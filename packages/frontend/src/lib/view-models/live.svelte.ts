@@ -16,13 +16,14 @@ import {
   type SelectChoiceInput,
 } from "@drive-coding/core/voice/live-config"
 import {
-  buildLiveAgentPrompt,
-  formatSecretaryToAgent,
+  conversationHasLiveAgentPreamble,
+  formatSecretaryDispatch,
 } from "@drive-coding/core/voice/live-agent-prompt"
 import { formatAgentDelivery, formatConfigSeedProse, formatPermissionPending } from "@drive-coding/core/voice/live-prompt"
 import { buildLiveSeed } from "@drive-coding/core/voice/live-seed"
 import { formatMemoryForPrompt, type MemoryItem } from "@drive-coding/core/voice/live-memory"
 import { searchSessionBubbles } from "@drive-coding/core/voice/live-search"
+import { parseRecentBool, parseRecentCount, readRecentBubbles } from "@drive-coding/core/voice/live-read-recent"
 import { isUnpromptedSend } from "@drive-coding/core/voice/unprompted-guard"
 import {
   loadAlwaysMemory,
@@ -34,6 +35,7 @@ import { mapPermissionOptions } from "$lib/types/permission"
 import {
   LIVE_SEED_LABELS,
   mapBubblesToLiveSeed,
+  mapBubblesToRecent,
   mapSessionTurnState,
 } from "$lib/util/live-seed-from-session"
 import { geminiLive } from "../adapters/voice/live/gemini"
@@ -44,7 +46,9 @@ import {
   type LiveSessionState,
   type LiveTranscriptEntry,
 } from "../engines/live-session"
+import { LiveVad } from "../engines/live-vad"
 import { MicFrames } from "../engines/mic-frames"
+import { liveInfo } from "../util/live-log"
 import type { AgentSession } from "./agent-session.svelte"
 import type { Mic } from "./mic.svelte"
 import type { Settings } from "./settings.svelte"
@@ -84,19 +88,22 @@ export class Live {
   readonly #engine: LiveSessionEngine
   readonly #frames: MicFrames
   readonly #sink: LiveAudioSink
+  readonly #vad: LiveVad
+  readonly #vadLoad: Promise<void>
   #pendingAgentDelivery = false
   #notifiedPermissionKey: string | null = null
   /** Set when agent delivery is sent; cleared on first user transcript fragment. */
   #deliveredSinceUserSpoke = false
-  /** One-shot agent instruction per Live open cycle. */
-  #agentPromptSent = false
   #lastUserTranscriptIdSeen: number | undefined = undefined
   /** Session-scoped secretary memory (RAM). Cleared when Live class is recreated. */
   #sessionMemory: MemoryItem[] = []
   /** Cross-session memory — loaded from localStorage on construct. */
   #alwaysMemory: MemoryItem[] = loadAlwaysMemory()
+  /** Bumped by Stop / toggle so a pending close_live wait does not fire after. */
+  #closeAfterSpeechEpoch = 0
 
   state: LiveSessionState = $state("closed")
+  paused = $state(false)
   transcript: LiveTranscriptEntry[] = $state([])
   error: MessageKey | null = $state(null)
   /** Reactive bridge — fed by LiveAudioSink, not read from sink.isPlaying directly. */
@@ -125,6 +132,8 @@ export class Live {
         this.isSpeaking = playing
       },
     })
+    this.#vad = new LiveVad()
+    this.#vadLoad = this.#vad.load()
     this.#engine = new LiveSessionEngine({
       connector: {
         fetchToken: async () => {
@@ -142,12 +151,13 @@ export class Live {
       },
       frames: this.#frames,
       audioSink: this.#sink,
+      speechFilter: this.#vad,
     })
 
     this.#engine.on("state", (s) => {
       this.state = s
       if (s === "open") this.error = null
-      if (s === "closed") this.#agentPromptSent = false
+      if (s === "closed") this.paused = false
     })
     this.#engine.on("transcript", (entry) => {
       this.transcript = [...this.#engine.transcript]
@@ -184,6 +194,8 @@ export class Live {
 
   async toggle(): Promise<void> {
     if (this.isOpen) {
+      this.#closeAfterSpeechEpoch++
+      this.paused = false
       this.#engine.close()
       return
     }
@@ -191,16 +203,17 @@ export class Live {
 
     this.error = null
     try {
+      await this.#vadLoad
+      if (this.#vad.loadFailed) {
+        this.error = "live.error.vadLoad"
+      }
       await this.#frames.start()
+      this.#vad.armPrime()
       await this.#engine.open()
       if (this.state === "error") {
         this.error = "live.error.connect"
       } else if (this.state === "open") {
         this.#injectSeedAndMemory()
-        if (!this.#agentPromptSent) {
-          this.#agentPromptSent = true
-          void this.#session.sendPrompt(buildLiveAgentPrompt())
-        }
       }
     } catch (e: unknown) {
       this.error =
@@ -211,6 +224,33 @@ export class Live {
     }
   }
 
+  /** Pause mic forwarding while keeping the Live socket open. */
+  pause(): void {
+    if (this.state !== "open") return
+    this.#engine.setPaused(true)
+    this.paused = true
+  }
+
+  /** Resume mic forwarding after manual pause (button only — no voice resume). */
+  resume(): void {
+    if (!this.paused) return
+    this.#engine.setPaused(false)
+    this.#vad.reset()
+    this.paused = false
+  }
+
+  /** Tool result first; disconnect only after farewell audio finishes (or grace/timeout). */
+  async #closeAfterSecretarySpeech(): Promise<void> {
+    const epoch = ++this.#closeAfterSpeechEpoch
+    liveInfo("close-live-wait")
+    await this.#sink.whenQuiet({ graceMs: 400, timeoutMs: 12_000 })
+    if (epoch !== this.#closeAfterSpeechEpoch) return
+    if (this.state !== "open") return
+    liveInfo("close-live-after-speech")
+    this.paused = false
+    this.#engine.close()
+  }
+
   #dispatchGate(text: string) {
     return canDispatchPrompt({
       status: this.#session.status,
@@ -219,6 +259,23 @@ export class Live {
       isRemoteView: this.#session.isRemoteView,
       text,
     })
+  }
+
+  /** First successful dispatch prepends the explanation unless it is already in the ACP transcript. */
+  #sendToAgent(text: string): void {
+    const includePreamble = !conversationHasLiveAgentPreamble(this.#conversationTexts())
+    void this.#session.sendPrompt(formatSecretaryDispatch(text, { includePreamble }))
+  }
+
+  #conversationTexts(): string[] {
+    const texts: string[] = []
+    const last = this.#session.lastUserMessage
+    if (last) texts.push(last)
+    for (const bubble of this.#session.bubbles ?? []) {
+      if (bubble.kind !== "user") continue
+      texts.push(bubble.segments.map((s) => s.text).join(""))
+    }
+    return texts
   }
 
   #lastFinalUserTranscript(): string {
@@ -248,7 +305,7 @@ export class Live {
           })
           return
         }
-        void this.#session.sendPrompt(formatSecretaryToAgent(text))
+        this.#sendToAgent(text)
         this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
         this.#pendingAgentDelivery = true
         break
@@ -270,7 +327,7 @@ export class Live {
           })
           return
         }
-        void this.#session.sendPrompt(formatSecretaryToAgent(text))
+        this.#sendToAgent(text)
         this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
         this.#pendingAgentDelivery = true
         break
@@ -279,6 +336,24 @@ export class Live {
         void this.#session.cancelTurn()
         this.#pendingAgentDelivery = false
         this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
+        break
+      }
+      case "pause_live": {
+        if (this.state !== "open") {
+          this.#engine.sendActionResult(action.id, action.name, { status: "not_open" })
+          break
+        }
+        if (this.paused) {
+          this.#engine.sendActionResult(action.id, action.name, { status: "already_paused" })
+          break
+        }
+        this.#engine.sendActionResult(action.id, action.name, { status: "paused" })
+        this.pause()
+        break
+      }
+      case "close_live": {
+        this.#engine.sendActionResult(action.id, action.name, { status: "closing" })
+        void this.#closeAfterSecretarySpeech()
         break
       }
       case "answer_permission": {
@@ -307,6 +382,17 @@ export class Live {
         const query = typeof action.args.query === "string" ? action.args.query : ""
         const bubbles = mapBubblesToLiveSeed(this.#session.bubbles ?? [])
         const result = searchSessionBubbles(bubbles, query)
+        this.#engine.sendActionResult(action.id, action.name, result)
+        break
+      }
+      case "read_recent": {
+        const items = mapBubblesToRecent(this.#session.bubbles ?? [])
+        const result = readRecentBubbles(items, {
+          count: parseRecentCount(action.args.count),
+          thoughts: parseRecentBool(action.args.thoughts) ?? false,
+          toolCalls: parseRecentBool(action.args.toolCalls) ?? false,
+          messages: parseRecentBool(action.args.messages) ?? true,
+        })
         this.#engine.sendActionResult(action.id, action.name, result)
         break
       }

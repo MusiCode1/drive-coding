@@ -10,6 +10,8 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import {
   buildLiveAgentPrompt,
+  conversationHasLiveAgentPreamble,
+  formatSecretaryDispatch,
   formatSecretaryToAgent,
   LIVE_SECRETARY_TO_AGENT_MARKER,
 } from "./live-agent-prompt"
@@ -43,5 +45,29 @@ describe("buildLiveAgentPrompt", () => {
     expect(agentSource).not.toContain("buildLiveSecretaryPrompt")
     expect(agentSource).not.toContain("LIVE_AGENT_DELIVERY_MARKER")
     expect(buildLiveAgentPrompt()).not.toContain("[תשובת-סוכן]")
+  })
+})
+
+describe("formatSecretaryDispatch", () => {
+  it("tags only when preamble is omitted", () => {
+    expect(formatSecretaryDispatch("fix auth.ts")).toBe(formatSecretaryToAgent("fix auth.ts"))
+  })
+
+  it("prepends the one-shot instruction before the first tagged body", () => {
+    const out = formatSecretaryDispatch("fix auth.ts", { includePreamble: true })
+    expect(out.startsWith(`${buildLiveAgentPrompt()}\n\n`)).toBe(true)
+    expect(out.endsWith(formatSecretaryToAgent("fix auth.ts"))).toBe(true)
+  })
+})
+
+describe("conversationHasLiveAgentPreamble", () => {
+  it("is false when the conversation is empty", () => {
+    expect(conversationHasLiveAgentPreamble([])).toBe(false)
+    expect(conversationHasLiveAgentPreamble(["hello", "[מזכיר] what time?"])).toBe(false)
+  })
+
+  it("is true when any text contains the full explanation", () => {
+    const sent = formatSecretaryDispatch("מה השעה?", { includePreamble: true })
+    expect(conversationHasLiveAgentPreamble(["earlier", sent])).toBe(true)
   })
 })

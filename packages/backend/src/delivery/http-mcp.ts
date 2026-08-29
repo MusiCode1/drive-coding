@@ -15,17 +15,24 @@
 
 import {
   AgentCloseInput,
-  AgentListInput,
   AgentNotifyParentInput,
   AgentOpenInput,
   type AgentRegistry,
   AgentSendInput,
-  AgentStateInput,
+  MCP_CONFIGURE_HINT,
+  MCP_NOTIFY_PARENT_META,
+  MCP_SERVER_DESCRIPTION,
+  MCP_SERVER_INSTRUCTIONS,
+  MCP_SERVER_TITLE,
+  MCP_TOOL_META,
+  McpSessionListInput,
+  SessionStateMcpInput,
   toAgentPublic,
 } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
+import { getCliSpec } from "@drive-coding/provider/config"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import { z } from "zod"
@@ -55,9 +62,6 @@ const DEFAULT_STATE_FIELDS = [
   "lastTurnError",
   "pending",
 ] as const
-
-/** MCP-only `fields` on top of AgentStateInput — do not rewrite the shared contract. */
-const SessionStateMcpInput = AgentStateInput.and({ "fields?": "string[]" })
 
 export type McpHttpDeps = {
   registry: AgentRegistry
@@ -150,6 +154,11 @@ function pickSessionState(
   return out
 }
 
+function cliMeta(kind: string): { kind: string; displayName: string } {
+  const spec = getCliSpec(kind, process.env)
+  return { kind, displayName: spec?.displayName ?? kind }
+}
+
 function assistantTextSince(messages: unknown[]): string {
   const parts: string[] = []
   for (const m of messages) {
@@ -168,22 +177,42 @@ function createSessionBusMcpServer(
   ctx: McpRequestContext,
   callerRecord: Awaited<ReturnType<AgentRegistry["get"]>>,
 ): McpServer {
-  const server = new McpServer({
-    name: "drive-coding",
-    version: resolveAppVersion(),
-  })
+  const server = new McpServer(
+    {
+      name: "drive-coding",
+      title: MCP_SERVER_TITLE,
+      description: MCP_SERVER_DESCRIPTION,
+      version: resolveAppVersion(),
+    },
+    { instructions: MCP_SERVER_INSTRUCTIONS },
+  )
+
+  server.registerResource(
+    "guide",
+    "drive-coding://guide",
+    {
+      title: "Usage guide",
+      description: "Workflow, identity header, and limits for drive-coding MCP tools.",
+      mimeType: "text/markdown",
+    },
+    async () => ({
+      contents: [
+        {
+          uri: "drive-coding://guide",
+          mimeType: "text/markdown",
+          text: MCP_SERVER_INSTRUCTIONS,
+        },
+      ],
+    }),
+  )
 
   const callerAgentId = ctx.callerAgentId
 
   registerArkTool(
     server,
     "session_list",
-    {
-      title: "List sessions",
-      description:
-        "List live drive-coding agents (id, cliKind, cwd, status, turnState). Same surface as GET /api/agents.",
-    },
-    AgentListInput,
+    MCP_TOOL_META.session_list,
+    McpSessionListInput,
     async () => {
       const all = await deps.registry.list()
       const agents = all.map((a) => {
@@ -191,6 +220,7 @@ function createSessionBusMcpServer(
         const host = deps.agentSessionRegistry.getHost(a.id)
         return {
           ...toAgentPublic(a),
+          displayName: cliMeta(a.cliKind).displayName,
           pid: rt?.pid ?? null,
           attached: rt?.attached ?? false,
           busy: rt?.busy ?? false,
@@ -208,11 +238,7 @@ function createSessionBusMcpServer(
   registerArkTool(
     server,
     "session_open",
-    {
-      title: "Open session",
-      description:
-        "Spawn a drive-coding agent and wait until its ACP session exists. Returns agent, sessionId, url, modes, configOptions.",
-    },
+    MCP_TOOL_META.session_open,
     AgentOpenInput,
     async (raw) => {
       const input = raw as typeof AgentOpenInput.infer
@@ -264,8 +290,10 @@ function createSessionBusMcpServer(
         agent: created.agentId,
         sessionId,
         url: `${publicUrl}/chat/${input.cli}/${sessionId}?sessionTransport=http`,
+        cli: cliMeta(input.cli),
         modes: host?.state.modes,
         configOptions: host?.state.configOptions,
+        hint: MCP_CONFIGURE_HINT,
       })
     },
   )
@@ -273,11 +301,7 @@ function createSessionBusMcpServer(
   registerArkTool(
     server,
     "session_close",
-    {
-      title: "Close session",
-      description:
-        "Delete the agent and kill its CLI. Refuses when turnState is not idle unless force is true. The signal is turnState, not busy.",
-    },
+    MCP_TOOL_META.session_close,
     AgentCloseInput,
     async (raw) => {
       const input = raw as typeof AgentCloseInput.infer
@@ -297,11 +321,7 @@ function createSessionBusMcpServer(
   registerArkTool(
     server,
     "session_send",
-    {
-      title: "Send prompt",
-      description:
-        "Prompt the agent and wait for the turn to end (rpc-wait). Returns stopReason, or {running:true} when noWait or the wait times out. Does not auto-close. file/marker/idleTimeoutSec/keep are CLI-only and ignored.",
-    },
+    MCP_TOOL_META.session_send,
     AgentSendInput,
     async (raw) => {
       const input = raw as typeof AgentSendInput.infer
@@ -367,11 +387,7 @@ function createSessionBusMcpServer(
   registerArkTool(
     server,
     "session_state",
-    {
-      title: "Session state",
-      description:
-        'Read in-process host.state. Default fields omit commands/messages (the bulk of GET /state). Pass fields:["*"] for the full snapshot.',
-    },
+    MCP_TOOL_META.session_state,
     SessionStateMcpInput,
     async (raw) => {
       const input = raw as typeof SessionStateMcpInput.infer
@@ -392,11 +408,7 @@ function createSessionBusMcpServer(
     registerArkTool(
       server,
       "notify_parent",
-      {
-        title: "Notify parent",
-        description:
-          "Push a prompt to the parent agent's live session. Caller identity is taken from the MCP request header — no agent id argument.",
-      },
+      MCP_NOTIFY_PARENT_META,
       AgentNotifyParentInput,
       async (raw) => {
         const input = raw as typeof AgentNotifyParentInput.infer

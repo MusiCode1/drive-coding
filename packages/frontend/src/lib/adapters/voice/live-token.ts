@@ -19,9 +19,10 @@ export async function fetchLiveToken(opts?: {
   voiceName?: string
 }): Promise<LiveTokenResult> {
   const language = opts?.language ?? "he"
+  const actions = buildLiveActions()
   const body = {
-    systemInstruction: buildLiveSecretaryPrompt({ language }),
-    actions: buildLiveActions().map((a) => a.name),
+    systemInstruction: buildLiveSecretaryPrompt({ language, tools: actions }),
+    actions: actions.map((a) => a.name),
     voiceName: opts?.voiceName,
   }
 

@@ -44,7 +44,21 @@ export const LIVE_ACTION_PROSE: Readonly<
     params: {},
   },
   cancel_turn: {
-    description: "בטל את הריצה הנוכחית של הסוכן.",
+    description:
+      "בטל רק את הריצה שרצה עכשיו אצל סוכן הקוד. לא מוחק קבצים, לא מבטל תור שכבר נגמר, " +
+      "ולא מוחק עבודה שכבר נכתבה. אם אין תור פתוח — אין מה לבטל.",
+    params: {},
+  },
+  pause_live: {
+    description:
+      "השהה שליחת מיקרופון לשיחה החיה; הסוקט נשאר פתוח. " +
+      "אם כבר מושהה — מחזיר already_paused. חידוש רק בכפתור Resume, אין כלי resume.",
+    params: {},
+  },
+  close_live: {
+    description:
+      "סגור את השיחה החיה (לא cancel_turn — זה תור סוכן הקוד). " +
+      "קודם אמור שלום בקול, אחר כך קרא לכלי; אל תסגור באמצע משפט.",
     params: {},
   },
   answer_permission: {
@@ -74,8 +88,24 @@ export const LIVE_ACTION_PROSE: Readonly<
     params: {},
   },
   search_session: {
-    description: "חפש בהיסטוריית השיחה הנוכחית.",
+    description:
+      "חפש בהיסטוריית השיחה לפי מילות מפתח. לא מחזיר את כל ההודעות — רק קטעים שתואמים לשאילתה. " +
+      "אם המשתמש רוצה את ההודעות האחרונות בלי חיפוש — השתמש ב-read_recent.",
     params: { query: "מילות חיפוש." },
+  },
+  read_recent: {
+    description:
+      "החזר את כמה הפריטים האחרונים בשיחה לפי סדר כרונולוגי. בלי שאילתה. " +
+      "ברירת מחדל: טקסט משתמש/סוכן ושמות כלים בלבד — בלי מחשבות ובלי ארגומנטים/פלט. " +
+      "thoughts=true מוסיף מחשבות. toolCalls=true מחזיר קריאות כלים מלאות. " +
+      "messages=false משמיט את טקסט השיחה — כך: רק מחשבות, רק כלים, או שניהם. " +
+      "ברירת מחדל 8, לכל היותר 20. אם טענת שאין לך גישה להודעות, קרא לכלי הזה קודם.",
+    params: {
+      count: "כמה פריטים אחרונים להחזיר (1–20). השמט ל-8.",
+      thoughts: "true כדי לכלול מחשבות פנימיות. ברירת מחדל false.",
+      toolCalls: "true לקריאות כלים מלאות (שם, ארגומנטים, פלט). ברירת מחדל false — רק שם.",
+      messages: "false כדי להשמיט הודעות משתמש/סוכן. ברירת מחדל true.",
+    },
   },
   remember_session: {
     description:
@@ -128,10 +158,14 @@ const LANGUAGE_SECTION =
   "אך המזהים הטכניים חייבים להישמר כפי שנאמרו."
 
 const SCOPE_SECTION =
-  "אתה מדבר עם המשתמש ישירות. ענה בעצמך על שאלות רגילות (שעה, מזג אוויר אם ידוע, " +
-  "מה אתה יכול לעשות, שיחה קצרה) — בלי לשלוח אותן לסוכן הקוד ובלי להגיד " +
-  '"אני יכול רק דברים שקשורים לקוד". ' +
-  "שלח לסוכן (compose_prompt / forward) רק כשהמשתמש מבקש עבודה על קוד, קבצים, " +
+  "התפקיד העיקרי שלך הוא לתווך: להעביר הודעות בין המשתמש לסוכן הקוד ולהיפך, " +
+  "כדי לאפשר למשתמש לדבר עם הסוכן בקול. " +
+  "ענה בעצמך על שאלות רגילות (שעה, מזג אוויר אם ידוע, שיחה קצרה) ועל היכולות שלך כמזכיר — " +
+  "מה הכלים שלך עושים, מתי אתה שולח לסוכן. " +
+  "אל תחווה דעה על יכולות סוכן הקוד, על איכות התשובות שלו, או על איך יצא לו — " +
+  "מסור את דבריו, ושאלו אותו אם המשתמש שואל עליו. " +
+  "בלי להגיד \"אני יכול רק דברים שקשורים לקוד\". " +
+  "שלח לסוכן (compose_prompt / forward) כשהמשתמש מבקש עבודה על קוד, קבצים, " +
   "ריצה, דיבוג, או משהו שדורש את עוזר-הקוד. " +
   "על בקשות קוד — אל תשאל הבהרות; קרא מיד לכלי עם ניסוח מלא."
 
@@ -149,6 +183,81 @@ const CONFIG_TOOLS_SECTION =
   "לשנות הגדרות סשן (מודל, מצב, thinking), מסך דלוק, שפה, או ערכת צבעים — " +
   "השתמש ב-list_config ואז set_session_config / set_app_setting. " +
   "אל תנחש ערכים; קרא list_config קודם."
+
+const HISTORY_TOOLS_SECTION =
+  "הודעות השיחה: בפתיחה מקבלים כמה תורות אחרונים בדחיפה, ואחר כך תשובות שנדחפות. " +
+  "זה לא כל ההיסטוריה. כדי לראות עוד — חובה להשתמש בכלים: " +
+  "read_recent לחתך אחרון בלי חיפוש, search_session למילות מפתח. " +
+  "אל תגיד שאין לך גישה להודעות בלי לקרוא לאחד מהם."
+
+const LIVE_SESSION_CONTROL_SECTION =
+  "סיום והשהיה של השיחה החיה: «ביי», «סיימנו» ודומה — קודם אמור שלום בקול, אחר כך close_live. " +
+  "אל תסגור באמצע משפט. השהיה בלי לסיים את השיחה — pause_live (הסוקט נשאר). " +
+  "חידוש אחרי השהיה — רק כפתור Resume; אין כלי resume קולי."
+
+type LivePromptTool = {
+  name: string
+  description: string
+  params: readonly { name: string; required: boolean; description: string }[]
+}
+
+/** Names in declaration order — keep in sync with LIVE_ACTION_SHAPES (tested). */
+export const LIVE_SECRETARY_TOOL_ORDER = [
+  "compose_prompt",
+  "forward",
+  "cancel_turn",
+  "pause_live",
+  "close_live",
+  "answer_permission",
+  "search_session",
+  "read_recent",
+  "remember_session",
+  "remember_always",
+  "list_config",
+  "set_session_config",
+  "set_app_setting",
+] as const
+
+export function formatLiveToolsSection(tools: readonly LivePromptTool[]): string {
+  const lines = ["כלים — זה מה שכל כלי עושה באמת. אל תמציא התנהגות אחרת:"]
+  for (const t of tools) {
+    const sig =
+      t.params.length === 0
+        ? `${t.name}()`
+        : `${t.name}(${t.params.map((p) => (p.required ? p.name : `${p.name}?`)).join(", ")})`
+    lines.push(`- ${sig}: ${t.description}`)
+  }
+  return lines.join("\n")
+}
+
+function toolsFromProse(): LivePromptTool[] {
+  return LIVE_SECRETARY_TOOL_ORDER.map((name) => {
+    const prose = LIVE_ACTION_PROSE[name]
+    if (!prose) throw new Error(`Missing prose for action: ${name}`)
+    const requiredGuess: Record<string, boolean> = {
+      text: true,
+      optionId: true,
+      query: true,
+      id: name === "set_session_config",
+      value: true,
+      key: true,
+      count: false,
+      thoughts: false,
+      toolCalls: false,
+      messages: false,
+    }
+    const paramNames = Object.keys(prose.params)
+    return {
+      name,
+      description: prose.description,
+      params: paramNames.map((p) => ({
+        name: p,
+        required: requiredGuess[p] ?? false,
+        description: prose.params[p] ?? "",
+      })),
+    }
+  })
+}
 
 const CONFIG_SEED_LABELS: Record<string, string> = {
   model: "מודל",
@@ -204,17 +313,23 @@ export function formatConfigSeedProse(snapshot: ConfigSnapshot): string {
 }
 
 /** Builds the secretary system prompt. */
-export function buildLiveSecretaryPrompt(opts?: { language?: "he" | "en" }): string {
+export function buildLiveSecretaryPrompt(opts?: {
+  language?: "he" | "en"
+  tools?: readonly LivePromptTool[]
+}): string {
   const lang = opts?.language ?? "he"
   const role =
     lang === "he"
-      ? "אתה מזכיר קולי: מדבר עם המשתמש, ומפעיל כלים כשצריך — כולל שליחה לעוזר-קוד."
-      : "You are a voice secretary: talk to the user directly, and use tools when needed — including sending work to the coding assistant."
+      ? "אתה מזכיר קולי: מתווך בין המשתמש לסוכן הקוד — מעביר הודעות לשני הכיוונים כדי לאפשר שיחה קולית עם הסוכן. מפעיל כלים כשצריך."
+      : "You are a voice secretary: a relay between the user and the coding agent — pass messages both ways so the user can talk to the agent. Use tools when needed."
 
   return [
     role,
     SCOPE_SECTION,
+    HISTORY_TOOLS_SECTION,
+    LIVE_SESSION_CONTROL_SECTION,
     CONFIG_TOOLS_SECTION,
+    formatLiveToolsSection(opts?.tools ?? toolsFromProse()),
     IDENTIFIER_SECTION,
     LANGUAGE_SECTION,
     AGENT_DELIVERY_SECTION,

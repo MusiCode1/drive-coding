@@ -32,7 +32,9 @@ const MEASURED_SESSION_CONFIG = {
         },
         {
           name: "cancel_turn",
-          description: "בטל את הריצה הנוכחית של הסוכן.",
+          description:
+            "בטל רק את הריצה שרצה עכשיו אצל סוכן הקוד. לא מוחק קבצים, לא מבטל תור שכבר נגמר, " +
+            "ולא מוחק עבודה שכבר נכתבה. אם אין תור פתוח — אין מה לבטל.",
           parameters: { type: "OBJECT", properties: {}, required: [] },
         },
       ],
@@ -76,6 +78,15 @@ describe("buildGeminiLiveConfig()", () => {
       voiceName: "Puck",
     })
     const tools = built.tools as { functionDeclarations: unknown[] }[]
-    expect(tools[0]?.functionDeclarations.length).toBe(10)
+    expect(tools[0]?.functionDeclarations.length).toBe(13)
+  })
+
+  it("includes contextWindowCompression.slidingWindow for long sessions", () => {
+    const built = buildGeminiLiveConfig({
+      actions: buildLiveActions(["forward"]),
+      systemInstruction: "x",
+      voiceName: "Puck",
+    })
+    expect(built.contextWindowCompression).toEqual({ slidingWindow: {} })
   })
 })

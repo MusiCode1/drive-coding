@@ -5,9 +5,11 @@
 import { afterEach, describe, expect, it } from "vitest"
 import {
   AGENT_ID_HEADER,
+  agentDeclaresHttpMcp,
   buildAgentIdentityEnv,
   buildAgentMcpServers,
   DRIVE_CODING_AGENT_ID_ENV,
+  optionalAgentMcpServers,
 } from "./agent-identity.js"
 import { getSelfBaseUrl, setSelfBaseUrl, setSelfBaseUrlForTests } from "./instances.js"
 
@@ -28,6 +30,31 @@ describe("buildAgentMcpServers", () => {
     const servers = buildAgentMcpServers("x", "http://127.0.0.1:4055/")
     const http = servers[0]
     expect(http && "url" in http && http.url).toBe("http://127.0.0.1:4055/api/mcp")
+  })
+})
+
+describe("agentDeclaresHttpMcp", () => {
+  it("true when mcpCapabilities.http is true", () => {
+    expect(agentDeclaresHttpMcp({ mcpCapabilities: { http: true } })).toBe(true)
+  })
+
+  it("false when mcpCapabilities absent or http not true", () => {
+    expect(agentDeclaresHttpMcp(undefined)).toBe(false)
+    expect(agentDeclaresHttpMcp({})).toBe(false)
+    expect(agentDeclaresHttpMcp({ mcpCapabilities: { sse: true } })).toBe(false)
+    expect(agentDeclaresHttpMcp({ mcpCapabilities: null })).toBe(false)
+  })
+})
+
+describe("optionalAgentMcpServers", () => {
+  it("returns servers when agent declares http MCP", () => {
+    expect(
+      optionalAgentMcpServers("a", "http://127.0.0.1:4055", { mcpCapabilities: { http: true } }),
+    ).toEqual(buildAgentMcpServers("a", "http://127.0.0.1:4055"))
+  })
+
+  it("returns undefined when agent did not declare http MCP", () => {
+    expect(optionalAgentMcpServers("a", "http://127.0.0.1:4055", {})).toBeUndefined()
   })
 })
 

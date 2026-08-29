@@ -25,7 +25,9 @@ import {
 } from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks, PromptBlocks } from "@drive-coding/provider/client"
 import { Hono } from "hono"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { buildAgentMcpServers } from "../../agent-identity.js"
+import { setSelfBaseUrlForTests } from "../../instances.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
 import type { ExtendedSessionHost } from "../session-host.js"
@@ -59,7 +61,7 @@ function makeMockHost(state: SessionState): ExtendedSessionHost {
     listSessions: vi.fn().mockResolvedValue({}),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),
-    agentCapabilities: {},
+    agentCapabilities: { mcpCapabilities: { http: true } },
   }
 }
 
@@ -550,6 +552,16 @@ describe("POST /api/agents/:id/rpc", () => {
   })
 
   describe("loadSession (blocking, cwd resolution, notifySessionAttached)", () => {
+    const TEST_SELF_BASE = "http://127.0.0.1:4055"
+    const expectedMcp = () => buildAgentMcpServers("agent-1", TEST_SELF_BASE)
+
+    beforeEach(() => {
+      setSelfBaseUrlForTests(TEST_SELF_BASE)
+    })
+    afterEach(() => {
+      setSelfBaseUrlForTests(undefined)
+    })
+
     it("happy path: 200 {sessionId, version}; cwd from params passed to host and to notifySessionAttached", async () => {
       const host = makeMockHost(makeMockState(13))
       ;(host.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -567,7 +579,11 @@ describe("POST /api/agents/:id/rpc", () => {
       const json = (await res.json()) as unknown as { sessionId: string; version: number }
       expect(json.sessionId).toBe("sess-9")
       expect(json.version).toBe(13)
-      expect(host.loadSession).toHaveBeenCalledWith({ cwd: "/from/params", sessionId: "sess-9" })
+      expect(host.loadSession).toHaveBeenCalledWith({
+        cwd: "/from/params",
+        sessionId: "sess-9",
+        mcpServers: expectedMcp(),
+      })
       // slice agent-patch-unify C2: ה-cwd שכבר חושב כאן (מ-params או מ-fallback)
       // עובר גם ל-notifySessionAttached — זו החוליה שהייתה חסרה בשרשרת ה-cwd (§3).
       expect(registry.notifySessionAttached).toHaveBeenCalledWith(
@@ -593,7 +609,11 @@ describe("POST /api/agents/:id/rpc", () => {
       })
       expect(res.status).toBe(200)
       expect(registry.getCwd).toHaveBeenCalledWith("agent-1")
-      expect(host.loadSession).toHaveBeenCalledWith({ cwd: "/fallback-cwd", sessionId: "sess-9" })
+      expect(host.loadSession).toHaveBeenCalledWith({
+        cwd: "/fallback-cwd",
+        sessionId: "sess-9",
+        mcpServers: expectedMcp(),
+      })
       // ה-cwd שנפתר (fallback, לא params) הוא זה שמגיע ל-notifySessionAttached.
       expect(registry.notifySessionAttached).toHaveBeenCalledWith(
         "agent-1",
@@ -616,6 +636,24 @@ describe("POST /api/agents/:id/rpc", () => {
       const json = (await res.json()) as unknown as { error: string }
       expect(json.error).toBe("no cwd available")
       expect(host.loadSession).not.toHaveBeenCalled()
+    })
+
+    it("omits mcpServers when agent did not declare http MCP in initialize", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host as ExtendedSessionHost).agentCapabilities = {}
+      ;(host.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        sessionId: "sess-9",
+        version: 1,
+      })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "loadSession",
+        params: { sessionId: "sess-9", cwd: "/from/params" },
+      })
+      expect(res.status).toBe(200)
+      expect(host.loadSession).toHaveBeenCalledWith({ cwd: "/from/params", sessionId: "sess-9" })
     })
 
     it("missing sessionId in params → 400 (ArkType), host.loadSession never called", async () => {

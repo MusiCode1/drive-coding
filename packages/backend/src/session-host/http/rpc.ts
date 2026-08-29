@@ -53,6 +53,8 @@ import { canonicalRpcMethod, RPC_METHODS } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
 import type { Hono } from "hono"
+import { optionalAgentMcpServers } from "../../agent-identity.js"
+import { getSelfBaseUrl } from "../../instances.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import { parseWaitMs, raceKeepRunning } from "./rpc-wait.js"
 
@@ -321,7 +323,16 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
         const cwd = p.cwd ?? registry.getCwd(agentId)
         if (!cwd) return c.json({ error: "no cwd available" }, 400)
         try {
-          const r = await host.loadSession({ cwd, sessionId: p.sessionId })
+          const mcpServers = optionalAgentMcpServers(
+            agentId,
+            getSelfBaseUrl(),
+            host.agentCapabilities,
+          )
+          const r = await host.loadSession({
+            cwd,
+            sessionId: p.sessionId,
+            ...(mcpServers !== undefined && { mcpServers }),
+          })
           // The agents registry must learn the newly-attached session
           // (status/acpSessionId — remote-warm-reconnect plumbing). catch+warn:
           // a reporting failure must not fail the switch itself.

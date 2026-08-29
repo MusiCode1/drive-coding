@@ -149,12 +149,16 @@ export type MessageKey =
   // ─── live ─── (slice live-ears)
   | "live.toggle.open"
   | "live.toggle.close"
+  // ─── live-silence-cost ───
+  | "live.toggle.pause"
+  | "live.toggle.resume"
   | "live.status.connecting"
   | "live.ear.listening"
   | "live.transcript.user"
   | "live.transcript.assistant"
   | "live.error.connect"
   | "live.error.noApiKey"
+  | "live.error.vadLoad"
   | "mic.stop"
   | "mic.discard"
   // ─── speakable (slice tts-speakable-text) — מה שנאמר במקום קוד/קישור ───

@@ -13,6 +13,7 @@
  *
  * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
  */
+import "$lib/log"
 import PlaybackDebugPanel from "$lib/components/debug/PlaybackDebugPanel.svelte"
 import "../app.css"
 import type { Locale } from "@drive-coding/core/i18n"

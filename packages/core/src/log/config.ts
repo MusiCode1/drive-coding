@@ -61,6 +61,7 @@ export function parseLogConfig(opts: {
     if (lsNs) ns = lsNs
     if (lsFormat === "pretty" || lsFormat === "json" || lsFormat === "both") format = lsFormat
     if (lsRemote === "1") remote = true
+    if (lsRemote === "0") remote = false
   }
 
   // שכבה 2: URL search params (עדיפות גבוהה ביותר)
@@ -87,6 +88,9 @@ export function parseLogConfig(opts: {
     if (urlRemote === "1") {
       remote = true
       if (urlSticky && opts.localStorage) opts.localStorage.setItem("LOG_REMOTE", "1")
+    } else if (urlRemote === "0") {
+      remote = false
+      if (urlSticky && opts.localStorage) opts.localStorage.setItem("LOG_REMOTE", "0")
     }
   }
 

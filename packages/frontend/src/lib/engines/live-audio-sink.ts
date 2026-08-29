@@ -20,6 +20,7 @@ export class LiveAudioSink {
   #nextStartTime = 0
   #activeSources: AudioBufferSourceNode[] = []
   #playing = false
+  readonly #idleWaiters = new Set<() => void>()
 
   constructor(opts?: LiveAudioSinkOpts) {
     this.#sampleRate = opts?.sampleRate ?? 24_000
@@ -28,6 +29,33 @@ export class LiveAudioSink {
 
   get isPlaying(): boolean {
     return this.#playing
+  }
+
+  /** Resolves when nothing is scheduled. Immediate if already idle. */
+  whenIdle(): Promise<void> {
+    if (!this.#playing) return Promise.resolve()
+    return new Promise((resolve) => {
+      this.#idleWaiters.add(resolve)
+    })
+  }
+
+  /**
+   * Wait out a farewell: late chunks may still arrive after the tool call.
+   * If idle, sit for `graceMs`; then wait until the queue drains (or timeout).
+   */
+  async whenQuiet(opts?: { graceMs?: number; timeoutMs?: number }): Promise<void> {
+    const graceMs = opts?.graceMs ?? 400
+    const timeoutMs = opts?.timeoutMs ?? 12_000
+    const started = Date.now()
+    if (!this.#playing && graceMs > 0) {
+      await sleep(graceMs)
+    }
+    while (this.#playing && Date.now() - started < timeoutMs) {
+      const left = timeoutMs - (Date.now() - started)
+      await Promise.race([this.whenIdle(), sleep(Math.max(0, left))])
+      if (this.#playing) continue
+      await sleep(80)
+    }
   }
 
   enqueue(pcm: Uint8Array): void {
@@ -95,5 +123,15 @@ export class LiveAudioSink {
     if (this.#playing === next) return
     this.#playing = next
     this.#onPlayingChange?.(next)
+    if (!next) {
+      for (const w of this.#idleWaiters) w()
+      this.#idleWaiters.clear()
+    }
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
 }

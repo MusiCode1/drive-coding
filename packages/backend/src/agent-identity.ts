@@ -8,6 +8,17 @@
 
 import type { NewSessionRequest } from "@agentclientprotocol/sdk"
 
+/** Minimal shape from ACP initialize — only what we need for MCP gating. */
+export type AgentMcpCapabilities = {
+  mcpCapabilities?: { http?: boolean; sse?: boolean } | null
+}
+
+/** True when the agent declared HTTP MCP support in initialize. */
+export function agentDeclaresHttpMcp(caps: AgentMcpCapabilities | undefined | null): boolean {
+  const mcp = caps?.mcpCapabilities
+  return mcp != null && mcp.http === true
+}
+
 /** Env var injected into spawned / in-process children so they know their agent id. */
 export const DRIVE_CODING_AGENT_ID_ENV = "DRIVE_CODING_AGENT_ID"
 
@@ -34,4 +45,17 @@ export function buildAgentMcpServers(
       headers: [{ name: AGENT_ID_HEADER, value: agentId }],
     },
   ]
+}
+
+/**
+ * MCP wiring for session/new|load — only when the agent declared http MCP in initialize.
+ * Returns undefined to omit the field entirely (some SDKs reject mcpServers even when []).
+ */
+export function optionalAgentMcpServers(
+  agentId: string,
+  baseUrl: string,
+  caps: AgentMcpCapabilities | undefined | null,
+): NewSessionRequest["mcpServers"] | undefined {
+  if (!agentDeclaresHttpMcp(caps)) return undefined
+  return buildAgentMcpServers(agentId, baseUrl)
 }

@@ -230,7 +230,7 @@ function buildAcpClientFacade(
     }) {
       return conn.newSession({
         cwd: opts.cwd,
-        mcpServers: opts.mcpServers ?? [],
+        ...(opts.mcpServers !== undefined && { mcpServers: opts.mcpServers }),
         ...(opts._meta != null && { _meta: opts._meta }),
       })
     },
@@ -248,7 +248,7 @@ function buildAcpClientFacade(
       return conn.loadSession({
         sessionId: opts.sessionId,
         cwd: opts.cwd,
-        mcpServers: opts.mcpServers ?? [],
+        ...(opts.mcpServers !== undefined && { mcpServers: opts.mcpServers }),
         ...(opts._meta != null && { _meta: opts._meta }),
       })
     },

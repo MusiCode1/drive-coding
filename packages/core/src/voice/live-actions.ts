@@ -33,6 +33,8 @@ export const LIVE_ACTION_SHAPES: readonly LiveActionShape[] = [
   },
   { name: "forward", params: [] },
   { name: "cancel_turn", params: [] },
+  { name: "pause_live", params: [] },
+  { name: "close_live", params: [] },
   {
     name: "answer_permission",
     params: [{ name: "optionId", type: "string", required: true }],
@@ -40,6 +42,15 @@ export const LIVE_ACTION_SHAPES: readonly LiveActionShape[] = [
   {
     name: "search_session",
     params: [{ name: "query", type: "string", required: true }],
+  },
+  {
+    name: "read_recent",
+    params: [
+      { name: "count", type: "number", required: false },
+      { name: "thoughts", type: "boolean", required: false },
+      { name: "toolCalls", type: "boolean", required: false },
+      { name: "messages", type: "boolean", required: false },
+    ],
   },
   {
     name: "remember_session",
