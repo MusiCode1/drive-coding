@@ -1,0 +1,39 @@
+{
+  "$comment": "Per-layer budgets. Purity weight applied at runtime except routes and .svelte components. Test files: no line budget.",
+  "scatterThreshold": 8,
+  "layers": {
+    "routes": { "metric": "lines", "budget": 150, "source": "documented", "purityWeight": false },
+    "components": {
+      "metric": "scriptLines",
+      "budget": 50,
+      "source": "documented",
+      "purityWeight": false,
+      "tsHelperBudget": 150
+    },
+    "view-models": { "metric": "lines", "budget": 400, "source": "proposed", "purityWeight": true },
+    "engines": { "metric": "lines", "budget": 400, "source": "proposed", "purityWeight": true },
+    "adapters": { "metric": "lines", "budget": 200, "source": "proposed", "purityWeight": true },
+    "actions": { "metric": "lines", "budget": 150, "source": "proposed", "purityWeight": true },
+    "session": { "metric": "lines", "budget": 400, "source": "proposed", "purityWeight": true },
+    "util": { "metric": "lines", "budget": 150, "source": "proposed", "purityWeight": true },
+    "other": { "metric": "lines", "budget": 400, "source": "proposed", "purityWeight": true }
+  },
+  "declaredPure": {
+    "globs": ["packages/core/src/**"],
+    "exceptions": [
+      "packages/core/src/async/with-retry.ts",
+      "packages/core/src/async/with-timeout.ts",
+      "packages/core/src/cli-resolve.ts",
+      "packages/core/src/cwd-hash.ts",
+      "packages/core/src/i18n/index.ts",
+      "packages/core/src/log/browser.ts",
+      "packages/core/src/log/config.ts",
+      "packages/core/src/log/index.ts",
+      "packages/core/src/voice/cache-key.ts"
+    ]
+  },
+  "test": {
+    "lineBudget": null,
+    "filename": "one-concern-infix"
+  }
+}
