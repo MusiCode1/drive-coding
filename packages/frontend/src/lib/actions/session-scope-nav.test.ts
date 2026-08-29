@@ -18,3 +18,11 @@ describe("session-scope-nav N4 — in-session navigation does not fire notify", 
     expect(notify).not.toHaveBeenCalled()
   })
 })
+
+describe("session-scope-nav N2-via-wiring — leaving session route fires notify", () => {
+  it("onSessionRouteChange /chat → / calls notifySessionNavigatedAway", () => {
+    const notify = vi.fn()
+    onSessionRouteChange("/chat", "/", { notifySessionNavigatedAway: notify })
+    expect(notify).toHaveBeenCalledOnce()
+  })
+})

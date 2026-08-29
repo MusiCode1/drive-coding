@@ -19,6 +19,7 @@ import "../app.css"
 import type { Locale } from "@drive-coding/core/i18n"
 import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { onDestroy, onMount } from "svelte"
+import { beforeNavigate } from "$app/navigation"
 import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import {
@@ -54,6 +55,7 @@ import { normalizeSessionTransport } from "$lib/session/session-transport"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { beWsUrl } from "$lib/util/be-url"
 import { bindSessionScope } from "$lib/actions/session-scope"
+import { onSessionRouteChange } from "$lib/actions/session-scope-nav"
 import { isPageHidden } from "$lib/util/page-visibility.svelte"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
@@ -184,6 +186,11 @@ presencePoller.init()
 session.bindConnectionRelease()
 session.setSseReconnectedListener(() => presencePoller.onSseReconnected())
 bindSessionScope({ session, speaker, orderAlloc: sharedOrderAlloc })
+
+// ─── session-scope-nav S2: stop audio when leaving session routes ───
+beforeNavigate((nav) => {
+  onSessionRouteChange(nav.from?.url.pathname ?? "", nav.to?.url.pathname, session)
+})
 
 // ─── wake-lock ─── (Track C — drive-first chrome)
 const wakeLock = new WakeLockEngine()
