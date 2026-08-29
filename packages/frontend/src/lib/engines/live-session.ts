@@ -14,6 +14,12 @@ export type LiveConnector = {
 
 export type LiveSessionState = "closed" | "connecting" | "open" | "error"
 
+export type LiveSpeechFilter = {
+  ingest(frame: Float32Array): readonly Float32Array[] | Promise<readonly Float32Array[]>
+  reset(): void
+  load?(): Promise<void>
+}
+
 export type LiveTranscriptEntry = {
   /**
    * Stable identity for keyed rendering.
@@ -56,8 +62,10 @@ export class LiveSessionEngine {
   }
   readonly #connectTimeoutMs: number
   readonly #audioSink?: { enqueue(pcm: Uint8Array): void; stop(): void }
+  readonly #speechFilter?: LiveSpeechFilter
 
   #state: LiveSessionState = "closed"
+  #paused = false
   readonly transcript: LiveTranscriptEntry[] = []
   /** F2 — bumped by close(); guards every resumption point inside open(). */
   #openEpoch = 0
@@ -73,11 +81,13 @@ export class LiveSessionEngine {
     frames: { on(event: "frame", h: (f: Float32Array) => void): () => void; stop(): Promise<void> }
     connectTimeoutMs?: number
     audioSink?: { enqueue(pcm: Uint8Array): void; stop(): void }
+    speechFilter?: LiveSpeechFilter
   }) {
     this.#connector = deps.connector
     this.#frames = deps.frames
     this.#connectTimeoutMs = deps.connectTimeoutMs ?? 20_000
     this.#audioSink = deps.audioSink
+    this.#speechFilter = deps.speechFilter
   }
 
   get state(): LiveSessionState {
@@ -147,8 +157,7 @@ export class LiveSessionEngine {
 
       this.#session = session
       this.#unsubFrame = this.#frames.on("frame", (frame) => {
-        const pcm = float32ToInt16LE(frame)
-        session.send({ type: "audio", pcm })
+        this.#onFrame(frame)
       })
       this.#setState("open")
     } catch {
@@ -160,8 +169,35 @@ export class LiveSessionEngine {
 
   close(): void {
     this.#openEpoch++
+    this.#paused = false
     this.#cleanupSession()
     this.#setState("closed")
+  }
+
+  /** Pause mic forwarding without stopping capture or closing the socket. */
+  setPaused(paused: boolean): void {
+    this.#paused = paused
+  }
+
+  #onFrame(frame: Float32Array): void {
+    if (this.#paused) return
+    const session = this.#session
+    if (!session) return
+
+    if (this.#speechFilter) {
+      void this.#forwardFilteredFrame(frame, session)
+      return
+    }
+
+    session.send({ type: "audio", pcm: float32ToInt16LE(frame) })
+  }
+
+  async #forwardFilteredFrame(frame: Float32Array, session: LiveSession): Promise<void> {
+    const batches = await this.#speechFilter!.ingest(frame)
+    if (this.#paused || this.#session !== session) return
+    for (const chunk of batches) {
+      session.send({ type: "audio", pcm: float32ToInt16LE(chunk) })
+    }
   }
 
   /** Immediate tool response — does not wait for agent turn (§B.2). */

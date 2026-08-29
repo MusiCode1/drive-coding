@@ -144,6 +144,7 @@ export const he: Catalog = {
   "live.transcript.assistant": "מזכיר",
   "live.error.connect": "חיבור Live נכשל",
   "live.error.noApiKey": "חסר מפתח Gemini בשרת",
+  "live.error.vadLoad": "סינון שקט לא נטען — האודיו נשלח במלואו",
   "mic.stop": "עצור",
   "mic.discard": "בטל הקלטה",
   "speakable.codeBlock": "בלוק קוד",

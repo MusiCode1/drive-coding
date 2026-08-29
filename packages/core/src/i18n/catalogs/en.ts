@@ -149,6 +149,7 @@ export const en: Catalog = {
   "live.transcript.assistant": "Secretary",
   "live.error.connect": "Live connection failed",
   "live.error.noApiKey": "Gemini API key missing on server",
+  "live.error.vadLoad": "Silence filter failed to load — sending all audio",
   "mic.stop": "Stop",
   "mic.discard": "Discard recording",
   "speakable.codeBlock": "code block",

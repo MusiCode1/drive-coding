@@ -155,6 +155,7 @@ export type MessageKey =
   | "live.transcript.assistant"
   | "live.error.connect"
   | "live.error.noApiKey"
+  | "live.error.vadLoad"
   | "mic.stop"
   | "mic.discard"
   // ─── speakable (slice tts-speakable-text) — מה שנאמר במקום קוד/קישור ───

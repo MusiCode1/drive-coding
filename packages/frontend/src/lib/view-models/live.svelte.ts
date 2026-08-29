@@ -46,6 +46,7 @@ import {
   type LiveSessionState,
   type LiveTranscriptEntry,
 } from "../engines/live-session"
+import { LiveVad } from "../engines/live-vad"
 import { MicFrames } from "../engines/mic-frames"
 import type { AgentSession } from "./agent-session.svelte"
 import type { Mic } from "./mic.svelte"
@@ -86,6 +87,8 @@ export class Live {
   readonly #engine: LiveSessionEngine
   readonly #frames: MicFrames
   readonly #sink: LiveAudioSink
+  readonly #vad: LiveVad
+  readonly #vadLoad: Promise<void>
   #pendingAgentDelivery = false
   #notifiedPermissionKey: string | null = null
   /** Set when agent delivery is sent; cleared on first user transcript fragment. */
@@ -125,6 +128,8 @@ export class Live {
         this.isSpeaking = playing
       },
     })
+    this.#vad = new LiveVad()
+    this.#vadLoad = this.#vad.load()
     this.#engine = new LiveSessionEngine({
       connector: {
         fetchToken: async () => {
@@ -142,6 +147,7 @@ export class Live {
       },
       frames: this.#frames,
       audioSink: this.#sink,
+      speechFilter: this.#vad,
     })
 
     this.#engine.on("state", (s) => {
@@ -190,6 +196,10 @@ export class Live {
 
     this.error = null
     try {
+      await this.#vadLoad
+      if (this.#vad.loadFailed) {
+        this.error = "live.error.vadLoad"
+      }
       await this.#frames.start()
       await this.#engine.open()
       if (this.state === "error") {
