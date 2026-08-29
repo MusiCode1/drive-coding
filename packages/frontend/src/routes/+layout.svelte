@@ -52,6 +52,7 @@ import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { normalizeSessionTransport } from "$lib/session/session-transport"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { beWsUrl } from "$lib/util/be-url"
+import { bindSessionScope } from "$lib/actions/session-scope"
 import { isPageHidden } from "$lib/util/page-visibility.svelte"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
@@ -181,6 +182,7 @@ const presencePoller = new PresencePoller(session)
 presencePoller.init()
 session.bindConnectionRelease()
 session.setSseReconnectedListener(() => presencePoller.onSseReconnected())
+bindSessionScope({ session, speaker, orderAlloc: sharedOrderAlloc })
 
 // ─── wake-lock ─── (Track C — drive-first chrome)
 const wakeLock = new WakeLockEngine()
