@@ -56,5 +56,6 @@ export function buildGeminiLiveConfig(opts: {
     tools: [{ functionDeclarations: opts.actions.map(declarationFromAction) }],
     systemInstruction: { parts: [{ text: opts.systemInstruction }] },
     thinkingConfig: { thinkingBudget: 0 },
+    contextWindowCompression: { slidingWindow: {} },
   }
 }
