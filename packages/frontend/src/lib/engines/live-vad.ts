@@ -49,22 +49,28 @@ export class LiveVad {
   async #doLoad(): Promise<void> {
     try {
       const url = `${this.#baseAssetUrl}/${SILERO_MODEL}`
-      this.#session = await ort.InferenceSession.create(url)
+      this.#session = await ort.InferenceSession.create(url, {
+        executionProviders: ["wasm"],
+      })
     } catch {
       this.#failOpen = true
     }
   }
 
   ingest(frame: Float32Array): Promise<readonly Float32Array[]> {
+    const owned = new Float32Array(frame)
     if (this.#failOpen) {
-      return Promise.resolve([frame])
+      return Promise.resolve([owned])
     }
-    const result = this.#queue.then(() => this.#ingestStep(frame))
+    const result = this.#queue.then(() => this.#ingestStep(owned))
     this.#queue = result.then(
       () => {},
       () => {},
     )
-    return result
+    return result.catch(() => {
+      this.#failOpen = true
+      return [owned]
+    })
   }
 
   async #ingestStep(frame: Float32Array): Promise<readonly Float32Array[]> {
@@ -80,7 +86,13 @@ export class LiveVad {
       this.#prefixRing.shift()
     }
 
-    const prob = await runVadStep(this.#session, frame, this.#vadState, ort)
+    let prob: number
+    try {
+      prob = await runVadStep(this.#session, frame, this.#vadState, ort)
+    } catch {
+      this.#failOpen = true
+      return [frame]
+    }
     const speaking = prob >= this.#threshold
     const decision = this.#gate.step(speaking)
 

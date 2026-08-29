@@ -49,6 +49,22 @@ describe("LiveVad", () => {
     expect.fail("expected silent frames to be dropped")
   })
 
+  it("fail-open sends the frame when runVadStep throws", async () => {
+    runVadStepMock.mockRejectedValueOnce(new Error("ort"))
+    const vad = new LiveVad()
+    await vad.load()
+
+    const frame = new Float32Array(1280).fill(0.3)
+    const out = await vad.ingest(frame)
+    expect(out).toHaveLength(1)
+    expect(out[0]).toEqual(frame)
+    expect(vad.loadFailed).toBe(true)
+
+    runVadStepMock.mockRejectedValue(new Error("ort"))
+    const again = await vad.ingest(new Float32Array(1280).fill(0.4))
+    expect(again).toHaveLength(1)
+  })
+
   it("fail-open sends every frame when load fails", async () => {
     const { InferenceSession } = await import("onnxruntime-web")
     vi.mocked(InferenceSession.create).mockRejectedValueOnce(new Error("network"))

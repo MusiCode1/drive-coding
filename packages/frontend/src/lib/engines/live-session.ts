@@ -193,7 +193,12 @@ export class LiveSessionEngine {
   }
 
   async #forwardFilteredFrame(frame: Float32Array, session: LiveSession): Promise<void> {
-    const batches = await this.#speechFilter!.ingest(frame)
+    let batches: readonly Float32Array[]
+    try {
+      batches = await this.#speechFilter!.ingest(frame)
+    } catch {
+      batches = [frame]
+    }
     if (this.#paused || this.#session !== session) return
     for (const chunk of batches) {
       session.send({ type: "audio", pcm: float32ToInt16LE(chunk) })
