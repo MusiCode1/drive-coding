@@ -6,53 +6,9 @@ import { Mp3Segment } from "./segments/mp3-segment.js"
 import { PlayableSink } from "./playable-sink.js"
 import { SharedAudioOutput } from "./shared-audio-output.js"
 
-function makeSourceBuffer(): SourceBuffer {
-  const listeners = new Map<string, Set<EventListener>>()
-  return {
-    appendBuffer: vi.fn(() => {
-      queueMicrotask(() => {
-        for (const fn of listeners.get("updateend") ?? []) {
-          fn(new Event("updateend"))
-        }
-      })
-    }),
-    addEventListener(type: string, fn: EventListener) {
-      if (!listeners.has(type)) listeners.set(type, new Set())
-      listeners.get(type)!.add(fn)
-    },
-    removeEventListener(type: string, fn: EventListener) {
-      listeners.get(type)?.delete(fn)
-    },
-  } as unknown as SourceBuffer
-}
-
-function makeMediaSource(sb: SourceBuffer): MediaSource {
-  const listeners = new Map<string, Set<EventListener>>()
-  const ms: MediaSource = {
-    readyState: "closed" as ReadyState,
-    addSourceBuffer: vi.fn(() => sb),
-    endOfStream: vi.fn(() => {
-      ;(ms as { readyState: ReadyState }).readyState = "ended"
-    }),
-    addEventListener(type: string, fn: EventListener) {
-      if (!listeners.has(type)) listeners.set(type, new Set())
-      listeners.get(type)!.add(fn)
-      if (type === "sourceopen") {
-        ;(ms as { readyState: ReadyState }).readyState = "open"
-        queueMicrotask(() => fn(new Event("sourceopen")))
-      }
-    },
-    removeEventListener(type: string, fn: EventListener) {
-      listeners.get(type)?.delete(fn)
-    },
-  } as unknown as MediaSource
-  return ms
-}
-
-type FakeAudio = HTMLAudioElement & { _advanceTo(t: number): void; _end?(): void }
+type FakeAudio = HTMLAudioElement & { _end(): void }
 
 function makeFakeAudio(): FakeAudio {
-  let currentTime = 0
   let paused = true
   const listeners = new Map<string, Set<EventListener>>()
 
@@ -63,16 +19,10 @@ function makeFakeAudio(): FakeAudio {
   }
 
   return {
-    get currentTime() {
-      return currentTime
-    },
-    set currentTime(v: number) {
-      currentTime = v
-    },
+    src: "",
     get paused() {
       return paused
     },
-    src: "",
     play: vi.fn(async () => {
       paused = false
     }),
@@ -86,9 +36,9 @@ function makeFakeAudio(): FakeAudio {
     removeEventListener(type: string, fn: EventListener) {
       listeners.get(type)?.delete(fn)
     },
-    _advanceTo(t: number) {
-      currentTime = t
-      emit("timeupdate")
+    _end() {
+      paused = true
+      emit("ended")
     },
   } as unknown as FakeAudio
 }
@@ -110,24 +60,15 @@ function streamFrom(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
 
 describe("PlayableSink + SharedAudioOutput contract", () => {
   let fakeAudio: FakeAudio
-  let savedMediaSource: typeof MediaSource
 
   beforeEach(() => {
     fakeAudio = makeFakeAudio()
-    const sb = makeSourceBuffer()
-    savedMediaSource = globalThis.MediaSource
-    vi.stubGlobal(
-      "MediaSource",
-      class MockMediaSource {
-        constructor() {
-          return makeMediaSource(sb)
-        }
-      },
-    )
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:seg")
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
   })
 
   afterEach(() => {
-    vi.stubGlobal("MediaSource", savedMediaSource)
+    vi.restoreAllMocks()
   })
 
   async function waitForSegment(seg: Mp3Segment): Promise<void> {
@@ -138,7 +79,7 @@ describe("PlayableSink + SharedAudioOutput contract", () => {
     throw new Error("segment not complete")
   }
 
-  it("Mp3Segment.play() resolves on boundary without audio ended", async () => {
+  it("Mp3Segment.play() resolves on audio ended (src-swap)", async () => {
     const output = new SharedAudioOutput(fakeAudio)
     const seg = new Mp3Segment("s0", output)
     const ac = new AbortController()
@@ -150,8 +91,9 @@ describe("PlayableSink + SharedAudioOutput contract", () => {
     const p = seg.play()
     await Promise.resolve()
     await Promise.resolve()
-    fakeAudio._advanceTo(output.endOf("s0") ?? 0.2)
+    fakeAudio._end()
     await p
+    expect(fakeAudio.src).toBe("blob:seg")
     expect(fakeAudio.pause).not.toHaveBeenCalled()
   })
 
@@ -172,7 +114,7 @@ describe("PlayableSink + SharedAudioOutput contract", () => {
     expect(sink.isComplete("y")).toBe(true)
   })
 
-  it("isComplete true without endOfStream on shared MSE", async () => {
+  it("isComplete true after blob is ready (no shared MSE)", async () => {
     const sink = new PlayableSink()
     const ac = new AbortController()
     await sink.prepareSegment("z", streamFrom([new Uint8Array(1600)]), ac)

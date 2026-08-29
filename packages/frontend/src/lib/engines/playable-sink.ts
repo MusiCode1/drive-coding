@@ -1,7 +1,7 @@
 /**
  * playable-sink.ts — PlayableSink: sink מאוחד עם SharedAudioOutput יחיד.
  *
- * SharedAudioOutput הוא הבעלים של HTMLAudioElement.
+ * SharedAudioOutput הוא הבעלים של HTMLAudioElement (src-swap בין משפטים).
  * Mp3Segment / PcmSegment מקבלים אותו בבנאי — לא יוצרים Audio() משלהם.
  */
 
@@ -126,11 +126,11 @@ export class PlayableSink implements AudioSink {
   #ensureFormat(format: "mp3" | "pcm"): void {
     if (this.#currentFormat === null) {
       this.#currentFormat = format
-      this.#output.switchFormat(format === "pcm" ? "blob" : "mse")
+      this.#output.switchFormat("blob")
       return
     }
     if (this.#currentFormat !== format) {
-      this.#output.switchFormat(format === "pcm" ? "blob" : "mse")
+      this.#output.switchFormat("blob")
       this.#currentFormat = format
     }
   }

@@ -1,9 +1,9 @@
 /**
- * mp3-segment.ts — segment MP3 עם append ל-SharedAudioOutput (MSE משותף).
+ * mp3-segment.ts — משפט MP3 כ-blob, ניגון על SharedAudioOutput (src-swap).
  *
- * isComplete(): כל בייטי הסגמנט נקלטו ו-append האחרון הסתיים — בלי endOfStream.
- * play(): נפתר על גבול timeupdate, לא על ended של האלמנט.
- * dispose(): abort בלבד — לא revoke/endOfStream/pause.
+ * isComplete(): כל הבייטים נקלטו וה-blob נוצר.
+ * play(): src על האלמנט המשותף, נפתר על ended.
+ * dispose(): abort + revoke של ה-blob של הסגמנט הזה — לא pause של האלמנט המשותף.
  */
 
 import type { SharedAudioOutput } from "../shared-audio-output.js"
@@ -16,8 +16,9 @@ export class Mp3Segment implements PlayableSegment {
   #state: Mp3State = "loading"
   #output: SharedAudioOutput
   #abortController: AbortController | null = null
+  #chunks: Uint8Array[] = []
+  #blobUrl: string | null = null
   #streamDone = false
-  #appendDone = false
 
   constructor(segmentId: string, output: SharedAudioOutput) {
     this.segmentId = segmentId
@@ -26,7 +27,6 @@ export class Mp3Segment implements PlayableSegment {
 
   prepare(stream: ReadableStream<Uint8Array>, ac: AbortController): void {
     this.#abortController = ac
-    this.#output.beginMp3Segment(this.segmentId)
     void this.#doPrepare(stream, ac)
   }
 
@@ -40,13 +40,13 @@ export class Mp3Segment implements PlayableSegment {
         if (done) break
         if (!value) break
         if ((this.#state as Mp3State) === "cancelled") break
-        await this.#output.appendMp3(value)
+        this.#chunks.push(new Uint8Array(value))
       }
 
       if (this.#state !== "cancelled") {
         this.#streamDone = true
-        this.#output.finalizeMp3Segment(this.segmentId)
-        this.#appendDone = true
+        this.#blobUrl = URL.createObjectURL(new Blob(this.#chunks, { type: "audio/mpeg" }))
+        this.#chunks = []
         if (this.#state === "loading") {
           this.#state = "ready"
         }
@@ -67,8 +67,13 @@ export class Mp3Segment implements PlayableSegment {
       throw new Error(`Mp3Segment ${this.segmentId} was cancelled`)
     }
 
+    const url = this.#blobUrl
+    if (!url) {
+      throw new Error(`Mp3Segment ${this.segmentId} has no blob`)
+    }
+
     this.#state = "playing"
-    await this.#output.playSegmentBoundary(this.segmentId)
+    await this.#output.playBlob(url)
     this.#state = "ended"
   }
 
@@ -88,18 +93,27 @@ export class Mp3Segment implements PlayableSegment {
   }
 
   isComplete(): boolean {
-    return this.#streamDone && this.#appendDone && this.#state !== "cancelled"
+    return this.#streamDone && this.#blobUrl !== null && this.#state !== "cancelled"
   }
 
   dispose(): void {
     this.#state = "cancelled"
     this.#abortController?.abort()
+    this.#chunks = []
+    if (this.#blobUrl) {
+      try {
+        URL.revokeObjectURL(this.#blobUrl)
+      } catch {
+        /* ignore */
+      }
+      this.#blobUrl = null
+    }
   }
 
   #waitForReady(): Promise<void> {
     return new Promise((resolve) => {
       const check = () => {
-        if (this.#state !== "loading" || (this.#appendDone && this.#streamDone)) {
+        if (this.#state !== "loading" || (this.#streamDone && this.#blobUrl !== null)) {
           resolve()
         } else {
           setTimeout(check, 50)

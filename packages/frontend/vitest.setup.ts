@@ -20,6 +20,8 @@ class MockAudio {
 class MockMediaSource {
   readyState: ReadyState = "closed"
   addSourceBuffer = vi.fn(() => ({
+    mode: "segments" as AppendMode,
+    buffered: { length: 0, start: () => 0, end: () => 0 },
     appendBuffer: vi.fn(),
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
