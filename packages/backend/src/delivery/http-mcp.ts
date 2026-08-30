@@ -42,6 +42,7 @@ import { resolveAppVersion } from "../app-version.js"
 import { raceKeepRunning } from "../session-host/http/rpc-wait.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
+import { defaultPublicUrl, loopbackBaseUrl } from "./public-url.js"
 
 const log = createLogger("backend.mcp")
 
@@ -119,12 +120,6 @@ function registerArkTool(
       return jsonError(e instanceof Error ? e.message : String(e))
     }
   })
-}
-
-function defaultPublicUrl(): string {
-  const port = process.env.PORT ?? "4000"
-  const host = process.env.DRIVE_CODING_HOST ?? "127.0.0.1"
-  return `http://${host}:${port}`
 }
 
 async function waitForSessionId(
@@ -242,10 +237,12 @@ function createSessionBusMcpServer(
     AgentOpenInput,
     async (raw) => {
       const input = raw as typeof AgentOpenInput.infer
-      const publicUrl = (input.publicUrl ?? input.base ?? defaultPublicUrl()).replace(/\/$/, "")
+      const explicit = input.publicUrl ?? input.base
+      const chatBase = (explicit ?? defaultPublicUrl()).replace(/\/$/, "")
+      const childBase = (explicit ?? loopbackBaseUrl()).replace(/\/$/, "")
       const env: Record<string, string> = { ...(input.env ?? {}) }
-      env.DRIVE_CODING_BASE = publicUrl
-      env.DC_BASE = publicUrl
+      env.DRIVE_CODING_BASE = childBase
+      env.DC_BASE = childBase
 
       const headerParent = callerAgentId
       const explicitParent =
@@ -289,7 +286,7 @@ function createSessionBusMcpServer(
       return jsonResult({
         agent: created.agentId,
         sessionId,
-        url: `${publicUrl}/chat/${input.cli}/${sessionId}?sessionTransport=http`,
+        url: `${chatBase}/chat/${input.cli}/${sessionId}?sessionTransport=http`,
         cli: cliMeta(input.cli),
         modes: host?.state.modes,
         configOptions: host?.state.configOptions,
