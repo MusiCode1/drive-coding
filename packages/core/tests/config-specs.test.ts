@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest"
 import { CONFIG_SPECS, type ConfigSpec, getLeaf, setLeaf } from "../src/config/specs.js"
 
 describe("CONFIG_SPECS — table invariants", () => {
-  it("1. exactly 10 entries", () => {
-    expect(CONFIG_SPECS).toHaveLength(10)
+  it("1. exactly 11 entries", () => {
+    expect(CONFIG_SPECS).toHaveLength(11)
   })
 
   it("2. unique key", () => {

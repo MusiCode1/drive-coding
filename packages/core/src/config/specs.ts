@@ -5,6 +5,7 @@
  * cliSpecs and https). Derivation sites in load-config.ts loop over this table.
  */
 
+import { normalizePublicBaseUrl } from "./public-base-url.js"
 import type { DriveCodingConfig } from "./schema.js"
 
 /** Roots deliberately excluded — see brief §2. */
@@ -26,7 +27,7 @@ export type ConfigSpec = {
   /** dotted path into DriveCodingConfig */
   key: ConfigLeafKey
   env: string
-  /** optional — 4 of 10 leaves have no CLI flag */
+  /** optional — 4 of 11 leaves have no CLI flag */
   flag?: string
   /** env-string → config value. undefined ⇒ leaf not contributed by the layer. */
   parse?: (raw: string) => unknown
@@ -61,6 +62,12 @@ export const CONFIG_SPECS = [
     serialize: (v: unknown) => (v as readonly string[]).join(","),
   },
   { key: "feStaticDir", env: "FE_STATIC_DIR", flag: "fe-static-dir" },
+  {
+    key: "publicBaseUrl",
+    env: "PUBLIC_BASE_URL",
+    flag: "public-base-url",
+    parse: (raw: string) => normalizePublicBaseUrl(raw),
+  },
   { key: "opencodeBin", env: "OPENCODE_BIN", flag: "opencode-bin" },
   {
     key: "wireRecord",

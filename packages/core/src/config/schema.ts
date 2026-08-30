@@ -14,6 +14,7 @@ export const DriveCodingConfig = type({
   "host?": "string",
   "corsOrigins?": "string[]",
   "feStaticDir?": "string",
+  "publicBaseUrl?": "string",
   "opencodeBin?": "string",
   "wireRecord?": "boolean",
   "fsBrowseBase?": "string",
