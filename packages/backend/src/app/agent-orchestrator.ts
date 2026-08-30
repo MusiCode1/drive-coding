@@ -31,7 +31,17 @@ import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { buildAgentIdentityEnv } from "../agent-identity.js"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
+import { loopbackBaseUrl } from "../delivery/public-url.js"
 import type { ProjectsRegistry } from "./projects-registry.js"
+
+/** Loopback BASE env every child gets (never PUBLIC_BASE_URL). */
+export function buildChildBaseEnv(): Record<string, string> {
+  const base = loopbackBaseUrl().replace(/\/$/, "")
+  return {
+    DRIVE_CODING_BASE: base,
+    DC_BASE: base,
+  }
+}
 
 const log = createLogger("backend.orchestrator")
 
@@ -180,19 +190,25 @@ export function createAgentOrchestrator(deps: {
       const agent = await deps.registry.create(input)
       await deps.registry.update(agent.id, { status: "starting" })
       const identityEnv = buildAgentIdentityEnv(agent.id)
+      // Caller env first; identity + loopback BASE always win (public-base-url split).
+      const childEnv = {
+        ...input.env,
+        ...identityEnv,
+        ...buildChildBaseEnv(),
+      }
 
       try {
         // ── הפעלת connection (connectSpawn דרך connectionRegistry) ──────────────
         // modelOverride (🔴 avigail): מועבר מ-input — לא מקובע null.
-        // shapeEnv: spawn-only (opencode config + DRIVE_CODING_AGENT_ID).
-        // agentEnv: same identity keys for in-process bridges (claude).
+        // shapeEnv: spawn-only (opencode config + DRIVE_CODING_AGENT_ID + BASE).
+        // agentEnv: same identity/BASE keys for in-process bridges (claude).
         // systemPrompt (slice project-system-prompt): גנרי — הצורה הספציפית-לספק
         // (מיפוי-meta לקלוד / config.developer_instructions לcodex) נכתבת בתוך provider בלבד.
         await deps.connectionRegistry.connect(agent.id, input.cliKind, {
           cwd: input.cwd,
           modelOverride: input.modelOverride ?? null,
-          shapeEnv: composeShapeEnv({ ...input.env, ...identityEnv }),
-          agentEnv: identityEnv,
+          shapeEnv: composeShapeEnv(childEnv),
+          agentEnv: childEnv,
           systemPrompt: input.systemPrompt ?? null,
         })
 

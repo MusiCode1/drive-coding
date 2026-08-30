@@ -99,16 +99,31 @@ function makeConnectionRegistry(
   reg: ConnectionRegistry
   closeMock: ReturnType<typeof vi.fn>
   connectMock: ReturnType<typeof vi.fn>
-  lastConnectOpts: { cwd?: string; modelOverride?: string | null; shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv } | null
+  lastConnectOpts: {
+    cwd?: string
+    modelOverride?: string | null
+    shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
+    agentEnv?: Record<string, string>
+  } | null
 } {
   let crashHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
-  let lastConnectOpts: { cwd?: string; modelOverride?: string | null; shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv } | null = null
+  let lastConnectOpts: {
+    cwd?: string
+    modelOverride?: string | null
+    shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
+    agentEnv?: Record<string, string>
+  } | null = null
   const closeMock = vi.fn(async (_id: string) => {})
   const connectMock = vi.fn(
     async (
       _agentId: string,
       _cliKind: string,
-      connectOpts: { cwd: string; modelOverride?: string | null; shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv },
+      connectOpts: {
+        cwd: string
+        modelOverride?: string | null
+        shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
+        agentEnv?: Record<string, string>
+      },
     ) => {
       lastConnectOpts = connectOpts
       if (opts.onConnectError) throw opts.onConnectError()
@@ -528,6 +543,46 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
     expect(connReg.lastConnectOpts?.shapeEnv).toBeTypeOf("function")
     const shaped = connReg.lastConnectOpts!.shapeEnv!("cursor", { EXISTING: "yes" })
     expect(shaped).toMatchObject({ EXISTING: "yes", BDS_SLICE: "probe" })
+    expect(shaped.DRIVE_CODING_BASE).toMatch(/^http:\/\//)
+    expect(shaped.DC_BASE).toBe(shaped.DRIVE_CODING_BASE)
+    expect(shaped.DRIVE_CODING_AGENT_ID).toBeTruthy()
+    // agentEnv carries the same BASE/identity for in-process bridges
+    expect(connReg.lastConnectOpts).toMatchObject({
+      agentEnv: expect.objectContaining({
+        DRIVE_CODING_BASE: shaped.DRIVE_CODING_BASE,
+        DC_BASE: shaped.DC_BASE,
+        BDS_SLICE: "probe",
+      }),
+    })
+  })
+
+  it("createAndSpawn forces loopback BASE even if caller passes a public URL", async () => {
+    const prev = process.env.PUBLIC_BASE_URL
+    process.env.PORT = "4371"
+    process.env.DRIVE_CODING_HOST = "127.0.0.1"
+    process.env.PUBLIC_BASE_URL = "https://public.example.com"
+    try {
+      const { registry } = makeRegistry()
+      const connReg = makeConnectionRegistry()
+      const orch = createAgentOrchestrator({ registry, connectionRegistry: connReg.reg })
+
+      await orch.createAndSpawn({
+        cliKind: "cursor",
+        cwd: "/proj",
+        modelOverride: null,
+        env: {
+          DRIVE_CODING_BASE: "https://public.example.com",
+          DC_BASE: "https://public.example.com",
+        },
+      })
+
+      const shaped = connReg.lastConnectOpts!.shapeEnv!("cursor", {})
+      expect(shaped.DRIVE_CODING_BASE).toBe("http://127.0.0.1:4371")
+      expect(shaped.DC_BASE).toBe("http://127.0.0.1:4371")
+    } finally {
+      if (prev === undefined) delete process.env.PUBLIC_BASE_URL
+      else process.env.PUBLIC_BASE_URL = prev
+    }
   })
 
   it("createAndSpawn without env → shapeEnv still wraps opencode injection", async () => {

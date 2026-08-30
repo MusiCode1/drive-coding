@@ -74,6 +74,7 @@ import {
   registerRecordingsPostHttp,
 } from "./delivery/http-history.js"
 import { registerLiveTokenHttp } from "./delivery/http-live-token.js"
+import { registerAgentPromptHttp } from "./delivery/http-agent-prompt.js"
 import { registerMcpHttp } from "./delivery/http-mcp.js"
 import { registerHttpOptions } from "./delivery/http-options.js"
 import { registerProxyHttp } from "./delivery/http-proxy.js"
@@ -216,6 +217,7 @@ registerAgentsHttp(app, {
 })
 // slice session-bus-mcp C0: Streamable HTTP MCP (stateless, per-request transport)
 registerMcpHttp(app, { registry, orchestrator, agentSessionRegistry })
+registerAgentPromptHttp(app, { registry })
 // Slice be-diag-harness: endpoint אבחון עשיר (eventLoop histogram + memory + agents)
 registerHealthHttp(app, { registry, connectionRegistry })
 registerProjectsHttp(app, { projectsRegistry })
