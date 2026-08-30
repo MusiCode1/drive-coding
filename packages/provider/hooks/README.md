@@ -3,10 +3,12 @@
 Thin, fail-open scripts that run **outside** the drive-coding process (Claude /
 Cursor / Codex command hooks are spawned subprocesses). They:
 
-1. Detect drive-coding via env (e.g. `DRIVE_CODING_BASE` / `DC_BASE`).
-2. If absent → exit 0 immediately (normal CLI use untouched).
-3. If present → short HTTP fetch to the BE for composed prompt text, then print
-   the CLI-specific hook JSON on stdout.
+1. Detect drive-coding via env (`DRIVE_CODING_AGENT_ID`, plus
+   `DRIVE_CODING_BASE` / `DC_BASE` or `PORT` for loopback).
+2. If no agent id → exit 0 immediately (normal CLI use untouched).
+3. If present → `GET {base}/api/agent-prompt?agent=<id>` (hard timeout), then
+   print the CLI-specific hook JSON on stdout. The **BE composes** the full
+   prompt text; the hook does not template-substitute.
 
 **Not** vendored ACP forks (`@Vendor/`). **Not** shared prompt text (that lives
 in `packages/backend/src/prompts/`). This tree is only the per-provider glue.

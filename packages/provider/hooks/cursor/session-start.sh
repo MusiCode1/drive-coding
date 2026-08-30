@@ -5,10 +5,19 @@
 #   stdin:  { session_id, is_background_agent, composer_mode? }
 #   stdout: { additional_context?: string, env?: { … } }
 #
-# Fail-open: no DRIVE_CODING_BASE / BE down / timeout / empty → exit 0, no stdout.
+# Fail-open: no agent id / BE down / timeout / empty / HTML → exit 0, no stdout.
 # sessionStart is fire-and-forget in Cursor; we still use a hard curl timeout.
+#
+# Optional debug: set DRIVE_CODING_HOOK_TRACE=1 to append one line to
+# /tmp/drive-coding-session-start.log (proves the hook ran under ACP or not).
 
 set -u
+
+if [[ "${DRIVE_CODING_HOOK_TRACE:-}" == "1" ]]; then
+  printf '%s agent=%s base=%s\n' "$(date -Iseconds 2>/dev/null || date)" \
+    "${DRIVE_CODING_AGENT_ID:-}" "${DRIVE_CODING_BASE:-${DC_BASE:-}}" \
+    >>/tmp/drive-coding-session-start.log 2>/dev/null || true
+fi
 
 # Drain stdin (required schema fields; unused for now).
 if [[ ! -t 0 ]]; then
