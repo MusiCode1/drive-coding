@@ -11,11 +11,18 @@
  */
 
 import type { Agent, AgentRegistry, BridgeCrashInfo, CreateAgentInput } from "@drive-coding/core"
+import { addSink, initLogger } from "@drive-coding/core/log"
+import type { LogEntry } from "@drive-coding/core/log/types"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../src/acp/connection-registry.js"
 
-const { createAgentOrchestrator, composeShapeEnv } = await import("../src/app/agent-orchestrator.js")
+const {
+  createAgentOrchestrator,
+  composeShapeEnv,
+  findChildren,
+  MAX_CASCADE_DEPTH,
+} = await import("../src/app/agent-orchestrator.js")
 
 // ─── Mock helpers ─────────────────────────────────────────────────────
 
@@ -64,6 +71,10 @@ function makeRegistry(): {
     },
   }
   return { registry, state }
+}
+
+function plantAgent(state: Map<string, Agent>, overrides: Partial<Agent> & { id: string }): void {
+  state.set(overrides.id, makeAgent(overrides))
 }
 
 /** Make a minimal mock ProviderConnection */
@@ -598,6 +609,192 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
 
     const shaped = connReg.lastConnectOpts!.shapeEnv!("opencode", {})
     expect(shaped.OPENCODE_CONFIG_CONTENT).toBeTruthy()
+  })
+
+  // ─── slice cascade-close-children: parent delete closes descendants ───
+
+  describe("cascade close children (slice cascade-close-children)", () => {
+    const PARENT_ID = "00000000-0000-0000-0000-000000000001"
+    const CHILD1_ID = "00000000-0000-0000-0000-000000000002"
+    const CHILD2_ID = "00000000-0000-0000-0000-000000000003"
+    const GRANDCHILD_ID = "00000000-0000-0000-0000-000000000004"
+    const SIBLING_ID = "00000000-0000-0000-0000-000000000005"
+    const CYCLE_A_ID = "00000000-0000-0000-0000-000000000010"
+    const CYCLE_B_ID = "00000000-0000-0000-0000-000000000011"
+
+    let logEntries: LogEntry[]
+    let removeLogSink: (() => void) | undefined
+
+    beforeEach(() => {
+      vi.spyOn(process.stdout, "write").mockReturnValue(true)
+      vi.spyOn(process.stderr, "write").mockReturnValue(true)
+      initLogger({ level: "trace", ns: "*", format: "json", remote: false })
+      logEntries = []
+      removeLogSink = addSink((e) => logEntries.push(e))
+    })
+
+    afterEach(() => {
+      removeLogSink?.()
+      removeLogSink = undefined
+    })
+
+    it("findChildren returns agents with matching parentAgentId", async () => {
+      const { registry, state } = makeRegistry()
+      plantAgent(state, { id: PARENT_ID })
+      plantAgent(state, { id: CHILD1_ID, parentAgentId: PARENT_ID })
+      plantAgent(state, { id: CHILD2_ID, parentAgentId: PARENT_ID })
+      plantAgent(state, { id: SIBLING_ID, parentAgentId: "other-parent" })
+
+      const children = await findChildren(registry, PARENT_ID)
+      expect(children.map((a) => a.id).sort()).toEqual([CHILD1_ID, CHILD2_ID].sort())
+    })
+
+    it("gate 2: closing parent removes parent and direct children from registry", async () => {
+      const { registry, state } = makeRegistry()
+      const { reg } = makeConnectionRegistry()
+      const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+      plantAgent(state, { id: PARENT_ID })
+      plantAgent(state, { id: CHILD1_ID, parentAgentId: PARENT_ID })
+      plantAgent(state, { id: CHILD2_ID, parentAgentId: PARENT_ID })
+
+      await orch.deleteAndKill(PARENT_ID)
+
+      expect([...state.keys()].sort()).toEqual([])
+    })
+
+    it("gate 3: closing root of A→B→C chain removes all three", async () => {
+      const { registry, state } = makeRegistry()
+      const { reg } = makeConnectionRegistry()
+      const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+      plantAgent(state, { id: PARENT_ID })
+      plantAgent(state, { id: CHILD1_ID, parentAgentId: PARENT_ID })
+      plantAgent(state, { id: GRANDCHILD_ID, parentAgentId: CHILD1_ID })
+
+      await orch.deleteAndKill(PARENT_ID)
+
+      expect([...state.keys()].sort()).toEqual([])
+    })
+
+    it("gate 4: circular parentAgentId does not hang — closing A completes", async () => {
+      const { registry, state } = makeRegistry()
+      const { reg } = makeConnectionRegistry()
+      const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+      plantAgent(state, { id: CYCLE_A_ID, parentAgentId: CYCLE_B_ID })
+      plantAgent(state, { id: CYCLE_B_ID, parentAgentId: CYCLE_A_ID })
+
+      await expect(orch.deleteAndKill(CYCLE_A_ID)).resolves.toBeUndefined()
+      expect([...state.keys()].sort()).toEqual([])
+    })
+
+    it("gate 5: chain deeper than MAX_CASCADE_DEPTH ends with depth warning in addSink", async () => {
+      const { registry, state } = makeRegistry()
+      const { reg } = makeConnectionRegistry()
+      const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+      const chainLength = MAX_CASCADE_DEPTH + 3
+      const ids: string[] = []
+      for (let i = 0; i < chainLength; i++) {
+        const id = `00000000-0000-0000-0000-${String(i + 100).padStart(12, "0")}`
+        ids.push(id)
+        plantAgent(state, {
+          id,
+          parentAgentId: i === 0 ? undefined : ids[i - 1],
+        })
+      }
+
+      await orch.deleteAndKill(ids[0]!)
+
+      const depthWarn = logEntries.find(
+        (e) => e.level === "warn" && e.msg === "cascade depth limit reached",
+      )
+      expect(depthWarn).toBeDefined()
+      expect(state.size).toBeGreaterThan(0)
+    })
+
+    it("gate 6: child with turnState≠idle is closed and emits warn with wasTurnState via addSink", async () => {
+      const { registry, state } = makeRegistry()
+      const { reg } = makeConnectionRegistry()
+      const getHost = vi.fn((agentId: string) =>
+        agentId === CHILD1_ID ? { state: { turnState: "waiting" } } : undefined,
+      )
+      const orch = createAgentOrchestrator({
+        registry,
+        connectionRegistry: reg,
+        sessionHostRegistry: { unregisterHost: vi.fn(), getHost },
+      })
+
+      plantAgent(state, { id: PARENT_ID })
+      plantAgent(state, { id: CHILD1_ID, parentAgentId: PARENT_ID })
+
+      await orch.deleteAndKill(PARENT_ID)
+
+      expect(state.has(CHILD1_ID)).toBe(false)
+      const turnWarn = logEntries.find(
+        (e) =>
+          e.level === "warn" &&
+          e.msg === "cascade closed child during active turn" &&
+          e.fields?.agentId === CHILD1_ID &&
+          e.fields?.wasTurnState === "waiting",
+      )
+      expect(turnWarn).toBeDefined()
+    })
+
+    it("gate 7: failure closing one child does not stop closing siblings and parent", async () => {
+      const { registry, state } = makeRegistry()
+      const { reg, closeMock } = makeConnectionRegistry()
+      closeMock.mockImplementation(async (id: string) => {
+        if (id === CHILD1_ID) throw new Error("simulated close failure")
+      })
+      const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+      plantAgent(state, { id: PARENT_ID })
+      plantAgent(state, { id: CHILD1_ID, parentAgentId: PARENT_ID })
+      plantAgent(state, { id: CHILD2_ID, parentAgentId: PARENT_ID })
+
+      await orch.deleteAndKill(PARENT_ID)
+
+      expect(state.has(PARENT_ID)).toBe(false)
+      expect(state.has(CHILD2_ID)).toBe(false)
+      const failureLog = logEntries.find((e) => e.msg === "cascade close had failures")
+      expect(failureLog?.fields?.failedChildIds).toContain(CHILD1_ID)
+    })
+
+    it("gate 8: unrelated sibling agent survives parent cascade", async () => {
+      const { registry, state } = makeRegistry()
+      const { reg } = makeConnectionRegistry()
+      const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+      plantAgent(state, { id: PARENT_ID })
+      plantAgent(state, { id: CHILD1_ID, parentAgentId: PARENT_ID })
+      plantAgent(state, { id: SIBLING_ID })
+
+      await orch.deleteAndKill(PARENT_ID)
+
+      expect(state.has(SIBLING_ID)).toBe(true)
+      expect(state.has(PARENT_ID)).toBe(false)
+      expect(state.has(CHILD1_ID)).toBe(false)
+    })
+
+    it("cascade info log summarizes closed children count via addSink", async () => {
+      const { registry, state } = makeRegistry()
+      const { reg } = makeConnectionRegistry()
+      const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+      plantAgent(state, { id: PARENT_ID })
+      plantAgent(state, { id: CHILD1_ID, parentAgentId: PARENT_ID })
+      plantAgent(state, { id: CHILD2_ID, parentAgentId: PARENT_ID })
+
+      await orch.deleteAndKill(PARENT_ID)
+
+      const summary = logEntries.find(
+        (e) => e.level === "info" && e.msg === "cascade closed children of agent",
+      )
+      expect(summary?.fields?.agentId).toBe(PARENT_ID)
+      expect(summary?.fields?.closedChildren).toBe(2)
+    })
   })
 
   // ─── slice remote-warm-reconnect C2b: ניקוי session-hosts ב-delete/crash ───

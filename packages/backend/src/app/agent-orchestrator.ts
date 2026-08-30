@@ -45,6 +45,18 @@ export function buildChildBaseEnv(): Record<string, string> {
 
 const log = createLogger("backend.orchestrator")
 
+/** Safety ceiling for parent→child cascade (independent of `visited`). */
+export const MAX_CASCADE_DEPTH = 20
+
+/** Agents whose `parentAgentId` equals `parentId`. */
+export async function findChildren(
+  registry: AgentRegistry,
+  parentId: string,
+): Promise<Agent[]> {
+  const all = await registry.list()
+  return all.filter((a) => a.parentAgentId === parentId)
+}
+
 // ─── סוגים ────────────────────────────────────────────────────────────────────
 
 /**
@@ -132,8 +144,72 @@ export function createAgentOrchestrator(deps: {
    * להגיש host מת עם snapshot ישן (ה-liveness check ב-getOrCreateHost מכסה גם
    * lazy, אבל כאן סוגרים את החלון במיידי). אופציונלי — טסטים/נתיבים בלי host.
    */
-  sessionHostRegistry?: { unregisterHost(agentId: string): void }
+  sessionHostRegistry?: {
+    unregisterHost(agentId: string): void
+    getHost?(agentId: string): { state: { turnState: string } } | undefined
+  }
 }): AgentOrchestrator {
+  async function closeAgentRecord(id: string): Promise<void> {
+    deps.sessionHostRegistry?.unregisterHost(id)
+
+    try {
+      await deps.registry.update(id, { status: "closed" })
+    } catch {
+      // ignore
+    }
+
+    await deps.connectionRegistry.close(id)
+
+    try {
+      await deps.registry.delete(id)
+    } catch {
+      // ignore if already gone
+    }
+  }
+
+  async function deleteAndKillInner(
+    id: string,
+    visited: Set<string>,
+    depth: number,
+    failures: string[],
+  ): Promise<number> {
+    if (visited.has(id)) {
+      return 0
+    }
+    visited.add(id)
+
+    let closedDescendants = 0
+
+    if (depth < MAX_CASCADE_DEPTH) {
+      const children = await findChildren(deps.registry, id)
+      for (const child of children) {
+        try {
+          closedDescendants += 1 + (await deleteAndKillInner(child.id, visited, depth + 1, failures))
+        } catch (e) {
+          failures.push(child.id)
+          log.warn({ err: e, agentId: child.id, parentId: id }, "cascade close child failed")
+        }
+      }
+    } else {
+      log.warn(
+        { agentId: id, depth, maxDepth: MAX_CASCADE_DEPTH },
+        "cascade depth limit reached",
+      )
+    }
+
+    if (depth > 0) {
+      const host = deps.sessionHostRegistry?.getHost?.(id)
+      const turnState = host?.state.turnState
+      if (turnState !== undefined && turnState !== "idle") {
+        log.warn({ agentId: id, wasTurnState: turnState }, "cascade closed child during active turn")
+      }
+    }
+
+    log.info({ agentId: id }, "deleteAndKill")
+    await closeAgentRecord(id)
+    return closedDescendants
+  }
+
   // מאזין התרסקויות: כש-connection מת, סמן סוכן כ-crashed + עדכן registry.
   deps.connectionRegistry.onCrash(async (agentId, info: BridgeCrashInfo) => {
     try {
@@ -244,23 +320,13 @@ export function createAgentOrchestrator(deps: {
     },
 
     async deleteAndKill(id: string): Promise<void> {
-      log.info({ agentId: id }, "deleteAndKill")
-      // slice remote-warm-reconnect C2b: הסרת host מיד (לפני close) — אין חלון
-      // שבו GET /events מחזיר host של סוכן שנמחק.
-      deps.sessionHostRegistry?.unregisterHost(id)
-
-      try {
-        await deps.registry.update(id, { status: "closed" })
-      } catch {
-        // התעלם
+      const failures: string[] = []
+      const closedChildren = await deleteAndKillInner(id, new Set(), 0, failures)
+      if (closedChildren > 0) {
+        log.info({ agentId: id, closedChildren }, "cascade closed children of agent")
       }
-
-      await deps.connectionRegistry.close(id)
-
-      try {
-        await deps.registry.delete(id)
-      } catch {
-        // התעלם if already gone
+      if (failures.length > 0) {
+        log.warn({ agentId: id, failedChildIds: failures }, "cascade close had failures")
       }
     },
 
