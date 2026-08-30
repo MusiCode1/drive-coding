@@ -30,6 +30,7 @@ import {
 import { CONFIG_SPECS, type ConfigSpec, getLeaf, setLeaf } from "@drive-coding/core/config/specs"
 import { type } from "arktype"
 import { getStateDir } from "../paths.js"
+import { sanitizePublicBaseUrl } from "./sanitize-public-base-url.js"
 
 export type RawArgs = Record<string, string | boolean | undefined>
 
@@ -385,6 +386,7 @@ export function loadConfig(opts: { argv: RawArgs; env: NodeJS.ProcessEnv }): Loa
   }
 
   const config = result.value
+  sanitizePublicBaseUrl(config, warnings)
   const envPatch = { ...buildConfigEnvPatch(config), ...buildSecretsEnvPatch(secrets) }
 
   return { config, secrets, envPatch, warnings, errors }

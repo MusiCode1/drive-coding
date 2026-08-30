@@ -29,6 +29,7 @@ Options:
       --opencode-bin <bin>      Agent binary to look for       (env: OPENCODE_BIN, default: opencode)
       --fe-static-dir <dir>     Override served web-UI dir     (env: FE_STATIC_DIR)
       --cors-origins <list>     Comma-separated CORS origins   (env: CORS_ORIGINS)
+      --public-base-url <origin>  Public origin of this backend  (env: PUBLIC_BASE_URL)
       --config <path>           Config file (JSONC)            (default: ~/.config/drive-coding/config.jsonc)
       --config-json <json>      Inline JSON config (overrides --config file)
       --secrets <path>          Secrets file (JSON)            (default: ~/.config/drive-coding/secrets.json)
@@ -63,6 +64,7 @@ try {
       "opencode-bin": { type: "string" },
       "fe-static-dir": { type: "string" },
       "cors-origins": { type: "string" },
+      "public-base-url": { type: "string" },
       config: { type: "string" },
       "config-json": { type: "string" },
       secrets: { type: "string" },
