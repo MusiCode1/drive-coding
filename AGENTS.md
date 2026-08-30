@@ -272,6 +272,12 @@ config file < `process.env` < CLI flags. `--env-file` is applied first and is
 **On this machine (srv1812097)**: both deployments run under systemd
 (`drive-coding-{main,dev}.service`) and use **`--env-file`**. `onecli` is absent.
 
+**`PUBLIC_BASE_URL`** — the backend's public origin (`https://host`, no path). Set via
+env, `--public-base-url`, or `publicBaseUrl` in `config.jsonc`. It is **automatically
+unioned into effective CORS** even when omitted from `CORS_ORIGINS`, and drives the chat
+URL that `session_open` returns. It is **not** `DRIVE_CODING_BASE` / `DC_BASE` — child
+CLI processes still receive loopback for those.
+
 ### Running BE with CORS for deployed CF Pages FE
 
 When connecting the deployed `https://drive-coding.pages.dev` FE to a local BE,

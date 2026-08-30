@@ -18,6 +18,8 @@ Environment=FE_ENV=preview
 Environment=LOG_WIRE=ws
 # CORS: localhost (dev port) + ה-CF tunnel הציבורי של dev (drive-coding-dev).
 Environment=CORS_ORIGINS=http://localhost:4001,https://drive-coding-dev.example.com
+# Public origin: auto-added to effective CORS; MCP chat links. Not DRIVE_CODING_BASE (child CLIs stay loopback).
+Environment=PUBLIC_BASE_URL=https://drive-coding-dev.example.com
 # opencode has its own Anthropic OAuth — strip OneCLI's proxy/placeholder vars.
 Environment=OPENCODE_BIN=/home/user/projects/drive-coding/dev/scripts/opencode-clean.sh
 # ExecStartPre מסנכרן תלויות ובונה את ה-FE אם חסר או לא-עדכני (build-if-stale:

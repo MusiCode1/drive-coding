@@ -13,6 +13,8 @@ Environment=FE_STATIC_DIR=/home/user/projects/drive-coding/main/packages/fronten
 # title = "Drive Coding" (no badge), source maps OFF (clean public bundle).
 # CORS: CF Pages (legacy) + localhost + ה-CF tunnel הציבורי של main (drive-coding).
 Environment=CORS_ORIGINS=https://drive-coding.pages.dev,http://localhost:4000,https://drive-coding.example.com
+# Public origin: auto-added to effective CORS; MCP chat links. Not DRIVE_CODING_BASE (child CLIs stay loopback).
+Environment=PUBLIC_BASE_URL=https://drive-coding.example.com
 # opencode has its own Anthropic OAuth — strip OneCLI's proxy/placeholder vars
 # that would otherwise break opencode's auth (see scripts/opencode-clean.sh).
 Environment=OPENCODE_BIN=/home/user/projects/drive-coding/main/scripts/opencode-clean.sh
