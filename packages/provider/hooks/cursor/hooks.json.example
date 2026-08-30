@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "bash \"/home/user/Projects/drive-coding/dev/packages/provider/hooks/cursor/session-start.sh\"",
+        "timeout": 2
+      }
+    ]
+  }
+}
