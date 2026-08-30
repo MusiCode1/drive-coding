@@ -1,48 +1,67 @@
 [Unit]
-Description=voice-acp DEV (staging) — Hono + static FE on :4001, via OneCLI gateway
+Description=drive-coding DEV (staging) — Hono + static FE on :4001
 After=network-online.target
 Wants=network-online.target
+# Default (5 tries / 10s) locks the unit in failed after a short crash-loop
+# and it never comes back alone. A wider window lets it recover.
+StartLimitIntervalSec=300
+StartLimitBurst=10
 
 [Service]
 Type=simple
-WorkingDirectory=/home/user/projects/drive-coding/dev
+WorkingDirectory=%h/Projects/drive-coding/dev
+
+# --- Deployment identity. Wins over .env and config.jsonc (env > config file) ---
 Environment=PORT=4001
 Environment=DRIVE_CODING_HOST=127.0.0.1
-Environment=FE_STATIC_DIR=/home/user/projects/drive-coding/dev/packages/frontend/build
-# Deployment profile (slice app-title-build-env).
-# FE_ENV=preview: badge "Preview" in the tab title ("Drive Coding Preview"),
-# source maps ON (debug staging builds). prod (voice-acp-main) leaves FE_ENV
-# unset → "Drive Coding" (clean, no source maps). Local vite dev: use FE_ENV=dev.
-# Overrides: FE_TITLE=<custom> / FE_SOURCEMAP=false|true.
+Environment=FE_STATIC_DIR=%h/Projects/drive-coding/dev/packages/frontend/build
+
+# FE_ENV=preview: "Preview" tab badge + source maps on.
+# prod (drive-coding-main) leaves FE_ENV unset → clean "Drive Coding", no source maps.
+# Local vite: FE_ENV=dev.
+# Overrides: FE_TITLE=<custom> / FE_SOURCEMAP=false|true / FE_PREVIEW_LABEL=<txt>.
+# ⚠️ Read at ExecStartPre (build-time in vite.config.ts), not at runtime.
 Environment=FE_ENV=preview
-Environment=LOG_WIRE=ws
-# CORS: localhost (dev port) + ה-CF tunnel הציבורי של dev (drive-coding-dev).
-Environment=CORS_ORIGINS=http://localhost:4001,https://drive-coding-dev.example.com
+
+# Wire recording — every raw frame under ~/.config/drive-coding/wire-recordings/.
+# Compressed daily by wire-rec-compress.timer. main runs without this on purpose.
+Environment=WIRE_RECORD=1
+
+# CORS: localhost (dev port) + public tunnel hostnames for this deployment.
+Environment=CORS_ORIGINS=http://localhost:4001,https://drive-coding-dev-vps.musicode.ovh,https://drive-coding-dev.musicode.ovh
 # Public origin: auto-added to effective CORS; MCP chat links. Not DRIVE_CODING_BASE (child CLIs stay loopback).
-Environment=PUBLIC_BASE_URL=https://drive-coding-dev.example.com
-# opencode has its own Anthropic OAuth — strip OneCLI's proxy/placeholder vars.
-Environment=OPENCODE_BIN=/home/user/projects/drive-coding/dev/scripts/opencode-clean.sh
-# ExecStartPre מסנכרן תלויות ובונה את ה-FE אם חסר או לא-עדכני (build-if-stale:
-# משווה את הגרסה ב-build/_app/version.json מול HEAD, בונה מחדש אם שונה).
-# רענון FE שוטף: השתמש ב-`bun run fe:build` בלי restart — הסוכנים החיים שורדים.
-# restart שמור לשינויי BE בלבד.
-ExecStartPre=/bin/bash -lc 'source /home/user/.config/shell/shared-env.sh && bun install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-stale'
-# claude in-process authenticates via subscription OAuth (~/.claude), not via OneCLI gateway.
-# This file declares the exclusion of api.anthropic.com from OneCLI (proxy + key placeholder),
-# scoped to the claude child process only — BE process.env (TTS proxy) is untouched.
-Environment=CLI_SPECS_FILE=/home/user/projects/drive-coding/dev/deploy/cli-specs.jsonc
-# systemd gives a minimal PATH — source shared env for onecli/bun/node/fnm.
-ExecStart=/bin/bash -c 'source /home/user/.config/shell/shared-env.sh && exec onecli run --agent voice-acp -- bun packages/backend/src/server.ts'
+Environment=PUBLIC_BASE_URL=https://drive-coding-dev-vps.musicode.ovh
+
+# opencode has its own Anthropic OAuth. The wrapper strips proxy/placeholder
+# vars OneCLI used to inject; without OneCLI it is a harmless passthrough,
+# kept so bringing OneCLI back does not require touching the unit.
+Environment=OPENCODE_BIN=%h/Projects/drive-coding/dev/scripts/opencode-clean.sh
+
+# ⚠️ CLI_SPECS_FILE intentionally unset. Default is
+# ~/.config/drive-coding/cli-specs.jsonc — the live provider catalog.
+# Pointing at deploy/cli-specs.jsonc would hide them and leave only the
+# obsolete OneCLI claude workaround.
+
+# ExecStartPre syncs deps and builds FE if missing/stale (build-if-stale:
+# compares build/_app/version.json to HEAD).
+# Ongoing FE refresh: `bun run fe:build` without restart — live agents survive.
+# restart is for BE changes only.
+ExecStartPre=/bin/bash -lc 'source %h/.config/shell/shared-env.sh && bun install --frozen-lockfile && node scripts/dc-build-fe.mjs --if-stale'
+
+# systemd gives a minimal PATH — source the shared env (bun · node/fnm · opencode).
+# Entry is bin/drive-coding.ts (not server.ts): only it supports --env-file.
+# --env-file is **non-overriding**: Environment= above wins; the file only
+# supplies missing secrets (TTS provider keys). Missing file → warning, not failure.
+# The env file sits above the worktrees (shared by main/dev/edge) and outside any repo.
+ExecStart=/bin/bash -c 'source %h/.config/shell/shared-env.sh && exec bun packages/backend/src/bin/drive-coding.ts --env-file %h/Projects/drive-coding/.env'
+
 TimeoutStartSec=300
-Restart=on-failure
-RestartSec=2
+Restart=always
+RestartSec=5
 
 [Install]
 WantedBy=default.target
 
-# הסביבה הציבורית: https://drive-coding-dev.example.com (CF tunnel home-server).
-# ה-BE מאזין ל-loopback בלבד; ingress חייב להיות drive-coding-dev.example.com → http://localhost:4001.
-# ה-routing מנוהל דרך CF API (PUT cfd_tunnel configurations), לא config מקומי.
-#
-# Drop-in: deploy/systemd/voice-acp-dev.service.d/10-logging.conf widens logging
-# (clears LOG_WIRE, opens backend.* at debug) to capture the next WS-disconnect crash.
+# Public path: CF tunnel → http://localhost:4001.
+# BE listens on loopback only; ingress is managed via CF API
+# (PUT cfd_tunnel configurations), not a local config file.
