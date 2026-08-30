@@ -58,7 +58,7 @@ import { createAgentOrchestrator, type AgentOrchestrator } from "./app/agent-orc
 import { createProjectsRegistry } from "./app/projects-registry.js"
 import { createRecordingsStore } from "./app/recordings-store.js"
 import { resolveAppVersion } from "./app-version.js"
-import { parseCorsOrigins } from "./delivery/cors-config.js"
+import { bootCorsOrigins } from "./delivery/cors-config.js"
 import { createEvictionController } from "./delivery/eviction-controller.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
@@ -93,7 +93,7 @@ import { createUsageStore } from "./usage/usage-store.js"
 
 const app = new Hono()
 
-app.use("*", cors({ origin: parseCorsOrigins(process.env.CORS_ORIGINS), credentials: true }))
+app.use("*", cors({ origin: bootCorsOrigins(), credentials: true }))
 
 // תלויות הפעלה (Boot dependencies)
 const registry = createInMemoryAgentRegistry()
