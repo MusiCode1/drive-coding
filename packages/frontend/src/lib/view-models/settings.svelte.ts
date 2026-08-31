@@ -80,6 +80,8 @@ type Persisted = {
   // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4)
   // null = לא נבחרה העדפה → קדימות ממשיכה ל-env. ws/http כותב דרך ה-Select בהגדרות.
   sessionTransport: SessionTransport | null
+  // ─── notifications ─── (slice notify-local)
+  notifications: boolean
 }
 
 const DEFAULTS: Persisted = {
@@ -130,6 +132,8 @@ const DEFAULTS: Persisted = {
   geminiTone: "neutral",
   // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4) — null = env נבחר
   sessionTransport: "http",
+  // ─── notifications ─── (slice notify-local) — opt-in
+  notifications: false,
 }
 
 /**
@@ -256,6 +260,9 @@ export class Settings {
   // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4)
   sessionTransport = $state<SessionTransport | null>(DEFAULTS.sessionTransport)
 
+  // ─── notifications ─── (slice notify-local)
+  notifications = $state<boolean>(DEFAULTS.notifications)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -305,6 +312,8 @@ export class Settings {
     this.geminiTone = loaded.geminiTone
     // ─── טרנספורט סשן ─── (slice transport-polish C4)
     this.sessionTransport = loaded.sessionTransport
+    // ─── notifications ─── (slice notify-local)
+    this.notifications = loaded.notifications
   }
 
   // ─── טופס חיבור ───
@@ -606,6 +615,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── notifications ─── (slice notify-local)
+
+  setNotifications = (v: boolean): void => {
+    this.notifications = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -638,6 +654,7 @@ export class Settings {
       geminiPace: this.geminiPace,
       geminiTone: this.geminiTone,
       sessionTransport: this.sessionTransport,
+      notifications: this.notifications,
     })
   }
 }
