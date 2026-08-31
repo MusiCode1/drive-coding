@@ -89,6 +89,8 @@ import { removeInstance, setSelfBaseUrl, writeInstance } from "./instances.js"
 import { ensureStateSubdir } from "./paths.js"
 import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
 import { resolveCloseOnTurnEndGraceMs } from "./session-host/close-on-turn-end.js"
+import { bootAgentEvents } from "./delivery/agent-events-boot.js"
+import { createOnSessionAttached } from "./server-on-session-attached.js"
 import { createUsageStore } from "./usage/usage-store.js"
 
 const app = new Hono()
@@ -135,36 +137,7 @@ let orchestratorRef: AgentOrchestrator | null = null
 // slice remote-warm-reconnect C1: תופסים את הרג'יסטרי (קודם נזרק ב-:151) — C2/C2b
 // מעבירים אותו ל-ws-agent (guard) ול-orchestrator (ניקוי hosts ב-delete/crash).
 const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionRegistry, {
-  onSessionAttached: async (agentId, sessionId, cwd) => {
-    // בדיוק מה ש-PATCH /api/agents/:id עושה (http-agents.ts, מסלול attach) —
-    // ה-endpoint ההוא נקרא רק מנתיבים מקומיים; ב-remote ה-SessionHost הוא שמצרף
-    // את ה-session (אוטומטית ב-doCreate, או ב-rpc.ts case "loadSession"), אז
-    // הוא מדווח ישירות דרך ה-callback הזה.
-    //
-    // הכרעת MED-9: ה-callback הפנימי עוקף את guard ה-409 (http-agents.ts) —
-    // **בכוונה** — ב-remote ה-host הוא authoritative לגבי ה-session שלו.
-    const agent = await registry.get(agentId)
-    if (!agent || agent.status === "closed") {
-      // race מול DELETE (deleteAndKill) — warn ודילוג, לא throw (הסשן חי; הפאנל יישאר ישן).
-      log.warn({ agentId, sessionId }, "onSessionAttached: agent missing or closed — skipped")
-      return
-    }
-    // slice agent-patch-unify C2 (D4 — שכבה ב'): extract מפורש, מפתח שערכו
-    // undefined לעולם לא נכנס ל-patch. registry.update מבצע spread בלי סינון —
-    // { cwd: undefined } היה מוחק את agent.cwd הקיים כש-cwd לא סופק (§3.5 D4).
-    const patch: Partial<Pick<Agent, "status" | "acpSessionId" | "cwd">> = {
-      status: "ready",
-      acpSessionId: sessionId,
-    }
-    if (cwd !== undefined) patch.cwd = cwd
-    await registry.update(agentId, patch)
-    acpSessionIdCache.set(agentId, sessionId)
-    // D7: תופעות-projectsRegistry עם cwd ?? agent.cwd — מתעד תחת התיקייה
-    // *החדשה* אם דווחה (מעבר-סשן, §3), אחרת תחת הקיימת (ללא שינוי).
-    const effectiveCwd = cwd ?? agent.cwd
-    await projectsRegistry.recordCwd(effectiveCwd, agent.cliKind as BridgeKind)
-    await projectsRegistry.recordSession(effectiveCwd, sessionId)
-  },
+  onSessionAttached: createOnSessionAttached({ registry, projectsRegistry, acpSessionIdCache }),
   evictionController,
   // slice ownership-handoff C4: warm reattach — sync cache of agentId→acpSessionId
   // maintained by onSessionAttached. Returns the last known acpSessionId, allowing
@@ -199,7 +172,11 @@ const orchestrator = createAgentOrchestrator({
   // agentSessionRegistry נוצר למעלה (לפני ה-orchestrator) — ר' ההערה שם.
   sessionHostRegistry: agentSessionRegistry,
 })
-orchestratorRef = orchestrator
+const { eventBus: agentEventBus, orchestrator: orchestratorWithEvents } = bootAgentEvents(app, {
+  registry,
+  orchestrator,
+})
+orchestratorRef = orchestratorWithEvents
 
 // נתיבי HTTP
 registerHttp(app)
@@ -210,12 +187,17 @@ registerClientLogHttp(app)
 // CUT-3b-ii: connectionRegistry מספק getRuntimeInfo (מחליף bridgeManager)
 registerAgentsHttp(app, {
   registry,
-  orchestrator,
+  orchestrator: orchestratorWithEvents,
   projectsRegistry,
   bridgeManager: connectionRegistry,
 })
 // slice session-bus-mcp C0: Streamable HTTP MCP (stateless, per-request transport)
-registerMcpHttp(app, { registry, orchestrator, agentSessionRegistry })
+registerMcpHttp(app, {
+  registry,
+  orchestrator: orchestratorWithEvents,
+  agentSessionRegistry,
+  eventBus: agentEventBus,
+})
 // Slice be-diag-harness: endpoint אבחון עשיר (eventLoop histogram + memory + agents)
 registerHealthHttp(app, { registry, connectionRegistry })
 registerProjectsHttp(app, { projectsRegistry })

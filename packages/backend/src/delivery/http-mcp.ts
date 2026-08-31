@@ -15,12 +15,10 @@
 
 import {
   AgentCloseInput,
-  AgentNotifyParentInput,
   AgentOpenInput,
   type AgentRegistry,
   AgentSendInput,
   MCP_CONFIGURE_HINT,
-  MCP_NOTIFY_PARENT_META,
   MCP_SERVER_DESCRIPTION,
   MCP_SERVER_INSTRUCTIONS,
   MCP_SERVER_TITLE,
@@ -41,6 +39,11 @@ import { AGENT_ID_HEADER } from "../agent-identity.js"
 import { resolveAppVersion } from "../app-version.js"
 import { raceKeepRunning } from "../session-host/http/rpc-wait.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
+import type { AgentEventBus } from "../session-host/agent-events.js"
+import {
+  applyNotifyOnDoneToOpenBody,
+  registerAgentEventMcpTools,
+} from "./agent-events-mcp-tools.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
 
 const log = createLogger("backend.mcp")
@@ -67,6 +70,7 @@ export type McpHttpDeps = {
   registry: AgentRegistry
   orchestrator: AgentOrchestrator
   agentSessionRegistry: AgentSessionRegistry
+  eventBus?: AgentEventBus
   /** Test knob when server has not listened (app.request without bind). */
   selfBaseUrl?: string
 }
@@ -267,6 +271,7 @@ function createSessionBusMcpServer(
       if (input.permission !== undefined) body.permissionPolicy = input.permission
       if (effectiveParent !== undefined) body.parentAgentId = effectiveParent
       if (input.closeOnTurnEnd === true) body.closeOnTurnEnd = true
+      applyNotifyOnDoneToOpenBody(body, input.notifyOnDone)
 
       const parsed = parseCreateAgentBody(body)
       if (!parsed.ok) return jsonError(parsed.error.body.error)
@@ -402,31 +407,13 @@ function createSessionBusMcpServer(
     },
   )
 
-  // C3: notify_parent — only when caller is a known agent with a parent (§2ו).
-  if (callerAgentId && callerRecord?.parentAgentId) {
-    const parentId = callerRecord.parentAgentId
-    registerArkTool(
+  if (deps.eventBus) {
+    registerAgentEventMcpTools(
       server,
-      "notify_parent",
-      MCP_NOTIFY_PARENT_META,
-      AgentNotifyParentInput,
-      async (raw) => {
-        const input = raw as typeof AgentNotifyParentInput.infer
-        const parentHostResult = await deps.agentSessionRegistry.getOrCreateHost(parentId)
-        if (!parentHostResult.ok) {
-          return jsonError(`parent session host did not start: ${parentHostResult.reason}`)
-        }
-        const { host: parentHost } = parentHostResult.entry
-        const sessionId = parentHost.state.sessionId
-        if (typeof sessionId !== "string" || sessionId.length === 0) {
-          return jsonError("parent has no sessionId")
-        }
-
-        void parentHost.prompt(sessionId, input.text).catch((e) => {
-          log.warn({ err: e, parentId, callerAgentId }, "notify_parent prompt failed")
-        })
-        return jsonResult({ ok: true, parent: parentId })
-      },
+      { registry: deps.registry, agentSessionRegistry: deps.agentSessionRegistry, eventBus: deps.eventBus },
+      ctx,
+      callerRecord,
+      registerArkTool,
     )
   }
 

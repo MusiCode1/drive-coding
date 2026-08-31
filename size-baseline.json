@@ -117,8 +117,8 @@
       "class": "mixed"
     },
     "packages/backend/src/delivery/http-mcp.ts": {
-      "metric": 471,
-      "impurity": 26,
+      "metric": 458,
+      "impurity": 25,
       "class": "scattered"
     },
     "packages/backend/src/delivery/http-options.ts": {
@@ -182,8 +182,8 @@
       "class": "mixed"
     },
     "packages/backend/src/server.ts": {
-      "metric": 467,
-      "impurity": 21,
+      "metric": 449,
+      "impurity": 17,
       "class": "mixed"
     },
     "packages/backend/src/session-host/http/events.ts": {
