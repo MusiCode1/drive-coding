@@ -199,6 +199,9 @@ $effect(() => {
 const notify = new NotifyEngine({ text: (kind) => notifyTexts(i18n.t, kind) })
 $effect(() => notify.setEnabled(settings.notifications))
 $effect(() => () => notify.dispose())
+$effect(() => notify.notifyTurn(session.turnState))
+$effect(() => notify.notifyPermissionPending(session.pendingPermission !== null))
+$effect(() => notify.notifyElicitationPending(session.pendingElicitation !== null))
 
 // ─── dir/lang sync ─── (rtl-ltr-bidi)
 // סנכרון <html dir> ו-<html lang> ל-locale — הקסם של הדו-כיווניות.
