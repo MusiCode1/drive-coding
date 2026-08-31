@@ -127,7 +127,6 @@ const evictionController = createEvictionController()
 // slice ownership-handoff C4: sync acpSessionId cache for warm reattach.
 // Updated by onSessionAttached (same source of truth as registry.update acpSessionId).
 const acpSessionIdCache = new Map<string, string>()
-
 // slice session-lifecycle-fields C1: orchestrator ref — registry is created first.
 let orchestratorRef: AgentOrchestrator | null = null
 
@@ -135,6 +134,7 @@ let orchestratorRef: AgentOrchestrator | null = null
 // slice remote-warm-reconnect C1: תופסים את הרג'יסטרי (קודם נזרק ב-:151) — C2/C2b
 // מעבירים אותו ל-ws-agent (guard) ול-orchestrator (ניקוי hosts ב-delete/crash).
 const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionRegistry, {
+  agentRegistry: registry,
   onSessionAttached: async (agentId, sessionId, cwd) => {
     // בדיוק מה ש-PATCH /api/agents/:id עושה (http-agents.ts, מסלול attach) —
     // ה-endpoint ההוא נקרא רק מנתיבים מקומיים; ב-remote ה-SessionHost הוא שמצרף

@@ -48,6 +48,7 @@
  * ─── slice rpc-wait (TDD): optional waitMs on the six fire-and-forget methods ───
  */
 
+import type { AgentRegistry } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import { canonicalRpcMethod, RPC_METHODS } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
@@ -56,6 +57,7 @@ import type { Hono } from "hono"
 import { optionalAgentMcpServers } from "../../agent-identity.js"
 import { getSelfBaseUrl } from "../../instances.js"
 import type { AgentSessionRegistry } from "../registry.js"
+import { guardRpcRoute } from "./rpc-scope.js"
 import { parseWaitMs, raceKeepRunning } from "./rpc-wait.js"
 
 const log = createLogger("backend.session-host.rpc")
@@ -154,7 +156,11 @@ async function respondRpcWait<T>(
 /**
  * registerRpcRoute — registers POST /api/agents/:id/rpc on the Hono app.
  */
-export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): void {
+export function registerRpcRoute(
+  app: Hono,
+  registry: AgentSessionRegistry,
+  agentRegistry: AgentRegistry,
+): void {
   app.post("/api/agents/:id/rpc", async (c) => {
     const agentId = c.req.param("id")
 
@@ -191,7 +197,7 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
     }
     const waitMs = waitParsed === "invalid" ? null : waitParsed
 
-    // Dispatch to host method
+    return guardRpcRoute(c, agentId, method, agentRegistry, registry, async () => {
     switch (method) {
       case RPC_METHODS.prompt: {
         const p = PromptParams(params)
@@ -380,5 +386,6 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
 
     // 202 Accepted — fire and forget; version for client sync
     return c.json({ version: host.state.version }, 202)
+    })
   })
 }

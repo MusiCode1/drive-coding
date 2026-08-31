@@ -13,8 +13,10 @@
 
 import type { Hono } from "hono"
 import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
+import type { AgentRegistry } from "@drive-coding/core"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import { createAgentSessionRegistry, type OnSessionAttached } from "../registry.js"
+import { bindScopeEnforcement } from "../../bind-scope-enforcement.js"
 import { registerEventsRoute } from "./events.js"
 import { registerPresenceRoute } from "./presence.js"
 import { registerReplyRoute } from "./reply.js"
@@ -22,8 +24,8 @@ import { registerRpcRoute } from "./rpc.js"
 import { registerStateRoute } from "./state.js"
 
 export type RegisterSessionHostHttpOpts = {
-  /** AgentSessionRegistry — created externally and passed in for wiring */
   agentSessionRegistry: ReturnType<typeof createAgentSessionRegistry>
+  agentRegistry: AgentRegistry
 }
 
 /**
@@ -36,9 +38,9 @@ export function registerSessionHostHttp(
   app: Hono,
   opts: RegisterSessionHostHttpOpts,
 ): void {
-  const { agentSessionRegistry } = opts
+  const { agentSessionRegistry, agentRegistry } = opts
   registerEventsRoute(app, agentSessionRegistry)
-  registerRpcRoute(app, agentSessionRegistry)
+  registerRpcRoute(app, agentSessionRegistry, agentRegistry)
   registerReplyRoute(app, agentSessionRegistry)
   registerStateRoute(app, agentSessionRegistry)
   registerPresenceRoute(app, agentSessionRegistry)
@@ -55,6 +57,7 @@ export function createAndRegisterSessionHostHttp(
   app: Hono,
   connectionRegistry: ConnectionRegistry,
   opts: {
+    agentRegistry: AgentRegistry
     onSessionAttached?: OnSessionAttached
     /**
      * slice ownership-handoff C4: eviction controller for HTTP→WS takeover.
@@ -88,6 +91,13 @@ export function createAndRegisterSessionHostHttp(
     getCloseOnTurnEnd: opts.getCloseOnTurnEnd,
     onScheduleCloseOnTurnEnd: opts.onScheduleCloseOnTurnEnd,
   })
-  registerSessionHostHttp(app, { agentSessionRegistry })
+  bindScopeEnforcement(app, {
+    registry: opts.agentRegistry,
+    sessionRegistry: agentSessionRegistry,
+  })
+  registerSessionHostHttp(app, {
+    agentSessionRegistry,
+    agentRegistry: opts.agentRegistry,
+  })
   return agentSessionRegistry
 }

@@ -16,6 +16,7 @@ import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { Hono } from "hono"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
+import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import { buildAgentMcpServers } from "../agent-identity.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
 import { registerRpcRoute } from "./http/rpc.js"
@@ -628,7 +629,7 @@ describe("AgentSessionRegistry", () => {
         await vi.advanceTimersByTimeAsync(300) // expiry — ownership released
 
         const app = new Hono()
-        registerRpcRoute(app, registry)
+        registerRpcRoute(app, registry, createInMemoryAgentRegistry())
         const res = await app.request(`/api/agents/agent-1/rpc`, {
           method: "POST",
           headers: { "content-type": "application/json" },

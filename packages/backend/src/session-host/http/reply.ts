@@ -25,26 +25,23 @@ import type { AgentSessionRegistry } from "../registry.js"
 
 /**
  * registerReplyRoute — registers POST /api/agents/:id/reply on the Hono app.
+ * Scope enforcement: bindScopeEnforcement middleware (slice agent-scopes C2).
  */
 export function registerReplyRoute(app: Hono, registry: AgentSessionRegistry): void {
   app.post("/api/agents/:id/reply", async (c) => {
     const agentId = c.req.param("id")
 
-    // Look up existing host (does NOT create — reply requires an active host)
     const host = registry.getHost(agentId)
     if (!host) {
       return c.json({ error: "Agent connection not found" }, 404)
     }
-    // slice ownership-handoff C4b: touch lastSeenAt — reply extends HTTP ownership TTL
     registry.touchOwner(agentId)
 
-    // Parse body
     const body = (await c.req.json()) as Record<string, unknown>
     const kind = body.kind as "permission" | "elicitation"
     const requestId = body.requestId as number
     const result = body.result
 
-    // Dispatch by kind
     if (kind === "permission") {
       host.respondPermission(requestId, result as Parameters<typeof host.respondPermission>[1])
     } else if (kind === "elicitation") {
@@ -53,7 +50,6 @@ export function registerReplyRoute(app: Hono, registry: AgentSessionRegistry): v
       return c.json({ error: `Unknown kind: ${String(body.kind)}` }, 400)
     }
 
-    // 200 OK — silent no-op if requestId not found (respond*() return void)
     return c.json({ ok: true }, 200)
   })
 }
