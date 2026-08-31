@@ -24,7 +24,8 @@ import type { AcpClient } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 import { Hono } from "hono"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { setSelfBaseUrlForTests } from "../../instances.js"
 import { createPatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import {
@@ -370,6 +371,16 @@ async function postRpcIntegration(app: Hono, body: unknown): Promise<RpcResponse
 }
 
 describe("session-host HTTP — remote-session-mgmt C3 (real host + real route)", () => {
+  // slice mcp-self-documenting (fa8f8871): the loadSession route computes
+  // mcpServers via getSelfBaseUrl(), which throws until the server has listened.
+  // app.request() never binds a port — inject the base URL like rpc.test.ts does.
+  beforeEach(() => {
+    setSelfBaseUrlForTests("http://127.0.0.1:4055")
+  })
+  afterEach(() => {
+    setSelfBaseUrlForTests(undefined)
+  })
+
   it("listSessions returns 200 {sessions, sessionCapabilities} from the real host", async () => {
     const { app, mockClient } = await setup()
     ;(mockClient.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({

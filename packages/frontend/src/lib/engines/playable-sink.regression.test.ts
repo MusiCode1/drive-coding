@@ -5,7 +5,7 @@
  */
 import { describe, expect, it, vi } from "vitest"
 import { PlayableSink } from "./playable-sink"
-import type { PlayableSegment } from "./segments/types"
+import type { PlayableSegment } from "./segments/playable-segment"
 
 function fakeSegment(id: string, disposed: string[]): PlayableSegment {
   return {
