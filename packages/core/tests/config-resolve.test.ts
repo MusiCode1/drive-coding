@@ -17,6 +17,7 @@
 
 import { describe, expect, it } from "vitest"
 import { resolveConfig } from "../src/config/resolve.js"
+import { configDefault } from "../src/config/specs.js"
 
 describe("resolveConfig — precedence", () => {
   it("1. flag > env > file: flag wins when all set", () => {
@@ -107,10 +108,17 @@ describe("resolveConfig — validation", () => {
     expect(result._unsafeUnwrap().port).toBe(4100)
   })
 
-  it("9. all layers empty → valid empty config", () => {
+  it("9. all layers empty → product defaults filled", () => {
     const result = resolveConfig([{}, {}, {}])
     expect(result.isOk()).toBe(true)
-    expect(result._unsafeUnwrap()).toEqual({})
+    const cfg = result._unsafeUnwrap()
+    expect(cfg.port).toBe(configDefault("port"))
+    expect(cfg.host).toBe(configDefault("host"))
+    expect(cfg.rssBudgetMb).toBe(configDefault("rssBudgetMb"))
+    expect(cfg.httpOwnerTtlMs).toBe(configDefault("httpOwnerTtlMs"))
+    expect(cfg.opencodeBin).toBe(configDefault("opencodeBin"))
+    expect(cfg.feStaticDir).toBeUndefined()
+    expect(cfg.wireRecord).toBeUndefined()
   })
 
   it("10. https as boolean", () => {

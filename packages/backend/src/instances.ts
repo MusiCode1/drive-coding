@@ -43,7 +43,7 @@ export function setSelfBaseUrlForTests(url: string | undefined): void {
   selfBaseUrl = url
 }
 
-export function getInstancesDir(env: NodeJS.ProcessEnv = process.env): string {
+export function getInstancesDir(env: NodeJS.ProcessEnv): string {
   const xdg = env.XDG_RUNTIME_DIR
   if (xdg !== undefined && xdg !== "") {
     return join(xdg, "drive-coding")
@@ -51,10 +51,7 @@ export function getInstancesDir(env: NodeJS.ProcessEnv = process.env): string {
   return join(getStateDir(), "instances")
 }
 
-export function writeInstance(
-  record: InstanceRecord,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
+export function writeInstance(record: InstanceRecord, env: NodeJS.ProcessEnv): string {
   const dir = getInstancesDir(env)
   mkdirSync(dir, { recursive: true })
   const file = join(dir, `${record.port}.json`)
@@ -62,7 +59,7 @@ export function writeInstance(
   return file
 }
 
-export function removeInstance(port: number, env: NodeJS.ProcessEnv = process.env): void {
+export function removeInstance(port: number, env: NodeJS.ProcessEnv): void {
   const file = join(getInstancesDir(env), `${port}.json`)
   try {
     unlinkSync(file)
@@ -97,9 +94,7 @@ async function probeHealth(record: InstanceRecord): Promise<boolean> {
   }
 }
 
-export async function resolveInstances(
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<InstanceRecord[]> {
+export async function resolveInstances(env: NodeJS.ProcessEnv): Promise<InstanceRecord[]> {
   const dir = getInstancesDir(env)
   let names: string[]
   try {

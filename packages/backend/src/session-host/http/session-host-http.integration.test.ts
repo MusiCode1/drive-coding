@@ -165,6 +165,7 @@ async function setup(): Promise<{
     touchConnection: (_id, _cid) => {},
     getRuntimeInfo: (_id) => null,
     getConnectionCount: (_id) => 0,
+    stop: () => {},
   }
 
   const app = new Hono()

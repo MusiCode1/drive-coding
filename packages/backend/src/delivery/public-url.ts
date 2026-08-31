@@ -1,11 +1,15 @@
 import { normalizePublicBaseUrl } from "@drive-coding/core/config/public-base-url"
+import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
+import { configDefault } from "@drive-coding/core/config/specs"
 
-export function loopbackBaseUrl(): string {
-  const port = process.env.PORT ?? "4000"
-  const host = process.env.DRIVE_CODING_HOST ?? "127.0.0.1"
+export type UrlConfig = Pick<DriveCodingConfig, "port" | "host" | "publicBaseUrl">
+
+export function loopbackBaseUrl(config: UrlConfig): string {
+  const port = config.port ?? configDefault("port")
+  const host = config.host ?? configDefault("host")
   return `http://${host}:${port}`
 }
 
-export function defaultPublicUrl(): string {
-  return normalizePublicBaseUrl(process.env.PUBLIC_BASE_URL ?? "") ?? loopbackBaseUrl()
+export function defaultPublicUrl(config: UrlConfig): string {
+  return normalizePublicBaseUrl(config.publicBaseUrl ?? "") ?? loopbackBaseUrl(config)
 }

@@ -36,6 +36,7 @@
  * so concurrent callers share the same in-flight creation.
  */
 
+import { configDefault } from "@drive-coding/core/config/specs"
 import { createLogger } from "@drive-coding/core/log"
 import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
@@ -151,6 +152,9 @@ export type AgentSessionRegistry = {
     via: "ws" | "http" | null
   } | null
   getConnectionCount(agentId: string): number
+
+  /** slice boot-layer C2: stop the HTTP ownership TTL sweep interval. */
+  stop(): void
 }
 
 type AgentSessionRegistryDeps = {
@@ -213,10 +217,9 @@ type AgentSessionRegistryDeps = {
    * Exposed for tests to control sweep timing.
    */
   _httpSweepMs?: number
+  /** slice boot-layer C5: env reference for TTL fallback (no direct process.env). */
+  env?: NodeJS.ProcessEnv
 }
-
-/** slice ttl-ownership: the default HTTP ownership TTL (10 minutes). */
-export const DEFAULT_HTTP_OWNER_TTL_MS = 600_000
 
 /**
  * resolveHttpOwnerTtlMs — parses HTTP_OWNER_TTL_MS.
@@ -226,14 +229,15 @@ export const DEFAULT_HTTP_OWNER_TTL_MS = 600_000
  * of 30 green tests that all injected a mock and never once ran the default.
  *
  * Accepts only a finite, strictly-positive number. Anything else — missing,
- * blank, NaN, 0, negative, Infinity — falls back to the default.
+ * blank, NaN, 0, negative, Infinity — falls back to configDefault("httpOwnerTtlMs").
  */
 export function resolveHttpOwnerTtlMs(raw: string | undefined): number {
-  if (raw === undefined) return DEFAULT_HTTP_OWNER_TTL_MS
+  const fallback = configDefault("httpOwnerTtlMs")
+  if (raw === undefined) return fallback
   const trimmed = raw.trim()
-  if (trimmed === "") return DEFAULT_HTTP_OWNER_TTL_MS
+  if (trimmed === "") return fallback
   const n = Number(trimmed)
-  if (!Number.isFinite(n) || n <= 0) return DEFAULT_HTTP_OWNER_TTL_MS
+  if (!Number.isFinite(n) || n <= 0) return fallback
   return n
 }
 
@@ -256,7 +260,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
 
   // slice connection-set D8: per-row HTTP TTL sweep — removes stale http rows only.
   const HTTP_OWNER_TTL_MS =
-    deps._httpOwnerTtlMs ?? resolveHttpOwnerTtlMs(process.env.HTTP_OWNER_TTL_MS)
+    deps._httpOwnerTtlMs ?? resolveHttpOwnerTtlMs(deps.env?.HTTP_OWNER_TTL_MS)
   const HTTP_SWEEP_MS = deps._httpSweepMs ?? 30_000 // sweep every 30s
   const httpSweep = setInterval(() => {
     const now = Date.now()
@@ -481,5 +485,10 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     getConnectionCount(agentId: string) {
       return connectionRegistry.getConnectionCount(agentId)
     },
+
+  /** slice boot-layer C2: stop the HTTP ownership TTL sweep interval. */
+  stop(): void {
+    clearInterval(httpSweep)
+  },
   }
 }

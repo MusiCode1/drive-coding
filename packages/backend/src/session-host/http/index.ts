@@ -81,16 +81,22 @@ export function createAndRegisterSessionHostHttp(
     /** slice session-lifecycle-fields C1 */
     getCloseOnTurnEnd?: (agentId: string) => boolean | Promise<boolean>
     onScheduleCloseOnTurnEnd?: (agentId: string) => void
+    /** slice boot-layer C1: HTTP ownership TTL from config */
+    _httpOwnerTtlMs?: number
+    /** slice boot-layer C5: env reference for TTL fallback */
+    env?: NodeJS.ProcessEnv
   } = {},
 ): ReturnType<typeof createAgentSessionRegistry> {
   const agentSessionRegistry = createAgentSessionRegistry({
     connectionRegistry,
+    env: opts.env,
     onSessionAttached: opts.onSessionAttached,
     evictionController: opts.evictionController,
     getAcpSessionId: opts.getAcpSessionId,
     getPermissionPolicy: opts.getPermissionPolicy,
     getCloseOnTurnEnd: opts.getCloseOnTurnEnd,
     onScheduleCloseOnTurnEnd: opts.onScheduleCloseOnTurnEnd,
+    _httpOwnerTtlMs: opts._httpOwnerTtlMs,
   })
   registerSessionHostHttp(app, { agentSessionRegistry, connectionRegistry })
   return agentSessionRegistry

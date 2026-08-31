@@ -38,6 +38,7 @@ export function registerAgentsHttp(
       } | null
       getConnectionCount(id: string): number
     }
+    env: NodeJS.ProcessEnv
   },
 ): void {
   // GET /api/agents — רשימה (מועשרת ב-pid+attached+via אם bridgeManager זמין)
@@ -79,7 +80,7 @@ export function registerAgentsHttp(
     }
 
     // מאמת מול הסכימה המלאה (כולל existingSessionId אופציונלי עבור Slice 8a)
-    const parsed = parseCreateAgentBody(body)
+    const parsed = parseCreateAgentBody(body, deps.env)
     if (!parsed.ok) {
       return c.json(parsed.error.body, parsed.error.status)
     }

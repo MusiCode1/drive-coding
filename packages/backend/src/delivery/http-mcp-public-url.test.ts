@@ -37,6 +37,7 @@ function makeStubSessionRegistry(): AgentSessionRegistry {
     getEpoch: vi.fn(() => 0),
     touchOwner: vi.fn(),
     getRuntimeInfo: vi.fn(() => null),
+    stop: vi.fn(),
   } as unknown as AgentSessionRegistry
 }
 
@@ -75,19 +76,19 @@ afterEach(() => {
 
 describe("defaultPublicUrl / loopbackBaseUrl", () => {
   it("with PUBLIC_BASE_URL → defaultPublicUrl uses it; loopback unchanged", () => {
-    process.env.PORT = "4360"
-    process.env.DRIVE_CODING_HOST = "127.0.0.1"
-    process.env.PUBLIC_BASE_URL = "https://public.example.com"
-    expect(defaultPublicUrl()).toBe("https://public.example.com")
-    expect(loopbackBaseUrl()).toBe("http://127.0.0.1:4360")
+    const cfg = {
+      port: 4360,
+      host: "127.0.0.1",
+      publicBaseUrl: "https://public.example.com",
+    }
+    expect(defaultPublicUrl(cfg)).toBe("https://public.example.com")
+    expect(loopbackBaseUrl(cfg)).toBe("http://127.0.0.1:4360")
   })
 
   it("without PUBLIC_BASE_URL → both return loopback", () => {
-    delete process.env.PUBLIC_BASE_URL
-    process.env.PORT = "4360"
-    process.env.DRIVE_CODING_HOST = "127.0.0.1"
-    expect(defaultPublicUrl()).toBe("http://127.0.0.1:4360")
-    expect(loopbackBaseUrl()).toBe("http://127.0.0.1:4360")
+    const cfg = { port: 4360, host: "127.0.0.1" }
+    expect(defaultPublicUrl(cfg)).toBe("http://127.0.0.1:4360")
+    expect(loopbackBaseUrl(cfg)).toBe("http://127.0.0.1:4360")
   })
 })
 
@@ -115,10 +116,12 @@ describe("session_open default bases (slice public-base-url)", () => {
   }
 
   it("with PUBLIC_BASE_URL → chat url is public; child env stays loopback", async () => {
-    process.env.PUBLIC_BASE_URL = "https://public.example.com"
-    process.env.PORT = "4360"
-    process.env.DRIVE_CODING_HOST = "127.0.0.1"
-    delete process.env.MCP_HTTP
+    const urlConfig = {
+      port: 4360,
+      host: "127.0.0.1",
+      publicBaseUrl: "https://public.example.com",
+    }
+    const env: NodeJS.ProcessEnv = {}
 
     const app = new Hono()
     const registry = createInMemoryAgentRegistry()
@@ -127,6 +130,8 @@ describe("session_open default bases (slice public-base-url)", () => {
       registry,
       orchestrator,
       agentSessionRegistry: makeStubSessionRegistry(),
+      env,
+      urlConfig,
     })
 
     const { result, orchestrator: orch } = await openWithoutExplicitPublic(app, orchestrator)
@@ -145,10 +150,8 @@ describe("session_open default bases (slice public-base-url)", () => {
   })
 
   it("without PUBLIC_BASE_URL → chat url and child env both loopback", async () => {
-    delete process.env.PUBLIC_BASE_URL
-    process.env.PORT = "4360"
-    process.env.DRIVE_CODING_HOST = "127.0.0.1"
-    delete process.env.MCP_HTTP
+    const urlConfig = { port: 4360, host: "127.0.0.1" }
+    const env: NodeJS.ProcessEnv = {}
 
     const app = new Hono()
     const registry = createInMemoryAgentRegistry()
@@ -157,6 +160,8 @@ describe("session_open default bases (slice public-base-url)", () => {
       registry,
       orchestrator,
       agentSessionRegistry: makeStubSessionRegistry(),
+      env,
+      urlConfig,
     })
 
     const { result, orchestrator: orch } = await openWithoutExplicitPublic(app, orchestrator)

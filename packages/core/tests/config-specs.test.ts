@@ -3,11 +3,17 @@
  */
 
 import { describe, expect, it } from "vitest"
-import { CONFIG_SPECS, type ConfigSpec, getLeaf, setLeaf } from "../src/config/specs.js"
+import {
+  CONFIG_SPECS,
+  type ConfigSpec,
+  configDefault,
+  getLeaf,
+  setLeaf,
+} from "../src/config/specs.js"
 
 describe("CONFIG_SPECS — table invariants", () => {
-  it("1. exactly 11 entries", () => {
-    expect(CONFIG_SPECS).toHaveLength(11)
+  it("1. exactly 13 entries", () => {
+    expect(CONFIG_SPECS).toHaveLength(13)
   })
 
   it("2. unique key", () => {
@@ -23,6 +29,14 @@ describe("CONFIG_SPECS — table invariants", () => {
   it("4. unique flag when present", () => {
     const flags = CONFIG_SPECS.flatMap((s) => (s.flag !== undefined ? [s.flag] : []))
     expect(new Set(flags).size).toBe(flags.length)
+  })
+
+  it("4b. product defaults are the agreed numbers (mutation guard)", () => {
+    expect(configDefault("port")).toBe(4000)
+    expect(configDefault("host")).toBe("127.0.0.1")
+    expect(configDefault("rssBudgetMb")).toBe(1500)
+    expect(configDefault("httpOwnerTtlMs")).toBe(600_000)
+    expect(configDefault("opencodeBin")).toBe("opencode")
   })
 })
 
@@ -56,6 +70,24 @@ describe("CONFIG_SPECS — parse/serialize round-trip", () => {
     expect(spec.parse?.("0")).toBe(false)
     expect(spec.serialize?.(false)).toBe("0")
     expect(spec.parse?.(spec.serialize?.(false) ?? "")).toBe(false)
+  })
+
+  it("5d. rssBudgetMb round-trip", () => {
+    const spec = specFor("rssBudgetMb")
+    expect(spec.parse?.("2048")).toBe(2048)
+    expect(spec.serialize?.(2048)).toBe("2048")
+    expect(spec.parse?.(spec.serialize?.(2048) ?? "")).toBe(2048)
+    expect(spec.parse?.("not-a-number")).toBeUndefined()
+  })
+
+  it("5e. httpOwnerTtlMs round-trip", () => {
+    const spec = specFor("httpOwnerTtlMs")
+    expect(spec.parse?.("5000")).toBe(5000)
+    expect(spec.serialize?.(5000)).toBe("5000")
+    expect(spec.parse?.(spec.serialize?.(5000) ?? "")).toBe(5000)
+    expect(spec.parse?.("0")).toBeUndefined()
+    expect(spec.parse?.("-1")).toBeUndefined()
+    expect(spec.parse?.("NaN")).toBeUndefined()
   })
 })
 

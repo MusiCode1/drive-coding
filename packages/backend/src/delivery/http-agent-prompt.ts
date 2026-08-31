@@ -8,6 +8,8 @@
  */
 
 import type { AgentRegistry } from "@drive-coding/core"
+import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
+import { configDefault } from "@drive-coding/core/config/specs"
 import type { Hono } from "hono"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
 import {
@@ -15,36 +17,38 @@ import {
   buildSurfacePrompt,
   type SurfaceRuntimeInfo,
 } from "../prompts/index.js"
-import { defaultPublicUrl, loopbackBaseUrl } from "./public-url.js"
+import { defaultPublicUrl, loopbackBaseUrl, type UrlConfig } from "./public-url.js"
 
 function stripTrailingSlash(url: string): string {
   return url.replace(/\/$/, "")
 }
 
-function parsePort(baseUrl: string): number {
+function parsePort(baseUrl: string, urlConfig: UrlConfig): number {
   try {
     const u = new URL(baseUrl)
     if (u.port) return Number(u.port)
     return u.protocol === "https:" ? 443 : 80
   } catch {
-    return Number(process.env.PORT ?? "4000")
+    return urlConfig.port ?? configDefault("port")
   }
 }
 
-export function buildAgentPromptText(opts: {
-  agentId: string
-  parentAgentId?: string
-}): string {
-  const base = stripTrailingSlash(loopbackBaseUrl())
-  const publicRaw = process.env.PUBLIC_BASE_URL
+export function buildAgentPromptText(
+  opts: {
+    agentId: string
+    parentAgentId?: string
+  },
+  urlConfig: UrlConfig,
+): string {
+  const base = stripTrailingSlash(loopbackBaseUrl(urlConfig))
   const publicBaseUrl =
-    publicRaw !== undefined && publicRaw.length > 0
-      ? stripTrailingSlash(defaultPublicUrl())
+    urlConfig.publicBaseUrl !== undefined && urlConfig.publicBaseUrl.length > 0
+      ? stripTrailingSlash(defaultPublicUrl(urlConfig))
       : undefined
 
   const runtime: SurfaceRuntimeInfo = {
     baseUrl: base,
-    port: parsePort(base),
+    port: parsePort(base, urlConfig),
     pid: process.pid,
     agentId: opts.agentId,
     parentAgentId: opts.parentAgentId,
@@ -59,7 +63,7 @@ export function buildAgentPromptText(opts: {
 
 export function registerAgentPromptHttp(
   app: Hono,
-  deps: { registry: AgentRegistry },
+  deps: { registry: AgentRegistry; urlConfig: UrlConfig },
 ): void {
   app.get("/api/agent-prompt", async (c) => {
     const fromQuery = c.req.query("agent")?.trim()
@@ -80,10 +84,13 @@ export function registerAgentPromptHttp(
       return c.text(`unknown agent: ${agentId}`, 404)
     }
 
-    const body = buildAgentPromptText({
-      agentId: agent.id,
-      parentAgentId: agent.parentAgentId,
-    })
+    const body = buildAgentPromptText(
+      {
+        agentId: agent.id,
+        parentAgentId: agent.parentAgentId,
+      },
+      deps.urlConfig,
+    )
 
     return c.text(body, 200, {
       "Content-Type": "text/plain; charset=utf-8",

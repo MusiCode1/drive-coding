@@ -11,7 +11,7 @@
  *  7. flag-layer --elevenlabs-key → warning about process list visibility
  *  8. cliSpecs from file → CLI_SPECS_JSON in envPatch
  *  9. --log-level flag → LOG_LEVEL in envPatch
- * 10. all defaults absent → empty config + empty envPatch (no crash)
+ * 10. all absent → product defaults in config + envPatch
  */
 
 import * as fs from "node:fs"
@@ -179,10 +179,18 @@ describe("loadConfig — log flags", () => {
 })
 
 describe("loadConfig — empty inputs", () => {
-  it("10. all absent → no crash, empty envPatch", () => {
+  it("10. all absent → product defaults in config + envPatch", () => {
     const { config, envPatch, warnings } = loadConfig({ argv: {}, env: {} })
-    expect(config).toEqual({})
-    expect(envPatch).toEqual({})
+    expect(config.port).toBe(4000)
+    expect(config.host).toBe("127.0.0.1")
+    expect(config.rssBudgetMb).toBe(1500)
+    expect(config.httpOwnerTtlMs).toBe(600_000)
+    expect(config.opencodeBin).toBe("opencode")
+    expect(envPatch["PORT"]).toBe("4000")
+    expect(envPatch["DRIVE_CODING_HOST"]).toBe("127.0.0.1")
+    expect(envPatch["RSS_BUDGET_MB"]).toBe("1500")
+    expect(envPatch["HTTP_OWNER_TTL_MS"]).toBe("600000")
+    expect(envPatch["OPENCODE_BIN"]).toBe("opencode")
     expect(warnings).toHaveLength(0)
   })
 })

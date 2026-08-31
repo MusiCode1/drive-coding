@@ -35,13 +35,14 @@ export type ParseCreateAgentFailure = {
 
 export function parseCreateAgentBody(
   body: unknown,
+  env: NodeJS.ProcessEnv,
 ): { ok: true; value: CreateAndSpawnInput } | { ok: false; error: ParseCreateAgentFailure } {
   const parsed = CreateAgentInputFull(body)
   if (parsed instanceof type.errors) {
     return { ok: false, error: { status: 400, body: { error: parsed.summary } } }
   }
 
-  if (getCliSpec(parsed.cliKind, process.env) === undefined) {
+  if (getCliSpec(parsed.cliKind, env) === undefined) {
     return {
       ok: false,
       error: {

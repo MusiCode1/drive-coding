@@ -111,7 +111,7 @@ export async function runCli(argv: string[]): Promise<number> {
       console.log(AGENT_HELP)
       return 0
     }
-    const instances = await resolveInstances()
+    const instances = await resolveInstances(process.env)
     printInstances(instances, asJson)
     return 0
   }
