@@ -26,7 +26,7 @@ vi.mock("$lib/adapters/agents-api", () => ({
 }))
 
 // 2. ws-transport: WsAcpTransport — מדמה open מיידי (חובה regular function ל-new)
-vi.mock("$lib/engines/ws-transport", () => ({
+vi.mock("@drive-coding/acp-wire", () => ({
   // eslint-disable-next-line prefer-arrow-callback
   WsAcpTransport: vi.fn().mockImplementation(function MockTransport() {
     return {

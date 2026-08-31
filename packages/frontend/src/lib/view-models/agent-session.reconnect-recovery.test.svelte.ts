@@ -42,7 +42,7 @@ vi.mock("$lib/adapters/sessions", () => ({
   normalizeSessionInfo: vi.fn((x: unknown) => x),
 }))
 
-vi.mock("$lib/engines/ws-transport", () => ({
+vi.mock("@drive-coding/acp-wire", () => ({
   // eslint-disable-next-line prefer-arrow-callback
   WsAcpTransport: vi.fn().mockImplementation(function MockTransport() {
     return {

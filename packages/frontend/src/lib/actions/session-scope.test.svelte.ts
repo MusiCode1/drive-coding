@@ -101,7 +101,7 @@ const lv = vi.hoisted(() => {
   return { state }
 })
 
-vi.mock("$lib/engines/ws-transport", () => ({
+vi.mock("@drive-coding/acp-wire", () => ({
   WsAcpTransport: vi.fn(function MockTransport() {
     const t = {
       onClose: vi.fn(),
