@@ -25,13 +25,31 @@ async function waitForSocket(path: string, timeoutMs = 3000): Promise<void> {
   throw new Error(`socket not ready: ${path}`)
 }
 
+/** connect + immediate destroy — same-tick probe contract (socketAlive). */
+function probeConnect(path: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const sock = connect(path)
+    sock.once("connect", () => {
+      sock.destroy()
+      resolve()
+    })
+    sock.once("error", reject)
+  })
+}
+
+async function flushPromotions(): Promise<void> {
+  await new Promise<void>((r) => setImmediate(r))
+  await new Promise<void>((r) => setImmediate(r))
+}
+
 describe("unix-socket", () => {
   it("exchanges bytes bidirectionally", async () => {
     const path = sockPath()
     const listenPromise = listenUnix(path)
     await waitForSocket(path)
     const client = await connectUnix(path)
-    const server = await listenPromise
+    const handle = await listenPromise
+    const server = handle.transport
 
     const enc = new TextEncoder()
     const dec = new TextDecoder()
@@ -56,6 +74,7 @@ describe("unix-socket", () => {
 
     client.close()
     server.close()
+    handle.close()
   })
 
   it("invokes onClose at most once per transport", async () => {
@@ -63,7 +82,8 @@ describe("unix-socket", () => {
     const listenPromise = listenUnix(path)
     await waitForSocket(path)
     const client = await connectUnix(path)
-    const server = await listenPromise
+    const handle = await listenPromise
+    const server = handle.transport
 
     let clientCount = 0
     let serverCount = 0
@@ -79,35 +99,104 @@ describe("unix-socket", () => {
 
     expect(clientCount).toBeLessThanOrEqual(1)
     expect(serverCount).toBeLessThanOrEqual(1)
+    client.close()
+    handle.close()
   })
 
-  it("destroys second connection (no queue)", async () => {
+  it("second connection replaces first (client-wins)", async () => {
     const path = sockPath()
     const listenPromise = listenUnix(path)
     await waitForSocket(path)
-    const first = await connectUnix(path)
-    await listenPromise
 
-    let secondDestroyed = false
-    await new Promise<void>((resolve, reject) => {
-      const sock = connect(path)
-      sock.once("connect", () => {
-        sock.on("close", () => {
-          secondDestroyed = true
-          resolve()
-        })
-      })
-      sock.once("error", reject)
-      setTimeout(() => {
-        if (!secondDestroyed) {
-          sock.destroy()
-          resolve()
-        }
-      }, 200)
+    const c1 = await connectUnix(path)
+    const handle = await listenPromise
+
+    let c1Closed = false
+    c1.onClose(() => {
+      c1Closed = true
     })
 
-    expect(secondDestroyed).toBe(true)
-    first.close()
+    const c2 = await connectUnix(path)
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(c1Closed).toBe(true)
+
+    const current = handle.current()
+    expect(current).toBeDefined()
+
+    const enc = new TextEncoder()
+    const dec = new TextDecoder()
+
+    const cw = c2.writable.getWriter()
+    await cw.write(enc.encode("from-c2\n"))
+    cw.releaseLock()
+
+    const sr = current!.readable.getReader()
+    const { value: received } = await sr.read()
+    sr.releaseLock()
+    expect(dec.decode(received)).toBe("from-c2\n")
+
+    const sw = current!.writable.getWriter()
+    await sw.write(enc.encode("to-c2\n"))
+    sw.releaseLock()
+
+    const cr = c2.readable.getReader()
+    const { value: reply } = await cr.read()
+    cr.releaseLock()
+    expect(dec.decode(reply)).toBe("to-c2\n")
+
+    c1.close()
+    c2.close()
+    handle.close()
+  })
+
+  it("peer close does not unlink listen", async () => {
+    const path = sockPath()
+    const listenPromise = listenUnix(path)
+    await waitForSocket(path)
+    const client = await connectUnix(path)
+    const handle = await listenPromise
+
+    handle.transport.close()
+    client.close()
+
+    await access(path)
+
+    const client2 = await connectUnix(path)
+    await flushPromotions()
+    expect(handle.current()).toBeDefined()
+
+    client2.close()
+    handle.close()
+
+    await expect(access(path)).rejects.toThrow()
+  })
+
+  it("connect+destroy probe does not promote", async () => {
+    const path = sockPath()
+    const listenPromise = listenUnix(path)
+    await waitForSocket(path)
+
+    await probeConnect(path)
+
+    let resolved = false
+    listenPromise.then(() => {
+      resolved = true
+    })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(resolved).toBe(false)
+
+    const client = await connectUnix(path)
+    const handle = await listenPromise
+    expect(handle).toBeDefined()
+
+    const currentBefore = handle.current()
+    await probeConnect(path)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(handle.current()).toBe(currentBefore)
+
+    client.close()
+    handle.close()
   })
 
   it("createNamedPipeTransport throws", () => {
