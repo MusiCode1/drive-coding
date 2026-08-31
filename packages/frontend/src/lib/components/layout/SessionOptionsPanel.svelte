@@ -40,7 +40,6 @@ import {
 import { readSessionTransport } from "$lib/session/session-transport-read"
 import { shouldWarnOnLeave } from "$lib/session/should-warn-on-leave"
 import { sessionPathWithTransport } from "$lib/session/session-url"
-import { filterExtraConfigOptions } from "$lib/util/session-config-extras"
 
 const t = getI18n().t
 const session = getSession()
@@ -163,16 +162,9 @@ const modelGroups = $derived.by<SelectGroup[] | undefined>(() => {
 
 // ─── חישובים ───
 
-/**
- * Extras below the dedicated mode/model row.
- * Keep category mode/model siblings (e.g. Permission) when the primary control
- * already comes from SessionModeState / ACP models (#63).
- */
+/** configOptions שאינם model/mode */
 const extraOptions = $derived(
-  filterExtraConfigOptions(session.configOptions, {
-    hasModesState: (session.modes?.availableModes?.length ?? 0) > 0,
-    hasModelsState: (session.models?.availableModels?.length ?? 0) > 0,
-  }),
+  session.configOptions.filter((o) => o.category !== "model" && o.category !== "mode"),
 )
 
 /**
