@@ -157,7 +157,11 @@ describe("detectAvailableClis: defaults", () => {
   it("defaults specs param to CLI_SPECS when not passed", () => {
     vi.mocked(fs.existsSync).mockReturnValue(false)
 
-    const result = detectAvailableClis()
+    // ⚠️ env must be explicit, NOT the default process.env: resolveCliBinary's
+    // envVar branch (OPENCODE_BIN etc.) returns the value with NO existsSync
+    // check, so the fs mock cannot reach it. A machine that exports OPENCODE_BIN
+    // made this test fail with ["opencode"] — an environment leak, not a bug.
+    const result = detectAvailableClis(undefined, { PATH: "/fake/bin", PATHEXT: "" })
 
     // CLI_SPECS has 7 kinds today; all not-found under a clean mocked fs.
     expect(Object.keys(result.details).length).toBeGreaterThan(0)

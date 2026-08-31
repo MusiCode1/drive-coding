@@ -102,10 +102,16 @@ describe.skipIf(!bunBinary)(
       // This replicates the F-1 trigger: PATH does not contain the bridge binary.
       const minimalPath = "/usr/bin:/bin"
 
+      // ⚠️ OPENCODE_BIN (and friends) must be stripped, not just PATH: the resolver
+      // checks the envVar override FIRST and returns it without touching PATH, so a
+      // machine that exports OPENCODE_BIN spawns successfully and the POST returns
+      // 201 instead of the ENOENT this test exists to reproduce.
+      const { OPENCODE_BIN: _o, ...cleanEnv } = process.env
+
       be = spawn(bunBinary, ["src/server.ts"], {
         cwd: backendDir,
         env: {
-          ...process.env,
+          ...cleanEnv,
           PORT: String(port),
           PATH: minimalPath,
         },

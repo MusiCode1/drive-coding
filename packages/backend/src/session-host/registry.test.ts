@@ -781,7 +781,7 @@ describe("AgentSessionRegistry", () => {
       const conn = makeMockConnection()
       const connectionRegistry = makeMockConnectionRegistry(conn)
       const mockHost = makeMockHost(null)
-      mockHost.agentCapabilities = {}
+      ;(mockHost as unknown as { agentCapabilities: unknown }).agentCapabilities = {}
 
       const registry = createAgentSessionRegistry({
         connectionRegistry,

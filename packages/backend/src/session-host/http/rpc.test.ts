@@ -660,7 +660,7 @@ describe("POST /api/agents/:id/rpc", () => {
 
     it("passes empty mcpServers when agent did not declare http MCP in initialize", async () => {
       const host = makeMockHost(makeMockState())
-      ;(host as ExtendedSessionHost).agentCapabilities = {}
+      ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = {}
       ;(host.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
         sessionId: "sess-9",
         version: 1,
