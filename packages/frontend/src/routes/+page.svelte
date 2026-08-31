@@ -293,7 +293,7 @@ async function refreshCliAvailability() {
      ב-.connect-footer נשאר מוצמד לתחתית ולא נגלל איתה (slice: connect-screen-layout). */
   .connect {
     max-width: 420px;
-    height: 100dvh;
+    height: calc(100dvh - var(--kb)); /* minus the OSK - cwd input + submit stay reachable */
     margin: 0 auto;
     display: flex;
     flex-direction: column;
@@ -304,7 +304,7 @@ async function refreshCliAvailability() {
     flex: 1 1 auto;
     min-height: 0; /* קריטי — בלי זה flex-child לא מתכווץ ולא נגלל */
     overflow-y: auto; /* עיצוב ה-scrollbar עצמו מגיע ממחלקת chat-scroll שעל האלמנט */
-    padding: 4rem 1rem 1rem;
+    padding: calc(4rem + var(--safe-t)) calc(1rem + var(--safe-x)) 1rem; /* + cutout insets */
     /* slice connect-panel-resize (Commit 2.5): inset ל-scrollIntoView של ידית הגרירה —
        הידית מעוגנת לתחתית ה-body(=ראש ה-footer), לכן הערך אינו-תלוי בגובה ה-footer המדויק. */
     scroll-padding-bottom: 5rem;
@@ -312,8 +312,8 @@ async function refreshCliAvailability() {
 
   .connect-footer {
     flex-shrink: 0;
-    padding: 0.75rem 1rem;
-    padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); /* notch/home-indicator בנייד */
+    padding: 0.75rem calc(1rem + var(--safe-x));
+    padding-bottom: max(0.75rem, var(--safe-b)); /* notch/home-indicator בנייד */
     border-top: 1px solid var(--border);
     background: var(--bg);
   }
@@ -369,17 +369,17 @@ async function refreshCliAvailability() {
 
   /* slice cli-specs-hot-reload: refresh button next to the CLI dropdown */
   .cli-refresh-btn {
-    margin-top: 0;
     margin-inline-start: auto;
     padding: 0;
     flex-shrink: 0;
     display: grid;
     place-items: center;
-    width: 1.5rem;
-    height: 1.5rem;
+    /* 44px hit target (mobile-parity); negative margin-block keeps the label row compact. */
+    width: 44px;
+    height: 44px;
+    margin-block: -0.625rem;
     background: transparent;
-    border: none;
-    border-radius: 0.375rem;
+    border-radius: 0.375rem; /* border:none already comes from the generic button rule */
     color: var(--fg-dim);
   }
 

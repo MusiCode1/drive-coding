@@ -348,7 +348,14 @@ $effect(() => {
 })
 </script>
 
-<div class="relative flex flex-col h-[100dvh] w-full mx-auto overflow-hidden" style="background:var(--bg)">
+<!-- mobile-parity: 100dvh minus the on-screen keyboard. `dvh` follows browser chrome but
+     not the OSK, so without `--kb` (engines/viewport-insets.ts) the RecordFooter sits behind
+     the keyboard while typing, with no way to scroll it back (body is overflow:hidden).
+     `--kb` is 0px on desktop and wherever visualViewport is missing → no-op there. -->
+<div
+  class="relative flex flex-col w-full mx-auto overflow-hidden"
+  style="background:var(--bg); height:calc(100dvh - var(--kb))"
+>
   <!-- AppHeader (absolute top) -->
   <AppHeader />
 
