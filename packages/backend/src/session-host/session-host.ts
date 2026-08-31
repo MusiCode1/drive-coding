@@ -368,6 +368,7 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> &
    * ships them in the listSessions response so the FE can gate the delete button.
    */
   readonly agentCapabilities: AcpClient["capabilities"]
+  emitExtNotification(method: string, params: Record<string, unknown>): void
 }
 
 /**
@@ -692,23 +693,7 @@ export async function createSessionHostFromConnection(
     patches: patchStream,
 
     dispose,
-    // ── C3: turn boundaries — mirrors LocalSessionView.prompt/cancel (waiting
-    // לפני ה-await, idle בשני הענפים), עם סטייה אחת מוצהרת: שתי הפליטות (הצלחה
-    // וגם cancel) מגודרות ב-`turn === turnSeq` — "התור שלי עדיין הנוכחי". ─────
-    //
-    // ⚠️ hotfix (אחרי C4, avigail): הסדר הוא waiting **לפני** add-message —
-    // ההפך מהניסוח המקורי של "מלכודת ג'" ("הסדר הזה בטוח", לא "הכרחי"). הסיבה
-    // לא הייתה מספר-ה-patches (שניהם עדיין שני emit נפרדים — ReadableStream לא
-    // מאחד enqueue-ים סמוכים לקריאה אחת, אין "batch" אמיתי על ה-wire) אלא
-    // **הערך שנצפה ביניהם**: ה-FE מסנכרן turnState פר-patch. בסדר הישן
-    // (add-message ואז waiting) הסנכרון הראשון קורא turnState שעדיין `idle`,
-    // ורק הסנכרון השני (אחרי ה-patch השני) מעלה אותו ל-`waiting` — הבהוב
-    // `waiting → idle → waiting` שמצית flush מזויף של סוף-תור ב-Speaker
-    // וצליל-חשיבה כפול. בסדר החדש שני הסנכרונים רואים `waiting`:
-    // apply-patch.ts's add-message branch גוזר turnState מ-role, ול-role:"user"
-    // (תמיד המקרה כאן) הוא **משמר** את הערך הקיים — כלומר add-message שמגיע
-    // *אחרי* waiting לא דורס אותו. אותה עובדה בדיוק (role=user = no-op)
-    // שהפכה את הסדר הישן ל"בטוח" הופכת את הסדר החדש ל"מתקן".
+    // C3 turn boundaries — waiting before add-message (hotfix: avoids idle flash in FE).
     async prompt(
       sessionId: string,
       content: string | PromptBlocks,
@@ -1000,6 +985,7 @@ export async function createSessionHostFromConnection(
       return client.capabilities
     },
 
+    ...{ emitExtNotification: handleExtNotification },
     ...turnHostMethods,
   }
 }

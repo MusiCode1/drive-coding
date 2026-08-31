@@ -18,6 +18,7 @@ import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
+import { createAgentEventBus } from "../session-host/agent-events.js"
 import { registerMcpHttp } from "./http-mcp.js"
 
 type HostStub = {
@@ -141,7 +142,8 @@ function makeApp(opts?: { mcpHttp?: string }) {
   const registry = createInMemoryAgentRegistry()
   const orchestrator = makeOrchestrator(registry)
   const agentSessionRegistry = makeStubSessionRegistry()
-  registerMcpHttp(app, { registry, orchestrator, agentSessionRegistry })
+  const eventBus = createAgentEventBus()
+  registerMcpHttp(app, { registry, orchestrator, agentSessionRegistry, eventBus })
   if (prev === undefined) delete process.env.MCP_HTTP
   else process.env.MCP_HTTP = prev
   return { app, registry, orchestrator, agentSessionRegistry }
@@ -212,6 +214,7 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
       "session_open",
       "session_send",
       "session_state",
+      "session_subscribe",
     ])
     const openTool = tools.find((t) => t.name === "session_open")
     const schema = openTool?.inputSchema as { properties?: { cli?: { description?: string } } }
@@ -344,6 +347,24 @@ describe("session_open / session_close (slice session-bus-mcp C1)", () => {
     await client.close()
     expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
       expect.objectContaining({ closeOnTurnEnd: true }),
+    )
+  })
+
+  it("session_open passes notifyOnDone through to createAndSpawn", async () => {
+    const { app, orchestrator } = makeApp()
+    const subscriberId = "00000000-0000-4000-8000-000000000099"
+    const client = await connectClient(app)
+    await client.callTool({
+      name: "session_open",
+      arguments: {
+        cli: "cursor",
+        cwd: "/tmp/mcp-c1-notify-done",
+        notifyOnDone: subscriberId,
+      },
+    })
+    await client.close()
+    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({ notifyOnDone: subscriberId }),
     )
   })
 
@@ -574,6 +595,23 @@ describe("agent-identity-mcp (C2/C3)", () => {
     await client.close()
     expect(isToolError(result)).toBe(true)
     expect(toolText(result)).toMatch(/conflicts/)
+  })
+
+  it("session_subscribe registers a subscriber on the event bus", async () => {
+    const { app, registry } = makeApp()
+    const target = await registry.create({ cliKind: "cursor", cwd: "/tmp/target-sub" })
+    const subscriber = await registry.create({ cliKind: "cursor", cwd: "/tmp/subscriber" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: subscriber.id })
+    const result = await client.callTool({
+      name: "session_subscribe",
+      arguments: { agent: target.id },
+    })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as { ok: boolean; agent: string; subscriber: string }
+    expect(body.ok).toBe(true)
+    expect(body.agent).toBe(target.id)
+    expect(body.subscriber).toBe(subscriber.id)
   })
 
   it("notify_parent appears only for caller with parent", async () => {

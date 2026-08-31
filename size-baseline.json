@@ -182,7 +182,7 @@
       "class": "mixed"
     },
     "packages/backend/src/server.ts": {
-      "metric": 438,
+      "metric": 436,
       "impurity": 13,
       "class": "mixed"
     },
@@ -227,7 +227,7 @@
       "class": "mixed"
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 1005,
+      "metric": 991,
       "impurity": 20,
       "class": "scattered"
     },

@@ -160,11 +160,9 @@ const orchestrator = createAgentOrchestrator({
   // agentSessionRegistry נוצר למעלה (לפני ה-orchestrator) — ר' ההערה שם.
   sessionHostRegistry: agentSessionRegistry,
 })
-const { orchestrator: orchestratorWithEvents } = bootAgentEvents(app, {
-  registry,
-  orchestrator,
-  eventBus: agentEventBus,
-})
+const orchestratorWithEvents = bootAgentEvents(app, {
+  registry, orchestrator, eventBus: agentEventBus, agentSessionRegistry,
+}).orchestrator
 orchestratorRef = orchestratorWithEvents
 
 // נתיבי HTTP
