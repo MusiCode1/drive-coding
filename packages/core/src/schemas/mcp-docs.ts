@@ -50,6 +50,7 @@ To apply a change, pass those ids on \`session_send.sets\` before the prompt. If
 
 When drive-coding injects this server into a child agent, requests include \`X-Drive-Coding-Agent: <uuid>\`.
 That sets the caller identity for **session_open** (\`parentAgentId\`) and enables **notify_parent** for child agents.
+Call **session_whoami** (no parameters) to discover your own agent UUID from that header — the server does not guess from ENV.
 
 There is **no authentication** — any client that can reach the URL can list, open, prompt, or close agents.
 
@@ -68,6 +69,7 @@ export type McpToolName =
   | "session_state"
   | "session_close"
   | "session_subscribe"
+  | "session_whoami"
   | "notify_parent"
 
 export const MCP_TOOL_META: Record<
@@ -103,6 +105,11 @@ export const MCP_TOOL_META: Record<
     title: "Subscribe to agent events",
     description:
       "Register the caller (or an explicit subscriber UUID) to receive turn-ended and stall-suspected events for the target agent. Idempotent — duplicate subscribe is a no-op. Requires agent (target). subscriber defaults to X-Drive-Coding-Agent when present.",
+  },
+  session_whoami: {
+    title: "Who am I",
+    description:
+      "Discovery only — not authentication. Return the caller's agent UUID already resolved from X-Drive-Coding-Agent. No parameters. Missing or unknown header → error; the server does not guess from ENV.",
   },
 }
 
