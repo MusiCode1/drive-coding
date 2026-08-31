@@ -37,6 +37,11 @@ function probeConnect(path: string): Promise<void> {
   })
 }
 
+async function flushPromotions(): Promise<void> {
+  await new Promise<void>((r) => setImmediate(r))
+  await new Promise<void>((r) => setImmediate(r))
+}
+
 describe("unix-socket", () => {
   it("exchanges bytes bidirectionally", async () => {
     const path = sockPath()
@@ -158,6 +163,7 @@ describe("unix-socket", () => {
     await access(path)
 
     const client2 = await connectUnix(path)
+    await flushPromotions()
     expect(handle.current()).toBeDefined()
 
     client2.close()

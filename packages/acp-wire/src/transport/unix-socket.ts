@@ -12,13 +12,26 @@ async function unlinkQuiet(path: string): Promise<void> {
   }
 }
 
+export type UnixListenHandle = {
+  readonly path: string
+  readonly transport: AcpTransport
+  current(): AcpTransport | undefined
+  onAccept(cb: (transport: AcpTransport) => void): void
+  close(): void
+}
+
 /**
- * Listen on a Unix domain socket. Resolves with transport on first connection.
- * Second connection is destroyed (no queue). transport.close() closes socket+server+unlink.
+ * Listen on a Unix domain socket. Resolves with handle on first real promotion.
+ * Subsequent connections replace the current peer (client-wins). Probe
+ * connections (connect+destroy) are ignored. handle.close() tears down server.
  */
-export function listenUnix(path: string): Promise<AcpTransport> {
+export function listenUnix(path: string): Promise<UnixListenHandle> {
   return new Promise((resolve, reject) => {
     let settled = false
+    let firstTransport: AcpTransport | undefined
+    let currentTransport: AcpTransport | undefined
+    const acceptCallbacks: Array<(transport: AcpTransport) => void> = []
+    let handleClosed = false
 
     try {
       unlinkSync(path)
@@ -30,12 +43,69 @@ export function listenUnix(path: string): Promise<AcpTransport> {
     }
 
     const server = createServer((sock) => {
-      if (!settled) {
-        settled = true
-        resolve(wrapListenTransport(sock, server, path))
-        return
+      const attemptPromote = () => {
+        if (handleClosed) {
+          sock.destroy()
+          return
+        }
+
+        if (sock.destroyed || sock.readyState === "closed") {
+          return
+        }
+
+        const peer = socketToAcpTransport(sock)
+
+        peer.onClose(() => {
+          if (currentTransport === peer) {
+            currentTransport = undefined
+          }
+        })
+
+        if (currentTransport) {
+          currentTransport.close()
+        }
+
+        currentTransport = peer
+        if (!firstTransport) {
+          firstTransport = peer
+        }
+
+        for (const cb of acceptCallbacks) {
+          cb(peer)
+        }
+
+        if (!settled) {
+          settled = true
+          resolve({
+            path,
+            get transport() {
+              return firstTransport!
+            },
+            current() {
+              return currentTransport
+            },
+            onAccept(cb) {
+              acceptCallbacks.push(cb)
+            },
+            close() {
+              if (handleClosed) return
+              handleClosed = true
+              server.close()
+              void unlinkQuiet(path)
+              currentTransport?.close()
+            },
+          })
+        }
       }
-      sock.destroy()
+
+      // Double defer: probe (connect+destroy) closes the server socket before
+      // the second tick; real clients stay open through both ticks.
+      setImmediate(() => {
+        if (handleClosed || sock.destroyed || sock.readyState === "closed") {
+          return
+        }
+        setImmediate(attemptPromote)
+      })
     })
 
     server.on("error", (err) => {
@@ -47,30 +117,6 @@ export function listenUnix(path: string): Promise<AcpTransport> {
 
     server.listen(path)
   })
-}
-
-function wrapListenTransport(
-  sock: import("node:net").Socket,
-  server: ReturnType<typeof createServer>,
-  path: string,
-): AcpTransport {
-  const base = socketToAcpTransport(sock)
-  let closed = false
-
-  return {
-    readable: base.readable,
-    writable: base.writable,
-    close() {
-      if (closed) return
-      closed = true
-      base.close()
-      server.close()
-      void unlinkQuiet(path)
-    },
-    onClose(cb) {
-      base.onClose(cb)
-    },
-  }
 }
 
 /**
