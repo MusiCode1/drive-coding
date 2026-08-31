@@ -222,12 +222,12 @@
       "class": "mixed"
     },
     "packages/backend/src/session-host/registry.ts": {
-      "metric": 539,
-      "impurity": 12,
+      "metric": 513,
+      "impurity": 10,
       "class": "mixed"
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 1010,
+      "metric": 1005,
       "impurity": 20,
       "class": "scattered"
     },

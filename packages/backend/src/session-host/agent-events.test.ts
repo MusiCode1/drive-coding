@@ -1,13 +1,15 @@
 /**
- * agent-events.test.ts — AgentEventBus unit tests (slice be-events-subscribe C0).
+ * agent-events.test.ts — AgentEventBus + stall sweep unit tests (slice be-events-subscribe).
  */
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
   createAgentEventBus,
   DEFAULT_STALL_SUSPECT_MS,
   resolveStallSuspectMs,
 } from "./agent-events.js"
+import { computeSilentMs, runStallSweep } from "./agent-events-stall.js"
+import type { ExtendedSessionHost } from "./session-host.js"
 
 describe("resolveStallSuspectMs", () => {
   it("returns default when env is missing", () => {
@@ -62,5 +64,65 @@ describe("AgentEventBus", () => {
     bus.subscribe("target-a", "sub-1")
     bus.unsubscribe("target-a", "sub-1")
     expect(bus.subscribersOf("target-a")).toEqual([])
+  })
+})
+
+function mockHost(state: {
+  turnState: ExtendedSessionHost["state"]["turnState"]
+  turnStartedAt: number
+  stallReported?: boolean
+}): ExtendedSessionHost {
+  let stallReported = state.stallReported ?? false
+  return {
+    state: { turnState: state.turnState } as ExtendedSessionHost["state"],
+    getTurnStartedAt: () => state.turnStartedAt,
+    getStallReported: () => stallReported,
+    markStallReported: () => {
+      stallReported = true
+    },
+  } as ExtendedSessionHost
+}
+
+describe("stall-suspected sweep", () => {
+  it("(a) waiting turn with no frames above threshold emits once; agent stays registered", () => {
+    const now = 100_000
+    const turnStartedAt = now - 100
+    const map = new Map([
+      ["agent-a", { host: mockHost({ turnState: "waiting", turnStartedAt }) }],
+    ])
+    const suspected: Array<{ agentId: string; silentMs: number }> = []
+    runStallSweep({
+      now,
+      map,
+      connectionRegistry: {
+        getRuntimeInfo: () => ({ lastMessageAt: null }),
+      } as never,
+      stallSuspectMs: 50,
+      onStallSuspected: (agentId, silentMs) => suspected.push({ agentId, silentMs }),
+    })
+    expect(suspected).toEqual([{ agentId: "agent-a", silentMs: 100 }])
+    expect(map.has("agent-a")).toBe(true)
+    expect(map.get("agent-a")?.host.getStallReported()).toBe(true)
+  })
+
+  it("(b) stale lastMessageAt from prior turn does not fire after fresh applyTurnStart", () => {
+    const now = 100_000
+    const turnStartedAt = now - 10
+    const staleLastMessageAt = now - 200
+    expect(computeSilentMs(now, turnStartedAt, staleLastMessageAt)).toBe(10)
+    const map = new Map([
+      ["agent-b", { host: mockHost({ turnState: "waiting", turnStartedAt }) }],
+    ])
+    const suspected: string[] = []
+    runStallSweep({
+      now,
+      map,
+      connectionRegistry: {
+        getRuntimeInfo: () => ({ lastMessageAt: staleLastMessageAt }),
+      } as never,
+      stallSuspectMs: 50,
+      onStallSuspected: (agentId) => suspected.push(agentId),
+    })
+    expect(suspected).toEqual([])
   })
 })

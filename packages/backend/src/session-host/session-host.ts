@@ -56,7 +56,7 @@ import type { AcpTransport } from "@drive-coding/provider/transport"
 import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
 
 type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
-import { createTurnLifecycleHandlers } from "./turn-lifecycle.js"
+import { createTurnLifecycleHandlers, type TurnTimingHost } from "./turn-lifecycle.js"
 import { msgOf } from "./error-message.js"
 import { createPendingRequests } from "./pending-requests.js"
 
@@ -287,7 +287,8 @@ export type SessionHostFromConnOptions = {
  * and for driving session configuration.
  * S4 exposes these via HTTP endpoints.
  */
-export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
+export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> &
+  TurnTimingHost & {
   /**
    * slice remote-session-mgmt C2: loadSession as a SWITCH (not a bare delegate).
    * Order: turnSeq++ → pending cleanup → full-state reset → sessionId flip
@@ -458,7 +459,7 @@ export async function createSessionHostFromConnection(
   }
 
   // ── C3: turn boundaries ─────────────────────────────────────────────────
-  const { turn: turnLifecycle, emitTurnEnd, maybeScheduleCloseOnTurnEnd } =
+  const { turn: turnLifecycle, emitTurnEnd, maybeScheduleCloseOnTurnEnd, stampTurnStart, turnHostMethods } =
     createTurnLifecycleHandlers({
       getState: () => currentState,
       emit,
@@ -497,16 +498,7 @@ export async function createSessionHostFromConnection(
   // timeout: abort getQuota if the CLI does not respond within this window.
   const QUOTA_FETCH_TIMEOUT_MS = 5_000
 
-  /**
-   * Fires an async getQuota call after a successful session start/load.
-   * Non-blocking: does NOT await here — caller proceeds immediately.
-   * Five invariants (brief §5/C3):
-   *   1. Not part of newSession/loadSession success condition.
-   *   2. Timeout: race against QUOTA_FETCH_TIMEOUT_MS.
-   *   3. Guard-gen: response arriving after session switch or dispose is discarded.
-   *   4. Dedupe: only one in-flight call at a time.
-   *   5. Validate { snapshot } shape before writing to state.
-   */
+  /** Non-blocking quota fetch after session start/load (slice http-state-gaps C3). */
   function startQuotaFetch(sessionId: string): void {
     // condition 4: dedupe — one in-flight call per generation.
     // ⚠️ Must be scoped to the CURRENT generation. A plain boolean starves the
@@ -724,6 +716,7 @@ export async function createSessionHostFromConnection(
     ): Promise<void> {
       if (disposed) throw new Error("SessionHost disposed")
       const turn = ++turnLifecycle.turnSeq
+      stampTurnStart()
       emit(applyTurnStart(currentState)) // 1. waiting — לפני ה-await, ולפני add-message (hotfix)
       const msg = synthesizeUserMessage(currentState, content, meta)
       const applied = applyUserMessage(currentState, msg)
@@ -1006,5 +999,7 @@ export async function createSessionHostFromConnection(
     get agentCapabilities(): AcpClient["capabilities"] {
       return client.capabilities
     },
+
+    ...turnHostMethods,
   }
 }

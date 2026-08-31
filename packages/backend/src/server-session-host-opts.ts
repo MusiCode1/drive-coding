@@ -7,6 +7,7 @@ import type { AgentOrchestrator } from "./app/agent-orchestrator.js"
 import { resolveCloseOnTurnEndGraceMs } from "./session-host/close-on-turn-end.js"
 import type { AgentEventBus } from "./session-host/agent-events.js"
 import { agentEventSessionHostOpts } from "./delivery/agent-events-boot.js"
+import { createStallSuspectedEmitter } from "./session-host/agent-events-stall.js"
 import { createOnSessionAttached } from "./server-on-session-attached.js"
 import type { ProjectsRegistry } from "./app/projects-registry.js"
 import { createLogger } from "@drive-coding/core/log"
@@ -48,5 +49,6 @@ export function createSessionHostRegistryOpts(deps: {
       }, graceMs)
     },
     ...agentEventSessionHostOpts(deps.agentEventBus),
+    onStallSuspected: createStallSuspectedEmitter(deps.agentEventBus),
   }
 }
