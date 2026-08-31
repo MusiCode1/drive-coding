@@ -26,9 +26,14 @@ import * as path from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-// Allow longer timeout for server startup
-const SERVER_TIMEOUT = 8000
-const STARTUP_WAIT = 3000
+// ‏באג #64: ‏זמן-העלייה הקר של ה-BE תחת vitest נמדד ב-**~3.5 שניות** (‏probe
+// ‏עם סקר-פורט: ECONNREFUSED ב-t=1..3s, ‏HTTP 200 ב-t=4s, ‏"listening" ב-+3544ms),
+// ‏מול תקציב שהיה 3000ms. ‏הפספוס של ~500ms הפיל את הקובץ **רק בהרצה מבודדת** —
+// ‏בהרצה מלאה המטמונים חמים והעלייה נכנסת מתחת לתקציב, ולכן זה נראה "פלייקי".
+// ‏`waitForServer` סוקר כל 300ms ומחזיר מיָדית בהצלחה ⇒ תקרה גבוהה **אינה** מאטה
+// ‏את המסלול הבריא; היא רק מפסיקה להיכשל על מכונה איטית או מטמון קר.
+const SERVER_TIMEOUT = 45_000
+const STARTUP_WAIT = 30_000
 
 function waitForServer(protocol: "http" | "https", port: number, timeoutMs: number): Promise<void> {
   return new Promise((resolve, reject) => {
