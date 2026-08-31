@@ -35,7 +35,14 @@ const cwdLabel = $derived(session.cwd ? basename(session.cwd) : "")
 const headerLabel = $derived(session.sessionTitle?.trim() ? session.sessionTitle : agentName)
 </script>
 
-<header class="absolute top-0 inset-x-0 z-20 flex items-center gap-3 px-4 pt-3 pb-8 pointer-events-none">
+<!-- safe-area (mobile-parity): pt-3 alone puts the session title behind the status bar on a
+     notched phone, because app.html asks for viewport-fit=cover. Padding (not margin) so the
+     fade layer still covers the full strip. padding-inline keeps it clear of a landscape notch. -->
+<header
+  class="absolute top-0 inset-x-0 z-20 flex items-center gap-3 pb-8 pointer-events-none"
+  style="padding-top:calc(0.75rem + var(--safe-t));
+         padding-inline:calc(1rem + var(--safe-x))"
+>
   <!-- fade layer -->
   <div
     class="absolute inset-0 -z-10 backdrop-blur-sm"
