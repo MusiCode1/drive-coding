@@ -17,7 +17,6 @@
  * ─── slice view-switch C3 (integration) ───
  */
 
-import { createI18n, detectLocale } from "@drive-coding/core/i18n"
 import {
   applyPendingRequest,
   applyTurnEnd,
@@ -806,10 +805,10 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
   })
 })
 
-// ── loadSession/switchSession — no-op ב-remote ──────────────────────────────
+// ── loadSession/switchSession/newSession/attachToLiveAgent — remote routing ──
 
 describe("AgentSession + remote view — WS paths are blocked", () => {
-  it("loadSession/switchSession/newSession/attachToLiveAgent are no-ops when #view is set", async () => {
+  it("loadSession/attachToLiveAgent stay no-ops; switchSession/newSession route through the view", async () => {
     const view = new MockSessionView()
     view.connect("remote-sess-11")
     const agent = new AgentSession({ view })
@@ -820,24 +819,40 @@ describe("AgentSession + remote view — WS paths are blocked", () => {
     await agent.newSession({ cwd: "/ws", cliKind: "claude" })
     await agent.attachToLiveAgent({ agentId: "a", sessionId: "s", cwd: "/ws", cliKind: "claude" })
 
-    // אף אחד מהם לא נגע ב-status/#view — עדיין connected, אין WS
     expect(agent.status).toBe("connected")
+    expect(view.loadSessionMock).toHaveBeenCalled()
+    expect(view.newSessionMock).toHaveBeenCalledWith("/ws")
   })
 
-  // slice agent-patch-unify C4, ממצא 3: no-op שקט → הודעה גלויה (i18n), בלי ניווט.
-  // מימוש newSession ב-remote עצמו אינו ב-scope — ר' §2 בבריף.
-  it("newSession sets a visible i18n error in remote mode instead of a silent no-op", async () => {
+  it("newSession on remote calls view.newSession, syncs sessionId, clears title", async () => {
     const view = new MockSessionView()
     view.connect("remote-sess-13")
     const agent = new AgentSession({ view })
     agent._setStatusForTest("connected")
-    const sessionIdBefore = agent._getSessionIdForTest()
+    agent.sessionTitle = "Old Title"
 
     await agent.newSession({ cwd: "/ws", cliKind: "claude" })
 
-    expect(agent.error).toBe(createI18n({ locale: detectLocale() }).t("session.newSessionUnsupportedRemote"))
-    expect(agent.status).toBe("connected") // לא נגע ב-status
-    expect(agent._getSessionIdForTest()).toBe(sessionIdBefore) // sessionId לא השתנה — הפאנל לא ינווט
+    expect(view.newSessionMock).toHaveBeenCalledWith("/ws")
+    expect(agent.error).toBeNull()
+    expect(agent.status).toBe("connected")
+    expect(agent.sessionTitle).toBe("")
+    expect(agent._getSessionIdForTest()).toBe("remote-new-sess")
+  })
+
+  it("newSession remote failure populates session.error and leaves prior sessionId", async () => {
+    const view = new MockSessionView()
+    view.connect("remote-sess-13b")
+    const agent = new AgentSession({ view })
+    agent._setStatusForTest("connected")
+    const sessionIdBefore = agent._getSessionIdForTest()
+    view.newSessionMock.mockRejectedValueOnce(new Error("RPC 502"))
+
+    await agent.newSession({ cwd: "/ws", cliKind: "claude" })
+
+    expect(agent.error).toContain("newSession failed")
+    expect(agent._getSessionIdForTest()).toBe(sessionIdBefore)
+    expect(agent.status).toBe("connected")
   })
 })
 

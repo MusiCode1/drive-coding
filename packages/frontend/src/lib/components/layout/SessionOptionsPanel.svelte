@@ -40,6 +40,7 @@ import {
 import { readSessionTransport } from "$lib/session/session-transport-read"
 import { shouldWarnOnLeave } from "$lib/session/should-warn-on-leave"
 import { sessionPathWithTransport } from "$lib/session/session-url"
+import { filterExtraConfigOptions } from "$lib/util/session-config-extras"
 
 const t = getI18n().t
 const session = getSession()
@@ -162,9 +163,16 @@ const modelGroups = $derived.by<SelectGroup[] | undefined>(() => {
 
 // ─── חישובים ───
 
-/** configOptions שאינם model/mode */
+/**
+ * Extras below the dedicated mode/model row.
+ * Keep category mode/model siblings (e.g. Permission) when the primary control
+ * already comes from SessionModeState / ACP models (#63).
+ */
 const extraOptions = $derived(
-  session.configOptions.filter((o) => o.category !== "model" && o.category !== "mode"),
+  filterExtraConfigOptions(session.configOptions, {
+    hasModesState: (session.modes?.availableModes?.length ?? 0) > 0,
+    hasModelsState: (session.models?.availableModels?.length ?? 0) > 0,
+  }),
 )
 
 /**
@@ -246,9 +254,7 @@ async function selectSession(info: { sessionId: string; cwd: string; title?: str
 /**
  * סשן חדש: warm new-session על החיבור הקיים — ללא detach/respawn.
  * נשאר ב-/chat עם בועות ריקות, מוכן לפרומפט.
- *
- * slice agent-patch-unify C4 ממצא 3: ב-remote, newSession() הוא no-op שמציב this.error
- * (מחרוזת i18n) בלי לשנות sessionId — לא לנווט במקרה הזה (הודעה גלויה בלבד).
+ * ב-remote: rpc session/new על ה-host; כשל → session.error, בלי ניווט.
  */
 async function onNewSession() {
   await session.newSession({ cliKind: settings.cliKind })
@@ -466,7 +472,7 @@ $effect(() => {
     </label>
     {/if}
 
-    <!-- שאר configOptions (לא model/mode) -->
+    <!-- שאר configOptions (לא הבורר הראשי של mode/model; כולל אחים באותה קטגוריה — #63) -->
     {#each extraOptions as opt (opt.id)}
       {#if opt.type === "select"}
         {@const choices = flattenSelectOptions(opt)}

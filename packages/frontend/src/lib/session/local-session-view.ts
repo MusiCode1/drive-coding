@@ -271,7 +271,7 @@ export class LocalSessionView implements SessionView {
    * יוצר session ACP חדש.
    * קורא ל-createClientFn → client.newSession() → מעדכן state.
    */
-  async newSession(): Promise<void> {
+  async newSession(_cwd?: string): Promise<void> {
     this.#state = { ...this.#state, status: "connecting" }
     this.#client = await this.#createClientFn(this.#makeCallbacks())
     const result = await this.#client.newSession({ cwd: this.#cwd })

@@ -71,9 +71,10 @@ export interface SessionView {
 
   /**
    * יוצר session ACP חדש.
-   * cwd/cliKind נקבעו בבנייה של LocalSessionView.
+   * local: cwd נקבע בבנייה (ארגומנט אופציונלי להתעלמות).
+   * remote: cwd אופציונלי — כמו loadSession; fallback ל-cwd של החיבור ב-BE.
    */
-  newSession(): Promise<void>
+  newSession(cwd?: string): Promise<void>
 
   /**
    * טוען session ACP קיים לפי sessionId.

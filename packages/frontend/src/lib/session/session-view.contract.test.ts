@@ -310,6 +310,13 @@ describe("SessionView deviation table — remote-only behaviors", () => {
             json: () => Promise.resolve({ sessionId: params?.sessionId ?? "s", version: 2 }),
           } as unknown as Response
         }
+        if (rpcMethod === RPC_METHODS.newSession) {
+          return {
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ sessionId: "s-brand-new", version: 3 }),
+          } as unknown as Response
+        }
         if (rpcMethod === RPC_METHODS.deleteSession) {
           return {
             ok: true,
@@ -338,7 +345,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
     activeViews.length = 0
   })
 
-  it("newSession still rejects; loadSession/listSessions/deleteSession perform real RPCs (remote-session-mgmt C4)", async () => {
+  it("newSession/loadSession/listSessions/deleteSession perform real RPCs", async () => {
     const view = new RemoteSessionView("a1", "http://be.local", {
       _fetch: mockFetchFor({}),
       _sleep: () => Promise.resolve(),
@@ -346,8 +353,8 @@ describe("SessionView deviation table — remote-only behaviors", () => {
     activeViews.push(view)
     await view.connect()
 
-    // ❌ newSession stays unsupported (session creation is BE-owned)
-    await expect(view.newSession()).rejects.toThrow("not supported in remote mode")
+    await expect(view.newSession("/w")).resolves.toBeUndefined()
+    expect(view.state.sessionId).toBe("s-brand-new")
 
     // loadSession — resolves and updates BOTH sessionId sources from the answer
     await expect(view.loadSession("s-new", "/w")).resolves.toBeUndefined()

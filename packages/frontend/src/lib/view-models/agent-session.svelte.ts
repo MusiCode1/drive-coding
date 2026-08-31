@@ -2303,14 +2303,33 @@ export class AgentSession {
    * למה לא detach+attach: detach הורג bridge + גורם ל-race "WS closed (1005)" + spawn מיותר.
    */
   newSession = async (input: { cwd?: string; cliKind: string }): Promise<void> => {
-    // ─── slice view-switch C3-ה: חסימת נתיבי-WS ב-remote ───
-    // slice agent-patch-unify C4, ממצא 3: המימוש ב-remote עצמו אינו ב-scope — המינימום
-    // המוסכם הוא הודעה גלויה (i18n) בלי ניווט, במקום no-op שקט שהשאיר את הפאנל מנווט
-    // בשקט לסשן הנוכחי (sessionId לא משתנה כאן).
-    if (this.#remoteView()) {
-      this.error = createI18n({ locale: this.#settings?.locale ?? detectLocale() }).t(
-        "session.newSessionUnsupportedRemote",
-      )
+    // Warm new-session on the existing HTTP host (rpc session/new) — parity with
+    // remote switchSession. Bubbles clear via SSE reset from the host.
+    const remoteView = this.#remoteView()
+    if (remoteView) {
+      if (this.status !== "connected" || this.isLoadingHistory) {
+        throw new Error(`cannot newSession in status ${this.status}`)
+      }
+      const cwd = input.cwd ?? this.cwd
+      if (!cwd) throw new Error("newSession: no cwd")
+      this.error = null
+      this.#errorSurfaced = false
+      this.sessionTitle = ""
+      this.isLoadingHistory = true
+      try {
+        await remoteView.newSession(cwd)
+        const newId = remoteView.state.sessionId
+        if (!newId) throw new Error("newSession returned no sessionId")
+        this.#sessionId = newId
+        this.cwd = cwd
+        // Empty title: skip #pushTitleToServer (it no-ops on !title) — host already
+        // cleared title via update-session; agent list stays blank until a real title.
+        await this.#applyRememberedConfig()
+      } catch (e) {
+        this.error = `newSession failed: ${formatAcpError(e)}`
+      } finally {
+        this.isLoadingHistory = false
+      }
       return
     }
     const cwd = input.cwd ?? this.cwd

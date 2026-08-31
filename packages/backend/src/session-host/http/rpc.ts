@@ -20,6 +20,7 @@
  * and break the contract. Management methods ignore `waitMs` silently (valid or invalid).
  *   - session/list   → 200 {sessions, sessionCapabilities} | 502 {error, code?}
  *   - session/load   → 200 {sessionId, version} | 400 (bad params / no cwd) | 502
+ *   - session/new    → 200 {sessionId, version} | 400 (no cwd) | 502
  *   - session/delete → 200 {ok:true} | 200 {ok:false, unsupported:true} (-32601) | 502
  *
  * Returns 404 if connection not found (registry.getOrCreateHost → {ok:false}),
@@ -94,7 +95,29 @@ const PromptParams = type({
 })
 const CancelParams = type({ sessionId: "string" })
 const LoadSessionParams = type({ sessionId: "string", "cwd?": "string" })
+const NewSessionParams = type({ "cwd?": "string" })
 const DeleteSessionParams = type({ sessionId: "string" })
+
+/**
+ * Parity with FE local warm newSession (`CLAUDE_SESSION_META` in agent-session).
+ * Injected only on session/new when registry.getCliKind === "claude".
+ */
+const CLAUDE_SESSION_META = {
+  claudeCode: {
+    options: {
+      thinking: { type: "adaptive", display: "summarized" },
+      forwardSubagentText: true,
+    },
+    emitRawSDKMessages: [
+      { type: "system", subtype: "task_started" },
+      { type: "system", subtype: "task_progress" },
+      { type: "system", subtype: "task_notification" },
+      { type: "system", subtype: "task_updated" },
+      { type: "assistant" },
+      { type: "user" },
+    ],
+  },
+} as const
 
 // ─── slice remote-session-mgmt C3: JSON-RPC error mapping ───
 // A JSON-RPC error is not necessarily an Error instance — the `code` sits on a
@@ -310,6 +333,18 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
             200,
           )
         } catch (e) {
+          // -32601 (CLI without list) → empty list, not 502.
+          // Cloudflare often replaces origin 502 with HTML, stripping `{code:-32601}`
+          // so the FE cannot degrade gently — return 200 here like deleteSession.
+          if (codeOf(e) === -32601) {
+            return c.json(
+              {
+                sessions: [],
+                sessionCapabilities: host.agentCapabilities?.sessionCapabilities ?? null,
+              },
+              200,
+            )
+          }
           const code = codeOf(e)
           return c.json(
             code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
@@ -325,7 +360,7 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
         try {
           const mcpServers = optionalAgentMcpServers(
             agentId,
-            getSelfBaseUrl(),
+            getSelfBaseUrl,
             host.agentCapabilities,
           )
           const r = await host.loadSession({
@@ -342,6 +377,38 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
             await registry.notifySessionAttached(agentId, r.sessionId, cwd)
           } catch (err) {
             log.warn({ err, agentId }, "notifySessionAttached after loadSession failed")
+          }
+          return c.json({ sessionId: r.sessionId, version: host.state.version }, 200)
+        } catch (e) {
+          const code = codeOf(e)
+          return c.json(
+            code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
+            502,
+          )
+        }
+      }
+      case RPC_METHODS.newSession: {
+        const p = NewSessionParams(params)
+        if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
+        const cwd = p.cwd ?? registry.getCwd(agentId)
+        if (!cwd) return c.json({ error: "no cwd available" }, 400)
+        try {
+          const mcpServers = optionalAgentMcpServers(
+            agentId,
+            getSelfBaseUrl,
+            host.agentCapabilities,
+          )
+          const claudeMeta =
+            registry.getCliKind(agentId) === "claude" ? CLAUDE_SESSION_META : undefined
+          const r = await host.newSession({
+            cwd,
+            ...(mcpServers !== undefined && { mcpServers }),
+            ...(claudeMeta !== undefined && { _meta: claudeMeta }),
+          })
+          try {
+            await registry.notifySessionAttached(agentId, r.sessionId, cwd)
+          } catch (err) {
+            log.warn({ err, agentId }, "notifySessionAttached after newSession failed")
           }
           return c.json({ sessionId: r.sessionId, version: host.state.version }, 200)
         } catch (e) {

@@ -457,8 +457,6 @@ export type MessageKey =
   | "sessionUrl.takeover.body"
   | "sessionUrl.takeover.confirm"
   | "sessionUrl.takeover.cancel"
-  // ─── agent-patch-unify C4: ממצא 3 — newSession ב-remote אינו נתמך ───
-  | "session.newSessionUnsupportedRemote"
   // ─── sidebar-resize ───
   | "sidebar.resizeHandle"
   // ─── cwd-path-combo ───

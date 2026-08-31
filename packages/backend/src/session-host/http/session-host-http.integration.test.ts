@@ -161,6 +161,7 @@ async function setup(): Promise<{
     unregisterHost: () => {},
     notifySessionAttached: async () => {},
     getCwd: (id) => (id === AGENT_ID ? "/connection/cwd" : undefined),
+    getCliKind: () => undefined,
     getEpoch: (_id) => 0,
     touchConnection: (_id, _cid) => {},
     getRuntimeInfo: (_id) => null,

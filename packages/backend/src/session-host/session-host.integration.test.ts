@@ -1120,6 +1120,33 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     expect(host.state.messages).toHaveLength(1)
   })
 
+  it("newSession warm: reset clears messages; success clears title; failure restores sessionId", async () => {
+    const { host, mockClient, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" }) // cold → s1 (no reset patches)
+
+    callbacks.onUpdate(chunkOf("s1", "old history"))
+    expect(host.state.messages).toHaveLength(1)
+    await readOnePatch(host.patches)
+
+    ;(mockClient.newSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      sessionId: "s-new",
+      configOptions: [],
+    })
+    const result = await host.newSession({ cwd: "/a" })
+    expect(result.sessionId).toBe("s-new")
+    expect(host.state.sessionId).toBe("s-new")
+    expect(host.state.messages).toEqual([])
+    expect(host.state.title).toBe("")
+
+    // Failure path: restore previous sessionId
+    ;(mockClient.newSession as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("cli newSession failed"),
+    )
+    await expect(host.newSession({ cwd: "/a" })).rejects.toThrow("cli newSession failed")
+    expect(host.state.sessionId).toBe("s-new")
+    expect(host.state.turnState).toBe("idle")
+  })
+
   it("turnSeq++: a turn active at switch time that ends afterwards does NOT land applyTurnEnd/lastTurnError on the new session", async () => {
     const { host, conn, mockClient } = await setup()
     await host.newSession({ cwd: "/a" })

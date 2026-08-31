@@ -50,12 +50,14 @@ export function buildAgentMcpServers(
 /**
  * MCP wiring for session/new|load — only when the agent declared http MCP in initialize.
  * Returns undefined to omit the field entirely (some SDKs reject mcpServers even when []).
+ * `baseUrl` may be a thunk so callers can avoid resolving listen URL when MCP is omitted.
  */
 export function optionalAgentMcpServers(
   agentId: string,
-  baseUrl: string,
+  baseUrl: string | (() => string),
   caps: AgentMcpCapabilities | undefined | null,
 ): NewSessionRequest["mcpServers"] | undefined {
   if (!agentDeclaresHttpMcp(caps)) return undefined
-  return buildAgentMcpServers(agentId, baseUrl)
+  const url = typeof baseUrl === "function" ? baseUrl() : baseUrl
+  return buildAgentMcpServers(agentId, url)
 }

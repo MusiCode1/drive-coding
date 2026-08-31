@@ -705,6 +705,72 @@ export async function createSessionHostFromConnection(
     }
   }
 
+  // ─── session switch preamble (shared by newSession + loadSession) ───
+  //  1. turnSeq++ + cancelledTurn=-1 — invalidate outgoing turns.
+  //  2. Pending cleanup — cancelled defaults before reset.
+  //  3. Reset via applyPatch + emit (❌ no manual version bump).
+  // ⚠️ Steps 1+3 MUST stay synchronous with the caller's sessionId flip when
+  // there is no pending — `await` of a helper always yields one microtask and
+  // would let old-session tails / permissions land before the flip (C2 tests).
+  // Failure path (rollbackSessionSwitch): sessionId only + second monotonic
+  // reset + idle — ❌ no snapshot restore (versions never rewind).
+  function beginSessionSwitchInvalidate(): void {
+    turnSeq++
+    cancelledTurn = -1
+    quotaGeneration++
+  }
+
+  /** Returns true if a microtask flush is required before reset. */
+  function cancelOpenPendingSync(): boolean {
+    const openPermission = currentState.pending.permission
+    const openElicitation = currentState.pending.elicitation
+    if (openPermission) {
+      permPending.respond(openPermission.requestId, { outcome: { outcome: "cancelled" } })
+    }
+    if (openElicitation) {
+      elicitPending.respond(openElicitation.requestId, { action: "cancel" })
+    }
+    return Boolean(openPermission || openElicitation)
+  }
+
+  function emitSessionSwitchReset(): {
+    oldSessionId: string | null
+    preResetConfigOptions: SessionConfigOption[]
+  } {
+    const oldSessionId = currentState.sessionId
+    const preResetConfigOptions = currentState.configOptions
+    const resetPatch: Patch = {
+      op: "reset",
+      version: currentState.version + 1,
+      messages: [],
+      nextMessageSeq: 0,
+      nextSegmentSeq: 0,
+    }
+    currentState = applyPatch(currentState, resetPatch)
+    emitPatches([resetPatch])
+    return { oldSessionId, preResetConfigOptions }
+  }
+
+  function rollbackSessionSwitch(oldSessionId: string | null): void {
+    currentState = { ...currentState, sessionId: oldSessionId }
+    const resetPatch2: Patch = {
+      op: "reset",
+      version: currentState.version + 1,
+      messages: [],
+      nextMessageSeq: 0,
+      nextSegmentSeq: 0,
+    }
+    currentState = applyPatch(currentState, resetPatch2)
+    emitPatches([resetPatch2])
+    const idlePatch: Patch = {
+      op: "update-session",
+      version: currentState.version + 1,
+      changes: { turnState: "idle" },
+    }
+    currentState = applyPatch(currentState, idlePatch)
+    emitPatches([idlePatch])
+  }
+
   // ── ExtendedSessionHost ───────────────────────────────────────────────────
 
   return {
@@ -763,114 +829,96 @@ export async function createSessionHostFromConnection(
       }
     },
 
+    /**
+     * Cold create (no prior sessionId): thin path — ACP session/new + optional
+     * configOptions patch (registry getOrCreateHost). Warm (already had a
+     * session): switch preamble like loadSession so HTTP "new session" clears
+     * transcript; sessionId parked on a sentinel until the CLI returns the id.
+     */
     async newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts) {
       if (disposed) throw new Error("SessionHost disposed")
-      const result = (await client.newSession(opts)) as {
-        sessionId: string
-        // הסוכן הוא הסמכות על ה-configOptions שלו, והם נשמרים ב-currentState
-        // כפי שהם. המיזוג מ-dev הידק את הטיפוסים, ולכן ההצהרה מפורשת כאן
-        // במקום `unknown[]` שנשפך אל תוך SessionState.
-        configOptions?: SessionConfigOption[]
-      }
-      // Update currentState.sessionId so setMode/setConfigOption can use it
-      // Also capture configOptions from session/new response (capabilities.ts:17)
-      const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
-      currentState = { ...currentState, sessionId: result.sessionId, configOptions }
-      if (configOptions.length > 0) {
-        emitPatches([
-          {
-            version: currentState.version + 1,
+      const hadSession = currentState.sessionId !== null
+
+      if (!hadSession) {
+        const result = (await client.newSession(opts)) as {
+          sessionId: string
+          configOptions?: SessionConfigOption[]
+        }
+        const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
+        currentState = { ...currentState, sessionId: result.sessionId, configOptions }
+        if (configOptions.length > 0) {
+          const updatePatch: Patch = {
             op: "update-session",
+            version: currentState.version + 1,
             changes: { configOptions },
-          },
-        ])
-        currentState = { ...currentState, version: currentState.version + 1 }
+          }
+          currentState = applyPatch(currentState, updatePatch)
+          emitPatches([updatePatch])
+        }
+        quotaGeneration++
+        startQuotaFetch(result.sessionId)
+        return result
       }
-      // slice http-state-gaps C3: advance generation + fire quota fetch (non-blocking)
-      quotaGeneration++
-      startQuotaFetch(result.sessionId as string)
-      return result
+
+      beginSessionSwitchInvalidate()
+      if (cancelOpenPendingSync()) {
+        // One microtask: let handlers' finally (clearPendingRequest + emit) land
+        // before the reset. ❌ Do not await when there is no pending — that would
+        // yield and let old-session tails land before the sessionId flip.
+        await Promise.resolve()
+      }
+      const { oldSessionId } = emitSessionSwitchReset()
+      // Sentinel ≠ any real ACP sessionId → handleUpdate drops outgoing tails.
+      // null would pass the filter (host-with-no-session pass-through) and re-fill.
+      currentState = { ...currentState, sessionId: "__drive_switching__" }
+
+      try {
+        const result = (await client.newSession(opts)) as {
+          sessionId: string
+          configOptions?: SessionConfigOption[]
+        }
+        const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
+        currentState = { ...currentState, sessionId: result.sessionId, configOptions }
+        const updatePatch: Patch = {
+          op: "update-session",
+          version: currentState.version + 1,
+          changes: {
+            turnState: "idle",
+            lastTurnError: null,
+            quota: null,
+            title: "",
+            ...(configOptions.length > 0 ? { configOptions } : {}),
+          },
+        }
+        currentState = applyPatch(currentState, updatePatch)
+        emitPatches([updatePatch])
+        startQuotaFetch(result.sessionId)
+        return result
+      } catch (err) {
+        rollbackSessionSwitch(oldSessionId)
+        throw err
+      }
     },
 
     // ─── slice remote-session-mgmt C2: loadSession as a SWITCH ───
-    // Mandatory order (brief C2):
-    //  1. turnSeq++ + cancelledTurn=-1 — cancels every open turn of the outgoing
-    //     session: turnSeq advances only in prompt, so a stale turn ending AFTER
-    //     the switch would otherwise land applyTurnEnd/lastTurnError on the new
-    //     session (the `turn === turnSeq` guard alone does not protect).
-    //  2. Pending cleanup — open permission/elicitation answered with their
-    //     cancelled defaults (respond resolves the promise + clears the timer;
-    //     clearPendingRequest inside the handler's finally clears the state and
-    //     emits the clear patch, legitimately BEFORE the reset).
-    //  3. Reset on the full state via pure core applyPatch + emit (❌ no manual
-    //     version bump — applyPatch owns it).
-    //  4. Flip sessionId BEFORE the await — otherwise the step-5 filter would
-    //     drop the new session's replay (arriving during the await; streamHistory
-    //     runs inside the CLI's loadSession handler) and let in old-session tails.
-    //  5. (sessionId filter in handleUpdate + guards in the permission/elicitation
-    //     handlers — see above.)
-    //  6. await client.loadSession.
-    //  7. Success: capture configOptions + ONE update-session
-    //     {configOptions?, turnState:"idle", lastTurnError:null} — idle because
-    //     the replay ends in an assistant message (derives "responding");
-    //     lastTurnError:null because reset does not clear it and the outgoing
-    //     session's "prompt failed" banner must not survive. ❌ sessionId is NOT
-    //     re-written from the response — the flip (4) and the rollback (8) are
-    //     the ONLY sessionId writes (overlapping switches could otherwise revert).
-    //  8. Failure: rollback sessionId ONLY. ❌ NO snapshot restore — it would
-    //     rewind the version counter and every future patch would be dropped at
-    //     the FE watermark (remote-session-view.ts #applyIncoming). Instead: a
-    //     SECOND reset at a continuing version (monotonic — passes the watermark
-    //     and realigns the FE, which already got part of the replay, with the
-    //     empty host) + turnState:"idle" + rethrow (route → 502 → VM error).
-    //     Documented edge: the rendered history is gone — the user picks a session
-    //     again; the CLI's data is untouched.
+    // Mandatory order (brief C2): prepareSessionSwitch (1–3) → flip sessionId
+    // BEFORE await (4) → await client.loadSession (6) → success update-session
+    // (7) / rollbackSessionSwitch (8). See prepareSessionSwitch comment above.
     async loadSession(opts: {
       cwd: string
       sessionId: string
       _meta?: Record<string, unknown>
     } & SessionMcpOpts): Promise<{ sessionId: string; version: number }> {
       if (disposed) throw new Error("SessionHost disposed")
-      // 1. Invalidate turns of the outgoing session.
-      turnSeq++
-      cancelledTurn = -1
-      // slice http-state-gaps: invalidate the outgoing session's quota fetch HERE,
-      // before any await. Advancing it only after client.loadSession resolves left a
-      // window where session A's quota response passed the guard and was written onto
-      // session B's state (calev finding 9).
-      quotaGeneration++
-
-      // 2. Pending cleanup (cancelled defaults; the clear patches land before the
-      //    reset — the one legitimate pre-reset emission).
-      const openPermission = currentState.pending.permission
-      const openElicitation = currentState.pending.elicitation
-      if (openPermission) {
-        permPending.respond(openPermission.requestId, { outcome: { outcome: "cancelled" } })
-      }
-      if (openElicitation) {
-        elicitPending.respond(openElicitation.requestId, { action: "cancel" })
-      }
-      if (openPermission || openElicitation) {
-        // One microtask: let the handlers' finally (clearPendingRequest + emit)
-        // land before the reset so the patch order stays deterministic.
+      beginSessionSwitchInvalidate()
+      if (cancelOpenPendingSync()) {
         await Promise.resolve()
       }
+      const { oldSessionId, preResetConfigOptions } = emitSessionSwitchReset()
 
-      // 3. Reset the full state.
-      // slice http-state-gaps C2: capture configOptions BEFORE reset (for same-session merge)
-      const oldSessionId = currentState.sessionId
-      const preResetConfigOptions = currentState.configOptions
-      const resetPatch: Patch = {
-        op: "reset",
-        version: currentState.version + 1,
-        messages: [],
-        nextMessageSeq: 0,
-        nextSegmentSeq: 0,
-      }
-      currentState = applyPatch(currentState, resetPatch)
-      emitPatches([resetPatch])
-
-      // 4. Flip sessionId BEFORE the await (see the long comment above).
+      // 4. Flip sessionId BEFORE the await — otherwise the step-5 filter would
+      //    drop the new session's replay (arriving during the await; streamHistory
+      //    runs inside the CLI's loadSession handler) and let in old-session tails.
       currentState = { ...currentState, sessionId: opts.sessionId }
 
       // 6.
@@ -910,23 +958,7 @@ export async function createSessionHostFromConnection(
         return { sessionId: opts.sessionId, version: currentState.version }
       } catch (err) {
         // 8. Failure — rollback sessionId only + second monotonic reset + idle.
-        currentState = { ...currentState, sessionId: oldSessionId }
-        const resetPatch2: Patch = {
-          op: "reset",
-          version: currentState.version + 1,
-          messages: [],
-          nextMessageSeq: 0,
-          nextSegmentSeq: 0,
-        }
-        currentState = applyPatch(currentState, resetPatch2)
-        emitPatches([resetPatch2])
-        const idlePatch: Patch = {
-          op: "update-session",
-          version: currentState.version + 1,
-          changes: { turnState: "idle" },
-        }
-        currentState = applyPatch(currentState, idlePatch)
-        emitPatches([idlePatch])
+        rollbackSessionSwitch(oldSessionId)
         throw err
       }
     },

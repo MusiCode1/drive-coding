@@ -10,12 +10,13 @@ import { describe, expect, it } from "vitest"
 import { canonicalRpcMethod, LEGACY_RPC_METHODS, RPC_METHODS } from "./rpc-methods.js"
 
 describe("RPC_METHODS", () => {
-  it("maps the seven canonical methods to their ACP names", () => {
+  it("maps the eight canonical methods to their ACP names", () => {
     expect(RPC_METHODS.prompt).toBe("session/prompt")
     expect(RPC_METHODS.cancel).toBe("session/cancel")
     expect(RPC_METHODS.setMode).toBe("session/set_mode")
     expect(RPC_METHODS.setConfigOption).toBe("session/set_config_option")
     expect(RPC_METHODS.loadSession).toBe("session/load")
+    expect(RPC_METHODS.newSession).toBe("session/new")
     expect(RPC_METHODS.listSessions).toBe("session/list")
     expect(RPC_METHODS.deleteSession).toBe("session/delete")
   })

@@ -130,6 +130,11 @@ export type AgentSessionRegistry = {
    */
   getCwd(agentId: string): string | undefined
   /**
+   * Passthrough ל-connectionRegistry.getCliKind(agentId).
+   * נחוץ ל-session/new ב-rpc — הזרקת _meta של Claude (parity עם FE מקומי).
+   */
+  getCliKind(agentId: string): string | undefined
+  /**
    * slice ownership-handoff C3: passthrough to connectionRegistry.getEpoch(agentId).
    * Returns the ownership generation counter (0 for unknown agentId).
    */
@@ -376,7 +381,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       // Session init: warm reattach uses loadSession; cold uses newSession.
       // Skip if host already has a sessionId (injected-ready host in tests).
       if (!host.state.sessionId) {
-        const mcpServers = optionalAgentMcpServers(agentId, getSelfBaseUrl(), host.agentCapabilities)
+        const mcpServers = optionalAgentMcpServers(agentId, getSelfBaseUrl, host.agentCapabilities)
         const sessionBase = { cwd, ...(mcpServers !== undefined && { mcpServers }) }
         if (acpSessionId) {
           await host.loadSession({ ...sessionBase, sessionId: acpSessionId })
@@ -472,6 +477,9 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     },
     getCwd(agentId: string): string | undefined {
       return connectionRegistry.getCwd(agentId)
+    },
+    getCliKind(agentId: string): string | undefined {
+      return connectionRegistry.getCliKind(agentId)
     },
     getEpoch(agentId: string): number {
       return connectionRegistry.getEpoch(agentId)

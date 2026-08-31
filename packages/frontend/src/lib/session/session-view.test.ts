@@ -28,7 +28,7 @@ class MockSessionView implements SessionView {
   setMode(_mode: string): Promise<void> { return Promise.resolve() }
   setConfigOption(_key: string, _value: unknown): Promise<void> { return Promise.resolve() }
   extMethod(_method: string, _params: unknown): Promise<unknown> { return Promise.resolve(null) }
-  newSession(): Promise<void> { return Promise.resolve() }
+  newSession(_cwd?: string): Promise<void> { return Promise.resolve() }
   loadSession(_sessionId: string, _cwd?: string): Promise<void> { return Promise.resolve() }
   listSessions(): Promise<SessionInfo[]> { return Promise.resolve([]) }
   deleteSession(_sessionId: string): Promise<void> { return Promise.resolve() }

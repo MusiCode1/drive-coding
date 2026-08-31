@@ -648,16 +648,59 @@ describe("RemoteSessionView — respond()", () => {
   })
 })
 
-// ── session management — newSession still throws; list/load/delete are real RPCs ──
-// (slice remote-session-mgmt C4)
+// ── session management — newSession/list/load/delete over rpc ──
+// (slice remote-session-mgmt C4 + remote warm newSession)
 
-describe("RemoteSessionView — newSession still throws", () => {
-  it("newSession() throws", async () => {
+describe("RemoteSessionView — newSession over rpc", () => {
+  it("newSession() posts session/new and updates sessionId from the response", async () => {
+    const seen: unknown[] = []
     const view = newView("agent-1", "http://be.local", {
-      _fetch: makeMockFetch({}),
+      _fetch: vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.includes("/events")) {
+          return sseResponse([{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }], {
+            keepOpen: true,
+          })
+        }
+        if (url.includes("/rpc")) {
+          const body = init?.body ? JSON.parse(init.body as string) : undefined
+          seen.push(body)
+          return jsonResponse({ sessionId: "sess-brand-new", version: 9 })
+        }
+        throw new Error(`unexpected fetch: ${url}`)
+      }),
       _sleep: noSleep,
     })
-    await expect(view.newSession()).rejects.toThrow("not supported in remote mode")
+    await view.connect()
+    await view.newSession("/work")
+
+    expect(seen[0]).toMatchObject({
+      method: RPC_METHODS.newSession,
+      params: { cwd: "/work" },
+    })
+    expect(view.state.sessionId).toBe("sess-brand-new")
+  })
+
+  it("newSession() without cwd omits cwd from params", async () => {
+    const seen: unknown[] = []
+    const view = newView("agent-1", "http://be.local", {
+      _fetch: vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.includes("/events")) {
+          return sseResponse([{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }], {
+            keepOpen: true,
+          })
+        }
+        if (url.includes("/rpc")) {
+          const body = init?.body ? JSON.parse(init.body as string) : undefined
+          seen.push(body)
+          return jsonResponse({ sessionId: "sess-x", version: 1 })
+        }
+        throw new Error(`unexpected fetch: ${url}`)
+      }),
+      _sleep: noSleep,
+    })
+    await view.connect()
+    await view.newSession()
+    expect(seen[0]).toMatchObject({ method: RPC_METHODS.newSession, params: {} })
   })
 })
 // ─── slice remote-session-mgmt C4: listSessions/loadSession/deleteSession ───
@@ -689,6 +732,9 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
         }
         if (method === RPC_METHODS.loadSession) {
           return jsonResponse(opts.loadSessionBody ?? { sessionId: "sess-2", version: 5 })
+        }
+        if (method === RPC_METHODS.newSession) {
+          return jsonResponse({ sessionId: "sess-new", version: 6 })
         }
         if (method === RPC_METHODS.deleteSession) {
           return jsonResponse(opts.deleteSessionBody ?? { ok: true })
