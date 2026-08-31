@@ -88,9 +88,9 @@ import { createEchoWsHandler } from "./delivery/ws-echo.js"
 import { removeInstance, setSelfBaseUrl, writeInstance } from "./instances.js"
 import { ensureStateSubdir } from "./paths.js"
 import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
-import { resolveCloseOnTurnEndGraceMs } from "./session-host/close-on-turn-end.js"
 import { bootAgentEvents } from "./delivery/agent-events-boot.js"
-import { createOnSessionAttached } from "./server-on-session-attached.js"
+import { createAgentEventBus } from "./session-host/agent-events.js"
+import { createSessionHostRegistryOpts } from "./server-session-host-opts.js"
 import { createUsageStore } from "./usage/usage-store.js"
 
 const app = new Hono()
@@ -133,36 +133,24 @@ const acpSessionIdCache = new Map<string, string>()
 // slice session-lifecycle-fields C1: orchestrator ref — registry is created first.
 let orchestratorRef: AgentOrchestrator | null = null
 
+// slice be-events-subscribe C0: single in-memory event bus for agent lifecycle events.
+const agentEventBus = createAgentEventBus()
+
 // S4 session-host-http: 4 routes — GET /events, POST /rpc, POST /reply, GET /state
 // slice remote-warm-reconnect C1: תופסים את הרג'יסטרי (קודם נזרק ב-:151) — C2/C2b
 // מעבירים אותו ל-ws-agent (guard) ול-orchestrator (ניקוי hosts ב-delete/crash).
-const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionRegistry, {
-  onSessionAttached: createOnSessionAttached({ registry, projectsRegistry, acpSessionIdCache }),
-  evictionController,
-  // slice ownership-handoff C4: warm reattach — sync cache of agentId→acpSessionId
-  // maintained by onSessionAttached. Returns the last known acpSessionId, allowing
-  // the HTTP host to call loadSession instead of newSession after WS eviction.
-  getAcpSessionId: (agentId) => acpSessionIdCache.get(agentId),
-  getPermissionPolicy: async (agentId) => {
-    const agent = await registry.get(agentId)
-    return agent?.permissionPolicy
-  },
-  getCloseOnTurnEnd: async (agentId) => {
-    const agent = await registry.get(agentId)
-    return agent?.closeOnTurnEnd === true
-  },
-  onScheduleCloseOnTurnEnd: (agentId) => {
-    const graceMs = resolveCloseOnTurnEndGraceMs(process.env.CLOSE_ON_TURN_END_GRACE_MS)
-    setTimeout(() => {
-      void orchestratorRef?.deleteAndKill(agentId).catch((err) => {
-        log.warn(
-          { err, agentId },
-          "closeOnTurnEnd: deleteAndKill failed after grace",
-        )
-      })
-    }, graceMs)
-  },
-})
+const agentSessionRegistry = createAndRegisterSessionHostHttp(
+  app,
+  connectionRegistry,
+  createSessionHostRegistryOpts({
+    registry,
+    projectsRegistry,
+    acpSessionIdCache,
+    agentEventBus,
+    getOrchestrator: () => orchestratorRef,
+    evictionController,
+  }),
+)
 
 const orchestrator = createAgentOrchestrator({
   registry,
@@ -172,9 +160,10 @@ const orchestrator = createAgentOrchestrator({
   // agentSessionRegistry נוצר למעלה (לפני ה-orchestrator) — ר' ההערה שם.
   sessionHostRegistry: agentSessionRegistry,
 })
-const { eventBus: agentEventBus, orchestrator: orchestratorWithEvents } = bootAgentEvents(app, {
+const { orchestrator: orchestratorWithEvents } = bootAgentEvents(app, {
   registry,
   orchestrator,
+  eventBus: agentEventBus,
 })
 orchestratorRef = orchestratorWithEvents
 

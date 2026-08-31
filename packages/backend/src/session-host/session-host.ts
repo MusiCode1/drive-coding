@@ -56,7 +56,8 @@ import type { AcpTransport } from "@drive-coding/provider/transport"
 import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
 
 type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
-import { isCleanTurnEndForClose } from "./close-on-turn-end.js"
+import { createTurnLifecycleHandlers } from "./turn-lifecycle.js"
+import { msgOf } from "./error-message.js"
 import { createPendingRequests } from "./pending-requests.js"
 
 // ─── C2: createSessionHost ───────────────────────────────────────────────────
@@ -260,6 +261,11 @@ export type SessionHostFromConnOptions = {
   /** Called once after the first eligible turn end — server wires deleteAndKill. */
   onScheduleCloseOnTurnEnd?: () => void
   /**
+   * slice be-events-subscribe C1: called after applyTurnEnd when patches.length > 0.
+   * Always wired for every host — independent of closeOnTurnEnd / notifyOnDone.
+   */
+  onTurnEnded?: (info: import("./agent-events-turn.js").TurnEndedInfo) => void
+  /**
    * slice ownership-handoff C4: warm reattach — agent already initialized.
    * Uses createAttachedAcpClient (skips initialize) + loadSession (restores state).
    * Omit for cold start (normal path: createAcpClient + newSession).
@@ -384,6 +390,7 @@ export async function createSessionHostFromConnection(
     permissionPolicy,
     closeOnTurnEnd,
     onScheduleCloseOnTurnEnd,
+    onTurnEnded,
     warmReattach,
     _createAcpClient = createAcpClient,
   } = opts
@@ -444,44 +451,22 @@ export async function createSessionHostFromConnection(
     emitPatches(result.patches)
   }
 
-  // ── C3: turn boundaries ─────────────────────────────────────────────────
-  // turnSeq — מקודם רק ב-prompt (תור חדש). cancelledTurn — מסומן (❌ לא מקודם)
-  // ע"י cancel, ומשפיע רק על מטען-השגיאה — לעולם לא על הפליטה עצמה.
-  let turnSeq = 0
-  let cancelledTurn = -1
-  /** slice session-lifecycle-fields C1: only the first clean turn end may close. */
-  let closeOnTurnEndScheduled = false
-
-  /**
-   * After applyTurnEnd emit on success (720) or cancel (912) — NOT error path (729).
-   * Error-path agents stay in the list as evidence (Avigail finding 2).
-   */
-  function maybeScheduleCloseOnTurnEnd(): void {
-    if (!closeOnTurnEnd || closeOnTurnEndScheduled || disposed) return
-    if (!isCleanTurnEndForClose(currentState)) return
-    closeOnTurnEndScheduled = true
-    onScheduleCloseOnTurnEnd?.()
-  }
-
   /** מיישם {state,patches} על currentState + פולט — עוזר-IO מקומי. */
   function emit(r: { state: SessionState; patches: Patch[] }): void {
     currentState = r.state
     emitPatches(r.patches)
   }
 
-  /** אותה קדימות כמו formatAcpError ב-FE: data.details → data.message → message → String(e). */
-  function msgOf(err: unknown): string {
-    if (err && typeof err === "object") {
-      const e = err as { message?: unknown; data?: unknown }
-      if (e.data && typeof e.data === "object") {
-        const data = e.data as { details?: unknown; message?: unknown }
-        if (typeof data.details === "string" && data.details.length > 0) return data.details
-        if (typeof data.message === "string" && data.message.length > 0) return data.message
-      }
-      if (typeof e.message === "string" && e.message.length > 0) return e.message
-    }
-    return String(err)
-  }
+  // ── C3: turn boundaries ─────────────────────────────────────────────────
+  const { turn: turnLifecycle, emitTurnEnd, maybeScheduleCloseOnTurnEnd } =
+    createTurnLifecycleHandlers({
+      getState: () => currentState,
+      emit,
+      closeOnTurnEnd,
+      onScheduleCloseOnTurnEnd,
+      onTurnEnded,
+      disposed: () => disposed,
+    })
 
   // ── PendingRequests for permission + elicitation ──────────────────────────
   // slice session-host-pending-surface C4: מונה requestId משותף יחיד — לא שני
@@ -738,7 +723,7 @@ export async function createSessionHostFromConnection(
       meta?: Record<string, unknown>,
     ): Promise<void> {
       if (disposed) throw new Error("SessionHost disposed")
-      const turn = ++turnSeq
+      const turn = ++turnLifecycle.turnSeq
       emit(applyTurnStart(currentState)) // 1. waiting — לפני ה-await, ולפני add-message (hotfix)
       const msg = synthesizeUserMessage(currentState, content, meta)
       const applied = applyUserMessage(currentState, msg)
@@ -746,8 +731,8 @@ export async function createSessionHostFromConnection(
       emitPatches(applied.patches) // 2. add-message — role="user" משמר waiting (מלכודת ג')
       try {
         await client.prompt(sessionId, content)
-        if (turn === turnSeq) {
-          emit(applyTurnEnd(currentState)) // 3א. הצלחה
+        if (turn === turnLifecycle.turnSeq) {
+          emitTurnEnd(applyTurnEnd(currentState), { stopReason: "end_turn" }) // 3א. הצלחה
           maybeScheduleCloseOnTurnEnd()
           // slice http-state-gaps C3: refresh quota at turn end — the brief asked for
           // it and it was missing (calev finding 7). A turn is exactly when usage
@@ -755,9 +740,15 @@ export async function createSessionHostFromConnection(
           if (currentState.sessionId) startQuotaFetch(currentState.sessionId)
         }
       } catch (err) {
-        if (turn === turnSeq) {
-          const error = turn === cancelledTurn ? undefined : { message: msgOf(err), at: Date.now() }
-          emit(applyTurnEnd(currentState, error)) // 3ב. שגיאה — אין closeOnTurnEnd (הסוכן נשאר כראיה)
+        if (turn === turnLifecycle.turnSeq) {
+          const error =
+            turn === turnLifecycle.cancelledTurn
+              ? undefined
+              : { message: msgOf(err), at: Date.now() }
+          emitTurnEnd(applyTurnEnd(currentState, error), {
+            stopReason: error?.message,
+            lastTurnError: error ?? null,
+          }) // 3ב. שגיאה — אין closeOnTurnEnd (הסוכן נשאר כראיה)
         }
         throw err // rethrow — הקורא הישיר עדיין רואה את השגיאה
       }
@@ -832,8 +823,8 @@ export async function createSessionHostFromConnection(
     } & SessionMcpOpts): Promise<{ sessionId: string; version: number }> {
       if (disposed) throw new Error("SessionHost disposed")
       // 1. Invalidate turns of the outgoing session.
-      turnSeq++
-      cancelledTurn = -1
+      turnLifecycle.turnSeq++
+      turnLifecycle.cancelledTurn = -1
       // slice http-state-gaps: invalidate the outgoing session's quota fetch HERE,
       // before any await. Advancing it only after client.loadSession resolves left a
       // window where session A's quota response passed the guard and was written onto
@@ -933,15 +924,15 @@ export async function createSessionHostFromConnection(
 
     async cancel(sessionId: string) {
       if (disposed) throw new Error("SessionHost disposed")
-      const turn = turnSeq // מסמן, ❌ לא מקדם
-      cancelledTurn = turn
+      const turn = turnLifecycle.turnSeq // מסמן, ❌ לא מקדם
+      turnLifecycle.cancelledTurn = turn
       try {
         await client.cancel(sessionId)
       } catch {
         // best-effort — תואם ל-local
       }
-      if (turn === turnSeq) {
-        emit(applyTurnEnd(currentState)) // אותה גדר בדיוק כמו ב-prompt
+      if (turn === turnLifecycle.turnSeq) {
+        emitTurnEnd(applyTurnEnd(currentState), { stopReason: "cancelled" }) // אותה גדר בדיוק כמו ב-prompt
         maybeScheduleCloseOnTurnEnd()
       }
     },
