@@ -102,7 +102,7 @@ export const MCP_TOOL_META: Record<
   session_subscribe: {
     title: "Subscribe to agent events",
     description:
-      "Register the caller (or an explicit subscriber UUID) to receive turn-ended and stall-suspected events for the target agent. Idempotent — duplicate subscribe is a no-op. Requires agent (target). subscriber defaults to X-Drive-Coding-Agent when present.",
+      "Register the caller (or an explicit subscriber UUID) to receive turn-ended and stall-suspected events for the target agent. Duplicate subscribe with the same options is a no-op; repeating with new options (e.g. includeLastAssistantText) updates the subscription. Requires agent (target). subscriber defaults to X-Drive-Coding-Agent when present.",
   },
 }
 
