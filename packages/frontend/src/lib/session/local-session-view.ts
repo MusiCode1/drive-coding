@@ -274,7 +274,7 @@ export class LocalSessionView implements SessionView {
   async newSession(_cwd?: string): Promise<void> {
     this.#state = { ...this.#state, status: "connecting" }
     this.#client = await this.#createClientFn(this.#makeCallbacks())
-    const result = await this.#client.newSession({ cwd: this.#cwd })
+    const result = await this.#client.newSession({ cwd: this.#cwd, mcpServers: [] })
     const sessionId = (result as { sessionId?: string }).sessionId ?? null
     this.#sessionId = sessionId
     this.#state = { ...this.#state, status: "connected", sessionId }
@@ -289,7 +289,7 @@ export class LocalSessionView implements SessionView {
   async loadSession(sessionId: string, cwd?: string): Promise<void> {
     this.#state = { ...this.#state, status: "connecting" }
     this.#client = await this.#createClientFn(this.#makeCallbacks())
-    await this.#client.loadSession({ sessionId, cwd: cwd ?? this.#cwd })
+    await this.#client.loadSession({ sessionId, cwd: cwd ?? this.#cwd, mcpServers: [] })
     this.#sessionId = sessionId
     this.#state = { ...this.#state, status: "connected", sessionId }
     await this.#refreshQuota()

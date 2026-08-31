@@ -333,7 +333,7 @@ describe("AgentSession.newSession", () => {
 
     await session.newSession({ cliKind: "opencode" })
 
-    expect(mockClient.newSession).toHaveBeenCalledWith({ cwd: "/tmp" })
+    expect(mockClient.newSession).toHaveBeenCalledWith({ cwd: "/tmp", mcpServers: [] })
     expect(session.bubbles).toHaveLength(0)
     expect(session.status).toBe("connected")
   })
@@ -408,6 +408,7 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
     >)
     expect(mockClient.newSession).toHaveBeenCalledWith({
       cwd: "/proj",
+      mcpServers: [],
       _meta: EXPECTED_META,
     })
   })
@@ -421,7 +422,7 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
     const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<
       typeof createAcpClient
     >)
-    expect(mockClient.newSession).toHaveBeenCalledWith({ cwd: "/tmp" })
+    expect(mockClient.newSession).toHaveBeenCalledWith({ cwd: "/tmp", mcpServers: [] })
   })
 
   // ── loadSession (cold) with claude → _meta injected ──
@@ -436,6 +437,7 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
     expect(mockClient.loadSession).toHaveBeenCalledWith({
       sessionId: "sess-1",
       cwd: "/proj",
+      mcpServers: [],
       _meta: EXPECTED_META,
     })
   })
@@ -449,7 +451,11 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
     const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<
       typeof createAcpClient
     >)
-    expect(mockClient.loadSession).toHaveBeenCalledWith({ sessionId: "sess-2", cwd: "/tmp" })
+    expect(mockClient.loadSession).toHaveBeenCalledWith({
+      sessionId: "sess-2",
+      cwd: "/tmp",
+      mcpServers: [],
+    })
   })
 })
 

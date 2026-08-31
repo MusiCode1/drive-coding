@@ -1397,6 +1397,7 @@ export class AgentSession {
           const loadResult = await this.#client.loadSession({
             sessionId: this.#sessionId!,
             cwd: this.cwd!,
+            mcpServers: [],
             ...(m && { _meta: m }),
           })
           this.#captureSessionConfig(loadResult)
@@ -1504,6 +1505,7 @@ export class AgentSession {
       const m = this.#sessionMeta()
       const sessionResult = await this.#client.newSession({
         cwd: input.cwd,
+        mcpServers: [],
         ...(m && { _meta: m }),
       })
       this.#sessionId = (sessionResult as { sessionId?: string }).sessionId ?? null
@@ -2082,6 +2084,7 @@ export class AgentSession {
         const loadResult = await this.#client.loadSession({
           sessionId: input.sessionId,
           cwd: input.cwd,
+          mcpServers: [],
           ...(m && { _meta: m }),
         })
         this.#captureSessionConfig(loadResult) // slice 23: לכוד config (sessionId מ-input, לא מ-response)
@@ -2257,6 +2260,7 @@ export class AgentSession {
         const loadResult = await this.#client.loadSession({
           sessionId: input.sessionId,
           cwd: input.cwd,
+          mcpServers: [],
           ...(m && { _meta: m }),
         })
         this.#captureSessionConfig(loadResult)
@@ -2354,7 +2358,11 @@ export class AgentSession {
 
     try {
       const m = this.#sessionMeta()
-      const result = await this.#client.newSession({ cwd, ...(m && { _meta: m }) })
+      const result = await this.#client.newSession({
+        cwd,
+        mcpServers: [],
+        ...(m && { _meta: m }),
+      })
       const newId = (result as { sessionId?: string }).sessionId ?? null
       if (!newId) throw new Error("newSession returned no sessionId")
       this.#sessionId = newId

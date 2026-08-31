@@ -49,7 +49,8 @@ export function buildAgentMcpServers(
 
 /**
  * MCP wiring for session/new|load — only when the agent declared http MCP in initialize.
- * Returns undefined to omit the field entirely (some SDKs reject mcpServers even when []).
+ * Returns undefined when not injecting; callers should pass `?? []` so the ACP wire
+ * always carries a required array (some older paths omitted the field entirely).
  * `baseUrl` may be a thunk so callers can avoid resolving listen URL when MCP is omitted.
  */
 export function optionalAgentMcpServers(

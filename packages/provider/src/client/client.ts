@@ -134,13 +134,15 @@ export type AcpClient = {
   authMethods: ReadonlyArray<AuthMethod>
   newSession(opts: {
     cwd: string
-    mcpServers?: NewSessionRequest["mcpServers"]
+    /** Required by ACP NewSessionRequest — never omit on the wire. */
+    mcpServers: NewSessionRequest["mcpServers"]
     _meta?: AcpRequestMeta
   }): ReturnType<ClientSideConnection["newSession"]>
   loadSession(opts: {
     cwd: string
     sessionId: string
-    mcpServers?: NewSessionRequest["mcpServers"]
+    /** Required by ACP LoadSessionRequest — never omit on the wire. */
+    mcpServers: NewSessionRequest["mcpServers"]
     _meta?: AcpRequestMeta
   }): ReturnType<ClientSideConnection["loadSession"]>
   listSessions(): ReturnType<ClientSideConnection["listSessions"]>
@@ -225,12 +227,12 @@ function buildAcpClientFacade(
     /** יוצר session ACP חדש */
     async newSession(opts: {
       cwd: string
-      mcpServers?: NewSessionRequest["mcpServers"]
+      mcpServers: NewSessionRequest["mcpServers"]
       _meta?: AcpRequestMeta
     }) {
       return conn.newSession({
         cwd: opts.cwd,
-        ...(opts.mcpServers !== undefined && { mcpServers: opts.mcpServers }),
+        mcpServers: opts.mcpServers,
         ...(opts._meta != null && { _meta: opts._meta }),
       })
     },
@@ -242,13 +244,13 @@ function buildAcpClientFacade(
     async loadSession(opts: {
       cwd: string
       sessionId: string
-      mcpServers?: NewSessionRequest["mcpServers"]
+      mcpServers: NewSessionRequest["mcpServers"]
       _meta?: AcpRequestMeta
     }) {
       return conn.loadSession({
         sessionId: opts.sessionId,
         cwd: opts.cwd,
-        ...(opts.mcpServers !== undefined && { mcpServers: opts.mcpServers }),
+        mcpServers: opts.mcpServers,
         ...(opts._meta != null && { _meta: opts._meta }),
       })
     },

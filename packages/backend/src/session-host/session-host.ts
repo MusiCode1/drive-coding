@@ -216,14 +216,20 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
 
     async newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts) {
       if (disposed) throw new Error("SessionHost disposed")
-      return client.newSession(opts) as Promise<{ sessionId: string }>
+      return client.newSession({
+        ...opts,
+        mcpServers: opts.mcpServers ?? [],
+      }) as Promise<{ sessionId: string }>
     },
 
     async loadSession(
       opts: { cwd: string; sessionId: string; _meta?: Record<string, unknown> } & SessionMcpOpts,
     ) {
       if (disposed) throw new Error("SessionHost disposed")
-      return client.loadSession(opts) as Promise<{ sessionId: string }>
+      return client.loadSession({
+        ...opts,
+        mcpServers: opts.mcpServers ?? [],
+      }) as Promise<{ sessionId: string }>
     },
     async cancel(sessionId: string) {
       if (disposed) throw new Error("SessionHost disposed")
@@ -838,9 +844,10 @@ export async function createSessionHostFromConnection(
     async newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts) {
       if (disposed) throw new Error("SessionHost disposed")
       const hadSession = currentState.sessionId !== null
+      const sessionOpts = { ...opts, mcpServers: opts.mcpServers ?? [] }
 
       if (!hadSession) {
-        const result = (await client.newSession(opts)) as {
+        const result = (await client.newSession(sessionOpts)) as {
           sessionId: string
           configOptions?: SessionConfigOption[]
         }
@@ -873,7 +880,7 @@ export async function createSessionHostFromConnection(
       currentState = { ...currentState, sessionId: "__drive_switching__" }
 
       try {
-        const result = (await client.newSession(opts)) as {
+        const result = (await client.newSession(sessionOpts)) as {
           sessionId: string
           configOptions?: SessionConfigOption[]
         }
@@ -923,7 +930,10 @@ export async function createSessionHostFromConnection(
 
       // 6.
       try {
-        const result = (await client.loadSession(opts)) as {
+        const result = (await client.loadSession({
+          ...opts,
+          mcpServers: opts.mcpServers ?? [],
+        })) as {
           sessionId: string
           configOptions?: unknown[]
         }

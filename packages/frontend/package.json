@@ -16,7 +16,7 @@
   "dependencies": {
     "@agentclientprotocol/sdk": "^1.2.1",
     "@ai-sdk/google": "^3.0.75",
-    "@drive-coding/acp-wire/browser": "workspace:*",
+    "@drive-coding/acp-wire": "workspace:*",
     "@drive-coding/core": "workspace:*",
     "@drive-coding/provider": "workspace:*",
     "@google/genai": "^2.3.0",

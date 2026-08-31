@@ -109,7 +109,7 @@ describe("LocalSessionView — connection", () => {
     await view.newSession()
 
     expect(cbsCaptured).not.toBeNull()
-    expect(mock.client.newSession).toHaveBeenCalledWith({ cwd: "/workspace" })
+    expect(mock.client.newSession).toHaveBeenCalledWith({ cwd: "/workspace", mcpServers: [] })
     expect(view.state.status).toBe("connected")
     expect(view.state.sessionId).toBe("s-test")
   })
@@ -125,7 +125,11 @@ describe("LocalSessionView — connection", () => {
     await view.loadSession("existing-session-42")
 
     expect(mock.client.loadSession).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "existing-session-42", cwd: "/workspace" }),
+      expect.objectContaining({
+        sessionId: "existing-session-42",
+        cwd: "/workspace",
+        mcpServers: [],
+      }),
     )
     expect(view.state.status).toBe("connected")
     expect(view.state.sessionId).toBe("existing-session-42")

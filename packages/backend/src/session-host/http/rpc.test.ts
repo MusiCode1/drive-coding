@@ -658,7 +658,7 @@ describe("POST /api/agents/:id/rpc", () => {
       expect(host.loadSession).not.toHaveBeenCalled()
     })
 
-    it("omits mcpServers when agent did not declare http MCP in initialize", async () => {
+    it("passes empty mcpServers when agent did not declare http MCP in initialize", async () => {
       const host = makeMockHost(makeMockState())
       ;(host as ExtendedSessionHost).agentCapabilities = {}
       ;(host.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -673,7 +673,11 @@ describe("POST /api/agents/:id/rpc", () => {
         params: { sessionId: "sess-9", cwd: "/from/params" },
       })
       expect(res.status).toBe(200)
-      expect(host.loadSession).toHaveBeenCalledWith({ cwd: "/from/params", sessionId: "sess-9" })
+      expect(host.loadSession).toHaveBeenCalledWith({
+        cwd: "/from/params",
+        sessionId: "sess-9",
+        mcpServers: [],
+      })
     })
 
     it("missing sessionId in params → 400 (ArkType), host.loadSession never called", async () => {

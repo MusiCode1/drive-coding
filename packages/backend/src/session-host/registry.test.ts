@@ -777,7 +777,7 @@ describe("AgentSessionRegistry", () => {
       expect(connectionRegistry.getCwd).toHaveBeenCalledWith("agent-1")
     })
 
-    it("omits mcpServers when agent did not declare http MCP in initialize", async () => {
+    it("passes empty mcpServers when agent did not declare http MCP in initialize", async () => {
       const conn = makeMockConnection()
       const connectionRegistry = makeMockConnectionRegistry(conn)
       const mockHost = makeMockHost(null)
@@ -791,7 +791,7 @@ describe("AgentSessionRegistry", () => {
 
       await registry.getOrCreateHost("agent-1")
 
-      expect(mockHost.newSession).toHaveBeenCalledWith({ cwd: "/tmp/mock-cwd" })
+      expect(mockHost.newSession).toHaveBeenCalledWith({ cwd: "/tmp/mock-cwd", mcpServers: [] })
     })
 
     it("does not call host.newSession again if host already has a sessionId", async () => {

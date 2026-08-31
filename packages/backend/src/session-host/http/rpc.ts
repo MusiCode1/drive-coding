@@ -358,15 +358,12 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
         const cwd = p.cwd ?? registry.getCwd(agentId)
         if (!cwd) return c.json({ error: "no cwd available" }, 400)
         try {
-          const mcpServers = optionalAgentMcpServers(
-            agentId,
-            getSelfBaseUrl,
-            host.agentCapabilities,
-          )
+          const mcpServers =
+            optionalAgentMcpServers(agentId, getSelfBaseUrl, host.agentCapabilities) ?? []
           const r = await host.loadSession({
             cwd,
             sessionId: p.sessionId,
-            ...(mcpServers !== undefined && { mcpServers }),
+            mcpServers,
           })
           // The agents registry must learn the newly-attached session
           // (status/acpSessionId — remote-warm-reconnect plumbing). catch+warn:
@@ -393,16 +390,13 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
         const cwd = p.cwd ?? registry.getCwd(agentId)
         if (!cwd) return c.json({ error: "no cwd available" }, 400)
         try {
-          const mcpServers = optionalAgentMcpServers(
-            agentId,
-            getSelfBaseUrl,
-            host.agentCapabilities,
-          )
+          const mcpServers =
+            optionalAgentMcpServers(agentId, getSelfBaseUrl, host.agentCapabilities) ?? []
           const claudeMeta =
             registry.getCliKind(agentId) === "claude" ? CLAUDE_SESSION_META : undefined
           const r = await host.newSession({
             cwd,
-            ...(mcpServers !== undefined && { mcpServers }),
+            mcpServers,
             ...(claudeMeta !== undefined && { _meta: claudeMeta }),
           })
           try {

@@ -381,8 +381,8 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       // Session init: warm reattach uses loadSession; cold uses newSession.
       // Skip if host already has a sessionId (injected-ready host in tests).
       if (!host.state.sessionId) {
-        const mcpServers = optionalAgentMcpServers(agentId, getSelfBaseUrl, host.agentCapabilities)
-        const sessionBase = { cwd, ...(mcpServers !== undefined && { mcpServers }) }
+        const mcpServers = optionalAgentMcpServers(agentId, getSelfBaseUrl, host.agentCapabilities) ?? []
+        const sessionBase = { cwd, mcpServers }
         if (acpSessionId) {
           await host.loadSession({ ...sessionBase, sessionId: acpSessionId })
         } else {

@@ -80,7 +80,7 @@ describe("createAttachedAcpClient", () => {
 
     // Fire loadSession — don't await (no server to respond); just verify the frame
     // is enqueued on the wire. The Promise will remain pending.
-    void client.loadSession({ sessionId: "test-session", cwd: "/tmp" })
+    void client.loadSession({ sessionId: "test-session", cwd: "/tmp", mcpServers: [] })
 
     // Allow microtask queue to flush the write.
     await Promise.resolve()
