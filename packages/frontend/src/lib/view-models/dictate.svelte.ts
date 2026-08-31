@@ -1,5 +1,5 @@
 /**
- * Dictate — type-to-input speech capture (append to draft, never sendPrompt).
+ * Dictate — type-to-input speech capture (append to draft only; never sends to agent).
  * (slice dictate-to-input, C1)
  *
  * State machine: idle → listening → busy → idle

@@ -39,9 +39,11 @@ function controlMinHeights(form: HTMLElement, supportsImageInput: boolean): stri
   const stop = form.querySelector("button.type-area-stop-run")
   const send = form.querySelector('button[type="submit"]')
   const image = form.querySelector('button[aria-label="attach.addImage"]')
+  const dictate = form.querySelector('button[aria-label="dictate.start"]')
 
   const controls: Element[] = []
   if (supportsImageInput && image) controls.push(image)
+  if (dictate) controls.push(dictate)
   if (textarea) controls.push(textarea)
   if (send) controls.push(send)
   if (stop) controls.push(stop)
@@ -58,7 +60,7 @@ describe("TypeArea — control height token (type-area-align)", () => {
       expect(form.style.getPropertyValue("--control-h")).toBe("2.5rem")
 
       const heights = controlMinHeights(form, supportsImageInput)
-      const expectedCount = supportsImageInput ? 4 : 3
+      const expectedCount = supportsImageInput ? 5 : 4
       expect(heights).toHaveLength(expectedCount)
       expect(new Set(heights)).toEqual(new Set([CONTROL_MIN_HEIGHT]))
     },
@@ -69,7 +71,7 @@ describe("TypeArea — control height token (type-area-align)", () => {
     (supportsImageInput) => {
       mountHarness(supportsImageInput)
       const iconControls = target?.querySelectorAll("button.type-area-icon-control")
-      expect(iconControls?.length).toBe(supportsImageInput ? 2 : 1)
+      expect(iconControls?.length).toBe(supportsImageInput ? 3 : 2)
     },
   )
 })
