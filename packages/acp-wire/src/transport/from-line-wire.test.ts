@@ -1,25 +1,23 @@
 /**
- * in-process-acp-transport.test.ts — TDD tests for InProcessAcpTransport (C1).
- *
- * Testing: tdd (brief §C1)
+ * from-line-wire.test.ts — TDD tests for createFromLineWire.
  *
  * Tests:
  *   - readable: lines from onLine arrive as Uint8Array chunks with \n suffix
- *   - writable: Uint8Array written triggers conn.wire.write (re-adds \n — NDJSON child framing)
+ *   - writable: Uint8Array written triggers wire.write (re-adds \n — NDJSON child framing)
  *   - writable: line-buffer/split on \n — SDK chunks may be multi-line or partial
  *   - close(): after close, no more writes or callbacks
- *   - onClose: maps to conn.onCrash — BridgeCrashInfo → (code, reason) adapter
+ *   - onClose: maps onCrash — LineWireCrashInfo → (code, reason) adapter
  *   - TextEncoder/TextDecoder: string ↔ Uint8Array
  */
 
 import { describe, expect, it, vi } from "vitest"
-import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
-import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
+import {
+  createFromLineWire,
+  type LineWireCrashInfo,
+} from "./from-line-wire.js"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-// ⚠️ חתימות מדויקות ולא ReturnType<typeof vi.fn> — הטרנספורט דורש
-// onLine/write/onCrash בחתימה ספציפית, ו-Mock גנרי אינו assignable אליה.
 type MockWire = {
   onLine: ((cb: (line: string) => void) => () => void) & ReturnType<typeof vi.fn>
   write: ((line: string) => boolean) & ReturnType<typeof vi.fn>
@@ -27,13 +25,13 @@ type MockWire = {
 }
 
 type MockOnCrash = {
-  onCrash: ((cb: (info: BridgeCrashInfo) => void) => () => void) & ReturnType<typeof vi.fn>
-  _triggerCrash: (info: BridgeCrashInfo) => void
+  onCrash: ((cb: (info: LineWireCrashInfo) => void) => () => void) & ReturnType<typeof vi.fn>
+  _triggerCrash: (info: LineWireCrashInfo) => void
 }
 
 function makeMockConnection(): MockWire & MockOnCrash {
   const lineListeners: Array<(line: string) => void> = []
-  const crashListeners: Array<(info: BridgeCrashInfo) => void> = []
+  const crashListeners: Array<(info: LineWireCrashInfo) => void> = []
 
   return {
     onLine: vi.fn((cb: (line: string) => void) => {
@@ -44,7 +42,7 @@ function makeMockConnection(): MockWire & MockOnCrash {
       }
     }),
     write: vi.fn(() => true),
-    onCrash: vi.fn((cb: (info: BridgeCrashInfo) => void) => {
+    onCrash: vi.fn((cb: (info: LineWireCrashInfo) => void) => {
       crashListeners.push(cb)
       return () => {
         const i = crashListeners.indexOf(cb)
@@ -54,7 +52,7 @@ function makeMockConnection(): MockWire & MockOnCrash {
     _triggerLine(line: string) {
       lineListeners.forEach((cb) => cb(line))
     },
-    _triggerCrash(info: BridgeCrashInfo) {
+    _triggerCrash(info: LineWireCrashInfo) {
       crashListeners.forEach((cb) => cb(info))
     },
   }
@@ -82,11 +80,11 @@ const enc = new TextEncoder()
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
-describe("InProcessAcpTransport", () => {
+describe("createFromLineWire", () => {
   describe("readable — onLine → Uint8Array with \\n suffix", () => {
     it("emits a Uint8Array chunk for each onLine event, with \\n appended", async () => {
       const mock = makeMockConnection()
-      const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+      const transport = createFromLineWire({ wire: mock, onCrash: mock.onCrash })
 
       const chunksPromise = readChunks(transport.readable, 2)
 
@@ -100,18 +98,15 @@ describe("InProcessAcpTransport", () => {
 
     it("subscribes to wire.onLine in constructor", () => {
       const mock = makeMockConnection()
-      createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+      createFromLineWire({ wire: mock, onCrash: mock.onCrash })
       expect(mock.onLine).toHaveBeenCalledOnce()
     })
   })
 
-  describe("writable — Uint8Array → conn.wire.write with line-buffering", () => {
-    // חוזה ה-wire של spawn (spawn-core.writeStdin כותב verbatim, "wrapper normalizes")
-    // מחייב שורה מסיימת-\n — בדיוק כמו הנתיב המקומי (ws-agent.ts:170 מוסיף \n במפורש).
-    // בלי ה-\n ה-CLI (readline/NDJSON) לא רואה שורה שלמה → initialize נתקע.
-    it("writes a single complete line to conn.wire.write with \\n terminator", async () => {
+  describe("writable — Uint8Array → wire.write with line-buffering", () => {
+    it("writes a single complete line to wire.write with \\n terminator", async () => {
       const mock = makeMockConnection()
-      const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+      const transport = createFromLineWire({ wire: mock, onCrash: mock.onCrash })
 
       const writer = transport.writable.getWriter()
       await writer.write(enc.encode('{"method":"prompt"}\n'))
@@ -122,10 +117,9 @@ describe("InProcessAcpTransport", () => {
 
     it("buffers a partial chunk and flushes when \\n arrives in next write", async () => {
       const mock = makeMockConnection()
-      const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+      const transport = createFromLineWire({ wire: mock, onCrash: mock.onCrash })
 
       const writer = transport.writable.getWriter()
-      // Simulate SDK sending {"me split across two chunks
       await writer.write(enc.encode('{"me'))
       await writer.write(enc.encode('thod":"x"}\n'))
       await writer.releaseLock()
@@ -136,7 +130,7 @@ describe("InProcessAcpTransport", () => {
 
     it("handles multiple lines in a single chunk", async () => {
       const mock = makeMockConnection()
-      const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+      const transport = createFromLineWire({ wire: mock, onCrash: mock.onCrash })
 
       const writer = transport.writable.getWriter()
       await writer.write(enc.encode('{"id":1}\n{"id":2}\n'))
@@ -151,7 +145,7 @@ describe("InProcessAcpTransport", () => {
   describe("close()", () => {
     it("calling close() cancels the readable (done=true on next read)", async () => {
       const mock = makeMockConnection()
-      const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+      const transport = createFromLineWire({ wire: mock, onCrash: mock.onCrash })
 
       transport.close()
 
@@ -161,36 +155,32 @@ describe("InProcessAcpTransport", () => {
       expect(done).toBe(true)
     })
 
-    // slice handoff-foundations C1 DoD 1: close() removes crash subscriptions.
-    // Previously onClose() discarded the unsubscribe handle — the crash listener
-    // was orphaned at registration. Now close() must remove it.
     it("close() removes crash subscriptions registered via onClose (crash no longer fires)", () => {
       const mock = makeMockConnection()
-      const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+      const transport = createFromLineWire({ wire: mock, onCrash: mock.onCrash })
 
       const onCloseCb = vi.fn()
       transport.onClose(onCloseCb)
 
       transport.close()
 
-      // After close, a crash must NOT reach the onClose callback
       mock._triggerCrash({ exitCode: 1, signal: null })
       expect(onCloseCb).not.toHaveBeenCalled()
     })
 
     it("close() is idempotent — calling twice does not throw", () => {
       const mock = makeMockConnection()
-      const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+      const transport = createFromLineWire({ wire: mock, onCrash: mock.onCrash })
 
       expect(() => transport.close()).not.toThrow()
       expect(() => transport.close()).not.toThrow()
     })
   })
 
-  describe("onClose — adapter: conn.onCrash → (code?, reason?)", () => {
-    it("registers onClose callback via conn.onCrash", () => {
+  describe("onClose — adapter: onCrash → (code?, reason?)", () => {
+    it("registers onClose callback via onCrash", () => {
       const mock = makeMockConnection()
-      const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+      const transport = createFromLineWire({ wire: mock, onCrash: mock.onCrash })
 
       const onCloseCb = vi.fn()
       transport.onClose(onCloseCb)
@@ -198,9 +188,9 @@ describe("InProcessAcpTransport", () => {
       expect(mock.onCrash).toHaveBeenCalledOnce()
     })
 
-    it("when conn crashes with exitCode, calls onClose(code, reason)", () => {
+    it("when peer crashes with exitCode, calls onClose(code, reason)", () => {
       const mock = makeMockConnection()
-      const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+      const transport = createFromLineWire({ wire: mock, onCrash: mock.onCrash })
 
       const onCloseCb = vi.fn()
       transport.onClose(onCloseCb)
@@ -210,9 +200,9 @@ describe("InProcessAcpTransport", () => {
       expect(onCloseCb).toHaveBeenCalledWith(1, expect.any(String))
     })
 
-    it("when conn crashes with signal, calls onClose(1, signal-string)", () => {
+    it("when peer crashes with signal, calls onClose(1, signal-string)", () => {
       const mock = makeMockConnection()
-      const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+      const transport = createFromLineWire({ wire: mock, onCrash: mock.onCrash })
 
       const onCloseCb = vi.fn()
       transport.onClose(onCloseCb)
@@ -222,9 +212,9 @@ describe("InProcessAcpTransport", () => {
       expect(onCloseCb).toHaveBeenCalledWith(1, "SIGKILL")
     })
 
-    it("when conn crashes cleanly (exitCode=0, no signal), calls onClose(0, '')", () => {
+    it("when peer crashes cleanly (exitCode=0, no signal), calls onClose(0, '')", () => {
       const mock = makeMockConnection()
-      const transport = createInProcessAcpTransport({ wire: mock, onCrash: mock.onCrash })
+      const transport = createFromLineWire({ wire: mock, onCrash: mock.onCrash })
 
       const onCloseCb = vi.fn()
       transport.onClose(onCloseCb)

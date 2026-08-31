@@ -12,3 +12,7 @@ export {
 export { inboundKind, outboundSink } from "./streamable-http/routing.js"
 export { listenHttp, type HttpListenHandle } from "./streamable-http/server.js"
 export { createHttpClient, type HttpAcpClient } from "./streamable-http/client.js"
+export {
+  createFromLineWire,
+  createInProcessAcpTransport,
+} from "./transport/from-line-wire.js"
