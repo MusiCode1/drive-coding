@@ -478,6 +478,8 @@ export type MessageKey =
   | "settings.notifications.title"
   | "settings.toggle.notifications"
   | "settings.notifications.blocked"
+  | "settings.notifications.quietHint"
+  | "settings.notifications.retry"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

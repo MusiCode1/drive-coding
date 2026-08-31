@@ -143,6 +143,61 @@ const sessionTransportDisplay = $derived(
   settings.sessionTransport ??
     resolveSessionTransport({ stored: null, env: env.PUBLIC_SESSION_TRANSPORT }),
 )
+
+// ─── notifications quiet-block ─── (slice notify-quiet-prompt)
+let quietHint = $state(false)
+let pendingEnable = $state(false)
+
+function clearQuietHint() {
+  quietHint = false
+  pendingEnable = false
+}
+
+async function onNotificationsChange(v: boolean) {
+  if (v) {
+    if (notify.permission === "default") {
+      const result = await notify.requestPermission()
+      if (result === "granted") {
+        settings.setNotifications(true)
+        clearQuietHint()
+      } else if (result === "denied") {
+        settings.setNotifications(false)
+        clearQuietHint()
+      } else {
+        settings.setNotifications(false)
+        quietHint = true
+        pendingEnable = true
+      }
+    } else if (notify.permission === "granted") {
+      settings.setNotifications(true)
+    }
+  } else {
+    settings.setNotifications(false)
+    clearQuietHint()
+  }
+}
+
+async function retryNotifications() {
+  const result = await notify.requestPermission()
+  if (result === "granted") {
+    settings.setNotifications(true)
+    clearQuietHint()
+  } else if (result === "denied") {
+    settings.setNotifications(false)
+    clearQuietHint()
+  } else {
+    settings.setNotifications(false)
+    quietHint = true
+    pendingEnable = true
+  }
+}
+
+$effect(() => {
+  if (notify.permission === "granted" && pendingEnable) {
+    settings.setNotifications(true)
+    clearQuietHint()
+  }
+})
 </script>
 
 
@@ -235,21 +290,26 @@ const sessionTransportDisplay = $derived(
     />
   </SettingsCard>
 
-  <!-- כרטיס התראות — notify-local -->
+  <!-- כרטיס התראות — notify-local · notify-quiet-prompt -->
   <SettingsCard title={t("settings.notifications.title")}>
     <SettingToggle
       label={t("settings.toggle.notifications")}
       checked={settings.notifications}
       disabled={notify.permission === "unsupported" || notify.permission === "denied"}
-      onCheckedChange={async (v) => {
-        if (v && notify.permission === "default") {
-          await notify.requestPermission()
-        }
-        settings.setNotifications(v)
-      }}
+      onCheckedChange={onNotificationsChange}
     />
     {#if notify.permission === "denied"}
       <p class="text-sm" style="color:var(--fg-dim)">{t("settings.notifications.blocked")}</p>
+    {:else if quietHint}
+      <p class="text-sm" style="color:var(--fg-dim)">{t("settings.notifications.quietHint")}</p>
+      <button
+        type="button"
+        class="text-sm font-medium mt-1"
+        style="color:var(--accent)"
+        onclick={() => void retryNotifications()}
+      >
+        {t("settings.notifications.retry")}
+      </button>
     {/if}
   </SettingsCard>
 

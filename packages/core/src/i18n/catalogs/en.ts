@@ -477,4 +477,7 @@ export const en: Catalog = {
   "settings.notifications.title": "Notifications",
   "settings.toggle.notifications": "Notify when tab is hidden",
   "settings.notifications.blocked": "Notifications are blocked in the browser. Enable them in browser settings.",
+  "settings.notifications.quietHint":
+    "The browser showed a bell in the address bar (unrecognized site). Click it to allow notifications.",
+  "settings.notifications.retry": "Try again",
 }

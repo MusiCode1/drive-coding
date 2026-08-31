@@ -195,8 +195,9 @@ $effect(() => {
   return () => wakeLock.dispose()
 })
 
-// ─── notifications ─── (slice notify-local)
+// ─── notifications ─── (slice notify-local · notify-quiet-prompt)
 const notify = new NotifyEngine({ text: (kind) => notifyTexts(i18n.t, kind) })
+notify.watchPermission()
 $effect(() => notify.setEnabled(settings.notifications))
 $effect(() => () => notify.dispose())
 $effect(() => notify.notifyTurn(session.turnState))
