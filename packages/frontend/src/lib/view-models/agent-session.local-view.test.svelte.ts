@@ -552,7 +552,7 @@ describe("DoD 13 — authMethods · _meta · captureSessionConfig · notify · a
       rename: false,
       thinkingTokens: false,
       image: false,
-      systemPrompt: false,
+      systemPrompt: "unsupported",
     } as never)
     await session.refreshQuota()
     expect(vh.state.client.extMethod).toHaveBeenCalledWith(
