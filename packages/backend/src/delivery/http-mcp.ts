@@ -42,7 +42,7 @@ import { resolveAppVersion } from "../app-version.js"
 import { raceKeepRunning } from "../session-host/http/rpc-wait.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
-import { defaultPublicUrl, loopbackBaseUrl } from "./public-url.js"
+import { defaultPublicUrl, loopbackBaseUrl, type UrlConfig } from "./public-url.js"
 
 const log = createLogger("backend.mcp")
 
@@ -68,6 +68,8 @@ export type McpHttpDeps = {
   registry: AgentRegistry
   orchestrator: AgentOrchestrator
   agentSessionRegistry: AgentSessionRegistry
+  env: NodeJS.ProcessEnv
+  urlConfig: UrlConfig
   /** Test knob when server has not listened (app.request without bind). */
   selfBaseUrl?: string
 }
@@ -149,8 +151,8 @@ function pickSessionState(
   return out
 }
 
-function cliMeta(kind: string): { kind: string; displayName: string } {
-  const spec = getCliSpec(kind, process.env)
+function cliMeta(kind: string, env: NodeJS.ProcessEnv): { kind: string; displayName: string } {
+  const spec = getCliSpec(kind, env)
   return { kind, displayName: spec?.displayName ?? kind }
 }
 
@@ -215,7 +217,7 @@ function createSessionBusMcpServer(
         const host = deps.agentSessionRegistry.getHost(a.id)
         return {
           ...toAgentPublic(a),
-          displayName: cliMeta(a.cliKind).displayName,
+          displayName: cliMeta(a.cliKind, deps.env).displayName,
           pid: rt?.pid ?? null,
           attached: rt?.attached ?? false,
           busy: rt?.busy ?? false,
@@ -238,8 +240,8 @@ function createSessionBusMcpServer(
     async (raw) => {
       const input = raw as typeof AgentOpenInput.infer
       const explicit = input.publicUrl ?? input.base
-      const chatBase = (explicit ?? defaultPublicUrl()).replace(/\/$/, "")
-      const childBase = (explicit ?? loopbackBaseUrl()).replace(/\/$/, "")
+      const chatBase = (explicit ?? defaultPublicUrl(deps.urlConfig)).replace(/\/$/, "")
+      const childBase = (explicit ?? loopbackBaseUrl(deps.urlConfig)).replace(/\/$/, "")
       const env: Record<string, string> = { ...(input.env ?? {}) }
       env.DRIVE_CODING_BASE = childBase
       env.DC_BASE = childBase
@@ -266,7 +268,7 @@ function createSessionBusMcpServer(
       if (effectiveParent !== undefined) body.parentAgentId = effectiveParent
       if (input.closeOnTurnEnd === true) body.closeOnTurnEnd = true
 
-      const parsed = parseCreateAgentBody(body)
+      const parsed = parseCreateAgentBody(body, deps.env)
       if (!parsed.ok) return jsonError(parsed.error.body.error)
 
       const created = await deps.orchestrator.createAndSpawn(parsed.value)
@@ -287,7 +289,7 @@ function createSessionBusMcpServer(
         agent: created.agentId,
         sessionId,
         url: `${chatBase}/chat/${input.cli}/${sessionId}?sessionTransport=http`,
-        cli: cliMeta(input.cli),
+        cli: cliMeta(input.cli, deps.env),
         modes: host?.state.modes,
         configOptions: host?.state.configOptions,
         hint: MCP_CONFIGURE_HINT,
@@ -435,7 +437,7 @@ function createSessionBusMcpServer(
  * Transport + McpServer are built per request (stateless). Do not hoist them.
  */
 export function registerMcpHttp(app: Hono, deps: McpHttpDeps): void {
-  if (process.env.MCP_HTTP === "0") {
+  if (deps.env.MCP_HTTP === "0") {
     log.info({}, "MCP HTTP endpoint disabled (MCP_HTTP=0)")
     return
   }

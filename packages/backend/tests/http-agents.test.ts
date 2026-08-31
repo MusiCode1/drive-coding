@@ -48,7 +48,7 @@ function makeApp(opts?: { projectsRegistry?: ReturnType<typeof makeFakeProjectsR
     getBridgePort: vi.fn(() => 7100),
   }
 
-  registerAgentsHttp(app, { registry, orchestrator, projectsRegistry: opts?.projectsRegistry })
+  registerAgentsHttp(app, { registry, orchestrator, projectsRegistry: opts?.projectsRegistry, env: process.env })
   return { app, registry, orchestrator }
 }
 
@@ -184,7 +184,7 @@ describe("HTTP /api/agents", () => {
         },
         getBridgePort: vi.fn(() => 7100),
       }
-      registerAgentsHttp(app, { registry, orchestrator })
+      registerAgentsHttp(app, { registry, orchestrator, env: process.env })
 
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -235,7 +235,7 @@ describe("HTTP /api/agents", () => {
         },
         getBridgePort: vi.fn(() => 7100),
       }
-      registerAgentsHttp(app, { registry, orchestrator })
+      registerAgentsHttp(app, { registry, orchestrator, env: process.env })
 
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -273,7 +273,7 @@ describe("HTTP /api/agents", () => {
         },
         getBridgePort: vi.fn(() => 7100),
       }
-      registerAgentsHttp(app, { registry, orchestrator })
+      registerAgentsHttp(app, { registry, orchestrator, env: process.env })
 
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -297,7 +297,7 @@ describe("HTTP /api/agents", () => {
         async deleteAndKill() {},
         getBridgePort: vi.fn(() => null),
       }
-      registerAgentsHttp(app, { registry, orchestrator: failingOrchestrator })
+      registerAgentsHttp(app, { registry, orchestrator: failingOrchestrator, env: process.env })
 
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -763,7 +763,7 @@ describe("HTTP /api/agents", () => {
         getConnectionCount: vi.fn(() => 1),
       }
 
-      registerAgentsHttp(app, { registry, orchestrator, bridgeManager })
+      registerAgentsHttp(app, { registry, orchestrator, bridgeManager, env: process.env })
 
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       const res = await app.request("/api/agents")

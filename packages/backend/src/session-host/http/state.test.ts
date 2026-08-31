@@ -63,6 +63,7 @@ function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
     touchConnection: vi.fn(),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
     getConnectionCount: vi.fn().mockReturnValue(0),
+    stop: vi.fn(),
     getBroadcaster: vi.fn().mockReturnValue(undefined),
     unregisterHost: vi.fn(),
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),

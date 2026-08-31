@@ -38,11 +38,11 @@ const EXT_TO_CONTENT_TYPE: Record<string, string> = {
   ".gif": "image/gif",
 }
 
-export function registerCliLogoHttp(app: Hono): void {
+export function registerCliLogoHttp(app: Hono, env: NodeJS.ProcessEnv): void {
   app.get("/api/cli-logo/:cliId", async (c) => {
     const cliId = c.req.param("cliId")
 
-    const spec = getCliSpec(cliId, process.env)
+    const spec = getCliSpec(cliId, env)
     if (spec === undefined) {
       return c.json({ error: "unknown CLI" }, 404)
     }
@@ -66,7 +66,7 @@ export function registerCliLogoHttp(app: Hono): void {
     // של Windows וב-UNC.
     const rawPath = isAbsolutePath(logo)
       ? logo
-      : resolve(dirname(resolveCliSpecsPath(process.env)), logo)
+      : resolve(dirname(resolveCliSpecsPath(env)), logo)
 
     // allowlist סיומות — נבדק לפני קריאת-דיסק. הסיומת קובעת את ה-Content-Type; אין sniffing.
     const ext = extname(rawPath).toLowerCase()

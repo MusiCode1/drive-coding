@@ -111,6 +111,7 @@ function makeStubSessionRegistry(): AgentSessionRegistry & { hosts: Map<string, 
     touchConnection: vi.fn(),
     getRuntimeInfo: vi.fn(() => null),
     getConnectionCount: vi.fn(() => 0),
+    stop: vi.fn(),
   } as unknown as AgentSessionRegistry & { hosts: Map<string, HostStub> }
 }
 
@@ -135,16 +136,19 @@ function makeOrchestrator(registry: AgentRegistry): AgentOrchestrator {
 }
 
 function makeApp(opts?: { mcpHttp?: string }) {
-  const prev = process.env.MCP_HTTP
-  if (opts?.mcpHttp !== undefined) process.env.MCP_HTTP = opts.mcpHttp
-  else delete process.env.MCP_HTTP
+  const env: NodeJS.ProcessEnv = {}
+  if (opts?.mcpHttp !== undefined) env.MCP_HTTP = opts.mcpHttp
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
   const orchestrator = makeOrchestrator(registry)
   const agentSessionRegistry = makeStubSessionRegistry()
-  registerMcpHttp(app, { registry, orchestrator, agentSessionRegistry })
-  if (prev === undefined) delete process.env.MCP_HTTP
-  else process.env.MCP_HTTP = prev
+  registerMcpHttp(app, {
+    registry,
+    orchestrator,
+    agentSessionRegistry,
+    env,
+    urlConfig: { port: 4000, host: "127.0.0.1" },
+  })
   return { app, registry, orchestrator, agentSessionRegistry }
 }
 

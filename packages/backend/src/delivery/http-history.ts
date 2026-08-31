@@ -172,9 +172,9 @@ export function registerFsBrowseHttp(
     allowedBase?: string
   } = {},
 ): void {
-  // opt-in restriction: opts.allowedBase או env FS_BROWSE_ALLOWED_BASE.
-  // undefined = allow-all (Q1 decision: ברירת מחדל מאפשרת הכל).
-  const allowedBase = opts.allowedBase ?? process.env.FS_BROWSE_ALLOWED_BASE
+  // opt-in restriction: opts.allowedBase when set.
+  // undefined = allow-all (Q1 decision: default allows everything).
+  const allowedBase = opts.allowedBase
 
   app.get("/api/fs/browse", async (c) => {
     const rawPath = c.req.query("path")

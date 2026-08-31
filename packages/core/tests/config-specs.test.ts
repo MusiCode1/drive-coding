@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest"
 import { CONFIG_SPECS, type ConfigSpec, getLeaf, setLeaf } from "../src/config/specs.js"
 
 describe("CONFIG_SPECS — table invariants", () => {
-  it("1. exactly 11 entries", () => {
-    expect(CONFIG_SPECS).toHaveLength(11)
+  it("1. exactly 13 entries", () => {
+    expect(CONFIG_SPECS).toHaveLength(13)
   })
 
   it("2. unique key", () => {
@@ -56,6 +56,24 @@ describe("CONFIG_SPECS — parse/serialize round-trip", () => {
     expect(spec.parse?.("0")).toBe(false)
     expect(spec.serialize?.(false)).toBe("0")
     expect(spec.parse?.(spec.serialize?.(false) ?? "")).toBe(false)
+  })
+
+  it("5d. rssBudgetMb round-trip", () => {
+    const spec = specFor("rssBudgetMb")
+    expect(spec.parse?.("2048")).toBe(2048)
+    expect(spec.serialize?.(2048)).toBe("2048")
+    expect(spec.parse?.(spec.serialize?.(2048) ?? "")).toBe(2048)
+    expect(spec.parse?.("not-a-number")).toBeUndefined()
+  })
+
+  it("5e. httpOwnerTtlMs round-trip", () => {
+    const spec = specFor("httpOwnerTtlMs")
+    expect(spec.parse?.("5000")).toBe(5000)
+    expect(spec.serialize?.(5000)).toBe("5000")
+    expect(spec.parse?.(spec.serialize?.(5000) ?? "")).toBe(5000)
+    expect(spec.parse?.("0")).toBeUndefined()
+    expect(spec.parse?.("-1")).toBeUndefined()
+    expect(spec.parse?.("NaN")).toBeUndefined()
   })
 })
 

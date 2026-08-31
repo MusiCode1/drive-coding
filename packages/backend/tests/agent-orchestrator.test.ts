@@ -557,14 +557,13 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
   })
 
   it("createAndSpawn forces loopback BASE even if caller passes a public URL", async () => {
-    const prev = process.env.PUBLIC_BASE_URL
-    process.env.PORT = "4371"
-    process.env.DRIVE_CODING_HOST = "127.0.0.1"
-    process.env.PUBLIC_BASE_URL = "https://public.example.com"
-    try {
-      const { registry } = makeRegistry()
-      const connReg = makeConnectionRegistry()
-      const orch = createAgentOrchestrator({ registry, connectionRegistry: connReg.reg })
+    const { registry } = makeRegistry()
+    const connReg = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({
+      registry,
+      connectionRegistry: connReg.reg,
+      urlConfig: { port: 4371, host: "127.0.0.1", publicBaseUrl: "https://public.example.com" },
+    })
 
       await orch.createAndSpawn({
         cliKind: "cursor",
@@ -579,10 +578,6 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
       const shaped = connReg.lastConnectOpts!.shapeEnv!("cursor", {})
       expect(shaped.DRIVE_CODING_BASE).toBe("http://127.0.0.1:4371")
       expect(shaped.DC_BASE).toBe("http://127.0.0.1:4371")
-    } finally {
-      if (prev === undefined) delete process.env.PUBLIC_BASE_URL
-      else process.env.PUBLIC_BASE_URL = prev
-    }
   })
 
   it("createAndSpawn without env → shapeEnv still wraps opencode injection", async () => {

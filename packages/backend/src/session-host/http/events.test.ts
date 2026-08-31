@@ -94,6 +94,7 @@ function makeMockRegistry(
     touchConnection: vi.fn(),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
     getConnectionCount: vi.fn().mockReturnValue(0),
+    stop: vi.fn(),
   }
 }
 

@@ -12,7 +12,7 @@
  * prevents further requests from making it worse.
  *
  * Configuration:
- *   RSS_BUDGET_MB env var — override threshold (default: 1500 MB = 1.5 GB)
+ *   thresholdBytes — RSS budget (boot passes from config.rssBudgetMb)
  *   intervalMs — polling interval (default: 5000 ms)
  *
  * The timer is unref()d so it does not keep the process alive.
@@ -32,11 +32,7 @@ export function createMemoryGuard(opts?: {
   thresholdBytes?: number
   intervalMs?: number
 }): MemoryGuard {
-  const thresholdBytes =
-    opts?.thresholdBytes ??
-    (process.env.RSS_BUDGET_MB
-      ? Number(process.env.RSS_BUDGET_MB) * 1024 * 1024
-      : DEFAULT_THRESHOLD_BYTES)
+  const thresholdBytes = opts?.thresholdBytes ?? DEFAULT_THRESHOLD_BYTES
   const intervalMs = opts?.intervalMs ?? DEFAULT_INTERVAL_MS
 
   let overBudgetFlag = false

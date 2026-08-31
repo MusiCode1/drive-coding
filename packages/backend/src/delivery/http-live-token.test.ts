@@ -8,11 +8,8 @@ import { mintLiveTokenForTest, registerLiveTokenHttp } from "./http-live-token.j
 
 describe("POST /api/voice/live/token", () => {
   it("returns 503 when GEMINI_API_KEY is missing", async () => {
-    const prev = process.env.GEMINI_API_KEY
-    delete process.env.GEMINI_API_KEY
-    try {
-      const app = new Hono()
-      registerLiveTokenHttp(app)
+    const app = new Hono()
+    registerLiveTokenHttp(app, {})
 
       const res = await app.request("/api/voice/live/token", {
         method: "POST",
@@ -22,14 +19,11 @@ describe("POST /api/voice/live/token", () => {
 
       expect(res.status).toBe(503)
       expect(await res.json()).toEqual({ error: "no-api-key" })
-    } finally {
-      if (prev !== undefined) process.env.GEMINI_API_KEY = prev
-    }
   })
 
   it("returns 400 on invalid body", async () => {
     const app = new Hono()
-    registerLiveTokenHttp(app)
+    registerLiveTokenHttp(app, process.env)
 
     const res = await app.request("/api/voice/live/token", {
       method: "POST",
