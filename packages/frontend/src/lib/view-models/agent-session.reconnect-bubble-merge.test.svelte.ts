@@ -39,7 +39,7 @@ vi.mock("$lib/adapters/sessions", () => ({
 }))
 
 // ws-transport: waitForOpen נפתר מיידית (warm "מצליח" לפתוח את ה-WS)
-vi.mock("$lib/engines/ws-transport", () => ({
+vi.mock("@drive-coding/acp-wire", () => ({
   // eslint-disable-next-line prefer-arrow-callback
   WsAcpTransport: vi.fn().mockImplementation(function MockTransport() {
     return {

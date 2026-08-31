@@ -1,5 +1,5 @@
 /**
- * ws-to-streams.test.ts — סינון control-frames ($/pong) ב-readable.
+ * browser-ws-streams.test.ts — סינון control-frames ($/pong) ב-readable.
  *
  * ה-heartbeat שולח $/ping; ה-BE מחזיר $/pong כ-frame עצמאי. הוא אסור שידלוף
  * לספריית לקוח ה-ACP החיצונית — wsToWebStreams מסנן אותו לפני הזרם.
@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, test } from "vitest"
-import { wsToWebStreams } from "./ws-to-streams.js"
+import { wsToWebStreams } from "./browser-ws-streams.js"
 
 // ─── WebSocket stub מינימלי (message/close/error בלבד) ───────────────────────
 

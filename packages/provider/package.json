@@ -6,7 +6,6 @@
   "exports": {
     "./client": "./src/client/index.ts",
     "./transport": "./src/transport/types.ts",
-    "./transport/ws": "./src/transport/ws.ts",
     "./config": "./src/config/index.ts",
     "./spawn": "./src/spawn/index.ts",
     "./host": "./src/host/index.ts",

@@ -1,5 +1,5 @@
 /**
- * ws-transport.ts — מימוש WebSocket בדפדפן עבור AcpTransport.
+ * browser-ws.ts — מימוש WebSocket בדפדפן עבור AcpTransport.
  *
  * עוטף `WebSocket` יחד עם צינור הזרמים (`wsToWebStreams`) ומוסיף
  * keepalive לטובת NAT (שליחת $/ping כל 25 שניות) — עניין ספציפי ל-WS שלא
@@ -16,8 +16,8 @@
  * close() / ה-WS נסגר מהצד השני → ה-heartbeat נעצר, ה-onClose listeners מופעלים.
  */
 
-import type { AcpTransport } from "@drive-coding/provider/transport"
-import { wsToWebStreams } from "./ws-to-streams.js"
+import type { AcpTransport } from "./types.js"
+import { wsToWebStreams } from "./browser-ws-streams.js"
 
 const HEARTBEAT_INTERVAL_MS = 25_000
 
@@ -34,7 +34,7 @@ export class WsAcpTransport implements AcpTransport {
     this.#ws = ws ?? new WebSocket(url)
     // ה-BE עשוי להעביר מסגרות בינאריות של `Buffer` מה-stdout של הילד (בתי NDJSON).
     // ללא binaryType=arraybuffer, הדפדפן יעביר אותם כ-Blob — מה שקשה יותר
-    // לפענח בצורה סינכרונית בצינור הזרם. arraybuffer שומר על נתיב פיענוח אחיד.
+    // לפיענוח בצורה סינכרונית בצינור הזרם. arraybuffer שומר על נתיב פיענוח אחיד.
     this.#ws.binaryType = "arraybuffer"
 
     // מתחיל את פעימות הלב (heartbeat) ברגע שהחיבור פתוח. אנחנו רושמים את

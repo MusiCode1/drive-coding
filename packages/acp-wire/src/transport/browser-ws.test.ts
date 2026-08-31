@@ -1,5 +1,5 @@
 /**
- * ws-transport.test.ts — unit tests for WsAcpTransport.closeAndWait (NBug2 fix).
+ * browser-ws.test.ts — unit tests for WsAcpTransport.closeAndWait (NBug2 fix).
  *
  * WsAcpTransport קיבל פרמטר ws?: WebSocket ב-constructor — מנצלים אותו
  * להזרקת WebSocket stub בלי HTTP/Node אמיתי.
@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { WsAcpTransport } from "./ws.js"
+import { WsAcpTransport } from "./browser-ws.js"
 
 // ─── WebSocket constants (כמו בדפדפן) ────────────────────────────────────────
 
@@ -28,33 +28,27 @@ function makeWsStub(initialReadyState: number = WS_OPEN) {
   let _readyState = initialReadyState
 
   const ws = {
-    get readyState() {
-      return _readyState
-    },
+    get readyState() { return _readyState },
     binaryType: "arraybuffer" as BinaryType,
     send: vi.fn(),
     close: vi.fn().mockImplementation(() => {
       _readyState = WS_CLOSING
     }),
-    addEventListener: vi
-      .fn()
-      .mockImplementation((event: string, cb: (ev: unknown) => void, _opts?: unknown) => {
+    addEventListener: vi.fn().mockImplementation(
+      (event: string, cb: (ev: unknown) => void, _opts?: unknown) => {
         if (!listeners.has(event)) listeners.set(event, [])
         listeners.get(event)!.push(cb)
-      }),
+      },
+    ),
     removeEventListener: vi.fn(),
     // helper: הצת event ידנית
     _fire(event: string, ev: unknown = {}) {
       for (const cb of listeners.get(event) ?? []) cb(ev)
     },
     // helper: סמן כ-CLOSED (לפני שמציתים close)
-    _setClosed() {
-      _readyState = WS_CLOSED
-    },
+    _setClosed() { _readyState = WS_CLOSED },
     // helper: סמן כ-CONNECTING
-    _setConnecting() {
-      _readyState = WS_CONNECTING
-    },
+    _setConnecting() { _readyState = WS_CONNECTING },
   }
 
   return ws
@@ -64,18 +58,15 @@ function makeWsStub(initialReadyState: number = WS_OPEN) {
 
 beforeEach(() => {
   // WsAcpTransport בודק WebSocket.CLOSED כ-static — צריך לstub את הגלובל
-  vi.stubGlobal(
-    "WebSocket",
-    Object.assign(
-      vi.fn().mockImplementation(() => makeWsStub()),
-      {
-        CONNECTING: WS_CONNECTING,
-        OPEN: WS_OPEN,
-        CLOSING: WS_CLOSING,
-        CLOSED: WS_CLOSED,
-      },
-    ),
-  )
+  vi.stubGlobal("WebSocket", Object.assign(
+    vi.fn().mockImplementation(() => makeWsStub()),
+    {
+      CONNECTING: WS_CONNECTING,
+      OPEN: WS_OPEN,
+      CLOSING: WS_CLOSING,
+      CLOSED: WS_CLOSED,
+    },
+  ))
 })
 
 afterEach(() => {
@@ -106,9 +97,7 @@ describe("WsAcpTransport.closeAndWait — NBug2 fix", () => {
     const transport = new WsAcpTransport("ws://localhost/test", ws as unknown as WebSocket)
 
     let resolved = false
-    const p = transport.closeAndWait(1000).then(() => {
-      resolved = true
-    })
+    const p = transport.closeAndWait(1000).then(() => { resolved = true })
 
     // עדיין לא הסתיים — ממתין ל-close event
     expect(resolved).toBe(false)
@@ -128,9 +117,7 @@ describe("WsAcpTransport.closeAndWait — NBug2 fix", () => {
     const transport = new WsAcpTransport("ws://localhost/test", ws as unknown as WebSocket)
 
     let resolved = false
-    const p = transport.closeAndWait(200).then(() => {
-      resolved = true
-    })
+    const p = transport.closeAndWait(200).then(() => { resolved = true })
 
     expect(resolved).toBe(false)
 
@@ -154,12 +141,10 @@ describe("WsAcpTransport.closeAndWait — NBug2 fix", () => {
       origClose.call(ws)
     })
     const origAddEventListener = ws.addEventListener
-    ws.addEventListener = vi
-      .fn()
-      .mockImplementation((event: string, cb: (ev: unknown) => void, opts?: unknown) => {
-        if (event === "close") callOrder.push("registered-close-listener")
-        origAddEventListener.call(ws, event, cb, opts)
-      })
+    ws.addEventListener = vi.fn().mockImplementation((event: string, cb: (ev: unknown) => void, opts?: unknown) => {
+      if (event === "close") callOrder.push("registered-close-listener")
+      origAddEventListener.call(ws, event, cb, opts)
+    })
 
     const p = transport_from_ws(ws).closeAndWait(500)
 
@@ -181,9 +166,7 @@ describe("WsAcpTransport.closeAndWait — NBug2 fix", () => {
     const transport = new WsAcpTransport("ws://localhost/test", ws as unknown as WebSocket)
 
     let resolved = false
-    const p = transport.closeAndWait(1000).then(() => {
-      resolved = true
-    })
+    const p = transport.closeAndWait(1000).then(() => { resolved = true })
 
     // לא אמור להיפתר מיד (CLOSING אינו CLOSED)
     expect(resolved).toBe(false)
@@ -192,6 +175,28 @@ describe("WsAcpTransport.closeAndWait — NBug2 fix", () => {
     ws._fire("close", { code: 1000, reason: "" })
     await p
     expect(resolved).toBe(true)
+  })
+})
+
+// ─── בדיקות sendRaw ────────────────────────────────────────────────────────────
+
+describe("WsAcpTransport.sendRaw", () => {
+  test("OPEN — קורא ל-ws.send", () => {
+    const ws = makeWsStub(WS_OPEN)
+    const transport = new WsAcpTransport("ws://localhost/test", ws as unknown as WebSocket)
+
+    transport.sendRaw('{"jsonrpc":"2.0","method":"$/detach"}\n')
+
+    expect(ws.send).toHaveBeenCalledOnce()
+    expect(ws.send).toHaveBeenCalledWith('{"jsonrpc":"2.0","method":"$/detach"}\n')
+  })
+
+  test("לא-OPEN — לא שולח ולא זורק", () => {
+    const ws = makeWsStub(WS_CONNECTING)
+    const transport = new WsAcpTransport("ws://localhost/test", ws as unknown as WebSocket)
+
+    expect(() => transport.sendRaw('{"jsonrpc":"2.0","method":"$/detach"}\n')).not.toThrow()
+    expect(ws.send).not.toHaveBeenCalled()
   })
 })
 

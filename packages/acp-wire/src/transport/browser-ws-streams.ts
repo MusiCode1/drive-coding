@@ -1,5 +1,5 @@
 /**
- * ws-to-streams.ts — דפדפן WebSocket → { ReadableStream, WritableStream }
+ * browser-ws-streams.ts — דפדפן WebSocket → { ReadableStream, WritableStream }
  *
  * חוזה (אחרי תיקון F1 — צינור in-process ישיר, ללא עטיפת stdio-to-ws):
  * 1. משתמש ב-WebSocket הטבעי של הדפדפן (ולא בחבילת `ws` של npm).

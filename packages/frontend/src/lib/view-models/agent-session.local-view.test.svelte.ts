@@ -86,7 +86,7 @@ const vh = vi.hoisted(() => {
   return { state }
 })
 
-vi.mock("$lib/engines/ws-transport", () => ({
+vi.mock("@drive-coding/acp-wire", () => ({
   WsAcpTransport: vi.fn(function MockTransport() {
     const behavior = vh.state.queue.shift() ?? { mode: "open" }
     let closeCb: ((code: number, reason: string) => void) | null = null
