@@ -470,6 +470,6 @@ export const he: Catalog = {
   "settings.toggle.notifications": "התראות כשהטאב מוסתר",
   "settings.notifications.blocked": "ההתראות חסומות בדפדפן. אפשרי אותן בהגדרות הדפדפן.",
   "settings.notifications.quietHint":
-    "הדפדפן הציג פעמון בשורת הכתובת («אתר לא מוכר»). לחצי עליו כדי לאשר התראות.",
+    "ייתכן שהדפדפן הציג פעמון בשורת הכתובת (\"אתר לא מוכר\"). לחצי עליו כדי לאשר התראות.",
   "settings.notifications.retry": "נסי שוב",
 }
