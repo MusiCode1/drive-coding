@@ -17,12 +17,12 @@ function setDocumentHidden(hidden: boolean) {
 	})
 }
 
-let mockNotificationCtor: ReturnType<typeof vi.fn>
+let ctorCalls: unknown[][]
 
 function setupNotificationMocks(opts?: { permission?: NotificationPermission }) {
 	const showNotification = vi.fn(async () => {})
 	const permission = opts?.permission ?? "granted"
-	mockNotificationCtor = vi.fn()
+	ctorCalls = []
 
 	vi.stubGlobal(
 		"Notification",
@@ -30,7 +30,7 @@ function setupNotificationMocks(opts?: { permission?: NotificationPermission }) 
 			static permission = permission
 			static requestPermission = vi.fn(async () => permission)
 			constructor(...args: unknown[]) {
-				mockNotificationCtor(...args)
+				ctorCalls.push(args)
 			}
 		},
 	)
@@ -46,7 +46,7 @@ function setupNotificationMocks(opts?: { permission?: NotificationPermission }) 
 
 beforeEach(() => {
 	setDocumentHidden(false)
-	mockNotificationCtor = vi.fn()
+	ctorCalls = []
 })
 
 afterEach(() => {
@@ -205,7 +205,7 @@ describe("NotifyEngine permission", () => {
 		engine.notifyTurn("idle")
 
 		await vi.waitFor(() => expect(showNotification).toHaveBeenCalledTimes(1))
-		expect(mockNotificationCtor).not.toHaveBeenCalled()
+		expect(ctorCalls).toHaveLength(0)
 		engine.dispose()
 	})
 })
