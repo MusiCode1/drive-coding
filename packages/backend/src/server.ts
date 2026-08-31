@@ -58,7 +58,8 @@ import { createAgentOrchestrator, type AgentOrchestrator } from "./app/agent-orc
 import { createProjectsRegistry } from "./app/projects-registry.js"
 import { createRecordingsStore } from "./app/recordings-store.js"
 import { resolveAppVersion } from "./app-version.js"
-import { bootCorsOrigins } from "./delivery/cors-config.js"
+import { loadAppConfig, wireRecorderDir } from "./boot/config.js"
+import { effectiveCorsOrigins } from "./delivery/cors-config.js"
 import { createEvictionController } from "./delivery/eviction-controller.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
@@ -92,27 +93,20 @@ import { createAndRegisterSessionHostHttp, registerConnectionRoute } from "./ses
 import { resolveCloseOnTurnEndGraceMs } from "./session-host/close-on-turn-end.js"
 import { createUsageStore } from "./usage/usage-store.js"
 
+const config = loadAppConfig()
+
 const app = new Hono()
 
-app.use("*", cors({ origin: bootCorsOrigins(), credentials: true }))
+const corsOriginsRaw =
+  config.corsOrigins !== undefined ? config.corsOrigins.join(",") : undefined
+app.use("*", cors({ origin: effectiveCorsOrigins(corsOriginsRaw, config.publicBaseUrl), credentials: true }))
 
 // תלויות הפעלה (Boot dependencies)
 const registry = createInMemoryAgentRegistry()
 
-// wire-recorder: פעיל כש-WIRE_RECORD=1; אחרת no-op (אפס IO, אפס overhead)
-//
-// ⚠️ BUG ידוע (טרם תוקן, 2026-08-15) — הבדיקה כאן היא truthiness על מחרוזת,
-// ולא השוואה ל-"1". `load-config.ts:212` כותב אקטיבית WIRE_RECORD="0" כשההקלטה
-// **כבויה** בקונפיג, ו-"0" הוא truthy ב-JS — כלומר כיבוי ההקלטה דרך הקונפיג
-// מדליק אותה. הצורה הנכונה היא `=== "1"`, בדיוק כמו ב-`load-config.ts:114`.
-// לא מתוקן כאן כדי לא לשנות התנהגות מחוץ ל-slice ייעודי.
-//
-// ⚠️ אין cap / rotation / pruning ב-`wire-recorder.ts`. היעד הוא
-// `~/.config/drive-coding/wire-recordings/` — **מחוץ לריפו**, כך ש-.gitignore
-// ו-`git worktree remove` לא נוגעים בו. בין 2026-07-12 ל-2026-08-15 זה הצטבר
-// ל-3.2G ב-773 קבצים (קובץ בודד הגיע ל-617MB) ומילא את הדיסק.
+// wire-recorder: active when config.wireRecord is true; otherwise no-op (zero IO, zero overhead)
 const wireRecorder = createWireRecorder({
-  dir: process.env.WIRE_RECORD ? ensureStateSubdir("wire-recordings") : null,
+  dir: wireRecorderDir(config),
 })
 
 // CUT-3b-ii: connection-registry מחליף את bridge-manager singleton.
@@ -190,6 +184,7 @@ const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionReg
       })
     }, graceMs)
   },
+  _httpOwnerTtlMs: config.httpOwnerTtlMs,
 })
 
 const orchestrator = createAgentOrchestrator({
@@ -231,8 +226,11 @@ const usageStore = createUsageStore(ensureStateSubdir("usage"))
 
 // Slice proxy-tap-memory: RSS watchdog — defense-in-depth if TransformStream approach fails.
 // Polls RSS every 5s; returns 503 on /proxy/* when over budget (default: 1.5GB).
-// Override threshold with RSS_BUDGET_MB env var.
-const memoryGuard = createMemoryGuard()
+const memoryGuard = createMemoryGuard(
+  config.rssBudgetMb !== undefined
+    ? { thresholdBytes: config.rssBudgetMb * 1024 * 1024 }
+    : undefined,
+)
 
 // Slice 10: פרוקסי שקוף עבור Google + ElevenLabs (+ usage tap)
 registerProxyHttp(app, {
@@ -259,7 +257,7 @@ registerCliLogoHttp(app)
 // Slice 20: serve the built static FE (single-origin local prod).
 // Binary mode: serve from embedded FE manifest (assets in $bunfs, no disk reads).
 // Dev mode / explicit FE_STATIC_DIR: serve from filesystem via serveStatic.
-const feStaticDir = process.env.FE_STATIC_DIR
+const feStaticDir = config.feStaticDir
 if (isBinary() && !feStaticDir) {
   // Binary mode with no explicit FE_STATIC_DIR override — serve from embedded manifest.
   // Dynamic import so the stub compiles cleanly in dev (never executes in dev).
@@ -377,8 +375,8 @@ agentWss.on("connection", (ws, req) => {
 
 preferPathClaudeExecutable()
 
-const port = Number(process.env.PORT ?? 4000)
-const hostname = process.env.DRIVE_CODING_HOST ?? "127.0.0.1"
+const port = config.port ?? 4000
+const hostname = config.host ?? "127.0.0.1"
 
 const tls = resolveTls(process.env)
 const httpServer: ServerType = tls

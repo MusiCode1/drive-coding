@@ -27,7 +27,7 @@ export type ConfigSpec = {
   /** dotted path into DriveCodingConfig */
   key: ConfigLeafKey
   env: string
-  /** optional — 4 of 11 leaves have no CLI flag */
+  /** optional — leaves without a CLI flag */
   flag?: string
   /** env-string → config value. undefined ⇒ leaf not contributed by the layer. */
   parse?: (raw: string) => unknown
@@ -74,6 +74,25 @@ export const CONFIG_SPECS = [
     env: "WIRE_RECORD",
     parse: (raw: string) => raw === "1",
     serialize: (v: unknown) => (v ? "1" : "0"),
+  },
+  {
+    key: "rssBudgetMb",
+    env: "RSS_BUDGET_MB",
+    parse: (raw: string) => {
+      const n = Number(raw)
+      return Number.isNaN(n) ? undefined : n
+    },
+    serialize: (v: unknown) => String(v),
+  },
+  {
+    key: "httpOwnerTtlMs",
+    env: "HTTP_OWNER_TTL_MS",
+    parse: (raw: string) => {
+      const n = Number(raw)
+      if (!Number.isFinite(n) || n <= 0) return undefined
+      return n
+    },
+    serialize: (v: unknown) => String(v),
   },
   { key: "fsBrowseBase", env: "FS_BROWSE_ALLOWED_BASE" },
   { key: "log.level", env: "LOG_LEVEL", flag: "log-level" },

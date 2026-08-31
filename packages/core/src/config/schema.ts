@@ -17,6 +17,8 @@ export const DriveCodingConfig = type({
   "publicBaseUrl?": "string",
   "opencodeBin?": "string",
   "wireRecord?": "boolean",
+  "rssBudgetMb?": "number",
+  "httpOwnerTtlMs?": "number",
   "fsBrowseBase?": "string",
   "log?": {
     "level?": "string",

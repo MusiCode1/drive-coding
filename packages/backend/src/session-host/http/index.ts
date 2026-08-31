@@ -81,6 +81,8 @@ export function createAndRegisterSessionHostHttp(
     /** slice session-lifecycle-fields C1 */
     getCloseOnTurnEnd?: (agentId: string) => boolean | Promise<boolean>
     onScheduleCloseOnTurnEnd?: (agentId: string) => void
+    /** slice boot-layer C1: HTTP ownership TTL from config */
+    _httpOwnerTtlMs?: number
   } = {},
 ): ReturnType<typeof createAgentSessionRegistry> {
   const agentSessionRegistry = createAgentSessionRegistry({
@@ -91,6 +93,7 @@ export function createAndRegisterSessionHostHttp(
     getPermissionPolicy: opts.getPermissionPolicy,
     getCloseOnTurnEnd: opts.getCloseOnTurnEnd,
     onScheduleCloseOnTurnEnd: opts.onScheduleCloseOnTurnEnd,
+    _httpOwnerTtlMs: opts._httpOwnerTtlMs,
   })
   registerSessionHostHttp(app, { agentSessionRegistry, connectionRegistry })
   return agentSessionRegistry
