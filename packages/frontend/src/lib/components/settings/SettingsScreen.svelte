@@ -19,7 +19,7 @@ import { version } from "$app/environment"
 import { goto } from "$app/navigation"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import GeminiVoicePicker from "$lib/components/chat/GeminiVoicePicker.svelte"
-import { getI18n, getSettings } from "$lib/context"
+import { getI18n, getNotify, getSettings } from "$lib/context"
 import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { ttsStatus } from "$lib/view-models/tts-status.svelte"
@@ -32,6 +32,7 @@ import SettingToggle from "./SettingToggle.svelte"
 import TtsStatusCard from "./TtsStatusCard.svelte"
 
 const settings = getSettings()
+const notify = getNotify()
 const t = getI18n().t
 
 // translateThoughts disabled כש-speakThoughts כבוי
@@ -142,6 +143,62 @@ const sessionTransportDisplay = $derived(
   settings.sessionTransport ??
     resolveSessionTransport({ stored: null, env: env.PUBLIC_SESSION_TRANSPORT }),
 )
+
+// ─── notifications quiet-block ─── (slice notify-quiet-prompt)
+let quietHint = $state(false)
+let pendingEnable = $state(false)
+
+function clearQuietHint() {
+  quietHint = false
+  pendingEnable = false
+}
+
+async function onNotificationsChange(v: boolean) {
+  if (v) {
+    if (notify.permission === "default") {
+      // Quiet UI (Edge/Chrome): requestPermission() often does not resolve until
+      // the user clicks the address-bar bell — show the hint *before* awaiting.
+      settings.setNotifications(false)
+      quietHint = true
+      pendingEnable = true
+      const result = await notify.requestPermission()
+      if (result === "granted") {
+        settings.setNotifications(true)
+        clearQuietHint()
+      } else if (result === "denied") {
+        settings.setNotifications(false)
+        clearQuietHint()
+      }
+      // else still default — keep quietHint + pendingEnable
+    } else if (notify.permission === "granted") {
+      settings.setNotifications(true)
+    }
+  } else {
+    settings.setNotifications(false)
+    clearQuietHint()
+  }
+}
+
+async function retryNotifications() {
+  settings.setNotifications(false)
+  quietHint = true
+  pendingEnable = true
+  const result = await notify.requestPermission()
+  if (result === "granted") {
+    settings.setNotifications(true)
+    clearQuietHint()
+  } else if (result === "denied") {
+    settings.setNotifications(false)
+    clearQuietHint()
+  }
+}
+
+$effect(() => {
+  if (notify.permission === "granted" && pendingEnable) {
+    settings.setNotifications(true)
+    clearQuietHint()
+  }
+})
 </script>
 
 
@@ -232,6 +289,31 @@ const sessionTransportDisplay = $derived(
       checked={settings.screenWakeLock}
       onCheckedChange={(v) => settings.setScreenWakeLock(v)}
     />
+  </SettingsCard>
+
+  <!-- כרטיס התראות — notify-local · notify-quiet-prompt -->
+  <SettingsCard title={t("settings.notifications.title")}>
+    <SettingToggle
+      label={t("settings.toggle.notifications")}
+      checked={settings.notifications}
+      disabled={notify.permission === "unsupported" || notify.permission === "denied"}
+      onCheckedChange={onNotificationsChange}
+    />
+    {#if notify.permission === "denied"}
+      <p class="text-sm" style="color:var(--fg-dim)">{t("settings.notifications.blocked")}</p>
+    {:else if quietHint}
+      <p class="text-sm mt-2" role="status" style="color:var(--fg)">
+        {t("settings.notifications.quietHint")}
+      </p>
+      <button
+        type="button"
+        class="text-sm font-medium mt-1"
+        style="color:var(--accent)"
+        onclick={() => void retryNotifications()}
+      >
+        {t("settings.notifications.retry")}
+      </button>
+    {/if}
   </SettingsCard>
 
   <!-- כרטיס תצוגת צ'אט — display-toggle-consistency -->
