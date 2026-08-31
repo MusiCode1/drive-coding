@@ -1,7 +1,7 @@
 /**
  * agent-events.ts — in-memory pub/sub for agent lifecycle events (slice be-events-subscribe).
  *
- * Map<targetId, Set<subscriberId>> — no persistence. Subscriptions survive subscriber death.
+ * Map<targetId, Map<subscriberId, options>> — no persistence. Subscriptions survive subscriber death.
  */
 
 import type { AgentEvent, AgentEventKind } from "@drive-coding/core/schemas/agent-events.js"
@@ -9,6 +9,20 @@ import type { AgentEvent, AgentEventKind } from "@drive-coding/core/schemas/agen
 export type { AgentEvent, AgentEventKind }
 
 export const DEFAULT_STALL_SUSPECT_MS = 600_000
+
+export type AgentSubscribeOptions = { includeLastAssistantText: boolean }
+
+const DEFAULT_SUBSCRIBE_OPTIONS: AgentSubscribeOptions = { includeLastAssistantText: false }
+
+function normalizeOptions(options?: AgentSubscribeOptions): AgentSubscribeOptions {
+  return {
+    includeLastAssistantText: options?.includeLastAssistantText === true,
+  }
+}
+
+function optionsEqual(a: AgentSubscribeOptions, b: AgentSubscribeOptions): boolean {
+  return a.includeLastAssistantText === b.includeLastAssistantText
+}
 
 /**
  * resolveStallSuspectMs — parses STALL_SUSPECT_MS.
@@ -24,37 +38,47 @@ export function resolveStallSuspectMs(raw: string | undefined): number {
 }
 
 export type AgentEventBus = {
-  subscribe(targetId: string, subscriberId: string): void
+  subscribe(targetId: string, subscriberId: string, options?: AgentSubscribeOptions): void
   unsubscribe(targetId: string, subscriberId: string): void
   subscribersOf(targetId: string): readonly string[]
+  optionsOf(targetId: string, subscriberId: string): AgentSubscribeOptions | undefined
   emit(event: AgentEvent): void
   onEvent(cb: (e: AgentEvent, subscriberIds: readonly string[]) => void): () => void
 }
 
 export function createAgentEventBus(): AgentEventBus {
-  const subs = new Map<string, Set<string>>()
+  const subs = new Map<string, Map<string, AgentSubscribeOptions>>()
   const listeners = new Set<(e: AgentEvent, subscriberIds: readonly string[]) => void>()
 
   return {
-    subscribe(targetId: string, subscriberId: string): void {
-      let set = subs.get(targetId)
-      if (!set) {
-        set = new Set()
-        subs.set(targetId, set)
+    subscribe(targetId: string, subscriberId: string, options?: AgentSubscribeOptions): void {
+      const normalized = normalizeOptions(options)
+      let map = subs.get(targetId)
+      if (!map) {
+        map = new Map()
+        subs.set(targetId, map)
       }
-      set.add(subscriberId)
+      const existing = map.get(subscriberId)
+      if (existing !== undefined && optionsEqual(existing, normalized)) {
+        return
+      }
+      map.set(subscriberId, normalized)
     },
 
     unsubscribe(targetId: string, subscriberId: string): void {
-      const set = subs.get(targetId)
-      if (!set) return
-      set.delete(subscriberId)
-      if (set.size === 0) subs.delete(targetId)
+      const map = subs.get(targetId)
+      if (!map) return
+      map.delete(subscriberId)
+      if (map.size === 0) subs.delete(targetId)
     },
 
     subscribersOf(targetId: string): readonly string[] {
-      const set = subs.get(targetId)
-      return set ? [...set] : []
+      const map = subs.get(targetId)
+      return map ? [...map.keys()] : []
+    },
+
+    optionsOf(targetId: string, subscriberId: string): AgentSubscribeOptions | undefined {
+      return subs.get(targetId)?.get(subscriberId)
     },
 
     emit(event: AgentEvent): void {

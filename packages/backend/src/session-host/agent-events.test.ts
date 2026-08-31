@@ -38,6 +38,25 @@ describe("AgentEventBus", () => {
     expect(bus.subscribersOf("target-a")).toEqual(["sub-1"])
   })
 
+  it("subscribe without options defaults includeLastAssistantText to false", () => {
+    const bus = createAgentEventBus()
+    bus.subscribe("target-a", "sub-1")
+    expect(bus.optionsOf("target-a", "sub-1")).toEqual({ includeLastAssistantText: false })
+  })
+
+  it("subscribe again with includeLastAssistantText updates options", () => {
+    const bus = createAgentEventBus()
+    bus.subscribe("target-a", "sub-1")
+    bus.subscribe("target-a", "sub-1", { includeLastAssistantText: true })
+    expect(bus.optionsOf("target-a", "sub-1")).toEqual({ includeLastAssistantText: true })
+    expect(bus.subscribersOf("target-a")).toEqual(["sub-1"])
+  })
+
+  it("optionsOf on unregistered pair returns undefined", () => {
+    const bus = createAgentEventBus()
+    expect(bus.optionsOf("target-a", "sub-1")).toBeUndefined()
+  })
+
   it("emit delivers to onEvent with subscriber list", () => {
     const bus = createAgentEventBus()
     bus.subscribe("target-a", "sub-1")

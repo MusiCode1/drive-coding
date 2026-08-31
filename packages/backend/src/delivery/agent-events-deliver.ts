@@ -6,11 +6,15 @@ import type { AgentEvent } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import type { AgentEventBus } from "../session-host/agent-events.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
+import { extractLastAssistantText } from "./last-assistant-text.js"
 
 const log = createLogger("backend.agent-events.deliver")
 
 /** Facts-only prompt template for subscriber delivery (slice be-events-subscribe C3). */
-export function formatAgentEventPrompt(event: AgentEvent): string {
+export function formatAgentEventPrompt(
+  event: AgentEvent,
+  extras?: { lastAssistantText?: string },
+): string {
   const lines = [
     "[drive-coding event]",
     `kind: ${event.kind}`,
@@ -26,6 +30,10 @@ export function formatAgentEventPrompt(event: AgentEvent): string {
   if (event.lastTurnError != null) {
     lines.push(`lastTurnError.message: ${event.lastTurnError.message}`)
   }
+  const preview = extras?.lastAssistantText
+  if (event.kind === "turn-ended" && preview !== undefined && preview.length > 0) {
+    lines.push(`lastAssistantText: ${preview}`)
+  }
   return lines.join("\n")
 }
 
@@ -33,6 +41,7 @@ function deliverToSubscriber(
   registry: AgentSessionRegistry,
   subscriberId: string,
   event: AgentEvent,
+  extras?: { lastAssistantText?: string },
 ): void {
   void registry
     .getOrCreateHost(subscriberId)
@@ -50,7 +59,7 @@ function deliverToSubscriber(
         log.warn({ subscriberId, agentId: event.agentId }, "agent event: subscriber has no sessionId")
         return
       }
-      void host.prompt(sessionId, formatAgentEventPrompt(event)).catch((err) => {
+      void host.prompt(sessionId, formatAgentEventPrompt(event, extras)).catch((err) => {
         log.warn({ err, subscriberId, agentId: event.agentId }, "agent event: subscriber prompt failed")
       })
     })
@@ -70,7 +79,18 @@ export function wireAgentEventDelivery(deps: {
       targetHost.emitExtNotification("_drive/agent_event", { ...event })
     }
     for (const subscriberId of subscriberIds) {
-      deliverToSubscriber(deps.agentSessionRegistry, subscriberId, event)
+      let extras: { lastAssistantText?: string } | undefined
+      if (
+        event.kind === "turn-ended" &&
+        deps.eventBus.optionsOf(event.agentId, subscriberId)?.includeLastAssistantText === true &&
+        targetHost
+      ) {
+        const text = extractLastAssistantText(targetHost.state.messages)
+        if (text !== undefined) {
+          extras = { lastAssistantText: text }
+        }
+      }
+      deliverToSubscriber(deps.agentSessionRegistry, subscriberId, event, extras)
     }
   })
 }

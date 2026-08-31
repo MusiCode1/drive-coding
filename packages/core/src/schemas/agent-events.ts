@@ -14,6 +14,9 @@ export type AgentEvent = {
 /** POST /api/agents/:id/subscribe body */
 export const AgentSubscribeBody = type({
   subscriberAgentId: "string.uuid",
+  "includeLastAssistantText?": type("boolean").describe(
+    "When true, turn-ended prompts include a truncated preview of the target agent's last assistant message.",
+  ),
 })
 export type AgentSubscribeBody = typeof AgentSubscribeBody.infer
 
@@ -22,6 +25,9 @@ export const AgentSubscribeInput = type({
   agent: type("string >= 1").describe("Target agent UUID to subscribe to."),
   "subscriber?": type("string >= 1").describe(
     "Subscriber agent UUID. Defaults to X-Drive-Coding-Agent header when present.",
+  ),
+  "includeLastAssistantText?": type("boolean").describe(
+    "When true, turn-ended prompts include a truncated preview of the target agent's last assistant message.",
   ),
 })
 export type AgentSubscribeInput = typeof AgentSubscribeInput.infer

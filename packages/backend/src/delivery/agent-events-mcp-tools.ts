@@ -43,13 +43,17 @@ function jsonError(message: string) {
   return { isError: true as const, content: [{ type: "text" as const, text: message }] }
 }
 
-/** Merge notifyOnDone from session_open input into the create body. */
+/** Merge notifyOnDone and includeLastAssistantText from session_open input into the create body. */
 export function applyNotifyOnDoneToOpenBody(
   body: Record<string, unknown>,
   notifyOnDone: string | undefined,
+  includeLastAssistantText?: boolean,
 ): void {
   if (notifyOnDone !== undefined && notifyOnDone !== "") {
     body.notifyOnDone = notifyOnDone
+  }
+  if (includeLastAssistantText === true) {
+    body.includeLastAssistantText = true
   }
 }
 
@@ -81,7 +85,9 @@ export function registerAgentEventMcpTools(
           `subscriber required — pass subscriber or ${AGENT_ID_HEADER} header`,
         )
       }
-      deps.eventBus.subscribe(input.agent, subscriberId)
+      deps.eventBus.subscribe(input.agent, subscriberId, {
+        includeLastAssistantText: input.includeLastAssistantText === true,
+      })
       return jsonResult({ ok: true, agent: input.agent, subscriber: subscriberId })
     },
   )

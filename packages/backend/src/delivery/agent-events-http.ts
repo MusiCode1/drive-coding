@@ -27,7 +27,9 @@ export function registerAgentEventsHttp(
     if (parsed instanceof type.errors) {
       return c.json({ error: parsed.summary }, 400)
     }
-    deps.eventBus.subscribe(targetId, parsed.subscriberAgentId)
+    deps.eventBus.subscribe(targetId, parsed.subscriberAgentId, {
+      includeLastAssistantText: parsed.includeLastAssistantText === true,
+    })
     return c.body(null, 204)
   })
 }
@@ -39,8 +41,11 @@ export function subscribeNotifyOnDone(
   eventBus: AgentEventBus,
   agentId: string,
   notifyOnDone: string | undefined,
+  options?: { includeLastAssistantText?: boolean },
 ): void {
   if (notifyOnDone !== undefined && notifyOnDone !== "") {
-    eventBus.subscribe(agentId, notifyOnDone)
+    eventBus.subscribe(agentId, notifyOnDone, {
+      includeLastAssistantText: options?.includeLastAssistantText === true,
+    })
   }
 }
