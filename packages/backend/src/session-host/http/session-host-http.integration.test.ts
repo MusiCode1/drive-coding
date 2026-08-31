@@ -26,6 +26,7 @@ import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { setSelfBaseUrlForTests } from "../../instances.js"
+import { createInMemoryAgentRegistry } from "../../agents/registry.js"
 import { createPatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import {
@@ -145,7 +146,10 @@ async function setup(): Promise<{
   }
 
   const app = new Hono()
-  registerSessionHostHttp(app, { agentSessionRegistry: registry })
+  registerSessionHostHttp(app, {
+    agentSessionRegistry: registry,
+    agentRegistry: createInMemoryAgentRegistry(),
+  })
 
   return { app, host, mockClient, callbacks: capturedCallbacks }
 }

@@ -26,6 +26,7 @@ import {
 import type { AcpClient, AcpClientCallbacks, PromptBlocks } from "@drive-coding/provider/client"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { createInMemoryAgentRegistry } from "../../agents/registry.js"
 import { buildAgentMcpServers } from "../../agent-identity.js"
 import { setSelfBaseUrlForTests } from "../../instances.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
@@ -101,7 +102,7 @@ function makeMockRegistry(
 
 function makeApp(registry: AgentSessionRegistry): Hono {
   const app = new Hono()
-  registerRpcRoute(app, registry)
+  registerRpcRoute(app, registry, createInMemoryAgentRegistry())
   return app
 }
 

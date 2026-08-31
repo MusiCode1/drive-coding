@@ -58,6 +58,8 @@ import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
 type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
 import { isCleanTurnEndForClose } from "./close-on-turn-end.js"
 import { createPendingRequests } from "./pending-requests.js"
+import { createRequestScopePermission } from "./session-host-scope.js"
+import { msgOf } from "./session-host-msg.js"
 
 // ─── C2: createSessionHost ───────────────────────────────────────────────────
 
@@ -470,18 +472,6 @@ export async function createSessionHostFromConnection(
   }
 
   /** אותה קדימות כמו formatAcpError ב-FE: data.details → data.message → message → String(e). */
-  function msgOf(err: unknown): string {
-    if (err && typeof err === "object") {
-      const e = err as { message?: unknown; data?: unknown }
-      if (e.data && typeof e.data === "object") {
-        const data = e.data as { details?: unknown; message?: unknown }
-        if (typeof data.details === "string" && data.details.length > 0) return data.details
-        if (typeof data.message === "string" && data.message.length > 0) return data.message
-      }
-      if (typeof e.message === "string" && e.message.length > 0) return e.message
-    }
-    return String(err)
-  }
 
   // ── PendingRequests for permission + elicitation ──────────────────────────
   // slice session-host-pending-surface C4: מונה requestId משותף יחיד — לא שני
@@ -951,6 +941,11 @@ export async function createSessionHostFromConnection(
       permPending.respond(requestId, response)
     },
 
+    requestScopePermission: createRequestScopePermission({
+      isDisposed: () => disposed, getState: () => currentState, setState: (s) => { currentState = s },
+      emitPatches, nextRequestId: () => nextRequestId++, permPending,
+    }),
+
     respondElicitation(requestId: number, response: CreateElicitationResponse): void {
       if (disposed) return // slice handoff-foundations C1: no-op after dispose
       elicitPending.respond(requestId, response)
@@ -1015,5 +1010,5 @@ export async function createSessionHostFromConnection(
     get agentCapabilities(): AcpClient["capabilities"] {
       return client.capabilities
     },
-  }
+  } as ExtendedSessionHost
 }

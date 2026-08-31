@@ -9,6 +9,7 @@ import type { AcpTransport } from "@drive-coding/provider/transport"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createInMemoryAgentRegistry } from "../src/agents/registry.js"
 import { waitForTurnEnd } from "../src/cli/wait-for-turn.js"
+import { bindScopeEnforcement } from "../src/bind-scope-enforcement.js"
 import { registerAgentsHttp } from "../src/delivery/http-agents.js"
 import { resolveCloseOnTurnEndGraceMs } from "../src/session-host/close-on-turn-end.js"
 import { setSelfBaseUrlForTests } from "../src/instances.js"
@@ -133,11 +134,12 @@ async function makeGateServer() {
   }
   orchestratorRef = orchestrator
 
+  bindScopeEnforcement(app, { registry, sessionRegistry: agentSessionRegistry })
   registerAgentsHttp(app, { registry, orchestrator, bridgeManager: connectionRegistry as never })
   const { registerEventsRoute } = await import("../src/session-host/http/events.js")
   registerEventsRoute(app, agentSessionRegistry)
   const { registerRpcRoute } = await import("../src/session-host/http/rpc.js")
-  registerRpcRoute(app, agentSessionRegistry)
+  registerRpcRoute(app, agentSessionRegistry, registry)
 
   const server: ServerType = await new Promise((resolve) => {
     const s = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" })

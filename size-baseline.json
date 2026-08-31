@@ -72,7 +72,7 @@
       "class": "mixed"
     },
     "packages/backend/src/delivery/http-agents.ts": {
-      "metric": 226,
+      "metric": 225,
       "impurity": 11,
       "class": "mixed"
     },
@@ -117,8 +117,8 @@
       "class": "mixed"
     },
     "packages/backend/src/delivery/http-mcp.ts": {
-      "metric": 471,
-      "impurity": 26,
+      "metric": 386,
+      "impurity": 20,
       "class": "scattered"
     },
     "packages/backend/src/delivery/http-options.ts": {
@@ -197,7 +197,7 @@
       "class": "mixed"
     },
     "packages/backend/src/session-host/http/reply.ts": {
-      "metric": 59,
+      "metric": 55,
       "impurity": 1,
       "class": "mixed"
     },
@@ -227,7 +227,7 @@
       "class": "mixed"
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 1019,
+      "metric": 1014,
       "impurity": 20,
       "class": "scattered"
     },
