@@ -151,6 +151,9 @@ export type AgentSessionRegistry = {
     via: "ws" | "http" | null
   } | null
   getConnectionCount(agentId: string): number
+
+  /** slice boot-layer C2: stop the HTTP ownership TTL sweep interval. */
+  stop(): void
 }
 
 type AgentSessionRegistryDeps = {
@@ -481,5 +484,10 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     getConnectionCount(agentId: string) {
       return connectionRegistry.getConnectionCount(agentId)
     },
+
+  /** slice boot-layer C2: stop the HTTP ownership TTL sweep interval. */
+  stop(): void {
+    clearInterval(httpSweep)
+  },
   }
 }

@@ -1,8 +1,8 @@
 import "./log-setup.js" // חייב להיות ראשון — מאתחל לוגר לפני כל יבוא אחר
 import { createServer as httpsCreateServer } from "node:https"
-import type { Agent, ServerMessage } from "@drive-coding/core"
+import type { ServerMessage } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
-import { onConfigChange, stopWatching } from "@drive-coding/provider/config"
+import { onConfigChange } from "@drive-coding/provider/config"
 import { type ServerType, serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
@@ -50,17 +50,11 @@ process.on("unhandledRejection", (reason) => {
   process.exit(1)
 })
 
-import type { BridgeKind } from "@drive-coding/core"
 import { cors } from "hono/cors"
-import { createConnectionRegistry } from "./acp/connection-registry.js"
-import { createInMemoryAgentRegistry } from "./agents/registry.js"
-import { createAgentOrchestrator, type AgentOrchestrator } from "./app/agent-orchestrator.js"
-import { createProjectsRegistry } from "./app/projects-registry.js"
-import { createRecordingsStore } from "./app/recordings-store.js"
 import { resolveAppVersion } from "./app-version.js"
-import { loadAppConfig, wireRecorderDir } from "./boot/config.js"
+import { loadAppConfig } from "./boot/config.js"
+import { createDeps } from "./boot/deps.js"
 import { effectiveCorsOrigins } from "./delivery/cors-config.js"
-import { createEvictionController } from "./delivery/eviction-controller.js"
 import { registerHttp } from "./delivery/http.js"
 import { registerAgentsHttp } from "./delivery/http-agents.js"
 import { registerCliAvailabilityHttp } from "./delivery/http-cli-availability.js"
@@ -82,16 +76,12 @@ import { registerProxyHttp } from "./delivery/http-proxy.js"
 import { registerReloadConfigHttp } from "./delivery/http-reload-config.js"
 import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
 import { registerUsageHttp } from "./delivery/http-usage.js"
-import { createMemoryGuard } from "./delivery/memory-guard.js"
-import { createWireRecorder } from "./delivery/wire-recorder.js"
 // הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
 import { createAgentWsHandler } from "./delivery/ws-agent.js"
 import { createEchoWsHandler } from "./delivery/ws-echo.js"
 import { removeInstance, setSelfBaseUrl, writeInstance } from "./instances.js"
 import { ensureStateSubdir } from "./paths.js"
-import { createAndRegisterSessionHostHttp, registerConnectionRoute } from "./session-host/http/index.js"
-import { resolveCloseOnTurnEndGraceMs } from "./session-host/close-on-turn-end.js"
-import { createUsageStore } from "./usage/usage-store.js"
+import { registerConnectionRoute } from "./session-host/http/index.js"
 
 const config = loadAppConfig()
 
@@ -101,101 +91,18 @@ const corsOriginsRaw =
   config.corsOrigins !== undefined ? config.corsOrigins.join(",") : undefined
 app.use("*", cors({ origin: effectiveCorsOrigins(corsOriginsRaw, config.publicBaseUrl), credentials: true }))
 
-// תלויות הפעלה (Boot dependencies)
-const registry = createInMemoryAgentRegistry()
-
-// wire-recorder: active when config.wireRecord is true; otherwise no-op (zero IO, zero overhead)
-const wireRecorder = createWireRecorder({
-  dir: wireRecorderDir(config),
-})
-
-// CUT-3b-ii: connection-registry מחליף את bridge-manager singleton.
-// wireRecorder מוזרם ל-registry (server יוצר, registry מחבר ל-conn.onFrame פר-agent).
-const connectionRegistry = createConnectionRegistry({ wireRecorder })
-const projectsRegistry = createProjectsRegistry(ensureStateSubdir("cache"))
-const recordingsStore = createRecordingsStore(ensureStateSubdir("recordings"))
-
-// slice ownership-handoff C4: eviction controller — shared between ws-agent (fills)
-// and agentSessionRegistry (calls evictAndWait for HTTP→WS takeover).
-const evictionController = createEvictionController()
-
-// slice ownership-handoff C4: sync acpSessionId cache for warm reattach.
-// Updated by onSessionAttached (same source of truth as registry.update acpSessionId).
-const acpSessionIdCache = new Map<string, string>()
-
-// slice session-lifecycle-fields C1: orchestrator ref — registry is created first.
-let orchestratorRef: AgentOrchestrator | null = null
-
-// S4 session-host-http: 4 routes — GET /events, POST /rpc, POST /reply, GET /state
-// slice remote-warm-reconnect C1: תופסים את הרג'יסטרי (קודם נזרק ב-:151) — C2/C2b
-// מעבירים אותו ל-ws-agent (guard) ול-orchestrator (ניקוי hosts ב-delete/crash).
-const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionRegistry, {
-  onSessionAttached: async (agentId, sessionId, cwd) => {
-    // בדיוק מה ש-PATCH /api/agents/:id עושה (http-agents.ts, מסלול attach) —
-    // ה-endpoint ההוא נקרא רק מנתיבים מקומיים; ב-remote ה-SessionHost הוא שמצרף
-    // את ה-session (אוטומטית ב-doCreate, או ב-rpc.ts case "loadSession"), אז
-    // הוא מדווח ישירות דרך ה-callback הזה.
-    //
-    // הכרעת MED-9: ה-callback הפנימי עוקף את guard ה-409 (http-agents.ts) —
-    // **בכוונה** — ב-remote ה-host הוא authoritative לגבי ה-session שלו.
-    const agent = await registry.get(agentId)
-    if (!agent || agent.status === "closed") {
-      // race מול DELETE (deleteAndKill) — warn ודילוג, לא throw (הסשן חי; הפאנל יישאר ישן).
-      log.warn({ agentId, sessionId }, "onSessionAttached: agent missing or closed — skipped")
-      return
-    }
-    // slice agent-patch-unify C2 (D4 — שכבה ב'): extract מפורש, מפתח שערכו
-    // undefined לעולם לא נכנס ל-patch. registry.update מבצע spread בלי סינון —
-    // { cwd: undefined } היה מוחק את agent.cwd הקיים כש-cwd לא סופק (§3.5 D4).
-    const patch: Partial<Pick<Agent, "status" | "acpSessionId" | "cwd">> = {
-      status: "ready",
-      acpSessionId: sessionId,
-    }
-    if (cwd !== undefined) patch.cwd = cwd
-    await registry.update(agentId, patch)
-    acpSessionIdCache.set(agentId, sessionId)
-    // D7: תופעות-projectsRegistry עם cwd ?? agent.cwd — מתעד תחת התיקייה
-    // *החדשה* אם דווחה (מעבר-סשן, §3), אחרת תחת הקיימת (ללא שינוי).
-    const effectiveCwd = cwd ?? agent.cwd
-    await projectsRegistry.recordCwd(effectiveCwd, agent.cliKind as BridgeKind)
-    await projectsRegistry.recordSession(effectiveCwd, sessionId)
-  },
-  evictionController,
-  // slice ownership-handoff C4: warm reattach — sync cache of agentId→acpSessionId
-  // maintained by onSessionAttached. Returns the last known acpSessionId, allowing
-  // the HTTP host to call loadSession instead of newSession after WS eviction.
-  getAcpSessionId: (agentId) => acpSessionIdCache.get(agentId),
-  getPermissionPolicy: async (agentId) => {
-    const agent = await registry.get(agentId)
-    return agent?.permissionPolicy
-  },
-  getCloseOnTurnEnd: async (agentId) => {
-    const agent = await registry.get(agentId)
-    return agent?.closeOnTurnEnd === true
-  },
-  onScheduleCloseOnTurnEnd: (agentId) => {
-    const graceMs = resolveCloseOnTurnEndGraceMs(process.env.CLOSE_ON_TURN_END_GRACE_MS)
-    setTimeout(() => {
-      void orchestratorRef?.deleteAndKill(agentId).catch((err) => {
-        log.warn(
-          { err, agentId },
-          "closeOnTurnEnd: deleteAndKill failed after grace",
-        )
-      })
-    }, graceMs)
-  },
-  _httpOwnerTtlMs: config.httpOwnerTtlMs,
-})
-
-const orchestrator = createAgentOrchestrator({
+const { deps, disposables } = createDeps(config, process.env, app)
+const {
   registry,
   connectionRegistry,
   projectsRegistry,
-  // slice remote-warm-reconnect C2b: ניקוי hosts ב-delete/crash. אפשרי רק כי
-  // agentSessionRegistry נוצר למעלה (לפני ה-orchestrator) — ר' ההערה שם.
-  sessionHostRegistry: agentSessionRegistry,
-})
-orchestratorRef = orchestrator
+  recordingsStore,
+  evictionController,
+  agentSessionRegistry,
+  orchestrator,
+  usageStore,
+  memoryGuard,
+} = deps
 
 // נתיבי HTTP
 registerHttp(app)
@@ -220,17 +127,6 @@ registerRecordingsHttp(app, { recordingsStore })
 registerRecordingsPostHttp(app, { recordingsStore })
 registerFsBrowseHttp(app)
 registerFsFileHttp(app)
-
-// Slice tts-usage-metering: usage metering store
-const usageStore = createUsageStore(ensureStateSubdir("usage"))
-
-// Slice proxy-tap-memory: RSS watchdog — defense-in-depth if TransformStream approach fails.
-// Polls RSS every 5s; returns 503 on /proxy/* when over budget (default: 1.5GB).
-const memoryGuard = createMemoryGuard(
-  config.rssBudgetMb !== undefined
-    ? { thresholdBytes: config.rssBudgetMb * 1024 * 1024 }
-    : undefined,
-)
 
 // Slice 10: פרוקסי שקוף עבור Google + ElevenLabs (+ usage tap)
 registerProxyHttp(app, {
@@ -444,11 +340,11 @@ async function gracefulShutdown(sig: string): Promise<void> {
   force.unref()
   try {
     removeInstance(boundPort)
-    await Promise.allSettled(connectionRegistry.list().map((id) => connectionRegistry.close(id)))
-    stopWatching()
+    for (const d of [...disposables].reverse()) {
+      await Promise.resolve(d.dispose())
+    }
     echoWss.close()
     agentWss.close()
-    usageStore.flushUsageOnShutdown()
     await new Promise<void>((r) => httpServer.close(() => r()))
   } catch (e) {
     procLog.error({ err: e }, "error during shutdown")
