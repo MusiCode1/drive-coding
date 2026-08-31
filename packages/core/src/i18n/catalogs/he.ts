@@ -459,4 +459,14 @@ export const he: Catalog = {
   "chat.tool.output.exitCode": "קוד יציאה",
   "chat.tool.output.stderr": "stderr",
   "chat.tool.output.empty": "אין פלט",
+  // ─── notifications ─── (slice notify-local)
+  "notify.permission.title": "נדרשת הרשאה",
+  "notify.permission.body": "הסוכן מבקש אישור — חזרי לאפליקציה כדי להמשיך.",
+  "notify.elicitation.title": "נדרשת תשובה",
+  "notify.elicitation.body": "הסוכן ממתין לקלט — חזרי לאפליקציה כדי להמשיך.",
+  "notify.turnEnd.title": "התור הסתיים",
+  "notify.turnEnd.body": "הסוכן סיים — חזרי לאפליקציה כדי לראות את התשובה.",
+  "settings.notifications.title": "התראות",
+  "settings.toggle.notifications": "התראות כשהטאב מוסתר",
+  "settings.notifications.blocked": "ההתראות חסומות בדפדפן. אפשרי אותן בהגדרות הדפדפן.",
 }

@@ -468,6 +468,16 @@ export type MessageKey =
   | "chat.tool.output.exitCode"
   | "chat.tool.output.stderr"
   | "chat.tool.output.empty"
+  // ─── notifications ─── (slice notify-local)
+  | "notify.permission.title"
+  | "notify.permission.body"
+  | "notify.elicitation.title"
+  | "notify.elicitation.body"
+  | "notify.turnEnd.title"
+  | "notify.turnEnd.body"
+  | "settings.notifications.title"
+  | "settings.toggle.notifications"
+  | "settings.notifications.blocked"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

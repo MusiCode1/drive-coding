@@ -19,7 +19,7 @@ import { version } from "$app/environment"
 import { goto } from "$app/navigation"
 import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import GeminiVoicePicker from "$lib/components/chat/GeminiVoicePicker.svelte"
-import { getI18n, getSettings } from "$lib/context"
+import { getI18n, getNotify, getSettings } from "$lib/context"
 import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { ttsStatus } from "$lib/view-models/tts-status.svelte"
@@ -32,6 +32,7 @@ import SettingToggle from "./SettingToggle.svelte"
 import TtsStatusCard from "./TtsStatusCard.svelte"
 
 const settings = getSettings()
+const notify = getNotify()
 const t = getI18n().t
 
 // translateThoughts disabled כש-speakThoughts כבוי
@@ -232,6 +233,24 @@ const sessionTransportDisplay = $derived(
       checked={settings.screenWakeLock}
       onCheckedChange={(v) => settings.setScreenWakeLock(v)}
     />
+  </SettingsCard>
+
+  <!-- כרטיס התראות — notify-local -->
+  <SettingsCard title={t("settings.notifications.title")}>
+    <SettingToggle
+      label={t("settings.toggle.notifications")}
+      checked={settings.notifications}
+      disabled={notify.permission === "unsupported" || notify.permission === "denied"}
+      onCheckedChange={async (v) => {
+        if (v && notify.permission === "default") {
+          await notify.requestPermission()
+        }
+        settings.setNotifications(v)
+      }}
+    />
+    {#if notify.permission === "denied"}
+      <p class="text-sm" style="color:var(--fg-dim)">{t("settings.notifications.blocked")}</p>
+    {/if}
   </SettingsCard>
 
   <!-- כרטיס תצוגת צ'אט — display-toggle-consistency -->

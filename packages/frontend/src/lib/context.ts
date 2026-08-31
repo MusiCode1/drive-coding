@@ -33,6 +33,7 @@ import type { ContentViewerVM } from "./view-models/content-viewer.svelte"
 import type { RecentProjects } from "./view-models/recent-projects.svelte"
 import type { AudioPlaylist } from "./engines/audio-playlist.svelte"
 import type { PresencePoller } from "./view-models/presence-poller.svelte"
+import type { NotifyEngine } from "./engines/notify.svelte"
 
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
@@ -98,3 +99,6 @@ export const [getCliAvailability, setCliAvailability] = createContext<CliAvailab
 
 // ─── presence-poller ─── (slice liveness C3)
 export const [getPresencePoller, setPresencePoller] = createContext<PresencePoller>()
+
+// ─── notifications ─── (slice notify-local)
+export const [getNotify, setNotify] = createContext<NotifyEngine>()

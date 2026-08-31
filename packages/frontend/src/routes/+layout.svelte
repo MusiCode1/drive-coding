@@ -33,6 +33,7 @@ import {
   setLive,
   setMic,
   setModals,
+  setNotify,
   setModelStatus,
   setPresencePoller,
   setRecentProjects,
@@ -50,6 +51,8 @@ import { createConfigChangeSocket } from "$lib/engines/config-change-socket"
 import { CuesEngine } from "$lib/engines/cues"
 import { PlayableSink } from "$lib/engines/playable-sink"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
+import { NotifyEngine } from "$lib/engines/notify.svelte"
+import { notifyTexts } from "$lib/notify-texts"
 import { normalizeSessionTransport } from "$lib/session/session-transport"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { beWsUrl } from "$lib/util/be-url"
@@ -192,6 +195,11 @@ $effect(() => {
   return () => wakeLock.dispose()
 })
 
+// ─── notifications ─── (slice notify-local)
+const notify = new NotifyEngine({ text: (kind) => notifyTexts(i18n.t, kind) })
+$effect(() => notify.setEnabled(settings.notifications))
+$effect(() => () => notify.dispose())
+
 // ─── dir/lang sync ─── (rtl-ltr-bidi)
 // סנכרון <html dir> ו-<html lang> ל-locale — הקסם של הדו-כיווניות.
 // ה-effect קורא $state (i18n.locale) וכותב ל-DOM (לא ל-$state) → אין infinite loop.
@@ -275,6 +283,7 @@ setActiveAgents(activeAgents)
 setRecentProjects(recentProjects)
 setCliAvailability(cliAvailability)
 setPresencePoller(presencePoller)
+setNotify(notify)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
 const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })

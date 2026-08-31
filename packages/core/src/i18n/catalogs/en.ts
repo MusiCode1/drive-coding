@@ -467,4 +467,14 @@ export const en: Catalog = {
   "chat.tool.output.exitCode": "Exit code",
   "chat.tool.output.stderr": "stderr",
   "chat.tool.output.empty": "No output",
+  // ─── notifications ─── (slice notify-local)
+  "notify.permission.title": "Permission required",
+  "notify.permission.body": "The agent needs approval — return to the app to continue.",
+  "notify.elicitation.title": "Input required",
+  "notify.elicitation.body": "The agent is waiting for input — return to the app to continue.",
+  "notify.turnEnd.title": "Turn finished",
+  "notify.turnEnd.body": "The agent finished — return to the app to see the response.",
+  "settings.notifications.title": "Notifications",
+  "settings.toggle.notifications": "Notify when tab is hidden",
+  "settings.notifications.blocked": "Notifications are blocked in the browser. Enable them in browser settings.",
 }
