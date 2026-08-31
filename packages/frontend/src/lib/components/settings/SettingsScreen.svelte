@@ -156,6 +156,11 @@ function clearQuietHint() {
 async function onNotificationsChange(v: boolean) {
   if (v) {
     if (notify.permission === "default") {
+      // Quiet UI (Edge/Chrome): requestPermission() often does not resolve until
+      // the user clicks the address-bar bell — show the hint *before* awaiting.
+      settings.setNotifications(false)
+      quietHint = true
+      pendingEnable = true
       const result = await notify.requestPermission()
       if (result === "granted") {
         settings.setNotifications(true)
@@ -163,11 +168,8 @@ async function onNotificationsChange(v: boolean) {
       } else if (result === "denied") {
         settings.setNotifications(false)
         clearQuietHint()
-      } else {
-        settings.setNotifications(false)
-        quietHint = true
-        pendingEnable = true
       }
+      // else still default — keep quietHint + pendingEnable
     } else if (notify.permission === "granted") {
       settings.setNotifications(true)
     }
@@ -178,6 +180,9 @@ async function onNotificationsChange(v: boolean) {
 }
 
 async function retryNotifications() {
+  settings.setNotifications(false)
+  quietHint = true
+  pendingEnable = true
   const result = await notify.requestPermission()
   if (result === "granted") {
     settings.setNotifications(true)
@@ -185,10 +190,6 @@ async function retryNotifications() {
   } else if (result === "denied") {
     settings.setNotifications(false)
     clearQuietHint()
-  } else {
-    settings.setNotifications(false)
-    quietHint = true
-    pendingEnable = true
   }
 }
 
@@ -301,7 +302,9 @@ $effect(() => {
     {#if notify.permission === "denied"}
       <p class="text-sm" style="color:var(--fg-dim)">{t("settings.notifications.blocked")}</p>
     {:else if quietHint}
-      <p class="text-sm" style="color:var(--fg-dim)">{t("settings.notifications.quietHint")}</p>
+      <p class="text-sm mt-2" role="status" style="color:var(--fg)">
+        {t("settings.notifications.quietHint")}
+      </p>
       <button
         type="button"
         class="text-sm font-medium mt-1"
