@@ -1,16 +1,10 @@
 import "./log-setup.js" // חייב להיות ראשון — מאתחל לוגר לפני כל יבוא אחר
 import { createServer as httpsCreateServer } from "node:https"
-import type { ServerMessage } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
-import { onConfigChange } from "@drive-coding/provider/config"
 import { type ServerType, serve } from "@hono/node-server"
-import { serveStatic } from "@hono/node-server/serve-static"
 import { Hono } from "hono"
-import { WebSocket, WebSocketServer } from "ws"
-import { isBinary } from "./binary.js"
 import { preferPathClaudeExecutable } from "./config/prefer-path-cli.js"
 import { isTransientSocketError } from "./delivery/transient-socket-error.js"
-import { safeUrlPathname } from "./delivery/url-safe.js"
 import { resolveTls } from "./tls.js"
 
 const log = createLogger("backend.server")
@@ -52,36 +46,12 @@ process.on("unhandledRejection", (reason) => {
 
 import { cors } from "hono/cors"
 import { resolveAppVersion } from "./app-version.js"
+import { buildApp } from "./boot/app.js"
 import { loadAppConfig } from "./boot/config.js"
 import { createDeps } from "./boot/deps.js"
+import { createWsStack } from "./boot/ws.js"
 import { effectiveCorsOrigins } from "./delivery/cors-config.js"
-import { registerHttp } from "./delivery/http.js"
-import { registerAgentsHttp } from "./delivery/http-agents.js"
-import { registerCliAvailabilityHttp } from "./delivery/http-cli-availability.js"
-import { registerCliLogoHttp } from "./delivery/http-cli-logo.js"
-import { registerClientLogHttp } from "./delivery/http-client-log.js"
-import { registerFsFileHttp } from "./delivery/http-fs-file.js"
-import { registerHealthHttp } from "./delivery/http-health.js"
-import {
-  registerFsBrowseHttp,
-  registerProjectsHttp,
-  registerRecordingsHttp,
-  registerRecordingsPostHttp,
-} from "./delivery/http-history.js"
-import { registerLiveTokenHttp } from "./delivery/http-live-token.js"
-import { registerAgentPromptHttp } from "./delivery/http-agent-prompt.js"
-import { registerMcpHttp } from "./delivery/http-mcp.js"
-import { registerHttpOptions } from "./delivery/http-options.js"
-import { registerProxyHttp } from "./delivery/http-proxy.js"
-import { registerReloadConfigHttp } from "./delivery/http-reload-config.js"
-import { registerTtsCapabilitiesHttp } from "./delivery/http-tts-capabilities.js"
-import { registerUsageHttp } from "./delivery/http-usage.js"
-// הערה: createSessionsCache הוסר — רשימת הסשנים עכשיו מונעת מצד ה-FE דרך ACP WS
-import { createAgentWsHandler } from "./delivery/ws-agent.js"
-import { createEchoWsHandler } from "./delivery/ws-echo.js"
 import { removeInstance, setSelfBaseUrl, writeInstance } from "./instances.js"
-import { ensureStateSubdir } from "./paths.js"
-import { registerConnectionRoute } from "./session-host/http/index.js"
 
 const config = loadAppConfig()
 
@@ -92,182 +62,10 @@ const corsOriginsRaw =
 app.use("*", cors({ origin: effectiveCorsOrigins(corsOriginsRaw, config.publicBaseUrl), credentials: true }))
 
 const { deps, disposables } = createDeps(config, process.env, app)
-const {
-  registry,
-  connectionRegistry,
-  projectsRegistry,
-  recordingsStore,
-  evictionController,
-  agentSessionRegistry,
-  orchestrator,
-  usageStore,
-  memoryGuard,
-} = deps
+const ws = createWsStack()
 
-// נתיבי HTTP
-registerHttp(app)
-registerHttpOptions(app)
-registerTtsCapabilitiesHttp(app)
-registerLiveTokenHttp(app)
-registerClientLogHttp(app)
-// CUT-3b-ii: connectionRegistry מספק getRuntimeInfo (מחליף bridgeManager)
-registerAgentsHttp(app, {
-  registry,
-  orchestrator,
-  projectsRegistry,
-  bridgeManager: connectionRegistry,
-})
-// slice session-bus-mcp C0: Streamable HTTP MCP (stateless, per-request transport)
-registerMcpHttp(app, { registry, orchestrator, agentSessionRegistry })
-registerAgentPromptHttp(app, { registry })
-// Slice be-diag-harness: endpoint אבחון עשיר (eventLoop histogram + memory + agents)
-registerHealthHttp(app, { registry, connectionRegistry })
-registerProjectsHttp(app, { projectsRegistry })
-registerRecordingsHttp(app, { recordingsStore })
-registerRecordingsPostHttp(app, { recordingsStore })
-registerFsBrowseHttp(app)
-registerFsFileHttp(app)
-
-// Slice 10: פרוקסי שקוף עבור Google + ElevenLabs (+ usage tap)
-registerProxyHttp(app, {
-  cacheBaseDir: ensureStateSubdir("cache", "proxy"),
-  usageStore,
-  memoryGuard,
-})
-
-// Slice tts-usage-metering: usage summary endpoint
-registerUsageHttp(app, { usageStore })
-
-// Slice cli-availability: מסנן dropdown הספקים ב-FE לפי CLIs מותקנים בפועל
-registerCliAvailabilityHttp(app)
-
-// Slice cli-specs-hot-reload: broadcast config changes to FE + manual reload endpoint.
-onConfigChange(() => broadcastConfigChanged())
-registerReloadConfigHttp(app)
-
-// Slice cli-logo-serving: מגיש קובץ-לוגו CLI לפי id (id-keyed, ר' §3 בבריף)
-registerCliLogoHttp(app)
-
-// (session-host routes נרשמים למעלה — ליד יצירת agentSessionRegistry, לפני ה-orchestrator)
-
-// Slice 20: serve the built static FE (single-origin local prod).
-// Binary mode: serve from embedded FE manifest (assets in $bunfs, no disk reads).
-// Dev mode / explicit FE_STATIC_DIR: serve from filesystem via serveStatic.
-const feStaticDir = config.feStaticDir
-if (isBinary() && !feStaticDir) {
-  // Binary mode with no explicit FE_STATIC_DIR override — serve from embedded manifest.
-  // Dynamic import so the stub compiles cleanly in dev (never executes in dev).
-  const { FE } = await import("./fe-manifest.gen.js")
-  // noUncheckedIndexedAccess: FE[key] is string | undefined — guard required.
-  const indexPath: string | undefined = FE["/index.html"]
-  // Assets: serve any path found in the manifest.
-  app.use("/*", async (c, next) => {
-    const p: string | undefined = FE[c.req.path]
-    if (p) return new Response(Bun.file(p))
-    return next()
-  })
-  // SPA fallback: any unmatched GET → index.html (client-side routing).
-  if (indexPath) {
-    app.get("/*", () => new Response(Bun.file(indexPath)))
-  }
-  log.info({}, "serving embedded FE from binary manifest")
-} else if (feStaticDir) {
-  // Dev / explicit override: serve from filesystem.
-  // Assets first (js/css/etc), then SPA fallback to index.html for any
-  // unmatched path (client-side routing). Registered AFTER all /api,/proxy
-  // routes so it never shadows them.
-  //
-  // Cache-Control (cache-version slice): onFound נקרא רק כשקובץ נמצא —
-  // נקי יותר ממiddleware (אין צורך ב-await next() + guard). ה-/api,/proxy
-  // רשומים לפני הבלוק הזה ו-terminal, כך שלעולם לא מגיעים לכאן. /ws
-  // מטופל ב-httpServer.on("upgrade") לפני Hono — גם לא מגיע לכאן.
-  // guard מפורש לבטחון נוסף.
-  app.use(
-    "/*",
-    serveStatic({
-      root: feStaticDir,
-      onFound: (_path, c) => {
-        const reqPath = c.req.path
-        if (reqPath.startsWith("/api") || reqPath.startsWith("/proxy")) return
-        if (reqPath.startsWith("/_app/immutable/")) {
-          c.header("Cache-Control", "public, max-age=31536000, immutable")
-        } else {
-          c.header("Cache-Control", "no-cache")
-        }
-      },
-    }),
-  )
-  app.get(
-    "/*",
-    serveStatic({
-      path: `${feStaticDir}/index.html`,
-      onFound: (_path, c) => {
-        c.header("Cache-Control", "no-cache")
-      },
-    }),
-  )
-  log.info({ feStaticDir }, "serving static FE")
-}
-
-// מטפלי WS
-const echoWss = new WebSocketServer({ noServer: true })
-const agentWss = new WebSocketServer({ noServer: true })
-
-// error listeners על שרתי WS — מונעים throw (unhandled EventEmitter error) על שגיאות רמת-שרת
-echoWss.on("error", (err) => procLog.warn({ src: "echoWss", err }, "wss error"))
-agentWss.on("error", (err) => procLog.warn({ src: "agentWss", err }, "wss error"))
-
-// cli-specs-hot-reload: broadcasts config_changed to every echo-WS client.
-// function declaration (hoisted) — the wiring above runs before echoWss exists.
-function broadcastConfigChanged(): void {
-  const payload: ServerMessage = { type: "config_changed", timestamp: Date.now() }
-  const msg = JSON.stringify(payload)
-  for (const client of echoWss.clients) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(msg)
-    }
-  }
-}
-
-const echoHandler = createEchoWsHandler()
-// CUT-3b-ii: connectionRegistry מחליף bridgeManager ב-ws-agent
-// slice remote-warm-reconnect C2: sessionHostRegistry → דחיית WS כש-host חי על הסוכן
-const agentWs = createAgentWsHandler({
-  orchestrator,
-  connectionRegistry,
-  sessionHostRegistry: agentSessionRegistry,
-  evictionController,
-})
-const onAgentConnect = agentWs.onConnect
-registerConnectionRoute(app, connectionRegistry, {
-  closeLiveSocket: agentWs.closeLiveSocket,
-})
-
-echoWss.on("connection", (ws) => {
-  echoHandler(ws)
-})
-
-agentWss.on("connection", (ws, req) => {
-  const pathname = safeUrlPathname(req.url)
-  if (pathname === null) {
-    ws.close()
-    return
-  }
-  const match = pathname.match(/^\/ws\/agent\/([^/]+)$/)
-  const agentId = match?.[1] ?? ""
-  let connectionId: string | undefined
-  try {
-    connectionId = new URL(req.url ?? "", "http://localhost").searchParams.get("connectionId") ?? undefined
-  } catch {
-    connectionId = undefined
-  }
-
-  onAgentConnect(ws, agentId, connectionId).catch((err) => {
-    // async errors (e.g. evictAndWait timeout) — log and close
-    ws.close(1011, "internal error")
-    procLog.error({ err, agentId }, "onAgentConnect async error")
-  })
-})
+await buildApp(app, config, deps, { broadcastConfigChanged: ws.broadcastConfigChanged })
+ws.wireRoutes(app, deps)
 
 preferPathClaudeExecutable()
 
@@ -279,34 +77,7 @@ const httpServer: ServerType = tls
   ? serve({ fetch: app.fetch, hostname, port, createServer: httpsCreateServer, serverOptions: tls })
   : serve({ fetch: app.fetch, hostname, port })
 
-httpServer.on("upgrade", (req, socket, head) => {
-  // safeUrlPathname: עטיפה בטוחה ל-new URL — לעולם לא זורקת.
-  // target פגום (למשל "//[::1") גורם ל-new URL לזרוק TypeError → uncaughtException → exit.
-  // כאן: pathname===null → הרוס סוקט ו-return, ה-BE שורד.
-  const pathname = safeUrlPathname(req.url)
-  if (pathname === null) {
-    log.warn({ url: req.url }, "upgrade: malformed request-target — destroying socket")
-    socket.destroy()
-    return
-  }
-
-  if (pathname === "/ws/echo") {
-    echoWss.handleUpgrade(req, socket, head, (ws) => {
-      echoWss.emit("connection", ws, req)
-    })
-    return
-  }
-
-  if (pathname.startsWith("/ws/agent/")) {
-    agentWss.handleUpgrade(req, socket, head, (ws) => {
-      agentWss.emit("connection", ws, req)
-    })
-    return
-  }
-
-  // נתיב WS לא ידוע — הרוס את הסוקט
-  socket.destroy()
-})
+ws.attachUpgradeHandler(httpServer)
 
 log.info({ hostname, port }, "listening")
 
@@ -327,7 +98,6 @@ setSelfBaseUrl(instanceRecord)
 // ─── Graceful shutdown ────────────────────────────────────────────────────────
 // SIGINT (Ctrl+C) / SIGTERM — סגור חיבורים, הרוג ילדים, צא בצורה מסודרת.
 // force-timeout: אם הכיבוי תקוע (hang) — הכרח יציאה אחרי 8s.
-// usage-store: flush לפני יציאה (נקי יותר מ-SIGINT handler מקביל ב-usage-store).
 let shuttingDown = false
 async function gracefulShutdown(sig: string): Promise<void> {
   if (shuttingDown) return
@@ -343,8 +113,8 @@ async function gracefulShutdown(sig: string): Promise<void> {
     for (const d of [...disposables].reverse()) {
       await Promise.resolve(d.dispose())
     }
-    echoWss.close()
-    agentWss.close()
+    ws.echoWss.close()
+    ws.agentWss.close()
     await new Promise<void>((r) => httpServer.close(() => r()))
   } catch (e) {
     procLog.error({ err: e }, "error during shutdown")

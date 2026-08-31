@@ -33,6 +33,7 @@ function makeMockRegistry(): AgentSessionRegistry {
       via: "http",
     }),
     getConnectionCount: vi.fn().mockReturnValue(1),
+    stop: vi.fn(),
   }
 }
 
