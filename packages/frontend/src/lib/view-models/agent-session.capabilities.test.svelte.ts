@@ -64,7 +64,7 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
   }
 })
 
-vi.mock("@drive-coding/acp-wire", () => ({
+vi.mock("@drive-coding/acp-wire/browser", () => ({
   WsAcpTransport: vi.fn(function mockWsTransport() {
     return {
       onClose: vi.fn(),

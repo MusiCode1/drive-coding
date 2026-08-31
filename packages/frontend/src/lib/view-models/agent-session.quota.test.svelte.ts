@@ -80,7 +80,7 @@ vi.mock("$lib/adapters/ext", () => ({
   })),
 }))
 
-vi.mock("@drive-coding/acp-wire", () => ({
+vi.mock("@drive-coding/acp-wire/browser", () => ({
   WsAcpTransport: vi.fn(function mockWsTransport() {
     return {
       onClose: vi.fn(),

@@ -53,7 +53,7 @@ import {
   onTurnStarted,
   type TurnActivityState,
 } from "$lib/engines/turn-watchdog"
-import { WsAcpTransport } from "@drive-coding/acp-wire"
+import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 // ─── slice view-switch C3: createRemoteView (attachRemote) ─── (additive)
 import { createRemoteView } from "$lib/session/create-session-view"
 // ─── slice local-view-wiring: LocalSessionView + tee ───
