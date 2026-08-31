@@ -455,4 +455,12 @@ export const he: Catalog = {
   "chat.tool.output.exitCode": "קוד יציאה",
   "chat.tool.output.stderr": "stderr",
   "chat.tool.output.empty": "אין פלט",
+  // ─── dictate ─── (slice dictate-to-input)
+  "dictate.start": "הכתבה",
+  "dictate.stop": "עצור הכתבה",
+  "dictate.listening": "כותב…",
+  "dictate.error.permission": "אין הרשאת מיקרופון",
+  "dictate.error.notFound": "לא נמצא מיקרופון",
+  "dictate.error.transcribe": "התמלול נכשל",
+  "dictate.error.generic": "ההכתבה נכשלה",
 }

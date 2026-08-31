@@ -465,6 +465,14 @@ export type MessageKey =
   | "chat.tool.output.exitCode"
   | "chat.tool.output.stderr"
   | "chat.tool.output.empty"
+  // ─── dictate ─── (slice dictate-to-input)
+  | "dictate.start"
+  | "dictate.stop"
+  | "dictate.listening"
+  | "dictate.error.permission"
+  | "dictate.error.notFound"
+  | "dictate.error.transcribe"
+  | "dictate.error.generic"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
