@@ -347,6 +347,23 @@ describe("session_open / session_close (slice session-bus-mcp C1)", () => {
     )
   })
 
+  it("session_open passes systemPrompt through to createAndSpawn", async () => {
+    const { app, orchestrator } = makeApp()
+    const client = await connectClient(app)
+    await client.callTool({
+      name: "session_open",
+      arguments: {
+        cli: "cursor",
+        cwd: "/tmp/mcp-charter",
+        systemPrompt: "CHARTER_X",
+      },
+    })
+    await client.close()
+    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({ systemPrompt: "CHARTER_X" }),
+    )
+  })
+
   it("session_close on idle deletes the agent", async () => {
     const { app, registry } = makeApp()
     const client = await connectClient(app)

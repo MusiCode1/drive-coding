@@ -37,6 +37,7 @@ type Values = {
   text?: string
   "text-file"?: string
   "public-url"?: string
+  "system-prompt"?: string
 }
 
 function kv(entries: string[] | undefined): Record<string, string> {
@@ -95,6 +96,7 @@ export async function runCli(argv: string[]): Promise<number> {
         text: { type: "string" },
         "text-file": { type: "string" },
         "public-url": { type: "string" },
+        "system-prompt": { type: "string" },
       },
     }) as { values: Values; positionals: string[] })
   } catch (err) {
@@ -191,6 +193,7 @@ async function cmdOpen(base: string, values: Values, asJson: boolean): Promise<n
     ...(values.permission ? { permissionPolicy: values.permission } : {}),
     ...(values.parent ? { parentAgentId: values.parent } : {}),
     ...(values["close-on-turn-end"] ? { closeOnTurnEnd: true } : {}),
+    ...(values["system-prompt"] !== undefined ? { systemPrompt: values["system-prompt"] } : {}),
   })) as { agentId?: string }
   const agent = created.agentId
   if (!agent) {
