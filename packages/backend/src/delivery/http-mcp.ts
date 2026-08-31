@@ -271,7 +271,7 @@ function createSessionBusMcpServer(
       if (input.permission !== undefined) body.permissionPolicy = input.permission
       if (effectiveParent !== undefined) body.parentAgentId = effectiveParent
       if (input.closeOnTurnEnd === true) body.closeOnTurnEnd = true
-      applyNotifyOnDoneToOpenBody(body, input.notifyOnDone)
+      applyNotifyOnDoneToOpenBody(body, input.notifyOnDone, input.includeLastAssistantText)
 
       const parsed = parseCreateAgentBody(body)
       if (!parsed.ok) return jsonError(parsed.error.body.error)
