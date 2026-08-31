@@ -23,6 +23,31 @@ describe("formatAgentEventPrompt", () => {
     expect(prompt.split("\n").every((line) => !line.includes("."))).toBe(true)
   })
 
+  it("does not include lastAssistantText without extras", () => {
+    const prompt = formatAgentEventPrompt({
+      kind: "turn-ended",
+      agentId: "a",
+      at: 1,
+    })
+    expect(prompt).not.toContain("lastAssistantText")
+  })
+
+  it("includes lastAssistantText on turn-ended when extras provide text", () => {
+    const prompt = formatAgentEventPrompt(
+      { kind: "turn-ended", agentId: "a", at: 1, stopReason: "end_turn" },
+      { lastAssistantText: "hello" },
+    )
+    expect(prompt).toContain("lastAssistantText: hello")
+  })
+
+  it("omits lastAssistantText on stall-suspected even with extras", () => {
+    const prompt = formatAgentEventPrompt(
+      { kind: "stall-suspected", agentId: "a", at: 1, silentMs: 100 },
+      { lastAssistantText: "x" },
+    )
+    expect(prompt).not.toContain("lastAssistantText")
+  })
+
   it("includes optional silentMs and lastTurnError when set", () => {
     const prompt = formatAgentEventPrompt({
       kind: "stall-suspected",
@@ -71,5 +96,81 @@ describe("wireAgentEventDelivery", () => {
     expect(text).toContain("kind:")
     expect(text).toContain("agentId:")
     expect(text.startsWith("[drive-coding event]")).toBe(true)
+    expect(text).not.toContain("lastAssistantText")
+  })
+
+  it("includes lastAssistantText in prompt when subscriber opted in and host has assistant message", async () => {
+    const bus = createAgentEventBus()
+    bus.subscribe("target-a", "sub-1", { includeLastAssistantText: true })
+
+    const prompt = vi.fn(async () => {})
+    const subscriberHost = {
+      state: { sessionId: "sess-sub" },
+      prompt,
+    } as unknown as ExtendedSessionHost
+    const targetHost = {
+      state: {
+        messages: [
+          { role: "user", segments: [{ text: "q" }] },
+          { role: "assistant", segments: [{ text: "hello-from-state" }] },
+        ],
+      },
+      emitExtNotification: vi.fn(),
+    } as unknown as ExtendedSessionHost
+
+    wireAgentEventDelivery({
+      eventBus: bus,
+      agentSessionRegistry: {
+        getHost: (id: string) => (id === "target-a" ? targetHost : undefined),
+        getOrCreateHost: vi.fn(async () => ({ ok: true, entry: { host: subscriberHost } })),
+      } as never,
+    })
+
+    bus.emit({
+      kind: "turn-ended",
+      agentId: "target-a",
+      at: 42,
+      stopReason: "end_turn",
+    })
+
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce())
+    const text = prompt.mock.calls[0]?.[1] as string
+    expect(text).toContain("lastAssistantText: hello-from-state")
+  })
+
+  it("does not include lastAssistantText on stall-suspected even when opted in", async () => {
+    const bus = createAgentEventBus()
+    bus.subscribe("target-a", "sub-1", { includeLastAssistantText: true })
+
+    const prompt = vi.fn(async () => {})
+    const subscriberHost = {
+      state: { sessionId: "sess-sub" },
+      prompt,
+    } as unknown as ExtendedSessionHost
+    const targetHost = {
+      state: {
+        messages: [{ role: "assistant", segments: [{ text: "hello-from-state" }] }],
+      },
+      emitExtNotification: vi.fn(),
+    } as unknown as ExtendedSessionHost
+
+    wireAgentEventDelivery({
+      eventBus: bus,
+      agentSessionRegistry: {
+        getHost: (id: string) => (id === "target-a" ? targetHost : undefined),
+        getOrCreateHost: vi.fn(async () => ({ ok: true, entry: { host: subscriberHost } })),
+      } as never,
+    })
+
+    bus.emit({
+      kind: "stall-suspected",
+      agentId: "target-a",
+      at: 42,
+      silentMs: 600_001,
+    })
+
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce())
+    const text = prompt.mock.calls[0]?.[1] as string
+    expect(text).not.toContain("lastAssistantText")
   })
 })
