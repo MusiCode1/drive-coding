@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../src/acp/connection-registry.js"
 
 const { createAgentOrchestrator, composeShapeEnv } = await import("../src/app/agent-orchestrator.js")
+const { DC_TOKEN_ENV, issueToken } = await import("../src/agent-scope.js")
 
 // ─── Mock helpers ─────────────────────────────────────────────────────
 
@@ -99,16 +100,31 @@ function makeConnectionRegistry(
   reg: ConnectionRegistry
   closeMock: ReturnType<typeof vi.fn>
   connectMock: ReturnType<typeof vi.fn>
-  lastConnectOpts: { cwd?: string; modelOverride?: string | null; shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv } | null
+  lastConnectOpts: {
+    cwd?: string
+    modelOverride?: string | null
+    shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
+    agentEnv?: Record<string, string>
+  } | null
 } {
   let crashHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
-  let lastConnectOpts: { cwd?: string; modelOverride?: string | null; shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv } | null = null
+  let lastConnectOpts: {
+    cwd?: string
+    modelOverride?: string | null
+    shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
+    agentEnv?: Record<string, string>
+  } | null = null
   const closeMock = vi.fn(async (_id: string) => {})
   const connectMock = vi.fn(
     async (
       _agentId: string,
       _cliKind: string,
-      connectOpts: { cwd: string; modelOverride?: string | null; shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv },
+      connectOpts: {
+        cwd: string
+        modelOverride?: string | null
+        shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
+        agentEnv?: Record<string, string>
+      },
     ) => {
       lastConnectOpts = connectOpts
       if (opts.onConnectError) throw opts.onConnectError()
@@ -518,7 +534,7 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
     const connReg = makeConnectionRegistry()
     const orch = createAgentOrchestrator({ registry, connectionRegistry: connReg.reg })
 
-    await orch.createAndSpawn({
+    const result = await orch.createAndSpawn({
       cliKind: "cursor",
       cwd: "/proj",
       modelOverride: null,
@@ -528,6 +544,10 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
     expect(connReg.lastConnectOpts?.shapeEnv).toBeTypeOf("function")
     const shaped = connReg.lastConnectOpts!.shapeEnv!("cursor", { EXISTING: "yes" })
     expect(shaped).toMatchObject({ EXISTING: "yes", BDS_SLICE: "probe" })
+
+    const expectedToken = issueToken(result.agentId)
+    expect(shaped[DC_TOKEN_ENV]).toBe(expectedToken)
+    expect(connReg.lastConnectOpts?.agentEnv?.[DC_TOKEN_ENV]).toBe(expectedToken)
   })
 
   it("createAndSpawn without env → shapeEnv still wraps opencode injection", async () => {
