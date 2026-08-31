@@ -209,3 +209,88 @@ describe("NotifyEngine permission", () => {
 		engine.dispose()
 	})
 })
+
+describe("NotifyEngine.watchPermission", () => {
+	function setupPermissionsMock(initial: NotificationPermission = "default") {
+		let permission = initial
+		let onchange: (() => void) | null = null
+
+		const status = {
+			get state() {
+				return permission
+			},
+			set onchange(handler: (() => void) | null) {
+				onchange = handler
+			},
+			get onchange() {
+				return onchange
+			},
+		}
+
+		const query = vi.fn(async () => status)
+
+		vi.stubGlobal(
+			"Notification",
+			class MockNotification {
+				static get permission() {
+					return permission
+				}
+				static set permission(v: NotificationPermission) {
+					permission = v
+				}
+				static requestPermission = vi.fn(async () => permission)
+			},
+		)
+
+		vi.stubGlobal("navigator", {
+			serviceWorker: { ready: Promise.resolve({ showNotification: vi.fn() }) },
+			permissions: { query },
+		})
+
+		return {
+			query,
+			status,
+			setPermission(v: NotificationPermission) {
+				permission = v
+				onchange?.()
+			},
+		}
+	}
+
+	it("onchange → permission updates to granted", async () => {
+		const { query, setPermission } = setupPermissionsMock("default")
+		const engine = new NotifyEngine({ text: () => ({ title: "T", body: "B" }) })
+		expect(engine.permission).toBe("default")
+
+		engine.watchPermission()
+		await vi.waitFor(() => expect(query).toHaveBeenCalledWith({ name: "notifications" }))
+
+		setPermission("granted")
+		expect(engine.permission).toBe("granted")
+		engine.dispose()
+	})
+
+	it("dispose prevents onchange from updating permission", async () => {
+		const { query, setPermission } = setupPermissionsMock("default")
+		const engine = new NotifyEngine({ text: () => ({ title: "T", body: "B" }) })
+
+		engine.watchPermission()
+		await vi.waitFor(() => expect(query).toHaveBeenCalled())
+
+		engine.dispose()
+		setPermission("granted")
+		expect(engine.permission).toBe("default")
+	})
+})
+
+describe("NotifyEngine.refreshPermission", () => {
+	it("reads Notification.permission", () => {
+		setupNotificationMocks({ permission: "default" })
+		const engine = new NotifyEngine({ text: () => ({ title: "T", body: "B" }) })
+		expect(engine.refreshPermission()).toBe("default")
+
+		;(Notification as unknown as { permission: NotificationPermission }).permission = "granted"
+		expect(engine.refreshPermission()).toBe("granted")
+		engine.dispose()
+	})
+})

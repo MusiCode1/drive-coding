@@ -24,6 +24,8 @@ export class NotifyEngine {
 	#prevPermissionPending = false
 	#prevElicitationPending = false
 	#disposed = false
+	#permissionStatus: PermissionStatus | null = null
+	#onPermissionChange: (() => void) | null = null
 
 	constructor(opts: { text: (kind: NotifyKind) => NotifyText }) {
 		this.#text = opts.text
@@ -47,6 +49,37 @@ export class NotifyEngine {
 		}
 		const result = await Notification.requestPermission()
 		this.permission = result as NotifyPermission
+		return this.permission
+	}
+
+	/** Subscribe to permission changes (Permissions API). No-op if unsupported. */
+	watchPermission(): void {
+		if (this.#disposed || this.permission === "unsupported") return
+		if (this.#permissionStatus) return
+		if (typeof navigator === "undefined" || !("permissions" in navigator)) return
+
+		void navigator.permissions
+			.query({ name: "notifications" as PermissionName })
+			.then((status) => {
+				if (this.#disposed || this.#permissionStatus) return
+				this.#permissionStatus = status
+				const handler = () => {
+					if (this.#disposed) return
+					this.refreshPermission()
+				}
+				this.#onPermissionChange = handler
+				status.onchange = handler
+			})
+			.catch(() => {
+				/* Permissions API unavailable — no-op */
+			})
+	}
+
+	/** Refresh this.permission from Notification.permission (and stop quietly). */
+	refreshPermission(): NotifyPermission {
+		if (this.permission === "unsupported") return "unsupported"
+		if (typeof Notification === "undefined") return this.permission
+		this.permission = Notification.permission as NotifyPermission
 		return this.permission
 	}
 
@@ -74,6 +107,11 @@ export class NotifyEngine {
 	dispose(): void {
 		if (this.#disposed) return
 		this.#disposed = true
+		if (this.#permissionStatus && this.#onPermissionChange) {
+			this.#permissionStatus.onchange = null
+		}
+		this.#permissionStatus = null
+		this.#onPermissionChange = null
 		this.setEnabled(false)
 	}
 
