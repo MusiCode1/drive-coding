@@ -36,7 +36,7 @@ export interface LiveTokenResponse {
 const DEFAULT_MODEL = "gemini-3.1-flash-live-preview"
 const DEFAULT_VOICE = "Puck"
 
-export function registerLiveTokenHttp(app: Hono): void {
+export function registerLiveTokenHttp(app: Hono, env: NodeJS.ProcessEnv): void {
   app.post("/api/voice/live/token", async (c) => {
     let body: unknown
     try {
@@ -50,7 +50,7 @@ export function registerLiveTokenHttp(app: Hono): void {
       return c.json({ error: "invalid-body", details: parsed.summary }, 400)
     }
 
-    const auth = resolveProviderAuth("google", process.env)
+    const auth = resolveProviderAuth("google", env)
     if (!auth) {
       return c.json({ error: "no-api-key" }, 503)
     }

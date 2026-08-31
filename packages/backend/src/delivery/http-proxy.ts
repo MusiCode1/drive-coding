@@ -68,7 +68,12 @@ function getCache(cacheBaseDir: string) {
 
 export function registerProxyHttp(
   app: Hono,
-  opts: { cacheBaseDir?: string; usageStore?: UsageStore; memoryGuard?: MemoryGuard } = {},
+  opts: {
+    cacheBaseDir?: string
+    usageStore?: UsageStore
+    memoryGuard?: MemoryGuard
+    env: NodeJS.ProcessEnv
+  },
 ): void {
   const cacheBaseDir = opts.cacheBaseDir ?? path.resolve("data/cache/proxy")
   const proxyCache = getCache(cacheBaseDir)
@@ -149,7 +154,7 @@ export function registerProxyHttp(
     // אם הוגדר מפתח ב-env (ELEVENLABS_API_KEY / GEMINI_API_KEY) — מזריק ל-upstream.
     // אין מפתח → null → placeholder עובר כמו שהוא (OneCLI ממשיך לעבוד כרגיל).
     // לעולם לא ללוגג את הערך — הוא מפתח סודי.
-    const auth = resolveProviderAuth(provider, process.env)
+    const auth = resolveProviderAuth(provider, opts.env)
     if (auth) headers.set(auth.name, auth.value)
 
     // ── העברה ל-upstream ──────────────────────────────────────────────────

@@ -50,8 +50,3 @@ export function effectiveCorsOrigins(
   if (existing.includes(normalizedPublic)) return existing
   return [...existing, normalizedPublic]
 }
-
-/** Boot-time CORS list from process.env (keeps server.ts free of extra env reads). */
-export function bootCorsOrigins(): string | string[] {
-  return effectiveCorsOrigins(process.env.CORS_ORIGINS, process.env.PUBLIC_BASE_URL)
-}

@@ -137,7 +137,7 @@ async function makeGateServer() {
   }
   orchestratorRef = orchestrator
 
-  registerAgentsHttp(app, { registry, orchestrator, bridgeManager: connectionRegistry as never })
+  registerAgentsHttp(app, { registry, orchestrator, bridgeManager: connectionRegistry as never, env: process.env })
   const { registerEventsRoute } = await import("../src/session-host/http/events.js")
   registerEventsRoute(app, agentSessionRegistry, connectionRegistry as never)
   const { registerRpcRoute } = await import("../src/session-host/http/rpc.js")

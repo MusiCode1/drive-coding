@@ -51,38 +51,51 @@ export async function buildApp(
     memoryGuard,
   } = deps
 
+  const { env } = deps
+  const urlConfig = config
+
   registerHttp(app)
   registerHttpOptions(app)
-  registerTtsCapabilitiesHttp(app)
-  registerLiveTokenHttp(app)
+  registerTtsCapabilitiesHttp(app, env)
+  registerLiveTokenHttp(app, env)
   registerClientLogHttp(app)
   registerAgentsHttp(app, {
     registry,
     orchestrator,
     projectsRegistry,
     bridgeManager: connectionRegistry,
+    env,
   })
-  registerMcpHttp(app, { registry, orchestrator, agentSessionRegistry })
-  registerAgentPromptHttp(app, { registry })
+  registerMcpHttp(app, {
+    registry,
+    orchestrator,
+    agentSessionRegistry,
+    env,
+    urlConfig,
+  })
+  registerAgentPromptHttp(app, { registry, urlConfig })
   registerHealthHttp(app, { registry, connectionRegistry })
   registerProjectsHttp(app, { projectsRegistry })
   registerRecordingsHttp(app, { recordingsStore })
   registerRecordingsPostHttp(app, { recordingsStore })
-  registerFsBrowseHttp(app)
-  registerFsFileHttp(app)
+  registerFsBrowseHttp(app, {
+    allowedBase: config.fsBrowseBase ?? env.FS_BROWSE_ALLOWED_BASE,
+  })
+  registerFsFileHttp(app, { allowedBase: env.FS_FILE_ALLOWED_BASE })
 
   registerProxyHttp(app, {
     cacheBaseDir: ensureStateSubdir("cache", "proxy"),
     usageStore,
     memoryGuard,
+    env,
   })
 
   registerUsageHttp(app, { usageStore })
-  registerCliAvailabilityHttp(app)
+  registerCliAvailabilityHttp(app, env)
 
   onConfigChange(() => opts.broadcastConfigChanged())
   registerReloadConfigHttp(app)
-  registerCliLogoHttp(app)
+  registerCliLogoHttp(app, env)
 
   const feStaticDir = config.feStaticDir
   if (isBinary() && !feStaticDir) {

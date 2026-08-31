@@ -81,7 +81,7 @@ const subscriptionResponseSchema = type({
  * Returns null when unsupported / fetch-fail / parse-fail → caller keeps probe result.
  * IMPORTANT: never log auth.value.
  */
-async function probeElevenLabsQuota(): Promise<QuotaVerdict | null> {
+async function probeElevenLabsQuota(env: NodeJS.ProcessEnv): Promise<QuotaVerdict | null> {
   const subscriptionPath = SUBSCRIPTION_PATHS["elevenlabs"]
   const base = PROXY_HOSTS["elevenlabs"]
   if (!base || !subscriptionPath) return null
@@ -90,7 +90,7 @@ async function probeElevenLabsQuota(): Promise<QuotaVerdict | null> {
   const headers = new Headers()
 
   // Inject auth: env key if available, otherwise placeholder for OneCLI
-  const auth = resolveProviderAuth("elevenlabs", process.env)
+  const auth = resolveProviderAuth("elevenlabs", env)
   if (auth) {
     headers.set(auth.name, auth.value)
     // IMPORTANT: never log auth.value
@@ -128,7 +128,10 @@ async function probeElevenLabsQuota(): Promise<QuotaVerdict | null> {
 
 // ─── Core probe logic ─────────────────────────────────────────────────────────
 
-async function probeProvider(provider: "elevenlabs" | "google"): Promise<ProbeResult> {
+async function probeProvider(
+  provider: "elevenlabs" | "google",
+  env: NodeJS.ProcessEnv,
+): Promise<ProbeResult> {
   const cached = getCached(provider)
   if (cached) return cached
 
@@ -144,7 +147,7 @@ async function probeProvider(provider: "elevenlabs" | "google"): Promise<ProbeRe
   const headers = new Headers()
 
   // Inject auth: env key if available, otherwise placeholder for OneCLI
-  const auth = resolveProviderAuth(provider, process.env)
+  const auth = resolveProviderAuth(provider, env)
   if (auth) {
     headers.set(auth.name, auth.value)
     // IMPORTANT: never log auth.value
@@ -172,7 +175,7 @@ async function probeProvider(provider: "elevenlabs" | "google"): Promise<ProbeRe
 
   // NEW: quota gate — elevenlabs only, only when key is valid (result.available)
   if (provider === "elevenlabs" && result.available) {
-    const quota = await probeElevenLabsQuota()
+    const quota = await probeElevenLabsQuota(env)
     if (quota?.exhausted) {
       const gated: ProbeResult = { available: false, reason: quota.reason }
       setCached(provider, gated)
@@ -186,11 +189,11 @@ async function probeProvider(provider: "elevenlabs" | "google"): Promise<ProbeRe
 
 // ─── Route registration ───────────────────────────────────────────────────────
 
-export function registerTtsCapabilitiesHttp(app: Hono): void {
+export function registerTtsCapabilitiesHttp(app: Hono, env: NodeJS.ProcessEnv): void {
   app.get("/api/tts/capabilities", async (c) => {
     const [elevenlabs, google] = await Promise.all([
-      probeProvider("elevenlabs"),
-      probeProvider("google"),
+      probeProvider("elevenlabs", env),
+      probeProvider("google", env),
     ])
 
     const capabilities: ProviderCapabilities = { elevenlabs, google }

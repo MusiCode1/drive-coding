@@ -1431,13 +1431,9 @@ describe("resolveHttpOwnerTtlMs", () => {
   }
 
   // 🔴 default path: NO _httpOwnerTtlMs injected — the sweep must honour
-  // process.env.HTTP_OWNER_TTL_MS directly. Run-1's lesson (`Illegal
-  // invocation`) was a suite of green tests that all injected a mock and
-  // never once ran the default path.
+  // HTTP_OWNER_TTL_MS from deps.env (not direct process.env).
   it("🔴 default path: with no _httpOwnerTtlMs, the sweep honours HTTP_OWNER_TTL_MS from the env", async () => {
     vi.useFakeTimers()
-    const prev = process.env.HTTP_OWNER_TTL_MS
-    process.env.HTTP_OWNER_TTL_MS = "50"
     try {
       const conn = makeMockConnection()
       const touchState = makeTouchState(Date.now() - 10_000) // already stale
@@ -1448,6 +1444,7 @@ describe("resolveHttpOwnerTtlMs", () => {
         connectionRegistry,
         _createHostFn: vi.fn().mockResolvedValue(mockHost),
         _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+        env: { HTTP_OWNER_TTL_MS: "50" },
         _httpSweepMs: 20, // only the TTL comes from env — sweep interval still injected
       })
 
@@ -1457,8 +1454,6 @@ describe("resolveHttpOwnerTtlMs", () => {
       expect(connectionRegistry.removeConnection).toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
-      if (prev === undefined) delete process.env.HTTP_OWNER_TTL_MS
-      else process.env.HTTP_OWNER_TTL_MS = prev
     }
   })
 
@@ -1466,8 +1461,6 @@ describe("resolveHttpOwnerTtlMs", () => {
   // DEFAULT_HTTP_OWNER_TTL_MS to 600 MUST fail this.
   it("🔴 default path: with the env unset, the default is 600_000 (a 100s-stale owner is NOT released)", async () => {
     vi.useFakeTimers()
-    const prev = process.env.HTTP_OWNER_TTL_MS
-    delete process.env.HTTP_OWNER_TTL_MS
     try {
       const conn = makeMockConnection()
       const touchState = makeTouchState(Date.now() - 100_000)
@@ -1478,6 +1471,7 @@ describe("resolveHttpOwnerTtlMs", () => {
         connectionRegistry,
         _createHostFn: vi.fn().mockResolvedValue(mockHost),
         _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+        env: {},
         _httpSweepMs: 20,
       })
 
@@ -1487,8 +1481,6 @@ describe("resolveHttpOwnerTtlMs", () => {
       expect(connectionRegistry.removeConnection).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
-      if (prev === undefined) delete process.env.HTTP_OWNER_TTL_MS
-      else process.env.HTTP_OWNER_TTL_MS = prev
     }
   })
 })

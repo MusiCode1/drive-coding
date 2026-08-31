@@ -37,7 +37,7 @@ async function makeApp() {
   const { Hono } = await import("hono")
   const { registerCliAvailabilityHttp } = await import("../src/delivery/http-cli-availability.js")
   const app = new Hono()
-  registerCliAvailabilityHttp(app)
+  registerCliAvailabilityHttp(app, process.env)
   return app
 }
 

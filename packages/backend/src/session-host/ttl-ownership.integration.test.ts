@@ -255,17 +255,12 @@ describe("ttl-ownership integration (real registry + real broadcaster + real SSE
   // AGAIN before assertions 7-8 run. 500 keeps the whole test under a second
   // while leaving a comfortable margin over the ~150ms of real I/O involved.
   const TTL_MS = "500"
-  let prevTtl: string | undefined
 
   beforeEach(() => {
-    prevTtl = process.env.HTTP_OWNER_TTL_MS
-    process.env.HTTP_OWNER_TTL_MS = TTL_MS
     setSelfBaseUrlForTests("http://127.0.0.1:4055")
   })
 
   afterEach(() => {
-    if (prevTtl === undefined) delete process.env.HTTP_OWNER_TTL_MS
-    else process.env.HTTP_OWNER_TTL_MS = prevTtl
     setSelfBaseUrlForTests(undefined)
   })
 
@@ -292,9 +287,9 @@ describe("ttl-ownership integration (real registry + real broadcaster + real SSE
             return mockClient
           },
         }),
-      // TTL itself is deliberately NOT injected — it must come from
-      // process.env.HTTP_OWNER_TTL_MS (the default path). The sweep
-      // interval IS injected: real timers, but no reason to wait 30s.
+      // TTL itself is deliberately NOT injected — it must come from deps.env.
+      // The sweep interval IS injected: real timers, but no reason to wait 30s.
+      env: { HTTP_OWNER_TTL_MS: TTL_MS },
       _httpSweepMs: 20,
     })
 

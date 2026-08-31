@@ -97,6 +97,7 @@ export function createDeps(
       }, graceMs)
     },
     _httpOwnerTtlMs: config.httpOwnerTtlMs,
+    env,
   })
 
   const orchestrator = createAgentOrchestrator({
@@ -104,6 +105,7 @@ export function createDeps(
     connectionRegistry,
     projectsRegistry,
     sessionHostRegistry: agentSessionRegistry,
+    urlConfig: config,
   })
   orchestratorRef.current = orchestrator
 

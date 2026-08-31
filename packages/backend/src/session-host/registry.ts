@@ -216,6 +216,8 @@ type AgentSessionRegistryDeps = {
    * Exposed for tests to control sweep timing.
    */
   _httpSweepMs?: number
+  /** slice boot-layer C5: env reference for TTL fallback (no direct process.env). */
+  env?: NodeJS.ProcessEnv
 }
 
 /** slice ttl-ownership: the default HTTP ownership TTL (10 minutes). */
@@ -259,7 +261,9 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
 
   // slice connection-set D8: per-row HTTP TTL sweep — removes stale http rows only.
   const HTTP_OWNER_TTL_MS =
-    deps._httpOwnerTtlMs ?? resolveHttpOwnerTtlMs(process.env.HTTP_OWNER_TTL_MS)
+    deps._httpOwnerTtlMs ??
+    resolveHttpOwnerTtlMs(deps.env?.HTTP_OWNER_TTL_MS) ??
+    DEFAULT_HTTP_OWNER_TTL_MS
   const HTTP_SWEEP_MS = deps._httpSweepMs ?? 30_000 // sweep every 30s
   const httpSweep = setInterval(() => {
     const now = Date.now()

@@ -31,12 +31,12 @@ import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { buildAgentIdentityEnv } from "../agent-identity.js"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
-import { loopbackBaseUrl } from "../delivery/public-url.js"
+import { loopbackBaseUrl, type UrlConfig } from "../delivery/public-url.js"
 import type { ProjectsRegistry } from "./projects-registry.js"
 
 /** Loopback BASE env every child gets (never PUBLIC_BASE_URL). */
-export function buildChildBaseEnv(): Record<string, string> {
-  const base = loopbackBaseUrl().replace(/\/$/, "")
+export function buildChildBaseEnv(urlConfig: UrlConfig): Record<string, string> {
+  const base = loopbackBaseUrl(urlConfig).replace(/\/$/, "")
   return {
     DRIVE_CODING_BASE: base,
     DC_BASE: base,
@@ -133,7 +133,9 @@ export function createAgentOrchestrator(deps: {
    * lazy, אבל כאן סוגרים את החלון במיידי). אופציונלי — טסטים/נתיבים בלי host.
    */
   sessionHostRegistry?: { unregisterHost(agentId: string): void }
+  urlConfig?: UrlConfig
 }): AgentOrchestrator {
+  const urlConfig = deps.urlConfig ?? { port: 4000, host: "127.0.0.1" }
   // מאזין התרסקויות: כש-connection מת, סמן סוכן כ-crashed + עדכן registry.
   deps.connectionRegistry.onCrash(async (agentId, info: BridgeCrashInfo) => {
     try {
@@ -194,7 +196,7 @@ export function createAgentOrchestrator(deps: {
       const childEnv = {
         ...input.env,
         ...identityEnv,
-        ...buildChildBaseEnv(),
+        ...buildChildBaseEnv(urlConfig),
       }
 
       try {
