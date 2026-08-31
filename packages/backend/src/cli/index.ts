@@ -9,7 +9,7 @@ import type { InstanceRecord } from "@drive-coding/core/schemas/session-bus"
 import { resolveInstances } from "../instances.js"
 import { childEnv, formatInstanceList, resolveBase } from "./discover.js"
 import { AGENT_HELP } from "./help.js"
-import { postJson, readJson } from "./http.js"
+import { authedInit, postJson, readJson } from "./http.js"
 import { waitForTurnEnd } from "./wait-for-turn.js"
 
 type Values = {
@@ -287,7 +287,7 @@ async function cmdSend(base: string, values: Values): Promise<number> {
     `${icon} ${r.why}${r.stopReason ? `  stopReason=${r.stopReason}` : ""}  frames=${r.frames}  state=${r.lastState}`,
   )
   if (r.code === 0 && !values.keep) {
-    await fetch(`${base}/api/agents/${agent}`, { method: "DELETE" })
+    await fetch(`${base}/api/agents/${agent}`, authedInit({ method: "DELETE" }))
     console.log("agent closed")
   } else if (r.code !== 0) {
     console.log(
@@ -344,7 +344,7 @@ async function cmdClose(base: string, values: Values): Promise<number> {
   }
   if (turnState === null)
     console.error("[drive-coding] no /state (host not up?) — closing without turn check.")
-  const res = await fetch(`${base}/api/agents/${agent}`, { method: "DELETE" })
+  const res = await fetch(`${base}/api/agents/${agent}`, authedInit({ method: "DELETE" }))
   console.log(`${res.ok ? "ok" : "err"} DELETE ${res.status}  ${agent}${cwd ? `  ${cwd}` : ""}`)
   return res.ok ? 0 : 3
 }

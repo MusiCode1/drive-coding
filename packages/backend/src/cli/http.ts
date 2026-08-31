@@ -1,3 +1,7 @@
+import { authedInit } from "./authed-init.js"
+
+export { authedInit } from "./authed-init.js"
+
 export async function readJson(url: string, init?: RequestInit): Promise<unknown> {
   const res = await fetch(url, init)
   const text = await res.text()
@@ -6,9 +10,12 @@ export async function readJson(url: string, init?: RequestInit): Promise<unknown
 }
 
 export function postJson(url: string, body: unknown): Promise<unknown> {
-  return readJson(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  })
+  return readJson(
+    url,
+    authedInit({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  )
 }
