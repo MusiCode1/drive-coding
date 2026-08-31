@@ -8,22 +8,31 @@
 
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 import type { MessageKey } from "@drive-coding/core/i18n"
-import { canDispatchPrompt } from "@drive-coding/core/voice/live-dispatch"
-import {
-  formatListConfigSnapshot,
-  validateAppSetting,
-  type ListConfigInput,
-  type SelectChoiceInput,
-} from "@drive-coding/core/voice/live-config"
 import {
   conversationHasLiveAgentPreamble,
   formatSecretaryDispatch,
 } from "@drive-coding/core/voice/live-agent-prompt"
-import { formatAgentDelivery, formatConfigSeedProse, formatPermissionPending } from "@drive-coding/core/voice/live-prompt"
-import { buildLiveSeed } from "@drive-coding/core/voice/live-seed"
+import {
+  type ConfigChoice,
+  formatListConfigSnapshot,
+  type ListConfigInput,
+  type ListConfigOptionInput,
+  validateAppSetting,
+} from "@drive-coding/core/voice/live-config"
+import { canDispatchPrompt } from "@drive-coding/core/voice/live-dispatch"
 import { formatMemoryForPrompt, type MemoryItem } from "@drive-coding/core/voice/live-memory"
+import {
+  formatAgentDelivery,
+  formatConfigSeedProse,
+  formatPermissionPending,
+} from "@drive-coding/core/voice/live-prompt"
+import {
+  parseRecentBool,
+  parseRecentCount,
+  readRecentBubbles,
+} from "@drive-coding/core/voice/live-read-recent"
 import { searchSessionBubbles } from "@drive-coding/core/voice/live-search"
-import { parseRecentBool, parseRecentCount, readRecentBubbles } from "@drive-coding/core/voice/live-read-recent"
+import { buildLiveSeed } from "@drive-coding/core/voice/live-seed"
 import { isUnpromptedSend } from "@drive-coding/core/voice/unprompted-guard"
 import {
   loadAlwaysMemory,
@@ -76,7 +85,7 @@ function flattenSelectOptions(option: SessionConfigOption): SelectOpt[] {
   )
 }
 
-function toConfigChoices(items: SelectOpt[]): SelectChoiceInput[] {
+function toConfigChoices(items: SelectOpt[]): ConfigChoice[] {
   return items.map((o) => ({ id: o.value, name: o.name }))
 }
 
@@ -465,7 +474,11 @@ export class Live {
             break
           }
           void this.#session.setThinkingTokens(THINKING_TOKEN_VALUES[level] ?? null)
-          this.#engine.sendActionResult(action.id, action.name, { status: "ok", id, value: rawValue })
+          this.#engine.sendActionResult(action.id, action.name, {
+            status: "ok",
+            id,
+            value: rawValue,
+          })
           break
         }
         const validation = this.#validateSessionConfigValue(id, rawValue)
@@ -568,9 +581,12 @@ export class Live {
     const settings = this.#getSettings()
     const theme = this.#getTheme()
 
-    const sessionPart: ListConfigInput["session"] = {
+    // `options` is `readonly` on ListConfigInput — accumulate in a mutable local
+    // and assign once, instead of pushing through the readonly view.
+    const options: ListConfigOptionInput[] = []
+    const sessionPart: ListConfigInput["session"] & { options: ListConfigOptionInput[] } = {
       connected: s.status === "connected",
-      options: [],
+      options,
     }
 
     const configOptions = s.configOptions ?? []
@@ -626,7 +642,7 @@ export class Live {
       if (opt.type === "select") {
         const choices = flattenSelectOptions(opt)
         if (choices.length === 0) continue
-        sessionPart.options.push({
+        options.push({
           id: opt.id,
           name: opt.name,
           type: "select",
@@ -634,7 +650,7 @@ export class Live {
           choices: toConfigChoices(choices),
         })
       } else if (opt.type === "boolean") {
-        sessionPart.options.push({
+        options.push({
           id: opt.id,
           name: opt.name,
           type: "boolean",

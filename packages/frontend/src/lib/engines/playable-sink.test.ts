@@ -7,6 +7,7 @@ import type { PlayableSegment } from "./segments/playable-segment"
 
 function makeSeg(id: string): PlayableSegment {
   return {
+    segmentId: id,
     prepare: vi.fn(),
     play: vi.fn(async () => {}),
     pause: vi.fn(),

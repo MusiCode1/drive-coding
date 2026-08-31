@@ -13,7 +13,8 @@ describe("fetchLiveToken", () => {
   })
 
   it("POSTs systemInstruction and action names from core", async () => {
-    const fetchMock = vi.fn(async () => ({
+    // params must be declared, else `mock.calls[0]` is typed as the empty tuple
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
       ok: true,
       status: 200,
       json: async () => ({

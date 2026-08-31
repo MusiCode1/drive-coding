@@ -1363,7 +1363,11 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "s2" })
     await host.loadSession({ cwd: "/custom/dir", sessionId: "s2" })
 
-    expect(mockClient.loadSession).toHaveBeenCalledWith({ cwd: "/custom/dir", sessionId: "s2" })
+    expect(mockClient.loadSession).toHaveBeenCalledWith({
+      cwd: "/custom/dir",
+      sessionId: "s2",
+      mcpServers: [],
+    })
   })
 })
 

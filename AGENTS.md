@@ -101,12 +101,18 @@ git push origin dev
 bun install
 bun run dev           # all packages
 bun run test          # all tests
-bun run typecheck
+bun run typecheck     # tsc --build (core/backend/provider) + svelte-check (frontend)
+bun run typecheck:fe  # frontend only — svelte-check
 bun run lint          # Biome
 bun run lint:i18n     # scripts/lint-no-hebrew-in-code.sh — blocks Hebrew in code
 bun run format
 bun run hooks:install # one-time: set core.hooksPath=.githooks (runs pre-commit lint)
 ```
+
+> ⚠️ **The frontend is inside `typecheck` since 2026-08-31.** `tsconfig.json` at the root
+> references only `core` and `backend`, so `tsc --build` never saw `packages/frontend` —
+> it is checked by `svelte-check`, which nothing ran automatically. 63 type errors
+> accumulated there unnoticed. `typecheck` now chains both; keep it that way.
 
 > **Per-package commands** stay PM-agnostic via `node scripts/pm.mjs run-filter <pkg> <script>`
 > (it detects bun from the user-agent), or directly as `bun run --filter <pkg> <script>`.

@@ -18,6 +18,7 @@ import type {
   SessionNotification,
   UsageUpdate,
 } from "@agentclientprotocol/sdk"
+import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 // ─── slice reconnect-ws-takeover: תרגום נקודתי להודעת "נפתח במקום אחר" ───
 // ה-VM לרוב לא מייבא t() (i18n שייך לשכבת-הרכיב — ר' #appendUserPlaceholder), אבל
 // `error` הוא string גולמי שמוצג as-is (routes/+page.svelte:191, לא עובר t() ברכיב) —
@@ -53,7 +54,6 @@ import {
   onTurnStarted,
   type TurnActivityState,
 } from "$lib/engines/turn-watchdog"
-import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 // ─── slice view-switch C3: createRemoteView (attachRemote) ─── (additive)
 import { createRemoteView } from "$lib/session/create-session-view"
 // ─── slice local-view-wiring: LocalSessionView + tee ───
@@ -1567,6 +1567,7 @@ export class AgentSession {
     this.cwd = input.cwd
     this.#cliKind = input.cliKind
 
+    let attached = false
     try {
       // 3. HTTP בלבד. מיד אחריו: agentId מוצב — #cleanup מוחק לפיו; אם ההשמה נדחית
       // לשלב 6, כשל-מהיר (שלב 5) וה-catch (שלב 8) קוראים #cleanup() בלי מה למחוק,
@@ -1602,6 +1603,7 @@ export class AgentSession {
       this.#isRemote = true // slice local-view-wiring C1: view של remote מוצב כאן
       void this.#consumeViewPatches(view)
       this.#setStatus("connected")
+      attached = true
       // 7. ❌ אין WsAcpTransport/#client/#transport, ❌ אין #scheduleReconnect
     } catch (e) {
       // 8. כל שלבים 3-6 עטופים — createAgent/connect() שנדחים לא ישאירו status="connecting" לנצח
@@ -1613,7 +1615,10 @@ export class AgentSession {
     // slice http-cold-parity: שחזור-בחירות best-effort — בכוונה מחוץ ל-try. גרסה
     // שמניחה את זה בתוך ה-try הופכת כשל-RPC חולף אחד לחיבור-מוצלח→status="error"+
     // #cleanup() — הורגת agent+host+child שזה עתה נוצרו. ר' הבריף §4/Commit 1#4.
-    if (this.status === "connected") {
+    // ⚠️ דגל מקומי ולא `this.status === "connected"`: השומר בראש המתודה מצמצם את
+    // הטיפוס של this.status, ו-TS אינו עוקב אחרי ההשמה שבתוך #setStatus — לכן
+    // ההשוואה סומנה כ"בלתי-אפשרית". הדגל מבטא את אותו תנאי בדיוק, ונראה ל-TS.
+    if (attached) {
       try {
         await this.#applyRememberedConfig()
       } catch {

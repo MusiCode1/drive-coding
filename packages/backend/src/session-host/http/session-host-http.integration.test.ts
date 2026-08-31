@@ -435,7 +435,11 @@ describe("session-host HTTP — remote-session-mgmt C3 (real host + real route)"
     expect(json.sessionId).toBe("s2")
     expect(json.version).toBe(host.state.version)
     expect(host.state.sessionId).toBe("s2") // the switch landed on the real host
-    expect(mockClient.loadSession).toHaveBeenCalledWith({ cwd: "/other/dir", sessionId: "s2" })
+    expect(mockClient.loadSession).toHaveBeenCalledWith({
+      cwd: "/other/dir",
+      sessionId: "s2",
+      mcpServers: [],
+    })
   })
 
   it("loadSession without params.cwd falls back to registry.getCwd (the connection's cwd)", async () => {
@@ -450,6 +454,7 @@ describe("session-host HTTP — remote-session-mgmt C3 (real host + real route)"
     expect(mockClient.loadSession).toHaveBeenCalledWith({
       cwd: "/connection/cwd",
       sessionId: "s2",
+      mcpServers: [],
     })
   })
 

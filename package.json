@@ -14,7 +14,7 @@
     "build": "node scripts/pm.mjs run-all build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --build",
+    "typecheck": "tsc --build && node scripts/pm.mjs run-filter @drive-coding/frontend typecheck",
     "lint": "biome check .",
     "lint:i18n": "./scripts/lint-no-hebrew-in-code.sh",
     "lint:css-vars": "./scripts/lint-css-vars.sh packages/frontend/src",
@@ -25,7 +25,8 @@
     "fe:build": "node scripts/dc-build-fe.mjs",
     "fe:build:if-missing": "node scripts/dc-build-fe.mjs --if-missing",
     "fe:build:if-stale": "node scripts/dc-build-fe.mjs --if-stale",
-    "wire-rec:compress": "node scripts/compress-wire-recordings.mjs"
+    "wire-rec:compress": "node scripts/compress-wire-recordings.mjs",
+    "typecheck:fe": "node scripts/pm.mjs run-filter @drive-coding/frontend typecheck"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",

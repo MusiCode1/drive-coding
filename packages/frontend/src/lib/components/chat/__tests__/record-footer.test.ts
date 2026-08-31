@@ -109,7 +109,7 @@ describe("RecordFooter — live input mode", () => {
       },
     })
 
-    const typingBtn = [...root.querySelectorAll(".mode-tabs button")].find(
+    const typingBtn = [...root.querySelectorAll<HTMLElement>(".mode-tabs button")].find(
       (b) => b.getAttribute("aria-label") === "record.tab.type",
     )
     expect(typingBtn).toBeDefined()

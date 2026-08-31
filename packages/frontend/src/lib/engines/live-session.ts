@@ -54,17 +54,26 @@ type StateHandler = (state: LiveSessionState) => void
 
 let nextTranscriptId = 0
 
+/**
+ * Appends or merges, and returns **the entry that actually landed** — the
+ * merged `last` or the newly pushed one. Subscribers need that entry, not the
+ * caller's id-less fragment: `id` exists precisely so the view can key on it
+ * (see its doc above), and handing out an object without one reintroduces the
+ * duplicate-key crash it was added to prevent.
+ */
 function appendTranscript(
   transcript: LiveTranscriptEntry[],
   entry: { role: "user" | "assistant"; text: string; final: boolean },
-): void {
+): LiveTranscriptEntry {
   const last = transcript.at(-1)
   if (last && last.role === entry.role && !last.final) {
     last.text += entry.text
     last.final = entry.final
-    return
+    return last
   }
-  transcript.push({ ...entry, id: nextTranscriptId++ })
+  const appended: LiveTranscriptEntry = { ...entry, id: nextTranscriptId++ }
+  transcript.push(appended)
+  return appended
 }
 
 export class LiveSessionEngine {
@@ -286,9 +295,13 @@ export class LiveSessionEngine {
         break
       case "transcript": {
         liveNoteTranscript(event.role, event.text, event.final)
-        const entry = { role: event.role, text: event.text, final: event.final }
-        appendTranscript(this.transcript, entry)
-        for (const h of this.#transcriptHandlers) h(entry)
+        const landed = appendTranscript(this.transcript, {
+          role: event.role,
+          text: event.text,
+          final: event.final,
+        })
+        // copy, like the turn_done branch below — never hand out the live ref
+        for (const h of this.#transcriptHandlers) h({ ...landed })
         break
       }
       case "action":

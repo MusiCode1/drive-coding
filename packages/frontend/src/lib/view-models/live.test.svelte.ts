@@ -22,7 +22,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { AgentSession } from "./agent-session.svelte"
 import { Live } from "./live.svelte"
 import type { Mic } from "./mic.svelte"
-import { type Palette, ThemeVM } from "./theme.svelte"
+import type { Settings } from "./settings.svelte"
+import type { Palette, ThemeVM } from "./theme.svelte"
 
 vi.mock("../adapters/voice/live-token", () => ({
   fetchLiveToken: vi.fn(async () => ({
@@ -75,7 +76,7 @@ vi.mock("../engines/live-vad", () => ({
   LiveVad: class {
     loadFailed = false
     load = vi.fn(async () => {})
-    ingest = (...args: unknown[]) => vadIngestMock(...args)
+    ingest = (frame: Float32Array) => vadIngestMock(frame)
     reset = vadResetMock
     armPrime = vi.fn()
   },
@@ -121,14 +122,14 @@ function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return base as unknown as AgentSession
 }
 
-function mockSettings(overrides: Record<string, unknown> = {}) {
+function mockSettings(overrides: Record<string, unknown> = {}): Settings {
   return {
     screenWakeLock: false,
     locale: "he" as const,
     setScreenWakeLock: vi.fn(),
     setLocale: vi.fn(),
     ...overrides,
-  }
+  } as unknown as Settings
 }
 
 function mockTheme(overrides: { palette?: Palette; setPalette?: ReturnType<typeof vi.fn> } = {}) {
@@ -143,7 +144,7 @@ function createLive(opts: {
   mic?: Mic
   session: AgentSession
   getVoiceName?: () => string
-  getSettings?: () => ReturnType<typeof mockSettings>
+  getSettings?: () => Settings
   getTheme?: () => ThemeVM
 }): {
   live: Live
@@ -779,7 +780,9 @@ describe("Live agent secretary prompt (agent-secretary-prompt)", () => {
           id: "u1",
           messageId: null,
           createdAt: 0,
-          segments: [{ id: "s1", text: formatSecretaryDispatch("earlier", { includePreamble: true }) }],
+          segments: [
+            { id: "s1", text: formatSecretaryDispatch("earlier", { includePreamble: true }) },
+          ],
         },
       ] as AgentSession["bubbles"],
     })
@@ -1058,9 +1061,7 @@ describe("Live getVoiceName at mint", () => {
       await live.toggle()
       expect(live.state).toBe("open")
       expect(getVoiceName).toHaveBeenCalled()
-      expect(fetchLiveToken).toHaveBeenCalledWith(
-        expect.objectContaining({ voiceName: "Charon" }),
-      )
+      expect(fetchLiveToken).toHaveBeenCalledWith(expect.objectContaining({ voiceName: "Charon" }))
     } finally {
       dispose()
     }
@@ -1079,7 +1080,7 @@ describe("Live config control (live-config-control)", () => {
       },
       applyConfigOption: vi.fn(async () => {}),
       configOptions: [],
-      supports: { thinkingTokens: false },
+      supports: { thinkingTokens: false } as AgentSession["supports"],
     })
   }
 

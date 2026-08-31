@@ -584,8 +584,7 @@ export class AudioPlaylist {
    * Mock בטסטים: completedSegments.has(id).
    */
   #isComplete(segmentId: string): boolean {
-    const sink = this.#audioStream as AudioSink & { isComplete?: (id: string) => boolean }
-    return sink.isComplete?.(segmentId) ?? false
+    return this.#audioStream.isComplete?.(segmentId) ?? false
   }
 
   /**

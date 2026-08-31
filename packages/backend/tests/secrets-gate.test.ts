@@ -11,7 +11,17 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 vi.mock("node:child_process", () => ({ execFileSync: vi.fn().mockReturnValue("") }))
+import { SECRET_SPECS } from "@drive-coding/core/config/secrets"
 import { loadConfig } from "../src/config/load-config.js"
+
+/**
+ * ‏מאז 4211c995 ‏ל-CONFIG_SPECS ‏יש דפולטים, ולכן envPatch ‏תמיד מכיל גם
+ * PORT/DRIVE_CODING_HOST/OPENCODE_BIN/… — ‏בלי קשר לסודות. ‏השערים כאן
+ * ‏עוסקים **‏בסודות בלבד**, ‏אז מסננים למפתחות-הסוד.
+ */
+const SECRET_ENV = new Set<string>(SECRET_SPECS.map((s) => s.env))
+const secretKeys = (patch: Record<string, string>) =>
+  Object.keys(patch).filter((k) => SECRET_ENV.has(k))
 
 const EL = "PLACEHOLDER-EL"
 const GM = "PLACEHOLDER-GM"
@@ -39,7 +49,7 @@ describe("secrets-gate — #55 ‏לא נולד מחדש", () => {
 
   it("G2. ‏אותו מקרה ⇒ ‏שני המפתחות ב-envPatch (‏הכיווניות שנכשלת בשקט)", () => {
     const { envPatch } = loadConfig({ argv: { "elevenlabs-key": EL }, env: { GEMINI_API_KEY: GM } })
-    expect(Object.keys(envPatch).sort()).toEqual(["ELEVENLABS_API_KEY", "GEMINI_API_KEY"])
+    expect(secretKeys(envPatch).sort()).toEqual(["ELEVENLABS_API_KEY", "GEMINI_API_KEY"])
     expect(envPatch["GEMINI_API_KEY"]).toBe(GM)
   })
 })
@@ -65,7 +75,7 @@ describe("secrets-gate — ‏שכבת secrets.json ‏וקדימות", () => {
   it("G5. ‏קובץ-סודות ריק {} ⇒ ‏שקט מוחלט", () => {
     const p = writeTmp({})
     const { envPatch, warnings } = loadConfig({ argv: { secrets: p }, env: {} })
-    expect(Object.keys(envPatch)).toEqual([])
+    expect(secretKeys(envPatch)).toEqual([])
     expect(warnings).toEqual([])
   })
 })

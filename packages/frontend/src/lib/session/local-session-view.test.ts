@@ -385,6 +385,7 @@ describe("LocalSessionView — turnState lifecycle (C2)", () => {
     let turnStateBeforeResp = ""
     vi.mocked(mock.client.prompt).mockImplementationOnce(async () => {
       turnStateBeforeResp = view.state.turnState
+      return { stopReason: "end_turn" as const }
     })
 
     await view.prompt("Hello")

@@ -9,13 +9,10 @@
 import {
   createInitialSessionState,
   type Patch,
-  serializeFrame,
   type SessionState,
+  serializeFrame,
 } from "@drive-coding/core/session"
-import {
-  type IntentFrame,
-  toWireFrames,
-} from "@drive-coding/core/session/testing"
+import { type IntentFrame, toWireFrames } from "@drive-coding/core/session/testing"
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import {
   type SpeakableLabels,
@@ -33,7 +30,9 @@ import { Settings } from "./settings.svelte"
 import { Speaker } from "./speaker.svelte"
 
 const mockSynthesize = vi.fn()
-const mockIsAvailable = vi.fn(() => true)
+// params declared so the spread into it typechecks against the real
+// `isAvailable(provider)` signature on ttsCapabilities
+const mockIsAvailable = vi.fn((_provider: "elevenlabs" | "google") => true)
 const mockNarrate = vi.fn()
 
 vi.mock("$lib/adapters/voice/tts-resolve", () => ({
@@ -53,7 +52,7 @@ vi.mock("./capabilities.svelte", async (importOriginal) => {
     ...actual,
     ttsCapabilities: {
       ...actual.ttsCapabilities,
-      isAvailable: (...args: unknown[]) => mockIsAvailable(...args),
+      isAvailable: (provider: "elevenlabs" | "google") => mockIsAvailable(provider),
     },
   }
 })
@@ -133,7 +132,10 @@ function makeSnapshot(overrides: Partial<SessionState> = {}): SessionState {
   return { ...createInitialSessionState({ sessionId: "quiet-sess-1" }), ...overrides }
 }
 
-function makePatch(version: number, body: Omit<Patch, "version">): Patch {
+/** `Omit<Union, K>` collapses the union to its shared keys — distribute instead. */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
+
+function makePatch(version: number, body: DistributiveOmit<Patch, "version">): Patch {
   return { version, ...body } as Patch
 }
 
@@ -168,7 +170,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 function makeMockFetch(
   frameSets: IntentFrame[][],
   opts: { keepOpenLast?: boolean } = {},
-): ReturnType<typeof vi.fn> {
+): (url: string, init?: RequestInit) => Promise<Response> {
   let call = 0
   const { keepOpenLast = true } = opts
   return vi.fn().mockImplementation(async (url: string) => {
@@ -225,7 +227,7 @@ async function flushEffects(rounds = 8): Promise<void> {
 
 function createQuietHarness(
   frames: IntentFrame[],
-  mockFetch?: ReturnType<typeof vi.fn>,
+  mockFetch?: (url: string, init?: RequestInit) => Promise<Response>,
 ): QuietHarness {
   const fetchImpl = mockFetch ?? makeMockFetch([frames])
   const view = new RemoteSessionView("agent-quiet", "http://be.local", {

@@ -268,7 +268,7 @@ describe("SessionHost", () => {
 
       await host.newSession({ cwd: "/test" })
 
-      expect(mock.newSession).toHaveBeenCalledWith({ cwd: "/test" })
+      expect(mock.newSession).toHaveBeenCalledWith({ cwd: "/test", mcpServers: [] })
     })
 
     it("loadSession delegates to client.loadSession", async () => {
@@ -276,7 +276,11 @@ describe("SessionHost", () => {
 
       await host.loadSession({ cwd: "/test", sessionId: "abc" })
 
-      expect(mock.loadSession).toHaveBeenCalledWith({ cwd: "/test", sessionId: "abc" })
+      expect(mock.loadSession).toHaveBeenCalledWith({
+        cwd: "/test",
+        sessionId: "abc",
+        mcpServers: [],
+      })
     })
 
     it("cancel delegates to client.cancel", async () => {

@@ -83,7 +83,14 @@ export class MicFrames {
 
   on(event: "frame", handler: (f: MicFrame) => void): () => void
   on(event: "level", handler: (rms: number) => void): () => void
-  on(event: "frame" | "level", handler: (payload: MicFrame | number) => void): () => void {
+  // The impl signature takes a UNION of the two handler types, not a handler of
+  // the union: under strictFunctionTypes `(f: MicFrame) => void` is NOT
+  // assignable to `(p: MicFrame | number) => void` (params are contravariant),
+  // so the old form left overload 1 incompatible with its own implementation.
+  on(
+    event: "frame" | "level",
+    handler: ((f: MicFrame) => void) | ((rms: number) => void),
+  ): () => void {
     if (event === "frame") {
       return this.#emitter.on("frame", handler as Handler<MicFrame>)
     }

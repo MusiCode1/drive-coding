@@ -8,7 +8,7 @@
  * ─── slice session-view-port C2 (TDD) ───
  */
 import { describe, it, expect } from "vitest"
-import type { SessionView } from "./session-view"
+import type { SessionView, ViewEmission } from "./session-view"
 import { createInitialSessionState, type Patch } from "@drive-coding/core/session"
 import type { SessionInfo } from "$lib/adapters/sessions"
 import type { PromptBlocks } from "@drive-coding/provider/client"
@@ -17,7 +17,7 @@ import type { PromptBlocks } from "@drive-coding/provider/client"
 
 class MockSessionView implements SessionView {
   readonly state = createInitialSessionState({ sessionId: null })
-  readonly patches: ReadableStream<Patch[]> = new ReadableStream<Patch[]>()
+  readonly patches: ReadableStream<ViewEmission> = new ReadableStream<ViewEmission>()
   readonly supportsSessionDelete = false
 
   prompt(_content: string | PromptBlocks, _meta?: Record<string, unknown>): Promise<void> {

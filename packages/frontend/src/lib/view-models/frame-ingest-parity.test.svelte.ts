@@ -211,6 +211,17 @@ let capturedOnUpdate: ((n: SessionNotification) => void) | null = null
 let capturedOnExtNotification: ((method: string, params: Record<string, unknown>) => void) | null =
   null
 
+/**
+ * Resetting through a function, not inline `= null`: an inline assignment
+ * narrows these module-level `let`s to `null` for the rest of the block, and
+ * the later `capturedOnUpdate?.(…)` then reads as `never` — TS cannot see that
+ * the mock reassigns them.
+ */
+function resetCaptured(): void {
+  capturedOnUpdate = null
+  capturedOnExtNotification = null
+}
+
 function makeMockClient(): AcpClient {
   return {
     conn: {} as AcpClient["conn"],
@@ -287,8 +298,7 @@ import { AgentSession } from "./agent-session.svelte"
 
 async function runWsPath(): Promise<{ observed: unknown[]; bubbles: Bubble[] }> {
   const observed: unknown[] = []
-  capturedOnUpdate = null
-  capturedOnExtNotification = null
+  resetCaptured()
   const agent = new AgentSession({ _onUpdateObserved: (u) => observed.push(u) })
   await agent.attach({ cwd: "/proj", cliKind: "claude" })
   for (const entry of inbound) {

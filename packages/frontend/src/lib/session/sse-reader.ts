@@ -147,6 +147,17 @@ async function* readSSEFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<
 
 // ─── SSEReader ────────────────────────────────────────────────────────────────
 
+/**
+ * The watchdog seam needs only "schedule a repeating callback, hand back
+ * something cancellable". `typeof setInterval` here is the DOM ∪ Node overload
+ * set, which no single implementation satisfies — it made the production
+ * fallback below implicitly-`any` and forced `as unknown as` on every test
+ * double. Narrow the seam to what the class actually calls.
+ */
+export type IntervalId = ReturnType<typeof setInterval>
+export type SetIntervalFn = (fn: () => void, ms: number) => IntervalId
+export type ClearIntervalFn = (id: IntervalId) => void
+
 /** Options for SSEReader constructor. */
 export type SSEReaderOptions = {
   /** HTTP headers to include in every fetch request (e.g. Authorization). */
@@ -162,9 +173,9 @@ export type SSEReaderOptions = {
    * slice sse-liveness Commit 4a/4: same seam pattern as `_fetch`/`_sleep`/
    * `_now` — default = the real global, so production is unchanged.
    */
-  _setInterval?: typeof setInterval
+  _setInterval?: SetIntervalFn
   /** @internal For testing — override the silence-watchdog's timer cancel. */
-  _clearInterval?: typeof clearInterval
+  _clearInterval?: ClearIntervalFn
   /**
    * @internal For testing — override the snapshot-wait bound (default
    * `SNAPSHOT_TIMEOUT_MS`). Deliberately a plain number, not a `_sleep`-style
@@ -236,8 +247,8 @@ export class SSEReader {
   readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly #sleep: (ms: number) => Promise<void>
   readonly #now: () => number
-  readonly #doSetInterval: typeof setInterval
-  readonly #doClearInterval: typeof clearInterval
+  readonly #doSetInterval: SetIntervalFn
+  readonly #doClearInterval: ClearIntervalFn
   readonly #snapshotTimeoutMs: number
   #closed = false
   // calev-heavy M7: close() didn't abort the in-flight fetch — the underlying
@@ -252,7 +263,7 @@ export class SSEReader {
   // OR patch — traffic is traffic, §Commit 4 of the brief). Only meaningful
   // while `#watchdogTimer` is running (i.e. while a connection is open).
   #lastFrameAt = 0
-  #watchdogTimer: ReturnType<typeof setInterval> | null = null
+  #watchdogTimer: IntervalId | null = null
 
   constructor(url: string, opts: SSEReaderOptions = {}) {
     this.#url = url

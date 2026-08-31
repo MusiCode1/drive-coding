@@ -124,9 +124,9 @@ function describeGeminiMessage(message: unknown): Record<string, unknown> {
  * `Array.isArray` is load-bearing: `typeof [] === "object"`, so a bare
  * `typeof` check lets lists straight through to the failure above.
  */
-export function wrapActionResultResponse(result: unknown): unknown {
+export function wrapActionResultResponse(result: unknown): Record<string, unknown> {
   if (result !== null && typeof result === "object" && !Array.isArray(result)) {
-    return result
+    return result as Record<string, unknown>
   }
   return { value: result }
 }
@@ -203,7 +203,7 @@ export const geminiLive: LiveProvider = {
                 opts.onEvent(event)
               }
             },
-            onerror: (err: Error) => {
+            onerror: (err: ErrorEvent) => {
               liveWarn("socket-error", { message: String(err?.message ?? err) })
               opts.onEvent({ type: "error", message: String(err?.message ?? err) })
               failOnce(String(err?.message ?? err))

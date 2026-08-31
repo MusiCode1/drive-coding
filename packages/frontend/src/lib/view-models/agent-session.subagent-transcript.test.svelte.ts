@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs"
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { Bubble } from "$lib/types/bubble"
+import type { Bubble, ToolBubble } from "$lib/types/bubble"
 
 // ─── fixture loading ────────────────────────────────────────────────────────
 
@@ -297,7 +297,7 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
     })
 
     const parent = session.bubbles.find(
-      (b) => b.kind === "tool" && b.toolCall.toolCallId === "toolu_PARENT",
+      (b): b is ToolBubble => b.kind === "tool" && b.toolCall.toolCallId === "toolu_PARENT",
     )
     expect(parent).toBeDefined()
     expect(parent?.subFrames?.length).toBe(1)
