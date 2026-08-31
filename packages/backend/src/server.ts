@@ -88,7 +88,9 @@ import { createEchoWsHandler } from "./delivery/ws-echo.js"
 import { removeInstance, setSelfBaseUrl, writeInstance } from "./instances.js"
 import { ensureStateSubdir } from "./paths.js"
 import { createAndRegisterSessionHostHttp } from "./session-host/http/index.js"
-import { resolveCloseOnTurnEndGraceMs } from "./session-host/close-on-turn-end.js"
+import { bootAgentEvents } from "./delivery/agent-events-boot.js"
+import { createAgentEventBus } from "./session-host/agent-events.js"
+import { createSessionHostRegistryOpts } from "./server-session-host-opts.js"
 import { createUsageStore } from "./usage/usage-store.js"
 
 const app = new Hono()
@@ -131,65 +133,24 @@ const acpSessionIdCache = new Map<string, string>()
 // slice session-lifecycle-fields C1: orchestrator ref — registry is created first.
 let orchestratorRef: AgentOrchestrator | null = null
 
+// slice be-events-subscribe C0: single in-memory event bus for agent lifecycle events.
+const agentEventBus = createAgentEventBus()
+
 // S4 session-host-http: 4 routes — GET /events, POST /rpc, POST /reply, GET /state
 // slice remote-warm-reconnect C1: תופסים את הרג'יסטרי (קודם נזרק ב-:151) — C2/C2b
 // מעבירים אותו ל-ws-agent (guard) ול-orchestrator (ניקוי hosts ב-delete/crash).
-const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionRegistry, {
-  onSessionAttached: async (agentId, sessionId, cwd) => {
-    // בדיוק מה ש-PATCH /api/agents/:id עושה (http-agents.ts, מסלול attach) —
-    // ה-endpoint ההוא נקרא רק מנתיבים מקומיים; ב-remote ה-SessionHost הוא שמצרף
-    // את ה-session (אוטומטית ב-doCreate, או ב-rpc.ts case "loadSession"), אז
-    // הוא מדווח ישירות דרך ה-callback הזה.
-    //
-    // הכרעת MED-9: ה-callback הפנימי עוקף את guard ה-409 (http-agents.ts) —
-    // **בכוונה** — ב-remote ה-host הוא authoritative לגבי ה-session שלו.
-    const agent = await registry.get(agentId)
-    if (!agent || agent.status === "closed") {
-      // race מול DELETE (deleteAndKill) — warn ודילוג, לא throw (הסשן חי; הפאנל יישאר ישן).
-      log.warn({ agentId, sessionId }, "onSessionAttached: agent missing or closed — skipped")
-      return
-    }
-    // slice agent-patch-unify C2 (D4 — שכבה ב'): extract מפורש, מפתח שערכו
-    // undefined לעולם לא נכנס ל-patch. registry.update מבצע spread בלי סינון —
-    // { cwd: undefined } היה מוחק את agent.cwd הקיים כש-cwd לא סופק (§3.5 D4).
-    const patch: Partial<Pick<Agent, "status" | "acpSessionId" | "cwd">> = {
-      status: "ready",
-      acpSessionId: sessionId,
-    }
-    if (cwd !== undefined) patch.cwd = cwd
-    await registry.update(agentId, patch)
-    acpSessionIdCache.set(agentId, sessionId)
-    // D7: תופעות-projectsRegistry עם cwd ?? agent.cwd — מתעד תחת התיקייה
-    // *החדשה* אם דווחה (מעבר-סשן, §3), אחרת תחת הקיימת (ללא שינוי).
-    const effectiveCwd = cwd ?? agent.cwd
-    await projectsRegistry.recordCwd(effectiveCwd, agent.cliKind as BridgeKind)
-    await projectsRegistry.recordSession(effectiveCwd, sessionId)
-  },
-  evictionController,
-  // slice ownership-handoff C4: warm reattach — sync cache of agentId→acpSessionId
-  // maintained by onSessionAttached. Returns the last known acpSessionId, allowing
-  // the HTTP host to call loadSession instead of newSession after WS eviction.
-  getAcpSessionId: (agentId) => acpSessionIdCache.get(agentId),
-  getPermissionPolicy: async (agentId) => {
-    const agent = await registry.get(agentId)
-    return agent?.permissionPolicy
-  },
-  getCloseOnTurnEnd: async (agentId) => {
-    const agent = await registry.get(agentId)
-    return agent?.closeOnTurnEnd === true
-  },
-  onScheduleCloseOnTurnEnd: (agentId) => {
-    const graceMs = resolveCloseOnTurnEndGraceMs(process.env.CLOSE_ON_TURN_END_GRACE_MS)
-    setTimeout(() => {
-      void orchestratorRef?.deleteAndKill(agentId).catch((err) => {
-        log.warn(
-          { err, agentId },
-          "closeOnTurnEnd: deleteAndKill failed after grace",
-        )
-      })
-    }, graceMs)
-  },
-})
+const agentSessionRegistry = createAndRegisterSessionHostHttp(
+  app,
+  connectionRegistry,
+  createSessionHostRegistryOpts({
+    registry,
+    projectsRegistry,
+    acpSessionIdCache,
+    agentEventBus,
+    getOrchestrator: () => orchestratorRef,
+    evictionController,
+  }),
+)
 
 const orchestrator = createAgentOrchestrator({
   registry,
@@ -199,7 +160,10 @@ const orchestrator = createAgentOrchestrator({
   // agentSessionRegistry נוצר למעלה (לפני ה-orchestrator) — ר' ההערה שם.
   sessionHostRegistry: agentSessionRegistry,
 })
-orchestratorRef = orchestrator
+const orchestratorWithEvents = bootAgentEvents(app, {
+  registry, orchestrator, eventBus: agentEventBus, agentSessionRegistry,
+}).orchestrator
+orchestratorRef = orchestratorWithEvents
 
 // נתיבי HTTP
 registerHttp(app)
@@ -210,12 +174,17 @@ registerClientLogHttp(app)
 // CUT-3b-ii: connectionRegistry מספק getRuntimeInfo (מחליף bridgeManager)
 registerAgentsHttp(app, {
   registry,
-  orchestrator,
+  orchestrator: orchestratorWithEvents,
   projectsRegistry,
   bridgeManager: connectionRegistry,
 })
 // slice session-bus-mcp C0: Streamable HTTP MCP (stateless, per-request transport)
-registerMcpHttp(app, { registry, orchestrator, agentSessionRegistry })
+registerMcpHttp(app, {
+  registry,
+  orchestrator: orchestratorWithEvents,
+  agentSessionRegistry,
+  eventBus: agentEventBus,
+})
 // Slice be-diag-harness: endpoint אבחון עשיר (eventLoop histogram + memory + agents)
 registerHealthHttp(app, { registry, connectionRegistry })
 registerProjectsHttp(app, { projectsRegistry })

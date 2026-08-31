@@ -43,6 +43,8 @@ import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { buildAgentMcpServers, optionalAgentMcpServers } from "../agent-identity.js"
 import { getSelfBaseUrl } from "../instances.js"
 import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-broadcaster.js"
+import { buildAgentEventHostOpts } from "./agent-events-registry-opts.js"
+import { wireRegistrySweeps } from "./registry-sweeps.js"
 import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
 
 const log = createLogger("backend.session-host.registry")
@@ -202,6 +204,13 @@ type AgentSessionRegistryDeps = {
   getCloseOnTurnEnd?: (agentId: string) => boolean | Promise<boolean>
   /** slice session-lifecycle-fields C1: server wires grace timer + deleteAndKill. */
   onScheduleCloseOnTurnEnd?: (agentId: string) => void
+  /** slice be-events-subscribe C1 — see buildAgentEventHostOpts */
+  onTurnEnded?: Parameters<typeof buildAgentEventHostOpts>[0]["onTurnEnded"]
+  /** slice be-events-subscribe C2: stall-suspected callback — must not kill the agent */
+  onStallSuspected?: (agentId: string, silentMs: number) => void
+  /** slice be-events-subscribe C2: test knobs */
+  _stallSweepMs?: number
+  _stallSuspectMs?: number
   /**
    * slice ownership-handoff C4b: HTTP ownership TTL (ms).
    * Default: `HTTP_OWNER_TTL_MS` env, else 600_000ms (slice ttl-ownership).
@@ -247,6 +256,8 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     getPermissionPolicy,
     getCloseOnTurnEnd,
     onScheduleCloseOnTurnEnd,
+    onTurnEnded,
+    onStallSuspected,
   } = deps
 
   const map = new Map<string, HostEntry>()
@@ -254,48 +265,15 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
   // callers so only one host + one ACP session get created per agentId.
   const inFlight = new Map<string, Promise<HostResult>>()
 
-  // slice ownership-handoff C4b + slice liveness C1: unified ownership TTL sweep.
-  // Owners must send a liveness signal (WS $/ping or HTTP presence → touchOwner)
-  // within TTL_MS or lose ownership. On expiry: dispose + unregisterHost +
-  // markDetached (NOT deleteAndKill, NOT epoch++).
-  // 🔴 slice liveness C1 §2.1: the transport check is EXPLICIT — a WS owner must
-  // never be evicted here (WS has its own socket sweep in ws-agent.ts, a different
-  // role). Detecting "WS" indirectly via `getLastSeenAt() === null` no longer
-  // works now that touchOwner is transport-agnostic (a WS owner also has a stamp).
-  const HTTP_OWNER_TTL_MS =
-    deps._httpOwnerTtlMs ?? resolveHttpOwnerTtlMs(process.env.HTTP_OWNER_TTL_MS)
-  const HTTP_SWEEP_MS = deps._httpSweepMs ?? 30_000 // sweep every 30s
-  const httpSweep = setInterval(() => {
-    const now = Date.now()
-    for (const [agentId, entry] of map) {
-      // 🔴 explicit transport guard — without it, WS owners get evicted here (DoD 7).
-      if (connectionRegistry.getOwner(agentId)?.via !== "http") continue
-      const lastSeen = connectionRegistry.getLastSeenAt(agentId)
-      if (lastSeen === null) continue
-      if (now - lastSeen <= HTTP_OWNER_TTL_MS) continue
-      log.info(
-        { agentId, staleMs: now - lastSeen },
-        "HTTP owner stale — releasing ownership (holder retained)",
-      )
-      // 🔴 slice ttl-ownership: ownership and state are two lifecycles.
-      // Expiry releases OWNERSHIP and severs the abandoned stream — the host
-      // and broadcaster STAY in the map, so the next connection is a pure
-      // continuation (no loadSession, no fresh host, no version reset).
-      // Both calls are SYNCHRONOUS and land in the same tick, so their order
-      // does not matter: the next sweep pass (30s later) sees markDetached and
-      // skips this agent via the `via !== "http"` guard, which is what keeps
-      // close() from firing twice. The guarantee is same-tick, not ordering.
-      connectionRegistry.markDetached(agentId)
-      // Sever abandoned SSE subscribers + their keepalive timers. WITHOUT this,
-      // (1) events.ts's read-loop never ends (hono's write() swallows errors —
-      // see §0) so a live client never reconnects and never re-claims, and
-      // (2) the subscriber + its setInterval leak — the exact leak sse-liveness
-      // Commit 3 closed in unregisterHost. close() does NOT end the source:
-      // the broadcaster stays fully usable for the next subscribe().
-      entry.broadcaster.close()
-    }
-  }, HTTP_SWEEP_MS)
-  httpSweep.unref() // don't prevent process exit
+  wireRegistrySweeps({
+    map,
+    connectionRegistry,
+    httpOwnerTtlMs: deps._httpOwnerTtlMs ?? resolveHttpOwnerTtlMs(process.env.HTTP_OWNER_TTL_MS),
+    httpSweepMs: deps._httpSweepMs ?? 30_000,
+    onStallSuspected,
+    _stallSweepMs: deps._stallSweepMs,
+    _stallSuspectMs: deps._stallSuspectMs,
+  })
 
   async function doCreate(agentId: string): Promise<HostResult> {
     // Look up connection
@@ -351,19 +329,15 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // slice handoff-foundations C3: if session creation fails below, the host is
     // already subscribed to the wire (created by _createHostFn). Rollback MUST call
     // host.dispose() to remove the crash subscription and close the patches stream.
-    const hostOpts =
-      acpSessionId || permissionPolicy !== undefined || closeOnTurnEnd
-        ? {
-            ...(acpSessionId ? { warmReattach: { acpSessionId, cwd } } : {}),
-            ...(permissionPolicy !== undefined ? { permissionPolicy } : {}),
-            ...(closeOnTurnEnd
-              ? {
-                  closeOnTurnEnd: true,
-                  onScheduleCloseOnTurnEnd: () => onScheduleCloseOnTurnEnd?.(agentId),
-                }
-              : {}),
-          }
-        : undefined
+    const hostOpts = buildAgentEventHostOpts({
+      agentId,
+      cwd,
+      acpSessionId,
+      permissionPolicy,
+      closeOnTurnEnd,
+      onScheduleCloseOnTurnEnd,
+      onTurnEnded,
+    })
     // 🔴 הקשר-אבחון (2026-08-16): יצירת ה-host היא שמריצה את ה-ACP initialize,
     // ולכן כאן נופלות פקיעות ה-initialize/authenticate. עד עכשיו השגיאה עלתה מכאן
     // **בלי שום סימן זיהוי**: נתקלנו בשני כשלים חיים ולא הצלחנו לקבוע בדיעבד

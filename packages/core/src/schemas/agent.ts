@@ -135,6 +135,8 @@ export const Agent = type({
   "parentAgentId?": "string",
   // slice session-lifecycle-fields: auto-close after first clean turn end (grace timer).
   "closeOnTurnEnd?": "boolean",
+  // slice be-events-subscribe: UUID of agent to notify when this agent's turn ends.
+  "notifyOnDone?": "string.uuid",
 })
 export type Agent = typeof Agent.infer
 
@@ -198,6 +200,8 @@ export const CreateAgentInput = type({
   "parentAgentId?": "string",
   // slice session-lifecycle-fields: auto-close after first clean turn end.
   "closeOnTurnEnd?": "boolean",
+  // slice be-events-subscribe: UUID of agent to notify when this agent's turn ends.
+  "notifyOnDone?": "string.uuid",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 

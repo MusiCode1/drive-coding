@@ -77,6 +77,15 @@ export function createAndRegisterSessionHostHttp(
     /** slice session-lifecycle-fields C1 */
     getCloseOnTurnEnd?: (agentId: string) => boolean | Promise<boolean>
     onScheduleCloseOnTurnEnd?: (agentId: string) => void
+    /** slice be-events-subscribe C1 */
+    onTurnEnded?: (
+      agentId: string,
+      info: import("../agent-events-turn.js").TurnEndedInfo,
+    ) => void
+    /** slice be-events-subscribe C2 */
+    onStallSuspected?: (agentId: string, silentMs: number) => void
+    _stallSweepMs?: number
+    _stallSuspectMs?: number
   } = {},
 ): ReturnType<typeof createAgentSessionRegistry> {
   const agentSessionRegistry = createAgentSessionRegistry({
@@ -87,6 +96,10 @@ export function createAndRegisterSessionHostHttp(
     getPermissionPolicy: opts.getPermissionPolicy,
     getCloseOnTurnEnd: opts.getCloseOnTurnEnd,
     onScheduleCloseOnTurnEnd: opts.onScheduleCloseOnTurnEnd,
+    onTurnEnded: opts.onTurnEnded,
+    onStallSuspected: opts.onStallSuspected,
+    _stallSweepMs: opts._stallSweepMs,
+    _stallSuspectMs: opts._stallSuspectMs,
   })
   registerSessionHostHttp(app, { agentSessionRegistry })
   return agentSessionRegistry
