@@ -1,1 +1,5 @@
 export type { AcpTransport } from "./transport/types.js"
+export { createStdioTransport } from "./transport/stdio.js"
+export { listenUnix, connectUnix } from "./transport/unix-socket.js"
+export { socketToAcpTransport } from "./transport/node-streams.js"
+export { createNamedPipeTransport } from "./transport/named-pipe.js"
