@@ -73,7 +73,7 @@ export function isMaster(token: string | undefined, masterKey?: string): boolean
 
 /** All agent ids in the subtree rooted at rootId (includes root). Cycle-safe, depth-capped. */
 export function subtreeIds(
-  agents: { id: string; parentAgentId?: string }[],
+  agents: readonly { id: string; parentAgentId?: string }[],
   rootId: string,
 ): Set<string> {
   const result = new Set<string>()
@@ -124,7 +124,7 @@ export type AuthorizeWriteInput = {
   token: string | undefined
   targetId: string
   verb: string
-  agents: { id: string; parentAgentId?: string }[]
+  agents: readonly { id: string; parentAgentId?: string }[]
   onEscalate: () => Promise<"allow" | "deny">
 }
 

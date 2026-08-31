@@ -9,7 +9,8 @@ import {
   SCOPE_HEADER,
   verifyToken,
 } from "./agent-scope.js"
-import type { AgentSessionRegistry } from "../session-host/registry.js"
+import type { AgentSessionRegistry } from "./session-host/registry.js"
+import type { ScopePermissionHost } from "./session-host/session-host-scope.js"
 
 export { SCOPE_HEADER }
 
@@ -48,10 +49,13 @@ async function escalateScopePermission(deps: ScopedWriteDeps): Promise<"allow" |
   if (!verified) return "deny"
 
   const callerHost = sessionRegistry.getHost(verified.agentId)
-  if (!callerHost?.requestScopePermission) return "deny"
+  if (!callerHost) return "deny"
+  const requestScope = (callerHost as unknown as Partial<ScopePermissionHost>)
+    .requestScopePermission
+  if (!requestScope) return "deny"
   if (callerHost.state.pending.permission !== null) return "deny"
 
-  const decision = await callerHost.requestScopePermission({
+  const decision = await requestScope({
     callerId: verified.agentId,
     targetId,
     verb,

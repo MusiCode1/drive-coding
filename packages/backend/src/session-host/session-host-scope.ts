@@ -25,12 +25,6 @@ export type ScopePermissionHost = {
   }): Promise<"allow" | "deny" | "allow_always">
 }
 
-declare module "./session-host.js" {
-  interface ExtendedSessionHost {
-    requestScopePermission?: ScopePermissionHost["requestScopePermission"]
-  }
-}
-
 export function createRequestScopePermission(deps: {
   isDisposed: () => boolean
   getState: () => SessionState
@@ -49,13 +43,12 @@ export function createRequestScopePermission(deps: {
       { optionId: "scope-allow-always", name: "Allow always", kind: "allow_always" as const },
       { optionId: "scope-reject-once", name: "Reject", kind: "reject_once" as const },
     ]
+    const requestId = deps.nextRequestId()
     const params: RequestPermissionRequest = {
       sessionId: deps.getState().sessionId ?? "",
-      toolCall: { title },
+      toolCall: { toolCallId: `scope-${requestId}`, title },
       options,
     }
-
-    const requestId = deps.nextRequestId()
     const applied = applyPendingRequest(deps.getState(), {
       kind: "permission",
       value: { requestId, params } satisfies PendingPermission,

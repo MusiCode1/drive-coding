@@ -80,7 +80,7 @@ export function createAndRegisterSessionHostHttp(
     /** slice session-lifecycle-fields C1 */
     getCloseOnTurnEnd?: (agentId: string) => boolean | Promise<boolean>
     onScheduleCloseOnTurnEnd?: (agentId: string) => void
-  } = {},
+  },
 ): ReturnType<typeof createAgentSessionRegistry> {
   const agentSessionRegistry = createAgentSessionRegistry({
     connectionRegistry,

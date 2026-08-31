@@ -29,7 +29,7 @@ type RegisterTool = (
   server: McpServer,
   name: string,
   meta: { title: string; description: string },
-  ark: { (data: unknown): unknown },
+  ark: { toJsonSchema: () => object; (data: unknown): unknown },
   handler: (parsed: unknown) => Promise<ToolResult>,
 ) => void
 

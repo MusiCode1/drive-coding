@@ -22,8 +22,8 @@ describe("cli/http authedInit", () => {
     await fetch("http://127.0.0.1:9/api/agents/a", authedInit({ method: "DELETE" }))
 
     expect(fetchMock).toHaveBeenCalledOnce()
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
-    expect(new Headers(init.headers).get(SCOPE_HEADER)).toBe("test-scope-token")
+    const deleteCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(new Headers(deleteCall[1].headers).get(SCOPE_HEADER)).toBe("test-scope-token")
   })
 
   it("postJson includes scope header when DC_TOKEN is set", async () => {
@@ -33,9 +33,9 @@ describe("cli/http authedInit", () => {
 
     await postJson("http://127.0.0.1:9/api/agents/a/rpc", { method: "session/prompt" })
 
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
-    expect(new Headers(init.headers).get(SCOPE_HEADER)).toBe("post-token")
-    expect(new Headers(init.headers).get("content-type")).toBe("application/json")
+    const postCall = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(new Headers(postCall[1].headers).get(SCOPE_HEADER)).toBe("post-token")
+    expect(new Headers(postCall[1].headers).get("content-type")).toBe("application/json")
   })
 
   it("authedInit leaves headers unchanged without DC_TOKEN", () => {
