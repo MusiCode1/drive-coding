@@ -1,16 +1,21 @@
 /**
  * scope-write.ts — shared scoped-write enforcement for HTTP/MCP surfaces (C2).
  */
+// Guard rail, not a lock - see NOT_A_SECURITY_BOUNDARY in ./agent-scope.ts
 
 import type { AgentRegistry } from "@drive-coding/core"
+import { createLogger } from "@drive-coding/core/log"
 import {
   authorizeWrite,
+  NOT_A_SECURITY_BOUNDARY,
   recordAllowAlwaysGrant,
   SCOPE_HEADER,
   verifyToken,
 } from "./agent-scope.js"
 import type { AgentSessionRegistry } from "./session-host/registry.js"
 import type { ScopePermissionHost } from "./session-host/session-host-scope.js"
+
+const log = createLogger("backend.scope")
 
 export { SCOPE_HEADER }
 
@@ -39,6 +44,12 @@ export async function checkScopedWrite(deps: ScopedWriteDeps): Promise<boolean> 
     agents,
     onEscalate: async () => escalateScopePermission(deps),
   })
+  if (decision !== "allow") {
+    log.info(
+      { targetId: deps.targetId, verb: deps.verb, stance: NOT_A_SECURITY_BOUNDARY },
+      "scoped write denied",
+    )
+  }
   return decision === "allow"
 }
 

@@ -1,6 +1,7 @@
 /**
  * session-host-scope.ts — scope escalation on ExtendedSessionHost (C2).
  */
+// Guard rail, not a lock - see NOT_A_SECURITY_BOUNDARY in ../agent-scope.ts
 
 import type {
   RequestPermissionRequest,

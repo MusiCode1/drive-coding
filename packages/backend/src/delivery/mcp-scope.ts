@@ -1,6 +1,7 @@
 /**
  * mcp-scope.ts — scoped-write wrapper for MCP write tools (C2).
  */
+// Guard rail, not a lock - see NOT_A_SECURITY_BOUNDARY in ../agent-scope.ts
 
 import type { AgentRegistry } from "@drive-coding/core"
 import { guardMcpWrite, type ScopeEnforcementDeps } from "../bind-scope-enforcement.js"

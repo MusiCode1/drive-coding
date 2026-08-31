@@ -1,6 +1,7 @@
 /**
  * rpc-scope.ts — scoped-write preflight for POST /api/agents/:id/rpc (C2).
  */
+// Guard rail, not a lock - see NOT_A_SECURITY_BOUNDARY in ../../agent-scope.ts
 
 import type { AgentRegistry } from "@drive-coding/core"
 import { RPC_METHODS } from "@drive-coding/core/session"

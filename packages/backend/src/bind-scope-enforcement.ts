@@ -1,6 +1,7 @@
 /**
  * bind-scope-enforcement.ts — scoped-write middleware for agent HTTP routes (C2).
  */
+// Guard rail, not a lock - see NOT_A_SECURITY_BOUNDARY in ./agent-scope.ts
 
 import type { AgentRegistry } from "@drive-coding/core"
 import type { Hono } from "hono"

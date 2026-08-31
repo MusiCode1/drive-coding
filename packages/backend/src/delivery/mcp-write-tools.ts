@@ -1,6 +1,7 @@
 /**
  * mcp-write-tools.ts — scoped MCP write tools (session_close / session_send) (C2).
  */
+// Guard rail, not a lock - see NOT_A_SECURITY_BOUNDARY in ../agent-scope.ts
 
 import {
   AgentCloseInput,

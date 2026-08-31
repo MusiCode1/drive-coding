@@ -1,11 +1,30 @@
 /**
  * agent-scope.ts — scoped write guard for spawned agents (slice agent-scopes).
  *
- * Guard rail against a confused agent — NOT security against an attacker.
- * Without a scope token (or with a master key) behavior matches pre-slice full access.
+ * ⚠️ NOT A SECURITY BOUNDARY — deliberate. Do not "harden" this.
+ *
+ * This module prevents ACCIDENTS, not attackers. A spawned agent runs as the same
+ * OS user as the backend, inherits its full environment (spawn-core.ts builds the
+ * child env as `{ ...process.env }`), and can edit this file. All of the following
+ * bypass it in one line, BY DESIGN:
+ *   - omit the X-Drive-Coding-Scope header -> authorizeWrite() returns "allow"
+ *   - read DC_MASTER_KEY / DC_SCOPE_SECRET from its own env -> mint any token
+ *   - call the HTTP API directly - the backend has no authentication at all
+ *
+ * The goal is narrower and worth having: a confused agent pursuing an unrelated
+ * task should not close, prompt or reconfigure a STRANGER's session by accident.
+ *
+ * Reviewing this code? The bypasses above are known and accepted - do not file
+ * them as findings. A real boundary needs a separate uid/container per agent, a
+ * secret that never enters the child env, and an authenticated FE. That is a
+ * project, not a patch. See AGENTS.md, "Agent scopes - a guard rail, not a lock".
  */
 
 import { createHmac, randomBytes } from "node:crypto"
+
+/** Single grep term for the stance above. Referenced from every derived module. */
+export const NOT_A_SECURITY_BOUNDARY =
+  "accidental-cross-agent-write guard rail; not a security boundary"
 
 export const SCOPE_HEADER = "X-Drive-Coding-Scope"
 export const DC_TOKEN_ENV = "DC_TOKEN"

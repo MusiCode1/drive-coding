@@ -51,12 +51,17 @@ To apply a change, pass those ids on \`session_send.sets\` before the prompt. If
 When drive-coding injects this server into a child agent, requests include \`X-Drive-Coding-Agent: <uuid>\`.
 That sets the caller identity for **session_open** (\`parentAgentId\`) and enables **notify_parent** for child agents.
 
-There is **no authentication** — any client that can reach the URL can list, open, prompt, or close agents.
+The header is caller **identity**, not a login.
+
+Write calls (**session_close**, **session_send**) are limited to agents you spawned — your own
+subtree. Writing to any other agent raises a permission prompt to **your user**; until they
+answer, the call blocks, and a refusal comes back as \`scope-denied\`. Reads (**session_list**,
+**session_state**) are never restricted.
 
 ## Limits
 
 - **Stateless HTTP** — no live push notifications; poll with session_state or session_send.
-- **session_close** refuses when \`turnState !== idle\` unless \`force: true\`. Any caller can close any agent by id.
+- **session_close** refuses when \`turnState !== idle\` unless \`force: true\`, and is subject to the scope rule above.
 - **session_send** defaults to 1800s wait; \`file\`, \`marker\`, \`idleTimeoutSec\`, \`keep\` are ignored (CLI-only).
 - Kill switch: backend owner sets \`MCP_HTTP=0\` to disable the endpoint.
 `
