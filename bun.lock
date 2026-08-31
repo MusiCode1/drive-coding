@@ -16,9 +16,18 @@
         "vitest": "^4.0.0",
       },
     },
+    "packages/acp-wire": {
+      "name": "@drive-coding/acp-wire",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/node": "^22.0.0",
+        "typescript": "^5.6.0",
+        "vitest": "^4.0.0",
+      },
+    },
     "packages/backend": {
       "name": "@drive-coding/backend",
-      "version": "0.17.0",
+      "version": "0.19.0",
       "bin": {
         "drive-coding": "./src/bin/drive-coding.ts",
       },
@@ -49,7 +58,7 @@
     },
     "packages/core": {
       "name": "@drive-coding/core",
-      "version": "0.26.0",
+      "version": "0.28.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.2.1",
         "@drive-coding/provider": "workspace:*",
@@ -62,7 +71,7 @@
     },
     "packages/frontend": {
       "name": "@drive-coding/frontend",
-      "version": "0.32.0",
+      "version": "0.34.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.2.1",
         "@ai-sdk/google": "^3.0.75",
@@ -97,7 +106,7 @@
     },
     "packages/provider": {
       "name": "@drive-coding/provider",
-      "version": "0.11.0",
+      "version": "0.13.0",
       "dependencies": {
         "@agentclientprotocol/claude-agent-acp": "^0.58.1",
         "@agentclientprotocol/sdk": "^1.2.1",
@@ -113,7 +122,7 @@
     },
     "packages/release": {
       "name": "drive-coding",
-      "version": "0.34.1",
+      "version": "0.36.0",
       "bin": {
         "drive-coding": "dist/drive-coding.js",
       },
@@ -217,6 +226,8 @@
     "@csstools/css-syntax-patches-for-csstree": ["@csstools/css-syntax-patches-for-csstree@1.1.4", "", { "optionalDependencies": { "css-tree": "3.2.1" } }, "sha512-wgsqt92b7C7tQhIdPNxj0n9zuUbQlvAuI1exyzeNrOKOi62SD7ren8zqszmpVREjAOqg8cD2FqYhQfAuKjk4sw=="],
 
     "@csstools/css-tokenizer": ["@csstools/css-tokenizer@4.0.0", "", {}, "sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA=="],
+
+    "@drive-coding/acp-wire": ["@drive-coding/acp-wire@workspace:packages/acp-wire"],
 
     "@drive-coding/backend": ["@drive-coding/backend@workspace:packages/backend"],
 
@@ -1281,6 +1292,8 @@
     "zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 
     "zod-to-json-schema": ["zod-to-json-schema@3.25.2", "", { "peerDependencies": { "zod": "4.4.3" } }, "sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA=="],
+
+    "@drive-coding/acp-wire/@types/node": ["@types/node@22.20.0", "", { "dependencies": { "undici-types": "6.21.0" } }, "sha512-QWlFW2wf3nTjC13/DqRnBpR4ZO36VJH/JVBkA/vcnmbTBNQIlnObqyqZE1tUR7+Ni23Lda8R1BxMfbXRpCUx5g=="],
 
     "@drive-coding/provider/@types/node": ["@types/node@22.20.0", "", { "dependencies": { "undici-types": "6.21.0" } }, "sha512-QWlFW2wf3nTjC13/DqRnBpR4ZO36VJH/JVBkA/vcnmbTBNQIlnObqyqZE1tUR7+Ni23Lda8R1BxMfbXRpCUx5g=="],
 
