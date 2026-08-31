@@ -4,6 +4,7 @@
 
 import type { Agent, BridgeKind } from "@drive-coding/core"
 import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
+import { configDefault } from "@drive-coding/core/config/specs"
 import { createLogger } from "@drive-coding/core/log"
 import { stopWatching } from "@drive-coding/provider/config"
 import type { Hono } from "hono"
@@ -110,11 +111,9 @@ export function createDeps(
   orchestratorRef.current = orchestrator
 
   const usageStore = createUsageStore(ensureStateSubdir("usage"))
-  const memoryGuard = createMemoryGuard(
-    config.rssBudgetMb !== undefined
-      ? { thresholdBytes: config.rssBudgetMb * 1024 * 1024 }
-      : undefined,
-  )
+  const memoryGuard = createMemoryGuard({
+    thresholdBytes: (config.rssBudgetMb ?? configDefault("rssBudgetMb")) * 1024 * 1024,
+  })
 
   const disposables: Disposable[] = [
     { name: "memoryGuard", dispose: () => memoryGuard.stop() },

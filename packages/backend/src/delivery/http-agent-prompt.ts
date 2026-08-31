@@ -9,6 +9,7 @@
 
 import type { AgentRegistry } from "@drive-coding/core"
 import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
+import { configDefault } from "@drive-coding/core/config/specs"
 import type { Hono } from "hono"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
 import {
@@ -28,7 +29,7 @@ function parsePort(baseUrl: string, urlConfig: UrlConfig): number {
     if (u.port) return Number(u.port)
     return u.protocol === "https:" ? 443 : 80
   } catch {
-    return urlConfig.port ?? 4000
+    return urlConfig.port ?? configDefault("port")
   }
 }
 

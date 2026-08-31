@@ -18,7 +18,8 @@
  * The timer is unref()d so it does not keep the process alive.
  */
 
-const DEFAULT_THRESHOLD_BYTES = 1_500 * 1024 * 1024 // 1.5 GB
+import { configDefault } from "@drive-coding/core/config/specs"
+
 const DEFAULT_INTERVAL_MS = 5_000
 
 export interface MemoryGuard {
@@ -32,7 +33,8 @@ export function createMemoryGuard(opts?: {
   thresholdBytes?: number
   intervalMs?: number
 }): MemoryGuard {
-  const thresholdBytes = opts?.thresholdBytes ?? DEFAULT_THRESHOLD_BYTES
+  const thresholdBytes =
+    opts?.thresholdBytes ?? configDefault("rssBudgetMb") * 1024 * 1024
   const intervalMs = opts?.intervalMs ?? DEFAULT_INTERVAL_MS
 
   let overBudgetFlag = false

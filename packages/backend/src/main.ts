@@ -1,5 +1,6 @@
 import "./log-setup.js"
 import { createServer as httpsCreateServer } from "node:https"
+import { configDefault } from "@drive-coding/core/config/specs"
 import { createLogger } from "@drive-coding/core/log"
 import { type ServerType, serve } from "@hono/node-server"
 import { Hono } from "hono"
@@ -65,8 +66,8 @@ const ws = createWsStack()
 await buildApp(app, config, deps, { broadcastConfigChanged: ws.broadcastConfigChanged })
 ws.wireRoutes(app, deps)
 
-const port = config.port ?? 4000
-const hostname = config.host ?? "127.0.0.1"
+const port = config.port ?? configDefault("port")
+const hostname = config.host ?? configDefault("host")
 
 const tls = resolveTls(process.env)
 const httpServer: ServerType = tls

@@ -36,6 +36,31 @@ export type ConfigSpec = {
    * `unknown` not `never`: derivation loop passes getLeaf(...) which is unknown.
    */
   serialize?: (value: unknown) => string
+  /**
+   * Product default when no layer defines the leaf.
+   * Applied in resolveConfig. The only place a configurable default may be written.
+   */
+  default?: unknown
+}
+
+/** Keys that have a product default on CONFIG_SPECS. */
+export type ConfigDefaultKey = "port" | "host" | "rssBudgetMb" | "httpOwnerTtlMs" | "opencodeBin"
+
+export type ConfigDefaults = {
+  port: number
+  host: string
+  rssBudgetMb: number
+  httpOwnerTtlMs: number
+  opencodeBin: string
+}
+
+/** Read a product default. Throws if the key has none — that is a catalog bug. */
+export function configDefault<K extends ConfigDefaultKey>(key: K): ConfigDefaults[K] {
+  const spec: ConfigSpec | undefined = CONFIG_SPECS.find((s) => s.key === key)
+  if (spec?.default === undefined) {
+    throw new Error(`CONFIG_SPECS has no default for ${key}`)
+  }
+  return spec.default as ConfigDefaults[K]
 }
 
 export const CONFIG_SPECS = [
@@ -48,8 +73,9 @@ export const CONFIG_SPECS = [
       return Number.isNaN(n) ? undefined : n
     },
     serialize: (v: unknown) => String(v),
+    default: 4000,
   },
-  { key: "host", env: "DRIVE_CODING_HOST", flag: "host" },
+  { key: "host", env: "DRIVE_CODING_HOST", flag: "host", default: "127.0.0.1" },
   {
     key: "corsOrigins",
     env: "CORS_ORIGINS",
@@ -68,7 +94,7 @@ export const CONFIG_SPECS = [
     flag: "public-base-url",
     parse: (raw: string) => normalizePublicBaseUrl(raw),
   },
-  { key: "opencodeBin", env: "OPENCODE_BIN", flag: "opencode-bin" },
+  { key: "opencodeBin", env: "OPENCODE_BIN", flag: "opencode-bin", default: "opencode" },
   {
     key: "wireRecord",
     env: "WIRE_RECORD",
@@ -83,6 +109,7 @@ export const CONFIG_SPECS = [
       return Number.isNaN(n) ? undefined : n
     },
     serialize: (v: unknown) => String(v),
+    default: 1500,
   },
   {
     key: "httpOwnerTtlMs",
@@ -93,6 +120,7 @@ export const CONFIG_SPECS = [
       return n
     },
     serialize: (v: unknown) => String(v),
+    default: 600_000,
   },
   { key: "fsBrowseBase", env: "FS_BROWSE_ALLOWED_BASE" },
   { key: "log.level", env: "LOG_LEVEL", flag: "log-level" },

@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { parseArgs } from "node:util"
+import { configDefault } from "@drive-coding/core/config/specs"
 import { buildVersion, isBinary } from "../binary.js"
 import { loadConfig, parseEnvFile } from "../config/load-config.js"
 
@@ -193,15 +194,15 @@ if (!isBinary()) {
   process.env.FE_STATIC_DIR ??= feBuildDir
 }
 // Binary + explicit FE_STATIC_DIR (flag/env already set above) — no further action needed.
-process.env.PORT ??= "4000"
+process.env.PORT ??= String(configDefault("port"))
 
 const port = process.env.PORT
-const host = process.env.DRIVE_CODING_HOST ?? "127.0.0.1"
+const host = process.env.DRIVE_CODING_HOST ?? configDefault("host")
 
 // Preflight: check that the default AI agent (opencode) is reachable.
 // The user may override via OPENCODE_BIN. If missing — warn but do not block
 // (they might use claude/codex which are typically invoked via npx).
-const agentBin = process.env.OPENCODE_BIN ?? "opencode"
+const agentBin = process.env.OPENCODE_BIN ?? configDefault("opencodeBin")
 try {
   // On POSIX: `which <bin>`; on Windows: `where <bin>` — both exit 0 if found.
   const isWindows = process.platform === "win32"

@@ -1,3 +1,16 @@
+## 2026-08-31 — config defaults live only in CONFIG_SPECS
+
+Product defaults for catalogued config keys (`port`, `host`, `rssBudgetMb`, `httpOwnerTtlMs`, `opencodeBin`) now live on `CONFIG_SPECS[].default` and are applied in `resolveConfig`. Consumers call `configDefault(...)` — no more `?? 4000` / `DEFAULT_HTTP_OWNER_TTL_MS` at the call site.
+
+Rule: `docs-for-llm/design-principles.md` §7 · `.cursor/rules/config-defaults.mdc`.
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | vitest (specs/resolve/load-config/mapping/registry/liveness) | **127 עברו** |
+| 2 | core typecheck | **עבר** |
+
+---
+
 ## 2026-08-27 12:25 — slice live-transcript-box · Commit 2 (data-live-entry) · סיום
 
 Phase 2: `data-live-entry` על כל רשומה + טסט DoD 4 נפרד.

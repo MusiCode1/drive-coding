@@ -1457,8 +1457,7 @@ describe("resolveHttpOwnerTtlMs", () => {
     }
   })
 
-  // 🔴 the guard against "an accidentally tiny default" — a mutation of
-  // DEFAULT_HTTP_OWNER_TTL_MS to 600 MUST fail this.
+  // 🔴 guard: a mutation of CONFIG_SPECS httpOwnerTtlMs default to 600 MUST fail this.
   it("🔴 default path: with the env unset, the default is 600_000 (a 100s-stale owner is NOT released)", async () => {
     vi.useFakeTimers()
     try {

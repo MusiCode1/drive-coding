@@ -211,7 +211,8 @@ After `cd .worktrees/<name>`, run `bun install && bun run hooks:install`.
 
 - **`HTTP_OWNER_TTL_MS`** — how long an HTTP owner may go without a liveness
   signal (`POST /api/agents/:id/presence` → `touchOwner`) before the backend
-  **releases ownership**. Default `600000` (10 min). Expiry releases ownership
+  **releases ownership**. Default: `configDefault("httpOwnerTtlMs")` in
+  `CONFIG_SPECS` (10 min). Expiry releases ownership
   and severs abandoned SSE streams — it does **not** destroy the session host,
   kill the agent, or reset `version`; the next connection is a continuation.
   Set it low (e.g. `HTTP_OWNER_TTL_MS=5000`) to exercise the path without a
@@ -391,6 +392,7 @@ public clone. Paths under `packages/` are real files here.
 |--------------|------|--------|
 | **Code design rules** — layers, what an "engine" is, when to use `$effect` vs a method, state-machine pattern, primary-vs-derived VMs | `docs-for-llm/design-principles.md` §1-5 | **canonical** |
 | **The 50 architectural decisions (D1-D50)** | `docs-for-llm/design-principles.md` §6 | **canonical** |
+| **Config defaults** — product default of a `CONFIG_SPECS` key lives only there | `docs-for-llm/design-principles.md` §7 · `.cursor/rules/config-defaults.mdc` | **canonical** |
 | **FE five golden rules** (the short, injected version) | `packages/frontend/AGENTS.md` | canonical (design-principles expands it) |
 | **UX spec** — drive-first, colors, mic states, bubbles, car mode | `docs-for-llm/frontend-spec.md` | canonical |
 | **FE↔BE protocol, schemas, ports** | `docs-for-llm/vnext-spec.md` | canonical (§8.5 slices is OBSOLETE) |

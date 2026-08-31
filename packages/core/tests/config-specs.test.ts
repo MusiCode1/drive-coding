@@ -3,7 +3,13 @@
  */
 
 import { describe, expect, it } from "vitest"
-import { CONFIG_SPECS, type ConfigSpec, getLeaf, setLeaf } from "../src/config/specs.js"
+import {
+  CONFIG_SPECS,
+  type ConfigSpec,
+  configDefault,
+  getLeaf,
+  setLeaf,
+} from "../src/config/specs.js"
 
 describe("CONFIG_SPECS — table invariants", () => {
   it("1. exactly 13 entries", () => {
@@ -23,6 +29,14 @@ describe("CONFIG_SPECS — table invariants", () => {
   it("4. unique flag when present", () => {
     const flags = CONFIG_SPECS.flatMap((s) => (s.flag !== undefined ? [s.flag] : []))
     expect(new Set(flags).size).toBe(flags.length)
+  })
+
+  it("4b. product defaults are the agreed numbers (mutation guard)", () => {
+    expect(configDefault("port")).toBe(4000)
+    expect(configDefault("host")).toBe("127.0.0.1")
+    expect(configDefault("rssBudgetMb")).toBe(1500)
+    expect(configDefault("httpOwnerTtlMs")).toBe(600_000)
+    expect(configDefault("opencodeBin")).toBe("opencode")
   })
 })
 
