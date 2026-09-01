@@ -260,6 +260,30 @@ BE_PORT=4001 bun run --filter @drive-coding/frontend dev
 Each worktree's FE will get a different OS-assigned Vite port — no conflict
 on the FE side. Tunnels (if used) point at each FE's specific Vite port.
 
+## Agent scopes — a guard rail, not a lock
+
+Spawned agents carry a signed `DC_TOKEN` (env) / `X-Drive-Coding-Scope` (MCP header), and
+write calls — `DELETE`/`PATCH /api/agents/:id`, `/reply`, `/rpc`, and the MCP `session_close`
+/ `session_send` tools — are limited to the caller's own subtree. Anything outside it raises
+a permission prompt on the caller's session. Entry point: `authorizeWrite()` in
+`packages/backend/src/agent-scope.ts`.
+
+> ⚠️ **This is not a security boundary, and it is not meant to become one.** A spawned agent
+> runs as the same OS user as the backend, inherits its whole environment (`spawn-core.ts`
+> builds the child env as `{ ...process.env }`, so `DC_MASTER_KEY` and `DC_SCOPE_SECRET` are
+> readable by any child), can call the HTTP API with no header at all — `authorizeWrite()`
+> returns `"allow"` when there is no token — and can edit the guard itself. The backend has
+> no authentication of any kind.
+
+What it *is* for: a confused agent pursuing an unrelated task should not close, prompt or
+reconfigure a **stranger's** session by accident. That is the whole goal, and it is worth
+having on its own.
+
+**If you are reviewing this code: the bypasses above are known and accepted. Do not report
+them as findings.** A real boundary needs a separate uid or container per agent, a secret
+that never enters the child env, and an authenticated FE — a project, not a patch. Grep
+`NOT_A_SECURITY_BOUNDARY` for the canonical statement in code.
+
 ## Backend needs API credentials — OneCLI is **one** way, not the only way
 
 > ⛔ **Corrected 2026-08-26.** This section used to say *"Backend MUST run through

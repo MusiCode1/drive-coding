@@ -36,6 +36,7 @@ export function createInMemoryAgentRegistry(): AgentRegistry {
         ...(input.notifyOnDone !== undefined && input.notifyOnDone !== ""
           ? { notifyOnDone: input.notifyOnDone }
           : {}),
+        ...(input.roleLabel !== undefined ? { roleLabel: input.roleLabel } : {}),
       }
       store.set(id, agent)
       return agent

@@ -9,7 +9,6 @@ import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
 import type { ProjectsRegistry } from "../app/projects-registry"
-// slice liveness C2: short response cache + no-store on GET /api/agents.
 import { parseCreateAgentBody } from "./create-agent-input.js"
 import { httpCacheGet, httpCacheSet } from "./http-cache.js"
 

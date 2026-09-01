@@ -7,6 +7,7 @@
  */
 
 import type { NewSessionRequest } from "@agentclientprotocol/sdk"
+import { DC_TOKEN_ENV, issueToken, SCOPE_HEADER } from "./agent-scope.js"
 
 /** Minimal shape from ACP initialize — only what we need for MCP gating. */
 export type AgentMcpCapabilities = {
@@ -28,7 +29,10 @@ export const AGENT_ID_HEADER = "X-Drive-Coding-Agent"
 export const MCP_SERVER_NAME = "drive-coding"
 
 export function buildAgentIdentityEnv(agentId: string): Record<string, string> {
-  return { [DRIVE_CODING_AGENT_ID_ENV]: agentId }
+  return {
+    [DRIVE_CODING_AGENT_ID_ENV]: agentId,
+    [DC_TOKEN_ENV]: issueToken(agentId),
+  }
 }
 
 /** Loopback self URL for child MCP wiring — always 127.0.0.1 regardless of bind host (§4.4). */
@@ -42,7 +46,10 @@ export function buildAgentMcpServers(
       type: "http",
       name: MCP_SERVER_NAME,
       url,
-      headers: [{ name: AGENT_ID_HEADER, value: agentId }],
+      headers: [
+        { name: AGENT_ID_HEADER, value: agentId },
+        { name: SCOPE_HEADER, value: issueToken(agentId) },
+      ],
     },
   ]
 }

@@ -23,6 +23,8 @@ import {
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
 import { httpCacheInvalidateAll } from "../delivery/http-cache.js"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
+import { connCharterAtConnect, consumeConnCharter, getConnCharter } from "./connection-registry-charter.js"
+import { deriveLastSeenAt, deriveVia, syncAttached } from "./connection-registry-rows.js"
 
 const wireLog = createLogger("backend.acp.wire")
 const cfgLog = createLogger("backend.acp.config")
@@ -59,29 +61,8 @@ type ConnEntry = {
   unsubs: Array<() => void>
   cwd: string
   cliKind: string
-}
-
-function syncAttached(e: ConnEntry): void {
-  e.attached = e.connections.size > 0
-}
-
-function deriveVia(e: ConnEntry): ConnectionVia | null {
-  for (const row of e.connections.values()) {
-    if (row.via === "ws") return "ws"
-  }
-  for (const row of e.connections.values()) {
-    if (row.via === "http") return "http"
-  }
-  return null
-}
-
-function deriveLastSeenAt(e: ConnEntry): number | null {
-  if (e.connections.size === 0) return null
-  let max = 0
-  for (const row of e.connections.values()) {
-    if (row.lastSeenAt > max) max = row.lastSeenAt
-  }
-  return max
+  /** slice agent-charter C2: project charter for first-prompt prepend. */
+  charter?: string
 }
 
 export type ConnectionRegistry = {
@@ -93,6 +74,8 @@ export type ConnectionRegistry = {
 
   get(agentId: string): ProviderConnection | undefined
   getCwd(agentId: string): string | undefined
+  getCharter(agentId: string): string | undefined
+  consumeCharter(agentId: string): string | undefined
   getCliKind(agentId: string): string | undefined
   list(): string[]
 
@@ -235,6 +218,7 @@ export function createConnectionRegistry(opts?: {
           unsubs: [unsubFrame, unsubCrash],
           cwd: connectOpts.cwd,
           cliKind,
+          ...connCharterAtConnect(conn, connectOpts.systemPrompt),
         })
         return conn
       } finally {
@@ -248,6 +232,14 @@ export function createConnectionRegistry(opts?: {
 
     getCwd(agentId) {
       return map.get(agentId)?.cwd
+    },
+
+    getCharter(agentId) {
+      return getConnCharter(map.get(agentId))
+    },
+
+    consumeCharter(agentId) {
+      return consumeConnCharter(map.get(agentId))
     },
 
     getCliKind(agentId) {

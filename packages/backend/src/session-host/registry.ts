@@ -47,6 +47,7 @@ import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-bro
 import { buildAgentEventHostOpts } from "./agent-events-registry-opts.js"
 import { startAgentStallSweep } from "./agent-events-stall-sweep.js"
 import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
+import { makePromptCharterHook } from "./session-host-charter.js"
 
 const log = createLogger("backend.session-host.registry")
 
@@ -359,15 +360,14 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // slice handoff-foundations C3: if session creation fails below, the host is
     // already subscribed to the wire (created by _createHostFn). Rollback MUST call
     // host.dispose() to remove the crash subscription and close the patches stream.
-    const hostOpts = buildAgentEventHostOpts({
-      agentId,
-      cwd,
-      acpSessionId,
-      permissionPolicy,
-      closeOnTurnEnd,
-      onScheduleCloseOnTurnEnd,
-      onTurnEnded,
-    })
+    // slice agent-charter C2: always wire charter prepend (cold session_open too).
+    const hostOpts = {
+      transformPromptForAcp: makePromptCharterHook(connectionRegistry, agentId),
+      ...buildAgentEventHostOpts({
+        agentId, cwd, acpSessionId, permissionPolicy, closeOnTurnEnd,
+        onScheduleCloseOnTurnEnd, onTurnEnded,
+      }),
+    }
     // 🔴 הקשר-אבחון (2026-08-16): יצירת ה-host היא שמריצה את ה-ACP initialize,
     // ולכן כאן נופלות פקיעות ה-initialize/authenticate. עד עכשיו השגיאה עלתה מכאן
     // **בלי שום סימן זיהוי**: נתקלנו בשני כשלים חיים ולא הצלחנו לקבוע בדיעבד

@@ -617,7 +617,7 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
         rename: false,
         thinkingTokens: false,
         image: true,
-        systemPrompt: false,
+        systemPrompt: "unsupported",
       },
     }
     const { fetchMock } = sseFetchFor(snapshot)

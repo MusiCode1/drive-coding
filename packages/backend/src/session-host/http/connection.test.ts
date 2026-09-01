@@ -18,6 +18,8 @@ function makeReg(overrides: Partial<ConnectionRegistry> = {}): ConnectionRegistr
     getConnectionCount: vi.fn(() => 0),
     connect: vi.fn(),
     getCwd: vi.fn(),
+    getCharter: vi.fn(() => undefined),
+    consumeCharter: vi.fn(() => undefined),
     getCliKind: vi.fn(),
     list: vi.fn(() => []),
     isAttached: vi.fn(() => false),

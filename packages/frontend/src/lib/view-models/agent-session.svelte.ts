@@ -425,8 +425,8 @@ export class AgentSession {
    * ─── slice systemprompt-capability ───
    * **שלושה מצבים, לא שניים** (ממצא אביגיל):
    * - `capabilities === null` — טרם ידוע ⇒ **שקט**. לא אזהרה ולא הבטחה.
-   * - `systemPrompt === true`  — נתמך ⇒ שקט.
-   * - `systemPrompt === false` — לא נתמך ⇒ אזהרה.
+   * - `systemPrompt === "native" | "prepended"` — charter handled ⇒ שקט.
+   * - `systemPrompt === "unsupported"` — לא נתמך ⇒ אזהרה.
    *
    * ⚠️ **לא להשתמש כאן ב-`supports`** — הוא מחזיר all-false כשהיכולות טרם
    * הגיעו, ולכן היה מציג אזהרת-שווא ב-claude/codex בכל חיבור וחיבור-מחדש.
@@ -436,7 +436,7 @@ export class AgentSession {
    */
   get showsSystemPromptWarning(): boolean {
     const caps = this.#capabilities
-    return caps !== null && caps.systemPrompt === false
+    return caps !== null && caps.systemPrompt === "unsupported"
   }
 
   /** Test hook ל-spike: כמה raw Claude SDK ext notifications התקבלו בחיבור הנוכחי. */
@@ -459,7 +459,7 @@ export class AgentSession {
         rename: false,
         thinkingTokens: false,
         image: false,
-        systemPrompt: false,
+        systemPrompt: "unsupported",
       }
     )
   }
@@ -3078,7 +3078,7 @@ export class AgentSession {
             rename: false,
             thinkingTokens: false,
             image: false,
-            systemPrompt: false,
+            systemPrompt: "unsupported",
             ...data.mockState.capabilities,
           }
         }

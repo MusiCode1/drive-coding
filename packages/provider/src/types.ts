@@ -45,12 +45,12 @@ export interface NormalizedCapabilities {
   image: boolean
   /**
    * Static declaration — NOT discovered at runtime via ACP.
-   * true = this provider reads opts.systemPrompt and injects it into the session
-   * (claude via _meta.systemPrompt.append, codex via config.developer_instructions).
-   * All other providers (spawn-based, default) silently ignore systemPrompt → false.
-   * Like `rename`, this is a known static fact about the provider, not a wire-measured cap.
+   * How project charter (systemPrompt) is applied for this provider:
+   * - `"native"` — provider injects via native channel (claude _meta / codex developer_instructions)
+   * - `"prepended"` — charter prepended to the first user turn (spawn path, set at connect)
+   * - `"unsupported"` — no charter support; FE may warn when a project prompt is configured
    */
-  systemPrompt: boolean
+  systemPrompt: "native" | "prepended" | "unsupported"
 }
 
 /**

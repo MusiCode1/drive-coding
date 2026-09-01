@@ -26,6 +26,8 @@ agent open:
   --env K=V             Repeatable. Child also gets DRIVE_CODING_BASE and DC_BASE
   --parent <agentId>    Sets DC_PARENT on child and parentAgentId on server
   --close-on-turn-end   Auto-close agent after first clean turn end
+  --system-prompt <text>  Project charter forwarded to the agent (same as POST /api/agents)
+  --role-label <text>     Display label for the agent tree (metadata only, not sent to the model)
   --permission <policy> allow_once | allow_always | reject_once | ask
   --json
   --public-url <url>    Link host in the printed URL (default: --base)

@@ -290,6 +290,74 @@ describe("AgentPublic — title field", () => {
   })
 })
 
+// slice agent-role-label C0
+describe("AgentPublic — roleLabel field", () => {
+  it("accepts roleLabel as string", () => {
+    const result = AgentPublic({
+      id: "550e8400-e29b-41d4-a716-446655440011",
+      cliKind: "cursor",
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready",
+      createdAt: "2026-05-16T05:00:00.000Z",
+      roleLabel: "planner",
+    })
+    expect(result).not.toHaveProperty("summary")
+  })
+
+  it("accepts agent without roleLabel (optional)", () => {
+    const result = AgentPublic({
+      id: "550e8400-e29b-41d4-a716-446655440012",
+      cliKind: "cursor",
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready",
+      createdAt: "2026-05-16T05:00:00.000Z",
+    })
+    expect(result).not.toHaveProperty("summary")
+  })
+})
+
+describe("CreateAgentInput — roleLabel field (slice agent-role-label C0)", () => {
+  it("accepts roleLabel", () => {
+    const result = CreateAgentInput({
+      cliKind: "cursor",
+      cwd: "/x",
+      roleLabel: "executor",
+    })
+    expect(result).toMatchObject({ roleLabel: "executor" })
+  })
+})
+
+describe("toAgentPublic — roleLabel field (slice agent-role-label C0)", () => {
+  it("copies roleLabel from agent to pub", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440013",
+      cliKind: "cursor" as const,
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T05:00:00.000Z",
+      roleLabel: "planner",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub.roleLabel).toBe("planner")
+  })
+
+  it("omits roleLabel from pub when not set on agent", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440014",
+      cliKind: "cursor" as const,
+      cwd: "/project",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T10:00:00.000Z",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub).not.toHaveProperty("roleLabel")
+  })
+})
+
 describe("toAgentPublic — title field (slice session-title-in-process-list)", () => {
   it("copies title from agent to pub", () => {
     const agent = {

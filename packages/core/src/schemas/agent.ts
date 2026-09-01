@@ -137,6 +137,8 @@ export const Agent = type({
   "closeOnTurnEnd?": "boolean",
   // slice be-events-subscribe: UUID of agent to notify when this agent's turn ends.
   "notifyOnDone?": "string.uuid",
+  // slice agent-role-label: free-form display label (e.g. planner / executor).
+  "roleLabel?": "string",
 })
 export type Agent = typeof Agent.infer
 
@@ -177,6 +179,8 @@ export const AgentPublic = type({
   "title?": "string | null",
   // slice session-lifecycle-fields: who opened this agent.
   "parentAgentId?": "string",
+  // slice agent-role-label: free-form display label (e.g. planner / executor).
+  "roleLabel?": "string",
 })
 export type AgentPublic = typeof AgentPublic.infer
 
@@ -206,6 +210,8 @@ export const CreateAgentInput = type({
   "notifyOnDone?": "string.uuid",
   // slice mcp-event-last-text: include last assistant text in turn-ended notify prompts.
   "includeLastAssistantText?": "boolean",
+  // slice agent-role-label: free-form display label (e.g. planner / executor).
+  "roleLabel?": "string",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 
@@ -239,6 +245,9 @@ export function toAgentPublic(agent: Agent): AgentPublic {
   }
   if (agent.parentAgentId !== undefined) {
     pub.parentAgentId = agent.parentAgentId
+  }
+  if (agent.roleLabel !== undefined) {
+    pub.roleLabel = agent.roleLabel
   }
   return pub
 }

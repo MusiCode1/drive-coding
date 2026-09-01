@@ -104,6 +104,8 @@ function makeMockConnectionRegistry(conn: ProviderConnection | null): {
     connect: vi.fn(async () => conn as ProviderConnection),
     get: vi.fn(() => conn ?? undefined),
     getCwd: vi.fn(),
+    getCharter: vi.fn(() => undefined),
+    consumeCharter: vi.fn(() => undefined),
     getCliKind: vi.fn(),
     list: vi.fn(() => []),
     addConnection: addConnectionSpy,

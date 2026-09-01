@@ -16,6 +16,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../src/acp/connection-registry.js"
 
 const { createAgentOrchestrator, composeShapeEnv } = await import("../src/app/agent-orchestrator.js")
+const {
+  DC_TOKEN_ENV,
+  hasAllowAlwaysGrant,
+  issueToken,
+  recordAllowAlwaysGrant,
+  resetAllowAlwaysGrantsForTests,
+} = await import("../src/agent-scope.js")
 
 // ─── Mock helpers ─────────────────────────────────────────────────────
 
@@ -134,10 +141,23 @@ function makeConnectionRegistry(
   const reg: ConnectionRegistry = {
     connect: connectMock,
     get: vi.fn(() => undefined),
-    markAttached: vi.fn(),
-    markDetached: vi.fn(),
+    getCwd: vi.fn(() => undefined),
+    getCharter: vi.fn(() => undefined),
+    consumeCharter: vi.fn(() => undefined),
+    getCliKind: vi.fn(() => undefined),
+    list: vi.fn(() => []),
+    addConnection: vi.fn(),
+    removeConnection: vi.fn(),
+    touchConnection: vi.fn(),
+    clearAllConnections: vi.fn(),
+    getConnectionCount: vi.fn(() => 0),
     isAttached: vi.fn(() => false),
+    getEpoch: vi.fn(() => 0),
+    isOwnedByWs: vi.fn(() => false),
     getRuntimeInfo: vi.fn(() => null),
+    getLastSeenAt: vi.fn(() => null),
+    listHttpConnectionIds: vi.fn(() => []),
+    setWsSocketChecker: vi.fn(),
     close: closeMock,
     onCrash(handler) {
       crashHandler = handler
@@ -250,6 +270,20 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
 
     expect(closeMock).toHaveBeenCalledWith(result.agentId)
     expect(state.has(result.agentId)).toBe(false)
+  })
+
+  it("deleteAndKill clears allow_always grants involving the agent", async () => {
+    resetAllowAlwaysGrantsForTests()
+    const { registry } = makeRegistry()
+    const { reg } = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+    const a = await orch.createAndSpawn({ cliKind: "opencode", cwd: "/tmp/a", modelOverride: null })
+    const b = await orch.createAndSpawn({ cliKind: "opencode", cwd: "/tmp/b", modelOverride: null })
+    recordAllowAlwaysGrant(a.agentId, b.agentId, "close")
+
+    await orch.deleteAndKill(a.agentId)
+    expect(hasAllowAlwaysGrant(a.agentId, b.agentId, "close")).toBe(false)
   })
 
   it("deleteAndKill on non-existent id → no throw, close still attempted", async () => {
@@ -533,7 +567,7 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
     const connReg = makeConnectionRegistry()
     const orch = createAgentOrchestrator({ registry, connectionRegistry: connReg.reg })
 
-    await orch.createAndSpawn({
+    const result = await orch.createAndSpawn({
       cliKind: "cursor",
       cwd: "/proj",
       modelOverride: null,
@@ -554,6 +588,10 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
         BDS_SLICE: "probe",
       }),
     })
+
+    const expectedToken = issueToken(result.agentId)
+    expect(shaped[DC_TOKEN_ENV]).toBe(expectedToken)
+    expect(connReg.lastConnectOpts?.agentEnv?.[DC_TOKEN_ENV]).toBe(expectedToken)
   })
 
   it("createAndSpawn forces loopback BASE even if caller passes a public URL", async () => {

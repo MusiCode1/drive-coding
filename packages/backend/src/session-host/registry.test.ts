@@ -13,16 +13,18 @@
  */
 
 import type { ProviderConnection } from "@drive-coding/provider/connection"
+import type { AcpClient } from "@drive-coding/provider/client"
 import { Hono } from "hono"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
+import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import { buildAgentMcpServers } from "../agent-identity.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
 import { registerRpcRoute } from "./http/rpc.js"
 import type { PatchesBroadcaster } from "./patches-broadcaster.js"
 import type { HostEntry, HostResult } from "./registry.js"
 import { createAgentSessionRegistry, resolveHttpOwnerTtlMs } from "./registry.js"
-import type { ExtendedSessionHost } from "./session-host.js"
+import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
 
 // slice host-result-reason C1: getOrCreateHost now returns a discriminated
 // HostResult instead of HostEntry | undefined. Most existing tests only care
@@ -90,6 +92,8 @@ function makeMockConnectionRegistry(
     connect: vi.fn(),
     get: vi.fn().mockReturnValue(conn),
     getCwd: vi.fn().mockReturnValue("/tmp/mock-cwd"),
+    getCharter: vi.fn().mockReturnValue(undefined),
+    consumeCharter: vi.fn().mockReturnValue(undefined),
     list: vi.fn().mockReturnValue([]),
     addConnection: vi.fn((_id, cid, via, stream) => {
       rows.set(cid, { via, lastSeenAt: Date.now(), ...(stream !== undefined ? { stream } : {}) })
@@ -185,6 +189,8 @@ function makeMockHost(sessionId: string | null = null): ExtendedSessionHost {
     emitExtNotification: vi.fn(),
     respondPermission: vi.fn(),
     respondElicitation: vi.fn(),
+    isScopeRequest: () => false,
+    requestScopePermission: vi.fn().mockResolvedValue("deny"),
     listSessions: vi.fn().mockResolvedValue({}),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),
@@ -294,7 +300,10 @@ describe("AgentSessionRegistry", () => {
 
       // slice ownership-handoff C4: _createHostFn מקבל עכשיו גם opts
       // (acpSessionId למסלול warm). הבדיקה על ה-conn בלבד.
-      expect(createHostFn).toHaveBeenCalledWith(conn, undefined)
+      expect(createHostFn).toHaveBeenCalledWith(
+        conn,
+        expect.objectContaining({ transformPromptForAcp: expect.any(Function) }),
+      )
     })
 
     // ─── slice ownership-handoff C4 (post-calev): מסלול warm ─────────────────
@@ -358,9 +367,103 @@ describe("AgentSessionRegistry", () => {
 
       await registry.getOrCreateHost("agent-1")
 
-      expect(createHostFn).toHaveBeenCalledWith(conn, undefined)
+      expect(createHostFn).toHaveBeenCalledWith(
+        conn,
+        expect.objectContaining({ transformPromptForAcp: expect.any(Function) }),
+      )
       expect(mockHost.newSession).toHaveBeenCalled()
       expect(mockHost.loadSession).not.toHaveBeenCalled()
+    })
+
+    // ─── slice agent-charter C2: charter prepend wired via getOrCreateHost ───
+
+    it("gate 5: first prompt prepends consumed charter to ACP; bubble stays clean", async () => {
+      const conn = makeMockConnection()
+      let charterLeft: string | undefined = "CHARTER_X"
+      const connectionRegistry = {
+        ...makeMockConnectionRegistry(conn),
+        consumeCharter: vi.fn(() => {
+          const text = charterLeft
+          charterLeft = undefined
+          return text
+        }),
+      } as unknown as ConnectionRegistry
+      const mockClient = {
+        newSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
+        loadSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
+        prompt: vi.fn().mockResolvedValue(undefined),
+        cancel: vi.fn().mockResolvedValue(undefined),
+        setSessionMode: vi.fn().mockResolvedValue(undefined),
+        setSessionConfigOption: vi.fn().mockResolvedValue({ configOptions: [] }),
+        setSessionModel: vi.fn().mockResolvedValue(undefined),
+        extMethod: vi.fn().mockResolvedValue({}),
+        listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
+        deleteSession: vi.fn().mockResolvedValue(undefined),
+        capabilities: { mcpCapabilities: { http: true } },
+      } as unknown as AcpClient
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: async (c, opts) =>
+          createSessionHostFromConnection(c, {
+            ...opts,
+            _createAcpClient: async () => mockClient,
+          }),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      const result = await registry.getOrCreateHost("agent-1")
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      await result.entry.host.prompt("s1", "hello")
+
+      expect(mockClient.prompt).toHaveBeenCalledWith("s1", "CHARTER_X\n\nhello")
+      const msg = result.entry.host.state.messages[0]
+      expect(msg?.role).toBe("user")
+      if (msg?.role === "user") {
+        expect(msg.segments[0]?.text).toBe("hello")
+      }
+
+      await result.entry.host.prompt("s1", "again")
+      expect(mockClient.prompt).toHaveBeenLastCalledWith("s1", "again")
+    })
+
+    it("mutation gate 9: consumeCharter noop → first ACP prompt lacks charter text", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = {
+        ...makeMockConnectionRegistry(conn),
+        consumeCharter: vi.fn(() => undefined),
+      } as unknown as ConnectionRegistry
+      const mockClient = {
+        newSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
+        loadSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
+        prompt: vi.fn().mockResolvedValue(undefined),
+        cancel: vi.fn().mockResolvedValue(undefined),
+        setSessionMode: vi.fn().mockResolvedValue(undefined),
+        setSessionConfigOption: vi.fn().mockResolvedValue({ configOptions: [] }),
+        setSessionModel: vi.fn().mockResolvedValue(undefined),
+        extMethod: vi.fn().mockResolvedValue({}),
+        listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
+        deleteSession: vi.fn().mockResolvedValue(undefined),
+        capabilities: { mcpCapabilities: { http: true } },
+      } as unknown as AcpClient
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: async (c, opts) =>
+          createSessionHostFromConnection(c, {
+            ...opts,
+            _createAcpClient: async () => mockClient,
+          }),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      const result = await registry.getOrCreateHost("agent-1")
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      await result.entry.host.prompt("s1", "hello")
+
+      expect(mockClient.prompt).toHaveBeenCalledWith("s1", "hello")
     })
 
     // ─── slice ownership-handoff C4b (post-calev): מנגנון החיות ─────────────
@@ -654,7 +757,7 @@ describe("AgentSessionRegistry", () => {
         await vi.advanceTimersByTimeAsync(300) // expiry — ownership released
 
         const app = new Hono()
-        registerRpcRoute(app, registry)
+        registerRpcRoute(app, registry, createInMemoryAgentRegistry())
         const res = await app.request(`/api/agents/agent-1/rpc`, {
           method: "POST",
           headers: { "content-type": "application/json" },

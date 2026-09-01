@@ -9,7 +9,8 @@ import type { InstanceRecord } from "@drive-coding/core/schemas/session-bus"
 import { resolveInstances } from "../instances.js"
 import { childEnv, formatInstanceList, resolveBase } from "./discover.js"
 import { AGENT_HELP } from "./help.js"
-import { postJson, readJson } from "./http.js"
+import { authedInit, postJson, readJson } from "./http.js"
+import { buildOpenPostBody } from "./open-post-body.js"
 import { waitForTurnEnd } from "./wait-for-turn.js"
 
 type Values = {
@@ -37,6 +38,8 @@ type Values = {
   text?: string
   "text-file"?: string
   "public-url"?: string
+  "system-prompt"?: string
+  "role-label"?: string
 }
 
 function kv(entries: string[] | undefined): Record<string, string> {
@@ -95,6 +98,8 @@ export async function runCli(argv: string[]): Promise<number> {
         text: { type: "string" },
         "text-file": { type: "string" },
         "public-url": { type: "string" },
+        "system-prompt": { type: "string" },
+        "role-label": { type: "string" },
       },
     }) as { values: Values; positionals: string[] })
   } catch (err) {
@@ -184,14 +189,10 @@ async function cmdOpen(base: string, values: Values, asJson: boolean): Promise<n
   const cwd = values.cwd && values.cwd !== "" ? values.cwd : process.cwd()
   const extra = kv(values.env)
   const env = childEnv(base, extra, values.parent)
-  const created = (await postJson(`${base}/api/agents`, {
-    cliKind: cli,
-    cwd,
-    env,
-    ...(values.permission ? { permissionPolicy: values.permission } : {}),
-    ...(values.parent ? { parentAgentId: values.parent } : {}),
-    ...(values["close-on-turn-end"] ? { closeOnTurnEnd: true } : {}),
-  })) as { agentId?: string }
+  const created = (await postJson(
+    `${base}/api/agents`,
+    buildOpenPostBody(cli, cwd, env, values),
+  )) as { agentId?: string }
   const agent = created.agentId
   if (!agent) {
     console.error("[drive-coding] open: server returned no agentId")
@@ -287,7 +288,7 @@ async function cmdSend(base: string, values: Values): Promise<number> {
     `${icon} ${r.why}${r.stopReason ? `  stopReason=${r.stopReason}` : ""}  frames=${r.frames}  state=${r.lastState}`,
   )
   if (r.code === 0 && !values.keep) {
-    await fetch(`${base}/api/agents/${agent}`, { method: "DELETE" })
+    await fetch(`${base}/api/agents/${agent}`, authedInit({ method: "DELETE" }))
     console.log("agent closed")
   } else if (r.code !== 0) {
     console.log(
@@ -344,7 +345,7 @@ async function cmdClose(base: string, values: Values): Promise<number> {
   }
   if (turnState === null)
     console.error("[drive-coding] no /state (host not up?) — closing without turn check.")
-  const res = await fetch(`${base}/api/agents/${agent}`, { method: "DELETE" })
+  const res = await fetch(`${base}/api/agents/${agent}`, authedInit({ method: "DELETE" }))
   console.log(`${res.ok ? "ok" : "err"} DELETE ${res.status}  ${agent}${cwd ? `  ${cwd}` : ""}`)
   return res.ok ? 0 : 3
 }

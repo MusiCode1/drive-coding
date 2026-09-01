@@ -56,6 +56,12 @@ export const AgentOpenInput = type({
   "publicUrl?": optStr(
     "Public base URL of this drive-coding backend, e.g. http://127.0.0.1:4001. Default: loopback on PORT.",
   ),
+  "systemPrompt?": type("string | null").describe(
+    "Optional project charter (system prompt) forwarded to createAndSpawn — same as POST /api/agents.",
+  ),
+  "roleLabel?": optStr(
+    "Optional display label for the agent tree (e.g. planner, executor) — metadata only, not sent to the model.",
+  ),
 })
 export type AgentOpenInput = typeof AgentOpenInput.infer
 

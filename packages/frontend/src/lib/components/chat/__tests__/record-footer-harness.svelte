@@ -6,6 +6,8 @@
  */
 import {
   setAudioPlaylist,
+  setComposerDraft,
+  setDictate,
   setI18n,
   setLive,
   setMic,
@@ -27,6 +29,8 @@ import type { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
 import type { Speaker } from "$lib/view-models/speaker.svelte"
 import type { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
+import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
+import type { Dictate } from "$lib/view-models/dictate.svelte"
 import { UiShellVM, type InputMode } from "$lib/view-models/ui-shell.svelte"
 import RecordFooter from "../RecordFooter.svelte"
 
@@ -118,8 +122,12 @@ const fakeSettings = {
 const fakeSpeaker = {} as unknown as Speaker
 
 const fakePlaylist = { items: [], transport: "stopped" as const }
+const composerDraft = new ComposerDraft()
+const fakeDictate = { state: "idle", error: null, toggle: async () => {}, cancel: () => {} } as unknown as Dictate
 
 setI18n(fakeI18n)
+setComposerDraft(composerDraft)
+setDictate(fakeDictate)
 setSession(fakeSession)
 setResponsive(fakeResponsive)
 setUiShell(uiShell)

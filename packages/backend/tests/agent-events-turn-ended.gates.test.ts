@@ -52,6 +52,8 @@ async function makeTurnEndedGateServer(eventBus = createAgentEventBus()) {
   const connectionRegistry = {
     get: vi.fn((id: string) => makeMockConn(id)),
     getCwd: vi.fn(() => "/tmp/turn-ended-gate"),
+    getCharter: vi.fn(() => undefined),
+    consumeCharter: vi.fn(() => undefined),
     getCliKind: vi.fn(() => "cursor"),
     isOwnedByWs: vi.fn(() => false),
     getOwner: vi.fn(() => ({ via: "http" as const })),
@@ -119,7 +121,7 @@ async function makeTurnEndedGateServer(eventBus = createAgentEventBus()) {
 
   registerAgentsHttp(app, { registry, orchestrator, bridgeManager: connectionRegistry as never })
   const { registerRpcRoute } = await import("../src/session-host/http/rpc.js")
-  registerRpcRoute(app, agentSessionRegistry)
+  registerRpcRoute(app, agentSessionRegistry, registry)
 
   const server: ServerType = await new Promise((resolve) => {
     const s = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" })

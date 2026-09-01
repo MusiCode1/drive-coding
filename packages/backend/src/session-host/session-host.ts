@@ -59,6 +59,7 @@ type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
 import { createTurnLifecycleHandlers, type TurnTimingHost } from "./turn-lifecycle.js"
 import { msgOf } from "./error-message.js"
 import { createPendingRequests } from "./pending-requests.js"
+import { attachScopePermission, type ScopePermissionHost } from "./session-host-scope.js"
 
 // ─── C2: createSessionHost ───────────────────────────────────────────────────
 
@@ -286,6 +287,8 @@ export type SessionHostFromConnOptions = {
     callbacks: AcpClientCallbacks,
     opts?: AcpClientOptions,
   ) => Promise<AcpClient>
+  /** slice agent-charter C2: transform ACP prompt content (not the user bubble). */
+  transformPromptForAcp?: (content: string | PromptBlocks) => string | PromptBlocks
 }
 
 /**
@@ -293,8 +296,7 @@ export type SessionHostFromConnOptions = {
  * and for driving session configuration.
  * S4 exposes these via HTTP endpoints.
  */
-export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> &
-  TurnTimingHost & {
+export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & TurnTimingHost & ScopePermissionHost & {
   /**
    * slice remote-session-mgmt C2: loadSession as a SWITCH (not a bare delegate).
    * Order: turnSeq++ → pending cleanup → full-state reset → sessionId flip
@@ -401,6 +403,7 @@ export async function createSessionHostFromConnection(
     onTurnEnded,
     warmReattach,
     _createAcpClient = createAcpClient,
+    transformPromptForAcp,
   } = opts
 
   // Internal mutable state (same pattern as createSessionHost)
@@ -468,12 +471,8 @@ export async function createSessionHostFromConnection(
   // ── C3: turn boundaries ─────────────────────────────────────────────────
   const { turn: turnLifecycle, emitTurnEnd, maybeScheduleCloseOnTurnEnd, stampTurnStart, turnHostMethods } =
     createTurnLifecycleHandlers({
-      getState: () => currentState,
-      emit,
-      closeOnTurnEnd,
-      onScheduleCloseOnTurnEnd,
-      onTurnEnded,
-      disposed: () => disposed,
+      getState: () => currentState, emit, closeOnTurnEnd, onScheduleCloseOnTurnEnd,
+      onTurnEnded, disposed: () => disposed,
     })
 
   // ── PendingRequests for permission + elicitation ──────────────────────────
@@ -765,7 +764,8 @@ export async function createSessionHostFromConnection(
     patches: patchStream,
 
     dispose,
-    // C3 turn boundaries — waiting before add-message (hotfix: avoids idle flash in FE).
+    // C3 turn boundaries — waiting before add-message (hotfix).
+    // slice agent-charter C2: transformPromptForAcp prepends charter to ACP only.
     async prompt(
       sessionId: string,
       content: string | PromptBlocks,
@@ -780,7 +780,8 @@ export async function createSessionHostFromConnection(
       currentState = applied.state
       emitPatches(applied.patches) // 2. add-message — role="user" משמר waiting (מלכודת ג')
       try {
-        await client.prompt(sessionId, content)
+        const acpContent = transformPromptForAcp?.(content) ?? content
+        await client.prompt(sessionId, acpContent)
         if (turn === turnLifecycle.turnSeq) {
           emitTurnEnd(applyTurnEnd(currentState), { stopReason: "end_turn" }) // 3א. הצלחה
           maybeScheduleCloseOnTurnEnd()
@@ -962,7 +963,7 @@ export async function createSessionHostFromConnection(
       permPending.respond(requestId, response)
     },
 
-    respondElicitation(requestId: number, response: CreateElicitationResponse): void {
+    ...attachScopePermission({ isDisposed: () => disposed, getState: () => currentState, setState: (s) => { currentState = s }, emitPatches, nextRequestId: () => nextRequestId++, permPending }),    respondElicitation(requestId: number, response: CreateElicitationResponse): void {
       if (disposed) return // slice handoff-foundations C1: no-op after dispose
       elicitPending.respond(requestId, response)
     },
@@ -1026,7 +1027,6 @@ export async function createSessionHostFromConnection(
     get agentCapabilities(): AcpClient["capabilities"] {
       return client.capabilities
     },
-
     ...{ emitExtNotification: handleExtNotification },
     ...turnHostMethods,
   }

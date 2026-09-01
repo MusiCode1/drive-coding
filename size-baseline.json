@@ -32,7 +32,7 @@
       "class": "mixed"
     },
     "packages/backend/src/acp/connection-registry.ts": {
-      "metric": 383,
+      "metric": 375,
       "impurity": 7,
       "class": "mixed"
     },
@@ -102,7 +102,7 @@
       "class": "mixed"
     },
     "packages/backend/src/cli/index.ts": {
-      "metric": 371,
+      "metric": 372,
       "impurity": 34,
       "class": "scattered"
     },
@@ -142,7 +142,7 @@
       "class": "mixed"
     },
     "packages/backend/src/delivery/http-agents.ts": {
-      "metric": 229,
+      "metric": 228,
       "impurity": 11,
       "class": "mixed"
     },
@@ -182,9 +182,9 @@
       "class": "mixed"
     },
     "packages/backend/src/delivery/http-mcp.ts": {
-      "metric": 457,
-      "impurity": 21,
-      "class": "scattered"
+      "metric": 372,
+      "impurity": 15,
+      "class": "mixed"
     },
     "packages/backend/src/delivery/http-options.ts": {
       "metric": 14,

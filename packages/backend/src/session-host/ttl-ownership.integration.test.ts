@@ -108,6 +108,8 @@ function makeStatefulConnectionRegistry(conn: ProviderConnection, cwd: string): 
     connect: vi.fn(),
     get: vi.fn(() => conn),
     getCwd: vi.fn(() => cwd),
+    getCharter: vi.fn(() => undefined),
+    consumeCharter: vi.fn(() => undefined),
     getCliKind: vi.fn(() => "opencode"),
     list: vi.fn(() => []),
     addConnection: vi.fn((_id: string, cid: string, via: "ws" | "http", stream?: ReadableStream<unknown>) => {

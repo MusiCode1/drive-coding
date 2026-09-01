@@ -25,6 +25,7 @@ export function createSessionHostRegistryOpts(deps: {
   evictionController: Parameters<typeof createAgentSessionRegistry>[0]["evictionController"]
 }) {
   return {
+    agentRegistry: deps.registry,
     onSessionAttached: createOnSessionAttached({
       registry: deps.registry,
       projectsRegistry: deps.projectsRegistry,

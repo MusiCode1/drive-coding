@@ -111,7 +111,7 @@ function makeCapabilities(overrides: Partial<NormalizedCapabilities> = {}): Norm
     rename: false,
     thinkingTokens: false,
     image: false,
-    systemPrompt: false,
+    systemPrompt: "unsupported",
     ...overrides,
   }
 }
@@ -227,14 +227,21 @@ describe("AgentSession — capabilities ingestion (FE-normalization)", () => {
 
   it("showsSystemPromptWarning is true when the provider does not support it", async () => {
     await session.attach({ cwd: "/some/cwd", cliKind: "opencode" })
-    simulateCaps({ systemPrompt: false })
+    simulateCaps({ systemPrompt: "unsupported" })
 
     expect(session.showsSystemPromptWarning).toBe(true)
   })
 
   it("showsSystemPromptWarning is false when the provider supports it", async () => {
     await session.attach({ cwd: "/some/cwd", cliKind: "claude" })
-    simulateCaps({ systemPrompt: true })
+    simulateCaps({ systemPrompt: "native" })
+
+    expect(session.showsSystemPromptWarning).toBe(false)
+  })
+
+  it("showsSystemPromptWarning is false when the provider prepends charter", async () => {
+    await session.attach({ cwd: "/some/cwd", cliKind: "opencode" })
+    simulateCaps({ systemPrompt: "prepended" })
 
     expect(session.showsSystemPromptWarning).toBe(false)
   })

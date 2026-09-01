@@ -29,6 +29,7 @@ import { createLogger } from "@drive-coding/core/log"
 import { describeCrash } from "@drive-coding/provider/spawn"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { buildAgentIdentityEnv } from "../agent-identity.js"
+import { clearGrantsFor } from "../agent-scope.js"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
 import { loopbackBaseUrl, type UrlConfig } from "../delivery/public-url.js"
@@ -247,6 +248,7 @@ export function createAgentOrchestrator(deps: {
 
     async deleteAndKill(id: string): Promise<void> {
       log.info({ agentId: id }, "deleteAndKill")
+      clearGrantsFor(id)
       // slice remote-warm-reconnect C2b: הסרת host מיד (לפני close) — אין חלון
       // שבו GET /events מחזיר host של סוכן שנמחק.
       deps.sessionHostRegistry?.unregisterHost(id)

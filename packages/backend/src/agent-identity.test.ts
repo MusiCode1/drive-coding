@@ -11,19 +11,31 @@ import {
   DRIVE_CODING_AGENT_ID_ENV,
   optionalAgentMcpServers,
 } from "./agent-identity.js"
+import { DC_TOKEN_ENV, issueToken, SCOPE_HEADER, verifyToken } from "./agent-scope.js"
 import { getSelfBaseUrl, setSelfBaseUrl, setSelfBaseUrlForTests } from "./instances.js"
 
 describe("buildAgentMcpServers", () => {
-  it("builds http MCP server with identity header", () => {
+  it("builds http MCP server with identity + scope headers", () => {
     const servers = buildAgentMcpServers("agent-abc", "http://127.0.0.1:4055")
+    const token = issueToken("agent-abc")
     expect(servers).toEqual([
       {
         type: "http",
         name: "drive-coding",
         url: "http://127.0.0.1:4055/api/mcp",
-        headers: [{ name: AGENT_ID_HEADER, value: "agent-abc" }],
+        headers: [
+          { name: AGENT_ID_HEADER, value: "agent-abc" },
+          { name: SCOPE_HEADER, value: token },
+        ],
       },
     ])
+  })
+
+  it("gate C0: scope header is required for MCP wiring", () => {
+    const headers = buildAgentMcpServers("a", "http://127.0.0.1:9")[0]
+    expect(headers && "headers" in headers && headers.headers).toEqual(
+      expect.arrayContaining([{ name: SCOPE_HEADER, value: issueToken("a") }]),
+    )
   })
 
   it("strips trailing slash from base URL", () => {
@@ -59,8 +71,12 @@ describe("optionalAgentMcpServers", () => {
 })
 
 describe("buildAgentIdentityEnv", () => {
-  it("maps agent id to DRIVE_CODING_AGENT_ID", () => {
-    expect(buildAgentIdentityEnv("uuid-1")).toEqual({ [DRIVE_CODING_AGENT_ID_ENV]: "uuid-1" })
+  it("maps agent id to DRIVE_CODING_AGENT_ID and DC_TOKEN", () => {
+    const env = buildAgentIdentityEnv("uuid-1")
+    expect(env[DRIVE_CODING_AGENT_ID_ENV]).toBe("uuid-1")
+    const token = env[DC_TOKEN_ENV]
+    expect(token).toBeDefined()
+    expect(verifyToken(token!)).toEqual({ agentId: "uuid-1" })
   })
 })
 

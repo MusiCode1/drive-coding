@@ -27,6 +27,7 @@ export const CreateAgentInputFull = type({
   "closeOnTurnEnd?": "boolean",
   "notifyOnDone?": "string.uuid",
   "includeLastAssistantText?": "boolean",
+  "roleLabel?": "string",
 })
 export type CreateAgentInputFull = typeof CreateAgentInputFull.infer
 
@@ -89,6 +90,9 @@ export function parseCreateAgentBody(
   }
   if (parsed.includeLastAssistantText === true) {
     input.includeLastAssistantText = true
+  }
+  if (parsed.roleLabel !== undefined && parsed.roleLabel !== "") {
+    input.roleLabel = parsed.roleLabel
   }
   return { ok: true, value: input }
 }

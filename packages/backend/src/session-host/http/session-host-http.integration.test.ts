@@ -27,6 +27,7 @@ import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import { setSelfBaseUrlForTests } from "../../instances.js"
+import { createInMemoryAgentRegistry } from "../../agents/registry.js"
 import { createPatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import {
@@ -171,7 +172,11 @@ async function setup(): Promise<{
   }
 
   const app = new Hono()
-  registerSessionHostHttp(app, { agentSessionRegistry: registry, connectionRegistry })
+  registerSessionHostHttp(app, {
+    agentSessionRegistry: registry,
+    connectionRegistry,
+    agentRegistry: createInMemoryAgentRegistry(),
+  })
 
   return { app, host, mockClient, callbacks: capturedCallbacks }
 }
