@@ -132,6 +132,16 @@ export function resetAllowAlwaysGrantsForTests(): void {
   allowAlwaysGrants.clear()
 }
 
+/** Drops allow_always grants where callerId or targetId matches (slice scope-accident-proofing C3). */
+export function clearGrantsFor(agentId: string): void {
+  for (const key of [...allowAlwaysGrants]) {
+    const sep = key.indexOf("\0")
+    const callerId = key.slice(0, sep)
+    const targetId = key.slice(sep + 1, key.indexOf("\0", sep + 1))
+    if (callerId === agentId || targetId === agentId) allowAlwaysGrants.delete(key)
+  }
+}
+
 let enforcementEnabled = true
 
 /** Test hook (gate 5): disabling enforcement makes authorizeWrite always allow. */

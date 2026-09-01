@@ -15,6 +15,7 @@ import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import type { ScopeEnforcementDeps } from "../bind-scope-enforcement.js"
 import { raceKeepRunning } from "../session-host/http/rpc-wait.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
+import { scopeDeniedBody } from "../scope-write.js"
 import { runScopedMcpTool } from "./mcp-scope.js"
 
 const log = createLogger("backend.mcp")
@@ -84,7 +85,7 @@ export function registerMcpWriteTools(
           await deps.orchestrator.deleteAndKill(input.agent)
           return jsonResult({ ok: true, agent: input.agent })
         },
-        () => jsonError("scope-denied"),
+        () => jsonError(JSON.stringify(scopeDeniedBody())),
       )
     },
   )
@@ -160,7 +161,7 @@ export function registerMcpWriteTools(
             messagesSince,
           })
         },
-        () => jsonError("scope-denied"),
+        () => jsonError(JSON.stringify(scopeDeniedBody())),
       )
     },
   )

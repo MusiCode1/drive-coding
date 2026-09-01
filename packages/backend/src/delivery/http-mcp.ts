@@ -36,7 +36,7 @@ import type { Hono } from "hono"
 import { z } from "zod"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
-import { readScopeToken } from "../scope-write.js"
+import { readScopeToken, stripScopePendingFromState } from "../scope-write.js"
 import { registerMcpWriteTools } from "./mcp-write-tools.js"
 import { resolveAppVersion } from "../app-version.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
@@ -143,13 +143,13 @@ function pickSessionState(
   state: Record<string, unknown>,
   fields: string[] | undefined,
 ): Record<string, unknown> {
-  if (fields?.includes("*")) return { ...state }
+  if (fields?.includes("*")) return stripScopePendingFromState({ ...state })
   const keys = fields && fields.length > 0 ? fields : DEFAULT_STATE_FIELDS
   const out: Record<string, unknown> = {}
   for (const k of keys) {
     if (Object.hasOwn(state, k)) out[k] = state[k]
   }
-  return out
+  return stripScopePendingFromState(out)
 }
 
 function cliMeta(kind: string): { kind: string; displayName: string } {

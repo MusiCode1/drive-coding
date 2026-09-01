@@ -37,6 +37,8 @@ function makeMockHost(state: SessionState): ExtendedSessionHost {
     extMethod: vi.fn().mockResolvedValue({}),
     respondPermission: vi.fn(),
     respondElicitation: vi.fn(),
+    isScopeRequest: () => false,
+    requestScopePermission: vi.fn().mockResolvedValue("deny"),
     listSessions: vi.fn().mockResolvedValue({}),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),

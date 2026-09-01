@@ -13,7 +13,6 @@ import {
   verifyToken,
 } from "./agent-scope.js"
 import type { AgentSessionRegistry } from "./session-host/registry.js"
-import type { ScopePermissionHost } from "./session-host/session-host-scope.js"
 
 const log = createLogger("backend.scope")
 
@@ -61,12 +60,9 @@ async function escalateScopePermission(deps: ScopedWriteDeps): Promise<"allow" |
 
   const callerHost = sessionRegistry.getHost(verified.agentId)
   if (!callerHost) return "deny"
-  const requestScope = (callerHost as unknown as Partial<ScopePermissionHost>)
-    .requestScopePermission
-  if (!requestScope) return "deny"
   if (callerHost.state.pending.permission !== null) return "deny"
 
-  const decision = await requestScope({
+  const decision = await callerHost.requestScopePermission({
     callerId: verified.agentId,
     targetId,
     verb,
@@ -78,7 +74,34 @@ async function escalateScopePermission(deps: ScopedWriteDeps): Promise<"allow" |
   return decision
 }
 
-export const SCOPE_DENIED_BODY = { error: "scope-denied" as const }
+export type ScopeDeniedBody = {
+  error: "scope-denied"
+  reason: string
+  hint: string
+}
+
+export function scopeDeniedBody(): ScopeDeniedBody {
+  return {
+    error: "scope-denied",
+    reason: "This write targets an agent outside your subtree and was denied.",
+    hint:
+      "Ask the user to approve the action in the drive-coding UI. " +
+      "If no one responds within 30 seconds, the pending scope request is rejected automatically.",
+  }
+}
+
+export const SCOPE_DENIED_BODY: ScopeDeniedBody = scopeDeniedBody()
+
+/** MCP session_state only — hides scope escalation pending from agent discovery. */
+export function stripScopePendingFromState(out: Record<string, unknown>): Record<string, unknown> {
+  const pending = out.pending
+  if (!pending || typeof pending !== "object") return out
+  const toolCallId = (
+    pending as { permission?: { params?: { toolCall?: { toolCallId?: unknown } } } | null }
+  ).permission?.params?.toolCall?.toolCallId
+  if (typeof toolCallId !== "string" || !toolCallId.startsWith("scope-")) return out
+  return { ...out, pending: { ...(pending as Record<string, unknown>), permission: null } }
+}
 
 /** Promise-based guard — avoids extra `await` at call sites (size ratchet). */
 export function whenScopedWriteAllowed(

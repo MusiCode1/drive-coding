@@ -7,9 +7,13 @@ import {
   DC_MASTER_KEY_ENV,
   DC_SCOPE_SECRET_ENV,
   DC_TOKEN_ENV,
+  clearGrantsFor,
   getScopeSecret,
+  hasAllowAlwaysGrant,
   issueToken,
   isMaster,
+  recordAllowAlwaysGrant,
+  resetAllowAlwaysGrantsForTests,
   resetScopeSecretForTests,
   SCOPE_HEADER,
   subtreeIds,
@@ -108,5 +112,25 @@ describe("subtreeIds", () => {
     expect(result.has("X")).toBe(true)
     expect(result.has("Y")).toBe(true)
     expect(result.size).toBeLessThanOrEqual(21)
+  })
+})
+
+describe("clearGrantsFor", () => {
+  afterEach(() => {
+    resetAllowAlwaysGrantsForTests()
+  })
+
+  it("removes grants where agent is caller or target", () => {
+    recordAllowAlwaysGrant("A", "B", "close")
+    recordAllowAlwaysGrant("B", "C", "send")
+    recordAllowAlwaysGrant("X", "Y", "close")
+
+    clearGrantsFor("A")
+    expect(hasAllowAlwaysGrant("A", "B", "close")).toBe(false)
+    expect(hasAllowAlwaysGrant("B", "C", "send")).toBe(true)
+
+    clearGrantsFor("B")
+    expect(hasAllowAlwaysGrant("B", "C", "send")).toBe(false)
+    expect(hasAllowAlwaysGrant("X", "Y", "close")).toBe(true)
   })
 })
