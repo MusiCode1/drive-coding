@@ -20,6 +20,7 @@ import {
 import type { AgentOrchestrator } from "../src/app/agent-orchestrator.js"
 import { registerAgentsHttp } from "../src/delivery/http-agents.js"
 import { registerMcpHttp } from "../src/delivery/http-mcp.js"
+import { SCOPE_DENIED_BODY } from "../src/scope-write.js"
 import { bindScopeEnforcement } from "../src/bind-scope-enforcement.js"
 import { setSelfBaseUrlForTests } from "../src/instances.js"
 import { createAgentSessionRegistry } from "../src/session-host/registry.js"
@@ -164,7 +165,7 @@ describe("agent-scopes §6 gates", () => {
       headers: { [SCOPE_HEADER]: tokenA, [AGENT_ID_HEADER]: a.id },
     })
     expect(del.status).toBe(403)
-    expect(await del.json()).toEqual({ error: "scope-denied" })
+    expect(await del.json()).toEqual(SCOPE_DENIED_BODY)
 
     const client = await connectMcp(app, {
       [SCOPE_HEADER]: tokenA,
@@ -172,7 +173,11 @@ describe("agent-scopes §6 gates", () => {
     })
     const closeResult = await client.callTool({ name: "session_close", arguments: { agent: b.id } })
     expect(closeResult.isError).toBe(true)
-    expect(closeResult.content?.[0]).toMatchObject({ type: "text", text: "scope-denied" })
+    const mcpText = (closeResult.content?.[0] as { text: string }).text
+    const mcpBody = JSON.parse(mcpText) as typeof SCOPE_DENIED_BODY
+    expect(mcpBody).toEqual(SCOPE_DENIED_BODY)
+    expect(mcpBody.reason.length).toBeGreaterThan(0)
+    expect(mcpBody.hint.length).toBeGreaterThan(0)
     await client.close()
   })
 

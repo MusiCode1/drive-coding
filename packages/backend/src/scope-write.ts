@@ -78,7 +78,23 @@ async function escalateScopePermission(deps: ScopedWriteDeps): Promise<"allow" |
   return decision
 }
 
-export const SCOPE_DENIED_BODY = { error: "scope-denied" as const }
+export type ScopeDeniedBody = {
+  error: "scope-denied"
+  reason: string
+  hint: string
+}
+
+export function scopeDeniedBody(): ScopeDeniedBody {
+  return {
+    error: "scope-denied",
+    reason: "This write targets an agent outside your subtree and was denied.",
+    hint:
+      "Ask the user to approve the action in the drive-coding UI. " +
+      "If no one responds within 30 seconds, the pending scope request is rejected automatically.",
+  }
+}
+
+export const SCOPE_DENIED_BODY: ScopeDeniedBody = scopeDeniedBody()
 
 /** Promise-based guard — avoids extra `await` at call sites (size ratchet). */
 export function whenScopedWriteAllowed(
