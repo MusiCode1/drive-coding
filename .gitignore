@@ -68,3 +68,8 @@ packages/frontend/.build-old/
 !packages/frontend/docs/
 @Vendor/
 docs/plans/
+
+# Machine-local Cursor rule: a symlink to ~/.cursor/rules/machine-agents.mdc.
+# Per-machine and absolute — committing it would publish a broken link.
+# (.cursor/rules/config-defaults.mdc IS tracked; only this one is local.)
+/.cursor/rules/machine-agents.mdc

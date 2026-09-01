@@ -3,8 +3,8 @@
   "hooks": {
     "sessionStart": [
       {
-        "command": "bash \"/home/user/Projects/drive-coding/.worktrees/surface-prompt-hooks/packages/provider/hooks/cursor/session-start.sh\"",
-        "timeout": 2
+        "command": "bash \"$HOME/Projects/drive-coding/edge/packages/provider/hooks/cursor/inject-prompt.sh\" sessionStart",
+        "timeout": 5
       }
     ]
   }
