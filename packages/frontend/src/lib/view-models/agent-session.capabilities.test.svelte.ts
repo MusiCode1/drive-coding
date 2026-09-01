@@ -238,4 +238,11 @@ describe("AgentSession — capabilities ingestion (FE-normalization)", () => {
 
     expect(session.showsSystemPromptWarning).toBe(false)
   })
+
+  it("showsSystemPromptWarning is false when the provider prepends charter", async () => {
+    await session.attach({ cwd: "/some/cwd", cliKind: "opencode" })
+    simulateCaps({ systemPrompt: "prepended" })
+
+    expect(session.showsSystemPromptWarning).toBe(false)
+  })
 })
