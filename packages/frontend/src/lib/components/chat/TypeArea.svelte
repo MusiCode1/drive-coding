@@ -446,12 +446,6 @@ function openFilePicker(): void {
     </button>
   </form>
 
-  {#if dictateBusy}
-    <p aria-live="polite" class="text-xs" style="color:var(--fg-dim)">
-      {t("dictate.transcribing")}
-    </p>
-  {/if}
-
 </div>
 
 <style>
