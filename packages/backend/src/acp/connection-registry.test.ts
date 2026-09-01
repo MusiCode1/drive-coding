@@ -477,3 +477,48 @@ describe("connection-registry — NBug1 dedup (🔴 avigail)", () => {
     await reg.close("dedup-1")
   })
 })
+
+describe("connection-registry — charter (slice agent-charter C2)", () => {
+  let cleanupEnv: (() => void) | null = null
+
+  beforeEach(() => {
+    cleanupEnv = useScript(ALIVE_SCRIPT)
+  })
+
+  afterEach(async () => {
+    cleanupEnv?.()
+    cleanupEnv = null
+  })
+
+  it("spawn + systemPrompt stores charter and marks caps prepended before host", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("charter-1", "opencode", {
+      cwd: os.tmpdir(),
+      systemPrompt: "CHARTER_X",
+    })
+    const conn = reg.get("charter-1")
+    expect(conn?.capabilities.systemPrompt).toBe("prepended")
+    expect(reg.getCharter("charter-1")).toBe("CHARTER_X")
+    await reg.close("charter-1")
+  })
+
+  it("consumeCharter returns text once then undefined", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("charter-2", "opencode", {
+      cwd: os.tmpdir(),
+      systemPrompt: "ONCE",
+    })
+    expect(reg.consumeCharter("charter-2")).toBe("ONCE")
+    expect(reg.getCharter("charter-2")).toBeUndefined()
+    expect(reg.consumeCharter("charter-2")).toBeUndefined()
+    await reg.close("charter-2")
+  })
+
+  it("spawn without systemPrompt leaves caps unsupported and no charter", async () => {
+    const reg = createConnectionRegistry()
+    await reg.connect("charter-3", "cursor", { cwd: os.tmpdir() })
+    expect(reg.get("charter-3")?.capabilities.systemPrompt).toBe("unsupported")
+    expect(reg.getCharter("charter-3")).toBeUndefined()
+    await reg.close("charter-3")
+  })
+})

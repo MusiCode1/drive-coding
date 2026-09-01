@@ -1961,3 +1961,30 @@ describe("quota via state channel (http-state-gaps C3)", () => {
     expect(afterTurn).toBeGreaterThan(afterFirst) // ⚠️ לא דוכא
   })
 })
+
+describe("agent-charter C2 — transformPromptForAcp", () => {
+  it("prepends charter to ACP content once; user bubble stays clean", async () => {
+    const { conn } = makeMockConnection()
+    const mockClient = makeMockAcpClient()
+    let consumed = false
+    const host = await createSessionHostFromConnection(conn, {
+      transformPromptForAcp: (content) => {
+        if (consumed) return content
+        consumed = true
+        return typeof content === "string" ? `CHARTER\n\n${content}` : content
+      },
+      _createAcpClient: async () => mockClient,
+    })
+
+    await host.prompt("s1", "hello")
+    expect(mockClient.prompt).toHaveBeenCalledWith("s1", "CHARTER\n\nhello")
+    const msg = host.state.messages[0]
+    expect(msg?.role).toBe("user")
+    if (msg?.role === "user") {
+      expect(msg.segments[0]?.text).toBe("hello")
+    }
+
+    await host.prompt("s1", "again")
+    expect(mockClient.prompt).toHaveBeenLastCalledWith("s1", "again")
+  })
+})
