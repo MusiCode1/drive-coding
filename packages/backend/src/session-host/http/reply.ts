@@ -21,7 +21,16 @@
  */
 
 import type { Hono } from "hono"
+import { verifyToken } from "../../agent-scope.js"
+import { readScopeToken, scopeDeniedBody } from "../../scope-write.js"
 import type { AgentSessionRegistry } from "../registry.js"
+
+let selfApproveGuardEnabled = true
+
+/** Test hook (G5): disabling makes scope self-approve return 200 like the FE path. */
+export function setSelfApproveGuardForTests(enabled: boolean): void {
+  selfApproveGuardEnabled = enabled
+}
 
 /**
  * registerReplyRoute — registers POST /api/agents/:id/reply on the Hono app.
@@ -41,6 +50,13 @@ export function registerReplyRoute(app: Hono, registry: AgentSessionRegistry): v
     const kind = body.kind as "permission" | "elicitation"
     const requestId = body.requestId as number
     const result = body.result
+
+    if (kind === "permission" && selfApproveGuardEnabled && host.isScopeRequest(requestId)) {
+      const token = readScopeToken((name) => c.req.header(name))
+      if (token && verifyToken(token)) {
+        return c.json(scopeDeniedBody(), 403)
+      }
+    }
 
     if (kind === "permission") {
       host.respondPermission(requestId, result as Parameters<typeof host.respondPermission>[1])

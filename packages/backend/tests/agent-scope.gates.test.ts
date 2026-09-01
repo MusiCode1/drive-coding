@@ -21,6 +21,7 @@ import type { AgentOrchestrator } from "../src/app/agent-orchestrator.js"
 import { registerAgentsHttp } from "../src/delivery/http-agents.js"
 import { registerMcpHttp } from "../src/delivery/http-mcp.js"
 import { SCOPE_DENIED_BODY } from "../src/scope-write.js"
+import { setSelfApproveGuardForTests } from "../src/session-host/http/reply.js"
 import { bindScopeEnforcement } from "../src/bind-scope-enforcement.js"
 import { setSelfBaseUrlForTests } from "../src/instances.js"
 import { createAgentSessionRegistry } from "../src/session-host/registry.js"
@@ -143,6 +144,7 @@ async function connectMcp(
 describe("agent-scopes §6 gates", () => {
   afterEach(() => {
     setScopeEnforcementForTests(true)
+    setSelfApproveGuardForTests(true)
     resetAllowAlwaysGrantsForTests()
     setSelfBaseUrlForTests(undefined)
   })
@@ -224,6 +226,117 @@ describe("agent-scopes §6 gates", () => {
     }
     expect(httpBody.pending?.permission?.requestId).toBe(requestId)
     await client.close()
+    void delPromise
+  })
+
+  it("G1: scoped agent cannot self-approve scope escalation", async () => {
+    const { app, registry, agentSessionRegistry } = await makeScopeGateApp()
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a" })
+    const b = await registry.create({ cliKind: "cursor", cwd: "/b" })
+    const tokenA = issueToken(a.id)
+
+    await agentSessionRegistry.getOrCreateHost(a.id)
+    const hostA = agentSessionRegistry.getHost(a.id)!
+    const respondSpy = vi.spyOn(hostA, "respondPermission")
+
+    const delPromise = app.request(`/api/agents/${b.id}`, {
+      method: "DELETE",
+      headers: { [SCOPE_HEADER]: tokenA, [AGENT_ID_HEADER]: a.id },
+    })
+
+    await vi.waitFor(() => {
+      expect(hostA.state.pending.permission).not.toBeNull()
+    })
+    const requestId = hostA.state.pending.permission!.requestId
+
+    const reply = await app.request(`/api/agents/${a.id}/reply`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        [SCOPE_HEADER]: tokenA,
+        [AGENT_ID_HEADER]: a.id,
+      },
+      body: JSON.stringify({
+        kind: "permission",
+        requestId,
+        result: { outcome: { outcome: "selected", optionId: "scope-allow-once" } },
+      }),
+    })
+    expect(reply.status).toBe(403)
+    expect(await reply.json()).toEqual(SCOPE_DENIED_BODY)
+    expect(respondSpy).not.toHaveBeenCalled()
+    void delPromise
+  })
+
+  it("G2: reply without scope token still approves escalation", async () => {
+    const { app, registry, agentSessionRegistry, deleted } = await makeScopeGateApp()
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a" })
+    const b = await registry.create({ cliKind: "cursor", cwd: "/b" })
+    const tokenA = issueToken(a.id)
+
+    await agentSessionRegistry.getOrCreateHost(a.id)
+    const hostA = agentSessionRegistry.getHost(a.id)!
+
+    const delPromise = app.request(`/api/agents/${b.id}`, {
+      method: "DELETE",
+      headers: { [SCOPE_HEADER]: tokenA, [AGENT_ID_HEADER]: a.id },
+    })
+
+    await vi.waitFor(() => {
+      expect(hostA.state.pending.permission).not.toBeNull()
+    })
+    const requestId = hostA.state.pending.permission!.requestId
+
+    const reply = await app.request(`/api/agents/${a.id}/reply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "permission",
+        requestId,
+        result: { outcome: { outcome: "selected", optionId: "scope-allow-once" } },
+      }),
+    })
+    expect(reply.status).toBe(200)
+
+    const del = await delPromise
+    expect(del.status).toBe(204)
+    expect(deleted).toContain(b.id)
+  })
+
+  it("G5: disabling self-approve guard allows scoped reply", async () => {
+    setSelfApproveGuardForTests(false)
+    const { app, registry, agentSessionRegistry } = await makeScopeGateApp()
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a" })
+    const b = await registry.create({ cliKind: "cursor", cwd: "/b" })
+    const tokenA = issueToken(a.id)
+
+    await agentSessionRegistry.getOrCreateHost(a.id)
+    const hostA = agentSessionRegistry.getHost(a.id)!
+
+    const delPromise = app.request(`/api/agents/${b.id}`, {
+      method: "DELETE",
+      headers: { [SCOPE_HEADER]: tokenA, [AGENT_ID_HEADER]: a.id },
+    })
+
+    await vi.waitFor(() => {
+      expect(hostA.state.pending.permission).not.toBeNull()
+    })
+    const requestId = hostA.state.pending.permission!.requestId
+
+    const reply = await app.request(`/api/agents/${a.id}/reply`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        [SCOPE_HEADER]: tokenA,
+        [AGENT_ID_HEADER]: a.id,
+      },
+      body: JSON.stringify({
+        kind: "permission",
+        requestId,
+        result: { outcome: { outcome: "selected", optionId: "scope-allow-once" } },
+      }),
+    })
+    expect(reply.status).toBe(200)
     void delPromise
   })
 

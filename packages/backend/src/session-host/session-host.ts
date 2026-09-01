@@ -58,7 +58,7 @@ import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
 type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
 import { isCleanTurnEndForClose } from "./close-on-turn-end.js"
 import { createPendingRequests } from "./pending-requests.js"
-import { createRequestScopePermission } from "./session-host-scope.js"
+import { attachScopePermission, type ScopePermissionHost } from "./session-host-scope.js"
 import { msgOf } from "./session-host-msg.js"
 
 // ─── C2: createSessionHost ───────────────────────────────────────────────────
@@ -283,7 +283,7 @@ export type SessionHostFromConnOptions = {
  * and for driving session configuration.
  * S4 exposes these via HTTP endpoints.
  */
-export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
+export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & ScopePermissionHost & {
   /**
    * slice remote-session-mgmt C2: loadSession as a SWITCH (not a bare delegate).
    * Order: turnSeq++ → pending cleanup → full-state reset → sessionId flip
@@ -941,7 +941,7 @@ export async function createSessionHostFromConnection(
       permPending.respond(requestId, response)
     },
 
-    requestScopePermission: createRequestScopePermission({
+    ...attachScopePermission({
       isDisposed: () => disposed, getState: () => currentState, setState: (s) => { currentState = s },
       emitPatches, nextRequestId: () => nextRequestId++, permPending,
     }),

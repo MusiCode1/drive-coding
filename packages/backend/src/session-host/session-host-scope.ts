@@ -24,6 +24,40 @@ export type ScopePermissionHost = {
     targetId: string
     verb: string
   }): Promise<"allow" | "deny" | "allow_always">
+  isScopeRequest(requestId: number): boolean
+}
+
+export function createScopeRequestTracker(): Pick<
+  ScopePermissionHost,
+  "isScopeRequest"
+> & { markScopeRequest: (requestId: number) => void } {
+  const scopeRequestIds = new Set<number>()
+  return {
+    markScopeRequest: (id) => { scopeRequestIds.add(id) },
+    isScopeRequest: (id) => scopeRequestIds.has(id),
+  }
+}
+
+type ScopePermissionDeps = {
+  isDisposed: () => boolean
+  getState: () => SessionState
+  setState: (state: SessionState) => void
+  emitPatches: (patches: Patch[]) => void
+  nextRequestId: () => number
+  permPending: PermPending
+}
+
+export function attachScopePermission(
+  deps: ScopePermissionDeps,
+): Pick<ScopePermissionHost, "requestScopePermission" | "isScopeRequest"> {
+  const tracker = createScopeRequestTracker()
+  return {
+    requestScopePermission: createRequestScopePermission({
+      ...deps,
+      markScopeRequest: tracker.markScopeRequest,
+    }),
+    isScopeRequest: tracker.isScopeRequest,
+  }
 }
 
 export function createRequestScopePermission(deps: {
@@ -33,6 +67,7 @@ export function createRequestScopePermission(deps: {
   emitPatches: (patches: Patch[]) => void
   nextRequestId: () => number
   permPending: PermPending
+  markScopeRequest: (requestId: number) => void
 }): ScopePermissionHost["requestScopePermission"] {
   return (opts) => {
     if (deps.isDisposed()) return Promise.resolve("deny" as const)
@@ -45,6 +80,7 @@ export function createRequestScopePermission(deps: {
       { optionId: "scope-reject-once", name: "Reject", kind: "reject_once" as const },
     ]
     const requestId = deps.nextRequestId()
+    deps.markScopeRequest(requestId)
     const params: RequestPermissionRequest = {
       sessionId: deps.getState().sessionId ?? "",
       toolCall: { toolCallId: `scope-${requestId}`, title },
