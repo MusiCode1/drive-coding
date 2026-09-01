@@ -17,7 +17,6 @@
  */
 
 import Avatar from "$lib/components/chat/Avatar.svelte"
-import Select from "$lib/components/ui/Select.svelte"
 import { getI18n } from "$lib/context"
 import {
   type ElicitationParams,
@@ -179,13 +178,20 @@ function handleCancel(): void {
                   <span dir="auto">{field.label}</span>
                 </label>
               {:else if field.kind === "select"}
-                <Select
-                  bind:value={textValues[field.key]}
-                  options={field.options ?? []}
-                  title={field.label}
-                  disabled={submitting}
-                  compact={false}
-                />
+                <div class="radio-group" role="radiogroup" aria-label={field.label}>
+                  {#each field.options ?? [] as opt (opt.value)}
+                    <label class="radio-row">
+                      <input
+                        type="radio"
+                        name={field.key}
+                        value={opt.value}
+                        disabled={submitting}
+                        bind:group={textValues[field.key]}
+                      />
+                      <span dir="auto">{opt.label}</span>
+                    </label>
+                  {/each}
+                </div>
               {/if}
             </div>
           {/each}
@@ -293,6 +299,36 @@ function handleCancel(): void {
     gap: 0.4rem;
     font-size: 0.85rem;
     color: var(--fg);
+  }
+
+  .radio-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .radio-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 44px;
+    padding: 0.35rem 0.6rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    font-size: 0.85rem;
+    color: var(--fg);
+    cursor: pointer;
+  }
+
+  .radio-row:has(input:checked) {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+
+  .radio-row:has(input:disabled) {
+    opacity: 0.5;
+    cursor: default;
   }
 
   .actions {
