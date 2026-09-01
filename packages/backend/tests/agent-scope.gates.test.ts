@@ -13,6 +13,9 @@ import { createInMemoryAgentRegistry } from "../src/agents/registry.js"
 import { AGENT_ID_HEADER } from "../src/agent-identity.js"
 import {
   issueToken,
+  clearGrantsFor,
+  hasAllowAlwaysGrant,
+  recordAllowAlwaysGrant,
   resetAllowAlwaysGrantsForTests,
   SCOPE_HEADER,
   setScopeEnforcementForTests,
@@ -338,6 +341,16 @@ describe("agent-scopes §6 gates", () => {
     })
     expect(reply.status).toBe(200)
     void delPromise
+  })
+
+  it("G4: clearGrantsFor removes allow_always grants for agent", () => {
+    recordAllowAlwaysGrant("agent-a", "agent-b", "close")
+    recordAllowAlwaysGrant("agent-b", "agent-c", "send")
+    expect(hasAllowAlwaysGrant("agent-a", "agent-b", "close")).toBe(true)
+
+    clearGrantsFor("agent-a")
+    expect(hasAllowAlwaysGrant("agent-a", "agent-b", "close")).toBe(false)
+    expect(hasAllowAlwaysGrant("agent-b", "agent-c", "send")).toBe(true)
   })
 
   it("gate 3: escalation allow_once on caller host permits the close", async () => {

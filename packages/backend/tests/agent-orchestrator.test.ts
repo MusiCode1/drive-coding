@@ -16,7 +16,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../src/acp/connection-registry.js"
 
 const { createAgentOrchestrator, composeShapeEnv } = await import("../src/app/agent-orchestrator.js")
-const { DC_TOKEN_ENV, issueToken } = await import("../src/agent-scope.js")
+const {
+  DC_TOKEN_ENV,
+  hasAllowAlwaysGrant,
+  issueToken,
+  recordAllowAlwaysGrant,
+  resetAllowAlwaysGrantsForTests,
+} = await import("../src/agent-scope.js")
 
 // ─── Mock helpers ─────────────────────────────────────────────────────
 
@@ -251,6 +257,20 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
 
     expect(closeMock).toHaveBeenCalledWith(result.agentId)
     expect(state.has(result.agentId)).toBe(false)
+  })
+
+  it("deleteAndKill clears allow_always grants involving the agent", async () => {
+    resetAllowAlwaysGrantsForTests()
+    const { registry } = makeRegistry()
+    const { reg } = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+    const a = await orch.createAndSpawn({ cliKind: "opencode", cwd: "/tmp/a", modelOverride: null })
+    const b = await orch.createAndSpawn({ cliKind: "opencode", cwd: "/tmp/b", modelOverride: null })
+    recordAllowAlwaysGrant(a.agentId, b.agentId, "close")
+
+    await orch.deleteAndKill(a.agentId)
+    expect(hasAllowAlwaysGrant(a.agentId, b.agentId, "close")).toBe(false)
   })
 
   it("deleteAndKill on non-existent id → no throw, close still attempted", async () => {
