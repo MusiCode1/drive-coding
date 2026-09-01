@@ -44,6 +44,8 @@ import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { buildAgentMcpServers, optionalAgentMcpServers } from "../agent-identity.js"
 import { getSelfBaseUrl } from "../instances.js"
 import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-broadcaster.js"
+import { buildAgentEventHostOpts } from "./agent-events-registry-opts.js"
+import { startAgentStallSweep } from "./agent-events-stall-sweep.js"
 import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
 
 const log = createLogger("backend.session-host.registry")
@@ -211,6 +213,13 @@ type AgentSessionRegistryDeps = {
   getCloseOnTurnEnd?: (agentId: string) => boolean | Promise<boolean>
   /** slice session-lifecycle-fields C1: server wires grace timer + deleteAndKill. */
   onScheduleCloseOnTurnEnd?: (agentId: string) => void
+  /** slice be-events-subscribe C1 — see buildAgentEventHostOpts */
+  onTurnEnded?: Parameters<typeof buildAgentEventHostOpts>[0]["onTurnEnded"]
+  /** slice be-events-subscribe C2: stall-suspected callback — must not kill the agent */
+  onStallSuspected?: (agentId: string, silentMs: number) => void
+  /** slice be-events-subscribe C2: test knobs */
+  _stallSweepMs?: number
+  _stallSuspectMs?: number
   /**
    * slice ownership-handoff C4b: HTTP ownership TTL (ms).
    * Default: `HTTP_OWNER_TTL_MS` env, else 600_000ms (slice ttl-ownership).
@@ -256,6 +265,8 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     getPermissionPolicy,
     getCloseOnTurnEnd,
     onScheduleCloseOnTurnEnd,
+    onTurnEnded,
+    onStallSuspected,
   } = deps
 
   const map = new Map<string, HostEntry>()
@@ -283,6 +294,16 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     }
   }, HTTP_SWEEP_MS)
   httpSweep.unref() // don't prevent process exit
+
+  const stallSweep = onStallSuspected
+    ? startAgentStallSweep({
+        map,
+        connectionRegistry,
+        onStallSuspected,
+        _stallSweepMs: deps._stallSweepMs,
+        _stallSuspectMs: deps._stallSuspectMs,
+      })
+    : undefined
 
   async function doCreate(agentId: string): Promise<HostResult> {
     // Look up connection
@@ -338,19 +359,15 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // slice handoff-foundations C3: if session creation fails below, the host is
     // already subscribed to the wire (created by _createHostFn). Rollback MUST call
     // host.dispose() to remove the crash subscription and close the patches stream.
-    const hostOpts =
-      acpSessionId || permissionPolicy !== undefined || closeOnTurnEnd
-        ? {
-            ...(acpSessionId ? { warmReattach: { acpSessionId, cwd } } : {}),
-            ...(permissionPolicy !== undefined ? { permissionPolicy } : {}),
-            ...(closeOnTurnEnd
-              ? {
-                  closeOnTurnEnd: true,
-                  onScheduleCloseOnTurnEnd: () => onScheduleCloseOnTurnEnd?.(agentId),
-                }
-              : {}),
-          }
-        : undefined
+    const hostOpts = buildAgentEventHostOpts({
+      agentId,
+      cwd,
+      acpSessionId,
+      permissionPolicy,
+      closeOnTurnEnd,
+      onScheduleCloseOnTurnEnd,
+      onTurnEnded,
+    })
     // 🔴 הקשר-אבחון (2026-08-16): יצירת ה-host היא שמריצה את ה-ACP initialize,
     // ולכן כאן נופלות פקיעות ה-initialize/authenticate. עד עכשיו השגיאה עלתה מכאן
     // **בלי שום סימן זיהוי**: נתקלנו בשני כשלים חיים ולא הצלחנו לקבוע בדיעבד
@@ -497,6 +514,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
   /** slice boot-layer C2: stop the HTTP ownership TTL sweep interval. */
   stop(): void {
     clearInterval(httpSweep)
+    if (stallSweep) clearInterval(stallSweep)
   },
   }
 }

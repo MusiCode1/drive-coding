@@ -2,7 +2,6 @@
  * boot/deps.ts — boot dependencies + pre-serve disposables (C2).
  */
 
-import type { Agent, BridgeKind } from "@drive-coding/core"
 import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
 import { configDefault } from "@drive-coding/core/config/specs"
 import { createLogger } from "@drive-coding/core/log"
@@ -20,10 +19,11 @@ import { createEvictionController } from "../delivery/eviction-controller.js"
 import { createMemoryGuard, type MemoryGuard } from "../delivery/memory-guard.js"
 import { createWireRecorder } from "../delivery/wire-recorder.js"
 import { ensureStateSubdir } from "../paths.js"
-import { resolveCloseOnTurnEndGraceMs } from "../session-host/close-on-turn-end.js"
+import { createAgentEventBus, type AgentEventBus } from "../session-host/agent-events.js"
 import { createAndRegisterSessionHostHttp } from "../session-host/http/index.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { createUsageStore, type UsageStore } from "../usage/usage-store.js"
+import { createSessionHostRegistryOpts } from "../server-session-host-opts.js"
 import { wireRecorderDir } from "./config.js"
 
 const log = createLogger("backend.server")
@@ -41,6 +41,7 @@ export type BootDeps = {
   evictionController: ReturnType<typeof createEvictionController>
   acpSessionIdCache: Map<string, string>
   agentSessionRegistry: AgentSessionRegistry
+  agentEventBus: AgentEventBus
   orchestrator: AgentOrchestrator
   usageStore: UsageStore
   memoryGuard: MemoryGuard
@@ -60,43 +61,17 @@ export function createDeps(
   const acpSessionIdCache = new Map<string, string>()
 
   const orchestratorRef: { current: AgentOrchestrator | null } = { current: null }
+  const agentEventBus = createAgentEventBus()
 
   const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionRegistry, {
-    onSessionAttached: async (agentId, sessionId, cwd) => {
-      const agent = await registry.get(agentId)
-      if (!agent || agent.status === "closed") {
-        log.warn({ agentId, sessionId }, "onSessionAttached: agent missing or closed — skipped")
-        return
-      }
-      const patch: Partial<Pick<Agent, "status" | "acpSessionId" | "cwd">> = {
-        status: "ready",
-        acpSessionId: sessionId,
-      }
-      if (cwd !== undefined) patch.cwd = cwd
-      await registry.update(agentId, patch)
-      acpSessionIdCache.set(agentId, sessionId)
-      const effectiveCwd = cwd ?? agent.cwd
-      await projectsRegistry.recordCwd(effectiveCwd, agent.cliKind as BridgeKind)
-      await projectsRegistry.recordSession(effectiveCwd, sessionId)
-    },
-    evictionController,
-    getAcpSessionId: (agentId) => acpSessionIdCache.get(agentId),
-    getPermissionPolicy: async (agentId) => {
-      const agent = await registry.get(agentId)
-      return agent?.permissionPolicy
-    },
-    getCloseOnTurnEnd: async (agentId) => {
-      const agent = await registry.get(agentId)
-      return agent?.closeOnTurnEnd === true
-    },
-    onScheduleCloseOnTurnEnd: (agentId) => {
-      const graceMs = resolveCloseOnTurnEndGraceMs(env.CLOSE_ON_TURN_END_GRACE_MS)
-      setTimeout(() => {
-        void orchestratorRef.current?.deleteAndKill(agentId).catch((err) => {
-          log.warn({ err, agentId }, "closeOnTurnEnd: deleteAndKill failed after grace")
-        })
-      }, graceMs)
-    },
+    ...createSessionHostRegistryOpts({
+      registry,
+      projectsRegistry,
+      acpSessionIdCache,
+      agentEventBus,
+      getOrchestrator: () => orchestratorRef.current,
+      evictionController,
+    }),
     _httpOwnerTtlMs: config.httpOwnerTtlMs,
     env,
   })
@@ -139,6 +114,7 @@ export function createDeps(
     evictionController,
     acpSessionIdCache,
     agentSessionRegistry,
+    agentEventBus,
     orchestrator,
     usageStore,
     memoryGuard,

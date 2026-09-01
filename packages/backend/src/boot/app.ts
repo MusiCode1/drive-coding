@@ -23,6 +23,7 @@ import {
 } from "../delivery/http-history.js"
 import { registerLiveTokenHttp } from "../delivery/http-live-token.js"
 import { registerAgentPromptHttp } from "../delivery/http-agent-prompt.js"
+import { bootAgentEvents } from "../delivery/agent-events-boot.js"
 import { registerMcpHttp } from "../delivery/http-mcp.js"
 import { registerHttpOptions } from "../delivery/http-options.js"
 import { registerProxyHttp } from "../delivery/http-proxy.js"
@@ -46,10 +47,18 @@ export async function buildApp(
     projectsRegistry,
     recordingsStore,
     agentSessionRegistry,
+    agentEventBus,
     orchestrator,
     usageStore,
     memoryGuard,
   } = deps
+
+  const { orchestrator: orchestratorWithEvents } = bootAgentEvents(app, {
+    registry,
+    orchestrator,
+    eventBus: agentEventBus,
+    agentSessionRegistry,
+  })
 
   const { env } = deps
   const urlConfig = config
@@ -61,17 +70,18 @@ export async function buildApp(
   registerClientLogHttp(app)
   registerAgentsHttp(app, {
     registry,
-    orchestrator,
+    orchestrator: orchestratorWithEvents,
     projectsRegistry,
     bridgeManager: connectionRegistry,
     env,
   })
   registerMcpHttp(app, {
     registry,
-    orchestrator,
+    orchestrator: orchestratorWithEvents,
     agentSessionRegistry,
     env,
     urlConfig,
+    eventBus: agentEventBus,
   })
   registerAgentPromptHttp(app, { registry, urlConfig })
   registerHealthHttp(app, { registry, connectionRegistry })

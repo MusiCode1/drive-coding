@@ -67,6 +67,7 @@ export type McpToolName =
   | "session_send"
   | "session_state"
   | "session_close"
+  | "session_subscribe"
   | "notify_parent"
 
 export const MCP_TOOL_META: Record<
@@ -97,6 +98,11 @@ export const MCP_TOOL_META: Record<
     title: "Close agent session",
     description:
       "Delete the agent record and kill its CLI process (deleteAndKill). Refuses when turnState is not idle unless force: true — wait for the turn to finish or pass force. Missing agent returns { ok: true, alreadyClosed: true }. No ownership check: any caller can close any agent id.",
+  },
+  session_subscribe: {
+    title: "Subscribe to agent events",
+    description:
+      "Register the caller (or an explicit subscriber UUID) to receive turn-ended and stall-suspected events for the target agent. Idempotent — duplicate subscribe is a no-op. Requires agent (target). subscriber defaults to X-Drive-Coding-Agent when present.",
   },
 }
 

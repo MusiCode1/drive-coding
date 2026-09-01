@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # pre-commit hook for drive-coding.
 #
-# Currently runs only the i18n lint (Hebrew-in-code detector).
-# Add more checks here as the project grows.
+# Currently runs the i18n lint (Hebrew-in-code detector) and the
+# size/impurity ratchet. Both are skippable with `git commit --no-verify`.
+# There is no CI; skipping the hook is enough to bypass them.
 #
 # Installed via: bun run hooks:install
 # (which runs: git config core.hooksPath .githooks)
@@ -16,3 +17,6 @@ cd "$REPO_ROOT"
 
 # 1. Hebrew-in-code check
 ./scripts/lint-no-hebrew-in-code.sh
+
+# 2. Size/impurity ratchet (skip: git commit --no-verify)
+node scripts/lint-file-size.mjs

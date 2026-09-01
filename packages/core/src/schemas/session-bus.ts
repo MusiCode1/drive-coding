@@ -42,6 +42,9 @@ export const AgentOpenInput = type({
   "closeOnTurnEnd?": optBool(
     "When true, automatically close this agent after its first clean turn end.",
   ),
+  "notifyOnDone?": optStr(
+    "UUID of the agent to notify when this agent's turn ends (auto-subscribe on create).",
+  ),
   "base?": optStr(
     "Public base URL of this drive-coding backend (legacy alias for publicUrl). Used to build chat url and DC_BASE env.",
   ),

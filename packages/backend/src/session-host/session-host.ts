@@ -56,7 +56,8 @@ import type { AcpTransport } from "@drive-coding/provider/transport"
 import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
 
 type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
-import { isCleanTurnEndForClose } from "./close-on-turn-end.js"
+import { createTurnLifecycleHandlers, type TurnTimingHost } from "./turn-lifecycle.js"
+import { msgOf } from "./error-message.js"
 import { createPendingRequests } from "./pending-requests.js"
 
 // ─── C2: createSessionHost ───────────────────────────────────────────────────
@@ -266,6 +267,11 @@ export type SessionHostFromConnOptions = {
   /** Called once after the first eligible turn end — server wires deleteAndKill. */
   onScheduleCloseOnTurnEnd?: () => void
   /**
+   * slice be-events-subscribe C1: called after applyTurnEnd when patches.length > 0.
+   * Always wired for every host — independent of closeOnTurnEnd / notifyOnDone.
+   */
+  onTurnEnded?: (info: import("./agent-events-turn.js").TurnEndedInfo) => void
+  /**
    * slice ownership-handoff C4: warm reattach — agent already initialized.
    * Uses createAttachedAcpClient (skips initialize) + loadSession (restores state).
    * Omit for cold start (normal path: createAcpClient + newSession).
@@ -287,7 +293,8 @@ export type SessionHostFromConnOptions = {
  * and for driving session configuration.
  * S4 exposes these via HTTP endpoints.
  */
-export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
+export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> &
+  TurnTimingHost & {
   /**
    * slice remote-session-mgmt C2: loadSession as a SWITCH (not a bare delegate).
    * Order: turnSeq++ → pending cleanup → full-state reset → sessionId flip
@@ -367,6 +374,7 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
    * ships them in the listSessions response so the FE can gate the delete button.
    */
   readonly agentCapabilities: AcpClient["capabilities"]
+  emitExtNotification(method: string, params: Record<string, unknown>): void
 }
 
 /**
@@ -390,6 +398,7 @@ export async function createSessionHostFromConnection(
     permissionPolicy,
     closeOnTurnEnd,
     onScheduleCloseOnTurnEnd,
+    onTurnEnded,
     warmReattach,
     _createAcpClient = createAcpClient,
   } = opts
@@ -450,44 +459,22 @@ export async function createSessionHostFromConnection(
     emitPatches(result.patches)
   }
 
-  // ── C3: turn boundaries ─────────────────────────────────────────────────
-  // turnSeq — מקודם רק ב-prompt (תור חדש). cancelledTurn — מסומן (❌ לא מקודם)
-  // ע"י cancel, ומשפיע רק על מטען-השגיאה — לעולם לא על הפליטה עצמה.
-  let turnSeq = 0
-  let cancelledTurn = -1
-  /** slice session-lifecycle-fields C1: only the first clean turn end may close. */
-  let closeOnTurnEndScheduled = false
-
-  /**
-   * After applyTurnEnd emit on success (720) or cancel (912) — NOT error path (729).
-   * Error-path agents stay in the list as evidence (Avigail finding 2).
-   */
-  function maybeScheduleCloseOnTurnEnd(): void {
-    if (!closeOnTurnEnd || closeOnTurnEndScheduled || disposed) return
-    if (!isCleanTurnEndForClose(currentState)) return
-    closeOnTurnEndScheduled = true
-    onScheduleCloseOnTurnEnd?.()
-  }
-
   /** מיישם {state,patches} על currentState + פולט — עוזר-IO מקומי. */
   function emit(r: { state: SessionState; patches: Patch[] }): void {
     currentState = r.state
     emitPatches(r.patches)
   }
 
-  /** אותה קדימות כמו formatAcpError ב-FE: data.details → data.message → message → String(e). */
-  function msgOf(err: unknown): string {
-    if (err && typeof err === "object") {
-      const e = err as { message?: unknown; data?: unknown }
-      if (e.data && typeof e.data === "object") {
-        const data = e.data as { details?: unknown; message?: unknown }
-        if (typeof data.details === "string" && data.details.length > 0) return data.details
-        if (typeof data.message === "string" && data.message.length > 0) return data.message
-      }
-      if (typeof e.message === "string" && e.message.length > 0) return e.message
-    }
-    return String(err)
-  }
+  // ── C3: turn boundaries ─────────────────────────────────────────────────
+  const { turn: turnLifecycle, emitTurnEnd, maybeScheduleCloseOnTurnEnd, stampTurnStart, turnHostMethods } =
+    createTurnLifecycleHandlers({
+      getState: () => currentState,
+      emit,
+      closeOnTurnEnd,
+      onScheduleCloseOnTurnEnd,
+      onTurnEnded,
+      disposed: () => disposed,
+    })
 
   // ── PendingRequests for permission + elicitation ──────────────────────────
   // slice session-host-pending-surface C4: מונה requestId משותף יחיד — לא שני
@@ -518,16 +505,7 @@ export async function createSessionHostFromConnection(
   // timeout: abort getQuota if the CLI does not respond within this window.
   const QUOTA_FETCH_TIMEOUT_MS = 5_000
 
-  /**
-   * Fires an async getQuota call after a successful session start/load.
-   * Non-blocking: does NOT await here — caller proceeds immediately.
-   * Five invariants (brief §5/C3):
-   *   1. Not part of newSession/loadSession success condition.
-   *   2. Timeout: race against QUOTA_FETCH_TIMEOUT_MS.
-   *   3. Guard-gen: response arriving after session switch or dispose is discarded.
-   *   4. Dedupe: only one in-flight call at a time.
-   *   5. Validate { snapshot } shape before writing to state.
-   */
+  /** Non-blocking quota fetch after session start/load (slice http-state-gaps C3). */
   function startQuotaFetch(sessionId: string): void {
     // condition 4: dedupe — one in-flight call per generation.
     // ⚠️ Must be scoped to the CURRENT generation. A plain boolean starves the
@@ -787,30 +765,15 @@ export async function createSessionHostFromConnection(
     patches: patchStream,
 
     dispose,
-    // ── C3: turn boundaries — mirrors LocalSessionView.prompt/cancel (waiting
-    // לפני ה-await, idle בשני הענפים), עם סטייה אחת מוצהרת: שתי הפליטות (הצלחה
-    // וגם cancel) מגודרות ב-`turn === turnSeq` — "התור שלי עדיין הנוכחי". ─────
-    //
-    // ⚠️ hotfix (אחרי C4, avigail): הסדר הוא waiting **לפני** add-message —
-    // ההפך מהניסוח המקורי של "מלכודת ג'" ("הסדר הזה בטוח", לא "הכרחי"). הסיבה
-    // לא הייתה מספר-ה-patches (שניהם עדיין שני emit נפרדים — ReadableStream לא
-    // מאחד enqueue-ים סמוכים לקריאה אחת, אין "batch" אמיתי על ה-wire) אלא
-    // **הערך שנצפה ביניהם**: ה-FE מסנכרן turnState פר-patch. בסדר הישן
-    // (add-message ואז waiting) הסנכרון הראשון קורא turnState שעדיין `idle`,
-    // ורק הסנכרון השני (אחרי ה-patch השני) מעלה אותו ל-`waiting` — הבהוב
-    // `waiting → idle → waiting` שמצית flush מזויף של סוף-תור ב-Speaker
-    // וצליל-חשיבה כפול. בסדר החדש שני הסנכרונים רואים `waiting`:
-    // apply-patch.ts's add-message branch גוזר turnState מ-role, ול-role:"user"
-    // (תמיד המקרה כאן) הוא **משמר** את הערך הקיים — כלומר add-message שמגיע
-    // *אחרי* waiting לא דורס אותו. אותה עובדה בדיוק (role=user = no-op)
-    // שהפכה את הסדר הישן ל"בטוח" הופכת את הסדר החדש ל"מתקן".
+    // C3 turn boundaries — waiting before add-message (hotfix: avoids idle flash in FE).
     async prompt(
       sessionId: string,
       content: string | PromptBlocks,
       meta?: Record<string, unknown>,
     ): Promise<void> {
       if (disposed) throw new Error("SessionHost disposed")
-      const turn = ++turnSeq
+      const turn = ++turnLifecycle.turnSeq
+      stampTurnStart()
       emit(applyTurnStart(currentState)) // 1. waiting — לפני ה-await, ולפני add-message (hotfix)
       const msg = synthesizeUserMessage(currentState, content, meta)
       const applied = applyUserMessage(currentState, msg)
@@ -818,8 +781,8 @@ export async function createSessionHostFromConnection(
       emitPatches(applied.patches) // 2. add-message — role="user" משמר waiting (מלכודת ג')
       try {
         await client.prompt(sessionId, content)
-        if (turn === turnSeq) {
-          emit(applyTurnEnd(currentState)) // 3א. הצלחה
+        if (turn === turnLifecycle.turnSeq) {
+          emitTurnEnd(applyTurnEnd(currentState), { stopReason: "end_turn" }) // 3א. הצלחה
           maybeScheduleCloseOnTurnEnd()
           // slice http-state-gaps C3: refresh quota at turn end — the brief asked for
           // it and it was missing (calev finding 7). A turn is exactly when usage
@@ -827,9 +790,15 @@ export async function createSessionHostFromConnection(
           if (currentState.sessionId) startQuotaFetch(currentState.sessionId)
         }
       } catch (err) {
-        if (turn === turnSeq) {
-          const error = turn === cancelledTurn ? undefined : { message: msgOf(err), at: Date.now() }
-          emit(applyTurnEnd(currentState, error)) // 3ב. שגיאה — אין closeOnTurnEnd (הסוכן נשאר כראיה)
+        if (turn === turnLifecycle.turnSeq) {
+          const error =
+            turn === turnLifecycle.cancelledTurn
+              ? undefined
+              : { message: msgOf(err), at: Date.now() }
+          emitTurnEnd(applyTurnEnd(currentState, error), {
+            stopReason: error?.message,
+            lastTurnError: error ?? null,
+          }) // 3ב. שגיאה — אין closeOnTurnEnd (הסוכן נשאר כראיה)
         }
         throw err // rethrow — הקורא הישיר עדיין רואה את השגיאה
       }
@@ -975,15 +944,15 @@ export async function createSessionHostFromConnection(
 
     async cancel(sessionId: string) {
       if (disposed) throw new Error("SessionHost disposed")
-      const turn = turnSeq // מסמן, ❌ לא מקדם
-      cancelledTurn = turn
+      const turn = turnLifecycle.turnSeq // מסמן, ❌ לא מקדם
+      turnLifecycle.cancelledTurn = turn
       try {
         await client.cancel(sessionId)
       } catch {
         // best-effort — תואם ל-local
       }
-      if (turn === turnSeq) {
-        emit(applyTurnEnd(currentState)) // אותה גדר בדיוק כמו ב-prompt
+      if (turn === turnLifecycle.turnSeq) {
+        emitTurnEnd(applyTurnEnd(currentState), { stopReason: "cancelled" }) // אותה גדר בדיוק כמו ב-prompt
         maybeScheduleCloseOnTurnEnd()
       }
     },
@@ -1057,5 +1026,8 @@ export async function createSessionHostFromConnection(
     get agentCapabilities(): AcpClient["capabilities"] {
       return client.capabilities
     },
+
+    ...{ emitExtNotification: handleExtNotification },
+    ...turnHostMethods,
   }
 }

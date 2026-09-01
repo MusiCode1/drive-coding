@@ -1,6 +1,6 @@
 {
   "name": "drive-coding",
-  "version": "0.36.0",
+  "version": "0.37.0",
   "private": true,
   "type": "module",
   "packageManager": "bun@1.3.14",
@@ -19,6 +19,7 @@
     "lint:i18n": "./scripts/lint-no-hebrew-in-code.sh",
     "lint:css-vars": "./scripts/lint-css-vars.sh packages/frontend/src",
     "lint:rtl": "node scripts/lint-no-physical-classes.mjs",
+    "lint:size": "node scripts/lint-file-size.mjs",
     "format": "biome format --write .",
     "hooks:install": "git config core.hooksPath .githooks",
     "worktrees:prune": "node scripts/prune-worktrees.mjs",

@@ -78,6 +78,7 @@ elif [ "${ats:-0}" -gt "${bts:-0}" ]; then
 fi
 
 bun run lint:i18n > "$A/i18n.txt" 2>&1 || say "lint:i18n נכשל (מוחלט — חייב לעבור)"
+bun run lint:size > "$A/size.txt" 2>&1 || say "lint:size נכשל (מוחלט — חייב לעבור)"
 
 [ $fail -eq 0 ] && echo "✅ אין רגרסיה" || echo "— נמצאו רגרסיות —"
 exit $fail

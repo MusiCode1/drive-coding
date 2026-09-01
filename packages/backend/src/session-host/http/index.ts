@@ -85,6 +85,15 @@ export function createAndRegisterSessionHostHttp(
     _httpOwnerTtlMs?: number
     /** slice boot-layer C5: env reference for TTL fallback */
     env?: NodeJS.ProcessEnv
+    /** slice be-events-subscribe C1 */
+    onTurnEnded?: (
+      agentId: string,
+      info: import("../agent-events-turn.js").TurnEndedInfo,
+    ) => void
+    /** slice be-events-subscribe C2 */
+    onStallSuspected?: (agentId: string, silentMs: number) => void
+    _stallSweepMs?: number
+    _stallSuspectMs?: number
   } = {},
 ): ReturnType<typeof createAgentSessionRegistry> {
   const agentSessionRegistry = createAgentSessionRegistry({
@@ -97,6 +106,11 @@ export function createAndRegisterSessionHostHttp(
     getCloseOnTurnEnd: opts.getCloseOnTurnEnd,
     onScheduleCloseOnTurnEnd: opts.onScheduleCloseOnTurnEnd,
     _httpOwnerTtlMs: opts._httpOwnerTtlMs,
+    env: opts.env,
+    onTurnEnded: opts.onTurnEnded,
+    onStallSuspected: opts.onStallSuspected,
+    _stallSweepMs: opts._stallSweepMs,
+    _stallSuspectMs: opts._stallSuspectMs,
   })
   registerSessionHostHttp(app, { agentSessionRegistry, connectionRegistry })
   return agentSessionRegistry

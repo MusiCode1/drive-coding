@@ -312,10 +312,11 @@ observability commit `a76e7c1`).
 
 ## Wire tracing & recording (debug)
 
-Two passive taps on the ACP pipe (`packages/backend/src/acp/bridge-manager.ts`), both
+Two passive taps on the ACP pipe (`packages/backend/src/acp/connection-registry.ts`), both
 **off by default**, neither alters the stream (each runs *after* the send/write).
-Both live in `bridge-manager` — **always-active for the full child lifetime**, surviving
+Both live in `connection-registry` (`onFrame`) — **always-active for the full child lifetime**, surviving
 FE disconnect/reconnect cycles (unlike the previous `ws-agent` location).
+`bridge-manager.ts` was removed; `server.ts` notes the registry replaced that singleton.
 
 - **`LOG_WIRE=acp`** — live wire summary to the BE stdout via pino (slice-wire-observability-bridge).
   Namespace: `backend.acp.wire.*` (CLI↔BE layer).
