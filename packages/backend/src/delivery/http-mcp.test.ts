@@ -15,7 +15,7 @@ import { Hono } from "hono"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
-import { AGENT_ID_HEADER } from "../agent-identity.js"
+import { AGENT_ID_HEADER, DRIVE_CODING_AGENT_ID_ENV } from "../agent-identity.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { createAgentEventBus } from "../session-host/agent-events.js"
@@ -215,6 +215,7 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     expect(version?.title).toBeTruthy()
     expect(instructions).toContain("session_open")
     expect(instructions).toContain("configOptions")
+    expect(instructions).toContain("session_whoami")
     expect(tools.map((t) => t.name).sort()).toEqual([
       "session_close",
       "session_list",
@@ -222,6 +223,7 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
       "session_send",
       "session_state",
       "session_subscribe",
+      "session_whoami",
     ])
     const openTool = tools.find((t) => t.name === "session_open")
     const schema = openTool?.inputSchema as { properties?: { cli?: { description?: string } } }
@@ -699,5 +701,130 @@ describe("agent-identity-mcp (C2/C3)", () => {
     expect(isToolError(notified)).toBe(false)
     const parentHost = agentSessionRegistry.hosts.get(parent.id)
     expect(parentHost?.prompt).toHaveBeenCalledWith(`sess-${parent.id}`, "hello parent")
+  })
+})
+
+describe("session_whoami (slice mcp-whoami)", () => {
+  afterEach(() => {
+    delete process.env[DRIVE_CODING_AGENT_ID_ENV]
+  })
+
+  it("listTools includes session_whoami without caller header", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const { tools } = await client.listTools()
+    await client.close()
+    expect(tools.map((t) => t.name)).toContain("session_whoami")
+  })
+
+  it("without header returns isError", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(true)
+    expect(toolText(result)).toMatch(new RegExp(AGENT_ID_HEADER))
+  })
+
+  it("unknown header id returns isError", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app, {
+      [AGENT_ID_HEADER]: "00000000-0000-4000-8000-000000000099",
+    })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(true)
+  })
+
+  it("registered caller returns agent equal to header uuid", async () => {
+    const { app, registry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-self" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as {
+      agent: string
+      cliKind: string
+      cwd: string
+      hasParent: boolean
+    }
+    expect(body.agent).toBe(agent.id)
+    expect(body.cliKind).toBe("cursor")
+    expect(body.cwd).toBe("/tmp/whoami-self")
+    expect(body.hasParent).toBe(false)
+  })
+
+  it("two agents: header of A returns A.id not B.id", async () => {
+    const { app, registry } = makeApp()
+    const agentA = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-a" })
+    await registry.create({ cliKind: "codex", cwd: "/tmp/whoami-b" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agentA.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as { agent: string; cliKind: string }
+    expect(body.agent).toBe(agentA.id)
+    expect(body.cliKind).toBe("cursor")
+  })
+
+  it("ENV DRIVE_CODING_AGENT_ID alone does not invent identity", async () => {
+    const { app, registry } = makeApp()
+    const agentA = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-env" })
+    const envOnlyId = "00000000-0000-4000-8000-000000000088"
+    process.env[DRIVE_CODING_AGENT_ID_ENV] = envOnlyId
+
+    const anonClient = await connectClient(app)
+    const anonResult = await anonClient.callTool({ name: "session_whoami", arguments: {} })
+    await anonClient.close()
+    expect(isToolError(anonResult)).toBe(true)
+
+    const headerClient = await connectClient(app, { [AGENT_ID_HEADER]: agentA.id })
+    const headerResult = await headerClient.callTool({ name: "session_whoami", arguments: {} })
+    await headerClient.close()
+    expect(isToolError(headerResult)).toBe(false)
+    const body = JSON.parse(toolText(headerResult)) as { agent: string }
+    expect(body.agent).toBe(agentA.id)
+    expect(body.agent).not.toBe(envOnlyId)
+  })
+
+  it("includes parentAgentId and sessionId when present", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const parent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-parent" })
+    const child = await registry.create({
+      cliKind: "cursor",
+      cwd: "/tmp/whoami-child",
+      parentAgentId: parent.id,
+    })
+    agentSessionRegistry.hosts.set(child.id, {
+      state: {
+        sessionId: `sess-${child.id}`,
+        turnState: "idle",
+        modes: {},
+        configOptions: [],
+        title: "",
+        status: "connected",
+        lastTurnError: null,
+        pending: { permission: null, elicitation: null },
+        commands: [],
+        messages: [],
+      },
+      prompt: vi.fn(),
+      setConfigOption: vi.fn(),
+    })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: child.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as {
+      agent: string
+      hasParent: boolean
+      parentAgentId?: string
+      sessionId?: string
+    }
+    expect(body.agent).toBe(child.id)
+    expect(body.hasParent).toBe(true)
+    expect(body.parentAgentId).toBe(parent.id)
+    expect(body.sessionId).toBe(`sess-${child.id}`)
   })
 })

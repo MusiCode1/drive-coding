@@ -44,6 +44,7 @@ import {
   applyNotifyOnDoneToOpenBody,
   registerAgentEventMcpTools,
 } from "./agent-events-mcp-tools.js"
+import { registerSessionWhoamiMcpTool } from "./session-whoami-mcp-tool.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
 import { defaultPublicUrl, loopbackBaseUrl, type UrlConfig } from "./public-url.js"
 
@@ -405,7 +406,7 @@ function createSessionBusMcpServer(
       })
     },
   )
-
+  registerSessionWhoamiMcpTool(server, deps, ctx, callerRecord, registerArkTool)
   if (deps.eventBus) {
     registerAgentEventMcpTools(
       server,
@@ -415,7 +416,6 @@ function createSessionBusMcpServer(
       registerArkTool,
     )
   }
-
   return server
 }
 

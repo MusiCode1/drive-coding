@@ -125,6 +125,10 @@ export type AgentStateInput = typeof AgentStateInput.infer
 export const McpSessionListInput = type({})
 export type McpSessionListInput = typeof McpSessionListInput.infer
 
+/** MCP session_whoami — no parameters; identity from X-Drive-Coding-Agent header only. */
+export const McpSessionWhoamiInput = type({})
+export type McpSessionWhoamiInput = typeof McpSessionWhoamiInput.infer
+
 /** @deprecated Use McpSessionListInput — base/port/json are not used by MCP. */
 export const AgentListInput = McpSessionListInput
 export type AgentListInput = McpSessionListInput
