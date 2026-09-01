@@ -74,6 +74,27 @@ The current slice roadmap is `docs-for-llm/frontend/slices.md`.
 - No `any` — use `unknown` + ArkType to refine.
 - No deep `null` — `T | undefined` or Option pattern.
 
+### 🔴 A fail-open path is not implemented until its silence is pinned
+
+Fail-open is the right default for anything that must not block the user — hooks,
+prompt injection, optional fetches. It is also the most dangerous shape we have:
+**a broken fail-open path looks exactly like a healthy one that had nothing to do.**
+Both are "exit 0, no output". Nothing goes red, so nothing gets looked at.
+
+Three mechanisms were found dead on 2026-09-01, all the same shape: a scoped-write
+escalation the child could answer itself, a watcher that never notified on the MCP
+path, and a surface hook that reached one CLI out of three. None of them had a test,
+and all three had been silently useless for days.
+
+⇒ **Every fail-open path needs one of these before it counts as done:**
+
+1. a test that asserts the silent branches (not just the happy one), or
+2. a live probe whose result is written down with a date.
+
+`packages/provider/hooks/cursor/inject-prompt.test.ts` is the reference shape:
+five of its nine cases assert `exit 0 + empty stdout` — no agent id, backend down,
+non-2xx, wrong content-type, empty body. The happy path was never the risk.
+
 ## Versioning — מספור גרסאות (טקס מיזוג)
 
 > ה-bump קורה **בכל מיזוג ל-dev** (לא בכל commit) — חלק מטקס-המיזוג של מרדכי, אחרי calev GO + אישור משתמשת.
