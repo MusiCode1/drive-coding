@@ -14,6 +14,7 @@
  */
 import type { AvailableCommand } from "@agentclientprotocol/sdk"
 import ImagePlusIcon from "@lucide/svelte/icons/image-plus"
+import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import MicIcon from "@lucide/svelte/icons/mic"
 import OctagonXIcon from "@lucide/svelte/icons/octagon-x"
 import SendIcon from "@lucide/svelte/icons/send"
@@ -34,6 +35,7 @@ import {
   type ImageAttachment,
   revokeAttachment,
 } from "$lib/engines/image-attachment"
+import { runTypeAreaSubmit } from "$lib/actions/type-area-submit"
 import { applySlashSelection, matchSlashCommands } from "$lib/engines/slash-commands"
 import SlashCommandMenu from "./SlashCommandMenu.svelte"
 
@@ -161,14 +163,7 @@ $effect(() => {
 
 function onSubmit(e?: SubmitEvent) {
   e?.preventDefault()
-  const text = draft.text.trim()
-  // ─── slice-image-paste Commit 4b: שכבה 2 — תמונה-בלבד מותרת ───
-  if ((!text && attachments.length === 0) || isDisabled) return
-  session.sendPrompt(text, { attachments })
-  draft.clear()
-  // ─── slice-image-paste Commit 4b: ניקוי tray ───
-  attachments.forEach(revokeAttachment)
-  attachments = []
+  void runTypeAreaSubmit({ isDisabled, dictateState: dictate.state, finishListening: () => dictate.finishListening(), draftText: () => draft.text, attachments, sendPrompt: (t, o) => session.sendPrompt(t, o), sessionStatus: () => session.status, clear: () => { draft.clear(); attachments.forEach(revokeAttachment); attachments = [] } })
 }
 
 // ─── image handlers (slice-image-paste) ─────────────────────────────────────
@@ -323,7 +318,11 @@ function openFilePicker(): void {
       class="type-area-control type-area-icon-control shrink-0 rounded-xl p-2 flex items-center"
       style="color:{dictateListening ? 'var(--recording)' : 'var(--fg-dim)'}; min-height:var(--control-h)"
     >
-      <MicIcon size={18} strokeWidth={1.75} />
+      {#if dictateBusy}
+        <Loader2Icon size={18} strokeWidth={1.75} class="animate-spin" />
+      {:else}
+        <MicIcon size={18} strokeWidth={1.75} />
+      {/if}
     </button>
     {#if dictate.error}
       <span aria-live="polite" class="sr-only">{t(dictate.error)}</span>
@@ -426,7 +425,7 @@ function openFilePicker(): void {
     <!-- ─── slice-image-paste Commit 4b: שכבה 1 — disabled רק אם אין טקסט ואין תמונות ─── -->
     <button
       type="submit"
-      disabled={(!draft.text.trim() && attachments.length === 0) || isDisabled}
+      disabled={!(draft.text.trim().length > 0 || attachments.length > 0 || dictate.state === "listening") || isDisabled || dictate.state === "busy"}
       class="type-area-control rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-1.5 shrink-0"
       style="background:var(--accent); color:white; min-height:var(--control-h)"
       aria-label={t("record.send")}

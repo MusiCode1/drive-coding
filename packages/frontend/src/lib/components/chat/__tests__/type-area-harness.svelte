@@ -12,6 +12,9 @@
  *
  * ─── slice dictate-to-input (C2) ───
  * composerDraft, dictate, mic, uiShell stubs for dictate button + draft bind.
+ *
+ * ─── slice dictate-to-input-polish (C1) ───
+ * finishListening, dictateState, session ref for send-during-listening tests.
  */
 
 import {
@@ -28,7 +31,7 @@ import {
 import type { MessageKey } from "@drive-coding/core/i18n"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
-import type { DictateState } from "$lib/view-models/dictate.svelte"
+import type { Dictate, DictateState, FinishListeningResult } from "$lib/view-models/dictate.svelte"
 import type { I18nVM } from "$lib/view-models/i18n.svelte"
 import type { MicState } from "$lib/view-models/mic.svelte"
 import type { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
@@ -42,12 +45,19 @@ let props: {
   supportsImageInput?: boolean
   enterToSend?: boolean
   sendPrompt?: (text: string, opts?: { attachments?: unknown[] }) => void
+  dictateState?: DictateState
+  finishListening?: () => Promise<FinishListeningResult>
+  session?: { status: AgentSession["status"] }
 } = $props()
 
 const fakeI18n = { t: (key: string) => key } as unknown as I18nVM
 
+const sessionRef = $derived(props.session ?? { status: "connected" as AgentSession["status"] })
+
 const fakeSession = {
-  status: "connected",
+  get status() {
+    return sessionRef.status
+  },
   availableCommands: [],
   get supportsImageInput() {
     return props.supportsImageInput ?? false
@@ -75,10 +85,14 @@ const fakeModelStatus = {
 const composerDraft = new ComposerDraft()
 
 const fakeDictate = {
-  state: "idle" as DictateState,
+  get state() {
+    return props.dictateState ?? ("idle" as DictateState)
+  },
   error: null as MessageKey | null,
   toggle: async () => {},
   cancel: () => {},
+  finishListening: () =>
+    (props.finishListening ?? (async () => ({ ok: true, text: "" } as const)))(),
 }
 
 const fakeMic = {
@@ -95,7 +109,7 @@ setSettings(fakeSettings)
 setVoiceMode(fakeVoiceMode)
 setModelStatus(fakeModelStatus)
 setComposerDraft(composerDraft)
-setDictate(fakeDictate)
+setDictate(fakeDictate as unknown as Dictate)
 setMic(fakeMic)
 setUiShell(fakeUiShell)
 </script>
