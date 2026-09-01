@@ -191,4 +191,28 @@ describe("§6 spawn gates", () => {
     expect(post.env?.DC_BASE).toBe(`http://127.0.0.1:${s.port}`)
     expect(post.env?.DC_PROBE).toBe("nonce")
   })
+
+  it("gate 3: agent open --system-prompt forwards charter in POST body", async () => {
+    const xdg = mkdtempSync(join(tmpdir(), "dc-g3-charter-"))
+    const s = await healthAndAgents()
+    servers.push(s)
+    writeInstance(rec(s.port), { XDG_RUNTIME_DIR: xdg })
+    const r = await run(
+      [
+        "agent",
+        "open",
+        "--cli",
+        "cursor",
+        "--cwd",
+        "/tmp",
+        "--system-prompt",
+        "CHARTER_X",
+        "--json",
+      ],
+      xdg,
+    )
+    expect(r.code).toBe(0)
+    const post = s.posts[0] as { systemPrompt?: string }
+    expect(post.systemPrompt).toBe("CHARTER_X")
+  })
 })

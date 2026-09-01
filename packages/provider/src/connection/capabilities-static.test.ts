@@ -64,32 +64,32 @@ describe("staticCapsFor", () => {
     expect(caps.thinkingTokens).toBe(false)
   })
 
-  // DoD #6: default → false (כל CLI לא-מוכר)
-  it("default (unknown cli): systemPrompt=false", () => {
+  // DoD #6: default → unsupported (כל CLI לא-מוכר)
+  it("default (unknown cli): systemPrompt=unsupported", () => {
     // biome-ignore lint/suspicious/noExplicitAny: testing unknown cliKind
     const caps = staticCapsFor("unknown-cli-xyz" as any)
-    expect(caps.systemPrompt).toBe(false)
+    expect(caps.systemPrompt).toBe("unsupported")
   })
 
-  // DoD #7: codex → true, claude-spawn → false
-  it("codex: systemPrompt=true", () => {
-    expect(staticCapsFor("codex").systemPrompt).toBe(true)
+  // DoD #7: codex → native, claude-spawn → unsupported
+  it("codex: systemPrompt=native", () => {
+    expect(staticCapsFor("codex").systemPrompt).toBe("native")
   })
 
-  it("claude (spawn fallback): systemPrompt=false", () => {
-    expect(staticCapsFor("claude").systemPrompt).toBe(false)
+  it("claude (spawn fallback): systemPrompt=unsupported", () => {
+    expect(staticCapsFor("claude").systemPrompt).toBe("unsupported")
   })
 
-  // DoD #8: opencode, cursor, grok → false
-  it("opencode: systemPrompt=false", () => {
-    expect(staticCapsFor("opencode").systemPrompt).toBe(false)
+  // DoD #8: opencode, cursor, grok → unsupported
+  it("opencode: systemPrompt=unsupported", () => {
+    expect(staticCapsFor("opencode").systemPrompt).toBe("unsupported")
   })
 
-  it("cursor: systemPrompt=false", () => {
-    expect(staticCapsFor("cursor").systemPrompt).toBe(false)
+  it("cursor: systemPrompt=unsupported", () => {
+    expect(staticCapsFor("cursor").systemPrompt).toBe("unsupported")
   })
 
-  it("grok: systemPrompt=false", () => {
-    expect(staticCapsFor("grok").systemPrompt).toBe(false)
+  it("grok: systemPrompt=unsupported", () => {
+    expect(staticCapsFor("grok").systemPrompt).toBe("unsupported")
   })
 })

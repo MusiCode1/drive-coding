@@ -6,13 +6,13 @@ import { describe, expect, it } from "vitest"
 import { mapClaudeCapabilities } from "./capabilities.js"
 
 describe("mapClaudeCapabilities", () => {
-  it("systemPrompt=true — claude injects via _meta.systemPrompt.append", () => {
+  it("systemPrompt=native — claude injects via _meta.systemPrompt.append", () => {
     const caps = mapClaudeCapabilities(null)
-    expect(caps.systemPrompt).toBe(true)
+    expect(caps.systemPrompt).toBe("native")
   })
 
-  it("systemPrompt=true even when agentCapabilities present", () => {
+  it("systemPrompt=native even when agentCapabilities present", () => {
     const caps = mapClaudeCapabilities({ agentCapabilities: { mcpCapabilities: { http: true } } })
-    expect(caps.systemPrompt).toBe(true)
+    expect(caps.systemPrompt).toBe("native")
   })
 })
