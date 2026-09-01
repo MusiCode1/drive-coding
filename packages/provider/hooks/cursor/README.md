@@ -33,10 +33,17 @@ belt-and-suspenders for Cursor entry points that load `hooks.json`.
 ⚠️ **`cliKind: cursor` does NOT fire `sessionStart`; `cursor-sdk` does.**
 Measured live 2026-09-01 on the edge deployment, same BE, same env:
 
-| cliKind | trace log hit | agent sees the surface |
-|---|---|---|
-| `cursor` (`agent acp`) | no | **no** — answered `NO-SURFACE` |
-| `cursor-sdk` (HAC vendor) | yes, at first prompt | **yes** — quoted the surface verbatim |
+| cliKind | hook wired | trace hit | agent sees the surface |
+|---|---|---|---|
+| `cursor` (`agent acp`) | yes, `~/.cursor/hooks.json` | no | **no** — answered `NO-SURFACE` |
+| `cursor-sdk` (HAC vendor) | same wiring | yes, at first prompt | **yes** — quoted it verbatim |
+| `claude` | **no — `~/.claude/settings.json` never points here** | no | **no** — answered `NO-SURFACE` |
+
+⇒ Of the three measured CLIs, **only `cursor-sdk` receives the surface through
+hooks.** `hooks/claude/session-start.sh` has exactly one trace line ever, from
+the day it was written (2026-08-30, a manual `probe=1`). The wiring lives in
+per-machine files outside this repo, so "the script exists" says nothing about
+whether anything reaches the model.
 
 So for `cliKind: cursor` the surface must arrive by another channel; this hook
 does not reach it. See `pre-brief-cursor-sdk-acp-adapter.md`. Set `DRIVE_CODING_HOOK_TRACE=1` on the child to log hits to
