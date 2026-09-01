@@ -480,6 +480,15 @@ export type MessageKey =
   | "settings.notifications.blocked"
   | "settings.notifications.quietHint"
   | "settings.notifications.retry"
+  // ─── dictate ─── (slice dictate-to-input)
+  | "dictate.start"
+  | "dictate.stop"
+  | "dictate.listening"
+  | "dictate.error.permission"
+  | "dictate.error.notFound"
+  | "dictate.error.transcribe"
+  | "dictate.error.generic"
+  | "dictate.transcribing"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

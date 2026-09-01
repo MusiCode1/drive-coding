@@ -472,4 +472,13 @@ export const he: Catalog = {
   "settings.notifications.quietHint":
     "ייתכן שהדפדפן הציג פעמון בשורת הכתובת (\"אתר לא מוכר\"). לחצי עליו כדי לאשר התראות.",
   "settings.notifications.retry": "נסי שוב",
+  // ─── dictate ─── (slice dictate-to-input)
+  "dictate.start": "הכתבה",
+  "dictate.stop": "עצור הכתבה",
+  "dictate.listening": "כותב…",
+  "dictate.error.permission": "אין הרשאת מיקרופון",
+  "dictate.error.notFound": "לא נמצא מיקרופון",
+  "dictate.error.transcribe": "התמלול נכשל",
+  "dictate.error.generic": "ההכתבה נכשלה",
+  "dictate.transcribing": "מתמלל…",
 }

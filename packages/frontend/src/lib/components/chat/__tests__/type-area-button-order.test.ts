@@ -48,6 +48,13 @@ describe("TypeArea — button order (type-area-align)", () => {
     expect(stopIdx).toBeGreaterThanOrEqual(0)
     expect(submitIdx).toBeLessThan(stopIdx)
   })
+
+  it("compact-layout tool column wrappers exist in form DOM", () => {
+    const form = mountHarness()
+    expect(form.querySelector(".type-area-left-tools")).not.toBeNull()
+    expect(form.querySelector(".type-area-right-actions")).not.toBeNull()
+    expect(form.classList.contains("type-area-form")).toBe(true)
+  })
 })
 
 describe("TypeArea — Enter to send (type-area-align)", () => {

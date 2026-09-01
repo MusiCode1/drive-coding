@@ -547,8 +547,8 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/chat/TypeArea.svelte": {
-      "metric": 211,
-      "impurity": 9,
+      "metric": 243,
+      "impurity": 10,
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/chat/VoicePicker.svelte": {
@@ -927,7 +927,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/routes/+layout.svelte": {
-      "metric": 336,
+      "metric": 348,
       "impurity": 18,
       "class": "mixed"
     },

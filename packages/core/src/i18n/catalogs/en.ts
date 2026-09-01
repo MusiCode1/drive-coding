@@ -480,4 +480,13 @@ export const en: Catalog = {
   "settings.notifications.quietHint":
     "The browser may have shown a bell in the address bar (\"unrecognized site\"). Click it to allow notifications.",
   "settings.notifications.retry": "Try again",
+  // ─── dictate ─── (slice dictate-to-input)
+  "dictate.start": "Dictate",
+  "dictate.stop": "Stop dictation",
+  "dictate.listening": "Transcribing…",
+  "dictate.error.permission": "Microphone permission denied",
+  "dictate.error.notFound": "No microphone found",
+  "dictate.error.transcribe": "Transcription failed",
+  "dictate.error.generic": "Dictation failed",
+  "dictate.transcribing": "Transcribing…",
 }
