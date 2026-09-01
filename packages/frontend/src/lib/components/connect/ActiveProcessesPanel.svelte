@@ -189,6 +189,9 @@ function reconnectTitle(agent: AgentPublic): string {
           aria-label={connectionTitle(agent)}
         ></span>
         <CliBadge id={agent.cliKind} displayName={cliAvailability.details[agent.cliKind]?.displayName} logo={cliAvailability.details[agent.cliKind]?.logo} variant="badge" />
+        {#if agent.roleLabel}
+          <span class="role-label" title={agent.roleLabel}><bdi>{agent.roleLabel}</bdi></span>
+        {/if}
         <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
         {#if childCount > 0}
           <span class="meta-sep">·</span>
@@ -629,6 +632,17 @@ function reconnectTitle(agent: AgentPublic): string {
     white-space: nowrap;
     flex: 0 1 auto;
     min-width: 0;
+  }
+
+  /* role label (slice agent-role-label) — metadata beside CliBadge, not title/displayName */
+  .role-label {
+    color: var(--fg-dim);
+    font-size: 0.78rem;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   /* כותרת-הסשן (slice session-title-in-process-list) — תוכן-משתמש (עברית/אנגלית/
