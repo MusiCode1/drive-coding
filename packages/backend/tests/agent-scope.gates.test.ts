@@ -25,6 +25,7 @@ import { bindScopeEnforcement } from "../src/bind-scope-enforcement.js"
 import { setSelfBaseUrlForTests } from "../src/instances.js"
 import { createAgentSessionRegistry } from "../src/session-host/registry.js"
 import { createSessionHostFromConnection } from "../src/session-host/session-host.js"
+import { registerSessionHostHttp } from "../src/session-host/http/index.js"
 
 function makeMockConn(agentId: string): ProviderConnection {
   return {
@@ -112,6 +113,7 @@ async function makeScopeGateApp() {
     orchestrator,
     bridgeManager: connectionRegistry as never,
   })
+  registerSessionHostHttp(app, { agentSessionRegistry, agentRegistry: registry })
   registerMcpHttp(app, { registry, orchestrator, agentSessionRegistry, selfBaseUrl: "http://127.0.0.1:4055" })
   setSelfBaseUrlForTests("http://127.0.0.1:4055")
 
@@ -179,6 +181,50 @@ describe("agent-scopes §6 gates", () => {
     expect(mcpBody.reason.length).toBeGreaterThan(0)
     expect(mcpBody.hint.length).toBeGreaterThan(0)
     await client.close()
+  })
+
+  it("G3: MCP hides scope pending, GET /state keeps requestId", async () => {
+    const { app, registry, agentSessionRegistry } = await makeScopeGateApp()
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a" })
+    const b = await registry.create({ cliKind: "cursor", cwd: "/b" })
+    const tokenA = issueToken(a.id)
+
+    await agentSessionRegistry.getOrCreateHost(a.id)
+    const hostA = agentSessionRegistry.getHost(a.id)
+    expect(hostA).toBeDefined()
+
+    const delPromise = app.request(`/api/agents/${b.id}`, {
+      method: "DELETE",
+      headers: { [SCOPE_HEADER]: tokenA, [AGENT_ID_HEADER]: a.id },
+    })
+
+    await vi.waitFor(() => {
+      expect(hostA!.state.pending.permission).not.toBeNull()
+    })
+    const requestId = hostA!.state.pending.permission!.requestId
+
+    const client = await connectMcp(app, {
+      [SCOPE_HEADER]: tokenA,
+      [AGENT_ID_HEADER]: a.id,
+    })
+    const mcpState = await client.callTool({
+      name: "session_state",
+      arguments: { agent: a.id },
+    })
+    expect(mcpState.isError).not.toBe(true)
+    const parsed = JSON.parse((mcpState.content?.[0] as { text: string }).text) as {
+      pending?: { permission?: { requestId?: number } | null }
+    }
+    expect(parsed.pending?.permission).toBeNull()
+
+    const httpState = await app.request(`/api/agents/${a.id}/state`)
+    expect(httpState.status).toBe(200)
+    const httpBody = (await httpState.json()) as {
+      pending?: { permission?: { requestId?: number } | null }
+    }
+    expect(httpBody.pending?.permission?.requestId).toBe(requestId)
+    await client.close()
+    void delPromise
   })
 
   it("gate 3: escalation allow_once on caller host permits the close", async () => {

@@ -96,6 +96,17 @@ export function scopeDeniedBody(): ScopeDeniedBody {
 
 export const SCOPE_DENIED_BODY: ScopeDeniedBody = scopeDeniedBody()
 
+/** MCP session_state only — hides scope escalation pending from agent discovery. */
+export function stripScopePendingFromState(out: Record<string, unknown>): Record<string, unknown> {
+  const pending = out.pending
+  if (!pending || typeof pending !== "object") return out
+  const toolCallId = (
+    pending as { permission?: { params?: { toolCall?: { toolCallId?: unknown } } } | null }
+  ).permission?.params?.toolCall?.toolCallId
+  if (typeof toolCallId !== "string" || !toolCallId.startsWith("scope-")) return out
+  return { ...out, pending: { ...(pending as Record<string, unknown>), permission: null } }
+}
+
 /** Promise-based guard — avoids extra `await` at call sites (size ratchet). */
 export function whenScopedWriteAllowed(
   getHeader: (name: string) => string | undefined,
