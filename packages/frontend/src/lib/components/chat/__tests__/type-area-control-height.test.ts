@@ -56,7 +56,7 @@ describe("TypeArea — control height token (type-area-align)", () => {
     "supportsImageInput=%s: all controls share min-height:var(--control-h)",
     (supportsImageInput) => {
       const form = mountHarness(supportsImageInput)
-      expect(form.classList.contains("items-end")).toBe(true)
+      expect(form.classList.contains("items-stretch")).toBe(true)
       expect(form.style.getPropertyValue("--control-h")).toBe("2.5rem")
 
       const heights = controlMinHeights(form, supportsImageInput)
@@ -71,7 +71,8 @@ describe("TypeArea — control height token (type-area-align)", () => {
     (supportsImageInput) => {
       mountHarness(supportsImageInput)
       const iconControls = target?.querySelectorAll("button.type-area-icon-control")
-      expect(iconControls?.length).toBe(supportsImageInput ? 3 : 2)
+      // image? + dictate + send + stop
+      expect(iconControls?.length).toBe(supportsImageInput ? 4 : 3)
     },
   )
 })

@@ -275,7 +275,7 @@ function openFilePicker(): void {
   <!-- ─── form (autogrow נשמר — items-end, taEl, MAX_ROWS, rows=1) ─── -->
   <form
     onsubmit={onSubmit}
-    class="type-area-form flex gap-2 items-end w-full"
+    class="type-area-form flex gap-2 items-stretch w-full"
     style="--control-h: 2.5rem"
     ondrop={handleDrop}
     ondragover={handleDragOver}
@@ -331,7 +331,7 @@ function openFilePicker(): void {
     {/if}
 
     <!-- ─── wrapper: מארח את ה-textarea (ה-dropdown עצמו portal-ל-body — ר' SlashCommandMenu.svelte) ─── -->
-    <div class="flex-1 relative">
+    <div class="type-area-prompt flex-1 relative min-w-0">
     {#if menuOpen && slash && menuRect}
       <SlashCommandMenu
         matches={slash.matches}
@@ -426,10 +426,11 @@ function openFilePicker(): void {
 
     <div class="type-area-right-actions flex gap-2 shrink-0">
     <!-- ─── slice-image-paste Commit 4b: שכבה 1 — disabled רק אם אין טקסט ואין תמונות ─── -->
+    <!-- icon-square כמו stop (compact-align): אותם גודל/צורה בערימה האנכית -->
     <button
       type="submit"
       disabled={!(draft.text.trim().length > 0 || attachments.length > 0 || dictate.state === "listening") || isDisabled || dictate.state === "busy"}
-      class="type-area-control rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-1.5 shrink-0"
+      class="type-area-control type-area-icon-control shrink-0 rounded-xl p-2.5 flex items-center justify-center"
       style="background:var(--accent); color:white; min-height:var(--control-h)"
       aria-label={t("record.send")}
     >
@@ -464,11 +465,27 @@ function openFilePicker(): void {
     align-items: center;
   }
 
+  /* צפוף: 2×2 אנכי צמוד + textarea בגובה הערימה (לא items-end שמשאיר חור) */
   @container type-area (max-width: 26rem) {
     .type-area-left-tools,
     .type-area-right-actions {
       flex-direction: column;
       gap: 0.25rem; /* gap-1 */
+      align-self: stretch;
+      justify-content: flex-start;
+    }
+
+    .type-area-prompt {
+      display: flex;
+      flex-direction: column;
+      align-self: stretch;
+    }
+
+    .type-area-prompt textarea.type-area-control {
+      flex: 1 1 auto;
+      /* רצפה = 2 כפתורים + gap — ה-$effect ל-autogrow לא יורד מתחת לזה */
+      min-height: calc(2 * var(--control-h) + 0.25rem);
+      box-sizing: border-box;
     }
   }
 
