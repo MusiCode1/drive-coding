@@ -135,6 +135,8 @@ export const Agent = type({
   "parentAgentId?": "string",
   // slice session-lifecycle-fields: auto-close after first clean turn end (grace timer).
   "closeOnTurnEnd?": "boolean",
+  // slice agent-role-label: free-form display label (e.g. planner / executor).
+  "roleLabel?": "string",
 })
 export type Agent = typeof Agent.infer
 
@@ -173,6 +175,8 @@ export const AgentPublic = type({
   "title?": "string | null",
   // slice session-lifecycle-fields: who opened this agent.
   "parentAgentId?": "string",
+  // slice agent-role-label: free-form display label (e.g. planner / executor).
+  "roleLabel?": "string",
 })
 export type AgentPublic = typeof AgentPublic.infer
 
@@ -198,6 +202,8 @@ export const CreateAgentInput = type({
   "parentAgentId?": "string",
   // slice session-lifecycle-fields: auto-close after first clean turn end.
   "closeOnTurnEnd?": "boolean",
+  // slice agent-role-label: free-form display label (e.g. planner / executor).
+  "roleLabel?": "string",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 
@@ -231,6 +237,9 @@ export function toAgentPublic(agent: Agent): AgentPublic {
   }
   if (agent.parentAgentId !== undefined) {
     pub.parentAgentId = agent.parentAgentId
+  }
+  if (agent.roleLabel !== undefined) {
+    pub.roleLabel = agent.roleLabel
   }
   return pub
 }

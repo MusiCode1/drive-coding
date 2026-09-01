@@ -33,6 +33,7 @@ export function createInMemoryAgentRegistry(): AgentRegistry {
           : {}),
         ...(input.parentAgentId !== undefined ? { parentAgentId: input.parentAgentId } : {}),
         ...(input.closeOnTurnEnd === true ? { closeOnTurnEnd: true } : {}),
+        ...(input.roleLabel !== undefined ? { roleLabel: input.roleLabel } : {}),
       }
       store.set(id, agent)
       return agent

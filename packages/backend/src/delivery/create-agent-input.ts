@@ -25,6 +25,7 @@ export const CreateAgentInputFull = type({
   "env?": { "[string]": "string" },
   "parentAgentId?": "string",
   "closeOnTurnEnd?": "boolean",
+  "roleLabel?": "string",
 })
 export type CreateAgentInputFull = typeof CreateAgentInputFull.infer
 
@@ -80,6 +81,9 @@ export function parseCreateAgentBody(
   }
   if (parsed.closeOnTurnEnd === true) {
     input.closeOnTurnEnd = true
+  }
+  if (parsed.roleLabel !== undefined && parsed.roleLabel !== "") {
+    input.roleLabel = parsed.roleLabel
   }
   return { ok: true, value: input }
 }

@@ -41,6 +41,7 @@ import { registerMcpWriteTools } from "./mcp-write-tools.js"
 import { resolveAppVersion } from "../app-version.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
+import { applySessionOpenCreateFields } from "./session-open-body.js"
 
 const log = createLogger("backend.mcp")
 
@@ -251,10 +252,7 @@ function createSessionBusMcpServer(
         cwd: input.cwd,
         env,
       }
-      if (input.permission !== undefined) body.permissionPolicy = input.permission
-      if (effectiveParent !== undefined) body.parentAgentId = effectiveParent
-      if (input.closeOnTurnEnd === true) body.closeOnTurnEnd = true
-      if (input.systemPrompt !== undefined) body.systemPrompt = input.systemPrompt
+      applySessionOpenCreateFields(body, input, effectiveParent)
 
       const parsed = parseCreateAgentBody(body)
       if (!parsed.ok) return jsonError(parsed.error.body.error)

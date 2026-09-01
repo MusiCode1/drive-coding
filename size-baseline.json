@@ -47,7 +47,7 @@
       "class": "mixed"
     },
     "packages/backend/src/cli/index.ts": {
-      "metric": 374,
+      "metric": 372,
       "impurity": 33,
       "class": "scattered"
     },
@@ -117,7 +117,7 @@
       "class": "mixed"
     },
     "packages/backend/src/delivery/http-mcp.ts": {
-      "metric": 387,
+      "metric": 385,
       "impurity": 20,
       "class": "scattered"
     },

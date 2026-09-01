@@ -10,6 +10,7 @@ import { resolveInstances } from "../instances.js"
 import { childEnv, formatInstanceList, resolveBase } from "./discover.js"
 import { AGENT_HELP } from "./help.js"
 import { authedInit, postJson, readJson } from "./http.js"
+import { buildOpenPostBody } from "./open-post-body.js"
 import { waitForTurnEnd } from "./wait-for-turn.js"
 
 type Values = {
@@ -38,6 +39,7 @@ type Values = {
   "text-file"?: string
   "public-url"?: string
   "system-prompt"?: string
+  "role-label"?: string
 }
 
 function kv(entries: string[] | undefined): Record<string, string> {
@@ -97,6 +99,7 @@ export async function runCli(argv: string[]): Promise<number> {
         "text-file": { type: "string" },
         "public-url": { type: "string" },
         "system-prompt": { type: "string" },
+        "role-label": { type: "string" },
       },
     }) as { values: Values; positionals: string[] })
   } catch (err) {
@@ -186,15 +189,10 @@ async function cmdOpen(base: string, values: Values, asJson: boolean): Promise<n
   const cwd = values.cwd && values.cwd !== "" ? values.cwd : process.cwd()
   const extra = kv(values.env)
   const env = childEnv(base, extra, values.parent)
-  const created = (await postJson(`${base}/api/agents`, {
-    cliKind: cli,
-    cwd,
-    env,
-    ...(values.permission ? { permissionPolicy: values.permission } : {}),
-    ...(values.parent ? { parentAgentId: values.parent } : {}),
-    ...(values["close-on-turn-end"] ? { closeOnTurnEnd: true } : {}),
-    ...(values["system-prompt"] !== undefined ? { systemPrompt: values["system-prompt"] } : {}),
-  })) as { agentId?: string }
+  const created = (await postJson(
+    `${base}/api/agents`,
+    buildOpenPostBody(cli, cwd, env, values),
+  )) as { agentId?: string }
   const agent = created.agentId
   if (!agent) {
     console.error("[drive-coding] open: server returned no agentId")

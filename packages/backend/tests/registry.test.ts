@@ -93,4 +93,20 @@ describe("InMemoryAgentRegistry", () => {
     const fetched = await registry.get(agent.id)
     expect(fetched?.closeOnTurnEnd).toBe(true)
   })
+
+  it("stores roleLabel (slice agent-role-label C1)", async () => {
+    const agent = await registry.create({
+      cliKind: "cursor",
+      cwd: "/x",
+      roleLabel: "executor",
+    })
+    expect(agent.roleLabel).toBe("executor")
+    const fetched = await registry.get(agent.id)
+    expect(fetched?.roleLabel).toBe("executor")
+  })
+
+  it("omits roleLabel when not provided", async () => {
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/x" })
+    expect(agent).not.toHaveProperty("roleLabel")
+  })
 })
