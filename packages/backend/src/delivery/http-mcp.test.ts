@@ -254,6 +254,18 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     expect(body.agents[0]?.displayName).toBe("cursor")
   })
 
+  it("session_list exposes roleLabel via toAgentPublic", async () => {
+    const { app, registry } = makeApp()
+    await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-role", roleLabel: "executor" })
+    const client = await connectClient(app)
+    const result = await client.callTool({ name: "session_list", arguments: {} })
+    await client.close()
+    const body = JSON.parse(toolText(result)) as {
+      agents: Array<{ roleLabel?: string }>
+    }
+    expect(body.agents[0]?.roleLabel).toBe("executor")
+  })
+
   it("source has no self-call via HTTP", () => {
     const src = readFileSync(fileURLToPath(new URL("./http-mcp.ts", import.meta.url)), "utf8")
     expect(src.match(/fetch\(/g) ?? []).toHaveLength(0)
@@ -361,6 +373,23 @@ describe("session_open / session_close (slice session-bus-mcp C1)", () => {
     await client.close()
     expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
       expect.objectContaining({ systemPrompt: "CHARTER_X" }),
+    )
+  })
+
+  it("session_open passes roleLabel through to createAndSpawn", async () => {
+    const { app, orchestrator } = makeApp()
+    const client = await connectClient(app)
+    await client.callTool({
+      name: "session_open",
+      arguments: {
+        cli: "cursor",
+        cwd: "/tmp/mcp-role-label",
+        roleLabel: "planner",
+      },
+    })
+    await client.close()
+    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({ roleLabel: "planner" }),
     )
   })
 

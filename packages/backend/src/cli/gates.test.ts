@@ -215,4 +215,28 @@ describe("§6 spawn gates", () => {
     const post = s.posts[0] as { systemPrompt?: string }
     expect(post.systemPrompt).toBe("CHARTER_X")
   })
+
+  it("gate 3: agent open --role-label forwards roleLabel in POST body", async () => {
+    const xdg = mkdtempSync(join(tmpdir(), "dc-g3-role-label-"))
+    const s = await healthAndAgents()
+    servers.push(s)
+    writeInstance(rec(s.port), { XDG_RUNTIME_DIR: xdg })
+    const r = await run(
+      [
+        "agent",
+        "open",
+        "--cli",
+        "cursor",
+        "--cwd",
+        "/tmp",
+        "--role-label",
+        "executor",
+        "--json",
+      ],
+      xdg,
+    )
+    expect(r.code).toBe(0)
+    const post = s.posts[0] as { roleLabel?: string }
+    expect(post.roleLabel).toBe("executor")
+  })
 })
