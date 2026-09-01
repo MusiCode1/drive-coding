@@ -463,4 +463,5 @@ export const he: Catalog = {
   "dictate.error.notFound": "לא נמצא מיקרופון",
   "dictate.error.transcribe": "התמלול נכשל",
   "dictate.error.generic": "ההכתבה נכשלה",
+  "dictate.transcribing": "מתמלל…",
 }

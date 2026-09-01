@@ -473,6 +473,7 @@ export type MessageKey =
   | "dictate.error.notFound"
   | "dictate.error.transcribe"
   | "dictate.error.generic"
+  | "dictate.transcribing"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

@@ -149,7 +149,7 @@ const dictateBtnLabel = $derived(
   dictateListening
     ? "dictate.stop"
     : dictateBusy
-      ? "dictate.listening"
+      ? "dictate.transcribing"
       : "dictate.start",
 )
 
@@ -445,6 +445,12 @@ function openFilePicker(): void {
       <OctagonXIcon size={16} strokeWidth={2} />
     </button>
   </form>
+
+  {#if dictateBusy}
+    <p aria-live="polite" class="text-xs" style="color:var(--fg-dim)">
+      {t("dictate.transcribing")}
+    </p>
+  {/if}
 
 </div>
 

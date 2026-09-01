@@ -471,4 +471,5 @@ export const en: Catalog = {
   "dictate.error.notFound": "No microphone found",
   "dictate.error.transcribe": "Transcription failed",
   "dictate.error.generic": "Dictation failed",
+  "dictate.transcribing": "Transcribing…",
 }
