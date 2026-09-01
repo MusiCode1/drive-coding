@@ -30,8 +30,16 @@ User `~/.cursor/hooks.json` and/or project `.cursor/hooks.json`.
 Wire preference when spawning via drive-coding ACP remains separate; this hook is
 belt-and-suspenders for Cursor entry points that load `hooks.json`.
 
-⚠️ **`agent acp` may not fire `sessionStart`** (see `pre-brief-cursor-sdk-acp-adapter.md`).
-`cursor-sdk` + HAC does. Set `DRIVE_CODING_HOOK_TRACE=1` on the child to log hits to
+⚠️ **`cliKind: cursor` does NOT fire `sessionStart`; `cursor-sdk` does.**
+Measured live 2026-09-01 on the edge deployment, same BE, same env:
+
+| cliKind | trace log hit | agent sees the surface |
+|---|---|---|
+| `cursor` (`agent acp`) | no | **no** — answered `NO-SURFACE` |
+| `cursor-sdk` (HAC vendor) | yes, at first prompt | **yes** — quoted the surface verbatim |
+
+So for `cliKind: cursor` the surface must arrive by another channel; this hook
+does not reach it. See `pre-brief-cursor-sdk-acp-adapter.md`. Set `DRIVE_CODING_HOOK_TRACE=1` on the child to log hits to
 `/tmp/drive-coding-session-start.log` when measuring.
 
 ## Install (manual for now)
