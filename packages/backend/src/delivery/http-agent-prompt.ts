@@ -37,6 +37,8 @@ export function buildAgentPromptText(
   opts: {
     agentId: string
     parentAgentId?: string
+    /** slice charter-in-hook: the agent's own systemPrompt rides the same payload. */
+    charter?: string
   },
   urlConfig: UrlConfig,
 ): string {
@@ -58,6 +60,7 @@ export function buildAgentPromptText(
   return buildSurfacePrompt({
     pieces: [...SURFACE_PROMPT_PIECES],
     runtime,
+    charter: opts.charter,
   })
 }
 
@@ -88,6 +91,7 @@ export function registerAgentPromptHttp(
       {
         agentId: agent.id,
         parentAgentId: agent.parentAgentId,
+        charter: agent.systemPrompt ?? undefined,
       },
       deps.urlConfig,
     )

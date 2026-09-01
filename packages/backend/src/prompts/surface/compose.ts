@@ -13,6 +13,9 @@ export const SURFACE_PROMPT_PIECES = [
   "runtime",
   "capabilities",
   "display",
+  // Per-agent charter, last on purpose: the sections above are the environment,
+  // this one is "and your job here is X". Requires opts.charter.
+  "charter",
 ] as const
 
 export type SurfacePromptPiece = (typeof SURFACE_PROMPT_PIECES)[number]
@@ -21,6 +24,12 @@ export type BuildSurfacePromptOptions = {
   pieces: readonly SurfacePromptPiece[]
   /** Required when \`pieces\` includes \`"runtime"\`. */
   runtime?: SurfaceRuntimeInfo
+  /**
+   * Per-agent charter (\`systemPrompt\` on the agent record). When the piece is
+   * selected but the text is empty/absent the section is simply omitted — an
+   * agent without a charter is the normal case, not an error.
+   */
+  charter?: string
 }
 
 /**
@@ -43,6 +52,13 @@ export function buildSurfacePrompt(opts: BuildSurfacePromptOptions): string {
     }
     if (id === "display") {
       parts.push(SURFACE_DISPLAY)
+      continue
+    }
+    if (id === "charter") {
+      const charter = opts.charter?.trim()
+      if (charter !== undefined && charter.length > 0) {
+        parts.push(`# Your assignment\n\n${charter}`)
+      }
       continue
     }
     // runtime

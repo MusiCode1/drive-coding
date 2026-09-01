@@ -86,3 +86,33 @@ describe("GET /api/agent-prompt", () => {
     expect(await res.text()).toMatch(/unknown agent/)
   })
 })
+
+// ─── slice charter-in-hook ───────────────────────────────────────────────────
+// Cursor's `agent acp` does not load hooks.json at all (ACP-SESSIONSTART.md), so
+// for that CLI the charter still arrives prepended to the first ACP turn. Where
+// the hook DOES fire (cursor-sdk, and any CLI wired via hooks.json) this payload
+// is the system-level channel — so the charter belongs in it, not only on the wire.
+describe("charter in the hook payload", () => {
+  it("serves the agent's charter under its own heading", async () => {
+    const app = new Hono()
+    const withCharter = { ...sampleAgent, systemPrompt: "You are the verifier. Do not edit code." }
+    registerAgentPromptHttp(app, { registry: stubRegistry(withCharter), urlConfig })
+
+    const res = await app.request(`/api/agent-prompt?agent=${sampleAgent.id}`)
+    const body = await res.text()
+
+    expect(res.status).toBe(200)
+    expect(body).toContain("# Your assignment")
+    expect(body).toContain("You are the verifier. Do not edit code.")
+  })
+
+  it("omits the assignment section for an agent without a charter", async () => {
+    const app = new Hono()
+    registerAgentPromptHttp(app, { registry: stubRegistry(sampleAgent), urlConfig })
+
+    const body = await (await app.request(`/api/agent-prompt?agent=${sampleAgent.id}`)).text()
+
+    expect(body).toContain("About drive-coding")
+    expect(body).not.toContain("# Your assignment")
+  })
+})

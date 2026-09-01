@@ -139,6 +139,10 @@ export const Agent = type({
   "notifyOnDone?": "string.uuid",
   // slice agent-role-label: free-form display label (e.g. planner / executor).
   "roleLabel?": "string",
+  // slice charter-in-hook: the charter text is kept on the record so the surface
+  // endpoint can serve it to provider hooks. Deliberately NOT on AgentPublic —
+  // it is content, not display metadata, and can be long.
+  "systemPrompt?": "string | null",
 })
 export type Agent = typeof Agent.infer
 

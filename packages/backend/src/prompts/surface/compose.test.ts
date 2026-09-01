@@ -92,6 +92,7 @@ describe("buildSurfacePrompt", () => {
       "runtime",
       "capabilities",
       "display",
+      "charter",
     ])
   })
 
@@ -129,5 +130,28 @@ describe("buildSurfacePrompt", () => {
     expect(text).toContain(SURFACE_DISPLAY)
     expect(text).toContain("**Port:** 4001")
     expect(text).toContain("## Environment (this process)")
+  })
+})
+
+// ─── slice charter-in-hook ───────────────────────────────────────────────────
+// The charter rides the same payload the provider hook already fetches, so it
+// reaches the model as system-level context instead of being glued onto the
+// first user turn. An agent without a charter is the normal case: the section
+// must vanish, not render empty.
+describe("charter piece", () => {
+  it("renders the charter under its own heading, last", () => {
+    const out = buildSurfacePrompt({ pieces: ["about", "charter"], charter: "You are the verifier." })
+    expect(out).toContain("# Your assignment\n\nYou are the verifier.")
+    expect(out.indexOf("# Your assignment")).toBeGreaterThan(out.indexOf("About drive-coding"))
+  })
+
+  it("omits the section when there is no charter", () => {
+    const out = buildSurfacePrompt({ pieces: ["about", "charter"] })
+    expect(out).not.toContain("# Your assignment")
+  })
+
+  it("omits the section for whitespace-only charter", () => {
+    const out = buildSurfacePrompt({ pieces: ["about", "charter"], charter: "   \n  " })
+    expect(out).not.toContain("# Your assignment")
   })
 })
