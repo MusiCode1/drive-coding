@@ -33,6 +33,8 @@ import type { ContentViewerVM } from "./view-models/content-viewer.svelte"
 import type { RecentProjects } from "./view-models/recent-projects.svelte"
 import type { AudioPlaylist } from "./engines/audio-playlist.svelte"
 import type { PresencePoller } from "./view-models/presence-poller.svelte"
+import type { ComposerDraft } from "./view-models/composer-draft.svelte"
+import type { Dictate } from "./view-models/dictate.svelte"
 
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
@@ -98,3 +100,9 @@ export const [getCliAvailability, setCliAvailability] = createContext<CliAvailab
 
 // ─── presence-poller ─── (slice liveness C3)
 export const [getPresencePoller, setPresencePoller] = createContext<PresencePoller>()
+
+// ─── composer-draft ─── (slice dictate-to-input)
+export const [getComposerDraft, setComposerDraft] = createContext<ComposerDraft>()
+
+// ─── dictate ─── (slice dictate-to-input)
+export const [getDictate, setDictate] = createContext<Dictate>()

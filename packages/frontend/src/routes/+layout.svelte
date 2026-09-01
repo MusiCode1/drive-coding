@@ -27,7 +27,9 @@ import {
   setChatScroll,
   setCliAvailability,
   setContentViewer,
+  setComposerDraft,
   setCues,
+  setDictate,
   setI18n,
   setLive,
   setMic,
@@ -63,6 +65,8 @@ import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Live } from "$lib/view-models/live.svelte"
+import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
+import { Dictate } from "$lib/view-models/dictate.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
 import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
@@ -102,6 +106,12 @@ const audioPlaylist = new AudioPlaylist(sharedAudioStream)
 
 // ─── mic ─── (slice 3 — תלוי ב-session + cues)
 const mic = new Mic({ session, cues })
+
+// ─── composer-draft ─── (slice dictate-to-input)
+const composerDraft = new ComposerDraft()
+
+// ─── dictate ─── (slice dictate-to-input — תלוי ב-composerDraft + mic)
+const dictate = new Dictate({ draft: composerDraft, mic })
 
 // ─── theme ─── (redesign-1) — declared before Live getter; instance assigned below Live block
 let theme!: ThemeVM
@@ -271,6 +281,8 @@ setActiveAgents(activeAgents)
 setRecentProjects(recentProjects)
 setCliAvailability(cliAvailability)
 setPresencePoller(presencePoller)
+setComposerDraft(composerDraft)
+setDictate(dictate)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
 const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })

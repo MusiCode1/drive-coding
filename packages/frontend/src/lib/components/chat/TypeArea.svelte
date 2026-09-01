@@ -14,15 +14,28 @@
  */
 import type { AvailableCommand } from "@agentclientprotocol/sdk"
 import ImagePlusIcon from "@lucide/svelte/icons/image-plus"
+import Loader2Icon from "@lucide/svelte/icons/loader-2"
+import MicIcon from "@lucide/svelte/icons/mic"
 import OctagonXIcon from "@lucide/svelte/icons/octagon-x"
 import SendIcon from "@lucide/svelte/icons/send"
 import XIcon from "@lucide/svelte/icons/x"
-import { getI18n, getModelStatus, getSession, getSettings, getVoiceMode } from "$lib/context"
+import {
+  getComposerDraft,
+  getDictate,
+  getI18n,
+  getMic,
+  getModelStatus,
+  getSession,
+  getSettings,
+  getUiShell,
+  getVoiceMode,
+} from "$lib/context"
 import {
   fileToImageAttachment,
   type ImageAttachment,
   revokeAttachment,
 } from "$lib/engines/image-attachment"
+import { runTypeAreaSubmit } from "$lib/actions/type-area-submit"
 import { applySlashSelection, matchSlashCommands } from "$lib/engines/slash-commands"
 import SlashCommandMenu from "./SlashCommandMenu.svelte"
 
@@ -30,9 +43,12 @@ const session = getSession()
 const settings = getSettings()
 const voiceMode = getVoiceMode()
 const modelStatus = getModelStatus()
+const draft = getComposerDraft()
+const dictate = getDictate()
+const mic = getMic()
+const uiShell = getUiShell()
 const t = getI18n().t
 
-let promptText = $state("")
 let taEl = $state<HTMLTextAreaElement>()
 const MAX_ROWS = 6
 
@@ -43,7 +59,7 @@ let fileInputEl = $state<HTMLInputElement>()
 // ─── slash-command dropdown state ─── (slice-slash-commands, Commit 2)
 let dismissed = $state(false)
 let selectedIndex = $state(0)
-const slash = $derived(matchSlashCommands(promptText, session.availableCommands))
+const slash = $derived(matchSlashCommands(draft.text, session.availableCommands))
 const menuOpen = $derived(!!slash && slash.matches.length > 0 && !dismissed)
 
 // ─── ghost-hint (slice-slash-menu-native, Commit 2) ─────────────────────────
@@ -51,7 +67,7 @@ const menuOpen = $derived(!!slash && slash.matches.length > 0 && !dismissed)
 // הצג את ה-hint כ-ghost אפור. slash=null במצב הזה (matchSlashCommands מחזיר null
 // כש-rest.includes(" ")), לכן סורקים את availableCommands ישירות.
 const ghostHint = $derived.by(() => {
-  const text = promptText
+  const text = draft.text
   if (!text.startsWith("/")) return null
   const spaceIdx = text.indexOf(" ")
   // בדיוק "/name " — יש רווח אחד, אחריו אין ארגומנט
@@ -74,7 +90,7 @@ $effect(() => {
 })
 
 function acceptSlashSelection(cmd: AvailableCommand): void {
-  promptText = applySlashSelection(cmd)
+  draft.setText(applySlashSelection(cmd))
   dismissed = false
   taEl?.focus()
 }
@@ -109,7 +125,7 @@ $effect(() => {
 
 // גדל עם התוכן עד תקרה; scrollbar מופיע רק כשהתוכן חותך את ה-max-height
 $effect(() => {
-  promptText // dependency — re-run on every value change
+  draft.text // dependency — re-run on every value change
   const el = taEl
   if (!el) return
   el.style.height = "auto" // קודם מאפסים כדי שה-scrollHeight ישקף את התוכן הנוכחי
@@ -122,16 +138,32 @@ $effect(() => {
 
 const isDisabled = $derived(session.status !== "connected")
 
+const dictateListening = $derived(dictate.state === "listening")
+const dictateBusy = $derived(dictate.state === "busy")
+const dictateBtnEnabled = $derived(
+  !isDisabled &&
+    mic.state === "idle" &&
+    (dictate.state === "idle" || dictate.state === "listening"),
+)
+const dictateBtnLabel = $derived(
+  dictateListening
+    ? "dictate.stop"
+    : dictateBusy
+      ? "dictate.transcribing"
+      : "dictate.start",
+)
+
+$effect(() => {
+  const mode = uiShell.inputMode
+  const state = dictate.state
+  if (mode !== "typing" && state !== "idle") {
+    dictate.cancel()
+  }
+})
+
 function onSubmit(e?: SubmitEvent) {
   e?.preventDefault()
-  const text = promptText.trim()
-  // ─── slice-image-paste Commit 4b: שכבה 2 — תמונה-בלבד מותרת ───
-  if ((!text && attachments.length === 0) || isDisabled) return
-  session.sendPrompt(text, { attachments })
-  promptText = ""
-  // ─── slice-image-paste Commit 4b: ניקוי tray ───
-  attachments.forEach(revokeAttachment)
-  attachments = []
+  void runTypeAreaSubmit({ isDisabled, dictateState: dictate.state, finishListening: () => dictate.finishListening(), draftText: () => draft.text, attachments, sendPrompt: (t, o) => session.sendPrompt(t, o), sessionStatus: () => session.status, clear: () => { draft.clear(); attachments.forEach(revokeAttachment); attachments = [] } })
 }
 
 // ─── image handlers (slice-image-paste) ─────────────────────────────────────
@@ -243,7 +275,7 @@ function openFilePicker(): void {
   <!-- ─── form (autogrow נשמר — items-end, taEl, MAX_ROWS, rows=1) ─── -->
   <form
     onsubmit={onSubmit}
-    class="flex gap-2 items-end w-full"
+    class="type-area-form flex gap-2 items-stretch w-full"
     style="--control-h: 2.5rem"
     ondrop={handleDrop}
     ondragover={handleDragOver}
@@ -259,6 +291,7 @@ function openFilePicker(): void {
       onchange={handleFileChange}
     />
 
+    <div class="type-area-left-tools flex gap-2 shrink-0">
     <!-- כפתור הוספת תמונה (גלוי רק כש-supportsImageInput) -->
     {#if session.supportsImageInput}
       <button
@@ -274,8 +307,31 @@ function openFilePicker(): void {
       </button>
     {/if}
 
+    <!-- ─── dictate-to-input: append-only mic (slice dictate-to-input) ─── -->
+    <button
+      type="button"
+      onclick={() => void dictate.toggle()}
+      disabled={!dictateBtnEnabled}
+      aria-pressed={dictateListening ? true : undefined}
+      aria-busy={dictateBusy ? true : undefined}
+      aria-label={t(dictateBtnLabel)}
+      title={t(dictateBtnLabel)}
+      class="type-area-control type-area-icon-control shrink-0 rounded-xl p-2 flex items-center"
+      style="color:{dictateListening ? 'var(--recording)' : 'var(--fg-dim)'}; min-height:var(--control-h)"
+    >
+      {#if dictateBusy}
+        <Loader2Icon size={18} strokeWidth={1.75} class="animate-spin" />
+      {:else}
+        <MicIcon size={18} strokeWidth={1.75} />
+      {/if}
+    </button>
+    </div>
+    {#if dictate.error}
+      <span aria-live="polite" class="sr-only">{t(dictate.error)}</span>
+    {/if}
+
     <!-- ─── wrapper: מארח את ה-textarea (ה-dropdown עצמו portal-ל-body — ר' SlashCommandMenu.svelte) ─── -->
-    <div class="flex-1 relative">
+    <div class="type-area-prompt flex-1 relative min-w-0">
     {#if menuOpen && slash && menuRect}
       <SlashCommandMenu
         matches={slash.matches}
@@ -294,15 +350,15 @@ function openFilePicker(): void {
         dir="auto"
         class="absolute inset-0 z-10 rounded-xl px-3 py-2.5 text-sm pointer-events-none overflow-hidden whitespace-pre-wrap break-words"
         style="color:transparent; background:transparent; border:1px solid transparent"
-      ><span style="color:transparent">{promptText}</span><span style="color:var(--fg-muted); opacity:0.6">{ghostHint}</span></div>
+      ><span style="color:transparent">{draft.text}</span><span style="color:var(--fg-muted); opacity:0.6">{ghostHint}</span></div>
     {/if}
     <textarea
       bind:this={taEl}
-      bind:value={promptText}
+      bind:value={draft.text}
       placeholder={t("record.placeholder")}
       rows={1}
       disabled={isDisabled}
-      dir={promptText.length ? "auto" : "rtl"}
+      dir={draft.text.length ? "auto" : "rtl"}
       role="combobox"
       aria-expanded={menuOpen}
       aria-controls={menuOpen ? "slash-listbox" : undefined}
@@ -368,11 +424,13 @@ function openFilePicker(): void {
     ></textarea>
     </div>
 
+    <div class="type-area-right-actions flex gap-2 shrink-0">
     <!-- ─── slice-image-paste Commit 4b: שכבה 1 — disabled רק אם אין טקסט ואין תמונות ─── -->
+    <!-- icon-square כמו stop (compact-align): אותם גודל/צורה בערימה האנכית -->
     <button
       type="submit"
-      disabled={(!promptText.trim() && attachments.length === 0) || isDisabled}
-      class="type-area-control rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-1.5 shrink-0"
+      disabled={!(draft.text.trim().length > 0 || attachments.length > 0 || dictate.state === "listening") || isDisabled || dictate.state === "busy"}
+      class="type-area-control type-area-icon-control shrink-0 rounded-xl p-2.5 flex items-center justify-center"
       style="background:var(--accent); color:white; min-height:var(--control-h)"
       aria-label={t("record.send")}
     >
@@ -390,11 +448,47 @@ function openFilePicker(): void {
     >
       <OctagonXIcon size={16} strokeWidth={2} />
     </button>
+    </div>
   </form>
 
 </div>
 
 <style>
+  form.type-area-form {
+    container-type: inline-size;
+    container-name: type-area;
+  }
+
+  .type-area-left-tools,
+  .type-area-right-actions {
+    display: flex;
+    align-items: center;
+  }
+
+  /* צפוף: 2×2 אנכי צמוד + textarea בגובה הערימה (לא items-end שמשאיר חור) */
+  @container type-area (max-width: 26rem) {
+    .type-area-left-tools,
+    .type-area-right-actions {
+      flex-direction: column;
+      gap: 0.25rem; /* gap-1 */
+      align-self: stretch;
+      justify-content: flex-start;
+    }
+
+    .type-area-prompt {
+      display: flex;
+      flex-direction: column;
+      align-self: stretch;
+    }
+
+    .type-area-prompt textarea.type-area-control {
+      flex: 1 1 auto;
+      /* רצפה = 2 כפתורים + gap — ה-$effect ל-autogrow לא יורד מתחת לזה */
+      min-height: calc(2 * var(--control-h) + 0.25rem);
+      box-sizing: border-box;
+    }
+  }
+
   textarea.type-area-control {
     display: block;
   }
