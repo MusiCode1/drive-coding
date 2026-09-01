@@ -204,6 +204,8 @@ export const CreateAgentInput = type({
   "closeOnTurnEnd?": "boolean",
   // slice be-events-subscribe: UUID of agent to notify when this agent's turn ends.
   "notifyOnDone?": "string.uuid",
+  // slice mcp-event-last-text: include last assistant text in turn-ended notify prompts.
+  "includeLastAssistantText?": "boolean",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 

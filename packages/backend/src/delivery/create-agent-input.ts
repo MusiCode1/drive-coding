@@ -26,6 +26,7 @@ export const CreateAgentInputFull = type({
   "parentAgentId?": "string",
   "closeOnTurnEnd?": "boolean",
   "notifyOnDone?": "string.uuid",
+  "includeLastAssistantText?": "boolean",
 })
 export type CreateAgentInputFull = typeof CreateAgentInputFull.infer
 
@@ -85,6 +86,9 @@ export function parseCreateAgentBody(
   }
   if (parsed.notifyOnDone !== undefined && parsed.notifyOnDone !== "") {
     input.notifyOnDone = parsed.notifyOnDone
+  }
+  if (parsed.includeLastAssistantText === true) {
+    input.includeLastAssistantText = true
   }
   return { ok: true, value: input }
 }

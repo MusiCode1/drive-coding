@@ -153,7 +153,7 @@ function makeApp(opts?: { mcpHttp?: string }) {
     urlConfig: { port: 4000, host: "127.0.0.1" },
     eventBus,
   })
-  return { app, registry, orchestrator, agentSessionRegistry }
+  return { app, registry, orchestrator, agentSessionRegistry, eventBus }
 }
 
 function honoFetch(app: Hono): typeof fetch {
@@ -372,6 +372,28 @@ describe("session_open / session_close (slice session-bus-mcp C1)", () => {
     await client.close()
     expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
       expect.objectContaining({ notifyOnDone: subscriberId }),
+    )
+  })
+
+  it("session_open passes notifyOnDone and includeLastAssistantText through to createAndSpawn", async () => {
+    const { app, orchestrator } = makeApp()
+    const subscriberId = "00000000-0000-4000-8000-000000000088"
+    const client = await connectClient(app)
+    await client.callTool({
+      name: "session_open",
+      arguments: {
+        cli: "cursor",
+        cwd: "/tmp/mcp-c1-notify-text",
+        notifyOnDone: subscriberId,
+        includeLastAssistantText: true,
+      },
+    })
+    await client.close()
+    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notifyOnDone: subscriberId,
+        includeLastAssistantText: true,
+      }),
     )
   })
 
@@ -619,6 +641,36 @@ describe("agent-identity-mcp (C2/C3)", () => {
     expect(body.ok).toBe(true)
     expect(body.agent).toBe(target.id)
     expect(body.subscriber).toBe(subscriber.id)
+  })
+
+  it("session_subscribe without includeLastAssistantText defaults options to false", async () => {
+    const { app, registry, eventBus } = makeApp()
+    const target = await registry.create({ cliKind: "cursor", cwd: "/tmp/target-sub-default" })
+    const subscriber = await registry.create({ cliKind: "cursor", cwd: "/tmp/subscriber-default" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: subscriber.id })
+    await client.callTool({
+      name: "session_subscribe",
+      arguments: { agent: target.id },
+    })
+    await client.close()
+    expect(eventBus.optionsOf(target.id, subscriber.id)).toEqual({
+      includeLastAssistantText: false,
+    })
+  })
+
+  it("session_subscribe with includeLastAssistantText sets bus options", async () => {
+    const { app, registry, eventBus } = makeApp()
+    const target = await registry.create({ cliKind: "cursor", cwd: "/tmp/target-sub-flag" })
+    const subscriber = await registry.create({ cliKind: "cursor", cwd: "/tmp/subscriber-flag" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: subscriber.id })
+    await client.callTool({
+      name: "session_subscribe",
+      arguments: { agent: target.id, includeLastAssistantText: true },
+    })
+    await client.close()
+    expect(eventBus.optionsOf(target.id, subscriber.id)).toEqual({
+      includeLastAssistantText: true,
+    })
   })
 
   it("notify_parent appears only for caller with parent", async () => {

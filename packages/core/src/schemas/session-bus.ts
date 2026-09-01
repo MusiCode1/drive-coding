@@ -45,6 +45,9 @@ export const AgentOpenInput = type({
   "notifyOnDone?": optStr(
     "UUID of the agent to notify when this agent's turn ends (auto-subscribe on create).",
   ),
+  "includeLastAssistantText?": optBool(
+    "When true with notifyOnDone, turn-ended prompts include a truncated preview of the last assistant message.",
+  ),
   "base?": optStr(
     "Public base URL of this drive-coding backend (legacy alias for publicUrl). Used to build chat url and DC_BASE env.",
   ),

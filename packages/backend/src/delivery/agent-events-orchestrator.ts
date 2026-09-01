@@ -15,7 +15,9 @@ export function wrapOrchestratorWithAgentEvents(
     ...orchestrator,
     async createAndSpawn(input: CreateAndSpawnInput) {
       const result = await orchestrator.createAndSpawn(input)
-      subscribeNotifyOnDone(eventBus, result.agentId, input.notifyOnDone)
+      subscribeNotifyOnDone(eventBus, result.agentId, input.notifyOnDone, {
+        includeLastAssistantText: input.includeLastAssistantText === true,
+      })
       return result
     },
   }
