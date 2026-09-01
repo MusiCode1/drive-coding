@@ -517,7 +517,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/chat/ElicitationDialog.svelte": {
-      "metric": 128,
+      "metric": 127,
       "impurity": 1,
       "class": "mixed"
     },
