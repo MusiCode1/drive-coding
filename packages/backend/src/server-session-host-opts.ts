@@ -8,9 +8,11 @@ import { resolveCloseOnTurnEndGraceMs } from "./session-host/close-on-turn-end.j
 import type { AgentEventBus } from "./session-host/agent-events.js"
 import { agentEventSessionHostOpts } from "./delivery/agent-events-boot.js"
 import { createStallSuspectedEmitter } from "./session-host/agent-events-stall.js"
+import type { AgentSessionRegistry } from "./session-host/registry.js"
 import { createOnSessionAttached } from "./server-on-session-attached.js"
 import type { ProjectsRegistry } from "./app/projects-registry.js"
 import { createLogger } from "@drive-coding/core/log"
+import { createAgentSessionRegistry } from "./session-host/registry.js"
 
 const log = createLogger("backend.server")
 
@@ -20,9 +22,7 @@ export function createSessionHostRegistryOpts(deps: {
   acpSessionIdCache: Map<string, string>
   agentEventBus: AgentEventBus
   getOrchestrator: () => AgentOrchestrator | null
-  evictionController: Parameters<
-    typeof import("./session-host/http/index.js").createAndRegisterSessionHostHttp
-  >[2]["evictionController"]
+  evictionController: Parameters<typeof createAgentSessionRegistry>[0]["evictionController"]
 }) {
   return {
     onSessionAttached: createOnSessionAttached({

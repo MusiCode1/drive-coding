@@ -182,12 +182,16 @@ function makeMockHost(sessionId: string | null = null): ExtendedSessionHost {
     setConfigOption: vi.fn().mockResolvedValue(undefined),
     setSessionModel: vi.fn().mockResolvedValue(undefined),
     extMethod: vi.fn().mockResolvedValue({}),
+    emitExtNotification: vi.fn(),
     respondPermission: vi.fn(),
     respondElicitation: vi.fn(),
     listSessions: vi.fn().mockResolvedValue({}),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),
     agentCapabilities: { mcpCapabilities: { http: true } },
+    getTurnStartedAt: () => 0,
+    getStallReported: () => false,
+    markStallReported: () => {},
   }
   return host
 }

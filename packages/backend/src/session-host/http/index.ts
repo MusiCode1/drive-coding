@@ -106,7 +106,6 @@ export function createAndRegisterSessionHostHttp(
     getCloseOnTurnEnd: opts.getCloseOnTurnEnd,
     onScheduleCloseOnTurnEnd: opts.onScheduleCloseOnTurnEnd,
     _httpOwnerTtlMs: opts._httpOwnerTtlMs,
-    env: opts.env,
     onTurnEnded: opts.onTurnEnded,
     onStallSuspected: opts.onStallSuspected,
     _stallSweepMs: opts._stallSweepMs,

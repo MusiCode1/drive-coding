@@ -48,12 +48,16 @@ function makeMockHost(state: SessionState): ExtendedSessionHost {
     setConfigOption: vi.fn().mockResolvedValue(undefined),
     setSessionModel: vi.fn().mockResolvedValue(undefined),
     extMethod: vi.fn().mockResolvedValue({}),
+    emitExtNotification: vi.fn(),
     respondPermission: vi.fn(),
     respondElicitation: vi.fn(),
     listSessions: vi.fn().mockResolvedValue({}),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),
     agentCapabilities: {},
+    getTurnStartedAt: () => 0,
+    getStallReported: () => false,
+    markStallReported: () => {},
   }
 }
 
@@ -291,12 +295,16 @@ describe("GET /api/agents/:id/events", () => {
         setConfigOption: vi.fn().mockResolvedValue(undefined),
         setSessionModel: vi.fn().mockResolvedValue(undefined),
         extMethod: vi.fn().mockResolvedValue({}),
+        emitExtNotification: vi.fn(),
         respondPermission: vi.fn(),
         respondElicitation: vi.fn(),
         listSessions: vi.fn().mockResolvedValue({}),
         deleteSession: vi.fn().mockResolvedValue(undefined),
         dispose: vi.fn().mockResolvedValue(undefined),
         agentCapabilities: {},
+        getTurnStartedAt: () => 0,
+        getStallReported: () => false,
+        markStallReported: () => {},
       }
 
       const registry = makeMockRegistry({ host, broadcaster })

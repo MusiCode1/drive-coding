@@ -4,7 +4,7 @@
  * Map<targetId, Map<subscriberId, options>> — no persistence. Subscriptions survive subscriber death.
  */
 
-import type { AgentEvent, AgentEventKind } from "@drive-coding/core/schemas/agent-events.js"
+import type { AgentEvent, AgentEventKind } from "@drive-coding/core"
 
 export type { AgentEvent, AgentEventKind }
 

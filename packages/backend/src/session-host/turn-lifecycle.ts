@@ -2,7 +2,7 @@
  * turn-lifecycle.ts — turn boundary helpers for SessionHost (slice be-events-subscribe C1).
  */
 
-import type { Patch, SessionState } from "@drive-coding/core"
+import type { Patch, SessionState } from "@drive-coding/core/session"
 import { isCleanTurnEndForClose } from "./close-on-turn-end.js"
 import type { TurnEndedInfo } from "./agent-events-turn.js"
 
@@ -36,9 +36,9 @@ export function createTurnLifecycleHandlers(deps: {
     info: TurnEndedInfo,
   ) => void
   maybeScheduleCloseOnTurnEnd: () => void
-  nextTurn: () => number
-  markCancelled: (turn: number) => void
-  isCancelledTurn: (turn: number) => boolean
+  stampTurnStart: () => void
+  resetTurnTiming: () => void
+  turnHostMethods: TurnTimingHost
 } {
   const turn: TurnLifecycleState = {
     turnSeq: 0,

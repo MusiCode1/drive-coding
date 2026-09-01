@@ -699,8 +699,8 @@ export async function createSessionHostFromConnection(
   // Failure path (rollbackSessionSwitch): sessionId only + second monotonic
   // reset + idle — ❌ no snapshot restore (versions never rewind).
   function beginSessionSwitchInvalidate(): void {
-    turnSeq++
-    cancelledTurn = -1
+    turnLifecycle.turnSeq++
+    turnLifecycle.cancelledTurn = -1
     quotaGeneration++
   }
 

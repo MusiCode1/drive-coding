@@ -117,17 +117,17 @@
       "class": "mixed"
     },
     "packages/backend/src/delivery/agent-events-http.ts": {
-      "metric": 46,
+      "metric": 51,
       "impurity": 2,
       "class": "mixed"
     },
     "packages/backend/src/delivery/agent-events-mcp-tools.ts": {
-      "metric": 115,
+      "metric": 121,
       "impurity": 2,
       "class": "mixed"
     },
     "packages/backend/src/delivery/agent-events-orchestrator.ts": {
-      "metric": 22,
+      "metric": 24,
       "impurity": 1,
       "class": "mixed"
     },
@@ -309,11 +309,6 @@
     "packages/backend/src/session-host/pending-requests.ts": {
       "metric": 117,
       "impurity": 1,
-      "class": "mixed"
-    },
-    "packages/backend/src/session-host/registry-sweeps.ts": {
-      "metric": 47,
-      "impurity": 2,
       "class": "mixed"
     },
     "packages/backend/src/session-host/registry.ts": {

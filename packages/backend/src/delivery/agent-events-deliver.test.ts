@@ -66,7 +66,7 @@ describe("wireAgentEventDelivery", () => {
     const bus = createAgentEventBus()
     bus.subscribe("target-a", "sub-1")
 
-    const prompt = vi.fn(async () => {})
+    const prompt = vi.fn<(sessionId: string, content: string) => Promise<void>>(async () => {})
     const emitExtNotification = vi.fn()
     const subscriberHost = {
       state: { sessionId: "sess-sub" },
@@ -92,7 +92,7 @@ describe("wireAgentEventDelivery", () => {
 
     expect(emitExtNotification).toHaveBeenCalledWith("_drive/agent_event", event)
     await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce())
-    const text = prompt.mock.calls[0]?.[1] as string
+    const text = String(prompt.mock.calls[0]?.[1] ?? "")
     expect(text).toContain("kind:")
     expect(text).toContain("agentId:")
     expect(text.startsWith("[drive-coding event]")).toBe(true)
@@ -103,7 +103,7 @@ describe("wireAgentEventDelivery", () => {
     const bus = createAgentEventBus()
     bus.subscribe("target-a", "sub-1", { includeLastAssistantText: true })
 
-    const prompt = vi.fn(async () => {})
+    const prompt = vi.fn<(sessionId: string, content: string) => Promise<void>>(async () => {})
     const subscriberHost = {
       state: { sessionId: "sess-sub" },
       prompt,
@@ -134,7 +134,7 @@ describe("wireAgentEventDelivery", () => {
     })
 
     await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce())
-    const text = prompt.mock.calls[0]?.[1] as string
+    const text = String(prompt.mock.calls[0]?.[1] ?? "")
     expect(text).toContain("lastAssistantText: hello-from-state")
   })
 
@@ -142,7 +142,7 @@ describe("wireAgentEventDelivery", () => {
     const bus = createAgentEventBus()
     bus.subscribe("target-a", "sub-1", { includeLastAssistantText: true })
 
-    const prompt = vi.fn(async () => {})
+    const prompt = vi.fn<(sessionId: string, content: string) => Promise<void>>(async () => {})
     const subscriberHost = {
       state: { sessionId: "sess-sub" },
       prompt,
@@ -170,7 +170,7 @@ describe("wireAgentEventDelivery", () => {
     })
 
     await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce())
-    const text = prompt.mock.calls[0]?.[1] as string
+    const text = String(prompt.mock.calls[0]?.[1] ?? "")
     expect(text).not.toContain("lastAssistantText")
   })
 })
