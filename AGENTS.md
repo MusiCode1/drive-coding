@@ -160,6 +160,20 @@ the FE for the **user** to inspect, follow these rules:
 3. **Hand over a URL the user can actually open over HTTPS** — that is the deliverable
    of a preview, not a "it builds" report.
 
+4. **Close the preview the moment the user approves.** The preview exists for the
+   approval moment; once the user says "merge", nothing consumes it. Kill the BE and
+   the tunnel (only PIDs you launched — other agents run here too). Closing it is part
+   of the merge ritual, not an afterthought: an open preview holds a port, a tunnel,
+   and **a worktree that cannot be removed while it lives** — which is the usual reason
+   post-merge cleanup "didn't work". Merge is not done until preview + worktree +
+   branch are all closed (method: `brief-driven-slices` → `workflow.md`
+   §ניקוי-אחרי-מיזוג).
+
+   > Measured 2026-08-31: worktrees had piled to **95**, about **50 of them merged and
+   > clean** — leftovers. A one-off sweep took it back to 51. Use
+   > `bun run worktrees:prune` (it refuses to remove a worktree with a live process
+   > inside — `git worktree remove` does **not** check that).
+
 > **TODO (after `ui-session-polish` is merged):** make the preview target
 > **environment-variable driven** (localhost vs. tunnel, and the tunnel URL) so the
 > serve flow is config-driven instead of decided ad-hoc per run. Tracked as a
