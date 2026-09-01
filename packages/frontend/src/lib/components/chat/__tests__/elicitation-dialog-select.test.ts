@@ -77,4 +77,35 @@ describe("ElicitationDialog — select field (elicitation-options-visible)", () 
     expect(onResolve).toHaveBeenCalledOnce()
     expect(onResolve).toHaveBeenCalledWith({ color: "red" })
   })
+
+  it("renders field and option descriptions when present", () => {
+    mountHarness({
+      params: {
+        sessionId: "s1",
+        mode: "form",
+        message: "Pick a language",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            language: {
+              type: "string",
+              title: "Language",
+              description: "Which interface language do you prefer?",
+              oneOf: [
+                { const: "he", title: "Hebrew", description: "ממשק בעברית בלבד" },
+                { const: "en", title: "English", description: "English-only interface" },
+              ],
+            },
+          },
+          required: ["language"],
+        },
+      } as ElicitationParams,
+    })
+
+    expect(target?.textContent).toContain("Which interface language do you prefer?")
+    expect(target?.textContent).toContain("ממשק בעברית בלבד")
+    expect(target?.textContent).toContain("English-only interface")
+    expect(target?.querySelector(".field-description")).not.toBeNull()
+    expect(target?.querySelectorAll(".option-description").length).toBe(2)
+  })
 })

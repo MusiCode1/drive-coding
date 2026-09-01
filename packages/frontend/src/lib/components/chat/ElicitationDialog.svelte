@@ -153,6 +153,9 @@ function handleCancel(): void {
                 {field.label}
                 {#if field.required}<span class="required-mark" title={t("elicitation.required")}>*</span>{/if}
               </span>
+              {#if field.description}
+                <span class="field-description" dir="auto">{field.description}</span>
+              {/if}
               {#if field.kind === "text"}
                 <input
                   type="text"
@@ -188,7 +191,12 @@ function handleCancel(): void {
                         disabled={submitting}
                         bind:group={textValues[field.key]}
                       />
-                      <span dir="auto">{opt.label}</span>
+                      <span class="radio-content">
+                        <span class="radio-label" dir="auto">{opt.label}</span>
+                        {#if opt.description}
+                          <span class="option-description" dir="auto">{opt.description}</span>
+                        {/if}
+                      </span>
                     </label>
                   {/each}
                 </div>
@@ -279,6 +287,13 @@ function handleCancel(): void {
     color: var(--fg-dim);
   }
 
+  .field-description {
+    font-size: 0.72rem;
+    line-height: 1.35;
+    color: var(--fg-dim);
+    opacity: 0.92;
+  }
+
   .required-mark {
     color: var(--recording);
     margin-inline-start: 0.15rem;
@@ -309,7 +324,7 @@ function handleCancel(): void {
 
   .radio-row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.5rem;
     min-height: 44px;
     padding: 0.35rem 0.6rem;
@@ -319,6 +334,28 @@ function handleCancel(): void {
     font-size: 0.85rem;
     color: var(--fg);
     cursor: pointer;
+  }
+
+  .radio-row input[type="radio"] {
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+  }
+
+  .radio-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+
+  .radio-label {
+    line-height: 1.3;
+  }
+
+  .option-description {
+    font-size: 0.72rem;
+    line-height: 1.35;
+    color: var(--fg-dim);
   }
 
   .radio-row:has(input:checked) {
