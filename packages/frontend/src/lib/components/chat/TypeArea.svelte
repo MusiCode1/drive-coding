@@ -275,7 +275,7 @@ function openFilePicker(): void {
   <!-- ─── form (autogrow נשמר — items-end, taEl, MAX_ROWS, rows=1) ─── -->
   <form
     onsubmit={onSubmit}
-    class="flex gap-2 items-end w-full"
+    class="type-area-form flex gap-2 items-end w-full"
     style="--control-h: 2.5rem"
     ondrop={handleDrop}
     ondragover={handleDragOver}
@@ -291,6 +291,7 @@ function openFilePicker(): void {
       onchange={handleFileChange}
     />
 
+    <div class="type-area-left-tools flex gap-2 shrink-0">
     <!-- כפתור הוספת תמונה (גלוי רק כש-supportsImageInput) -->
     {#if session.supportsImageInput}
       <button
@@ -324,6 +325,7 @@ function openFilePicker(): void {
         <MicIcon size={18} strokeWidth={1.75} />
       {/if}
     </button>
+    </div>
     {#if dictate.error}
       <span aria-live="polite" class="sr-only">{t(dictate.error)}</span>
     {/if}
@@ -422,6 +424,7 @@ function openFilePicker(): void {
     ></textarea>
     </div>
 
+    <div class="type-area-right-actions flex gap-2 shrink-0">
     <!-- ─── slice-image-paste Commit 4b: שכבה 1 — disabled רק אם אין טקסט ואין תמונות ─── -->
     <button
       type="submit"
@@ -444,17 +447,31 @@ function openFilePicker(): void {
     >
       <OctagonXIcon size={16} strokeWidth={2} />
     </button>
+    </div>
   </form>
-
-  {#if dictateBusy}
-    <p aria-live="polite" class="text-xs" style="color:var(--fg-dim)">
-      {t("dictate.transcribing")}
-    </p>
-  {/if}
 
 </div>
 
 <style>
+  form.type-area-form {
+    container-type: inline-size;
+    container-name: type-area;
+  }
+
+  .type-area-left-tools,
+  .type-area-right-actions {
+    display: flex;
+    align-items: center;
+  }
+
+  @container type-area (max-width: 26rem) {
+    .type-area-left-tools,
+    .type-area-right-actions {
+      flex-direction: column;
+      gap: 0.25rem; /* gap-1 */
+    }
+  }
+
   textarea.type-area-control {
     display: block;
   }
