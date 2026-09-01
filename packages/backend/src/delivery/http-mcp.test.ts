@@ -19,6 +19,7 @@ import { AGENT_ID_HEADER, DRIVE_CODING_AGENT_ID_ENV } from "../agent-identity.js
 import { setSelfBaseUrlForTests } from "../instances.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { createAgentEventBus } from "../session-host/agent-events.js"
+import * as readProcessRssMod from "../adapters/read-process-rss.js"
 import { registerMcpHttp } from "./http-mcp.js"
 
 type HostStub = {
@@ -877,16 +878,20 @@ describe("session_whoami runtime envelope (slice mcp-whoami-runtime)", () => {
     const { app, registry, agentSessionRegistry } = makeApp()
     const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-runtime" })
     vi.mocked(agentSessionRegistry.getRuntimeInfo).mockReturnValue({
-      pid: process.pid,
+      pid: 250735,
       attached: true,
       busy: false,
       lastMessageAt: Date.now(),
       lastSeenAt: Date.now(),
       via: "http",
     })
+    const rssSpy = vi
+      .spyOn(readProcessRssMod, "readProcessRss")
+      .mockReturnValue({ rssMB: 1840, source: "proc" })
     const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
     const result = await client.callTool({ name: "session_whoami", arguments: {} })
     await client.close()
+    rssSpy.mockRestore()
     expect(isToolError(result)).toBe(false)
     const body = JSON.parse(toolText(result)) as {
       runtime?: {
@@ -899,6 +904,7 @@ describe("session_whoami runtime envelope (slice mcp-whoami-runtime)", () => {
       }
     }
     expect(typeof body.runtime?.cliPid).toBe("number")
+    expect(body.runtime?.cliPid).toBe(250735)
     expect(body.runtime?.attached).toBe(true)
     expect(body.runtime?.via).toBe("http")
     expect(body.runtime?.memory).toEqual(

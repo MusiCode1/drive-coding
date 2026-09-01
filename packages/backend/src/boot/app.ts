@@ -82,6 +82,7 @@ export async function buildApp(
     env,
     urlConfig,
     eventBus: agentEventBus,
+    memoryGuard,
   })
   registerAgentPromptHttp(app, { registry, urlConfig })
   registerHealthHttp(app, { registry, connectionRegistry })

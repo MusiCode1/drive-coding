@@ -25,6 +25,8 @@ const DEFAULT_INTERVAL_MS = 5_000
 export interface MemoryGuard {
   /** Returns true if RSS has exceeded the budget threshold. */
   overBudget(): boolean
+  /** RSS budget in megabytes (same threshold as proxy 503). */
+  rssBudgetMB(): number
   /** Stops the polling interval (call on graceful shutdown). */
   stop(): void
 }
@@ -58,6 +60,9 @@ export function createMemoryGuard(opts?: {
   return {
     overBudget(): boolean {
       return overBudgetFlag
+    },
+    rssBudgetMB(): number {
+      return Math.round(thresholdBytes / 1024 / 1024)
     },
     stop(): void {
       clearInterval(timer)
