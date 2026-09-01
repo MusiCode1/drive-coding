@@ -276,6 +276,8 @@ export type SessionHostFromConnOptions = {
     callbacks: AcpClientCallbacks,
     opts?: AcpClientOptions,
   ) => Promise<AcpClient>
+  /** slice agent-charter C2: transform content sent to ACP (not the user bubble). */
+  transformPromptForAcp?: (content: string | PromptBlocks) => string | PromptBlocks
 }
 
 /**
@@ -388,6 +390,7 @@ export async function createSessionHostFromConnection(
     onScheduleCloseOnTurnEnd,
     warmReattach,
     _createAcpClient = createAcpClient,
+    transformPromptForAcp,
   } = opts
 
   // Internal mutable state (same pattern as createSessionHost)
@@ -710,18 +713,14 @@ export async function createSessionHostFromConnection(
     // וגם cancel) מגודרות ב-`turn === turnSeq` — "התור שלי עדיין הנוכחי". ─────
     //
     // ⚠️ hotfix (אחרי C4, avigail): הסדר הוא waiting **לפני** add-message —
-    // ההפך מהניסוח המקורי של "מלכודת ג'" ("הסדר הזה בטוח", לא "הכרחי"). הסיבה
-    // לא הייתה מספר-ה-patches (שניהם עדיין שני emit נפרדים — ReadableStream לא
-    // מאחד enqueue-ים סמוכים לקריאה אחת, אין "batch" אמיתי על ה-wire) אלא
-    // **הערך שנצפה ביניהם**: ה-FE מסנכרן turnState פר-patch. בסדר הישן
-    // (add-message ואז waiting) הסנכרון הראשון קורא turnState שעדיין `idle`,
-    // ורק הסנכרון השני (אחרי ה-patch השני) מעלה אותו ל-`waiting` — הבהוב
-    // `waiting → idle → waiting` שמצית flush מזויף של סוף-תור ב-Speaker
-    // וצליל-חשיבה כפול. בסדר החדש שני הסנכרונים רואים `waiting`:
-    // apply-patch.ts's add-message branch גוזר turnState מ-role, ול-role:"user"
-    // (תמיד המקרה כאן) הוא **משמר** את הערך הקיים — כלומר add-message שמגיע
-    // *אחרי* waiting לא דורס אותו. אותה עובדה בדיוק (role=user = no-op)
-    // שהפכה את הסדר הישן ל"בטוח" הופכת את הסדר החדש ל"מתקן".
+    // ה-FE מסנכרן turnState פר-patch; add-message אחרי waiting משמר waiting
+    // (role=user = no-op). הסדר הישן (add-message ואז waiting) גרם להבהוב
+    // `waiting → idle → waiting` — flush מזויף של סוף-תור ב-Speaker.
+    // apply-patch.ts's add-message branch גוזר turnState מ-role; ל-role:"user"
+    // (תמיד המקרה כאן) הוא **משמר** את הערך הקיים — waiting לא נדרס.
+    // אותה עובדה בדיוק שהפכה את הסדר הישן ל"בטוח" הופכת את הסדר החדש ל"מתקן".
+    //
+    // slice agent-charter C2: transformPromptForAcp prepends charter to ACP only.
     async prompt(
       sessionId: string,
       content: string | PromptBlocks,
@@ -735,7 +734,8 @@ export async function createSessionHostFromConnection(
       currentState = applied.state
       emitPatches(applied.patches) // 2. add-message — role="user" משמר waiting (מלכודת ג')
       try {
-        await client.prompt(sessionId, content)
+        const acpContent = transformPromptForAcp?.(content) ?? content
+        await client.prompt(sessionId, acpContent)
         if (turn === turnSeq) {
           emit(applyTurnEnd(currentState)) // 3א. הצלחה
           maybeScheduleCloseOnTurnEnd()

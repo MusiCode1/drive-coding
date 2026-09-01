@@ -44,6 +44,7 @@ import { buildAgentMcpServers, optionalAgentMcpServers } from "../agent-identity
 import { getSelfBaseUrl } from "../instances.js"
 import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-broadcaster.js"
 import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
+import { makePromptCharterHook } from "./session-host-charter.js"
 
 const log = createLogger("backend.session-host.registry")
 
@@ -351,19 +352,18 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // slice handoff-foundations C3: if session creation fails below, the host is
     // already subscribed to the wire (created by _createHostFn). Rollback MUST call
     // host.dispose() to remove the crash subscription and close the patches stream.
-    const hostOpts =
-      acpSessionId || permissionPolicy !== undefined || closeOnTurnEnd
+    // slice agent-charter C2: always wire charter prepend (cold session_open too).
+    const hostOpts = {
+      transformPromptForAcp: makePromptCharterHook(connectionRegistry, agentId),
+      ...(acpSessionId ? { warmReattach: { acpSessionId, cwd } } : {}),
+      ...(permissionPolicy !== undefined ? { permissionPolicy } : {}),
+      ...(closeOnTurnEnd
         ? {
-            ...(acpSessionId ? { warmReattach: { acpSessionId, cwd } } : {}),
-            ...(permissionPolicy !== undefined ? { permissionPolicy } : {}),
-            ...(closeOnTurnEnd
-              ? {
-                  closeOnTurnEnd: true,
-                  onScheduleCloseOnTurnEnd: () => onScheduleCloseOnTurnEnd?.(agentId),
-                }
-              : {}),
+            closeOnTurnEnd: true,
+            onScheduleCloseOnTurnEnd: () => onScheduleCloseOnTurnEnd?.(agentId),
           }
-        : undefined
+        : {}),
+    }
     // 🔴 הקשר-אבחון (2026-08-16): יצירת ה-host היא שמריצה את ה-ACP initialize,
     // ולכן כאן נופלות פקיעות ה-initialize/authenticate. עד עכשיו השגיאה עלתה מכאן
     // **בלי שום סימן זיהוי**: נתקלנו בשני כשלים חיים ולא הצלחנו לקבוע בדיעבד

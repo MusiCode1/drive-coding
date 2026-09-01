@@ -60,6 +60,8 @@ async function makeGateServer() {
   const connectionRegistry = {
     get: vi.fn((id: string) => makeMockConn(id)),
     getCwd: vi.fn(() => "/tmp/gates"),
+    getCharter: vi.fn(() => undefined),
+    consumeCharter: vi.fn(() => undefined),
     getCliKind: vi.fn(() => "cursor"),
     isOwnedByWs: vi.fn(() => false),
     getOwner: vi.fn(() => ({ via: "http" as const })),

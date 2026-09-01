@@ -32,6 +32,7 @@ import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
 // (otherwise /api/agents would keep serving attached:true after an eviction).
 import { httpCacheInvalidateAll } from "../delivery/http-cache.js"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
+import { connCharterAtConnect, consumeConnCharter, getConnCharter } from "./connection-registry-charter.js"
 
 const wireLog = createLogger("backend.acp.wire")
 const cfgLog = createLogger("backend.acp.config")
@@ -84,30 +85,17 @@ type ConnEntry = {
   ownershipEpoch: number
   rec: WireSession
   unsubs: Array<() => void>
-  /**
-   * cwd מ-ConnectOpts שנמסר ל-connect() — נשמר כאן כי ConnEntry לא נשא אותו קודם
-   * (slice remote-session-view, הכרעה 1: יצירת session אוטומטית ב-BE צריכה cwd
-   * בנקודה שבה אין עוד ConnectOpts זמין — session-host/registry.ts).
-   */
+  /** cwd from connect() — for session-host auto newSession (slice remote-session-view). */
   cwd: string
   /**
-   * cliKind מ-connect() — נשמר לצורך **הקשר-אבחון בלבד**.
-   *
-   * 🔴 למה: כשה-initialize נכשל (timeout / ילד שלא עלה), שורת-השגיאה לא נשאה
-   * שום סימן זיהוי של הספק, ולכן אי אפשר היה לדעת בדיעבד איזה CLI נכשל —
-   * נתקלנו בזה חי ב-2026-08-16 ולא הצלחנו לשחזר מי היה שם. ⇒ כל תקלת-spawn
-   * הייתה חסרת-שם.
+   * cliKind from connect() — diagnostic context on failed ACP handshake.
+   * Kept on ConnEntry so spawn errors name the provider (2026-08-16 incident).
    */
   cliKind: string
-  /**
-   * slice ownership-handoff C4b + slice liveness C1: last time the owner sent a
-   * liveness signal (WS $/ping or HTTP presence).
-   * Separate from Owner.since (ownership transition time).
-   * Updated by touchOwner(); null when there is no owner. Transport-agnostic —
-   * the unified sweep in session-host/registry.ts decides transport on its own
-   * (via the explicit `via` check), never from lastSeenAt's null-ness.
-   */
+  /** lastSeenAt — owner liveness stamp (WS ping / HTTP presence). */
   lastSeenAt: number | null
+  /** slice agent-charter C2: project charter for first-prompt prepend. */
+  charter?: string
 }
 
 export type ConnectionRegistry = {
@@ -123,11 +111,14 @@ export type ConnectionRegistry = {
 
   get(agentId: string): ProviderConnection | undefined
 
-  /**
-   * getCwd — cwd שנמסר ל-connect() עבור agentId זה, או undefined אם לא רשום.
-   * נדרש ל-session-host/registry.ts (יצירת session אוטומטית — slice remote-session-view).
-   */
+  /** getCwd — cwd from connect(), or undefined if unknown. */
   getCwd(agentId: string): string | undefined
+
+  /** getCharter — stored charter text, or undefined. */
+  getCharter(agentId: string): string | undefined
+
+  /** consumeCharter — return stored charter once, then clear. */
+  consumeCharter(agentId: string): string | undefined
 
   /** getCliKind — הספק שנרשם ל-agentId, להקשר-אבחון בשורות-שגיאה. */
   getCliKind(agentId: string): string | undefined
@@ -334,6 +325,7 @@ export function createConnectionRegistry(opts?: {
           cwd: connectOpts.cwd,
           cliKind,
           lastSeenAt: null,
+          ...connCharterAtConnect(conn, connectOpts.systemPrompt),
         })
         return conn
       } finally {
@@ -347,6 +339,14 @@ export function createConnectionRegistry(opts?: {
 
     getCwd(agentId) {
       return map.get(agentId)?.cwd
+    },
+
+    getCharter(agentId) {
+      return getConnCharter(map.get(agentId))
+    },
+
+    consumeCharter(agentId) {
+      return consumeConnCharter(map.get(agentId))
     },
 
     getCliKind(agentId) {
