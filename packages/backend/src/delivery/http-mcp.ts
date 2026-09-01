@@ -12,7 +12,6 @@
  *
  * Kill switch: MCP_HTTP=0 skips registration (default ON).
  */
-
 import {
   AgentCloseInput,
   AgentOpenInput,
@@ -75,6 +74,7 @@ export type McpHttpDeps = {
   env: NodeJS.ProcessEnv
   urlConfig: UrlConfig
   eventBus?: AgentEventBus
+  memoryGuard?: import("./memory-guard.js").MemoryGuard
   /** Test knob when server has not listened (app.request without bind). */
   selfBaseUrl?: string
 }

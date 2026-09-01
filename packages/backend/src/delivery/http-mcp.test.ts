@@ -19,6 +19,7 @@ import { AGENT_ID_HEADER, DRIVE_CODING_AGENT_ID_ENV } from "../agent-identity.js
 import { setSelfBaseUrlForTests } from "../instances.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { createAgentEventBus } from "../session-host/agent-events.js"
+import * as readProcessRssMod from "../adapters/read-process-rss.js"
 import { registerMcpHttp } from "./http-mcp.js"
 
 type HostStub = {
@@ -826,5 +827,138 @@ describe("session_whoami (slice mcp-whoami)", () => {
     expect(body.hasParent).toBe(true)
     expect(body.parentAgentId).toBe(parent.id)
     expect(body.sessionId).toBe(`sess-${child.id}`)
+  })
+})
+
+describe("session_whoami runtime envelope (slice mcp-whoami-runtime)", () => {
+  it("includes backend.pid equal to process.pid and backend.memory.rssMB > 0", async () => {
+    const { app, registry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-backend" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as {
+      agent: string
+      backend?: {
+        pid: number
+        port: number
+        memory?: { rssMB: number; heapUsedMB: number; rssBudgetMB: number; overBudget: boolean }
+      }
+    }
+    expect(body.agent).toBe(agent.id)
+    expect(body.backend?.pid).toBe(process.pid)
+    expect(typeof body.backend?.memory?.rssMB).toBe("number")
+    expect(body.backend?.memory?.rssMB).toBeGreaterThan(0)
+    expect(body.backend?.port).toBe(4000)
+  })
+
+  it("backend.port comes from urlConfig not getSelfBaseUrl", async () => {
+    const env: NodeJS.ProcessEnv = {}
+    const app = new Hono()
+    const registry = createInMemoryAgentRegistry()
+    registerMcpHttp(app, {
+      registry,
+      orchestrator: makeOrchestrator(registry),
+      agentSessionRegistry: makeStubSessionRegistry(),
+      env,
+      urlConfig: { port: 4007, host: "127.0.0.1" },
+      eventBus: createAgentEventBus(),
+    })
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-port" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as { backend?: { port: number } }
+    expect(body.backend?.port).toBe(4007)
+  })
+
+  it("with cli running: runtime.cliPid is a number and memory has proc source", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-runtime" })
+    vi.mocked(agentSessionRegistry.getRuntimeInfo).mockReturnValue({
+      pid: 250735,
+      attached: true,
+      busy: false,
+      lastMessageAt: Date.now(),
+      lastSeenAt: Date.now(),
+      via: "http",
+    })
+    const rssSpy = vi
+      .spyOn(readProcessRssMod, "readProcessRss")
+      .mockReturnValue({ rssMB: 1840, source: "proc" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    rssSpy.mockRestore()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as {
+      runtime?: {
+        cliPid: number
+        attached: boolean
+        busy: boolean
+        via: string
+        memory: { rssMB: number; source: string } | null
+        source?: string
+      }
+    }
+    expect(typeof body.runtime?.cliPid).toBe("number")
+    expect(body.runtime?.cliPid).toBe(250735)
+    expect(body.runtime?.attached).toBe(true)
+    expect(body.runtime?.via).toBe("http")
+    expect(body.runtime?.memory).toEqual(
+      expect.objectContaining({ rssMB: expect.any(Number), source: "proc" }),
+    )
+    expect(body.runtime).not.toHaveProperty("memorySource")
+  })
+
+  it("without runtime info: runtime.memory null and source unavailable", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-no-rt" })
+    vi.mocked(agentSessionRegistry.getRuntimeInfo).mockReturnValue(null)
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as {
+      runtime?: { cliPid: null; memory: null; source: string }
+    }
+    expect(body.runtime?.cliPid).toBeNull()
+    expect(body.runtime?.memory).toBeNull()
+    expect(body.runtime?.source).toBe("unavailable")
+  })
+
+  it("publicBaseUrl omitted when urlConfig.publicBaseUrl unset", async () => {
+    const { app, registry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-pub" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as { backend?: { publicBaseUrl?: string } }
+    expect(body.backend).toBeDefined()
+    expect(body.backend).not.toHaveProperty("publicBaseUrl")
+  })
+
+  it("publicBaseUrl from urlConfig when set", async () => {
+    const env: NodeJS.ProcessEnv = {}
+    const app = new Hono()
+    const registry = createInMemoryAgentRegistry()
+    registerMcpHttp(app, {
+      registry,
+      orchestrator: makeOrchestrator(registry),
+      agentSessionRegistry: makeStubSessionRegistry(),
+      env,
+      urlConfig: { port: 4000, host: "127.0.0.1", publicBaseUrl: "https://public.example.com" },
+      eventBus: createAgentEventBus(),
+    })
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-pub-set" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as { backend?: { publicBaseUrl?: string } }
+    expect(body.backend?.publicBaseUrl).toBe("https://public.example.com")
   })
 })
