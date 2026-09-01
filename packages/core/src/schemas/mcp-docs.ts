@@ -50,7 +50,42 @@ To apply a change, pass those ids on \`session_send.sets\` before the prompt. If
 
 When drive-coding injects this server into a child agent, requests include \`X-Drive-Coding-Agent: <uuid>\`.
 That sets the caller identity for **session_open** (\`parentAgentId\`) and enables **notify_parent** for child agents.
-Call **session_whoami** (no parameters) to discover your own agent UUID from that header — the server does not guess from ENV.
+Call **session_whoami** (no parameters) to discover your own agent UUID and runtime context from that header — the server does not guess from ENV.
+
+Example response (fields may be omitted when unavailable):
+
+\`\`\`json
+{
+  "agent": "<uuid>",
+  "cliKind": "cursor",
+  "cwd": "/abs/agent/cwd",
+  "hasParent": false,
+  "sessionId": "<acp-session>",
+  "backend": {
+    "pid": 591395,
+    "port": 4004,
+    "version": "0.19.0",
+    "uptimeSec": 323,
+    "publicBaseUrl": "https://example.test",
+    "cwd": "/path/to/backend",
+    "memory": {
+      "rssMB": 412,
+      "heapUsedMB": 89,
+      "rssBudgetMB": 1500,
+      "overBudget": false
+    }
+  },
+  "runtime": {
+    "cliPid": 250735,
+    "attached": true,
+    "busy": false,
+    "via": "http",
+    "memory": { "rssMB": 1840, "source": "proc" }
+  }
+}
+\`\`\`
+
+When child RSS cannot be measured (Windows, stale pid, /proc failure): \`runtime.memory\` is \`null\` and \`runtime.source\` is \`"unavailable"\`. Child memory is Linux-only in v1.
 
 There is **no authentication** — any client that can reach the URL can list, open, prompt, or close agents.
 
@@ -109,7 +144,7 @@ export const MCP_TOOL_META: Record<
   session_whoami: {
     title: "Who am I",
     description:
-      "Discovery only — not authentication. Return the caller's agent UUID already resolved from X-Drive-Coding-Agent. No parameters. Missing or unknown header → error; the server does not guess from ENV.",
+      "Discovery only — not authentication. Return the caller's identity (agent UUID, cliKind, cwd, parent, sessionId) plus backend envelope (pid, port, version, uptimeSec, publicBaseUrl, memory budget) and runtime envelope (cli pid, attached, busy, via, child RSS on Linux). No parameters. Missing or unknown header → error; the server does not guess from ENV. Child memory is Linux-only in v1; Windows returns runtime.memory null with source unavailable.",
   },
 }
 
