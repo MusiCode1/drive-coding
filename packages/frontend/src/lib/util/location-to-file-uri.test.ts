@@ -26,9 +26,7 @@ describe("locationToFileUri", () => {
   })
 
   it("passes file:// URIs through unchanged", () => {
-    expect(locationToFileUri({ path: "file:///tmp/a.pdf" }, "/home/u/p")).toBe(
-      "file:///tmp/a.pdf",
-    )
+    expect(locationToFileUri({ path: "file:///tmp/a.pdf" }, "/home/u/p")).toBe("file:///tmp/a.pdf")
   })
 
   it("returns null for ~ paths", () => {
