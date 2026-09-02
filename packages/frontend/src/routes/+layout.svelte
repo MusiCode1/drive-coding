@@ -1,17 +1,6 @@
 <script lang="ts">
 /**
- * Composition root — מאתחל (instantiates) את כל ה-view-models הראשיים ומחבר
- * אותם לקונטקסט. זהו המקום היחיד באפליקציה שבו קוראים ל-`new <VM>()`.
- *
- * ─── עיצוב תוספתי בטוח למקביליות ───
- *
- * הוספת VM חדש:
- *   1. הוסף `import { Foo } from "$lib/view-models/foo.svelte"` לייבואים.
- *   2. הוסף בלוק `// ─── <domain> ───` חדש באזור למטה.
- *      לסדר יש חשיבות רק כאשר VM תלוי באחר (הצהר קודם על תלויות).
- *   3. הוסף `setFoo(foo)` בבלוק ה-setContext המתאים.
- *
- * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
+ * Composition root — view-models + setContext. Additive-only; see parallel-safe-code.md.
  */
 import PlaybackDebugPanel from "$lib/components/debug/PlaybackDebugPanel.svelte"
 import "../app.css"
@@ -304,6 +293,12 @@ const dcOptIn = typeof localStorage !== "undefined" && localStorage.getItem("__d
 if (__DC_ENABLED__ || dcOptIn) {
   void installDebugSurface()
 }
+
+// ─── pending-capture ─── (slice voice-pending-persistence)
+onMount(() => {
+  void mic.hydratePending()
+  void dictate.hydratePending()
+})
 
 // ─── config-change-socket ─── (slice cli-specs-hot-reload)
 // Wiring only: the socket, lifecycle and reconnect live in the engine (golden rule
