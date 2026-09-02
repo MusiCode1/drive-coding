@@ -14,6 +14,7 @@ import CircleCheckBigIcon from "@lucide/svelte/icons/circle-check-big"
 import CircleDotIcon from "@lucide/svelte/icons/circle-dot"
 import FileTextIcon from "@lucide/svelte/icons/file-text"
 import { getContentViewer, getI18n, getSession } from "$lib/context"
+import { entriesToMarkdown } from "$lib/util/entries-to-markdown"
 
 const session = getSession()
 const t = getI18n().t
@@ -51,6 +52,14 @@ function openMarkdown(content: string): void {
             </li>
           {/each}
         </ul>
+        <button
+          type="button"
+          class="plan-markdown-btn"
+          onclick={() => openMarkdown(entriesToMarkdown(item.entries))}
+        >
+          <FileTextIcon size={13} strokeWidth={2} />
+          {t("plan.openMarkdown")}
+        </button>
       {:else if item?.kind === "markdown"}
         <!-- PlanMarkdown → content-viewer הקיים (הצגת "בריף" לאישור) -->
         <button class="plan-markdown-btn" onclick={() => openMarkdown(item.content)}>

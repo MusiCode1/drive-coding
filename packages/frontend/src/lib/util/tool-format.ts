@@ -207,3 +207,5 @@ export function normalizeToolOutput(rawOutput: unknown): ToolOutputView {
 
   return { kind: "json", json: prettyJson(rawOutput) }
 }
+
+export { locationToFileUri } from "./location-to-file-uri"

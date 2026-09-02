@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { findFilePathMatches, resolveFileUri } from "./file-path-links"
+import { findFilePathMatches, hasViewableExt, resolveFileUri } from "./file-path-links"
 
 const raws = (t: string) => findFilePathMatches(t).map((m) => m.raw)
 
@@ -49,6 +49,32 @@ describe("findFilePathMatches", () => {
     const [m] = findFilePathMatches(t)
     expect(m).toBeDefined()
     expect(t.slice(m?.start ?? 0, m?.end ?? 0)).toBe("x/y.md")
+  })
+})
+
+describe("hasViewableExt", () => {
+  it("accepts proxy allowlist extensions", () => {
+    expect(hasViewableExt("AGENTS.md")).toBe(true)
+    expect(hasViewableExt("/tmp/a.png")).toBe(true)
+    expect(hasViewableExt("notes.txt")).toBe(true)
+    expect(hasViewableExt("doc.pdf")).toBe(true)
+    expect(hasViewableExt("photo.jpeg")).toBe(true)
+    expect(hasViewableExt("icon.svg")).toBe(true)
+  })
+
+  it("rejects extensions outside the allowlist", () => {
+    expect(hasViewableExt("server.ts")).toBe(false)
+    expect(hasViewableExt("index.html")).toBe(false)
+  })
+
+  it("returns false when there is no extension", () => {
+    expect(hasViewableExt("README")).toBe(false)
+    expect(hasViewableExt("/tmp/noext")).toBe(false)
+  })
+
+  it("is case-insensitive", () => {
+    expect(hasViewableExt("IMAGE.PNG")).toBe(true)
+    expect(hasViewableExt("Brief.MD")).toBe(true)
   })
 })
 

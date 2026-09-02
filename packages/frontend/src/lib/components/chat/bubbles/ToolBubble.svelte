@@ -12,8 +12,8 @@
  * ─── redesign-5 (C2) ───
  */
 import type { ToolBubble, ToolCall } from "$lib/types/bubble"
-import { getContentViewer, getI18n, getSettings, getChatScroll } from "$lib/context"
-import { prettyJson, formatLocation } from "$lib/util/tool-format"
+import { getContentViewer, getI18n, getSettings, getChatScroll, getSession } from "$lib/context"
+import { prettyJson, formatLocation, locationToFileUri } from "$lib/util/tool-format"
 import { normalizeToolCall } from "$lib/util/tool-call-view"
 import Maximize2Icon from "@lucide/svelte/icons/maximize-2"
 import ToolKindIcon from "./ToolKindIcon.svelte"
@@ -116,7 +116,21 @@ function asFencedCode(text: string): string {
             <div class="section-label">{t("chat.tool.locations")}</div>
             <ul class="font-mono text-[11px] opacity-80 list-none p-0 m-0">
               {#each tc.locations as loc}
-                <li>{formatLocation(loc)}</li>
+                {@const uri = locationToFileUri(loc, getSession().cwd)}
+                {#if uri}
+                  <li>
+                    <button
+                      type="button"
+                      class="loc-open"
+                      onclick={() => viewer.show({ kind: "file", uri, title: loc.path })}
+                      aria-label={t("contentViewer.expand")}
+                    >
+                      {formatLocation(loc)}
+                    </button>
+                  </li>
+                {:else}
+                  <li>{formatLocation(loc)}</li>
+                {/if}
               {/each}
             </ul>
           </div>
@@ -380,6 +394,21 @@ function asFencedCode(text: string): string {
     transition: opacity 0.15s;
   }
   .tool-image-btn:hover .tool-image { opacity: 0.85; }
+
+  .loc-open {
+    font: inherit;
+    font-family: ui-monospace, monospace;
+    font-size: inherit;
+    color: inherit;
+    opacity: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0;
+    text-align: inherit;
+    cursor: pointer;
+  }
+  .loc-open:hover { text-decoration: underline; }
 
   .hidden { display: none; }
 </style>
