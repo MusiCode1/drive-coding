@@ -30,6 +30,10 @@ export const en: Catalog = {
   "chat.bubble.user": "Me",
   "chat.bubble.thought": "Thought",
   "chat.bubble.agent": "Agent",
+  "chat.activityGroup.tools": "actions",
+  "chat.activityGroup.thoughts": "thoughts",
+  "chat.activityGroup.expand": "Show actions",
+  "chat.activityGroup.collapse": "Hide actions",
   "chat.empty": "Start typing below…",
   "chat.error.dismiss": "Dismiss error",
   "chat.prompt.placeholder": "Type a prompt…",
@@ -187,6 +191,7 @@ export const en: Catalog = {
   "header.audioOff": "Unmute audio",
   "sidebar.collapse": "Collapse panel",
   "sidebar.agentOptions": "Agent options",
+  "sidebar.display": "Display",
   "sidebar.sessions": "Sessions",
   "sidebar.refresh": "Refresh",
   "sidebar.newSession": "New session",
@@ -245,6 +250,7 @@ export const en: Catalog = {
   "settings.toggle.autoLoadRemoteImages":
     "Load remote images automatically — your browser will fetch any URL the agent emits, which can expose you",
   "settings.toggle.showTools": "Show tools by default",
+  "settings.toggle.compactActivity": "Clean reading",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter sends message",
   // ─── content-viewer ─── (slice content-viewer)

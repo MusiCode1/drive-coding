@@ -642,7 +642,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/settings/SettingsScreen.svelte": {
-      "metric": 200,
+      "metric": 199,
       "impurity": 6,
       "class": "mixed"
     },
@@ -902,7 +902,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/settings.svelte.ts": {
-      "metric": 660,
+      "metric": 659,
       "impurity": 6,
       "class": "mixed"
     },

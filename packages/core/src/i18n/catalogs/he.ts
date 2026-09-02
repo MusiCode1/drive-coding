@@ -26,6 +26,10 @@ export const he: Catalog = {
   "chat.bubble.user": "אני",
   "chat.bubble.thought": "מחשבה",
   "chat.bubble.agent": "סוכן",
+  "chat.activityGroup.tools": "פעולות",
+  "chat.activityGroup.thoughts": "מחשבות",
+  "chat.activityGroup.expand": "הצג פעולות",
+  "chat.activityGroup.collapse": "הסתר פעולות",
   "chat.empty": "התחל לכתוב למטה…",
   "chat.error.dismiss": "סגור שגיאה",
   "chat.prompt.placeholder": "כתוב prompt…",
@@ -182,6 +186,7 @@ export const he: Catalog = {
   "header.audioOff": "הפעל שמע",
   "sidebar.collapse": "קפל פאנל",
   "sidebar.agentOptions": "אפשרויות סוכן",
+  "sidebar.display": "תצוגה",
   "sidebar.sessions": "סשנים",
   "sidebar.refresh": "רענן",
   "sidebar.newSession": "סשן חדש",
@@ -240,6 +245,7 @@ export const he: Catalog = {
   "settings.toggle.autoLoadRemoteImages":
     "טען תמונות מרוחקות אוטומטית — הדפדפן יפנה לכל כתובת שהסוכן פלט, וכך עלול לחשוף אותך",
   "settings.toggle.showTools": "הצג כלים כברירת מחדל",
+  "settings.toggle.compactActivity": "קריאה נקייה",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter שולח הודעה",
   // ─── content-viewer ─── (slice content-viewer)
