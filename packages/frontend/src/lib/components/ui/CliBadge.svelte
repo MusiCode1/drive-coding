@@ -26,13 +26,12 @@
  * `isRemoteLogo()`) — הדפדפן מושך אותו **ישירות** (`<img src={logo}>`), לא דרך
  * ה-BE. ה-BE לעולם לא מושך URL מרוחק מטעם ה-client — זה משטח-SSRF.
  */
-import { beUrl } from "$lib/util/be-url"
 import {
   cliColorHue,
   cliDisplayName,
   cliLogoKey,
   cliMonogram,
-  isRemoteLogo,
+  resolveCliLogoUrl,
 } from "$lib/util/cli-display"
 
 interface Props {
@@ -51,12 +50,8 @@ const monogram = $derived(cliMonogram(label))
 const hue = $derived(cliColorHue(id))
 const monogramBg = $derived(`color-mix(in srgb, hsl(${hue} 70% 55%) 22%, transparent)`)
 const monogramFg = $derived(`hsl(${hue} 70% 45%)`)
-// 🔴 logo מרוחק (http/https, slice cli-logo-serving Commit 3) → הדפדפן מושך
-// ישירות מה-URL. logo מקומי (נתיב-קובץ) → דרך ה-BE (id-keyed, §3 בבריף). ה-BE
-// **אף פעם** לא נוגע ב-URLs מרוחקים — אחרת ה-endpoint הופך ל-proxy עם משטח-SSRF.
-const logoUrl = $derived(
-  logo ? (isRemoteLogo(logo) ? logo : beUrl(`/api/cli-logo/${id}`)) : undefined,
-)
+// resolveCliLogoUrl: מרוחק | static same-origin (/logos/…) | קובץ מקומי (/api/cli-logo).
+const logoUrl = $derived(logo ? resolveCliLogoUrl(id, logo) : undefined)
 
 // 🔴 `failed` חייב להתאפס כש-id/logo משתנים — אחרת אחרי החלפת CLI שבור אחד,
 // הנפילה-למונוגרמה "דבקה" גם ל-CLI הבא (לא רק לזה שבאמת נכשל). cliLogoKey

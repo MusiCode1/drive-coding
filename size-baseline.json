@@ -557,7 +557,7 @@
       "class": "pure"
     },
     "packages/frontend/src/lib/components/ui/CliBadge.svelte": {
-      "metric": 68,
+      "metric": 63,
       "impurity": 1,
       "class": "mixed"
     },

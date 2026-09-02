@@ -5,7 +5,15 @@
  * רכיב חדש לגמרי, כולל הטיפול בשם לא-לטיני/emoji.
  */
 import { describe, expect, it } from "vitest"
-import { cliColorHue, cliDisplayName, cliLogoKey, cliMonogram, isRemoteLogo } from "./cli-display"
+import {
+  cliColorHue,
+  cliDisplayName,
+  cliLogoKey,
+  cliMonogram,
+  isRemoteLogo,
+  isStaticLogoPath,
+  resolveCliLogoUrl,
+} from "./cli-display"
 
 describe("cliDisplayName", () => {
   it("displayName קיים → מוחזר כמו שהוא", () => {
@@ -97,6 +105,46 @@ describe("cliLogoKey (slice cli-logo-serving, Commit 1)", () => {
   it("אין התנגשות-שרשור מקרית: (id='a',logo='bc') שונה מ-(id='ab',logo='c')", () => {
     // שרשור נאיבי (id+logo) היה מייצר "abc" משני הצדדים — המפריד מונע התנגשות זו.
     expect(cliLogoKey("a", "bc")).not.toBe(cliLogoKey("ab", "c"))
+  })
+})
+
+describe("resolveCliLogoUrl (slice cli-logo-serving)", () => {
+  it("https:// → as-is", () => {
+    expect(resolveCliLogoUrl("pi", "https://cdn.example/logo.svg")).toBe(
+      "https://cdn.example/logo.svg",
+    )
+  })
+
+  it("/logos/… → same-origin static via beUrl", () => {
+    expect(resolveCliLogoUrl("cursor-sdk", "/logos/cli/cursor-sdk.svg")).toBe(
+      "/logos/cli/cursor-sdk.svg",
+    )
+  })
+
+  it("נתיב-קובץ מקומי (לא /logos/) → /api/cli-logo/:id", () => {
+    expect(resolveCliLogoUrl("pi", "/tmp/pi.png")).toBe("/api/cli-logo/pi")
+  })
+})
+
+describe("isStaticLogoPath (slice cli-logo-theme)", () => {
+  it("/logos/cli/claude.svg → true", () => {
+    expect(isStaticLogoPath("/logos/cli/claude.svg")).toBe(true)
+  })
+
+  it("/tmp/x.png → false", () => {
+    expect(isStaticLogoPath("/tmp/x.png")).toBe(false)
+  })
+
+  it("https://… → false", () => {
+    expect(isStaticLogoPath("https://example.com/logo.svg")).toBe(false)
+  })
+
+  it("מחרוזת ריקה → false", () => {
+    expect(isStaticLogoPath("")).toBe(false)
+  })
+
+  it("https://x/logos/cli/x.svg → false — לא startsWith /logos/", () => {
+    expect(isStaticLogoPath("https://x/logos/cli/x.svg")).toBe(false)
   })
 })
 
