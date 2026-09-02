@@ -57,7 +57,7 @@ let {
 } = $props()
 
 const responsive = getResponsive()
-const session = getSession()
+const session = getSession(), settings = getSettings()
 const modelStatus = getModelStatus()
 const playlist = getAudioPlaylist()
 const uiShell = getUiShell()
@@ -160,7 +160,7 @@ function checkEdges(): void {
  */
 function jumpToBottom(): void {
   const handle = chatScroll.handle
-  const len = groupActivityRuns(session.renderBubbles, getSettings().compactActivity).length
+  const len = groupActivityRuns(session.renderBubbles, settings.compactActivity).length
   if (handle && len > 0) {
     handle.scrollToIndex(len - 1, { align: "end" })
   } else if (scrollEl) {
