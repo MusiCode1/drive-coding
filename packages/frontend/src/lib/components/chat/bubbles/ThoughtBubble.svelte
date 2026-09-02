@@ -19,6 +19,7 @@ import type { ThoughtBubble } from "$lib/types/bubble"
 import { getI18n, getSettings, getChatScroll } from "$lib/context"
 import { joinSegmentText, visibleThoughtSegments } from "./bubble-rendering"
 import MarkdownContent from "./MarkdownContent.svelte"
+import { settingBackedOpen } from "./setting-backed-open.svelte"
 import { onMount } from "svelte"
 
 let { bubble }: { bubble: ThoughtBubble } = $props()
@@ -32,9 +33,7 @@ const isAllOriginal = $derived(displaySegments.every((seg) => seg.originalText =
 // join לטקסט רץ אחד כשהמקור (לא מתורגם)
 const runningText = $derived(isAllOriginal ? joinSegmentText(displaySegments) : null)
 
-// local state — מאותחל פעם אחת מה-setting, לא נגזר ממנו reactively.
-// מונע snap-back כשה-effect של bubble.segments.length רץ מחדש.
-let open = $state(settings.showThoughts)
+const open = settingBackedOpen(() => settings.showThoughts)
 
 // ─── toggle-intent (slice chat-virtualization, Commit 3 / fix) ───
 // chatScroll נקרא ב-component init (חוקי) — לא בתוך ה-callback.
@@ -51,7 +50,7 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
   class="px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed italic border border-dashed min-w-0 max-w-[85%] break-words"
   style="border-color:var(--border-str); color:var(--fg-dim)"
 >
-    <details bind:open ontoggle={onUserToggle}>
+    <details bind:open={open.value} ontoggle={onUserToggle}>
       <summary class="text-[11px] font-semibold not-italic opacity-70 mb-1 cursor-pointer thought-summary">
         {t("chat.bubble.thought")}
       </summary>

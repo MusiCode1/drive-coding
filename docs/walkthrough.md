@@ -1,3 +1,28 @@
+## 2026-09-03 01:32
+
+### מתג מחשבות/כלים פותח וסוגר בועות שכבר בתצוגה
+
+שינוי `showThoughts` / `showTools` מעדכן את `<details>` של בועות mounted, לא רק של בועות ש-virtua יוצר מחדש בגלילה.
+
+#### מה בוצע?
+
+**1. ממשק**
+
+- `setting-backed-open.svelte.ts` — `$state` + `$effect` צר על ה-boolean בלבד.
+- `ThoughtBubble` / `ToolBubble` — `bind:open={open.value}`.
+- לא `$derived`: לחיצה ידנית על בועה אחת נשארת.
+
+**2. ratchet**
+
+- `$effect` הוצא מהקומפוננטה (`ToolBubble` היה 54/0 → impurity). baseline נכתב למטה ל-53/0.
+
+#### בדיקות
+
+- lint:size + lint:i18n עברו.
+- פריוויו חי על edge (עין משתמשת: להשאיר).
+
+---
+
 ## 2026-08-31 — config defaults live only in CONFIG_SPECS
 
 Product defaults for catalogued config keys (`port`, `host`, `rssBudgetMb`, `httpOwnerTtlMs`, `opencodeBin`) now live on `CONFIG_SPECS[].default` and are applied in `resolveConfig`. Consumers call `configDefault(...)` — no more `?? 4000` / `DEFAULT_HTTP_OWNER_TTL_MS` at the call site.
