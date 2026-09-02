@@ -321,11 +321,13 @@ $effect(() => {
       <SettingToggle
         label={t("settings.toggle.showThoughts")}
         checked={settings.showThoughts}
+        disabled={settings.compactActivity}
         onCheckedChange={(v) => settings.setShowThoughts(v)}
       />
       <SettingToggle
         label={t("settings.toggle.showTools")}
         checked={settings.showTools}
+        disabled={settings.compactActivity}
         onCheckedChange={(v) => settings.setShowTools(v)}
       />
       <SettingToggle
