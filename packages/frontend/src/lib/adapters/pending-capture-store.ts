@@ -7,14 +7,10 @@
 import {
   parsePendingCapture,
   type PendingCapture,
+  type PendingCaptureStore,
 } from "@drive-coding/core/voice/pending-capture"
 
-export type PendingCaptureStore = {
-  load(): Promise<{ capture: PendingCapture; blob: Blob } | null>
-  save(capture: PendingCapture, blob: Blob): Promise<void>
-  updateMeta(id: string, patch: Partial<PendingCapture>): Promise<void>
-  remove(id: string): Promise<void>
-}
+export type { PendingCaptureStore }
 
 const DB_NAME = "drive-coding-pending"
 const DB_VERSION = 1

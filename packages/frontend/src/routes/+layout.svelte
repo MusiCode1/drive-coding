@@ -49,6 +49,7 @@ import { installDebugSurface } from "$lib/debug/dc"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import { createConfigChangeSocket } from "$lib/engines/config-change-socket"
 import { CuesEngine } from "$lib/engines/cues"
+import { createPendingCaptureWiring } from "$lib/engines/pending-capture-wiring"
 import { PlayableSink } from "$lib/engines/playable-sink"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { normalizeSessionTransport } from "$lib/session/session-transport"
@@ -99,13 +100,11 @@ const session = new AgentSession({ cues, settings })
 // AudioPlaylist נוצר לפני Speaker כי Speaker מקבל אותו כ-dependency.
 const sharedAudioStream = new PlayableSink()
 const sharedOrderAlloc = new OrderAllocator()
-// onPlaybackStart: cue "speaking" — guard #spokeThisTurn ב-Speaker
-// (Speaker יגדיר callback דרך onPlaybackStart בלבד — לא מוגדר כאן ישירות,
-//  כי Speaker צריך לבדוק #spokeThisTurn שלו. פתרון: Speaker ירשום callback לאחר init.)
 const audioPlaylist = new AudioPlaylist(sharedAudioStream)
 
-// ─── mic ─── (slice 3 — תלוי ב-session + cues)
-const mic = new Mic({ session, cues })
+// ─── mic ─── (slice 3; voice-pending-persistence recovery)
+const { micRecovery } = createPendingCaptureWiring()
+const mic = new Mic({ session, cues, recovery: micRecovery })
 
 // ─── composer-draft ─── (slice dictate-to-input)
 const composerDraft = new ComposerDraft()

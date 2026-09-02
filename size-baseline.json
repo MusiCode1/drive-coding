@@ -812,7 +812,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/routes/+layout.svelte": {
-      "metric": 331,
+      "metric": 330,
       "impurity": 13,
       "class": "mixed"
     },

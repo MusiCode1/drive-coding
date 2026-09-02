@@ -33,3 +33,10 @@ export function parsePendingCapture(value: unknown): PendingCapture | null {
   if (result instanceof type.errors) return null
   return result as PendingCapture
 }
+
+export type PendingCaptureStore = {
+  load(): Promise<{ capture: PendingCapture; blob: Blob } | null>
+  save(capture: PendingCapture, blob: Blob): Promise<void>
+  updateMeta(id: string, patch: Partial<PendingCapture>): Promise<void>
+  remove(id: string): Promise<void>
+}

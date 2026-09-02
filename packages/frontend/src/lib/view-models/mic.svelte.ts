@@ -5,15 +5,8 @@
  * מכונת מצבים (State machine): idle → recording → transcribing → idle
  *
  * בתעתיק מוצלח, שולח את הטקסט אל AgentSession.sendPrompt().
- * ה-recordingId מועבר הלאה (slice 10 יחבר לזה את ה-endpoint האמיתי ב-BE;
- * כרגע הוא תמיד "").
  *
- * השדה error שומר MessageKey כדי שהקומפוננטה תוכל לתרגם אותו בעזרת t().
- *
- * ─── slice sessions-inline: blob שמירה + retryTranscribe + canRetry ───
- * #lastBlob — שומר את הבלוב של ההקלטה האחרונה כאשר תמלול נכשל.
- * retryTranscribe() — מנסה שוב לתמלל את ה-blob השמור (public).
- * canRetry — getter שמחזיר true אם יש blob שמור (לUI).
+ * ─── slice voice-pending-persistence: IndexedDB pending + retry/dismiss/hydrate ───
  */
 
 import type { MessageKey } from "@drive-coding/core/i18n"
@@ -24,38 +17,54 @@ import { transcribe } from "../adapters/voice/transcribe"
 
 export type MicState = "idle" | "recording" | "transcribing"
 
+type MicTranscribeContext = {
+  transcribe: (blob: Blob) => Promise<{ text: string; recordingId: string }>
+  onSend?: (text: string, recordingId: string) => void
+}
+
+type MicProcessOutcome =
+  | { ok: true; text: string; recordingId: string }
+  | { ok: false; error: MessageKey }
+
+/** Injected from +layout — keeps adapter/engine wiring out of this VM. */
+export type MicPendingRecovery = {
+  readonly hasPending: boolean
+  hydrate(): Promise<{ lastError?: MessageKey } | null>
+  dismiss(): Promise<void>
+  processBlob(
+    blob: Blob,
+    mimeType: string,
+    ctx: MicTranscribeContext,
+  ): Promise<MicProcessOutcome>
+  retry(ctx: MicTranscribeContext): Promise<MicProcessOutcome>
+}
+
 export class Mic {
   state: MicState = $state("idle")
   error: MessageKey | null = $state(null)
+  pendingRestored = $state(false)
 
   readonly #session: AgentSession
   readonly #recorder: Recorder
   readonly #cues?: CuesEngine
-  // ─── slice sessions-inline: blob שמירה ───
-  #lastBlob: Blob | null = null
+  readonly #recovery: MicPendingRecovery
 
-  constructor(opts: { session: AgentSession; cues?: CuesEngine }) {
+  constructor(opts: { session: AgentSession; cues?: CuesEngine; recovery: MicPendingRecovery }) {
     this.#session = opts.session
     this.#recorder = new Recorder()
     this.#cues = opts.cues
+    this.#recovery = opts.recovery
   }
 
-  // ─── slice sessions-inline: getter ל-UI ───
-  /** מחזיר true אם יש blob שמור מהקלטה שתמלולה נכשל — אפשרות לנסות שוב. */
   get canRetry(): boolean {
-    return this.#lastBlob !== null
+    return this.#recovery.hasPending
   }
 
-  /**
-   * נקודת כניסה יחידה — ה-MicButton קורא לזה. מתנהג בהתאם למצב (state):
-   *   idle        → תחילת הקלטה
-   *   recording   → עצירה, תעתיק (transcribe), ושליחת פרומפט
-   *   transcribing → חוסר פעולה (no-op) (הכפתור מנוטרל)
-   */
   toggle = async (): Promise<void> => {
     if (this.state === "idle") {
       this.state = "recording"
       this.error = null
+      this.pendingRestored = false
       try {
         await this.#recorder.start()
       } catch (e: unknown) {
@@ -69,19 +78,19 @@ export class Mic {
         }
         return
       }
-      // slice 6: cue אחרי הרשאה הוענקה + הקלטה התחילה בפועל
       this.#cues?.play("recordingStart")
       return
     }
 
     if (this.state === "recording") {
       this.state = "transcribing"
-      // slice 6: cue מיד אחרי מעבר ל-transcribing (הקלטה הסתיימה)
       this.#cues?.play("recordingStop")
       let blob: Blob
+      let mimeType: string
       try {
         const result = await this.#recorder.stop()
         blob = result.blob
+        mimeType = result.mimeType
       } catch (e: unknown) {
         this.state = "idle"
         console.warn("[mic] recorder.stop() failed", e)
@@ -89,69 +98,63 @@ export class Mic {
         return
       }
 
-      // ─── slice sessions-inline: שמור blob לפני תמלול ───
-      this.#lastBlob = blob
-      await this.#runTranscribe(blob)
+      await this.#runTranscribe(blob, mimeType)
       return
     }
-
-    // transcribing → חוסר פעולה (no-op)
   }
 
-  /**
-   * מנסה שוב לתמלל את ההקלטה האחרונה ששמורה (אחרי כשל). no-op אם אין blob שמור.
-   * ─── slice sessions-inline ───
-   */
   retryTranscribe = async (): Promise<void> => {
-    if (this.#lastBlob === null) return
+    if (!this.#recovery.hasPending) return
     if (this.state !== "idle") return
     this.state = "transcribing"
     this.error = null
-    await this.#runTranscribe(this.#lastBlob)
+    this.pendingRestored = false
+    const outcome = await this.#recovery.retry(this.#transcribeContext())
+    this.state = "idle"
+    if (!outcome.ok) {
+      this.error = outcome.error
+    }
   }
 
-  /**
-   * ביטול באמצע הקלטה. נקרא על ידי VoiceMode.cancel() (slice 7 יוסיף גם
-   * כפתור ביטול ייעודי). עוצר את המקליט (recorder) ללא שליחת פרומפט.
-   */
+  hydratePending = (): Promise<void> => {
+    return this.#recovery.hydrate().then((capture) => {
+      if (!capture) return
+      this.pendingRestored = true
+      if (capture.lastError) {
+        this.error = capture.lastError
+      }
+    })
+  }
+
+  dismiss = (): Promise<void> => {
+    return this.#recovery.dismiss().then(() => {
+      this.error = null
+      this.pendingRestored = false
+    })
+  }
+
   cancel(): void {
     if (this.state === "recording") {
-      // עצור את המקליט מבלי לעבד את התוצאה
       void this.#recorder.stop().catch(() => {})
       this.state = "idle"
       this.error = null
     }
-    // במצב transcribing: אי אפשר לבטל בקשת Gemini שיצאה לדרך ב-MVP הנוכחי.
-    // המצב יחזור באופן טבעי ל-idle אחרי ש-transcribe() יסתיים (resolves/rejects).
   }
 
-  // ─── פרטי: לוגיקת transcribe משותפת ל-toggle ו-retryTranscribe ───
-
-  /**
-   * מריץ תמלול על blob נתון. אחראי על עדכון state, error, ו-#lastBlob.
-   * ב-catch: משאיר #lastBlob שמור (לא מאפס) כדי לאפשר retryTranscribe.
-   * בהצלחה: מאפס #lastBlob (לא צריך יותר).
-   */
-  #runTranscribe = async (blob: Blob): Promise<void> => {
-    let text: string
-    let recordingId: string
-    try {
-      const result = await transcribe(blob)
-      text = result.text
-      recordingId = result.recordingId
-    } catch (e: unknown) {
-      this.state = "idle"
-      console.warn("[mic] transcribe() failed", e)
-      this.error = "mic.error.transcribe"
-      // #lastBlob נשמר — המשתמש יכול לנסות שוב דרך retryTranscribe()
-      return
+  #transcribeContext(): MicTranscribeContext {
+    return {
+      transcribe: (blob) => transcribe(blob),
+      onSend: (text, recordingId) => {
+        void this.#session.sendPrompt(text, { recordingId })
+      },
     }
+  }
 
-    // הצלחה: נקה blob (לא צריך יותר)
-    this.#lastBlob = null
-    if (text.trim().length > 0) {
-      void this.#session.sendPrompt(text, { recordingId })
-    }
+  #runTranscribe = async (blob: Blob, mimeType: string): Promise<void> => {
+    const outcome = await this.#recovery.processBlob(blob, mimeType, this.#transcribeContext())
     this.state = "idle"
+    if (!outcome.ok) {
+      this.error = outcome.error
+    }
   }
 }
