@@ -182,6 +182,7 @@ export const he: Catalog = {
   "header.audioOff": "הפעל שמע",
   "sidebar.collapse": "קפל פאנל",
   "sidebar.agentOptions": "אפשרויות סוכן",
+  "sidebar.display": "תצוגה",
   "sidebar.sessions": "סשנים",
   "sidebar.refresh": "רענן",
   "sidebar.newSession": "סשן חדש",
@@ -239,6 +240,7 @@ export const he: Catalog = {
   "settings.toggle.autoLoadRemoteImages":
     "טען תמונות מרוחקות אוטומטית — הדפדפן יפנה לכל כתובת שהסוכן פלט, וכך עלול לחשוף אותך",
   "settings.toggle.showTools": "הצג כלים כברירת מחדל",
+  "settings.toggle.compactActivity": "קריאה נקייה",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter שולח הודעה",
   // ─── content-viewer ─── (slice content-viewer)

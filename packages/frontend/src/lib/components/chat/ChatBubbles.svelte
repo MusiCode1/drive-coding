@@ -16,7 +16,7 @@
  * {#if chatScroll.scrollEl} מונע mount לפני שה-scrollEl קיים.
  */
 import { Virtualizer, type VirtualizerHandle } from "virtua/svelte"
-import { getChatScroll, getI18n, getSession } from "$lib/context"
+import { getChatScroll, getI18n, getSession, getSettings } from "$lib/context"
 import BubbleRenderer from "./BubbleRenderer.svelte"
 import ActivityGroupBubble from "./bubbles/ActivityGroupBubble.svelte"
 import { groupActivityRuns } from "./bubbles/activity-groups"
@@ -26,10 +26,11 @@ import PlanChecklist from "./PlanChecklist.svelte"
 import StatusBubble from "./StatusBubble.svelte"
 
 const session = getSession()
+const settings = getSettings()
 const t = getI18n().t
 const chatScroll = getChatScroll()
 
-const items = $derived(groupActivityRuns(session.renderBubbles, false))
+const items = $derived(groupActivityRuns(session.renderBubbles, settings.compactActivity))
 
 let handle = $state<VirtualizerHandle | undefined>(undefined)
 

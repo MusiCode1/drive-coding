@@ -37,7 +37,7 @@ import {
   getI18n,
   getModelStatus,
   getResponsive,
-  getSession,
+  getSession, getSettings,
   getUiShell,
 } from "$lib/context"
 import type { Bubble } from "$lib/types/bubble"
@@ -160,7 +160,7 @@ function checkEdges(): void {
  */
 function jumpToBottom(): void {
   const handle = chatScroll.handle
-  const len = groupActivityRuns(session.renderBubbles, false).length
+  const len = groupActivityRuns(session.renderBubbles, getSettings().compactActivity).length
   if (handle && len > 0) {
     handle.scrollToIndex(len - 1, { align: "end" })
   } else if (scrollEl) {

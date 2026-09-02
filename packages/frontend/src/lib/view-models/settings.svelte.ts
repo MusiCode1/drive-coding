@@ -47,11 +47,9 @@ type Persisted = {
   // ─── תצוגת צ'אט ─── (display-toggle-consistency — פולריות חיובית: ON=מציג)
   showThoughts: boolean
   showTools: boolean
+  compactActivity: boolean
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend: boolean
-  // ─── תמונות מרוחקות ─── (slice msg-media)
-  // 🔴 כיבוי מכוון של בקרת-אבטחה, בבקשת המשתמש. ON = הדפדפן מושך לבד כל כתובת
-  // שהסוכן פלט (ערוץ הזרקת-פרומפט → דליפה). ברירת-המחדל false = click-to-load.
   autoLoadRemoteImages: boolean
   // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
   // מפה: cliKind → { configId/category → value }
@@ -66,8 +64,6 @@ type Persisted = {
   geminiVoice: string
   // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker) — נפרד מ-TTS כדי למנוע Kore↔Kore
   liveVoice: string
-  // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
-  // מפה: cwd → טקסט הפרומפט (מתווסף להוראות ברירת-המחדל של הסוכן, ר' provider/connection).
   projectSystemPrompt: Record<string, string>
   // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
   recentPanelHeight: number
@@ -77,15 +73,11 @@ type Persisted = {
   // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
   geminiPace: SpeechPace
   geminiTone: SpeechTone
-  // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4)
-  // null = לא נבחרה העדפה → קדימות ממשיכה ל-env. ws/http כותב דרך ה-Select בהגדרות.
   sessionTransport: SessionTransport | null
 }
 
 const DEFAULTS: Persisted = {
   cliKind: "opencode",
-  // Slice 24: lastCwd נשלף מ-GET /api/options.homeDir ב-+page.svelte (async, אחרי init).
-  // ריק עד אז — המשתמש ימלא ידנית אם ה-fetch נכשל.
   lastCwd: "",
   voiceId: DEFAULT_VOICE_ID,
   beUrl: "",
@@ -104,7 +96,7 @@ const DEFAULTS: Persisted = {
   // ─── תצוגת צ'אט ─── (display-toggle-consistency) — ברירות מחדל = התנהגות נוכחית (מחשבות פתוחות, כלים סגורים)
   showThoughts: true,
   showTools: false,
-  // ─── Enter toggle ─── (slice-enter-toggle) — ברירת מחדל = התנהגות נוכחית (Enter שולח)
+  compactActivity: false,
   enterToSend: true,
   // ─── תמונות מרוחקות ─── (slice msg-media) — ברירת מחדל = בטוח (click-to-load)
   autoLoadRemoteImages: false,
@@ -215,6 +207,7 @@ export class Settings {
   // ─── תצוגת צ'אט ─── (display-toggle-consistency — פולריות חיובית: ON=מציג)
   showThoughts = $state<boolean>(DEFAULTS.showThoughts)
   showTools = $state<boolean>(DEFAULTS.showTools)
+  compactActivity = $state<boolean>(DEFAULTS.compactActivity)
 
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend = $state<boolean>(DEFAULTS.enterToSend)
@@ -278,6 +271,7 @@ export class Settings {
     // ─── תצוגת צ'אט ───
     this.showThoughts = loaded.showThoughts
     this.showTools = loaded.showTools
+    this.compactActivity = loaded.compactActivity
     // ─── Enter toggle ───
     this.enterToSend = loaded.enterToSend
     // ─── תמונות מרוחקות ───
@@ -485,6 +479,10 @@ export class Settings {
     this.showTools = v
     this.#persist()
   }
+  setCompactActivity = (v: boolean): void => {
+    this.compactActivity = v
+    this.#persist()
+  }
 
   // ─── תמונות מרוחקות ─── (slice msg-media)
 
@@ -623,6 +621,7 @@ export class Settings {
       screenWakeLock: this.screenWakeLock,
       showThoughts: this.showThoughts,
       showTools: this.showTools,
+      compactActivity: this.compactActivity,
       enterToSend: this.enterToSend,
       autoLoadRemoteImages: this.autoLoadRemoteImages,
       lastConfig: this.lastConfig,

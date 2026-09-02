@@ -195,6 +195,8 @@ export type MessageKey =
   | "sidebar.collapse"
   | "sidebar.agentOptions"
   | "sidebar.sessions"
+  // ─── compact-activity ─── (slice compact-activity)
+  | "sidebar.display"
   | "sidebar.refresh"
   | "sidebar.newSession"
   // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
@@ -249,6 +251,7 @@ export type MessageKey =
   | "settings.chatDisplay"
   | "settings.toggle.showThoughts"
   | "settings.toggle.showTools"
+  | "settings.toggle.compactActivity"
   // ─── Enter toggle ─── (slice-enter-toggle)
   | "settings.toggle.enterToSend"
   // slice msg-media — התווית אומרת את הסיכון, לא רק את הפיצ'ר
