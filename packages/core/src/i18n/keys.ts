@@ -40,6 +40,11 @@ export type MessageKey =
   | "chat.bubble.user"
   | "chat.bubble.thought"
   | "chat.bubble.agent"
+  // ─── compact-activity ─── (slice compact-activity)
+  | "chat.activityGroup.tools"
+  | "chat.activityGroup.thoughts"
+  | "chat.activityGroup.expand"
+  | "chat.activityGroup.collapse"
   | "chat.empty"
   | "chat.error.dismiss"
   | "chat.prompt.placeholder"
