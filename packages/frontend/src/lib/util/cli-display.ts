@@ -5,6 +5,8 @@
  * המבני היחיד ל"עיגול צבעוני", לא לחישוב המונוגרמה עצמו).
  */
 
+import { beUrl } from "./be-url"
+
 /** שם לתצוגה: displayName אם הוצהר, אחרת המזהה עצמו. */
 export function cliDisplayName(id: string, displayName?: string): string {
   return displayName ? displayName : id
@@ -66,4 +68,29 @@ export function cliLogoKey(id: string, logo: string | undefined): string {
  */
 export function isRemoteLogo(logo: string): boolean {
   return /^https?:\/\//i.test(logo)
+}
+
+/** נתיב static FE (packages/frontend/static → build), למשל `/logos/cli/claude.svg`. */
+export function isStaticLogoPath(logo: string): boolean {
+  return logo.startsWith("/logos/")
+}
+
+/**
+ * URL סופי ל-`<img src>` — שלושה מסלולים (slice cli-logo-serving):
+ * 1. http(s):// מרוחק → ישירות (הדפדפן מושך; ה-BE לא proxy).
+ * 2. `/…` → static same-origin דרך beUrl (packages/frontend/static → build).
+ * 3. אחרת → נתיב-קובץ מקומי דרך `/api/cli-logo/:id` (id-keyed).
+ */
+export function resolveCliLogoUrl(id: string, logo: string): string {
+  if (isRemoteLogo(logo)) return logo
+  if (isStaticLogoPath(logo)) return beUrl(logo)
+  return beUrl(`/api/cli-logo/${id}`)
+}
+
+/**
+ * true for static monochrome SVGs that should follow `--fg` via CSS mask.
+ * qoder.svg is excluded — brand gradient would be destroyed by masking.
+ */
+export function isTintableLogo(logo: string): boolean {
+  return isStaticLogoPath(logo) && !logo.endsWith("qoder.svg")
 }
