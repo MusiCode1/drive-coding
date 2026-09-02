@@ -23,8 +23,8 @@ import { untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
-import SessionCard from "$lib/components/modals/SessionCard.svelte"
 import MachineStatsBar from "$lib/components/connect/MachineStatsBar.svelte"
+import SessionCard from "$lib/components/modals/SessionCard.svelte"
 import CliBadge from "$lib/components/ui/CliBadge.svelte"
 import Select, { type SelectGroup, type SelectOption } from "$lib/components/ui/Select.svelte"
 import {
@@ -39,11 +39,11 @@ import {
 } from "$lib/context"
 import { readSessionTransport } from "$lib/session/session-transport-read"
 import { sessionPathWithTransport } from "$lib/session/session-url"
+import DisplayOptionsRow from "./DisplayOptionsRow.svelte"
 
 const t = getI18n().t
 const session = getSession()
 const poller = getPresencePoller()
-// slice cli-branding (Commit 3): displayName ב-"רץ על" — ה-panel חסר-props ל-CLI
 const cliAvailability = getCliAvailability()
 // ─── redesign-fix: disconnect + audio הועברו מ-AppHeader (פדיון חוב redesign-2/3) ───
 const speaker = getSpeaker()
@@ -306,7 +306,6 @@ $effect(() => {
     {/if}
   </button>
 
-  <!-- הגדרות — toggle, בראש הרשימה בכל המצבים (ירד מ-AppHeader) -->
   <button
     class="flex-1 flex items-center justify-center gap-2 px-2.5 py-2 rounded-lg text-[13px] border"
     style="border-color:var(--border); color:{onSettings ? 'var(--accent)' : 'var(--fg-dim)'}"
@@ -318,6 +317,8 @@ $effect(() => {
     <SettingsIcon size={16} strokeWidth={1.75} />
   </button>
 </div>
+
+<DisplayOptionsRow />
 
 <!-- ─── modal אזהרה: leaveRunning כשלא-bypass ─── -->
 <BitsDialog.Root bind:open={leaveConfirmOpen}>

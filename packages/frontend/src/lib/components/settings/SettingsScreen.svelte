@@ -12,18 +12,19 @@
  * כפתורי איפוס ושמור.
  * ─── settings-redesign (redesign-3) · redesign-fix · V4a (TTS provider) · tts-provider-availability ───
  */
-import { env } from "$env/dynamic/public"
+
 import { onMount } from "svelte"
-import { resolveSessionTransport, type SessionTransport } from "$lib/session/session-transport"
 import { version } from "$app/environment"
 import { goto } from "$app/navigation"
-import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
+import { env } from "$env/dynamic/public"
 import GeminiVoicePicker from "$lib/components/chat/GeminiVoicePicker.svelte"
-import { getI18n, getSettings } from "$lib/context"
+import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
+import { getI18n, getSettings } from "$lib/context"
+import { resolveSessionTransport, type SessionTransport } from "$lib/session/session-transport"
+import { ttsReasonMessage } from "$lib/util/tts-reason"
 import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { ttsStatus } from "$lib/view-models/tts-status.svelte"
-import { ttsReasonMessage } from "$lib/util/tts-reason"
 import GeminiDirectingControls from "./GeminiDirectingControls.svelte"
 import LanguageSelect from "./LanguageSelect.svelte"
 import PalettePicker from "./PalettePicker.svelte"
@@ -33,8 +34,6 @@ import TtsStatusCard from "./TtsStatusCard.svelte"
 
 const settings = getSettings()
 const t = getI18n().t
-
-// translateThoughts disabled כש-speakThoughts כבוי
 const translateDisabled = $derived(!settings.speakThoughts)
 
 // ─── TTS provider + availability ─── (V4a + tts-provider-availability)
@@ -234,7 +233,6 @@ const sessionTransportDisplay = $derived(
     />
   </SettingsCard>
 
-  <!-- כרטיס תצוגת צ'אט — display-toggle-consistency -->
   <SettingsCard title={t("settings.chatDisplay")}>
     <div class="flex flex-col">
       <SettingToggle
@@ -246,6 +244,11 @@ const sessionTransportDisplay = $derived(
         label={t("settings.toggle.showTools")}
         checked={settings.showTools}
         onCheckedChange={(v) => settings.setShowTools(v)}
+      />
+      <SettingToggle
+        label={t("settings.toggle.compactActivity")}
+        checked={settings.compactActivity}
+        onCheckedChange={(v) => settings.setCompactActivity(v)}
       />
       <SettingToggle
         label={t("settings.toggle.autoLoadRemoteImages")}
@@ -317,6 +320,7 @@ const sessionTransportDisplay = $derived(
         settings.setCarMode(false)
         settings.setShowThoughts(true)
         settings.setShowTools(false)
+        settings.setCompactActivity(false)
         settings.setEnterToSend(true)
       }}
     >
