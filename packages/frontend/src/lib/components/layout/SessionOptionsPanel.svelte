@@ -324,8 +324,6 @@ $effect(() => {
   </button>
 </div>
 
-<DisplayOptionsRow />
-
 <!-- ─── modal אזהרה: leaveRunning כשלא-bypass ─── -->
 <BitsDialog.Root bind:open={leaveConfirmOpen}>
   <BitsDialog.Portal>
@@ -365,9 +363,11 @@ $effect(() => {
   </BitsDialog.Portal>
 </BitsDialog.Root>
 
-<!-- אזור גלילה מאוחד: אפשרויות סוכן + סשנים. הגלילה מתחילה מכאן (מסקשן אפשרויות סוכן),
-     כך שכשהגובה קטן ראש הרשימה לא נחתך אלא נגלל. שורת הפעולות מעל נשארת קבועה (shrink-0). -->
+<!-- אזור גלילה מאוחד: תצוגה + אפשרויות סוכן + סשנים.
+     שורת הפעולות מעל נשארת קבועה (shrink-0); מתגי התצוגה נגללים — במובייל הם אוכלים גובה. -->
 <div class="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto chat-scroll -mx-1 px-1">
+
+<DisplayOptionsRow />
 
 <!-- ─── cli-name-in-chat: שם ה-CLI מעל אפשרויות סוכן ─── -->
 {#if session.cliKind}
