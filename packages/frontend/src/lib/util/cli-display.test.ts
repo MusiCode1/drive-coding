@@ -12,6 +12,7 @@ import {
   cliMonogram,
   isRemoteLogo,
   isStaticLogoPath,
+  isTintableLogo,
   resolveCliLogoUrl,
 } from "./cli-display"
 
@@ -145,6 +146,32 @@ describe("isStaticLogoPath (slice cli-logo-theme)", () => {
 
   it("https://x/logos/cli/x.svg → false — לא startsWith /logos/", () => {
     expect(isStaticLogoPath("https://x/logos/cli/x.svg")).toBe(false)
+  })
+})
+
+describe("isTintableLogo (slice cli-logo-theme)", () => {
+  it("/logos/cli/claude.svg → true", () => {
+    expect(isTintableLogo("/logos/cli/claude.svg")).toBe(true)
+  })
+
+  it("/logos/cli/prime-agent.svg → true", () => {
+    expect(isTintableLogo("/logos/cli/prime-agent.svg")).toBe(true)
+  })
+
+  it("/logos/cli/qoder.svg → false — brand gradient", () => {
+    expect(isTintableLogo("/logos/cli/qoder.svg")).toBe(false)
+  })
+
+  it("/tmp/x.png → false", () => {
+    expect(isTintableLogo("/tmp/x.png")).toBe(false)
+  })
+
+  it("https://example.com/logo.svg → false", () => {
+    expect(isTintableLogo("https://example.com/logo.svg")).toBe(false)
+  })
+
+  it("https://example.com/logos/cli/qoder.svg → false", () => {
+    expect(isTintableLogo("https://example.com/logos/cli/qoder.svg")).toBe(false)
   })
 })
 

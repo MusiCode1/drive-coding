@@ -86,3 +86,11 @@ export function resolveCliLogoUrl(id: string, logo: string): string {
   if (isStaticLogoPath(logo)) return beUrl(logo)
   return beUrl(`/api/cli-logo/${id}`)
 }
+
+/**
+ * true for static monochrome SVGs that should follow `--fg` via CSS mask.
+ * qoder.svg is excluded — brand gradient would be destroyed by masking.
+ */
+export function isTintableLogo(logo: string): boolean {
+  return isStaticLogoPath(logo) && !logo.endsWith("qoder.svg")
+}
