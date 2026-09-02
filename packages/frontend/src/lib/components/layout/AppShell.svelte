@@ -23,8 +23,8 @@
  *   - turn-boundary: בועת user חדשה → following=true + קפיצה (גובר על hold)
  */
 
-// ─── redesign-7: smart-scroll ───
 import ArrowDownIcon from "@lucide/svelte/icons/arrow-down"
+import { groupActivityRuns } from "$lib/components/chat/bubbles/activity-groups"
 // ─── content-viewer ─── (slice content-viewer)
 import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
 // ─── redesign-6: modals (SessionsDialog הוסר ב-slice sessions-inline — סשנים עכשיו inline) ───
@@ -37,7 +37,7 @@ import {
   getI18n,
   getModelStatus,
   getResponsive,
-  getSession,
+  getSession, getSettings,
   getUiShell,
 } from "$lib/context"
 import type { Bubble } from "$lib/types/bubble"
@@ -57,7 +57,7 @@ let {
 } = $props()
 
 const responsive = getResponsive()
-const session = getSession()
+const session = getSession(), settings = getSettings()
 const modelStatus = getModelStatus()
 const playlist = getAudioPlaylist()
 const uiShell = getUiShell()
@@ -160,7 +160,7 @@ function checkEdges(): void {
  */
 function jumpToBottom(): void {
   const handle = chatScroll.handle
-  const len = session.renderBubbles.length
+  const len = groupActivityRuns(session.renderBubbles, settings.compactActivity).length
   if (handle && len > 0) {
     handle.scrollToIndex(len - 1, { align: "end" })
   } else if (scrollEl) {
