@@ -464,4 +464,8 @@ export const he: Catalog = {
   "dictate.error.transcribe": "התמלול נכשל",
   "dictate.error.generic": "ההכתבה נכשלה",
   "dictate.transcribing": "מתמלל…",
+  // ─── pending-capture ─── (slice voice-pending-persistence)
+  "pendingCapture.retry": "נסה שוב",
+  "pendingCapture.dismiss": "מחק",
+  "pendingCapture.restored": "הקלטה שלא הושלמה שוחזרה",
 }

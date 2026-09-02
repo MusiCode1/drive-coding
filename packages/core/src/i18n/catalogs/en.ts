@@ -472,4 +472,8 @@ export const en: Catalog = {
   "dictate.error.transcribe": "Transcription failed",
   "dictate.error.generic": "Dictation failed",
   "dictate.transcribing": "Transcribing…",
+  // ─── pending-capture ─── (slice voice-pending-persistence)
+  "pendingCapture.retry": "Try again",
+  "pendingCapture.dismiss": "Dismiss",
+  "pendingCapture.restored": "Unfinished recording restored",
 }

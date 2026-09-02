@@ -67,8 +67,11 @@ const fakeMic = {
   state: "idle",
   error: null,
   canRetry: false,
+  pendingRestored: false,
   cancel: () => {},
   retryTranscribe: async () => {},
+  dismiss: async () => {},
+  hydratePending: async () => {},
 } as unknown as Mic
 
 const liveState = $state({ open: liveOpen })

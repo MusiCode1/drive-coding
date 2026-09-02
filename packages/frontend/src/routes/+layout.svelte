@@ -103,14 +103,14 @@ const sharedOrderAlloc = new OrderAllocator()
 const audioPlaylist = new AudioPlaylist(sharedAudioStream)
 
 // ─── mic ─── (slice 3; voice-pending-persistence recovery)
-const { micRecovery } = createPendingCaptureWiring()
+const { micRecovery, dictateRecovery } = createPendingCaptureWiring()
 const mic = new Mic({ session, cues, recovery: micRecovery })
 
 // ─── composer-draft ─── (slice dictate-to-input)
 const composerDraft = new ComposerDraft()
 
 // ─── dictate ─── (slice dictate-to-input — תלוי ב-composerDraft + mic)
-const dictate = new Dictate({ draft: composerDraft, mic })
+const dictate = new Dictate({ draft: composerDraft, mic, recovery: dictateRecovery })
 
 // ─── theme ─── (redesign-1) — declared before Live getter; instance assigned below Live block
 let theme!: ThemeVM
