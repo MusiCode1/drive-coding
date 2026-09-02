@@ -21,6 +21,13 @@
 /** זהה ל-EXT_TO_CONTENT_TYPE ב-http-fs-file.ts. */
 const EXT = "md|markdown|txt|png|jpe?g|svg|webp|gif|pdf"
 
+const EXT_RE = new RegExp(String.raw`\.(?:${EXT})$`, "i")
+
+/** Whether `path` ends with an extension the fs proxy can serve. */
+export function hasViewableExt(path: string): boolean {
+  return EXT_RE.test(path)
+}
+
 /**
  * שלוש חלופות: `file:///…` מפורש · נתיב אבסולוטי · נתיב יחסי (עם `./` אופציונלי).
  *
