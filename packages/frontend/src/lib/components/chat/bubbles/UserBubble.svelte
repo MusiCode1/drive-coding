@@ -59,7 +59,7 @@ async function handleCopy() {
   and the bubble at inline-end — next to BubbleRow's avatar — without reversing the flex
   direction (side ownership is BubbleRow's; roots must not use self-* / row-reverse).
 -->
-<div class="flex gap-2 max-w-[85%] min-w-0 items-end group">
+<div class="user-bubble-outer flex gap-2 items-end group">
   <!-- כפתורי פעולה: copy + play (play רק אם recordingId קיים) -->
   <div class="bubble-actions">
     <button
@@ -89,7 +89,7 @@ async function handleCopy() {
       </button>
     {/if}
   </div>
-  <div class="bubble-wrapper min-w-0">
+  <div class="bubble-wrapper">
     <!-- תמונות מצורפות (slice-image-paste Commit 3) -->
     {#if bubble.attachments && bubble.attachments.length > 0}
       <div class="flex flex-wrap gap-1.5 mb-1">
@@ -144,7 +144,7 @@ async function handleCopy() {
       </div>
     {/if}
     <div
-      class="px-3.5 py-2.5 rounded-2xl rounded-se-sm text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
+      class="px-3.5 py-2.5 rounded-2xl rounded-se-sm text-sm leading-relaxed w-max max-w-full break-words"
       style="background:var(--bubble-user); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
     >
       <MarkdownContent
@@ -165,10 +165,30 @@ async function handleCopy() {
 </div>
 
 <style>
+  /*
+   * Hug the message (width: max-content) but cap against the definite chat
+   * column (85cqw from BubbleRow), not max-width: 100% of a fit-content rail.
+   * The old extra 85% + min-width:0 on this outer stacked a second cap on the
+   * rail and shrank short texts to the timestamp; mixed RTL+LTR then wrapped
+   * the Latin tail even when a single 85% column would fit it.
+   */
+  .user-bubble-outer {
+    max-width: 85cqw;
+  }
+
+  @media (min-width: 768px) {
+    .user-bubble-outer {
+      /* reserve BubbleRow avatar (size-7) + cluster gap */
+      max-width: calc(85cqw - 1.75rem - 8px);
+    }
+  }
+
   .bubble-wrapper {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
+    width: max-content;
+    max-width: 100%;
     /* toward avatar (inline-end on user/end side) */
     align-items: end;
   }
@@ -177,6 +197,9 @@ async function handleCopy() {
     display: flex;
     justify-content: end;
     padding-inline-end: 0.25rem;
+    /* timestamp must not widen the hug or become the shrink target */
+    width: 0;
+    min-width: 100%;
   }
 
   .timestamp {
