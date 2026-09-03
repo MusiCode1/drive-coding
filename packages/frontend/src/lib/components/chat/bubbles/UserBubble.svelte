@@ -89,7 +89,7 @@ async function handleCopy() {
       </button>
     {/if}
   </div>
-  <div class="bubble-wrapper">
+  <div class="bubble-wrapper min-w-0">
     <!-- תמונות מצורפות (slice-image-paste Commit 3) -->
     {#if bubble.attachments && bubble.attachments.length > 0}
       <div class="flex flex-wrap gap-1.5 mb-1">
@@ -144,7 +144,7 @@ async function handleCopy() {
       </div>
     {/if}
     <div
-      class="px-3.5 py-2.5 rounded-2xl rounded-se-sm text-sm leading-relaxed w-max max-w-full break-words"
+      class="px-3.5 py-2.5 rounded-2xl rounded-se-sm text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
       style="background:var(--bubble-user); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
     >
       <MarkdownContent
@@ -169,9 +169,6 @@ async function handleCopy() {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
-    /* hug the message, not the timestamp — min-w-0 here collapsed short texts */
-    width: max-content;
-    max-width: 100%;
     /* toward avatar (inline-end on user/end side) */
     align-items: end;
   }
