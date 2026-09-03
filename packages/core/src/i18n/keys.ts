@@ -502,6 +502,10 @@ export type MessageKey =
   | "dictate.error.transcribe"
   | "dictate.error.generic"
   | "dictate.transcribing"
+  // ─── pending-capture ─── (slice voice-pending-persistence)
+  | "pendingCapture.retry"
+  | "pendingCapture.dismiss"
+  | "pendingCapture.restored"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

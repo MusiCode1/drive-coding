@@ -501,4 +501,8 @@ export const en: Catalog = {
   "sidebar.sessionsFilterAll": "All sessions",
   "sidebar.sessionsFilterCwd": "Current path only",
   "sidebar.sessionsNoMatches": "No matches",
+  // ─── pending-capture ─── (slice voice-pending-persistence)
+  "pendingCapture.retry": "Try again",
+  "pendingCapture.dismiss": "Dismiss",
+  "pendingCapture.restored": "Unfinished recording restored",
 }

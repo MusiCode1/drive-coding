@@ -493,4 +493,8 @@ export const he: Catalog = {
   "sidebar.sessionsFilterAll": "כל השיחות",
   "sidebar.sessionsFilterCwd": "רק נתיב נוכחי",
   "sidebar.sessionsNoMatches": "אין התאמות",
+  // ─── pending-capture ─── (slice voice-pending-persistence)
+  "pendingCapture.retry": "נסה שוב",
+  "pendingCapture.dismiss": "מחק",
+  "pendingCapture.restored": "הקלטה שלא הושלמה שוחזרה",
 }

@@ -1,17 +1,6 @@
 <script lang="ts">
 /**
- * Composition root — מאתחל (instantiates) את כל ה-view-models הראשיים ומחבר
- * אותם לקונטקסט. זהו המקום היחיד באפליקציה שבו קוראים ל-`new <VM>()`.
- *
- * ─── עיצוב תוספתי בטוח למקביליות ───
- *
- * הוספת VM חדש:
- *   1. הוסף `import { Foo } from "$lib/view-models/foo.svelte"` לייבואים.
- *   2. הוסף בלוק `// ─── <domain> ───` חדש באזור למטה.
- *      לסדר יש חשיבות רק כאשר VM תלוי באחר (הצהר קודם על תלויות).
- *   3. הוסף `setFoo(foo)` בבלוק ה-setContext המתאים.
- *
- * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
+ * Composition root — view-models + setContext. Additive-only; see parallel-safe-code.md.
  */
 import "$lib/log"
 import PlaybackDebugPanel from "$lib/components/debug/PlaybackDebugPanel.svelte"
@@ -51,6 +40,7 @@ import { installDebugSurface } from "$lib/debug/dc"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import { createConfigChangeSocket } from "$lib/engines/config-change-socket"
 import { CuesEngine } from "$lib/engines/cues"
+import { createPendingCaptureWiring } from "$lib/engines/pending-capture-wiring"
 import { PlayableSink } from "$lib/engines/playable-sink"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { NotifyEngine } from "$lib/engines/notify.svelte"
@@ -104,19 +94,17 @@ const session = new AgentSession({ cues, settings })
 // AudioPlaylist נוצר לפני Speaker כי Speaker מקבל אותו כ-dependency.
 const sharedAudioStream = new PlayableSink()
 const sharedOrderAlloc = new OrderAllocator()
-// onPlaybackStart: cue "speaking" — guard #spokeThisTurn ב-Speaker
-// (Speaker יגדיר callback דרך onPlaybackStart בלבד — לא מוגדר כאן ישירות,
-//  כי Speaker צריך לבדוק #spokeThisTurn שלו. פתרון: Speaker ירשום callback לאחר init.)
 const audioPlaylist = new AudioPlaylist(sharedAudioStream)
 
-// ─── mic ─── (slice 3 — תלוי ב-session + cues)
-const mic = new Mic({ session, cues })
+// ─── mic ─── (slice 3; voice-pending-persistence recovery)
+const { micRecovery, dictateRecovery } = createPendingCaptureWiring()
+const mic = new Mic({ session, cues, recovery: micRecovery })
 
 // ─── composer-draft ─── (slice dictate-to-input)
 const composerDraft = new ComposerDraft()
 
 // ─── dictate ─── (slice dictate-to-input — תלוי ב-composerDraft + mic)
-const dictate = new Dictate({ draft: composerDraft, mic })
+const dictate = new Dictate({ draft: composerDraft, mic, recovery: dictateRecovery })
 
 // ─── theme ─── (redesign-1) — declared before Live getter; instance assigned below Live block
 let theme!: ThemeVM
@@ -322,6 +310,12 @@ const dcOptIn = typeof localStorage !== "undefined" && localStorage.getItem("__d
 if (__DC_ENABLED__ || dcOptIn) {
   void installDebugSurface()
 }
+
+// ─── pending-capture ─── (slice voice-pending-persistence)
+onMount(() => {
+  void mic.hydratePending()
+  void dictate.hydratePending()
+})
 
 // ─── config-change-socket ─── (slice cli-specs-hot-reload)
 // Wiring only: the socket, lifecycle and reconnect live in the engine (golden rule
