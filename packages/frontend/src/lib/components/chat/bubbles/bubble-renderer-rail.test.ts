@@ -71,4 +71,10 @@ describe("BubbleRenderer — alignment rail integration (Commit 2 gates)", () =>
     expect(src).toMatch(/bubble-actions/)
     expect(src).not.toMatch(/<Avatar/)
   })
+
+  it("User bubble actions sit in bubble-meta (not a sibling flex track beside the card)", () => {
+    const markup = readBubbleMarkup("UserBubble.svelte")
+    expect(markup).not.toMatch(/user-bubble-outer flex gap-2/)
+    expect(markup).toMatch(/bubble-meta[\s\S]*bubble-actions/)
+  })
 })

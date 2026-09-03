@@ -51,7 +51,7 @@ const { side, avatar, children }: Props = $props()
   .bubble-row-cluster {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 8px;
     min-width: 0;
     max-width: 100%;
     /* shrink-wrap — never a free 1fr track between avatar and bubble */
