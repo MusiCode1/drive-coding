@@ -450,7 +450,8 @@ export const he: Catalog = {
   "sessionUrl.notFound.body": "הסשן שביקשת אינו זמין כרגע. ייתכן שהוא נסגר או שהסוכן לא פועל.",
   "sessionUrl.notFound.back": "חזרה לדף הבית",
   "sessionUrl.takeover.title": "יש חיבור פעיל",
-  "sessionUrl.takeover.body": "סשן זה מחובר כבר ממכשיר או טאב אחר. להתחבר כאן ינתק את החיבור הקיים.",
+  "sessionUrl.takeover.body":
+    "סשן זה מחובר כבר ממכשיר או טאב אחר. להתחבר כאן ינתק את החיבור הקיים.",
   "sessionUrl.takeover.confirm": "התחבר בכל זאת",
   "sessionUrl.takeover.cancel": "ביטול",
   // ─── agent-patch-unify C4: ממצא 3 — newSession ב-remote אינו נתמך ─── (הודעה בלבד, בלי ניווט)
@@ -476,7 +477,7 @@ export const he: Catalog = {
   "settings.toggle.notifications": "התראות כשהטאב מוסתר",
   "settings.notifications.blocked": "ההתראות חסומות בדפדפן. אפשרי אותן בהגדרות הדפדפן.",
   "settings.notifications.quietHint":
-    "ייתכן שהדפדפן הציג פעמון בשורת הכתובת (\"אתר לא מוכר\"). לחצי עליו כדי לאשר התראות.",
+    'ייתכן שהדפדפן הציג פעמון בשורת הכתובת ("אתר לא מוכר"). לחצי עליו כדי לאשר התראות.',
   "settings.notifications.retry": "נסי שוב",
   // ─── dictate ─── (slice dictate-to-input)
   "dictate.start": "הכתבה",
@@ -487,4 +488,9 @@ export const he: Catalog = {
   "dictate.error.transcribe": "התמלול נכשל",
   "dictate.error.generic": "ההכתבה נכשלה",
   "dictate.transcribing": "מתמלל…",
+  // ─── sessions filter ─── (slice sessions-search-filter)
+  "sidebar.sessionsSearch": "חיפוש בכותרות…",
+  "sidebar.sessionsFilterAll": "כל השיחות",
+  "sidebar.sessionsFilterCwd": "רק נתיב נוכחי",
+  "sidebar.sessionsNoMatches": "אין התאמות",
 }

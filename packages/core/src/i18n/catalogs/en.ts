@@ -482,9 +482,10 @@ export const en: Catalog = {
   "notify.turnEnd.body": "The agent finished — return to the app to see the response.",
   "settings.notifications.title": "Notifications",
   "settings.toggle.notifications": "Notify when tab is hidden",
-  "settings.notifications.blocked": "Notifications are blocked in the browser. Enable them in browser settings.",
+  "settings.notifications.blocked":
+    "Notifications are blocked in the browser. Enable them in browser settings.",
   "settings.notifications.quietHint":
-    "The browser may have shown a bell in the address bar (\"unrecognized site\"). Click it to allow notifications.",
+    'The browser may have shown a bell in the address bar ("unrecognized site"). Click it to allow notifications.',
   "settings.notifications.retry": "Try again",
   // ─── dictate ─── (slice dictate-to-input)
   "dictate.start": "Dictate",
@@ -495,4 +496,9 @@ export const en: Catalog = {
   "dictate.error.transcribe": "Transcription failed",
   "dictate.error.generic": "Dictation failed",
   "dictate.transcribing": "Transcribing…",
+  // ─── sessions filter ─── (slice sessions-search-filter)
+  "sidebar.sessionsSearch": "Search titles…",
+  "sidebar.sessionsFilterAll": "All sessions",
+  "sidebar.sessionsFilterCwd": "Current path only",
+  "sidebar.sessionsNoMatches": "No matches",
 }

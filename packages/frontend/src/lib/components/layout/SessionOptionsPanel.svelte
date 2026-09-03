@@ -24,6 +24,7 @@ import { goto } from "$app/navigation"
 import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import MachineStatsBar from "$lib/components/connect/MachineStatsBar.svelte"
+import SessionsFilterBar from "$lib/components/layout/SessionsFilterBar.svelte"
 import SessionCard from "$lib/components/modals/SessionCard.svelte"
 import CliBadge from "$lib/components/ui/CliBadge.svelte"
 import Select, { type SelectGroup, type SelectOption } from "$lib/components/ui/Select.svelte"
@@ -38,8 +39,9 @@ import {
   getUiShell,
 } from "$lib/context"
 import { readSessionTransport } from "$lib/session/session-transport-read"
-import { shouldWarnOnLeave } from "$lib/session/should-warn-on-leave"
 import { sessionPathWithTransport } from "$lib/session/session-url"
+import { shouldWarnOnLeave } from "$lib/session/should-warn-on-leave"
+import { filterSessions } from "$lib/util/filter-sessions"
 import DisplayOptionsRow from "./DisplayOptionsRow.svelte"
 
 const t = getI18n().t
@@ -54,6 +56,21 @@ const uiShell = getUiShell()
 // ─── slice sessions-inline: settings לקבלת cliKind לבחירת סשן ───
 const settings = getSettings()
 const onSettings = $derived(page.url.pathname === "/settings")
+
+let sessionsSearchQuery = $state("")
+const filteredSessions = $derived(
+  filterSessions(session.sessions, {
+    query: sessionsSearchQuery,
+    currentCwd: session.cwd,
+    currentCwdOnly: settings.sessionsCurrentCwdOnly,
+  }),
+)
+const sessionsFilteredEmpty = $derived(
+  !session.sessionsLoading &&
+    !session.sessionsError &&
+    session.sessions.length > 0 &&
+    filteredSessions.length === 0,
+)
 
 function onDisconnect() {
   session.detach()
@@ -540,6 +557,15 @@ $effect(() => {
     </button>
   </div>
 
+  <SessionsFilterBar
+    query={sessionsSearchQuery}
+    onQueryChange={(v) => {
+      sessionsSearchQuery = v
+    }}
+    currentCwdOnly={settings.sessionsCurrentCwdOnly}
+    onCurrentCwdOnlyChange={(v) => settings.setSessionsCurrentCwdOnly(v)}
+  />
+
   <!-- סשן חדש — warm new-session על החיבור הקיים; disabled כשלא connected -->
   <button
     class="shrink-0 text-start rounded-lg p-2.5 text-[13px] font-medium border border-dashed disabled:opacity-40 disabled:cursor-not-allowed"
@@ -556,8 +582,12 @@ $effect(() => {
       <div class="text-[12px] opacity-50 px-1">{t("modal.sessions.loading")}</div>
     {:else if session.sessionsError}
       <div class="text-[12px] px-1" style="color:var(--recording)">{t("modal.sessions.error")}: {session.sessionsError}</div>
+    {:else if session.sessions.length === 0}
+      <div class="text-[12px] opacity-50 px-1">{t("modal.sessions.empty")}</div>
+    {:else if sessionsFilteredEmpty}
+      <div class="text-[12px] opacity-50 px-1">{t("sidebar.sessionsNoMatches")}</div>
     {:else}
-      {#each session.sessions as s (s.sessionId)}
+      {#each filteredSessions as s (s.sessionId)}
         <SessionCard
           session={s}
           isActive={false}

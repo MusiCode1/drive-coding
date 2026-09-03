@@ -76,6 +76,8 @@ type Persisted = {
   sessionTransport: SessionTransport | null
   // ─── notifications ─── (slice notify-local)
   notifications: boolean
+  // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
+  sessionsCurrentCwdOnly: boolean
 }
 
 const DEFAULTS: Persisted = {
@@ -126,6 +128,8 @@ const DEFAULTS: Persisted = {
   sessionTransport: "http",
   // ─── notifications ─── (slice notify-local) — opt-in
   notifications: false,
+  // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
+  sessionsCurrentCwdOnly: false,
 }
 
 /**
@@ -256,6 +260,9 @@ export class Settings {
   // ─── notifications ─── (slice notify-local)
   notifications = $state<boolean>(DEFAULTS.notifications)
 
+  // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
+  sessionsCurrentCwdOnly = $state<boolean>(DEFAULTS.sessionsCurrentCwdOnly)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -308,6 +315,8 @@ export class Settings {
     this.sessionTransport = loaded.sessionTransport
     // ─── notifications ─── (slice notify-local)
     this.notifications = loaded.notifications
+    // ─── סינון רשימת סשנים ───
+    this.sessionsCurrentCwdOnly = loaded.sessionsCurrentCwdOnly
   }
 
   // ─── טופס חיבור ───
@@ -620,6 +629,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
+
+  setSessionsCurrentCwdOnly = (v: boolean): void => {
+    this.sessionsCurrentCwdOnly = v
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -654,6 +670,7 @@ export class Settings {
       geminiTone: this.geminiTone,
       sessionTransport: this.sessionTransport,
       notifications: this.notifications,
+      sessionsCurrentCwdOnly: this.sessionsCurrentCwdOnly,
     })
   }
 }

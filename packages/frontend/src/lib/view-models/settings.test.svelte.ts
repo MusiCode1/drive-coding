@@ -25,8 +25,8 @@ vi.mock("../adapters/voice/voices", () => ({
   listVoices: vi.fn(),
 }))
 
-import { Settings } from "./settings.svelte"
 import { listVoices } from "../adapters/voice/voices"
+import { Settings } from "./settings.svelte"
 
 const SARAH_ID = "EXAVITQu4vr4xnSDxMaL"
 const STORAGE_KEY = "drive-coding-v2-settings"
@@ -332,6 +332,23 @@ describe("Settings — showThoughts / showTools (display-toggle-consistency)", (
   })
 })
 
+describe("Settings — sessionsCurrentCwdOnly (sessions-search-filter)", () => {
+  test("default sessionsCurrentCwdOnly = false when localStorage empty", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect(s.sessionsCurrentCwdOnly).toBe(false)
+  })
+
+  test("setSessionsCurrentCwdOnly writes to localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setSessionsCurrentCwdOnly(true)
+    expect(s.sessionsCurrentCwdOnly).toBe(true)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.sessionsCurrentCwdOnly).toBe(true)
+  })
+})
+
 describe("Settings — loadVoices", () => {
   test("populates availableVoices and drives loading/error", async () => {
     installLocalStorage()
@@ -489,7 +506,12 @@ describe("Settings — autoLoadRemoteImages (slice msg-media)", () => {
     const store = installLocalStorage()
     store.set(
       STORAGE_KEY,
-      JSON.stringify({ cliKind: "opencode", voiceId: "v1", showThoughts: true, enterToSend: false }),
+      JSON.stringify({
+        cliKind: "opencode",
+        voiceId: "v1",
+        showThoughts: true,
+        enterToSend: false,
+      }),
     )
     const s = new Settings()
     expect(s.autoLoadRemoteImages).toBe(false)

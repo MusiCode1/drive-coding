@@ -203,6 +203,11 @@ export type MessageKey =
   | "sidebar.display"
   | "sidebar.refresh"
   | "sidebar.newSession"
+  // ─── sessions filter ─── (slice sessions-search-filter)
+  | "sidebar.sessionsSearch"
+  | "sidebar.sessionsFilterAll"
+  | "sidebar.sessionsFilterCwd"
+  | "sidebar.sessionsNoMatches"
   // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
   | "sidebar.runningOn"
   | "sheet.handle"
