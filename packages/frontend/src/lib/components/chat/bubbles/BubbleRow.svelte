@@ -40,6 +40,8 @@ const { side, avatar, children }: Props = $props()
     box-sizing: border-box;
     /* pack cluster to inline-start (agent) */
     justify-content: start;
+    /* definite inline size so user bubbles can cap with 85cqw instead of cyclic 100% */
+    container-type: inline-size;
   }
 
   .bubble-row[data-side="end"] {
