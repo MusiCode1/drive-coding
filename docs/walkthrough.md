@@ -1,3 +1,61 @@
+## 2026-09-04 22:05
+
+### פריסת קונטיינר — Containerfile רב-שלבי + יוניט Quadlet
+
+הרצת ה-BE וה-FE הבנוי כאימג' אחד תחת podman rootless, כמקבילה
+ל-`deploy/systemd/drive-coding-*.service`. עלה ואומת על VPS חיצוני.
+
+#### מה בוצע?
+
+`deploy/container/` — שלושה קבצים חדשים, בלי לגעת בקוד קיים:
+
+- **`Containerfile`** — builder (`bun install` + FE build) ו-runtime נפרדים.
+  כל עבודת ה-`ExecStartPre` עוברת לזמן בנייה.
+- **`drive-coding-edge.container`** — יוניט Quadlet.
+- **`healthcheck.js`** — probe.
+
+`packages/backend/Dockerfile` נשאר stub מ-Slice 10; לא נגעתי בו.
+
+#### ארבע החלטות שנקבעו מבדיקה
+
+| ממצא | נגזרת |
+|---|---|
+| ל-`oven/bun:1` אין node, git או curl | ה-FE נבנה ב-`bun scripts/dc-build-fe.mjs` (מייבא רק `node:` builtins); ה-probe הוא bun ולא curl |
+| `cli-config-file.ts:30` משתמש ב-`os.homedir()`, **לא** ב-`XDG_CONFIG_HOME` | `HOME=/data` באימג', נפח ב-`/data/.config/drive-coding` |
+| `FE_ENV`/`FE_PREVIEW_LABEL` נקראים ב-`vite.config.ts` בזמן בנייה | `ARG` ב-builder, לא `ENV` בריצה |
+| `DRIVE_CODING_HOST=127.0.0.1` לא עובד בקונטיינר — loopback הוא ה-netns | `0.0.0.0` בפנים, `PublishPort=127.0.0.1:4002:4000` בחוץ |
+
+#### שלוש מלכודות שנצרבו
+
+**1. `acp-wire/dist` חסר.** `exports` הצביע ל-`dist/`, שנמצא ב-`.gitignore`.
+בעץ עבודה קיים הוא שורד מבנייה ידנית; checkout נקי נשבר. נוסף
+`RUN cd packages/acp-wire && bun run build` — **זמני**, ראה הערה בקובץ.
+
+**2. `Memory` אינו מפתח Quadlet.** podman 5.4 דוחה את **כל הקובץ** בגללו,
+ו-`daemon-reload` נכשל **בשקט** — היוניט פשוט לא נוצר. לאבחון:
+`/usr/libexec/podman/quadlet -user -dryrun`. הועבר ל-`MemoryMax` ב-`[Service]`,
+ו-`StartLimit*` הועברו ל-`[Unit]` ששם systemd מצפה להם.
+
+**3. Quadlet קוטע ציטוט מקונן.** `HealthCmd=bun -e "..."` הגיע ל-podman חתוך
+בגרש הסוגר, וכל probe החזיר `unhealthy`. לכן `healthcheck.js` כקובץ, בלי ציטוט.
+בנוסף podman מזהיר ש-`HEALTHCHECK` **מתעלמים ממנו בפורמט OCI** — מה שרץ בפועל
+הוא `HealthCmd` של Quadlet.
+
+#### אימות
+
+`/api/health` מחזיר `{"status":"ok","version":"0.19.0"}`, ה-FE מוגש `HTTP 200`,
+הקונטיינר `Up (healthy)`. צריכה: **197MB RAM**, 21 תהליכים. אימג' 1.93GB.
+
+הגרסה `0.19.0` ולא `0.39.0` היא תקינה ומתועדת: `resolveAppVersion()` במצב
+לא-מבונדל קורא את ה-`package.json` הקרוב, כלומר של `@drive-coding/backend`.
+
+#### מה לא בפנים
+
+אין CLIs של סוכנים ואין אישורי claude/codex — **סוכנים לא עובדים בהרצה הזו**.
+זו מגבלה עקרונית ולא השמטה: `connection-registry.ts:33-34` ממפה
+`claude → connectInProcess` ו-`codex → connectCodexInProcess`, כלומר הם רצים
+**בתוך תהליך ה-BE**. שורה 168 מתעלמת מ-`override.bin/args` עבורם. בידוד
+אמיתי לשניים האלה דורש את אימוץ `acp-wire`, לא Dockerfile.
 ## 2026-09-04 21:54
 
 ### acp-wire — שלוש כניסות סימטריות, והשורש מפסיק להיות מלכודת
