@@ -103,4 +103,38 @@ describe("Mic pending capture", () => {
     expect(mic.error).toBe("mic.error.permission")
     expect(mic.canRetry).toBe(false)
   })
+
+  it("goes through requesting before recording when start succeeds", async () => {
+    let resolveStart!: () => void
+    mockStart.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveStart = resolve
+      }),
+    )
+    const recovery = createRecovery()
+    const mic = new Mic({ session: fakeSession, recovery })
+
+    const p = mic.toggle()
+    expect(mic.state).toBe("requesting")
+
+    resolveStart()
+    await p
+
+    expect(mic.state).toBe("recording")
+    expect(mic.permissionHint).toBeNull()
+  })
+
+  it("refreshPermissionHint sets mic.hint.needsAllow on prompt", async () => {
+    vi.stubGlobal("navigator", {
+      permissions: {
+        query: vi.fn().mockResolvedValue({ state: "prompt" }),
+      },
+    })
+    const recovery = createRecovery()
+    const mic = new Mic({ session: fakeSession, recovery })
+
+    await mic.refreshPermissionHint()
+
+    expect(mic.permissionHint).toBe("mic.hint.needsAllow")
+  })
 })

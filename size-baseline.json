@@ -547,7 +547,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/chat/TypeArea.svelte": {
-      "metric": 243,
+      "metric": 246,
       "impurity": 10,
       "class": "mixed"
     },
@@ -883,7 +883,7 @@
     },
     "packages/frontend/src/lib/view-models/mic.svelte.ts": {
       "metric": 157,
-      "impurity": 5,
+      "impurity": 6,
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/presence-poller.svelte.ts": {

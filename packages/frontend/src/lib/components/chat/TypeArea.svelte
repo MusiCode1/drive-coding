@@ -140,6 +140,7 @@ const isDisabled = $derived(session.status !== "connected")
 
 const dictateListening = $derived(dictate.state === "listening")
 const dictateBusy = $derived(dictate.state === "busy")
+const dictateRequesting = $derived(dictate.state === "requesting")
 const dictateBtnEnabled = $derived(
   !isDisabled &&
     mic.state === "idle" &&
@@ -150,7 +151,9 @@ const dictateBtnLabel = $derived(
     ? "dictate.stop"
     : dictateBusy
       ? "dictate.transcribing"
-      : "dictate.start",
+      : dictateRequesting
+        ? "dictate.requesting"
+        : "dictate.start",
 )
 
 $effect(() => {
@@ -254,6 +257,11 @@ function openFilePicker(): void {
     onDismiss={() => void dictate.dismiss()}
     {t}
   />
+  {#if dictateRequesting}
+    <p class="text-xs px-1" style="color:var(--fg-dim)" role="status">{t("dictate.requesting")}</p>
+  {:else if !dictate.error && mic.permissionHint}
+    <p class="text-xs px-1" style="color:var(--fg-dim)" role="status">{t(mic.permissionHint)}</p>
+  {/if}
 
   {#if attachments.length > 0}
     <div class="flex flex-wrap gap-1.5 px-1">
@@ -319,13 +327,13 @@ function openFilePicker(): void {
       onclick={() => void dictate.toggle()}
       disabled={!dictateBtnEnabled}
       aria-pressed={dictateListening ? true : undefined}
-      aria-busy={dictateBusy ? true : undefined}
+      aria-busy={dictateBusy || dictateRequesting ? true : undefined}
       aria-label={t(dictateBtnLabel)}
       title={t(dictateBtnLabel)}
       class="type-area-control type-area-icon-control shrink-0 rounded-xl p-2 flex items-center"
       style="color:{dictateListening ? 'var(--recording)' : 'var(--fg-dim)'}; min-height:var(--control-h)"
     >
-      {#if dictateBusy}
+      {#if dictateBusy || dictateRequesting}
         <Loader2Icon size={18} strokeWidth={1.75} class="animate-spin" />
       {:else}
         <MicIcon size={18} strokeWidth={1.75} />

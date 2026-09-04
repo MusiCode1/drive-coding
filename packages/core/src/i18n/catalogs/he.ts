@@ -47,6 +47,7 @@ export const he: Catalog = {
   "mic.error.notFound": "לא נמצא מיקרופון. חבר מיקרופון ונסה שוב.",
   "mic.error.transcribe": "התמלול נכשל. נסה שוב.",
   "mic.error.generic": "שגיאה במיקרופון. נסה שוב.",
+  "mic.hint.needsAllow": "הגישה למיקרופון עדיין לא אושרה. בלחיצה תופיע בקשת אישור.",
   // ─── mic retry ─── (slice sessions-inline)
   "mic.retry": "נסה שוב",
 
@@ -57,6 +58,7 @@ export const he: Catalog = {
   "voiceMode.status.thinking": "חושב…",
   "voiceMode.status.speaking": "מדבר…",
   "voiceMode.status.cancelling": "מבטל…",
+  "voiceMode.status.requesting": "ממתינים לאישור גישה למיקרופון…",
   // ─── tool-bubble ─── (slice 4)
   "chat.tool.status.pending": "ממתין",
   "chat.tool.status.in_progress": "בתהליך",
@@ -488,6 +490,7 @@ export const he: Catalog = {
   "dictate.error.transcribe": "התמלול נכשל",
   "dictate.error.generic": "ההכתבה נכשלה",
   "dictate.transcribing": "מתמלל…",
+  "dictate.requesting": "ממתינים לאישור גישה למיקרופון…",
   // ─── sessions filter ─── (slice sessions-search-filter)
   "sidebar.sessionsSearch": "חיפוש בכותרות…",
   "sidebar.sessionsFilterAll": "כל השיחות",

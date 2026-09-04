@@ -1,10 +1,11 @@
 /**
  * Dictate — type-to-input speech capture (append to draft only; never sends to agent).
  *
- * State machine: idle → listening → busy → idle
- * Uses Recorder + transcribe; recordingId is discarded (D6).
+ * State machine: idle → requesting → listening → busy → idle
+ * `requesting` = waiting for the browser mic permission dialog.
  *
  * ─── slice voice-pending-persistence: IndexedDB pending + retry/dismiss/hydrate ───
+ * ─── slice mic-permission-indication: requesting before listening ───
  */
 
 import type { MessageKey } from "@drive-coding/core/i18n"
@@ -13,7 +14,7 @@ import { Recorder } from "../engines/recorder"
 import type { ComposerDraft } from "./composer-draft.svelte"
 import type { Mic } from "./mic.svelte"
 
-export type DictateState = "idle" | "listening" | "busy"
+export type DictateState = "idle" | "requesting" | "listening" | "busy"
 
 export type FinishListeningResult =
   | { ok: true; text: string }
@@ -63,7 +64,7 @@ export class Dictate {
   }
 
   finishListening = (): Promise<FinishListeningResult> => {
-    if (this.state === "idle") {
+    if (this.state === "idle" || this.state === "requesting") {
       return Promise.resolve({ ok: true, text: "" })
     }
     if (this.state === "busy" && !this.#inFlight) {
@@ -80,7 +81,7 @@ export class Dictate {
 
   toggle = async (): Promise<void> => {
     if (this.state === "idle") {
-      this.state = "listening"
+      this.state = "requesting"
       this.error = null
       this.pendingRestored = false
       try {
@@ -94,8 +95,15 @@ export class Dictate {
         } else {
           this.error = "dictate.error.generic"
         }
+        void this.#mic.refreshPermissionHint()
         return
       }
+      this.state = "listening"
+      this.#mic.permissionHint = null
+      return
+    }
+
+    if (this.state === "requesting") {
       return
     }
 

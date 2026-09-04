@@ -62,6 +62,8 @@ export type MessageKey =
   | "mic.error.generic"
   // ─── mic retry ─── (slice sessions-inline)
   | "mic.retry"
+  // ─── mic permission UX ─── (slice mic-permission-indication)
+  | "mic.hint.needsAllow"
   // ─── voice-mode ─── (slice 3)
   | "voiceMode.status.idle"
   | "voiceMode.status.recording"
@@ -69,6 +71,7 @@ export type MessageKey =
   | "voiceMode.status.thinking"
   | "voiceMode.status.speaking"
   | "voiceMode.status.cancelling"
+  | "voiceMode.status.requesting"
   // ─── tool-bubble ─── (slice 4)
   | "chat.tool.status.pending"
   | "chat.tool.status.in_progress"
@@ -502,6 +505,7 @@ export type MessageKey =
   | "dictate.error.transcribe"
   | "dictate.error.generic"
   | "dictate.transcribing"
+  | "dictate.requesting"
   // ─── pending-capture ─── (slice voice-pending-persistence)
   | "pendingCapture.retry"
   | "pendingCapture.dismiss"

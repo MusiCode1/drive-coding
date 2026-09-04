@@ -2,11 +2,13 @@
  * Mic — "האוזן" של המשתמש.
  *
  * נקודת כניסה (entry point) יחידה toggle() שמונעת על ידי רכיב ה-MicButton.
- * מכונת מצבים (State machine): idle → recording → transcribing → idle
+ * מכונת מצבים: idle → requesting → recording → transcribing → idle
  *
- * בתעתיק מוצלח, שולח את הטקסט אל AgentSession.sendPrompt().
+ * `requesting` = ממתינים לדיאלוג הרשאת המיקרופון (עדיין לא אושרה / לא נדחתה).
+ * עוברים ל-recording רק אחרי ש-getUserMedia הצליח.
  *
  * ─── slice voice-pending-persistence: IndexedDB pending + retry/dismiss/hydrate ───
+ * ─── slice mic-permission-indication: requesting + hint לפני אישור ───
  */
 
 import type { MessageKey } from "@drive-coding/core/i18n"
@@ -14,8 +16,9 @@ import type { CuesEngine } from "../engines/cues"
 import type { AgentSession } from "./agent-session.svelte"
 import { Recorder } from "../engines/recorder"
 import { transcribe } from "../adapters/voice/transcribe"
+import { probeMicPermission } from "../util/mic-permission"
 
-export type MicState = "idle" | "recording" | "transcribing"
+export type MicState = "idle" | "requesting" | "recording" | "transcribing"
 
 type MicTranscribeContext = {
   transcribe: (blob: Blob) => Promise<{ text: string; recordingId: string }>
@@ -43,6 +46,8 @@ export class Mic {
   state: MicState = $state("idle")
   error: MessageKey | null = $state(null)
   pendingRestored = $state(false)
+  /** Soft hint when permission is still `prompt` (not granted yet). */
+  permissionHint: MessageKey | null = $state(null)
 
   readonly #session: AgentSession
   readonly #recorder: Recorder
@@ -54,15 +59,21 @@ export class Mic {
     this.#recorder = new Recorder()
     this.#cues = opts.cues
     this.#recovery = opts.recovery
+    void this.refreshPermissionHint()
   }
 
   get canRetry(): boolean {
     return this.#recovery.hasPending
   }
 
+  refreshPermissionHint = async (): Promise<void> => {
+    const state = await probeMicPermission()
+    this.permissionHint = state === "prompt" ? "mic.hint.needsAllow" : null
+  }
+
   toggle = async (): Promise<void> => {
     if (this.state === "idle") {
-      this.state = "recording"
+      this.state = "requesting"
       this.error = null
       this.pendingRestored = false
       try {
@@ -71,14 +82,23 @@ export class Mic {
         this.state = "idle"
         if (e instanceof DOMException && e.name === "NotAllowedError") {
           this.error = "mic.error.permission"
+          this.permissionHint = null
         } else if (e instanceof DOMException && e.name === "NotFoundError") {
           this.error = "mic.error.notFound"
         } else {
           this.error = "mic.error.generic"
         }
+        void this.refreshPermissionHint()
         return
       }
+      this.state = "recording"
+      this.permissionHint = null
       this.#cues?.play("recordingStart")
+      return
+    }
+
+    if (this.state === "requesting") {
+      // getUserMedia in flight — ignore extra taps
       return
     }
 
@@ -139,6 +159,7 @@ export class Mic {
       this.state = "idle"
       this.error = null
     }
+    // requesting: cannot abort getUserMedia reliably — leave until resolve/reject
   }
 
   #transcribeContext(): MicTranscribeContext {

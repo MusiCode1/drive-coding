@@ -51,6 +51,7 @@ export const en: Catalog = {
   "mic.error.notFound": "No microphone found. Connect a microphone and try again.",
   "mic.error.transcribe": "Transcription failed. Please try again.",
   "mic.error.generic": "Microphone error. Please try again.",
+  "mic.hint.needsAllow": "Microphone access is not granted yet. Tap to allow when prompted.",
   // ─── mic retry ─── (slice sessions-inline)
   "mic.retry": "Try again",
 
@@ -61,6 +62,7 @@ export const en: Catalog = {
   "voiceMode.status.thinking": "Thinking…",
   "voiceMode.status.speaking": "Speaking…",
   "voiceMode.status.cancelling": "Cancelling…",
+  "voiceMode.status.requesting": "Waiting for microphone permission…",
   // ─── tool-bubble ─── (slice 4)
   "chat.tool.status.pending": "Pending",
   "chat.tool.status.in_progress": "In progress",
@@ -496,6 +498,7 @@ export const en: Catalog = {
   "dictate.error.transcribe": "Transcription failed",
   "dictate.error.generic": "Dictation failed",
   "dictate.transcribing": "Transcribing…",
+  "dictate.requesting": "Waiting for microphone permission…",
   // ─── sessions filter ─── (slice sessions-search-filter)
   "sidebar.sessionsSearch": "Search titles…",
   "sidebar.sessionsFilterAll": "All sessions",

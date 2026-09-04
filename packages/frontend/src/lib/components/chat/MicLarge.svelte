@@ -21,16 +21,26 @@ const t = getI18n().t
 
 const STATE_CLASS: Record<MicState, string> = {
   idle: "",
+  requesting: "spin-state",
   recording: "mic-rec",
   transcribing: "spin-state",
 }
 
-const isDisabled = $derived(mic.state === "transcribing" || live.isOpen)
+const isDisabled = $derived(
+  mic.state === "transcribing" || mic.state === "requesting" || live.isOpen,
+)
 const showDiscard = $derived(mic.state === "recording")
 const stateClass = $derived(STATE_CLASS[mic.state])
+const statusLine = $derived(
+  mic.state === "requesting"
+    ? ("voiceMode.status.requesting" as const)
+    : mic.error
+      ? null
+      : mic.permissionHint,
+)
 
 function onClick() {
-  if (mic.state === "transcribing") return
+  if (mic.state === "transcribing" || mic.state === "requesting") return
   void voiceMode.startTalking()
 }
 </script>
@@ -47,7 +57,7 @@ function onClick() {
     >
       {#if mic.state === "idle" || mic.state === "recording"}
         <MicIcon size={40} strokeWidth={1.5} />
-      {:else if mic.state === "transcribing"}
+      {:else if mic.state === "transcribing" || mic.state === "requesting"}
         <Loader2Icon size={40} strokeWidth={1.5} class="animate-spin" />
       {/if}
     </button>
@@ -102,6 +112,15 @@ function onClick() {
     onDismiss={() => void mic.dismiss()}
     {t}
   />
+  {#if statusLine}
+    <p
+      class="text-xs text-center mt-1 max-w-xs"
+      style="color:var(--fg-dim)"
+      role="status"
+    >
+      {t(statusLine)}
+    </p>
+  {/if}
 </div>
 
 <style>

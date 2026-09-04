@@ -1,6 +1,7 @@
 /**
  * dictate.test.ts — finishListening + pending capture (slice dictate-to-input-polish + voice-pending).
  */
+import type { MessageKey } from "@drive-coding/core/i18n"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { DictatePendingRecovery } from "./dictate.svelte"
 
@@ -25,7 +26,11 @@ import { ComposerDraft } from "./composer-draft.svelte"
 import { Dictate } from "./dictate.svelte"
 import type { Mic } from "./mic.svelte"
 
-const fakeMic = { state: "idle" } as Mic
+const fakeMic = {
+  state: "idle",
+  permissionHint: null as MessageKey | null,
+  refreshPermissionHint: vi.fn().mockResolvedValue(undefined),
+} as unknown as Mic
 
 function createRecovery(overrides: Partial<DictatePendingRecovery> = {}): DictatePendingRecovery {
   return {
@@ -175,6 +180,24 @@ describe("Dictate.toggle from listening", () => {
     expect(dictate.state).toBe("idle")
     expect(dictate.error).toBe("dictate.error.permission")
     expect(dictate.canRetry).toBe(false)
+  })
+
+  it("goes through requesting before listening when start succeeds", async () => {
+    let resolveStart!: () => void
+    mockStart.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveStart = resolve
+      }),
+    )
+    const { dictate } = createDictate()
+
+    const p = dictate.toggle()
+    expect(dictate.state).toBe("requesting")
+
+    resolveStart()
+    await p
+
+    expect(dictate.state).toBe("listening")
   })
 })
 
