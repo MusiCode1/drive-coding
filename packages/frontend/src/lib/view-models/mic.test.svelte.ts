@@ -91,4 +91,16 @@ describe("Mic pending capture", () => {
     ;(recovery as { hasPending: boolean }).hasPending = true
     expect(mic.canRetry).toBe(true)
   })
+
+  it("NotAllowedError sets mic.error.permission without pending retry", async () => {
+    mockStart.mockRejectedValueOnce(new DOMException("denied", "NotAllowedError"))
+    const recovery = createRecovery({ hasPending: false })
+    const mic = new Mic({ session: fakeSession, recovery })
+
+    await mic.toggle()
+
+    expect(mic.state).toBe("idle")
+    expect(mic.error).toBe("mic.error.permission")
+    expect(mic.canRetry).toBe(false)
+  })
 })

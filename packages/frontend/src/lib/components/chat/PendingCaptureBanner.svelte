@@ -1,7 +1,7 @@
 <script lang="ts">
 /**
- * PendingCaptureBanner — shared retry/dismiss banner for failed voice capture.
- * (slice voice-pending-persistence)
+ * PendingCaptureBanner — shared banner for voice errors + pending capture retry.
+ * (slice voice-pending-persistence; mic-permission-indication: show error without canRetry)
  */
 import type { MessageKey } from "@drive-coding/core/i18n"
 
@@ -21,7 +21,9 @@ let {
   t: (key: MessageKey) => string
 } = $props()
 
-const showBanner = $derived(restored || (error !== null && canRetry))
+/** Permission / notFound / generic have error but no blob — still must show. */
+const showBanner = $derived(restored || error !== null)
+const showActions = $derived(canRetry || error !== null || restored)
 </script>
 
 {#if showBanner}
@@ -36,16 +38,18 @@ const showBanner = $derived(restored || (error !== null && canRetry))
     {#if error}
       <p>{t(error)}</p>
     {/if}
-    {#if canRetry}
+    {#if showActions}
       <div class="flex gap-2 justify-center mt-1">
-        <button
-          type="button"
-          class="px-2 py-0.5 rounded text-[11px] font-medium border"
-          style="border-color:var(--recording); color:var(--recording)"
-          onclick={onRetry}
-        >
-          {t("pendingCapture.retry")}
-        </button>
+        {#if canRetry}
+          <button
+            type="button"
+            class="px-2 py-0.5 rounded text-[11px] font-medium border"
+            style="border-color:var(--recording); color:var(--recording)"
+            onclick={onRetry}
+          >
+            {t("pendingCapture.retry")}
+          </button>
+        {/if}
         <button
           type="button"
           class="px-2 py-0.5 rounded text-[11px] font-medium border"

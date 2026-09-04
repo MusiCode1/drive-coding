@@ -165,6 +165,17 @@ describe("Dictate.toggle from listening", () => {
 
     expect(draft.text).toBe("")
   })
+
+  it("NotAllowedError sets dictate.error.permission without canRetry", async () => {
+    mockStart.mockRejectedValueOnce(new DOMException("denied", "NotAllowedError"))
+    const { dictate } = createDictate()
+
+    await dictate.toggle()
+
+    expect(dictate.state).toBe("idle")
+    expect(dictate.error).toBe("dictate.error.permission")
+    expect(dictate.canRetry).toBe(false)
+  })
 })
 
 describe("Dictate pending capture retry", () => {
