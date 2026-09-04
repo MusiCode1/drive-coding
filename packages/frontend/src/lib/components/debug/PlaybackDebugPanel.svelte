@@ -15,7 +15,7 @@ import { onMount } from "svelte"
 import { type PlaybackDebugInfo, playbackDebugInfo } from "$lib/debug/playback-registry"
 
 let info = $state<PlaybackDebugInfo | null>(null)
-let open = $state(true)
+let open = $state(false)
 
 onMount(() => {
   const t = setInterval(() => {
