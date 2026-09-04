@@ -154,6 +154,7 @@ const responsive = new ResponsiveVM()
 
 // ─── ui-shell ─── (redesign-2)
 const uiShell = new UiShellVM()
+uiShell.setInputMode(settings.inputMode)
 
 // ─── modals ─── (redesign-6)
 const modals = new ModalsVM()
@@ -256,12 +257,11 @@ $effect(() => {
 })
 $effect(() => () => presencePoller.dispose())
 
-// ─── ui-shell inputMode reset ─── (slice playback-dock-scope)
-// RecordFooter mode was local $state — unmount on idle reset it. Singleton survives
-// navigation; reset when agentId is set/changed (attach, new session, switch).
+// ─── ui-shell inputMode reset ─── (slice ui-shell-session-prefs)
+// Close mobile sheet on session attach/switch; inputMode hydrates at boot only.
 $effect(() => {
   const agentId = session.agentId
-  if (agentId) uiShell.resetInputModeForSession()
+  if (agentId) uiShell.closeSheet()
 })
 
 // ─── חיווט ───────────────────────────────────────

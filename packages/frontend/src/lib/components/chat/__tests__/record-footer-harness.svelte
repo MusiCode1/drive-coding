@@ -25,14 +25,12 @@ import type { I18nVM } from "$lib/view-models/i18n.svelte"
 import type { Live } from "$lib/view-models/live.svelte"
 import type { Mic } from "$lib/view-models/mic.svelte"
 import type { Dictate } from "$lib/view-models/dictate.svelte"
-import type { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
+import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
 import type { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import type { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
 import type { Speaker } from "$lib/view-models/speaker.svelte"
 import type { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
-import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
-import type { Dictate } from "$lib/view-models/dictate.svelte"
 import { UiShellVM, type InputMode } from "$lib/view-models/ui-shell.svelte"
 import RecordFooter from "../RecordFooter.svelte"
 
@@ -122,11 +120,10 @@ const fakeSettings = {
   enterToSend: false,
   liveVoice: "Puck",
   setLiveVoice: () => {},
+  setInputMode: () => {},
 } as unknown as Settings
 
 const fakeSpeaker = {} as unknown as Speaker
-
-const fakeDraft = { text: "" } as unknown as ComposerDraft
 
 const fakeDictate = {
   state: "idle",
@@ -143,7 +140,6 @@ const fakeDictate = {
 
 const fakePlaylist = { items: [], transport: "stopped" as const }
 const composerDraft = new ComposerDraft()
-const fakeDictate = { state: "idle", error: null, toggle: async () => {}, cancel: () => {} } as unknown as Dictate
 
 setI18n(fakeI18n)
 setComposerDraft(composerDraft)
@@ -157,8 +153,6 @@ setVoiceMode(fakeVoiceMode)
 setModelStatus(fakeModelStatus)
 setSettings(fakeSettings)
 setSpeaker(fakeSpeaker)
-setComposerDraft(fakeDraft)
-setDictate(fakeDictate)
 setAudioPlaylist(fakePlaylist as never)
 </script>
 

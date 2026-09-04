@@ -61,9 +61,4 @@ export class UiShellVM {
   setInputMode(mode: InputMode): void {
     this.inputMode = mode
   }
-
-  /** כניסה לסשן — מאפס ל-record (התנהגות RecordFooter המקומי לפני singleton). */
-  resetInputModeForSession(): void {
-    this.inputMode = "record"
-  }
 }
