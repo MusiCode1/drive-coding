@@ -88,9 +88,12 @@ export class Dictate {
       this.state = "requesting"
       this.error = null
       this.pendingRestored = false
-      const perm = await probeMicPermission()
-      this.awaitingPermissionDialog = perm === "prompt"
-      this.#mic.permissionHint = perm === "prompt" ? "mic.hint.needsAllow" : null
+      this.awaitingPermissionDialog = this.#mic.permissionHint === "mic.hint.needsAllow"
+      void probeMicPermission().then((perm) => {
+        if (this.state !== "requesting") return
+        this.awaitingPermissionDialog = perm === "prompt"
+        this.#mic.permissionHint = perm === "prompt" ? "mic.hint.needsAllow" : null
+      })
       try {
         await this.#recorder.start()
       } catch (e: unknown) {

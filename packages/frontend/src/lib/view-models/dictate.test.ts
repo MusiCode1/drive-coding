@@ -198,7 +198,7 @@ describe("Dictate.toggle from listening", () => {
 
     const p = dictate.toggle()
     expect(dictate.state).toBe("requesting")
-    await vi.waitFor(() => expect(mockStart).toHaveBeenCalled())
+    expect(mockStart).toHaveBeenCalledOnce()
     expect(dictate.awaitingPermissionDialog).toBe(false)
 
     resolveStart()
@@ -223,6 +223,7 @@ describe("Dictate.toggle from listening", () => {
     const { dictate } = createDictate()
 
     const p = dictate.toggle()
+    expect(mockStart).toHaveBeenCalledOnce()
     await vi.waitFor(() => expect(dictate.awaitingPermissionDialog).toBe(true))
     expect(dictate.state).toBe("requesting")
 

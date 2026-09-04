@@ -80,9 +80,13 @@ export class Mic {
       this.state = "requesting"
       this.error = null
       this.pendingRestored = false
-      const perm = await probeMicPermission()
-      this.awaitingPermissionDialog = perm === "prompt"
-      this.permissionHint = perm === "prompt" ? "mic.hint.needsAllow" : null
+      // Optimistic from last probe (constructor / prior refresh) — don't block start.
+      this.awaitingPermissionDialog = this.permissionHint === "mic.hint.needsAllow"
+      void probeMicPermission().then((perm) => {
+        if (this.state !== "requesting") return
+        this.awaitingPermissionDialog = perm === "prompt"
+        this.permissionHint = perm === "prompt" ? "mic.hint.needsAllow" : null
+      })
       try {
         await this.#recorder.start()
       } catch (e: unknown) {

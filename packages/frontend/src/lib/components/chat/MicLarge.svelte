@@ -3,6 +3,7 @@
  * MicLarge — לחצן mic גדול 110px עם state visual (redesign-4).
  *
  * ─── slice voice-pending-persistence: PendingCaptureBanner below button (flex-col) ───
+ * requesting = soft pulse (not thinking spinner); transcribing keeps spin-state.
  */
 
 import Loader2Icon from "@lucide/svelte/icons/loader-2"
@@ -21,14 +22,14 @@ const t = getI18n().t
 
 const STATE_CLASS: Record<MicState, string> = {
   idle: "",
-  requesting: "spin-state",
+  requesting: "mic-arming",
   recording: "mic-rec",
   transcribing: "spin-state",
 }
 
-const isDisabled = $derived(
-  mic.state === "transcribing" || mic.state === "requesting" || live.isOpen,
-)
+const isArming = $derived(mic.state === "requesting")
+const isHardDisabled = $derived(mic.state === "transcribing" || live.isOpen)
+const isDisabled = $derived(isHardDisabled || isArming)
 const showDiscard = $derived(mic.state === "recording")
 const stateClass = $derived(STATE_CLASS[mic.state])
 const statusLine = $derived(
@@ -52,15 +53,17 @@ function onClick() {
     <button
       class="rounded-full border-none cursor-pointer flex items-center justify-center transition-all {stateClass}"
       style="width:110px; height:110px; background:var(--accent); color:white; font-size:2.5rem;"
-      class:disabled={isDisabled}
+      class:disabled={isHardDisabled}
+      class:mic-arming-wait={isArming}
       onclick={onClick}
       disabled={isDisabled}
+      aria-busy={isArming || mic.state === "transcribing" ? true : undefined}
       aria-label={t(`voiceMode.status.${mic.state}`)}
     >
-      {#if mic.state === "idle" || mic.state === "recording"}
-        <MicIcon size={40} strokeWidth={1.5} />
-      {:else if mic.state === "transcribing" || mic.state === "requesting"}
+      {#if mic.state === "transcribing"}
         <Loader2Icon size={40} strokeWidth={1.5} class="animate-spin" />
+      {:else}
+        <MicIcon size={40} strokeWidth={1.5} />
       {/if}
     </button>
 
@@ -134,6 +137,15 @@ function onClick() {
     background: var(--thinking) !important;
   }
 
+  .mic-arming {
+    animation: pulse-arm 1s ease-in-out infinite;
+  }
+
+  .mic-arming-wait {
+    cursor: wait;
+    opacity: 1;
+  }
+
   .flash-state {
     animation: flash-fast 0.3s infinite;
   }
@@ -141,6 +153,18 @@ function onClick() {
   .disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  @keyframes pulse-arm {
+    0%,
+    100% {
+      opacity: 1;
+      box-shadow: 0 0 0 0 var(--accent-soft);
+    }
+    50% {
+      opacity: 0.78;
+      box-shadow: 0 0 0 14px transparent;
+    }
   }
 
   @keyframes flash-fast {

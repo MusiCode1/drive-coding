@@ -331,9 +331,10 @@ function openFilePicker(): void {
       aria-label={t(dictateBtnLabel)}
       title={t(dictateBtnLabel)}
       class="type-area-control type-area-icon-control shrink-0 rounded-xl p-2 flex items-center"
+      class:dictate-arming={dictateRequesting && !dictateBusy}
       style="color:{dictateListening ? 'var(--recording)' : 'var(--fg-dim)'}; min-height:var(--control-h)"
     >
-      {#if dictateBusy || dictateRequesting}
+      {#if dictateBusy}
         <Loader2Icon size={18} strokeWidth={1.75} class="animate-spin" />
       {:else}
         <MicIcon size={18} strokeWidth={1.75} />
@@ -524,5 +525,20 @@ function openFilePicker(): void {
     color: var(--recording);
     background: transparent;
     cursor: pointer;
+  }
+
+  button.dictate-arming {
+    animation: dictate-arm-pulse 1s ease-in-out infinite;
+    cursor: wait;
+  }
+
+  @keyframes dictate-arm-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
   }
 </style>

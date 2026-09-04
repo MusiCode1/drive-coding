@@ -121,7 +121,8 @@ describe("Mic pending capture", () => {
 
     const p = mic.toggle()
     expect(mic.state).toBe("requesting")
-    await vi.waitFor(() => expect(mockStart).toHaveBeenCalled())
+    // probe runs in parallel — start must not wait on Permissions API
+    expect(mockStart).toHaveBeenCalledOnce()
     expect(mic.awaitingPermissionDialog).toBe(false)
 
     resolveStart()
@@ -130,6 +131,29 @@ describe("Mic pending capture", () => {
     expect(mic.state).toBe("recording")
     expect(mic.permissionHint).toBeNull()
     expect(mic.awaitingPermissionDialog).toBe(false)
+  })
+
+  it("starts recorder without waiting for a slow permission probe", async () => {
+    let resolveProbe!: (value: { state: string }) => void
+    mockStart.mockResolvedValueOnce(undefined)
+    vi.stubGlobal("navigator", {
+      permissions: {
+        query: vi.fn(
+          () =>
+            new Promise<{ state: string }>((resolve) => {
+              resolveProbe = resolve
+            }),
+        ),
+      },
+    })
+    const recovery = createRecovery()
+    const mic = new Mic({ session: fakeSession, recovery })
+
+    const p = mic.toggle()
+    expect(mockStart).toHaveBeenCalledOnce()
+    resolveProbe({ state: "granted" })
+    await p
+    expect(mic.state).toBe("recording")
   })
 
   it("awaitingPermissionDialog is true while requesting when permission is prompt", async () => {
@@ -148,6 +172,7 @@ describe("Mic pending capture", () => {
     const mic = new Mic({ session: fakeSession, recovery })
 
     const p = mic.toggle()
+    expect(mockStart).toHaveBeenCalledOnce()
     await vi.waitFor(() => expect(mic.awaitingPermissionDialog).toBe(true))
     expect(mic.state).toBe("requesting")
 
