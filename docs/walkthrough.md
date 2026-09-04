@@ -1,3 +1,75 @@
+## 2026-09-04 21:54
+
+### acp-wire — שלוש כניסות סימטריות, והשורש מפסיק להיות מלכודת
+
+מיזוג `integration/run-acp-wire-be` אל edge, ובאותה הזדמנות פיצול ה-`exports`
+של `@drive-coding/acp-wire` לשלוש כניסות: שורש ניטרלי, `/browser`, `/node`.
+
+הרקע: ה-`exports` הצביעו ל-`dist/`, ו-`dist/` ב-`.gitignore`. בעץ עבודה קיים
+זה לא מורגש (הוא שרד מבנייה ידנית), אבל **checkout נקי נשבר** —
+`Rollup failed to resolve import "@drive-coding/acp-wire/browser"`. התגלה
+בבניית קונטיינר, שהיא הדבר היחיד שמתחיל באמת מאפס. `ExecStartPre` ביוניט
+מריץ רק `bun install` + `dc-build-fe.mjs` ואף פעם לא בונה את החבילה.
+
+#### מה בוצע?
+
+**1. מיזוג `integration/run-acp-wire-be`**
+
+- `in-process-acp-transport.ts` (147 שורות) נמחק; הפונקציונליות עברה ל-`acp-wire`
+  כ-`from-line-wire.ts`, והטסט עבר איתה.
+- `SessionHost` מייבא `createFromLineWire` + `AcpTransport` מהחבילה.
+- התנגשות יחידה: `packages/acp-wire/package.json` → `exports`.
+  **לא נלקח "theirs"** — הענף מסיר את `./browser`, שמיובא ב-22 קבצי FE.
+
+**2. פיצול לשלוש כניסות**
+
+מיפוי תלויות `node:` בפועל — רק 4 מתוך 11 קבצים תלויים:
+
+| קובץ | תלות |
+|---|---|
+| `transport/stdio.ts` | `node:stream` |
+| `transport/unix-socket.ts` | `node:fs`, `node:fs/promises`, `node:net` |
+| `transport/node-streams.ts` | `node:net` |
+| `streamable-http/server.ts` | `node:crypto`, `node:http` |
+
+- `.` → `src/index.ts` — `AcpTransport`, `createFromLineWire`,
+  `createInProcessAcpTransport`, `ACP_*`, `FORBIDDEN_HTTP_PORTS`,
+  `inboundKind`/`outboundSink`, `createHttpClient`.
+- `./browser` → `src/browser.ts` — `WsAcpTransport`, `wsToWebStreams`.
+- `./node` → `src/node.ts` (חדש) — stdio · unix · net · http server.
+
+`createHttpClient` בשורש **במכוון**: הוא מדבר `fetch` + `ReadableStream`,
+מייבא רק `./headers.js`, ולכן עובד גם בדפדפן. `named-pipe.ts` הוא stub שזורק.
+
+**3. אפס שינוי בצרכנים**
+
+מהשורש מיובאים רק `AcpTransport` ו-`createFromLineWire`, ושניהם נשארו שם.
+`agent-session.svelte.ts` ו-21 קבצי FE נוספים כבר מייבאים מ-`/browser`.
+השינוי היחיד: `index.test.ts` → `browser-entry.test.ts`, מייבא מ-`./browser.js`
+(המסלול שה-FE באמת עובר בו).
+
+#### אימות
+
+מדידה מול edge נקי ב-worktree נפרד, לא מול הזיכרון:
+
+| שער | edge | הענף |
+|---|---|---|
+| typecheck | 10 errors | 10 errors — **רשימות זהות** |
+| טסטים | 2 failed (`http-mcp.test.ts`) | אותם 2 בדיוק |
+| `bun run fe:build` | — | ✅ built in 43s |
+| טסטי acp-wire | — | 7 files / 45 tests ✅ |
+
+שני הכשלים (`session_list`, `session_open`) קיימים מראש ב-edge.
+
+**בדיקת הדליפה שהמבנה נועד למנוע:** בתוצר הלקוח נמצאה הפניה אחת ל-`node:`,
+והיא ב-sourcemap בלבד, בקוד מת מאחורי `if(!1)`, מספרייה חיצונית — אפס
+אזכורי acp-wire.
+
+#### נגזרת
+
+`Containerfile` מכיל כרגע `RUN cd packages/acp-wire && bun run build` כעקיפה.
+אחרי המיזוג הוא **מיותר** — אין יותר `dist` ב-`exports`. להסיר ולבנות מחדש.
+
 ## 2026-09-03 01:32
 
 ### מתג מחשבות/כלים פותח וסוגר בועות שכבר בתצוגה

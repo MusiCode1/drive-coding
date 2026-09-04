@@ -52,8 +52,8 @@ import type {
 import { createAcpClient, createAttachedAcpClient } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { parseExtResult } from "@drive-coding/provider/extensions"
-import type { AcpTransport } from "@drive-coding/provider/transport"
-import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
+import type { AcpTransport } from "@drive-coding/acp-wire"
+import { createFromLineWire } from "@drive-coding/acp-wire"
 
 type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
 import { createTurnLifecycleHandlers, type TurnTimingHost } from "./turn-lifecycle.js"
@@ -549,7 +549,7 @@ export async function createSessionHostFromConnection(
 
   // ── Transport + AcpClient ─────────────────────────────────────────────────
 
-  const transport = createInProcessAcpTransport({
+  const transport = createFromLineWire({
     wire: conn.wire,
     onCrash: conn.onCrash.bind(conn),
   })
