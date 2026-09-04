@@ -224,6 +224,7 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
       "session_send",
       "session_state",
       "session_subscribe",
+      "session_surface",
       "session_whoami",
     ])
     const openTool = tools.find((t) => t.name === "session_open")
@@ -1006,5 +1007,57 @@ describe("session_whoami runtime envelope (slice mcp-whoami-runtime)", () => {
     expect(isToolError(result)).toBe(false)
     const body = JSON.parse(toolText(result)) as { backend?: { publicBaseUrl?: string } }
     expect(body.backend?.publicBaseUrl).toBe("https://public.example.com")
+  })
+})
+
+describe("session_surface (slice mcp-surface-tool)", () => {
+  afterEach(() => {
+    delete process.env[DRIVE_CODING_AGENT_ID_ENV]
+  })
+
+  it("listTools includes session_surface without caller header", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const { tools } = await client.listTools()
+    await client.close()
+    expect(tools.map((t) => t.name)).toContain("session_surface")
+  })
+
+  it("without header returns isError", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const result = await client.callTool({ name: "session_surface", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(true)
+    expect(toolText(result)).toMatch(new RegExp(AGENT_ID_HEADER))
+  })
+
+  it("unknown header id returns isError", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app, {
+      [AGENT_ID_HEADER]: "00000000-0000-4000-8000-000000000098",
+    })
+    const result = await client.callTool({ name: "session_surface", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(true)
+  })
+
+  it("registered caller gets the surface prompt as plain text", async () => {
+    const { app, registry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/surface-self" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_surface", arguments: {} })
+    await client.close()
+
+    expect(isToolError(result)).toBe(false)
+    const text = toolText(result)
+    // The caller must be able to act on this without a second lookup:
+    // who it is, how to reach the BE, and how to hand the user a file.
+    expect(text).toContain(agent.id)
+    expect(text).toContain("/api/mcp")
+    expect(text).toContain("/api/fs/file")
+    // Text, not JSON — a stringified body would escape every newline.
+    expect(text).not.toMatch(/^\s*[{[]/)
+    expect(text).toContain("\n")
   })
 })
