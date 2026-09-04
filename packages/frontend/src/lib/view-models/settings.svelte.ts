@@ -21,6 +21,7 @@ import { DEFAULT_GEMINI_VOICE, DEFAULT_LIVE_VOICE } from "../adapters/voice/voic
 import { setBeUrlBase } from "../util/be-url"
 import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH_REM } from "../util/sidebar-width"
 import { ttsCapabilities } from "./capabilities.svelte"
+import { coerceInputMode, type InputMode } from "./ui-shell.svelte"
 
 const STORAGE_KEY = "drive-coding-v2-settings"
 
@@ -78,6 +79,7 @@ type Persisted = {
   notifications: boolean
   // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
   sessionsCurrentCwdOnly: boolean
+  inputMode: InputMode
 }
 
 const DEFAULTS: Persisted = {
@@ -130,6 +132,7 @@ const DEFAULTS: Persisted = {
   notifications: false,
   // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
   sessionsCurrentCwdOnly: false,
+  inputMode: "record",
 }
 
 /**
@@ -262,6 +265,7 @@ export class Settings {
 
   // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
   sessionsCurrentCwdOnly = $state<boolean>(DEFAULTS.sessionsCurrentCwdOnly)
+  inputMode = $state<InputMode>(DEFAULTS.inputMode)
 
   constructor() {
     const loaded = load()
@@ -270,53 +274,35 @@ export class Settings {
     this.voiceId = loaded.voiceId
     this.beUrl = loaded.beUrl
     setBeUrlBase(this.beUrl)
-    // ─── דיבור ───
     this.speakThoughts = loaded.speakThoughts
     this.narrateTools = loaded.narrateTools
     this.translateThoughts = loaded.translateThoughts
-    // ─── רכב ───
     this.carMode = loaded.carMode
-    // ─── שפה ───
     this.locale = loaded.locale
-    // ─── השתקה ───
     this.muted = loaded.muted
-    // ─── מסך ───
     this.screenWakeLock = loaded.screenWakeLock
-    // ─── תצוגת צ'אט ───
     this.showThoughts = loaded.showThoughts
     this.showTools = loaded.showTools
     this.compactActivity = loaded.compactActivity
-    // ─── Enter toggle ───
     this.enterToSend = loaded.enterToSend
-    // ─── תמונות מרוחקות ───
     this.autoLoadRemoteImages = loaded.autoLoadRemoteImages
-    // ─── config אחרון פר-CLI ───
     this.lastConfig = loaded.lastConfig
-    // ─── TTS provider ───
     this.ttsProvider = loaded.ttsProvider
-    // ─── תיקיות אחרונות ───
     this.recentCollapsed = loaded.recentCollapsed
-    // ─── leave-running ───
     this.suppressLeaveWarning = loaded.suppressLeaveWarning
-    // ─── קול Gemini ───
     this.geminiVoice = loaded.geminiVoice
-    // ─── קול Gemini Live ───
     this.liveVoice = loaded.liveVoice
-    // ─── פרומפט-מערכת פר-פרויקט ───
     this.projectSystemPrompt = loaded.projectSystemPrompt
-    // ─── גובה פאנלים נגרר ───
     this.recentPanelHeight = loaded.recentPanelHeight
     this.activePanelHeight = loaded.activePanelHeight
     this.sidebarWidthRem = Number.isFinite(loaded.sidebarWidthRem)
       ? clampSidebarWidth(loaded.sidebarWidthRem)
       : DEFAULTS.sidebarWidthRem
     this.geminiTone = loaded.geminiTone
-    // ─── טרנספורט סשן ─── (slice transport-polish C4)
     this.sessionTransport = loaded.sessionTransport
-    // ─── notifications ─── (slice notify-local)
     this.notifications = loaded.notifications
-    // ─── סינון רשימת סשנים ───
     this.sessionsCurrentCwdOnly = loaded.sessionsCurrentCwdOnly
+    this.inputMode = coerceInputMode(loaded.inputMode)
   }
 
   // ─── טופס חיבור ───
@@ -636,6 +622,11 @@ export class Settings {
     this.#persist()
   }
 
+  setInputMode = (mode: InputMode): void => {
+    this.inputMode = coerceInputMode(mode)
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -671,6 +662,7 @@ export class Settings {
       sessionTransport: this.sessionTransport,
       notifications: this.notifications,
       sessionsCurrentCwdOnly: this.sessionsCurrentCwdOnly,
+      inputMode: this.inputMode,
     })
   }
 }
