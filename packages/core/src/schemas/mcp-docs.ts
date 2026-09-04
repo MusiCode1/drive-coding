@@ -110,6 +110,7 @@ export type McpToolName =
   | "session_close"
   | "session_subscribe"
   | "session_whoami"
+  | "session_surface"
   | "notify_parent"
 
 export const MCP_TOOL_META: Record<
@@ -150,6 +151,11 @@ export const MCP_TOOL_META: Record<
     title: "Who am I",
     description:
       "Discovery only — not authentication. Return the caller's identity (agent UUID, cliKind, cwd, parent, sessionId) plus backend envelope (pid, port, version, uptimeSec, publicBaseUrl, memory budget) and runtime envelope (cli pid, attached, busy, via, child RSS on Linux). No parameters. Missing or unknown header → error; the server does not guess from ENV. Child memory is Linux-only in v1; Windows returns runtime.memory null with source unavailable.",
+  },
+  session_surface: {
+    title: "Read this UI's surface prompt",
+    description:
+      "Return the drive-coding surface prompt for the calling agent: what this product is, how to reach this backend (loopback base, MCP endpoint, file proxy, public origin, your agent id), the session-bus tools, and the display capabilities of the chat UI — how to give the user a clickable link to a local file, embed an image, or render a mermaid diagram. Same body as GET /api/agent-prompt, which normally arrives through a CLI hook; call this when that hook is not wired. No parameters; identity comes from X-Drive-Coding-Agent. Read it before dumping a raw filesystem path at the user.",
   },
 }
 

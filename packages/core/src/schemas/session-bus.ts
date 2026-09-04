@@ -135,6 +135,10 @@ export type McpSessionListInput = typeof McpSessionListInput.infer
 export const McpSessionWhoamiInput = type({})
 export type McpSessionWhoamiInput = typeof McpSessionWhoamiInput.infer
 
+/** MCP session_surface — no parameters; the caller's own surface prompt, by header identity. */
+export const McpSessionSurfaceInput = type({})
+export type McpSessionSurfaceInput = typeof McpSessionSurfaceInput.infer
+
 /** @deprecated Use McpSessionListInput — base/port/json are not used by MCP. */
 export const AgentListInput = McpSessionListInput
 export type AgentListInput = McpSessionListInput
