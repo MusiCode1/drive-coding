@@ -4,6 +4,12 @@ export type SheetDetent = "peek" | "half" | "full"
 /** מצב אזור-הקלט בתחתית הצ'אט — record / typing / live / hidden. */
 export type InputMode = "record" | "typing" | "live" | "hidden"
 
+/** Coerce persisted / unknown values to a valid InputMode. */
+export function coerceInputMode(v: unknown): InputMode {
+  if (v === "record" || v === "typing" || v === "live" || v === "hidden") return v
+  return "record"
+}
+
 /**
  * UiShellVM — מצב ה-shell ה-UI הגלובלי (entity: חוצה chat + settings).
  *
