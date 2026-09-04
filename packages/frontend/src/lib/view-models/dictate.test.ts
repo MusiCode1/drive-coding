@@ -189,15 +189,48 @@ describe("Dictate.toggle from listening", () => {
         resolveStart = resolve
       }),
     )
+    vi.stubGlobal("navigator", {
+      permissions: {
+        query: vi.fn().mockResolvedValue({ state: "granted" }),
+      },
+    })
     const { dictate } = createDictate()
 
     const p = dictate.toggle()
+    expect(dictate.state).toBe("requesting")
+    await vi.waitFor(() => expect(mockStart).toHaveBeenCalled())
+    expect(dictate.awaitingPermissionDialog).toBe(false)
+
+    resolveStart()
+    await p
+
+    expect(dictate.state).toBe("listening")
+    expect(dictate.awaitingPermissionDialog).toBe(false)
+  })
+
+  it("awaitingPermissionDialog is true while requesting when permission is prompt", async () => {
+    let resolveStart!: () => void
+    mockStart.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveStart = resolve
+      }),
+    )
+    vi.stubGlobal("navigator", {
+      permissions: {
+        query: vi.fn().mockResolvedValue({ state: "prompt" }),
+      },
+    })
+    const { dictate } = createDictate()
+
+    const p = dictate.toggle()
+    await vi.waitFor(() => expect(dictate.awaitingPermissionDialog).toBe(true))
     expect(dictate.state).toBe("requesting")
 
     resolveStart()
     await p
 
     expect(dictate.state).toBe("listening")
+    expect(dictate.awaitingPermissionDialog).toBe(false)
   })
 })
 

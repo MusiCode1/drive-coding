@@ -883,7 +883,7 @@
     },
     "packages/frontend/src/lib/view-models/mic.svelte.ts": {
       "metric": 157,
-      "impurity": 6,
+      "impurity": 7,
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/presence-poller.svelte.ts": {

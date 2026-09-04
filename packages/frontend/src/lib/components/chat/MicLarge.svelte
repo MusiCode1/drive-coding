@@ -33,7 +33,9 @@ const showDiscard = $derived(mic.state === "recording")
 const stateClass = $derived(STATE_CLASS[mic.state])
 const statusLine = $derived(
   mic.state === "requesting"
-    ? ("voiceMode.status.requesting" as const)
+    ? mic.awaitingPermissionDialog
+      ? ("voiceMode.status.requesting" as const)
+      : null
     : mic.error
       ? null
       : mic.permissionHint,

@@ -151,7 +151,7 @@ const dictateBtnLabel = $derived(
     ? "dictate.stop"
     : dictateBusy
       ? "dictate.transcribing"
-      : dictateRequesting
+      : dictateRequesting && dictate.awaitingPermissionDialog
         ? "dictate.requesting"
         : "dictate.start",
 )
@@ -257,7 +257,7 @@ function openFilePicker(): void {
     onDismiss={() => void dictate.dismiss()}
     {t}
   />
-  {#if dictateRequesting}
+  {#if dictateRequesting && dictate.awaitingPermissionDialog}
     <p class="text-xs px-1" style="color:var(--fg-dim)" role="status">{t("dictate.requesting")}</p>
   {:else if !dictate.error && mic.permissionHint}
     <p class="text-xs px-1" style="color:var(--fg-dim)" role="status">{t(mic.permissionHint)}</p>

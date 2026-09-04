@@ -2,7 +2,8 @@
  * Dictate — type-to-input speech capture (append to draft only; never sends to agent).
  *
  * State machine: idle → requesting → listening → busy → idle
- * `requesting` = waiting for the browser mic permission dialog.
+ * `requesting` = waiting for getUserMedia; `awaitingPermissionDialog` only when
+ * Permissions API is still `prompt` (permission copy, not stream-open wait).
  *
  * ─── slice voice-pending-persistence: IndexedDB pending + retry/dismiss/hydrate ───
  * ─── slice mic-permission-indication: requesting before listening ───
@@ -11,6 +12,7 @@
 import type { MessageKey } from "@drive-coding/core/i18n"
 import { transcribe } from "../adapters/voice/transcribe"
 import { Recorder } from "../engines/recorder"
+import { probeMicPermission } from "../util/mic-permission"
 import type { ComposerDraft } from "./composer-draft.svelte"
 import type { Mic } from "./mic.svelte"
 
@@ -45,6 +47,8 @@ export class Dictate {
   state: DictateState = $state("idle")
   error: MessageKey | null = $state(null)
   pendingRestored = $state(false)
+  /** True only while requesting and Permissions API reports `prompt`. */
+  awaitingPermissionDialog: boolean = $state(false)
 
   readonly #draft: ComposerDraft
   readonly #mic: Mic
@@ -84,10 +88,14 @@ export class Dictate {
       this.state = "requesting"
       this.error = null
       this.pendingRestored = false
+      const perm = await probeMicPermission()
+      this.awaitingPermissionDialog = perm === "prompt"
+      this.#mic.permissionHint = perm === "prompt" ? "mic.hint.needsAllow" : null
       try {
         await this.#recorder.start()
       } catch (e: unknown) {
         this.state = "idle"
+        this.awaitingPermissionDialog = false
         if (e instanceof DOMException && e.name === "NotAllowedError") {
           this.error = "dictate.error.permission"
         } else if (e instanceof DOMException && e.name === "NotFoundError") {
@@ -99,6 +107,7 @@ export class Dictate {
         return
       }
       this.state = "listening"
+      this.awaitingPermissionDialog = false
       this.#mic.permissionHint = null
       return
     }

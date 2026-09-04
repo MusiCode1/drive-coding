@@ -111,17 +111,51 @@ describe("Mic pending capture", () => {
         resolveStart = resolve
       }),
     )
+    vi.stubGlobal("navigator", {
+      permissions: {
+        query: vi.fn().mockResolvedValue({ state: "granted" }),
+      },
+    })
     const recovery = createRecovery()
     const mic = new Mic({ session: fakeSession, recovery })
 
     const p = mic.toggle()
     expect(mic.state).toBe("requesting")
+    await vi.waitFor(() => expect(mockStart).toHaveBeenCalled())
+    expect(mic.awaitingPermissionDialog).toBe(false)
 
     resolveStart()
     await p
 
     expect(mic.state).toBe("recording")
     expect(mic.permissionHint).toBeNull()
+    expect(mic.awaitingPermissionDialog).toBe(false)
+  })
+
+  it("awaitingPermissionDialog is true while requesting when permission is prompt", async () => {
+    let resolveStart!: () => void
+    mockStart.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveStart = resolve
+      }),
+    )
+    vi.stubGlobal("navigator", {
+      permissions: {
+        query: vi.fn().mockResolvedValue({ state: "prompt" }),
+      },
+    })
+    const recovery = createRecovery()
+    const mic = new Mic({ session: fakeSession, recovery })
+
+    const p = mic.toggle()
+    await vi.waitFor(() => expect(mic.awaitingPermissionDialog).toBe(true))
+    expect(mic.state).toBe("requesting")
+
+    resolveStart()
+    await p
+
+    expect(mic.state).toBe("recording")
+    expect(mic.awaitingPermissionDialog).toBe(false)
   })
 
   it("refreshPermissionHint sets mic.hint.needsAllow on prompt", async () => {

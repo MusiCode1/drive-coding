@@ -4,7 +4,9 @@
  * נקודת כניסה (entry point) יחידה toggle() שמונעת על ידי רכיב ה-MicButton.
  * מכונת מצבים: idle → requesting → recording → transcribing → idle
  *
- * `requesting` = ממתינים לדיאלוג הרשאת המיקרופון (עדיין לא אושרה / לא נדחתה).
+ * `requesting` = ממתינים ל-getUserMedia (דיאלוג הרשאה *או* פתיחת סטרים).
+ * `awaitingPermissionDialog` = true רק כש-Permissions API אומר `prompt`
+ * (מסביר UI של «ממתינים לאישור» — לא כשההרשאה כבר ניתנה).
  * עוברים ל-recording רק אחרי ש-getUserMedia הצליח.
  *
  * ─── slice voice-pending-persistence: IndexedDB pending + retry/dismiss/hydrate ───
@@ -48,6 +50,8 @@ export class Mic {
   pendingRestored = $state(false)
   /** Soft hint when permission is still `prompt` (not granted yet). */
   permissionHint: MessageKey | null = $state(null)
+  /** True only while requesting and Permissions API reports `prompt`. */
+  awaitingPermissionDialog: boolean = $state(false)
 
   readonly #session: AgentSession
   readonly #recorder: Recorder
@@ -76,10 +80,14 @@ export class Mic {
       this.state = "requesting"
       this.error = null
       this.pendingRestored = false
+      const perm = await probeMicPermission()
+      this.awaitingPermissionDialog = perm === "prompt"
+      this.permissionHint = perm === "prompt" ? "mic.hint.needsAllow" : null
       try {
         await this.#recorder.start()
       } catch (e: unknown) {
         this.state = "idle"
+        this.awaitingPermissionDialog = false
         if (e instanceof DOMException && e.name === "NotAllowedError") {
           this.error = "mic.error.permission"
           this.permissionHint = null
@@ -92,6 +100,7 @@ export class Mic {
         return
       }
       this.state = "recording"
+      this.awaitingPermissionDialog = false
       this.permissionHint = null
       this.#cues?.play("recordingStart")
       return
