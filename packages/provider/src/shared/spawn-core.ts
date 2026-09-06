@@ -12,6 +12,7 @@
  */
 
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process"
+import { resolveSpawnCwd } from "./resolve-spawn-cwd.js"
 import { createInterface } from "node:readline"
 import { createLogger } from "@drive-coding/core/log"
 import { getCliCommand, getCliSpec } from "../config/index.js"
@@ -139,10 +140,16 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
     // shapeEnv hook: consumer (e.g. drive-coding wrapper) injects product-specific vars.
     const childEnv = hooks?.shapeEnv ? hooks.shapeEnv(input.cliKind, baseEnv) : baseEnv
 
+    // ACP session/new still gets input.cwd; process cwd must exist locally.
+    const spawnCwd = resolveSpawnCwd(input.cwd)
+    if (spawnCwd !== input.cwd) {
+      childLog.info({ requestedCwd: input.cwd, spawnCwd }, "spawn cwd fallback (path missing locally)")
+    }
+
     let child: ChildProcessWithoutNullStreams
     try {
       child = spawn(cli.bin, [...cli.args], {
-        cwd: input.cwd,
+        cwd: spawnCwd,
         env: childEnv,
         stdio: ["pipe", "pipe", "pipe"],
         // detached=true על POSIX יוצר process-group חדש לצאצא → killTree(-pid) הורג

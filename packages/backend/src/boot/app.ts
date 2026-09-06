@@ -20,7 +20,7 @@ import {
   registerProjectsHttp,
   registerRecordingsHttp,
   registerRecordingsPostHttp,
-} from "../delivery/http-history.js"
+} from "../delivery/http-fs-browse.js"
 import { registerLiveTokenHttp } from "../delivery/http-live-token.js"
 import { registerAgentPromptHttp } from "../delivery/http-agent-prompt.js"
 import { bootAgentEvents } from "../delivery/agent-events-boot.js"

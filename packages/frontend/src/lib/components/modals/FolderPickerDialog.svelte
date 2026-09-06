@@ -21,12 +21,20 @@ import { getI18n, getSettings, getModals } from "$lib/context"
 import { browseFolder } from "$lib/adapters/fs-browse"
 import type { FsEntry } from "$lib/adapters/fs-browse"
 import { fetchServerOptions } from "$lib/adapters/options"
+import {
+  getPathSeparator as getSeparator,
+  isPathRoot as isRoot,
+  pathBreadcrumbs,
+  resolveWebdavStart,
+  usesWebdavBrowse,
+} from "$lib/util/folder-picker-path"
 
 let { startPath = "" }: { startPath?: string } = $props()
 
 const t = getI18n().t
 const settings = getSettings()
 const modals = getModals()
+const viaWebdav = $derived(usesWebdavBrowse(settings.cliKind))
 
 // מצב מקומי
 // default: settings.lastCwd (שהוא homeDir מה-server אחרי load).
@@ -55,7 +63,9 @@ $effect(() => {
 // startPath נקרא כאן בתוך untrack → לא הופך ל-dependency של ה-$effect.
 async function openAtStart() {
   let start = startPath.trim() || settings.lastCwd
-  if (!start) {
+  if (viaWebdav) {
+    start = resolveWebdavStart(startPath, settings.lastCwd)
+  } else if (!start) {
     try {
       const opts = await fetchServerOptions()
       start = opts.homeDir
@@ -67,22 +77,7 @@ async function openAtStart() {
   await loadFolder(currentPath)
 }
 
-// breadcrumb — פיצול הנתיב לחלקים cross-platform (גם / וגם \).
-// Windows drive-letter: "D:\Users\User" → ["D:", "Users", "User"]
-const breadcrumbs = $derived(
-  currentPath.split(/[\\/]/).filter(Boolean)
-)
-
-// זיהוי separator: אם הנתיב מכיל "\" → Windows, אחרת Unix.
-// BE מחזיר realpath מנורמל, כך שהseparator עקבי.
-function getSeparator(path: string): string {
-  return path.includes("\\") ? "\\" : "/"
-}
-
-// בדיקת root cross-platform: Unix "/" או Windows drive-root "C:\" / "C:/"
-function isRoot(path: string): boolean {
-  return path === "/" || /^[a-zA-Z]:[\\/]?$/.test(path)
-}
+const breadcrumbs = $derived(pathBreadcrumbs(currentPath))
 
 async function loadFolder(path: string) {
   if (!path) {
@@ -92,7 +87,10 @@ async function loadFolder(path: string) {
   loading = true
   error = null
   try {
-    const result = await browseFolder(path, showHidden)
+    const result = await browseFolder(path, {
+      showHidden,
+      ...(viaWebdav ? { via: "webdav" as const } : {}),
+    })
     currentPath = result.path  // BE מחזיר realpath מנורמל
     entries = result.entries.filter((e) => e.isDir)
   } catch (err) {
