@@ -4,7 +4,8 @@
 # A = this unit (BE+FE). B = tzlev-agents (separate container).
 # network=host + PORT=4004 so getSelfBaseUrl MCP (127.0.0.1:PORT) from B
 # hits this BE — not an SSH -R listener on :4000 pointing at srv.
-# Spawn: wrapper → host podman.sock → podman exec B → agent acp.
+# Spawn: wrapper → ssh user@127.0.0.1 → podman exec B → agent acp
+# (podman remote API exec cannot relay ACP stdio for the BE child).
 
 [Unit]
 Description=drive-coding TZLEV (container) — sibling agents on netcup
@@ -17,6 +18,7 @@ StartLimitBurst=10
 Image=localhost/drive-coding:tzlev
 ContainerName=drive-coding-tzlev
 Network=host
+SecurityLabelDisable=true
 
 Environment=FE_ENV=preview
 Environment=FE_PREVIEW_LABEL=tzlev
@@ -24,18 +26,19 @@ Environment=WIRE_RECORD=1
 Environment=PORT=4004
 Environment=CORS_ORIGINS=http://localhost:4004,https://musicode-drive-coding-tzlev.nue.tuns.sh,https://drive-coding-edge-vps.musicode.ovh
 Environment=PUBLIC_BASE_URL=https://musicode-drive-coding-tzlev.nue.tuns.sh
-Environment=PODMAN_SOCK=/run/podman/podman.sock
 Environment=TZLEV_AGENTS_CONTAINER=tzlev-agents
 Environment=TZLEV_AGENTS_WORKDIR=/home/user/projects
+Environment=TZLEV_SSH_KEY=/data/.ssh/tzlev-agents
+Environment=TZLEV_SSH_HOST=user@127.0.0.1
 
 Volume=%h/.config/drive-coding:/data/.config/drive-coding:Z
 Volume=%h/projects:/home/user/projects:ro
-Volume=%t/podman/podman.sock:/run/podman/podman.sock
-Volume=/usr/bin/podman:/usr/bin/podman:ro
+Volume=%h/.config/tzlev-agents-ssh:/data/.ssh:ro
+Volume=%h/.local/bin/tzlev-agents-acp:/usr/local/bin/tzlev-agents-acp:ro
+Volume=/usr/bin/ssh:/usr/bin/ssh:ro
 Volume=/usr/lib:/usr/lib:ro
 Volume=/lib:/lib:ro
 Volume=/lib64:/lib64:ro
-Volume=%h/.local/bin/tzlev-agents-acp:/usr/local/bin/tzlev-agents-acp:ro
 
 HealthCmd=bun /app/deploy/container/healthcheck.js
 HealthInterval=30s

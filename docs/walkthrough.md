@@ -1,3 +1,23 @@
+## 2026-09-06 17:17
+
+### tzlev sibling — ACP דרך SSH localhost (לא podman remote)
+
+על netcup: A=`drive-coding-tzlev` (:4004, network=host) ליד B=`tzlev-agents`.
+ספאון דרך `podman --url unix://… exec` השאיר status=starting ו־wire ריק —
+ה־API של podman לא מעביר ACP stdio לילד של ה־BE.
+
+#### מה בוצע?
+
+- `deploy/container/tzlev-agents-acp` — `ssh user@127.0.0.1` → `podman exec -i` ב־B
+- `deploy/container/drive-coding-tzlev.container` — mounts ל־`/usr/bin/ssh` + מפתח
+  ב־`~/.config/tzlev-agents-ssh` (במקום podman.sock)
+
+#### אימות (netcup)
+
+- MCP `session_open` (cli=tzlev-agents) → ready + sessionId; wire ~14KB
+- `session_send` → `TZLEV_OK`
+- public health: `https://musicode-drive-coding-tzlev.nue.tuns.sh` → 200
+
 ## 2026-09-04 22:05
 
 ### פריסת קונטיינר — Containerfile רב-שלבי + יוניט Quadlet

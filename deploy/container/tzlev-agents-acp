@@ -1,31 +1,24 @@
 #!/usr/bin/env bash
-# tzlev-agents — ACP into sibling container `tzlev-agents` via host podman socket.
-# Runs inside drive-coding (container A); does NOT nest a container runtime.
+# tzlev-agents — ACP into sibling container `tzlev-agents` via SSH to host localhost.
+#
+# Why SSH (not podman --url unix://… exec): remote podman API exec does not
+# correctly relay ACP stdio when used as the drive-coding child (BE never sees
+# frames; wire stays empty). SSH → host → `podman exec -i` preserves pipes.
+#
+# Runs inside drive-coding (container A). Requires /usr/bin/ssh + key mount.
 set -euo pipefail
 
 CONTAINER="${TZLEV_AGENTS_CONTAINER:-tzlev-agents}"
 WORKDIR="${TZLEV_AGENTS_WORKDIR:-/home/user/projects}"
+KEY="${TZLEV_SSH_KEY:-/data/.ssh/tzlev-agents}"
+HOST="${TZLEV_SSH_HOST:-user@127.0.0.1}"
+SSH_BIN="${TZLEV_SSH_BIN:-/usr/bin/ssh}"
+KNOWN_HOSTS="${TZLEV_SSH_KNOWN_HOSTS:-/data/.ssh/known_hosts}"
 
-if [[ -n "${PODMAN_SOCK:-}" ]]; then
-  SOCK="$PODMAN_SOCK"
-elif [[ -S /run/podman/podman.sock ]]; then
-  SOCK=/run/podman/podman.sock
-elif [[ -S /run/user/"$(id -u)"/podman/podman.sock ]]; then
-  SOCK=/run/user/"$(id -u)"/podman/podman.sock
-else
-  echo "tzlev-agents-acp: podman socket missing" >&2
-  exit 1
-fi
-
-if [[ ! -S "$SOCK" ]]; then
-  echo "tzlev-agents-acp: not a socket: $SOCK" >&2
-  exit 1
-fi
-
-exec podman --url "unix://${SOCK}" exec -i \
-  -w "$WORKDIR" \
-  -e HOME=/home/user \
-  -e PATH=/home/user/.local/bin:/home/user/.bun/bin:/home/user/.opencode/bin:/usr/local/bin:/usr/bin:/bin \
-  "$CONTAINER" \
-  /home/user/.local/bin/agent \
-  acp
+exec "$SSH_BIN" -T -i "$KEY" \
+  -o BatchMode=yes \
+  -o StrictHostKeyChecking=accept-new \
+  -o UserKnownHostsFile="$KNOWN_HOSTS" \
+  -o ConnectTimeout=10 \
+  "$HOST" \
+  "podman exec -i -w \"$WORKDIR\" -e HOME=/home/user -e PATH=/home/user/.local/bin:/home/user/.bun/bin:/home/user/.opencode/bin:/usr/local/bin:/usr/bin:/bin \"$CONTAINER\" /home/user/.local/bin/agent acp"
