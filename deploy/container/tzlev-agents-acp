@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# tzlev-agents — ACP into sibling container `tzlev-agents` via host podman socket.
+# Runs inside drive-coding (container A); does NOT nest a container runtime.
+set -euo pipefail
+
+CONTAINER="${TZLEV_AGENTS_CONTAINER:-tzlev-agents}"
+WORKDIR="${TZLEV_AGENTS_WORKDIR:-/home/user/projects}"
+SOCK="${PODMAN_SOCK:-/run/podman/podman.sock}"
+
+if [[ ! -S "$SOCK" ]]; then
+  echo "tzlev-agents-acp: podman socket missing: $SOCK" >&2
+  exit 1
+fi
+
+exec podman --url "unix://${SOCK}" exec -i \
+  -w "$WORKDIR" \
+  -e HOME=/home/user \
+  -e PATH=/home/user/.local/bin:/home/user/.bun/bin:/home/user/.opencode/bin:/usr/local/bin:/usr/bin:/bin \
+  "$CONTAINER" \
+  /home/user/.local/bin/agent \
+  acp
