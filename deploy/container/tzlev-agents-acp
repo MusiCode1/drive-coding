@@ -5,10 +5,20 @@ set -euo pipefail
 
 CONTAINER="${TZLEV_AGENTS_CONTAINER:-tzlev-agents}"
 WORKDIR="${TZLEV_AGENTS_WORKDIR:-/home/user/projects}"
-SOCK="${PODMAN_SOCK:-/run/podman/podman.sock}"
+
+if [[ -n "${PODMAN_SOCK:-}" ]]; then
+  SOCK="$PODMAN_SOCK"
+elif [[ -S /run/podman/podman.sock ]]; then
+  SOCK=/run/podman/podman.sock
+elif [[ -S /run/user/"$(id -u)"/podman/podman.sock ]]; then
+  SOCK=/run/user/"$(id -u)"/podman/podman.sock
+else
+  echo "tzlev-agents-acp: podman socket missing" >&2
+  exit 1
+fi
 
 if [[ ! -S "$SOCK" ]]; then
-  echo "tzlev-agents-acp: podman socket missing: $SOCK" >&2
+  echo "tzlev-agents-acp: not a socket: $SOCK" >&2
   exit 1
 fi
 
