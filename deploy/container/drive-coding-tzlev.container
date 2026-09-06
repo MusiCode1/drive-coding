@@ -2,8 +2,9 @@
 # Install: ~/.config/containers/systemd/ then systemctl --user daemon-reload
 #
 # A = this unit (BE+FE). B = tzlev-agents (separate container).
-# Spawn path: wrapper → host podman.sock → podman exec B → agent acp.
-# No container-in-container; no SSH to another machine.
+# network=host + PORT=4004 so getSelfBaseUrl MCP (127.0.0.1:PORT) from B
+# hits this BE — not an SSH -R listener on :4000 pointing at srv.
+# Spawn: wrapper → host podman.sock → podman exec B → agent acp.
 
 [Unit]
 Description=drive-coding TZLEV (container) — sibling agents on netcup
@@ -15,33 +16,25 @@ StartLimitBurst=10
 [Container]
 Image=localhost/drive-coding:tzlev
 ContainerName=drive-coding-tzlev
-
-PublishPort=127.0.0.1:4004:4000
+Network=host
 
 Environment=FE_ENV=preview
 Environment=FE_PREVIEW_LABEL=tzlev
 Environment=WIRE_RECORD=1
+Environment=PORT=4004
 Environment=CORS_ORIGINS=http://localhost:4004,https://musicode-drive-coding-tzlev.nue.tuns.sh,https://drive-coding-edge-vps.musicode.ovh
 Environment=PUBLIC_BASE_URL=https://musicode-drive-coding-tzlev.nue.tuns.sh
 Environment=PODMAN_SOCK=/run/podman/podman.sock
 Environment=TZLEV_AGENTS_CONTAINER=tzlev-agents
 Environment=TZLEV_AGENTS_WORKDIR=/home/user/projects
 
-# cli-specs + recordings (HOME=/data in the image)
 Volume=%h/.config/drive-coding:/data/.config/drive-coding:Z
-
-# Same projects tree as tzlev-agents — local folder picker, no WebDAV
 Volume=%h/projects:/home/user/projects:ro
-
-# Host podman API (sibling exec only; wrapper hard-codes container name).
-# Client binary needs host libs (libsubid etc.) — mount host lib trees read-only.
 Volume=%t/podman/podman.sock:/run/podman/podman.sock
 Volume=/usr/bin/podman:/usr/bin/podman:ro
 Volume=/usr/lib:/usr/lib:ro
 Volume=/lib:/lib:ro
 Volume=/lib64:/lib64:ro
-
-# ACP wrapper (installed on host to ~/.local/bin)
 Volume=%h/.local/bin/tzlev-agents-acp:/usr/local/bin/tzlev-agents-acp:ro
 
 HealthCmd=bun /app/deploy/container/healthcheck.js
