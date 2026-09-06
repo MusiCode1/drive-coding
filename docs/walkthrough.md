@@ -1,3 +1,12 @@
+## 2026-09-06 18:15
+
+### tzlev-agents — sshd ב־B + A→B ישיר על :2222
+
+- `openssh-server` באימג׳; האזנה `127.0.0.1:2222` (network=host, לא :22)
+- entrypoint: unlock ל־`user` (`passwd -d`), `authorized_keys`, `~/.cursor` ל־uid 1000
+- wrapper ב־A: `ssh -p 2222` → `agent acp` (בלי `podman exec`)
+- smoke: SSH + MCP `session_open` על netcup
+
 ## 2026-09-06 17:17
 
 ### tzlev sibling — ACP דרך SSH localhost (לא podman remote)

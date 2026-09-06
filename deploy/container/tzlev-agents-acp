@@ -1,24 +1,23 @@
 #!/usr/bin/env bash
-# tzlev-agents — ACP into sibling container `tzlev-agents` via SSH to host localhost.
+# tzlev-agents — ACP into sibling container `tzlev-agents` via SSH.
 #
-# Why SSH (not podman --url unix://… exec): remote podman API exec does not
-# correctly relay ACP stdio when used as the drive-coding child (BE never sees
-# frames; wire stays empty). SSH → host → `podman exec -i` preserves pipes.
+# B runs sshd on 127.0.0.1:2222 (network=host). A shares that stack, so
+# this is A→B over loopback — not a hop through host podman exec.
 #
-# Runs inside drive-coding (container A). Requires /usr/bin/ssh + key mount.
+# Requires /usr/bin/ssh + key mount in A (see drive-coding-tzlev.container).
 set -euo pipefail
 
-CONTAINER="${TZLEV_AGENTS_CONTAINER:-tzlev-agents}"
 WORKDIR="${TZLEV_AGENTS_WORKDIR:-/home/user/projects}"
 KEY="${TZLEV_SSH_KEY:-/data/.ssh/tzlev-agents}"
 HOST="${TZLEV_SSH_HOST:-user@127.0.0.1}"
+PORT="${TZLEV_SSH_PORT:-2222}"
 SSH_BIN="${TZLEV_SSH_BIN:-/usr/bin/ssh}"
 KNOWN_HOSTS="${TZLEV_SSH_KNOWN_HOSTS:-/data/.ssh/known_hosts}"
 
-exec "$SSH_BIN" -T -i "$KEY" \
+exec "$SSH_BIN" -T -i "$KEY" -p "$PORT" \
   -o BatchMode=yes \
   -o StrictHostKeyChecking=accept-new \
   -o UserKnownHostsFile="$KNOWN_HOSTS" \
   -o ConnectTimeout=10 \
   "$HOST" \
-  "podman exec -i -w \"$WORKDIR\" -e HOME=/home/user -e PATH=/home/user/.local/bin:/home/user/.bun/bin:/home/user/.opencode/bin:/usr/local/bin:/usr/bin:/bin \"$CONTAINER\" /home/user/.local/bin/agent acp"
+  "cd \"$WORKDIR\" && exec /home/user/.local/bin/agent acp"

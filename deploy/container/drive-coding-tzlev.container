@@ -4,8 +4,8 @@
 # A = this unit (BE+FE). B = tzlev-agents (separate container).
 # network=host + PORT=4004 so getSelfBaseUrl MCP (127.0.0.1:PORT) from B
 # hits this BE — not an SSH -R listener on :4000 pointing at srv.
-# Spawn: wrapper → ssh user@127.0.0.1 → podman exec B → agent acp
-# (podman remote API exec cannot relay ACP stdio for the BE child).
+# Spawn: wrapper → ssh user@127.0.0.1:2222 → agent acp (sshd inside B).
+# B must run openssh-server on loopback :2222 (tzlev-agents-image).
 
 [Unit]
 Description=drive-coding TZLEV (container) — sibling agents on netcup
@@ -26,10 +26,10 @@ Environment=WIRE_RECORD=1
 Environment=PORT=4004
 Environment=CORS_ORIGINS=http://localhost:4004,https://musicode-drive-coding-tzlev.nue.tuns.sh,https://drive-coding-edge-vps.musicode.ovh
 Environment=PUBLIC_BASE_URL=https://musicode-drive-coding-tzlev.nue.tuns.sh
-Environment=TZLEV_AGENTS_CONTAINER=tzlev-agents
 Environment=TZLEV_AGENTS_WORKDIR=/home/user/projects
 Environment=TZLEV_SSH_KEY=/data/.ssh/tzlev-agents
 Environment=TZLEV_SSH_HOST=user@127.0.0.1
+Environment=TZLEV_SSH_PORT=2222
 
 Volume=%h/.config/drive-coding:/data/.config/drive-coding:Z
 Volume=%h/projects:/home/user/projects:ro
