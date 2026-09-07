@@ -7,9 +7,10 @@
  * לאותו סשן. הפרסיסטנס בנוי על התבנית של `ComposerDraft` — localStorage,
  * debounce, best-effort — אבל עם מפתח לכל סשן במקום מפתח יחיד.
  *
- * ה-VM לא מחזיק גאומטריה (מיקום/גודל). הפתק ממוקם קבוע ב-CSS: המוצר הוא
- * voice-first ומשמש בנהיגה, ופתק נגרר היה מוסיף כוונון עדין בדיוק במצב שבו
- * אי אפשר לכוון. "צף" כאן = overlay קבוע מעל הצ'אט.
+ * המיקום (`left`/`top`) נשמר **גלובלית** ולא לפי סשן — מפתח נפרד,
+ * `dc:session-memo-pos`. המיקום הוא העדפת-ממשק ("איפה נוח לי שהפתק ישב"),
+ * ולא נתון של הסשן; מיקום לכל סשן היה מקפיץ את הפתק בכל מעבר.
+ * גודל לא נשמר — הפתק בגודל קבוע.
  */
 
 const STORAGE_PREFIX = "dc:session-memo:"
@@ -80,6 +81,32 @@ function saveMemo(sessionId: string | null, memo: PersistedMemo): void {
  * רק בבדיקת דפדפן. שני השדות האלה כן reactive ומתעדכנים בדיוק כשסשן נטען או
  * מוחלף.
  */
+const POS_KEY = "dc:session-memo-pos"
+
+export type MemoPos = { left: number; top: number }
+
+/** `null` = לא נגרר מעולם ⇒ המיקום נקבע ב-CSS (פינה תחתונה, צד ההתחלה). */
+export function parsePos(raw: string | null): MemoPos | null {
+  if (!raw) return null
+  try {
+    const o = JSON.parse(raw) as Partial<MemoPos>
+    if (typeof o.left !== "number" || typeof o.top !== "number") return null
+    if (!Number.isFinite(o.left) || !Number.isFinite(o.top)) return null
+    return { left: o.left, top: o.top }
+  } catch {
+    return null
+  }
+}
+
+function loadPos(): MemoPos | null {
+  if (typeof localStorage === "undefined") return null
+  try {
+    return parsePos(localStorage.getItem(POS_KEY))
+  } catch {
+    return null
+  }
+}
+
 export type MemoSessionSource = {
   readonly status: unknown
   readonly agentId: string | null
@@ -90,6 +117,9 @@ export class SessionMemoVM {
   text = $state("")
   /** ברירת המחדל מצומצם: הפתק לא חוסם את הצ'אט עד שביקשו אותו. */
   minimized = $state(true)
+
+  /** מיקום גרור, גלובלי. `null` = ברירת המחדל של ה-CSS. */
+  pos = $state<MemoPos | null>(loadPos())
 
   /** הסשן שהתוכן הנוכחי שייך לו. plain field, לא $state — ראה persist למטה. */
   #loadedId: string | null = null
@@ -149,6 +179,20 @@ export class SessionMemoVM {
     this.minimized = value
     // כתיבה מיָדית: הצמצום הוא לרוב הפעולה האחרונה לפני מעבר מסך או ניתוק.
     saveMemo(this.#loadedId, { text: this.text, minimized: value })
+  }
+
+  /**
+   * נכתב מיָדית ולא ב-debounce: גרירה מסתיימת בהרפיית האצבע, ואם המשתמש סוגר
+   * את הטאב מיד אחריה — חלון-השהיה היה מאבד את המיקום החדש.
+   */
+  setPos(next: MemoPos): void {
+    this.pos = next
+    if (typeof localStorage === "undefined") return
+    try {
+      localStorage.setItem(POS_KEY, JSON.stringify(next))
+    } catch {
+      // best-effort
+    }
   }
 
   toggle(): void {
