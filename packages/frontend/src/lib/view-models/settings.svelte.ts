@@ -105,8 +105,8 @@ const DEFAULTS: Persisted = {
   showThoughts: true,
   showTools: false,
   compactActivity: false,
-  // ברירת מחדל דלוקה: הפתק מתחיל מצומצם, ולכן העלות שלו היא גלולה אחת.
-  showSessionMemo: true,
+  // אופט-אין: כבוי כברירת מחדל; ערך שמור גובר (load עושה {...DEFAULTS, ...parsed}).
+  showSessionMemo: false,
   enterToSend: true,
   // ─── תמונות מרוחקות ─── (slice msg-media) — ברירת מחדל = בטוח (click-to-load)
   autoLoadRemoteImages: false,
