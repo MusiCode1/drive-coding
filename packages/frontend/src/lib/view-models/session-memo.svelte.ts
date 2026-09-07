@@ -82,8 +82,10 @@ function saveMemo(sessionId: string | null, memo: PersistedMemo): void {
  * מוחלף.
  */
 const POS_KEY = "dc:session-memo-pos"
+const SIZE_KEY = "dc:session-memo-size"
 
 export type MemoPos = { left: number; top: number }
+export type MemoSize = { width: number; height: number }
 
 /** `null` = לא נגרר מעולם ⇒ המיקום נקבע ב-CSS (פינה תחתונה, צד ההתחלה). */
 export function parsePos(raw: string | null): MemoPos | null {
@@ -93,6 +95,29 @@ export function parsePos(raw: string | null): MemoPos | null {
     if (typeof o.left !== "number" || typeof o.top !== "number") return null
     if (!Number.isFinite(o.left) || !Number.isFinite(o.top)) return null
     return { left: o.left, top: o.top }
+  } catch {
+    return null
+  }
+}
+
+/** `null` = לא שונה גודל מעולם ⇒ המידות נקבעות ב-CSS. */
+export function parseSize(raw: string | null): MemoSize | null {
+  if (!raw) return null
+  try {
+    const o = JSON.parse(raw) as Partial<MemoSize>
+    if (typeof o.width !== "number" || typeof o.height !== "number") return null
+    if (!Number.isFinite(o.width) || !Number.isFinite(o.height)) return null
+    if (o.width <= 0 || o.height <= 0) return null
+    return { width: o.width, height: o.height }
+  } catch {
+    return null
+  }
+}
+
+function loadSize(): MemoSize | null {
+  if (typeof localStorage === "undefined") return null
+  try {
+    return parseSize(localStorage.getItem(SIZE_KEY))
   } catch {
     return null
   }
@@ -120,6 +145,9 @@ export class SessionMemoVM {
 
   /** מיקום גרור, גלובלי. `null` = ברירת המחדל של ה-CSS. */
   pos = $state<MemoPos | null>(loadPos())
+
+  /** גודל שנקבע ידנית, גלובלי. חל על הכרטיס בלבד — הגלולה בגודל קבוע. */
+  size = $state<MemoSize | null>(loadSize())
 
   /** הסשן שהתוכן הנוכחי שייך לו. plain field, לא $state — ראה persist למטה. */
   #loadedId: string | null = null
@@ -190,6 +218,17 @@ export class SessionMemoVM {
     if (typeof localStorage === "undefined") return
     try {
       localStorage.setItem(POS_KEY, JSON.stringify(next))
+    } catch {
+      // best-effort
+    }
+  }
+
+  /** נכתב מיָדית מאותו טעם כמו `setPos` — הגרירה נגמרת בהרפיה. */
+  setSize(next: MemoSize): void {
+    this.size = next
+    if (typeof localStorage === "undefined") return
+    try {
+      localStorage.setItem(SIZE_KEY, JSON.stringify(next))
     } catch {
       // best-effort
     }
