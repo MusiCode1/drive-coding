@@ -158,6 +158,25 @@ export function clampSizeToBox(size: Size, box: Box): Size {
   }
 }
 
+/**
+ * ה-inline style שממקם פתק שנגרר.
+ *
+ * ⚠️ הסדר הוא כל העניין, ולכן זה כאן ובטסט ולא כמחרוזת מוטבעת בקומפוננטה:
+ * `inset-inline-end` **הוא** `left` ב-RTL (ו-`right` ב-LTR), ולכן איפוס
+ * לוגי אחרי קביעה פיזית מבטל אותה בשקט. מאפסים את שני הצדדים הלוגיים
+ * תחילה, וקובעים פיזית בסוף — נכון בשני הכיוונים.
+ *
+ * נמדד לפני התיקון: `left:927px` הניב computed `1052.75px` ב-RTL, והפתק
+ * לא עקב אחרי הסמן. ב-LTR זה נראה תקין לגמרי — כשל שמתגלה רק בכיוון אחד.
+ */
+export function positionStyle(pos: Pos | null): string {
+  if (!pos) return ""
+  return (
+    `inset-inline-start:auto; inset-inline-end:auto; bottom:auto;` +
+    ` left:${pos.left}px; top:${pos.top}px;`
+  )
+}
+
 type PadResizeOptions = {
   getEl: () => HTMLElement | null
   /** גודל+מיקום חדשים. `pos` מוחזר רק כשהוא השתנה (RTL — ראה למטה). */

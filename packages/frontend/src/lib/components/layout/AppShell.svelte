@@ -402,10 +402,6 @@ $effect(() => {
           </button>
         {/if}
 
-        <!-- ─── overlay slot ─── (slice session-memo-pad)
-             אח של אזור-הגלילה בתוך אותו wrapper יחסי, כמו JumpDown למעלה:
-             מי שמרונדר כאן צף מעל הבועות, נשאר מעל ה-footer, ולא נגלל. -->
-        {@render overlay?.()}
       </div>
 
       <!-- footer slot — sibling של ה-scroll (shrink-0), מעוגן בתחתית העמודה.
@@ -426,4 +422,7 @@ $effect(() => {
   <ContentViewerDialog />
   <!-- ui-session-polish: loading spinner during session connect or history render -->
   <LoadingModal open={session.status === "connecting" || session.isLoadingHistory} />
+  <!-- overlay slot (slice session-memo-fullscreen): ילד של שורש ה-shell ⇒
+       offsetParent = כל המסך. רק ChatScreen מעביר אותו. -->
+  {@render overlay?.()}
 </div>
