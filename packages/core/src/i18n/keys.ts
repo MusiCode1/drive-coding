@@ -510,6 +510,11 @@ export type MessageKey =
   | "pendingCapture.retry"
   | "pendingCapture.dismiss"
   | "pendingCapture.restored"
+  // ─── session-memo ─── (slice session-memo-pad)
+  | "sessionMemo.title"
+  | "sessionMemo.open"
+  | "sessionMemo.minimize"
+  | "sessionMemo.placeholder"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

@@ -51,9 +51,12 @@ import Sidebar from "./Sidebar.svelte"
 let {
   children,
   footer,
+  overlay,
 }: {
   children: import("svelte").Snippet
   footer?: import("svelte").Snippet
+  /** slice session-memo-pad: overlay צף מעל אזור-הגלילה (לא נגלל, מעל ה-footer). */
+  overlay?: import("svelte").Snippet
 } = $props()
 
 const responsive = getResponsive()
@@ -398,6 +401,11 @@ $effect(() => {
             {t("chat.jumpDown")}
           </button>
         {/if}
+
+        <!-- ─── overlay slot ─── (slice session-memo-pad)
+             אח של אזור-הגלילה בתוך אותו wrapper יחסי, כמו JumpDown למעלה:
+             מי שמרונדר כאן צף מעל הבועות, נשאר מעל ה-footer, ולא נגלל. -->
+        {@render overlay?.()}
       </div>
 
       <!-- footer slot — sibling של ה-scroll (shrink-0), מעוגן בתחתית העמודה.

@@ -12,6 +12,7 @@ import ChatBubbles from "$lib/components/chat/ChatBubbles.svelte"
 import RecordFooter from "$lib/components/chat/RecordFooter.svelte"
 import AppShell from "$lib/components/layout/AppShell.svelte"
 import DisconnectBanner from "$lib/components/session/DisconnectBanner.svelte"
+import SessionMemoPad from "$lib/components/session/SessionMemoPad.svelte"
 import { getI18n, getSession, getMic, getBubblePlayer, getCues, getVoiceMode } from "$lib/context"
 import { BtRemoteEngine, TICK_INTERVAL_MS, buttonForKeyCode, type BtCommand } from "$lib/engines/bt-remote.js"
 import { btChatAction, PROBE_CUE_GAP_MS } from "$lib/engines/bt-chat-actions.js"
@@ -146,6 +147,11 @@ onMount(() => {
       <!-- slice auth-guidance: הדרכת-אימות ספציפית-ל-CLI (מתחת ל-error, רק כשיש authMethods) -->
       <AuthGuidance cliKind={session.cliKind} authMethods={session.authMethods} />
     {/if}
+
+    <!-- slice session-memo-pad: ממו הסשן צף מעל הצ'אט (מצומצם כברירת מחדל). -->
+    {#snippet overlay()}
+      <SessionMemoPad />
+    {/snippet}
 
     {#snippet footer()}
       <RecordFooter />

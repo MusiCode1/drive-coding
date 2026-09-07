@@ -508,4 +508,9 @@ export const en: Catalog = {
   "pendingCapture.retry": "Try again",
   "pendingCapture.dismiss": "Dismiss",
   "pendingCapture.restored": "Unfinished recording restored",
+  // ─── session-memo ─── (slice session-memo-pad)
+  "sessionMemo.title": "Memo",
+  "sessionMemo.open": "Open memo",
+  "sessionMemo.minimize": "Minimize memo",
+  "sessionMemo.placeholder": "Reminders or a summary of this session…",
 }

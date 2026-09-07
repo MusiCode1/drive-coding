@@ -512,7 +512,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/chat/ChatScreen.svelte": {
-      "metric": 114,
+      "metric": 115,
       "impurity": 9,
       "class": "mixed"
     },
@@ -602,7 +602,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/layout/AppShell.svelte": {
-      "metric": 347,
+      "metric": 350,
       "impurity": 12,
       "class": "mixed"
     },
@@ -927,7 +927,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/routes/+layout.svelte": {
-      "metric": 342,
+      "metric": 349,
       "impurity": 18,
       "class": "mixed"
     },

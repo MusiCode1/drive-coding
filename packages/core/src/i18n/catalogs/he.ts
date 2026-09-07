@@ -500,4 +500,9 @@ export const he: Catalog = {
   "pendingCapture.retry": "נסה שוב",
   "pendingCapture.dismiss": "מחק",
   "pendingCapture.restored": "הקלטה שלא הושלמה שוחזרה",
+  // ─── session-memo ─── (slice session-memo-pad)
+  "sessionMemo.title": "ממו",
+  "sessionMemo.open": "פתח ממו",
+  "sessionMemo.minimize": "צמצם ממו",
+  "sessionMemo.placeholder": "תזכורות או תקציר על נושא הסשן…",
 }
