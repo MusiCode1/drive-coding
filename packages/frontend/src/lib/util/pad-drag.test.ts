@@ -7,7 +7,17 @@
  * שנספרת בטעות כגרירה מונעת מהגלולה להיפתח בכלל.
  */
 import { describe, expect, test, vi } from "vitest"
-import { clampToBox, createPadDrag, DRAG_SLOP_PX, reclampElement } from "./pad-drag"
+import {
+  clampSizeToBox,
+  clampToBox,
+  createPadDrag,
+  createPadResize,
+  DRAG_SLOP_PX,
+  MIN_PAD_SIZE,
+  type Pos,
+  reclampElement,
+  type Size,
+} from "./pad-drag"
 
 const SIZE = { width: 280, height: 220 }
 const BOX = { width: 400, height: 800 }
@@ -64,6 +74,7 @@ function makeEvent(x: number, y: number, target?: Element) {
     target: el,
     currentTarget: capture,
     preventDefault: vi.fn(),
+    stopPropagation: vi.fn(),
   } as unknown as PointerEvent
 }
 
@@ -178,5 +189,106 @@ describe("reclampElement", () => {
       left: 120,
       top: 10,
     })
+  })
+})
+
+// ── resize ─────────────────────────────────────────────────────────────────
+
+function makeResizeEl(
+  rect: { left: number; top: number; width: number; height: number },
+  rtl: boolean,
+) {
+  const el = {
+    offsetWidth: rect.width,
+    offsetHeight: rect.height,
+    getBoundingClientRect: () => ({ ...rect, right: rect.left + rect.width }),
+    offsetParent: {
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: BOX.width, height: BOX.height }),
+    },
+  }
+  vi.spyOn(window, "getComputedStyle").mockReturnValue({
+    direction: rtl ? "rtl" : "ltr",
+  } as unknown as CSSStyleDeclaration)
+  return el as unknown as HTMLElement
+}
+
+function resizeHarness(
+  rect: { left: number; top: number; width: number; height: number },
+  rtl: boolean,
+) {
+  const sizes: { size: Size; pos: Pos | null }[] = []
+  const handlers = createPadResize({
+    getEl: () => makeResizeEl(rect, rtl),
+    onResize: (size, pos) => sizes.push({ size, pos }),
+  })
+  return { handlers, sizes }
+}
+
+describe("clampSizeToBox", () => {
+  test("a size that fits is untouched", () => {
+    expect(clampSizeToBox({ width: 200, height: 300 }, BOX)).toEqual({ width: 200, height: 300 })
+  })
+
+  test("a size larger than the box is cut down to it", () => {
+    // חלון שהוקטן: פתק רחב מהמסך היה מכסה את כל הצ'אט, בלי אפשרות סגירה.
+    expect(clampSizeToBox({ width: 900, height: 2000 }, BOX)).toEqual({
+      width: BOX.width,
+      height: BOX.height,
+    })
+  })
+
+  test("the minimum wins over a box that is smaller still", () => {
+    expect(clampSizeToBox({ width: 300, height: 300 }, { width: 50, height: 40 })).toEqual(
+      MIN_PAD_SIZE,
+    )
+  })
+})
+
+describe("createPadResize", () => {
+  const RECT = { left: 40, top: 30, width: 200, height: 150 }
+
+  test("LTR: dragging the end-side grip outward grows it, position unchanged", () => {
+    const { handlers, sizes } = resizeHarness(RECT, false)
+    handlers.onpointerdown(makeEvent(240, 180))
+    handlers.onpointermove(makeEvent(300, 260))
+    expect(sizes.at(-1)).toEqual({ size: { width: 260, height: 230 }, pos: null })
+  })
+
+  test("RTL: dragging left grows it and moves left so the anchored edge stays put", () => {
+    // ב-RTL הידית בשמאל. בלי הזזת left הפתק היה "בורח" הצידה תוך כדי מתיחה.
+    const { handlers, sizes } = resizeHarness(RECT, true)
+    handlers.onpointerdown(makeEvent(40, 180))
+    handlers.onpointermove(makeEvent(0, 200))
+    const last = sizes.at(-1)
+    expect(last?.size).toEqual({ width: 240, height: 170 })
+    expect(last?.pos).toEqual({ left: 0, top: 30 })
+    // הקצה המעוגן (הימני) לא זז: left+width נשאר 240.
+    expect((last?.pos?.left ?? 0) + (last?.size.width ?? 0)).toBe(RECT.left + RECT.width)
+  })
+
+  test("it never shrinks below the minimum", () => {
+    const { handlers, sizes } = resizeHarness(RECT, false)
+    handlers.onpointerdown(makeEvent(240, 180))
+    handlers.onpointermove(makeEvent(-500, -500))
+    expect(sizes.at(-1)?.size).toEqual(MIN_PAD_SIZE)
+  })
+
+  test("it never grows past the box edge", () => {
+    const { handlers, sizes } = resizeHarness(RECT, false)
+    handlers.onpointerdown(makeEvent(240, 180))
+    handlers.onpointermove(makeEvent(9999, 9999))
+    expect(sizes.at(-1)?.size).toEqual({
+      width: BOX.width - RECT.left,
+      height: BOX.height - RECT.top,
+    })
+  })
+
+  test("moves from another pointer are ignored", () => {
+    const { handlers, sizes } = resizeHarness(RECT, false)
+    handlers.onpointerdown(makeEvent(240, 180))
+    const other = makeEvent(400, 400) as { pointerId: number }
+    other.pointerId = 2
+    handlers.onpointermove(other as unknown as PointerEvent)
+    expect(sizes).toHaveLength(0)
   })
 })

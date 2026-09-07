@@ -11,7 +11,7 @@
  * ה-wrapper של אזור-הגלילה — צף מעל הבועות ומעל ה-footer, ולא נגלל איתן.
  */
 import { getI18n, getSessionMemo, getSettings } from "$lib/context"
-import { createPadDrag, reclampElement } from "$lib/util/pad-drag"
+import { clampSizeToBox, createPadDrag, createPadResize, reclampElement } from "$lib/util/pad-drag"
 
 const t = getI18n().t
 const memo = getSessionMemo()
@@ -28,7 +28,20 @@ function openUnlessDragged() {
   if (!dragging.consumeDrag()) memo.setMinimized(false)
 }
 
+const resizing = createPadResize({
+  getEl: () => el,
+  onResize: (size, pos) => {
+    memo.setSize(size)
+    if (pos) memo.setPos(pos)
+  },
+})
+
 function reclamp() {
+  const box = el?.offsetParent?.getBoundingClientRect()
+  if (box && memo.size) {
+    const size = clampSizeToBox(memo.size, box)
+    if (size.width !== memo.size.width || size.height !== memo.size.height) memo.setSize(size)
+  }
   const next = reclampElement(el, memo.pos)
   if (next) memo.setPos(next)
 }
@@ -51,6 +64,10 @@ const posStyle = $derived(
   memo.pos
     ? `left:${memo.pos.left}px; top:${memo.pos.top}px; bottom:auto; inset-inline-start:auto;`
     : "",
+)
+// גודל ידני גובר על מידות ברירת-המחדל שב-CSS (חל על הכרטיס בלבד).
+const sizeStyle = $derived(
+  memo.size ? `width:${memo.size.width}px; height:${memo.size.height}px;` : "",
 )
 </script>
 
@@ -77,7 +94,12 @@ const posStyle = $derived(
     {/if}
   </button>
 {:else}
-  <section bind:this={el} class="memo-card" style={posStyle} aria-label={t("sessionMemo.title")}>
+  <section
+    bind:this={el}
+    class="memo-card"
+    style="{posStyle} {sizeStyle}"
+    aria-label={t("sessionMemo.title")}
+  >
     <header class="memo-head" {...dragging}>
       <span class="memo-title">{t("sessionMemo.title")}</span>
       <button
@@ -99,6 +121,9 @@ const posStyle = $derived(
       bind:value={memo.text}
       placeholder={t("sessionMemo.placeholder")}
     ></textarea>
+    <!-- ידית שינוי-גודל. aria-hidden + data-no-drag: קישוט-עכבר, לא פקד
+         מקלדת — שינוי גודל אינו תנאי לשימוש בפתק. -->
+    <div class="memo-grip" data-no-drag aria-hidden="true" {...resizing}></div>
   </section>
 {/if}
 
@@ -193,6 +218,33 @@ const posStyle = $derived(
     font: inherit;
     font-size: 0.8125rem;
     line-height: 1.45;
+  }
+
+  /* inset-inline-end — פינת ה-end הלוגית: ימין ב-LTR, שמאל ב-RTL. */
+  .memo-grip {
+    position: absolute;
+    bottom: 0;
+    inset-inline-end: 0;
+    width: 1rem;
+    height: 1rem;
+    cursor: nwse-resize;
+    opacity: 0.45;
+    touch-action: none;
+  }
+
+  :global([dir="rtl"]) .memo-grip {
+    cursor: nesw-resize;
+  }
+
+  .memo-grip::before {
+    content: "";
+    position: absolute;
+    inset-inline-end: 3px;
+    bottom: 3px;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-bottom: 2px solid currentColor;
+    border-inline-end: 2px solid currentColor;
   }
 
   .memo-body::placeholder {

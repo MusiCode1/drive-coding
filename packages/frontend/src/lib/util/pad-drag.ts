@@ -139,3 +139,106 @@ export function createPadDrag(opts: PadDragOptions): PadDrag {
     },
   }
 }
+
+// ── שינוי גודל ──────────────────────────────────────────────────────────────
+
+export type Size = { width: number; height: number }
+
+/** רצפת גודל — מתחת לזה ה-textarea מפסיק להיות שמיש. */
+export const MIN_PAD_SIZE: Size = { width: 180, height: 120 }
+
+/**
+ * מקטין גודל שמור שכבר לא נכנס בתיבה (חלון שהוקטן, סיבוב מסך). בלי זה פתק
+ * שנמתח על מסך רחב היה מכסה את כל הצ'אט במסך צר — ואי אפשר לסגור אותו.
+ */
+export function clampSizeToBox(size: Size, box: Box): Size {
+  return {
+    width: Math.min(size.width, Math.max(MIN_PAD_SIZE.width, box.width)),
+    height: Math.min(size.height, Math.max(MIN_PAD_SIZE.height, box.height)),
+  }
+}
+
+type PadResizeOptions = {
+  getEl: () => HTMLElement | null
+  /** גודל+מיקום חדשים. `pos` מוחזר רק כשהוא השתנה (RTL — ראה למטה). */
+  onResize: (size: Size, pos: Pos | null) => void
+}
+
+/**
+ * ידית שינוי-גודל בפינה התחתונה בצד ה-**end** הלוגי.
+ *
+ * למה זה לא סתם "רוחב += dx": ה-end הלוגי הוא ימין ב-LTR ו**שמאל** ב-RTL,
+ * והממשק כאן RTL כברירת מחדל. בגרירה שמאלה ב-RTL הרוחב גדל, אבל האלמנט
+ * ממוקם ב-`left` — ולכן צריך להזיז את `left` באותה מידה כדי שהקצה הנגדי
+ * (קצה ה-start, זה שהמשתמש רואה כ"מעוגן") לא יזוז. בלי זה הפתק "בורח"
+ * הצידה בזמן שמותחים אותו.
+ *
+ * הגודל מוגבל גם מלמעלה — עד קצה התיבה — כדי שמתיחה לא תדחוף את הפתק
+ * אל מחוץ למסך.
+ */
+export function createPadResize(opts: PadResizeOptions): PadDragHandlers {
+  let start: {
+    id: number
+    x: number
+    y: number
+    width: number
+    height: number
+    left: number
+    top: number
+    rtl: boolean
+    box: Box
+  } | null = null
+
+  function end(e: PointerEvent) {
+    if (!start || e.pointerId !== start.id) return
+    start = null
+    if (e.currentTarget instanceof HTMLElement && e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+  }
+
+  return {
+    onpointerdown(e) {
+      const el = opts.getEl()
+      const parent = el?.offsetParent?.getBoundingClientRect()
+      if (!el || !parent) return
+      const r = el.getBoundingClientRect()
+      start = {
+        id: e.pointerId,
+        x: e.clientX,
+        y: e.clientY,
+        width: r.width,
+        height: r.height,
+        left: r.left - parent.left,
+        top: r.top - parent.top,
+        rtl: getComputedStyle(el).direction === "rtl",
+        box: { width: parent.width, height: parent.height },
+      }
+      if (e.currentTarget instanceof HTMLElement) e.currentTarget.setPointerCapture(e.pointerId)
+      e.preventDefault()
+      e.stopPropagation()
+    },
+    onpointermove(e) {
+      if (!start || e.pointerId !== start.id) return
+      const dx = e.clientX - start.x
+      // ב-RTL הידית בצד שמאל: גרירה שמאלה (dx שלילי) מגדילה.
+      const rawWidth = start.rtl ? start.width - dx : start.width + dx
+      // תקרה: עד קצה התיבה. ב-RTL הקצה המעוגן הוא הימני, ולכן המרחק הזמין
+      // הוא left+width; ב-LTR הוא box.width - left.
+      const maxWidth = start.rtl ? start.left + start.width : start.box.width - start.left
+      const width = Math.min(
+        Math.max(MIN_PAD_SIZE.width, rawWidth),
+        Math.max(MIN_PAD_SIZE.width, maxWidth),
+      )
+      const maxHeight = start.box.height - start.top
+      const height = Math.min(
+        Math.max(MIN_PAD_SIZE.height, start.height + (e.clientY - start.y)),
+        Math.max(MIN_PAD_SIZE.height, maxHeight),
+      )
+      const pos = start.rtl ? { left: start.left + start.width - width, top: start.top } : null
+      opts.onResize({ width, height }, pos)
+    },
+    onpointerup: end,
+    onpointercancel: end,
+  }
+}
