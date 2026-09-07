@@ -11,10 +11,47 @@
  * ה-wrapper של אזור-הגלילה — צף מעל הבועות ומעל ה-footer, ולא נגלל איתן.
  */
 import { getI18n, getSessionMemo, getSettings } from "$lib/context"
+import { createPadDrag, reclampElement } from "$lib/util/pad-drag"
 
 const t = getI18n().t
 const memo = getSessionMemo()
 const settings = getSettings()
+
+let el = $state<HTMLElement | null>(null)
+
+// מכונת-הגרירה ב-util; כאן רק החיווט.
+const dragging = createPadDrag({ getEl: () => el, onPos: (pos) => memo.setPos(pos) })
+
+// הפתיחה נשארת `onclick` (נגיש למקלדת), אבל גרירה שמסתיימת על הגלולה מייצרת
+// גם היא click — consumeDrag בולע אותו כדי שגרירה לא תפתח את הפתק.
+function openUnlessDragged() {
+  if (!dragging.consumeDrag()) memo.setMinimized(false)
+}
+
+function reclamp() {
+  const next = reclampElement(el, memo.pos)
+  if (next) memo.setPos(next)
+}
+
+// המיקום משותף לגלולה ולכרטיס, שרוחבם שונה מאוד — ולכן מצמידים מחדש בכל
+// פרישה/צמצום ובכל שינוי-מידות. אלה effects תלויי-DOM-node, שנשארים
+// בקומפוננטה לפי הסייג של חוק זהב #4.
+$effect(() => {
+  void memo.minimized
+  reclamp()
+})
+
+$effect(() => {
+  window.addEventListener("resize", reclamp)
+  return () => window.removeEventListener("resize", reclamp)
+})
+
+// מיקום גרור גובר על ברירת-המחדל של ה-CSS (פינה תחתונה, צד ההתחלה).
+const posStyle = $derived(
+  memo.pos
+    ? `left:${memo.pos.left}px; top:${memo.pos.top}px; bottom:auto; inset-inline-start:auto;`
+    : "",
+)
 </script>
 
 <!-- הכיבוי יושב כאן ולא ב-ChatScreen: leaf שקורא שדה אחד מ-VM הוא בדיוק מה
@@ -25,9 +62,12 @@ const settings = getSettings()
   <!-- כבוי בהגדרות — אין רינדור כלל. -->
 {:else if memo.minimized}
   <button
+    bind:this={el}
     type="button"
     class="memo-pill"
-    onclick={() => memo.setMinimized(false)}
+    style={posStyle}
+    {...dragging}
+    onclick={openUnlessDragged}
     aria-label={t("sessionMemo.open")}
     title={t("sessionMemo.open")}
   >
@@ -37,12 +77,13 @@ const settings = getSettings()
     {/if}
   </button>
 {:else}
-  <section class="memo-card" aria-label={t("sessionMemo.title")}>
-    <header class="memo-head">
+  <section bind:this={el} class="memo-card" style={posStyle} aria-label={t("sessionMemo.title")}>
+    <header class="memo-head" {...dragging}>
       <span class="memo-title">{t("sessionMemo.title")}</span>
       <button
         type="button"
         class="memo-min"
+        data-no-drag
         onclick={() => memo.setMinimized(true)}
         aria-label={t("sessionMemo.minimize")}
         title={t("sessionMemo.minimize")}
@@ -78,6 +119,8 @@ const settings = getSettings()
   }
 
   .memo-pill {
+    touch-action: none;
+    user-select: none;
     display: flex;
     align-items: center;
     gap: 0.375rem;
@@ -104,6 +147,11 @@ const settings = getSettings()
   }
 
   .memo-head {
+    /* ידית הגרירה. touch-action:none — בלעדיו הדפדפן תופס את המחווה כגלילה
+       ומבטל את ה-pointermove באמצע הגרירה. */
+    cursor: move;
+    touch-action: none;
+    user-select: none;
     display: flex;
     align-items: center;
     gap: 0.5rem;
