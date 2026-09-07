@@ -15,6 +15,7 @@ import {
   DRAG_SLOP_PX,
   MIN_PAD_SIZE,
   type Pos,
+  positionStyle,
   reclampElement,
   type Size,
 } from "./pad-drag"
@@ -290,5 +291,30 @@ describe("createPadResize", () => {
     other.pointerId = 2
     handlers.onpointermove(other as unknown as PointerEvent)
     expect(sizes).toHaveLength(0)
+  })
+})
+
+describe("positionStyle", () => {
+  test("no stored position means no inline override", () => {
+    expect(positionStyle(null)).toBe("")
+  })
+
+  test("logical sides are reset BEFORE the physical assignment", () => {
+    // הבאג האמיתי: `inset-inline-end` הוא `left` ב-RTL, ולכן איפוס לוגי
+    // שנכתב אחרי `left` מבטל אותו — והפתק מפסיק לעקוב אחרי הסמן. ב-LTR זה
+    // נראה תקין, ולכן רק נעילת הסדר כאן מגינה מרגרסיה.
+    const css = positionStyle({ left: 927, top: 101.5 })
+    expect(css).toContain("left:927px")
+    expect(css).toContain("top:101.5px")
+    expect(css.indexOf("inset-inline-end:auto")).toBeLessThan(css.indexOf("left:927px"))
+    expect(css.indexOf("inset-inline-start:auto")).toBeLessThan(css.indexOf("left:927px"))
+  })
+
+  test("both logical sides are neutralised, not just one", () => {
+    // איפוס צד אחד בלבד עובד בכיוון אחד ונשבר בשני.
+    const css = positionStyle({ left: 10, top: 20 })
+    expect(css).toContain("inset-inline-start:auto")
+    expect(css).toContain("inset-inline-end:auto")
+    expect(css).toContain("bottom:auto")
   })
 })

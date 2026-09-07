@@ -11,7 +11,13 @@
  * ה-wrapper של אזור-הגלילה — צף מעל הבועות ומעל ה-footer, ולא נגלל איתן.
  */
 import { getI18n, getSessionMemo, getSettings } from "$lib/context"
-import { clampSizeToBox, createPadDrag, createPadResize, reclampElement } from "$lib/util/pad-drag"
+import {
+  clampSizeToBox,
+  createPadDrag,
+  createPadResize,
+  positionStyle,
+  reclampElement,
+} from "$lib/util/pad-drag"
 
 const t = getI18n().t
 const memo = getSessionMemo()
@@ -60,11 +66,7 @@ $effect(() => {
 })
 
 // מיקום גרור גובר על ברירת-המחדל של ה-CSS (פינה תחתונה, צד ההתחלה).
-const posStyle = $derived(
-  memo.pos
-    ? `left:${memo.pos.left}px; top:${memo.pos.top}px; bottom:auto; inset-inline-start:auto;`
-    : "",
-)
+const posStyle = $derived(positionStyle(memo.pos))
 // גודל ידני גובר על מידות ברירת-המחדל שב-CSS (חל על הכרטיס בלבד).
 const sizeStyle = $derived(
   memo.size ? `width:${memo.size.width}px; height:${memo.size.height}px;` : "",
@@ -128,12 +130,13 @@ const sizeStyle = $derived(
 {/if}
 
 <style>
-  /* inset-inline-start: הצד ההתחלתי לפי כיוון הממשק (RTL/LTR), לא "שמאל".
-     bottom-4 מיישר לגובה של כפתור JumpDown באותו wrapper. */
+  /* ברירת המחדל בפינה התחתונה בצד ה-**end** הלוגי. הסיידבר הוא ילד ה-flex
+     הראשון ולכן הוא תמיד בצד ה-start (ימין ב-RTL, שמאל ב-LTR) — כך שהצד
+     הנגדי הוא היחיד שמובטח פנוי בשני הכיוונים. מכאן אפשר לגרור לכל מקום. */
   .memo-pill,
   .memo-card {
     position: absolute;
-    inset-inline-start: 1rem;
+    inset-inline-end: 1rem;
     bottom: 1rem;
     z-index: 20;
     border-radius: 0.75rem;
