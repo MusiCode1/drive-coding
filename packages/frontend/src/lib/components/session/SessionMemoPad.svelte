@@ -10,13 +10,20 @@
  * מרונדר דרך ה-snippet `overlay` של AppShell, ולכן הוא ממוקם absolute בתוך
  * ה-wrapper של אזור-הגלילה — צף מעל הבועות ומעל ה-footer, ולא נגלל איתן.
  */
-import { getI18n, getSessionMemo } from "$lib/context"
+import { getI18n, getSessionMemo, getSettings } from "$lib/context"
 
 const t = getI18n().t
 const memo = getSessionMemo()
+const settings = getSettings()
 </script>
 
-{#if memo.minimized}
+<!-- הכיבוי יושב כאן ולא ב-ChatScreen: leaf שקורא שדה אחד מ-VM הוא בדיוק מה
+     שחוק זהב #3 מתיר, וכך נקודת-הקריאה נשארת קובץ אחד. שים לב שזה **לא**
+     כפתור סגירה — הוא חי בהגדרות, הרחק ממחוות הצ'אט, ולכן אי אפשר להיתקל בו
+     בטעות ולאבד רשומות. -->
+{#if !settings.showSessionMemo}
+  <!-- כבוי בהגדרות — אין רינדור כלל. -->
+{:else if memo.minimized}
   <button
     type="button"
     class="memo-pill"

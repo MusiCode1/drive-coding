@@ -513,4 +513,5 @@ export const en: Catalog = {
   "sessionMemo.open": "Open memo",
   "sessionMemo.minimize": "Minimize memo",
   "sessionMemo.placeholder": "Reminders or a summary of this session…",
+  "settings.toggle.sessionMemo": "Session memo pad",
 }

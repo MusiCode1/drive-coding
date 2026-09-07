@@ -505,4 +505,5 @@ export const he: Catalog = {
   "sessionMemo.open": "פתח ממו",
   "sessionMemo.minimize": "צמצם ממו",
   "sessionMemo.placeholder": "תזכורות או תקציר על נושא הסשן…",
+  "settings.toggle.sessionMemo": "פתק ממו בסשן",
 }

@@ -515,6 +515,7 @@ export type MessageKey =
   | "sessionMemo.open"
   | "sessionMemo.minimize"
   | "sessionMemo.placeholder"
+  | "settings.toggle.sessionMemo"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

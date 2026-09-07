@@ -49,6 +49,8 @@ type Persisted = {
   showThoughts: boolean
   showTools: boolean
   compactActivity: boolean
+  // ─── session-memo ─── (slice session-memo-pad)
+  showSessionMemo: boolean
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend: boolean
   autoLoadRemoteImages: boolean
@@ -103,6 +105,8 @@ const DEFAULTS: Persisted = {
   showThoughts: true,
   showTools: false,
   compactActivity: false,
+  // ברירת מחדל דלוקה: הפתק מתחיל מצומצם, ולכן העלות שלו היא גלולה אחת.
+  showSessionMemo: true,
   enterToSend: true,
   // ─── תמונות מרוחקות ─── (slice msg-media) — ברירת מחדל = בטוח (click-to-load)
   autoLoadRemoteImages: false,
@@ -220,6 +224,9 @@ export class Settings {
   showTools = $state<boolean>(DEFAULTS.showTools)
   compactActivity = $state<boolean>(DEFAULTS.compactActivity)
 
+  // ─── session-memo ─── (slice session-memo-pad)
+  showSessionMemo = $state<boolean>(DEFAULTS.showSessionMemo)
+
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend = $state<boolean>(DEFAULTS.enterToSend)
 
@@ -284,6 +291,7 @@ export class Settings {
     this.showThoughts = loaded.showThoughts
     this.showTools = loaded.showTools
     this.compactActivity = loaded.compactActivity
+    this.showSessionMemo = loaded.showSessionMemo
     this.enterToSend = loaded.enterToSend
     this.autoLoadRemoteImages = loaded.autoLoadRemoteImages
     this.lastConfig = loaded.lastConfig
@@ -487,6 +495,10 @@ export class Settings {
     this.compactActivity = v
     this.#persist()
   }
+  setShowSessionMemo = (v: boolean): void => {
+    this.showSessionMemo = v
+    this.#persist()
+  }
 
   // ─── תמונות מרוחקות ─── (slice msg-media)
 
@@ -645,6 +657,7 @@ export class Settings {
       showThoughts: this.showThoughts,
       showTools: this.showTools,
       compactActivity: this.compactActivity,
+      showSessionMemo: this.showSessionMemo,
       enterToSend: this.enterToSend,
       autoLoadRemoteImages: this.autoLoadRemoteImages,
       lastConfig: this.lastConfig,
