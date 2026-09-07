@@ -336,6 +336,11 @@ $effect(() => {
         onCheckedChange={(v) => settings.setCompactActivity(v)}
       />
       <SettingToggle
+        label={t("settings.toggle.sessionMemo")}
+        checked={settings.showSessionMemo}
+        onCheckedChange={(v) => settings.setShowSessionMemo(v)}
+      />
+      <SettingToggle
         label={t("settings.toggle.autoLoadRemoteImages")}
         checked={settings.autoLoadRemoteImages}
         onCheckedChange={(v) => settings.setAutoLoadRemoteImages(v)}

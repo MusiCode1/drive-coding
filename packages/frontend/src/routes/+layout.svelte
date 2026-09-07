@@ -18,6 +18,7 @@ import {
   setCliAvailability,
   setContentViewer,
   setComposerDraft,
+  setSessionMemo,
   setCues,
   setDictate,
   setI18n,
@@ -61,6 +62,7 @@ import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Live } from "$lib/view-models/live.svelte"
 import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
+import { SessionMemoVM } from "$lib/view-models/session-memo.svelte"
 import { Dictate } from "$lib/view-models/dictate.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
@@ -102,6 +104,10 @@ const mic = new Mic({ session, cues, recovery: micRecovery })
 
 // ─── composer-draft ─── (slice dictate-to-input)
 const composerDraft = new ComposerDraft()
+
+// ─── session-memo ─── (slice session-memo-pad)
+// המעקב אחרי הסשן הפעיל יושב בתוך ה-VM (חוק זהב #4) — כאן רק הרכבה.
+const sessionMemo = new SessionMemoVM(session)
 
 // ─── dictate ─── (slice dictate-to-input — תלוי ב-composerDraft + mic)
 const dictate = new Dictate({ draft: composerDraft, mic, recovery: dictateRecovery })
@@ -287,6 +293,7 @@ setCliAvailability(cliAvailability)
 setPresencePoller(presencePoller)
 setNotify(notify)
 setComposerDraft(composerDraft)
+setSessionMemo(sessionMemo)
 setDictate(dictate)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
