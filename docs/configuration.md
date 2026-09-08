@@ -43,6 +43,8 @@ page but break voice. Put it behind HTTPS — a tunnel is enough for testing.
 | `CORS_ORIGINS` | *(unset)* | Comma-separated allowed origins. Only needed when the UI is served from a **different** origin than the API. |
 | `DRIVE_CODING_HTTPS` | *(unset)* | TLS material as JSON, to serve HTTPS directly. Most setups terminate TLS at a tunnel or reverse proxy instead and leave this alone. |
 | `AGENTS_STORE_FILE` | `<stateDir>/agents/<port>.json` | Where the agent registry snapshot is written. Named by port so several deployments on one machine (4000 / 4001 / 4002) never overwrite each other's rows. |
+| `AGENT_SIDECAR` | *(unset)* | Comma-separated cliKinds to run as **sidecars** — separate processes that survive a restart of this one. See below. Unset = nothing changes. |
+| `SHUTDOWN_KILLS_AGENTS` | *(unset)* | `1` makes a shutdown stop every sidecar too. Unset leaves them running (an interactive Ctrl+C asks). |
 
 > 🔴 **The backend has no authentication of its own.** This is deliberate: access
 > control is expected to live in front of it (Cloudflare Access, a VPN, or simply
@@ -139,7 +141,7 @@ secrets: removing a leaked key from `secrets.json` actually stops it being used.
 **What does not.** `PORT`, `DRIVE_CODING_HOST`, `DRIVE_CODING_HTTPS`,
 `CORS_ORIGINS`, `FE_STATIC_DIR`, `RSS_BUDGET_MB`, `HOTPATH_SLOW_MS`,
 `HTTP_OWNER_TTL_MS`, `WIRE_RECORD`, `FS_BROWSE_ALLOWED_BASE`,
-`AGENTS_STORE_FILE` — all baked into
+`AGENTS_STORE_FILE`, `AGENT_SIDECAR` — all baked into
 the HTTP server at boot. Changing one logs `restart required to apply` and is
 **not** applied. Deliberately loud: a config change that appears to work and
 doesn't is worse than one that refuses.
@@ -344,3 +346,68 @@ address before adoption can be turned on:
 When agents do outlive the backend, adoption becomes a probe over the live
 sockets and this same file is what restores their identity — including the
 `id` in the chat URL, which is why `POST /api/agents` accepts an explicit `id`.
+
+
+## Agents that survive a restart — `AGENT_SIDECAR`
+
+Normally a CLI agent is a child of the backend and dies with it. Set
+`AGENT_SIDECAR=cursor` and agents of that kind are launched instead as their own
+transient systemd unit, listening on a Unix socket:
+
+```
+backend ──connect──▶ $XDG_RUNTIME_DIR/drive-coding/agents-<port>/<agentId>.sock
+                       ──▶ [ sidecar, own unit ] ──stdio──▶ cursor
+```
+
+Restart the backend and the agents keep running; the new backend finds the
+sockets, adopts the matching rows from `AGENTS_STORE_FILE`, and re-attaches.
+
+**Off by default.** Only stdio-ACP CLIs can be hosted this way — currently
+`cursor`, `opencode`, `gemini`. `claude` and `codex` run as in-process adapters
+and are rejected with a warning if listed.
+
+### Why a systemd unit and not just a detached child
+
+```
+$ systemctl --user show drive-coding-edge.service -p KillMode
+KillMode=control-group
+```
+
+systemd SIGTERMs **every process in the unit's cgroup** on restart. `detached:
+true` at spawn opens a new process *group*, which is a different thing and does
+not help. Measured with a stand-in backend carrying the same `KillMode`:
+
+| | before restart | after restart |
+|---|---|---|
+| launched via `systemd-run` | pid 2479811 | **pid 2479811** — same process |
+| spawned as a detached child | pid 2479822 | pid 2480296 — killed, replaced |
+
+A transient unit lands in `app.slice` as a *sibling* of the backend, out of
+reach of its cgroup kill.
+
+⚠️ **A transient unit does not inherit the caller's environment.** Measured: 19
+variables and a PATH without `~/.bun/bin` or `~/.local/bin`. The launcher
+therefore uses an absolute interpreter path and forwards a named allowlist
+(`PATH`, `CLI_SPECS_FILE`, `CLI_SPECS_JSON`, `OPENCODE_BIN`, `LOG_*`, …).
+
+### What this does not do yet
+
+- **Output emitted while no backend is attached is dropped, not buffered.** A
+  turn producing text in the window between one backend dying and the next
+  connecting loses that text.
+- **The ACP session is not re-established automatically.** A re-attached agent
+  comes back as `starting`: the process is real, the session is not. Restoring
+  it is connection-level only, on purpose — `acpSessionIdCache` dies with the
+  backend, and creating a session host without a session id would call
+  `session/new` on an agent that may be mid-turn, opening a second session.
+- **Windows is not covered.** Unix sockets only.
+
+### Ending an agent for good
+
+Closing a connection only *detaches* from a sidecar — which is what lets a
+restart keep agents alive. `DELETE /api/agents/:id` (and MCP `session_close`,
+and `closeOnTurnEnd`) stop the unit as well. To do it by hand:
+
+```bash
+systemctl --user stop dc-agent-<agentId>
+```
