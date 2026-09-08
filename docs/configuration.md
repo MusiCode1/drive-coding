@@ -360,7 +360,21 @@ backend ──connect──▶ $XDG_RUNTIME_DIR/drive-coding/agents-<port>/<agen
 ```
 
 Restart the backend and the agents keep running; the new backend finds the
-sockets, adopts the matching rows from `AGENTS_STORE_FILE`, and re-attaches.
+sockets, adopts the matching rows from `AGENTS_STORE_FILE`, re-attaches, and
+re-seeds their ACP session ids so the transcripts come back too.
+
+Measured on a deployment carrying the same `KillMode=control-group` as the real
+ones:
+
+```
+before   backend MainPID 2547046 · 3 agent units at 2547234 / 2547260 / 2547302
+         agent 1 told "remember the word PERSIMMON"
+restart  systemctl --user restart drive-coding-sidecar
+after    backend MainPID 2548618 — replaced
+         all three agent units: same MainPIDs, still active
+         same sessionId, same 3-message transcript
+         "What word did I ask you to remember?" → "PERSIMMON"
+```
 
 **Off by default.** Only stdio-ACP CLIs can be hosted this way — currently
 `cursor`, `opencode`, `gemini`. `claude` and `codex` run as in-process adapters
@@ -395,11 +409,12 @@ therefore uses an absolute interpreter path and forwards a named allowlist
 - **Output emitted while no backend is attached is dropped, not buffered.** A
   turn producing text in the window between one backend dying and the next
   connecting loses that text.
-- **The ACP session is not re-established automatically.** A re-attached agent
-  comes back as `starting`: the process is real, the session is not. Restoring
-  it is connection-level only, on purpose — `acpSessionIdCache` dies with the
-  backend, and creating a session host without a session id would call
-  `session/new` on an agent that may be mid-turn, opening a second session.
+- **The conversation comes back, but only if the agent had one.** The row's
+  `acpSessionId` is persisted and re-seeded at boot, so re-opening the agent
+  takes `session/load` rather than `session/new`. Measured end to end: a restart,
+  then the same session id, the same transcript, and the agent still answering
+  from context set before the restart. An agent that never opened a session
+  comes back as `starting` — the process is real, the session is not yet.
 - **Windows is not covered.** Unix sockets only.
 
 ### Ending an agent for good
