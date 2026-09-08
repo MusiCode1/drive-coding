@@ -42,6 +42,7 @@ page but break voice. Put it behind HTTPS — a tunnel is enough for testing.
 | `FE_STATIC_DIR` | *(unset)* | Directory of the built frontend. When set, the backend serves the UI **and** the API on one origin. Unset = API only. |
 | `CORS_ORIGINS` | *(unset)* | Comma-separated allowed origins. Only needed when the UI is served from a **different** origin than the API. |
 | `DRIVE_CODING_HTTPS` | *(unset)* | TLS material as JSON, to serve HTTPS directly. Most setups terminate TLS at a tunnel or reverse proxy instead and leave this alone. |
+| `AGENTS_STORE_FILE` | `<stateDir>/agents/<port>.json` | Where the agent registry snapshot is written. Named by port so several deployments on one machine (4000 / 4001 / 4002) never overwrite each other's rows. |
 
 > 🔴 **The backend has no authentication of its own.** This is deliberate: access
 > control is expected to live in front of it (Cloudflare Access, a VPN, or simply
@@ -137,7 +138,8 @@ secrets: removing a leaked key from `secrets.json` actually stops it being used.
 
 **What does not.** `PORT`, `DRIVE_CODING_HOST`, `DRIVE_CODING_HTTPS`,
 `CORS_ORIGINS`, `FE_STATIC_DIR`, `RSS_BUDGET_MB`, `HOTPATH_SLOW_MS`,
-`HTTP_OWNER_TTL_MS`, `WIRE_RECORD`, `FS_BROWSE_ALLOWED_BASE` — all baked into
+`HTTP_OWNER_TTL_MS`, `WIRE_RECORD`, `FS_BROWSE_ALLOWED_BASE`,
+`AGENTS_STORE_FILE` — all baked into
 the HTTP server at boot. Changing one logs `restart required to apply` and is
 **not** applied. Deliberately loud: a config change that appears to work and
 doesn't is worse than one that refuses.
@@ -313,3 +315,32 @@ no override in the specs file.
 
 **Changed the specs file and nothing happened.**
 It is read at startup. Restart the backend.
+
+
+## The agent registry snapshot
+
+Every agent row is mirrored to `AGENTS_STORE_FILE` on each create, update and
+delete, written whole and replaced by `rename(2)` so a reader never sees half a
+snapshot. Runtime fields — `title`, and the per-request enrichment (`pid`,
+`attached`, `busy`, `lastSeenAt`) — are stripped before writing: they describe a
+live process, and restoring them would state something about a process that is
+gone.
+
+🔴 **The file is written but not yet trusted.** On boot the rows are read and
+then handed to an *adoption* function, which decides which of them may re-enter
+the live registry. The default adopts **none**, so `GET /api/agents` after a
+restart is empty — exactly as before this existed. That is deliberate and not a
+placeholder: today every CLI dies with the backend, so a row read back from disk
+describes a process that no longer exists.
+
+Two independent reasons the process dies, both of which the sidecar work has to
+address before adoption can be turned on:
+
+1. `KillMode=control-group` in the systemd unit — `systemctl restart` sends
+   SIGTERM to **every** process in the unit's cgroup, not just the main one.
+   `detached: true` at spawn creates a new process *group*, which does not help.
+2. The child's stdin/stdout are pipes to the backend, and they die with it.
+
+When agents do outlive the backend, adoption becomes a probe over the live
+sockets and this same file is what restores their identity — including the
+`id` in the chat URL, which is why `POST /api/agents` accepts an explicit `id`.
