@@ -73,7 +73,11 @@ const ws = createWsStack()
 // empty one that fills in a moment later.
 await Promise.all([
   buildApp(app, config, deps, { broadcastConfigChanged: ws.broadcastConfigChanged }),
-  restorePersistedAgents({ registry: deps.registry, connections: deps.connectionRegistry }),
+  restorePersistedAgents({
+    registry: deps.registry,
+    connections: deps.connectionRegistry,
+    acpSessionIds: deps.acpSessionIdCache,
+  }),
 ])
 ws.wireRoutes(app, deps)
 

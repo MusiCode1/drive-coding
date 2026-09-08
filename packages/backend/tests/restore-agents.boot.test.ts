@@ -104,6 +104,43 @@ describe("restorePersistedAgents", () => {
     expect(readAgentStore(file)).toHaveLength(1)
   })
 
+  it("🔴 seeds the acpSessionId cache — otherwise the transcript is lost", async () => {
+    // Measured live: without this the row came back with acpSessionId and
+    // getOrCreateHost still called session/new, because it reads the Map and
+    // not the row. The old conversation was orphaned inside a live process.
+    const socketDir = tmpDir()
+    await liveSidecar(agentSocketPath(socketDir, ID))
+    const { registry } = registryWithRow({ acpSessionId: "sess-77" })
+    const acpSessionIds = new Map<string, string>()
+
+    await restorePersistedAgents({
+      registry,
+      connections: { connect: async () => ({}) },
+      env: { AGENT_SIDECAR: "cursor" },
+      socketDir,
+      acpSessionIds,
+    })
+
+    expect(acpSessionIds.get(ID)).toBe("sess-77")
+  })
+
+  it("a row with no session id seeds nothing — cold start is correct there", async () => {
+    const socketDir = tmpDir()
+    await liveSidecar(agentSocketPath(socketDir, ID))
+    const { registry } = registryWithRow()
+    const acpSessionIds = new Map<string, string>()
+
+    await restorePersistedAgents({
+      registry,
+      connections: { connect: async () => ({}) },
+      env: { AGENT_SIDECAR: "cursor" },
+      socketDir,
+      acpSessionIds,
+    })
+
+    expect(acpSessionIds.size).toBe(0)
+  })
+
   it("🔴 does not create a session host — that would risk a second session", async () => {
     // acpSessionIdCache died with the previous process. A host built without a
     // session id takes the cold branch and calls session/new on an agent that
