@@ -317,7 +317,7 @@
       "class": "mixed"
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 1033,
+      "metric": 1029,
       "impurity": 22,
       "class": "scattered"
     },
@@ -927,7 +927,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/routes/+layout.svelte": {
-      "metric": 349,
+      "metric": 348,
       "impurity": 18,
       "class": "mixed"
     },

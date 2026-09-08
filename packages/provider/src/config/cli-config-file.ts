@@ -169,6 +169,18 @@ const changeEmitter = new EventEmitter()
 let watcher: fs.FSWatcher | null = null
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
+/**
+ * Filenames in the state directory that trigger a config-change event.
+ *
+ * `cli-specs.jsonc` invalidates this module's memo. `config.jsonc` and
+ * `secrets.json` belong to the backend's loadConfig — nothing here reads them —
+ * but they live in the very same directory, and watching it here reuses this watcher's debounce, its
+ * ENOENT guard and its directory-level watch (which is what makes atomic saves
+ * via write-temp+rename work). A second watcher would duplicate all three.
+ * The listener in server.ts decides what to actually do with the event.
+ */
+const WATCHED_FILENAMES = new Set(["config.jsonc", "secrets.json"])
+
 /** Clears the memoized override and emits to listeners — the only broadcast path. */
 export function invalidateCache(): void {
   _cached = null
@@ -188,13 +200,17 @@ function startWatching(): void {
   if (watcher !== null) return
   const filePath = resolveCliSpecsPath()
   const dir = dirname(filePath)
+  // Resolved per call: CLI_SPECS_FILE can point the specs file anywhere, and
+  // tests rely on that. config.jsonc is a fixed name in the same directory.
+  WATCHED_FILENAMES.add(basename(filePath))
   // fs.watch on a missing directory throws ENOENT synchronously — guard before watching.
   if (!fs.existsSync(dir)) return
   try {
     watcher = fs.watch(dir, { persistent: false }, (_eventType, filename) => {
       // Directory-level watch fires for other files in the same dir too
-      // (cache/, recordings/, wire-recordings/, usage/). React only to the config file.
-      if (filename !== null && filename !== basename(filePath)) return
+      // (cache/, recordings/, wire-recordings/, usage/). React only to the
+      // config files.
+      if (filename !== null && !WATCHED_FILENAMES.has(filename)) return
       scheduleInvalidate()
     })
     watcher.unref()

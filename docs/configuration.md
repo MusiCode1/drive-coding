@@ -100,6 +100,53 @@ existing key changes how that agent is launched.
 | `HOTPATH_SLOW_MS` | `50` | Log a warning when a hot-path operation exceeds this many milliseconds. |
 | `RSS_BUDGET_MB` | `1500` (`CONFIG_SPECS`) | Memory ceiling above which the backend starts shedding load. |
 | `HTTP_OWNER_TTL_MS` | `600000` (`CONFIG_SPECS`) | How long an HTTP owner may go without a liveness signal (`POST /api/agents/:id/presence`) before the backend **releases ownership**. Expiry releases ownership and severs abandoned SSE streams — it does **not** destroy the session host, kill the agent, or reset `version`; the next connection is a continuation. Lowering it (e.g. `5000`) is a **debugging aid**: the FE `LIVENESS_FRESH_MS` imports the same catalog default at build time, so a live env override here will make the UI's "connected" indicator lag behind the backend. |
+| `ELICITATION_TIMEOUT_MS` | *(unset — no timeout)* | How long an elicitation (a question the agent asked, e.g. `AskUserQuestion`) may stay unanswered before it auto-**declines**. Unset means it waits indefinitely, which is the point: an unanswered question must not answer itself. Accepts `never` / `off` / `0` as explicit synonyms. On expiry the agent receives `decline` — empty answers, turn continues — not `cancel`, which would abort the tool call. ⚠️ Values above `2147483647` (and `Infinity`) are **rejected and treated as no timeout**: Node collapses a larger `setTimeout` delay to 1ms, so such a value would cancel the request instantly rather than never. Also a `config.jsonc` leaf (`elicitationTimeoutMs`). |
+| `PERMISSION_TIMEOUT_MS` | *(unset — no timeout)* | Same, for permission prompts (tool approvals, plan approvals). On expiry the request resolves as `cancelled`. Same ceiling and same synonyms. Leaf: `permissionTimeoutMs`. |
+
+### Reloading configuration without a restart
+
+Editing `config.jsonc` or `secrets.json` takes effect on a running backend —
+no restart, no dropped agents. Two triggers, same path:
+
+```bash
+# 1. Just edit. A watcher on ~/.config/drive-coding/ picks it up (debounced
+#    150ms; atomic saves via write-temp+rename are handled).
+$EDITOR ~/.config/drive-coding/secrets.json
+#    ⚠️ The watcher only covers the directory holding cli-specs.jsonc. If you
+#    started the backend with --config or --secrets pointing elsewhere — or set
+#    CLI_SPECS_FILE to another directory — edits there are NOT noticed, and the
+#    endpoint below is the only trigger.
+
+# 2. Or ask explicitly:
+curl -X POST http://127.0.0.1:4002/api/reload-config
+```
+
+**What reloads** — only values verified to be re-read on every use *and*
+present in `CONFIG_SPECS`/`SECRET_SPECS`: `ELEVENLABS_API_KEY` and
+`GEMINI_API_KEY` (`resolveProviderAuth` is pure and called per request),
+`OPENCODE_BIN` (per spawn), `ELICITATION_TIMEOUT_MS` /
+`PERMISSION_TIMEOUT_MS` (per session host), `LOG_LEVEL` / `LOG_NS` /
+`LOG_FORMAT` (the reload re-runs `initLogger`), and `CLI_SPECS_JSON`.
+
+`OPENCODE_ARGS` and `LOG_WIRE` are **not** reloadable despite being read
+per use: they have no `CONFIG_SPECS` entry, so no config file can produce them.
+
+**Deleting** a key from the file is honoured too — it reverts to whatever the
+environment provided at boot, or is unset if nothing did. That matters for
+secrets: removing a leaked key from `secrets.json` actually stops it being used.
+
+**What does not.** `PORT`, `DRIVE_CODING_HOST`, `DRIVE_CODING_HTTPS`,
+`CORS_ORIGINS`, `FE_STATIC_DIR`, `RSS_BUDGET_MB`, `HOTPATH_SLOW_MS`,
+`HTTP_OWNER_TTL_MS`, `WIRE_RECORD`, `FS_BROWSE_ALLOWED_BASE` — all baked into
+the HTTP server at boot. Changing one logs `restart required to apply` and is
+**not** applied. Deliberately loud: a config change that appears to work and
+doesn't is worse than one that refuses.
+
+⚠️ **A process that is already running keeps the environment it started with.**
+Agents get `{ ...process.env }` at spawn time, and there is no way to update a
+live process's environment. New agents pick up the new value; agents already
+running do not. If you rotate a key to fix a broken agent, that agent still has
+to be restarted — only the ones you start afterwards get the new key.
 
 ### Reading a wire recording
 

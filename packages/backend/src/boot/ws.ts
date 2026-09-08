@@ -19,7 +19,7 @@ const procLog = createLogger("backend.process")
 export type WsStack = {
   echoWss: WebSocketServer
   agentWss: WebSocketServer
-  broadcastConfigChanged: () => void
+  broadcastConfigChanged: (changed?: string[]) => void
   wireRoutes: (app: Hono, deps: BootDeps) => void
   attachUpgradeHandler: (httpServer: ServerType) => void
 }
@@ -32,8 +32,8 @@ export function createWsStack(): WsStack {
   echoWss.on("error", (err) => procLog.warn({ src: "echoWss", err }, "wss error"))
   agentWss.on("error", (err) => procLog.warn({ src: "agentWss", err }, "wss error"))
 
-  function broadcastConfigChanged(): void {
-    const payload: ServerMessage = { type: "config_changed", timestamp: Date.now() }
+  function broadcastConfigChanged(changed: string[] = []): void {
+    const payload: ServerMessage = { type: "config_changed", timestamp: Date.now(), changed }
     const msg = JSON.stringify(payload)
     for (const client of echoWss.clients) {
       if (client.readyState === WebSocket.OPEN) {

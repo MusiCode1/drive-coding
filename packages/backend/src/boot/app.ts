@@ -5,6 +5,7 @@
 import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
 import { createLogger } from "@drive-coding/core/log"
 import { onConfigChange } from "@drive-coding/provider/config"
+import { applyReloadEffects, reloadRuntimeConfig } from "../config/runtime-config.js"
 import { serveStatic } from "@hono/node-server/serve-static"
 import type { Hono } from "hono"
 import { isBinary } from "../binary.js"
@@ -39,7 +40,7 @@ export async function buildApp(
   app: Hono,
   config: DriveCodingConfig,
   deps: BootDeps,
-  opts: { broadcastConfigChanged: () => void },
+  opts: { broadcastConfigChanged: (changed?: string[]) => void },
 ): Promise<void> {
   const {
     registry,
@@ -104,7 +105,24 @@ export async function buildApp(
   registerUsageHttp(app, { usageStore })
   registerCliAvailabilityHttp(app, env)
 
-  onConfigChange(() => opts.broadcastConfigChanged())
+  // Extended: the same event also re-resolves config.jsonc + secrets.json and
+  // applies the values that are safe to change while the process is running.
+  onConfigChange(() => {
+    const outcome = reloadRuntimeConfig()
+    applyReloadEffects(outcome)
+    for (const w of outcome.warnings) log.warn({ warning: w }, "config reload warning")
+    if (outcome.requiresRestart.length > 0) {
+      // Loud on purpose: the value changed in the file but the process still
+      // runs with the old one. Silence here is exactly how a config change
+      // appears to work and doesn't.
+      log.warn(
+        { keys: outcome.requiresRestart },
+        "config changed but these are fixed at boot — restart required to apply",
+      )
+    }
+    if (outcome.applied.length > 0) log.info({ keys: outcome.applied }, "config reloaded")
+    opts.broadcastConfigChanged(outcome.applied)
+  })
   registerReloadConfigHttp(app)
   registerCliLogoHttp(app, env)
 

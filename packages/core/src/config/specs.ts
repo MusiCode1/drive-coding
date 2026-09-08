@@ -63,6 +63,16 @@ export function configDefault<K extends ConfigDefaultKey>(key: K): ConfigDefault
   return spec.default as ConfigDefaults[K]
 }
 
+/** Shape-only normaliser for the two prompt timeouts — see their specs below. */
+function parseTimeoutValue(raw: string): number | "never" | "off" | undefined {
+  const trimmed = raw.trim().toLowerCase()
+  if (trimmed === "" || trimmed === "never" || trimmed === "off") {
+    return trimmed === "" ? undefined : (trimmed as "never" | "off")
+  }
+  const n = Number(trimmed)
+  return Number.isNaN(n) ? undefined : n
+}
+
 export const CONFIG_SPECS = [
   {
     key: "port",
@@ -123,6 +133,23 @@ export const CONFIG_SPECS = [
     default: 600_000,
   },
   { key: "fsBrowseBase", env: "FS_BROWSE_ALLOWED_BASE" },
+  // Prompt timeouts. `parse` only normalises the SHAPE so the schema validates;
+  // what a value MEANS is decided in exactly one place —
+  // resolveRequestTimeoutMs in backend/session-host/session-host.ts — which is
+  // also what rejects out-of-range values. An unparseable string contributes
+  // nothing, leaving the raw env var for that resolver to reject.
+  {
+    key: "elicitationTimeoutMs",
+    env: "ELICITATION_TIMEOUT_MS",
+    parse: parseTimeoutValue,
+    serialize: (v: unknown) => String(v),
+  },
+  {
+    key: "permissionTimeoutMs",
+    env: "PERMISSION_TIMEOUT_MS",
+    parse: parseTimeoutValue,
+    serialize: (v: unknown) => String(v),
+  },
   { key: "log.level", env: "LOG_LEVEL", flag: "log-level" },
   { key: "log.ns", env: "LOG_NS" },
   {

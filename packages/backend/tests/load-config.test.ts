@@ -141,6 +141,56 @@ describe("loadConfig — env vars", () => {
   })
 })
 
+describe("loadConfig — prompt timeouts", () => {
+  it("elicitationTimeoutMs from the config file → env patch", () => {
+    const configPath = writeTmpJson({ elicitationTimeoutMs: 5000 })
+    const { config, envPatch } = loadConfig({ argv: { config: configPath }, env: {} })
+    expect(config.elicitationTimeoutMs).toBe(5000)
+    expect(envPatch["ELICITATION_TIMEOUT_MS"]).toBe("5000")
+  })
+
+  it('"never" survives the file → envPatch round-trip unchanged', () => {
+    const configPath = writeTmpJson({ permissionTimeoutMs: "never" })
+    const { config, envPatch } = loadConfig({ argv: { config: configPath }, env: {} })
+    expect(config.permissionTimeoutMs).toBe("never")
+    expect(envPatch["PERMISSION_TIMEOUT_MS"]).toBe("never")
+  })
+
+  it("env beats the config file", () => {
+    const configPath = writeTmpJson({ elicitationTimeoutMs: 5000 })
+    const { config } = loadConfig({
+      argv: { config: configPath },
+      env: { ELICITATION_TIMEOUT_MS: "never" },
+    })
+    expect(config.elicitationTimeoutMs).toBe("never")
+  })
+
+  // 🔴 The reason these are two flat leaves and not one `timeouts` object:
+  // resolveConfig overrides object fields wholesale, so an object would let
+  // the env var below silently erase permissionTimeoutMs from the file.
+  it("setting one timeout in env does not erase the other from the file", () => {
+    const configPath = writeTmpJson({ elicitationTimeoutMs: 5000, permissionTimeoutMs: 7000 })
+    const { config } = loadConfig({
+      argv: { config: configPath },
+      env: { ELICITATION_TIMEOUT_MS: "never" },
+    })
+    expect(config.elicitationTimeoutMs).toBe("never")
+    expect(config.permissionTimeoutMs).toBe(7000)
+  })
+
+  it("unset → absent from config and from the env patch", () => {
+    const { config, envPatch } = loadConfig({ argv: {}, env: {} })
+    expect(config.elicitationTimeoutMs).toBeUndefined()
+    expect(envPatch["ELICITATION_TIMEOUT_MS"]).toBeUndefined()
+  })
+
+  it("unparseable env value is left for resolveRequestTimeoutMs to reject", () => {
+    const { config, envPatch } = loadConfig({ argv: {}, env: { ELICITATION_TIMEOUT_MS: "abc" } })
+    expect(config.elicitationTimeoutMs).toBeUndefined()
+    expect(envPatch["ELICITATION_TIMEOUT_MS"]).toBeUndefined()
+  })
+})
+
 describe("loadConfig — flag secrets", () => {
   it("7. --elevenlabs-key flag → warning about process list visibility", () => {
     const { secrets, warnings } = loadConfig({
