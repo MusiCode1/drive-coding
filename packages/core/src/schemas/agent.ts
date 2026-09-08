@@ -192,10 +192,6 @@ export type AgentPublic = typeof AgentPublic.infer
 export const CreateAgentInput = type({
   cliKind: CliId,
   cwd: "string >= 1",
-  // slice agent-registry-persist: זהות נתונה-מראש. ברירת-מחדל randomUUID().
-  // קיים כדי ששורה שנקראה מהדיסק תאומץ עם אותו id — בלעדיו כתובת-הצ'אט
-  // (שמכילה את ה-UUID) מתה בכל restart גם כשהתהליך עצמו שרד.
-  "id?": "string.uuid",
   "modelOverride?": "string | null",
   // Slice 8a: טעינת session ACP קיים דרך session/load במקום newSession
   "existingSessionId?": "string",

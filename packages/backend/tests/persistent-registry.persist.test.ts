@@ -120,13 +120,17 @@ describe("createPersistentAgentRegistry", () => {
     expect(restored?.status).toBe("busy")
   })
 
-  it("honours a caller-supplied id — the chat URL survives the restart", async () => {
+  it("🔴 create always mints a fresh id — identity survives through restore, not through the caller", async () => {
+    // An earlier version let the caller supply `id`, justified as "the chat URL
+    // has to survive a restart". It never did any such thing: the HTTP layer
+    // strips unknown keys, so the field was unreachable, and restore() preserves
+    // identity by seeding rows verbatim instead.
     const file = tmpFile()
     const reg = createPersistentAgentRegistry({ file })
-    const id = "22222222-2222-4222-8222-222222222222"
-    const agent = await reg.create({ id, cliKind: "claude", cwd: os.tmpdir() })
-    expect(agent.id).toBe(id)
-    expect((await reg.get(id))?.id).toBe(id)
+    const a = await reg.create({ cliKind: "claude", cwd: os.tmpdir() })
+    const b = await reg.create({ cliKind: "claude", cwd: os.tmpdir() })
+    expect(a.id).not.toBe(b.id)
+    expect(a.id).toMatch(/^[0-9a-f-]{36}$/)
   })
 
   it("keeps generating an id when the caller supplies none", async () => {

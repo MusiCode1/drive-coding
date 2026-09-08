@@ -138,14 +138,17 @@ export async function launchOrAttachAgent(opts: LaunchOpts): Promise<LaunchResul
     log.info({ agentId: opts.agentId, socket }, "attaching to running sidecar")
     return { kind: "attached", socket, probe }
   }
-  if (probe.state === "wedged") {
-    // Bound but not answering. Starting a second sidecar would fail to bind and
-    // leave two half-broken things; surfacing it is more useful than guessing.
-    return {
-      kind: "failed",
-      socket,
-      reason: "a sidecar is bound to this socket but not responding",
-    }
+  if (probe.state !== "stale" && probe.state !== "absent") {
+    // 🔴 Launch only when the slot is provably free: nothing there (`absent`) or
+    // a corpse the probe already cleared (`stale`). `wedged` and `unknown` both
+    // mean "I could not reach it", which is not the same as "it is not there" —
+    // and starting a second sidecar over a live one is how an agent ends up on
+    // an unlinked inode: alive, listening, and unreachable forever.
+    const detail =
+      probe.state === "wedged"
+        ? "bound but not responding"
+        : `probe failed (${probe.code ?? "no code"})`
+    return { kind: "failed", socket, reason: `cannot confirm the socket is free: ${detail}` }
   }
 
   const argv = buildSidecarArgv(opts, socket)

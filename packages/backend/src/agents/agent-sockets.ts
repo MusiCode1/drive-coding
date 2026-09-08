@@ -192,9 +192,19 @@ export type SocketProbe =
   | { state: "alive"; info?: PingInfo }
   /** Connected, but no pong within the budget — bound and not responding. */
   | { state: "wedged" }
-  /** ECONNREFUSED — the file is an orphan and was unlinked. */
+  /** ECONNREFUSED — the file outlived its process; it was unlinked. */
   | { state: "stale" }
-  /** ENOENT, EACCES, or anything else that is not a verdict about the peer. */
+  /** ENOENT — there is nothing here at all. The slot is genuinely free. */
+  | { state: "absent" }
+  /**
+   * Any other error: EACCES, EMFILE, a transient refusal from the kernel.
+   *
+   * 🔴 Kept separate from `absent` on purpose. Folding the two together is what
+   * makes a launcher start a second sidecar on top of a live one: "I could not
+   * reach it" is not "nothing is there", and only the second is safe to build
+   * on. A caller that cannot tell them apart has to guess, and the wrong guess
+   * strands a running agent forever.
+   */
   | { state: "unknown"; code?: string }
 
 /**
@@ -249,6 +259,10 @@ export function probeAgentSocket(path: string, timeoutMs = 1000): Promise<Socket
           /* someone else got there first — fine */
         }
         finish({ state: "stale" })
+        return
+      }
+      if (code === "ENOENT") {
+        finish({ state: "absent" })
         return
       }
       finish(code === undefined ? { state: "unknown" } : { state: "unknown", code })

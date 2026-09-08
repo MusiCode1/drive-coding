@@ -84,8 +84,10 @@ describe("probe ↔ listenUnix", () => {
     handle.close()
     await new Promise((r) => setTimeout(r, 20))
     if (!existsSync(path)) {
-      // close() unlinked — the orphan case is covered in the discovery suite.
-      expect((await probeAgentSocket(path)).state).toBe("unknown")
+      // close() unlinks on the way out, so there is nothing left to refuse a
+      // connection — the path is `absent`, not an error we failed to classify.
+      // The orphan-file case is covered in the discovery suite.
+      expect((await probeAgentSocket(path)).state).toBe("absent")
       return
     }
     expect((await probeAgentSocket(path)).state).toBe("stale")

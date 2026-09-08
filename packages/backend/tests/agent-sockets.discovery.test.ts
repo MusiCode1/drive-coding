@@ -158,14 +158,20 @@ describe("probeAgentSocket", () => {
     expect(existsSync(path)).toBe(false)
   })
 
-  it("a missing path is unknown, not stale — nothing to clean up", async () => {
+  it("🔴 a missing path is `absent`, not `unknown` — the distinction gates launching", async () => {
+    // Folding these together is what lets a launcher start a second sidecar on
+    // top of a live one: "I could not reach it" is not "nothing is there".
     const res = await probeAgentSocket(join(tmpDir(), "gone.sock"))
-    expect(res.state).toBe("unknown")
+    expect(res.state).toBe("absent")
   })
 
   it("never throws, whatever it is pointed at", async () => {
     const dir = tmpDir()
     mkdirSync(join(dir, "a-directory.sock"))
-    await expect(probeAgentSocket(join(dir, "a-directory.sock"))).resolves.toBeDefined()
+    // Measured: connect(2) to a directory answers ECONNREFUSED, same as a dead
+    // socket — so it lands in `stale`. That is still safe: the probe's unlink
+    // fails with EISDIR, and listenUnix then refuses to bind with a real error
+    // rather than pretending the path is usable.
+    expect((await probeAgentSocket(join(dir, "a-directory.sock"))).state).toBe("stale")
   })
 })
