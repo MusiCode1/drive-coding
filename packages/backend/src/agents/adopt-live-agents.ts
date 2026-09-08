@@ -80,9 +80,11 @@ export async function adoptLiveAgents(
     const probe = await probeAgentSocket(agentSocketPath(socketDir, id))
     const row = byId.get(id)
 
-    if (probe.state === "stale") {
-      // The probe already unlinked the corpse. Its row goes with it.
-      log.info({ agentId: id }, "socket was an orphan file — reaped")
+    if (probe.state === "stale" || probe.state === "absent") {
+      // stale: the probe unlinked the corpse. absent: it vanished between the
+      // readdir and the connect. Either way there is nothing to adopt, and the
+      // row should stop being offered.
+      log.info({ agentId: id, state: probe.state }, "no live socket — row dropped")
       continue
     }
     if (probe.state !== "alive") {

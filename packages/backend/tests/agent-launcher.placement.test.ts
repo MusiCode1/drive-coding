@@ -163,3 +163,41 @@ describe.skipIf(!hasSystemdUser())("launcher placement (systemd)", () => {
     expect(stopAgentUnit(randomUUID())).toBe(false)
   })
 })
+
+describe("launching only into a slot that is provably free", () => {
+  it("🔴 refuses when the probe could not reach the socket", async () => {
+    // `unknown` means "I could not tell", not "nothing is there". Treating the
+    // two alike is what puts a second sidecar on top of a live one, leaving the
+    // first on an unlinked inode — alive, listening, unreachable.
+    const dir = tmpDir()
+    const agentId = randomUUID()
+    await silentSidecar(agentSocketPath(dir, agentId))
+
+    const res = await launchOrAttachAgent({
+      agentId,
+      cliKind: "cursor",
+      cwd: "/tmp",
+      socketDir: dir,
+    })
+    expect(res.kind).toBe("failed")
+    expect(res.kind === "failed" && res.reason).toMatch(/cannot confirm the socket is free/)
+  })
+
+  it("proceeds when there is genuinely nothing there", async () => {
+    const dir = tmpDir()
+    const agentId = randomUUID()
+    units.push(agentUnitName(agentId))
+
+    const res = await launchOrAttachAgent({
+      agentId,
+      cliKind: "cursor",
+      cwd: tmpdir(),
+      socketDir: dir,
+      env: {
+        ...process.env,
+        CLI_SPECS_JSON: JSON.stringify({ cursor: { bin: "node", args: [fakeCli] } }),
+      },
+    })
+    expect(res.kind).toBe("launched")
+  }, 30000)
+})

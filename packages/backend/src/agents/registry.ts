@@ -9,7 +9,8 @@ import { buildAgentRow } from "./agent-row.js"
  * האם Thread-safe? כן, Bun ו-Node מריצים JS ב-thread יחיד.
  *
  * `seed` — שורות שנקראו מהדיסק ואומצו. נכנסות כמו שהן: הן כבר Agent מלא,
- * ולכן **לא** עוברות ב-buildAgentRow (שהיה דורס status/createdAt).
+ * ולכן **לא** עוברות ב-buildAgentRow (שהיה דורס status/createdAt). זה גם למה
+ * `create` תמיד טובע id חדש: שימור-זהות עובר דרך seed, ולא דרך id מהקורא.
  * `onChange` — נקרא אחרי כל מוטציה; זה התפר שהעטיפה המתמידה נתלית עליו.
  */
 export function createInMemoryAgentRegistry(opts?: {
@@ -28,7 +29,7 @@ export function createInMemoryAgentRegistry(opts?: {
         throw new Error(`invalid cwd: ${cwdResult.error.kind}`)
       }
       const agent = buildAgentRow({
-        id: input.id ?? randomUUID(),
+        id: randomUUID(),
         cwd: cwdResult.value, // מנורמל
         createdAt: new Date().toISOString(),
         input,
