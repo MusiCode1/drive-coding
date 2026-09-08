@@ -4,8 +4,16 @@ import type { AcpTransport } from "./types.js"
 /**
  * Convert a node:net Socket to an AcpTransport (bytes only).
  * Pattern: data→enqueue · end/close→readable.close · write in Promise · onClose once.
+ *
+ * `prelude` — bytes already read off the socket before the transport existed,
+ * replayed ahead of everything else. `listenUnix` peeks the first line to tell a
+ * `_drive/ping` probe from a real peer, and the peer's opening frame arrives in
+ * that same read; without a way to hand it back, the first ACP message of every
+ * connection would be swallowed. `Readable.unshift` would be the other route,
+ * but it interacts badly with the flowing-mode `'data'` listener below — an
+ * explicit parameter is one less thing that has to be true.
  */
-export function socketToAcpTransport(sock: Socket): AcpTransport {
+export function socketToAcpTransport(sock: Socket, prelude?: readonly Uint8Array[]): AcpTransport {
   let readableController: ReadableStreamDefaultController<Uint8Array> | undefined
   let closeCb: ((code: number, reason: string) => void) | undefined
   let closed = false
@@ -13,6 +21,9 @@ export function socketToAcpTransport(sock: Socket): AcpTransport {
   const readable = new ReadableStream<Uint8Array>({
     start(controller) {
       readableController = controller
+      for (const chunk of prelude ?? []) {
+        controller.enqueue(chunk)
+      }
       sock.on("data", (chunk: Buffer) => {
         try {
           readableController?.enqueue(new Uint8Array(chunk))
