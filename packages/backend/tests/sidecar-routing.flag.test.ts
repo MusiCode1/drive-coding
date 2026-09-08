@@ -28,16 +28,22 @@ describe("sidecarKinds", () => {
   })
 
   it("🔴 drops a cliKind that cannot be hosted in a sidecar rather than pretending", () => {
-    // claude and codex are in-process adapters. Accepting them here would look
-    // like the feature working and would fail at launch instead.
-    expect(sidecarKinds({ AGENT_SIDECAR: "claude" })).toEqual(new Set())
+    // codex is in-process only here. Accepting it would look like the feature
+    // working and would fail at launch instead.
+    expect(sidecarKinds({ AGENT_SIDECAR: "codex" })).toEqual(new Set())
     expect(sidecarKinds({ AGENT_SIDECAR: "codex,cursor" })).toEqual(new Set(["cursor"]))
     expect(sidecarKinds({ AGENT_SIDECAR: "nonsense" })).toEqual(new Set())
   })
 
-  it("the capable set is exactly the stdio-ACP CLIs", () => {
+  it("claude is capable — its adapter ships a binary, not only a library", () => {
+    // Verified live: full turn through the shipped bridge, correct auth under a
+    // transient unit, and session/load after the client died.
+    expect(SIDECAR_CAPABLE.has("claude")).toBe(true)
+    expect(sidecarKinds({ AGENT_SIDECAR: "claude,cursor" })).toEqual(new Set(["claude", "cursor"]))
+  })
+
+  it("the capable set is the CLIs something can speak ACP for", () => {
     expect(SIDECAR_CAPABLE.has("cursor")).toBe(true)
-    expect(SIDECAR_CAPABLE.has("claude")).toBe(false)
     expect(SIDECAR_CAPABLE.has("codex")).toBe(false)
   })
 })
