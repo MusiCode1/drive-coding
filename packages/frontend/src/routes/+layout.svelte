@@ -39,7 +39,8 @@ import {
 } from "$lib/context"
 import { installDebugSurface } from "$lib/debug/dc"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
-import { createConfigChangeSocket } from "$lib/engines/config-change-socket"
+import { createConfigChangeRefresher } from "$lib/engines/config-change-socket"
+import { ttsStatus } from "$lib/view-models/tts-status.svelte"
 import { CuesEngine } from "$lib/engines/cues"
 import { createPendingCaptureWiring } from "$lib/engines/pending-capture-wiring"
 import { PlayableSink } from "$lib/engines/playable-sink"
@@ -327,10 +328,8 @@ onMount(() => {
 // ─── config-change-socket ─── (slice cli-specs-hot-reload)
 // Wiring only: the socket, lifecycle and reconnect live in the engine (golden rule
 // forbids WebSocket in routes). Here we only create it and pass the callback.
-const configSocket = createConfigChangeSocket({
-  url: beWsUrl("/ws/echo"),
-  onConfigChanged: () => void cliAvailability.reload(),
-})
+const cfgTargets = { cliAvailability, ttsStatus }
+const configSocket = createConfigChangeRefresher(beWsUrl("/ws/echo"), cfgTargets)
 onMount(() => configSocket.start())
 onDestroy(() => configSocket.stop())
 </script>

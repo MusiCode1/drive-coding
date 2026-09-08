@@ -20,6 +20,13 @@ export const DriveCodingConfig = type({
   "rssBudgetMb?": "number",
   "httpOwnerTtlMs?": "number",
   "fsBrowseBase?": "string",
+  // Prompt timeouts, in milliseconds. Omitted — or "never" / "off" / 0 — means
+  // no timeout, which is the default: a question the user has not answered yet
+  // must not answer itself. Two flat leaves rather than a `timeouts` object,
+  // because resolveConfig overrides object fields wholesale: setting one in env
+  // would then silently erase the other from the config file.
+  "elicitationTimeoutMs?": "number|'never'|'off'",
+  "permissionTimeoutMs?": "number|'never'|'off'",
   "log?": {
     "level?": "string",
     "ns?": "string",

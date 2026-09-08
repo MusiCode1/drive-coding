@@ -70,6 +70,54 @@ describe("PendingRequests", () => {
       await promise
     })
 
+    it("timeoutMs: null never settles on its own — respond() still resolves", async () => {
+      const pending = createPendingRequests({ timeoutMs: null })
+
+      const promise = pending.request(7)
+
+      // Ten minutes of virtual time, well past any timeout this ever had.
+      vi.advanceTimersByTime(10 * 60_000)
+
+      let settled = false
+      promise
+        .then(() => {
+          settled = true
+        })
+        .catch(() => {
+          settled = true
+        })
+      await Promise.resolve()
+      expect(settled).toBe(false)
+
+      pending.respond(7, { action: "allow" })
+      await expect(promise).resolves.toEqual({ action: "allow" })
+    })
+
+    it("timeoutMs: null ignores defaultValue — respondAll still resolves", async () => {
+      const pending = createPendingRequests({
+        timeoutMs: null,
+        defaultValue: { action: "deny" as const },
+      })
+
+      const promise = pending.request(8)
+      vi.advanceTimersByTime(10 * 60_000)
+
+      let settled = false
+      promise
+        .then(() => {
+          settled = true
+        })
+        .catch(() => {
+          settled = true
+        })
+      await Promise.resolve()
+      expect(settled).toBe(false)
+
+      // dispose/session-switch path must still drain it.
+      pending.respondAll({ action: "deny" })
+      await expect(promise).resolves.toEqual({ action: "deny" })
+    })
+
     it("ignores respond() after timeout (no double-resolve)", async () => {
       const pending = createPendingRequests({ timeoutMs: 50 })
 

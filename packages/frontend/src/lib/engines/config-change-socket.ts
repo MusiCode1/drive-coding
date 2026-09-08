@@ -11,7 +11,12 @@ const RECONNECT_DELAY_MS = 1000
 
 export function createConfigChangeSocket(opts: {
   url: string
-  onConfigChanged: () => void
+  /**
+   * Called on every config_changed frame. `changed` lists the env keys the
+   * backend actually applied; it is empty from an older backend that predates
+   * the field, which callers should treat as "refresh everything you know".
+   */
+  onConfigChanged: (changed: string[]) => void
   wsFactory?: (url: string) => WebSocket
 }): { start(): void; stop(): void } {
   let ws: WebSocket | undefined
@@ -28,8 +33,8 @@ export function createConfigChangeSocket(opts: {
     }
     ws.addEventListener("message", (ev) => {
       try {
-        const msg = JSON.parse(String(ev.data)) as { type?: string }
-        if (msg.type === "config_changed") opts.onConfigChanged()
+        const msg = JSON.parse(String(ev.data)) as { type?: string; changed?: string[] }
+        if (msg.type === "config_changed") opts.onConfigChanged(msg.changed ?? [])
       } catch {
         // Ignore malformed or non-JSON frames.
       }
@@ -73,4 +78,33 @@ export function createConfigChangeSocket(opts: {
       ws = undefined
     },
   }
+}
+
+/** The view-models a config change may invalidate. */
+export type ConfigChangeTargets = {
+  cliAvailability: { reload: () => Promise<void> }
+  ttsStatus: { refresh: () => Promise<void> }
+}
+
+const TTS_PROVIDER_KEYS = ["ELEVENLABS_API_KEY", "GEMINI_API_KEY"]
+
+/**
+ * Wire a config-change socket to the view-models it invalidates.
+ *
+ * Lives here rather than in the route because the route is wiring only. An
+ * empty `changed` list means an older backend that does not report which keys
+ * moved — treat it as "might have" and refresh rather than silently skipping.
+ */
+export function createConfigChangeRefresher(
+  url: string,
+  targets: ConfigChangeTargets,
+): { start: () => void; stop: () => void } {
+  return createConfigChangeSocket({
+    url,
+    onConfigChanged: (changed) => {
+      void targets.cliAvailability.reload()
+      const touchesTts = changed.length === 0 || changed.some((k) => TTS_PROVIDER_KEYS.includes(k))
+      if (touchesTts) void targets.ttsStatus.refresh()
+    },
+  })
 }

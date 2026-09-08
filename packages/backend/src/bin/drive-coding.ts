@@ -6,6 +6,7 @@ import path from "node:path"
 import { parseArgs } from "node:util"
 import { configDefault } from "@drive-coding/core/config/specs"
 import { buildVersion, isBinary } from "../binary.js"
+import { captureConfigInputs } from "../config/runtime-config.js"
 import { loadConfig, parseEnvFile } from "../config/load-config.js"
 
 // Peek BEFORE parseArgs. Subcommand flags (--json/--cli/--base) are unknown to
@@ -153,6 +154,14 @@ if (envFilePath !== undefined) {
 // ---------------------------------------------------------------------------
 // Step 2: loadConfig — resolve all layers, get envPatch
 // ---------------------------------------------------------------------------
+// 🔴 Snapshot BEFORE Step 3. A later reload must replay the ORIGINAL env, not
+// the one Step 3 is about to overwrite: layer precedence is file < env < flag,
+// so feeding process.env back in would let the previous run's derived values
+// beat the freshly edited config file — a reload that silently does nothing.
+// `values` is captured too because it is module-local and never exported, and
+// a reloader without it would lose `--config` / `--secrets`.
+captureConfigInputs(values)
+
 const { envPatch, warnings, errors } = loadConfig({ argv: values, env: process.env })
 
 // Print warnings (visible in logs, but not fatal).

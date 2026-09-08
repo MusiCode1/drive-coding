@@ -47,6 +47,18 @@ const CACHE_TTL_MS = 60_000
 type CacheEntry = { result: ProbeResult; ts: number }
 const cache = new Map<string, CacheEntry>()
 
+/**
+ * Drop every cached probe.
+ *
+ * Called after a config reload swaps an API key. Without this the UI keeps
+ * reporting `available:false, reason:"auth"` for up to CACHE_TTL_MS after the
+ * key was fixed — the proxy is already working, but the status says otherwise,
+ * which reads as "the hot reload did not work".
+ */
+export function invalidateCapabilitiesCache(): void {
+  cache.clear()
+}
+
 function getCached(provider: string): ProbeResult | null {
   const entry = cache.get(provider)
   if (!entry) return null

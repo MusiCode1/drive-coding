@@ -348,7 +348,7 @@ describe("createSessionHostFromConnection", () => {
   })
 
   describe("elicitation requests → PendingRequests", () => {
-    it("onCreateElicitation defaults to cancel when not responded", async () => {
+    it("onCreateElicitation defaults to decline when not responded", async () => {
       vi.useFakeTimers()
       const { callbacks } = await setup(100, 100) // elicitationTimeoutMs=100
 
@@ -363,7 +363,7 @@ describe("createSessionHostFromConnection", () => {
       vi.useRealTimers()
 
       const response = await responsePromise
-      expect(response.action).toBe("cancel")
+      expect(response.action).toBe("decline")
     })
   })
 
@@ -516,7 +516,7 @@ describe("createSessionHostFromConnection", () => {
       vi.useRealTimers()
 
       const response = await responsePromise
-      expect(response.action).toBe("cancel")
+      expect(response.action).toBe("decline")
       expect(host.state.pending.elicitation).toBeNull()
     })
 

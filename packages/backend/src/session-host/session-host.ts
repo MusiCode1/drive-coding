@@ -30,6 +30,7 @@ import type {
   SessionNotification,
 } from "@agentclientprotocol/sdk"
 import type { Patch, SessionConfigOption, SessionState } from "@drive-coding/core/session"
+import { defaultRequestTimeouts } from "./request-timeout.js"
 import {
   applyPatch,
   applyPendingRequest,
@@ -242,19 +243,13 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
 
 // ─── C4: createSessionHostFromConnection ─────────────────────────────────────
 
-/** Default timeout for permission/elicitation requests (30 seconds) */
-const DEFAULT_PERMISSION_TIMEOUT_MS = 30_000
-
-/** Default timeout for elicitation requests */
-const DEFAULT_ELICITATION_TIMEOUT_MS = 30_000
-
 export type SessionHostFromConnOptions = {
   /** ACP initialize timeout (passed to createAcpClient). */
   initTimeoutMs?: number
-  /** Timeout for requestPermission before auto-deny. Default: 30s */
-  permissionTimeoutMs?: number
-  /** Timeout for elicitation before auto-cancel. Default: 30s */
-  elicitationTimeoutMs?: number
+  /** requestPermission timeout; null = none. Default: PERMISSION_TIMEOUT_MS env. */
+  permissionTimeoutMs?: number | null
+  /** elicitation timeout; null = none. Default: ELICITATION_TIMEOUT_MS env. */
+  elicitationTimeoutMs?: number | null
   /**
    * slice session-create-contract: auto-resolve permission by ACP option kind
    * before entering pending. "ask" / absent = today's behavior (pending).
@@ -395,8 +390,8 @@ export async function createSessionHostFromConnection(
 ): Promise<ExtendedSessionHost> {
   const {
     initTimeoutMs,
-    permissionTimeoutMs = DEFAULT_PERMISSION_TIMEOUT_MS,
-    elicitationTimeoutMs = DEFAULT_ELICITATION_TIMEOUT_MS,
+    permissionTimeoutMs = defaultRequestTimeouts().permission,
+    elicitationTimeoutMs = defaultRequestTimeouts().elicitation,
     permissionPolicy,
     closeOnTurnEnd,
     onScheduleCloseOnTurnEnd,
@@ -487,9 +482,10 @@ export async function createSessionHostFromConnection(
     defaultValue: { outcome: { outcome: "cancelled" } },
   })
 
+  // Expiry declines, not cancels: decline keeps the turn alive. See request-timeout.ts.
   const elicitPending = createPendingRequests<CreateElicitationResponse>({
     timeoutMs: elicitationTimeoutMs,
-    defaultValue: { action: "cancel" },
+    defaultValue: { action: "decline" },
   })
 
   // ── slice http-state-gaps C3: quota via state channel ───────────────────────

@@ -12,8 +12,8 @@ import {
 } from "../src/config/specs.js"
 
 describe("CONFIG_SPECS — table invariants", () => {
-  it("1. exactly 13 entries", () => {
-    expect(CONFIG_SPECS).toHaveLength(13)
+  it("1. exactly 15 entries", () => {
+    expect(CONFIG_SPECS).toHaveLength(15)
   })
 
   it("2. unique key", () => {

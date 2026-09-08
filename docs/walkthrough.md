@@ -1,3 +1,88 @@
+## 2026-09-08 14:20 (ביטול טיימר-השאלות + טעינה חמה של קונפיגורציה)
+
+ענף: `integration/run-config-hot-reload`, worktree `edge/.worktrees/config-hot-reload`,
+בסיס `edge` @ `5373830b`. שני סלייסים קשורים בענף אחד, כי השני נולד מהראשון.
+
+### 1 — הטיימר שסגר שאלות
+
+באג מהשטח: שאלות `AskUserQuestion` ואישורי-הרשאה **נעלמו אחרי ~30 שניות**,
+בלי הודעה. חקירה קודמת כיוונה ל-AFK של ה-TUI של Claude Code
+(`askUserQuestionTimeout`) — אבל במסלול הזה אין TUI: כל תהליכי ה-CLI רצים
+`--output-format stream-json` מתחת ל-drive-coding.
+
+השורש: `DEFAULT_PERMISSION_TIMEOUT_MS` / `DEFAULT_ELICITATION_TIMEOUT_MS`
+= `30_000` ב-`session-host.ts`. הוחלפו ב-`resolveRequestTimeoutMs` (טהורה
+ומיוצאת, בתבנית `resolveHttpOwnerTtlMs`) + `MAX_TIMEOUT_MS`. ברירת המחדל
+היא עכשיו **`null` — בלי טיימר**; `never`/`off`/`0`/ריק זהים.
+`pending-requests.ts` קיבל `timeoutMs: number | null`, וכש-`null` הוא
+**לא קורא ל-`setTimeout` כלל**.
+
+🛑 **המלכודת ששולטת בעיצוב:** Node מכווץ כל השהיית `setTimeout` מעל
+`2_147_483_647` — וגם `Infinity` — ל-**1ms** עם `TimeoutOverflowWarning`
+(נמדד, Node 25.9). "ערך ענק כדי לבטל טיימר" הופך את הבאג ממעצבן ל**מיָדי**.
+לכן ערכים כאלה נדחים ונופלים ל"בלי טיימר", ו"בלי טיימר" הוא `null` ולא מספר.
+
+פקיעה (רק כשמוגדר טיימר) עברה מ-`{action:"cancel"}` ל-`{action:"decline"}`:
+decline מחזיר answers ריק והתור ממשיך, cancel מפיל את קריאת-הכלי.
+⚠️ מסלולי ה-**dispose** (`session-host.integration.test.ts:1546,1586`) נשארו
+`cancel` — שם זו ההתנהגות הנכונה.
+
+### 2 — טעינה חמה
+
+הרציונל: התיקון דורש restart, ו-restart על `edge` סוגר את כל הסוכנים החיים.
+אם משלמים את המחיר, שה-restart יביא גם טעינה חמה — ולא יידרש עוד אחד.
+
+**הממצא:** מפתחות ה-API כבר חמים. `resolveProviderAuth`
+(`delivery/proxy-auth.ts`) טהורה ומקבלת `env` כפרמטר, ו-`http-proxy.ts`
+קורא לה **פר-בקשה**. חסרה הייתה רק נקודת-כתיבה.
+
+🔴 **הבאג המרכזי — לולאת-משוב.** ה-bin כותב `envPatch` ל-`process.env`
+(Step 3). הקדימות `file < env < flag`, ולכן קריאה שנייה של
+`loadConfig({env: process.env})` בונה `envLayer` מהערכים שהריצה כתבה,
+ו**שכבת ה-env מנצחת את הקובץ המעודכן**. עריכה בזמן ריצה לא נקלטת, בשקט.
+
+`config/runtime-config.ts` (חדש) — `captureConfigInputs(argv, env)` נקרא
+ב-bin **אחרי** בלוק `--env-file` ו**לפני** Step 3. `reloadRuntimeConfig()`
+מריץ `loadConfig` על ה-snapshot, ולכן הקובץ שוב מנצח. `loadConfig` לא נגע —
+הוא כבר חסר state. `ARGV_SNAPSHOT` שומר את `--config`/`--secrets`.
+
+`HOT_KEYS` — allowlist שכל ערך בו אומת מול אתר-קריאה: מפתחות API (פר-בקשה),
+`OPENCODE_BIN`/`OPENCODE_ARGS` (פר-spawn), הטיימאאוטים (פר-host), `LOG_*`
+(עם `initLogger`), `CLI_SPECS_JSON` (עם איפוס memo). מפתח מחוץ לרשימה מדווח
+`restart required to apply` ו**אינו מוחל**.
+
+🛑 **רקורסיה שנחסמה:** `applyReloadEffects` **אינו** קורא ל-`invalidateCache()`
+— זו הפונקציה ש**פולטת** את האירוע, וה-effects רצים מהמאזין שלה.
+
+`http-tts-capabilities.ts` — `invalidateCapabilitiesCache()`. בלעדיו המטמון
+בן 60 השניות מחזיר `reason:"auth"` דקה אחרי שהמפתח תוקן.
+
+ה-watcher (`cli-config-file.ts`) מזהה עכשיו גם `config.jsonc` ו-`secrets.json`
+דרך `WATCHED_FILENAMES` — לא watcher שני. `config_changed` נושאת
+`changed?: string[]`, וה-FE מרענן `ttsStatus` בנוסף ל-`cliAvailability`.
+
+**התאמות לארכיטקטורה של edge:** ההגדרות נוספו ל-`CONFIG_SPECS`
+(`core/config/specs.ts`) ולא לשלוש פונקציות נפרדות; `AssertCovered` תפס
+בזמן קומפילציה שהסכימה חייבת כיסוי. הסודות ב-edge חיים ב-`secrets.json`
+נפרד, ו-`loadConfig` מחזיר `errors` על סוד בקובץ הרגיל — הרלואודר **מסרב
+לרענן** במקרה כזה במקום לצאת.
+
+### טסטים
+
+`runtime-config.test.ts` (18) — המרכזי מוכיח שהקובץ הערוך נקלט, ולצדו טסט
+ש**מקבע את הבאג**: המסלול הנאיבי מחזיר את הערך הישן.
+`runtime-config.effects.test.ts` (6, `vi.hoisted` כי `vi.mock` מורם מעל consts).
+`cli-config-file.watch.test.ts` (+4) — **הראשונים בפרויקט על `fs.watch` אמיתי**,
+כולל שמירה אטומית וסינון קבצים. `session-host.test.ts` (+15 טבלאי, כולל
+`"Infinity"` ו-`"2147483648"` → `null`). `load-config.test.ts` (+6).
+
+⚠️ **נלמד תוך כדי:** טסט שקורא ל-`loadConfig` בלי `secrets` מפורש נופל על
+`<stateDir>/secrets.json` האמיתי — המפתח האמיתי של המכונה דלף ל-assertion
+ונתפס בהרצה הראשונה. כל טסט מצביע עכשיו לנתיב-סודות שאינו קיים.
+
+**מגבלה שנרשמה:** סוכן שכבר רץ מחזיק את הסביבה שאיתה נוצר
+(`spawn-core.ts` מעתיק `{...process.env}` ב-spawn). חדשים מקבלים, קיימים לא.
+
 ## 2026-09-04 22:05
 
 ### פריסת קונטיינר — Containerfile רב-שלבי + יוניט Quadlet
