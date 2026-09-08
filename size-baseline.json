@@ -32,8 +32,8 @@
       "class": "mixed"
     },
     "packages/backend/src/acp/connection-registry.ts": {
-      "metric": 375,
-      "impurity": 7,
+      "metric": 349,
+      "impurity": 6,
       "class": "mixed"
     },
     "packages/backend/src/agents/registry.ts": {

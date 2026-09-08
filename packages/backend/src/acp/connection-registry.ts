@@ -23,26 +23,16 @@ import {
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
 import { httpCacheInvalidateAll } from "../delivery/http-cache.js"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
-import { connCharterAtConnect, consumeConnCharter, getConnCharter } from "./connection-registry-charter.js"
+import {
+  connCharterAtConnect,
+  consumeConnCharter,
+  getConnCharter,
+} from "./connection-registry-charter.js"
 import { deriveLastSeenAt, deriveVia, syncAttached } from "./connection-registry-rows.js"
+import { openProviderConnection } from "./open-connection.js"
 
 const wireLog = createLogger("backend.acp.wire")
 const cfgLog = createLogger("backend.acp.config")
-
-const IN_PROCESS_CONNECTORS = {
-  claude: connectInProcess,
-  codex: connectCodexInProcess,
-} satisfies Partial<Record<CliKind, (opts: ConnectOpts) => Promise<ProviderConnection>>>
-
-export function overrideHasBinOrArgs(kind: string): boolean {
-  const o = loadCliSpecsOverride()[kind]
-  return o?.bin !== undefined || o?.args !== undefined
-}
-
-export function overrideHasEnv(kind: string): boolean {
-  const o = loadCliSpecsOverride()[kind]
-  return o?.setEnv !== undefined || o?.unsetEnv !== undefined
-}
 
 export type ConnectionVia = "ws" | "http"
 
@@ -85,11 +75,7 @@ export type ConnectionRegistry = {
     via: ConnectionVia,
     stream?: ReadableStream<unknown>,
   ): void
-  removeConnection(
-    agentId: string,
-    connectionId: string,
-    opts?: { onlyIfStream?: unknown },
-  ): void
+  removeConnection(agentId: string, connectionId: string, opts?: { onlyIfStream?: unknown }): void
   touchConnection(agentId: string, connectionId: string): void
   clearAllConnections(agentId: string): void
   getConnectionCount(agentId: string): number
@@ -165,19 +151,7 @@ export function createConnectionRegistry(opts?: {
       try {
         const rec = wireRecorder?.open(agentId) ?? { record() {}, close() {} }
 
-        if (cliKind in IN_PROCESS_CONNECTORS && overrideHasBinOrArgs(cliKind)) {
-          cfgLog.warn({ cliKind }, "cli-specs override.bin/args ignored for in-process cliKind")
-        }
-        if (cliKind in IN_PROCESS_CONNECTORS && overrideHasEnv(cliKind)) {
-          cfgLog.warn(
-            { cliKind },
-            "cli-specs override env vars are not supported by the in-process bridge",
-          )
-        }
-        const inProcess = IN_PROCESS_CONNECTORS[cliKind as keyof typeof IN_PROCESS_CONNECTORS]
-        const conn = inProcess
-          ? await inProcess(connectOpts)
-          : await connectSpawn(cliKind, connectOpts)
+        const conn = await openProviderConnection(agentId, cliKind, connectOpts)
 
         if (token.cancelled) {
           rec.close()
