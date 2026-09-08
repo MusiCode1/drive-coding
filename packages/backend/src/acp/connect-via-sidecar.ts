@@ -10,10 +10,21 @@
  * nothing changes — every agent takes the path it takes today. That default is
  * deliberate: this route is new, and the existing one carries live work.
  *
- * A CLI is a candidate only if it already speaks ACP over stdio. `cursor` does.
- * `claude` and `codex` are hosted in-process by adapters that would have to move
- * into the sidecar first, which is an architecture change rather than a port —
- * asking for them here logs a warning and changes nothing.
+ * A CLI is a candidate if something can speak ACP for it over stdio.
+ *
+ * `cursor`, `opencode` and `gemini` do it themselves. `claude` does not — but
+ * the adapter we already depend on ships a binary as well as a library, so the
+ * sidecar spawns that and claude becomes an ordinary stdio CLI. Verified live:
+ * a full turn, correct auth under a transient unit's minimal environment, and
+ * `session/load` after the client died, transcript included.
+ *
+ * ⚠️ Known cost for `claude` on this route: `_drive/getQuota` and
+ * `_drive/setThinkingTokens` answer `-32601 Method not found`. Both need direct
+ * access to the SDK object, which only the in-process adapter has. Measured,
+ * not assumed. Hosting the adapter's *library* inside the sidecar restores them
+ * and is the next step.
+ *
+ * `codex` stays out: its adapter is in-process only here.
  */
 
 import { configDefault } from "@drive-coding/core/config/specs"
@@ -27,7 +38,7 @@ import { agentSocketDir, ensureAgentSocketDir, probeAgentSocket } from "../agent
 const log = createLogger("backend.acp.sidecar")
 
 /** cliKinds that can currently be hosted in a sidecar. See the header. */
-export const SIDECAR_CAPABLE = new Set(["cursor", "opencode", "gemini"])
+export const SIDECAR_CAPABLE = new Set(["cursor", "opencode", "gemini", "claude"])
 
 /** How long to wait for a freshly launched sidecar to bind and answer. */
 const READY_TIMEOUT_MS = 30_000

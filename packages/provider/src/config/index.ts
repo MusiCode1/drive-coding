@@ -8,9 +8,10 @@
 // שליליים. כלומר הכשל שחיווט כזה אמור למנוע **אינו אפשרי**, ואי-אפשר לכתוב לו
 // טסט מבחין. `getBinaryCache().clear()` בתוך invalidateCache() יתקמפל ויעבור את
 // כל השערים — ועדיין יהיה קוד מת.
-export { getBinaryCache } from "./cli-config.js"
+export { resolveVendoredAcpBridge } from "./acp-bridge.js"
 export type { CliCommand } from "./cli-config.js"
 export {
+  getBinaryCache,
   getCliCommand,
   getCliSpec,
   getEffectiveCliKinds,

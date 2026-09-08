@@ -44,7 +44,7 @@ import { spawn } from "node:child_process"
 import { dirname } from "node:path"
 import { listenUnix } from "@drive-coding/acp-wire/node"
 import { createLogger, initLogger, parseEnvConfig } from "@drive-coding/core/log"
-import { getCliCommand, getCliSpec } from "@drive-coding/provider/config"
+import { getCliCommand, getCliSpec, resolveVendoredAcpBridge } from "@drive-coding/provider/config"
 import { removeAgentFiles, writeAgentMeta } from "../agents/agent-sockets.js"
 
 initLogger(parseEnvConfig())
@@ -79,7 +79,14 @@ export function parseSidecarArgs(argv: readonly string[]): Args {
 }
 
 export async function runSidecar(args: Args): Promise<void> {
-  const cli = getCliCommand(args.cliKind, args.modelOverride)
+  // Prefer the ACP bridge we ship over the one the spec would fetch: claude's
+  // spec says `npx -y …@latest`, which measured 23s and version 0.75.1 against
+  // the 0.58.1 we pin and test. See acp-bridge.ts.
+  const vendored = resolveVendoredAcpBridge(args.cliKind)
+  const cli = vendored ?? getCliCommand(args.cliKind, args.modelOverride)
+  if (vendored !== null) {
+    log.info({ cliKind: args.cliKind, bin: vendored.args[0] }, "using the bundled ACP bridge")
+  }
 
   // Same env shaping spawn-core applies (cli-spec-env-parity): a spec may need
   // a variable removed as much as added, and a sidecar that skipped this would
