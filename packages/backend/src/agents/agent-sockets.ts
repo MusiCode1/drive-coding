@@ -39,7 +39,7 @@
  * `instances.ts` already uses it for the same reason.
  */
 
-import { mkdirSync, readdirSync, unlinkSync } from "node:fs"
+import { mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import { connect } from "node:net"
 import { join } from "node:path"
 import { decodePing, decodePong, encodePing, type PingInfo } from "@drive-coding/acp-wire"
@@ -49,6 +49,7 @@ import { getStateDir } from "../paths.js"
 const log = createLogger("backend.agents.sockets")
 
 const SOCKET_SUFFIX = ".sock"
+const META_SUFFIX = ".json"
 
 /**
  * Linux caps `sockaddr_un.sun_path`. Measured on this kernel: 108 bytes bind,
@@ -85,6 +86,83 @@ export function agentSocketDir(port: number, env: NodeJS.ProcessEnv): string {
 export function ensureAgentSocketDir(dir: string): string {
   mkdirSync(dir, { recursive: true, mode: 0o700 })
   return dir
+}
+
+/**
+ * What a sidecar writes next to its socket so the directory can stand alone.
+ *
+ * 🔴 The point: before this, the directory carried only the agentId, so every
+ * other fact about an agent lived in the registry snapshot. Lose a row — a probe
+ * that timed out at boot is enough — and the socket became an unidentifiable
+ * thing that nothing would ever adopt, while its CLI kept running. Reproduced
+ * 2026-09-08: one missed probe permanently orphaned a live agent.
+ *
+ * With this the snapshot stops being load-bearing for identity. "Live socket
+ * with no record" stops being a category, because the record is right there.
+ *
+ * ⚠️ No sessionId here, deliberately. The sidecar is a pipe and does not parse
+ * ACP (design decision א), so it never learns one — and a session id is the part
+ * that changes, while a file next to a socket should describe what is stable.
+ * The session id stays in the registry snapshot, which is written by the side
+ * that actually knows it.
+ */
+export type AgentSocketMeta = {
+  agentId: string
+  cliKind: string
+  cwd: string
+  /** The sidecar's own pid — the one the systemd unit tracks. */
+  pid: number
+  startedAt: string
+}
+
+export function agentMetaPath(dir: string, agentId: string): string {
+  return join(dir, `${agentId}${META_SUFFIX}`)
+}
+
+/** Write the sidecar's own description. Never throws — best effort by design. */
+export function writeAgentMeta(dir: string, meta: AgentSocketMeta): void {
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 })
+    writeFileSync(agentMetaPath(dir, meta.agentId), `${JSON.stringify(meta, null, 2)}\n`, "utf8")
+  } catch (err) {
+    log.warn({ err, agentId: meta.agentId }, "could not write socket meta")
+  }
+}
+
+/** Read it back. Returns null for missing or unparseable — never throws. */
+export function readAgentMeta(dir: string, agentId: string): AgentSocketMeta | null {
+  let parsed: Partial<AgentSocketMeta>
+  try {
+    parsed = JSON.parse(
+      readFileSync(agentMetaPath(dir, agentId), "utf8"),
+    ) as Partial<AgentSocketMeta>
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      log.warn({ err, agentId }, "socket meta unreadable")
+    }
+    return null
+  }
+  if (
+    typeof parsed.agentId !== "string" ||
+    typeof parsed.cliKind !== "string" ||
+    typeof parsed.cwd !== "string" ||
+    typeof parsed.pid !== "number" ||
+    typeof parsed.startedAt !== "string"
+  ) {
+    return null
+  }
+  return parsed as AgentSocketMeta
+}
+
+/** Remove both the meta and the socket for an agent. Never throws. */
+export function removeAgentFiles(dir: string, agentId: string): void {
+  for (const p of [agentMetaPath(dir, agentId), join(dir, `${agentId}${SOCKET_SUFFIX}`)]) {
+    try {
+      unlinkSync(p)
+    } catch {
+      /* already gone */
+    }
+  }
 }
 
 export function agentSocketPath(dir: string, agentId: string): string {

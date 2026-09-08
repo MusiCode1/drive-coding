@@ -51,10 +51,9 @@ export async function restorePersistedAgents(opts: RestoreOpts): Promise<void> {
   const { registry, connections } = opts
   const env = opts.env ?? process.env
   const rows = registry.pendingRows()
-  if (rows.length === 0) {
-    await registry.restore([])
-    return
-  }
+  // 🔴 No early return on an empty snapshot. The directory is the registry, and
+  // a scan that only happens when we already have rows cannot ever discover a
+  // sidecar whose row was lost — which is exactly how one got stranded.
   if (sidecarKinds(env).size === 0) {
     // Nothing can have survived: every agent was a child of the process that
     // just died. Saying so beats probing a directory that will not exist.
@@ -62,8 +61,17 @@ export async function restorePersistedAgents(opts: RestoreOpts): Promise<void> {
     await registry.restore([])
     return
   }
-  const adopted = await adoptLiveAgents(rows, opts.socketDir ?? socketDirForEnv(env))
-  await registry.restore(adopted)
+  const { adopted, retained, recovered } = await adoptLiveAgents(
+    rows,
+    opts.socketDir ?? socketDirForEnv(env),
+  )
+  await registry.restore(adopted, retained)
+  if (recovered.length > 0) {
+    log.warn(
+      { ids: recovered },
+      "agents rebuilt from their sidecar meta — the snapshot had lost them",
+    )
+  }
 
   // 🔴 Restoring the row is not enough. Everything that serves an agent looks it
   // up in the connection registry first, so a row without a connection is an

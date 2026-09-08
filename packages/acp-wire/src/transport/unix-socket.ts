@@ -3,6 +3,7 @@ import { unlink } from "node:fs/promises"
 import { connect, createServer, type Socket } from "node:net"
 import { decodePing, encodePong, type PingInfo } from "../control/ping.js"
 import { socketToAcpTransport } from "./node-streams.js"
+import { isSocketLive } from "./socket-live.js"
 import type { AcpTransport } from "./types.js"
 
 /**
@@ -86,14 +87,32 @@ export function listenUnix(path: string): Promise<UnixListenHandle> {
     const acceptedWaiters: Array<(transport: AcpTransport) => void> = []
     let firstAccepted: AcpTransport | undefined
 
-    try {
-      unlinkSync(path)
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
-        reject(err)
+    // 🔴 Do not bind over a listener that is still alive.
+    //
+    // The unconditional `unlink` this replaces was silently destructive:
+    // measured 2026-09-08, a second listenUnix on the same path removed the
+    // first one's inode, bound its own, reported no error, and left the first
+    // process listening on an inode with no name — alive, serving nobody,
+    // unreachable forever. A whole class of orphan came from that one line.
+    //
+    // ECONNREFUSED means the file outlived its process and may be cleared.
+    // Anything answering means the path is taken, and taking it anyway would
+    // strand whatever is there.
+    void isSocketLive(path).then((live) => {
+      if (live) {
+        reject(new Error(`listenUnix: ${path} is already served by a live listener`))
         return
       }
-    }
+      try {
+        unlinkSync(path)
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+          reject(err)
+          return
+        }
+      }
+      startListening()
+    })
 
     function promote(sock: Socket, prelude: readonly Uint8Array[]): void {
       const peer = socketToAcpTransport(sock, prelude)
@@ -111,89 +130,91 @@ export function listenUnix(path: string): Promise<UnixListenHandle> {
       for (const cb of acceptCallbacks) cb(peer)
     }
 
-    const server = createServer((sock) => {
-      if (handleClosed) {
-        sock.destroy()
-        return
-      }
+    function startListening(): void {
+      const server = createServer((sock) => {
+        if (handleClosed) {
+          sock.destroy()
+          return
+        }
 
-      // Peek phase: buffer until the first newline, then decide once.
-      const chunks: Uint8Array[] = []
-      let buffered = ""
-      let decided = false
+        // Peek phase: buffer until the first newline, then decide once.
+        const chunks: Uint8Array[] = []
+        let buffered = ""
+        let decided = false
 
-      const onData = (chunk: Buffer): void => {
-        if (decided) return
-        chunks.push(new Uint8Array(chunk))
-        buffered += chunk.toString("utf8")
+        const onData = (chunk: Buffer): void => {
+          if (decided) return
+          chunks.push(new Uint8Array(chunk))
+          buffered += chunk.toString("utf8")
 
-        const nl = buffered.indexOf("\n")
-        if (nl === -1) {
-          // Never let a peer that sends no newline pin memory open.
-          if (buffered.length <= MAX_PEEK_BYTES) return
+          const nl = buffered.indexOf("\n")
+          if (nl === -1) {
+            // Never let a peer that sends no newline pin memory open.
+            if (buffered.length <= MAX_PEEK_BYTES) return
+            decided = true
+            sock.off("data", onData)
+            promote(sock, chunks)
+            return
+          }
+
           decided = true
           sock.off("data", onData)
+
+          const ping = decodePing(buffered.slice(0, nl))
+          if (ping !== null) {
+            // A probe. Answer and go — the owner never knew it was here.
+            sock.end(encodePong(ping.id, pingInfo?.()))
+            return
+          }
           promote(sock, chunks)
-          return
         }
 
-        decided = true
-        sock.off("data", onData)
+        sock.on("data", onData)
+        // A peer that closes without ever completing a line was never a peer.
+        sock.on("close", () => {
+          decided = true
+          sock.off("data", onData)
+        })
+        sock.on("error", () => {
+          decided = true
+        })
+      })
 
-        const ping = decodePing(buffered.slice(0, nl))
-        if (ping !== null) {
-          // A probe. Answer and go — the owner never knew it was here.
-          sock.end(encodePong(ping.id, pingInfo?.()))
-          return
+      server.on("error", (err) => {
+        if (!settled) {
+          settled = true
+          reject(err)
         }
-        promote(sock, chunks)
-      }
-
-      sock.on("data", onData)
-      // A peer that closes without ever completing a line was never a peer.
-      sock.on("close", () => {
-        decided = true
-        sock.off("data", onData)
       })
-      sock.on("error", () => {
-        decided = true
-      })
-    })
 
-    server.on("error", (err) => {
-      if (!settled) {
+      server.listen(path, () => {
+        if (settled) return
         settled = true
-        reject(err)
-      }
-    })
-
-    server.listen(path, () => {
-      if (settled) return
-      settled = true
-      resolve({
-        path,
-        current() {
-          return currentTransport
-        },
-        accepted() {
-          if (firstAccepted) return Promise.resolve(firstAccepted)
-          return new Promise<AcpTransport>((res) => acceptedWaiters.push(res))
-        },
-        onAccept(cb) {
-          acceptCallbacks.push(cb)
-        },
-        onPing(cb) {
-          pingInfo = cb
-        },
-        close() {
-          if (handleClosed) return
-          handleClosed = true
-          server.close()
-          void unlinkQuiet(path)
-          currentTransport?.close()
-        },
+        resolve({
+          path,
+          current() {
+            return currentTransport
+          },
+          accepted() {
+            if (firstAccepted) return Promise.resolve(firstAccepted)
+            return new Promise<AcpTransport>((res) => acceptedWaiters.push(res))
+          },
+          onAccept(cb) {
+            acceptCallbacks.push(cb)
+          },
+          onPing(cb) {
+            pingInfo = cb
+          },
+          close() {
+            if (handleClosed) return
+            handleClosed = true
+            server.close()
+            void unlinkQuiet(path)
+            currentTransport?.close()
+          },
+        })
       })
-    })
+    }
   })
 }
 

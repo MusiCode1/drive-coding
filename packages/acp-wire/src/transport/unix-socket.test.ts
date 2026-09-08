@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs"
+import { mkdtempSync, writeFileSync } from "node:fs"
 import { access } from "node:fs/promises"
 import { connect } from "node:net"
 import { tmpdir } from "node:os"
@@ -275,6 +275,47 @@ describe("unix-socket", () => {
 
       expect(JSON.parse(answer).result).toEqual({ alive: true })
       expect(handle.current()).toBeUndefined()
+      handle.close()
+    })
+  })
+
+  describe("binding over an existing path", () => {
+    it("🔴 refuses to steal a path from a live listener", async () => {
+      // Measured before this guard: the second bind unlinked the first one's
+      // inode, reported nothing, and left the first process listening on a
+      // nameless inode — alive and unreachable forever.
+      const path = sockPath()
+      const first = await listenUnix(path)
+
+      await expect(listenUnix(path)).rejects.toThrow(/already served by a live listener/)
+
+      // …and the incumbent is untouched.
+      const client = await connectUnix(path)
+      await write(client, "still-mine\n")
+      const peer = await first.accepted()
+      expect(await readOne(peer)).toBe("still-mine\n")
+
+      client.close()
+      first.close()
+    })
+
+    it("clears a socket file whose process is gone", async () => {
+      const path = sockPath()
+      const dead = await listenUnix(path)
+      dead.close()
+      await settle()
+
+      // Recreate the corpse the way a SIGKILL'd process leaves it.
+      writeFileSync(path, "")
+      const revived = await listenUnix(path)
+      expect(revived.path).toBe(path)
+      revived.close()
+    })
+
+    it("binds normally when nothing is there", async () => {
+      const path = sockPath()
+      const handle = await listenUnix(path)
+      await access(path)
       handle.close()
     })
   })
