@@ -41,9 +41,11 @@
  */
 
 import { spawn } from "node:child_process"
+import { dirname } from "node:path"
 import { listenUnix } from "@drive-coding/acp-wire/node"
 import { createLogger, initLogger, parseEnvConfig } from "@drive-coding/core/log"
 import { getCliCommand, getCliSpec } from "@drive-coding/provider/config"
+import { removeAgentFiles, writeAgentMeta } from "../agents/agent-sockets.js"
 
 initLogger(parseEnvConfig())
 const log = createLogger("sidecar")
@@ -102,6 +104,18 @@ export async function runSidecar(args: Args): Promise<void> {
 
   const handle = await listenUnix(args.socket)
   const startedAt = new Date().toISOString()
+
+  // Describe ourselves next to the socket, so the directory can be read without
+  // the backend's registry snapshot. A backend that lost our row can rebuild it
+  // from here instead of leaving us running and unreachable.
+  const socketDir = dirname(args.socket)
+  writeAgentMeta(socketDir, {
+    agentId: args.agentId,
+    cliKind: args.cliKind,
+    cwd: args.cwd,
+    pid: process.pid,
+    startedAt,
+  })
   // 🔴 Two pids, and they are not interchangeable. `pid` is this process — the
   // one that owns the socket and matches the systemd unit's MainPID, and the
   // one a caller means when it says "the agent's process". `cliPid` is the CLI
@@ -152,12 +166,16 @@ export async function runSidecar(args: Args): Promise<void> {
   child.on("exit", (code, signal) => {
     log.info({ code, signal }, "child exited — shutting down")
     handle.close()
+    // Take the description with us: a meta file without a socket would advertise
+    // an agent that no longer exists.
+    removeAgentFiles(socketDir, args.agentId)
     process.exit(code ?? 0)
   })
 
   const shutdown = (sig: NodeJS.Signals) => (): void => {
     log.info({ sig }, "signal — closing")
     handle.close()
+    removeAgentFiles(socketDir, args.agentId)
     child.kill(sig)
   }
   process.on("SIGTERM", shutdown("SIGTERM"))

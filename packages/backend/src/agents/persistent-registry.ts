@@ -34,8 +34,14 @@ const log = createLogger("backend.agents.persist")
 export type PersistentAgentRegistry = AgentRegistry & {
   /** Rows found on disk at construction. None of them are live yet. */
   pendingRows(): readonly Agent[]
-  /** Make these rows live, and rewrite the snapshot to match exactly. */
-  restore(rows: readonly Agent[]): Promise<void>
+  /**
+   * Make `live` rows live and rewrite the snapshot to `live` + `retain`.
+   *
+   * `retain` is for rows we could not confirm but must not lose — a socket that
+   * exists and did not answer in time. They stay on disk for the next boot
+   * without being presented as running agents.
+   */
+  restore(live: readonly Agent[], retain?: readonly Agent[]): Promise<void>
   /** Resolves once every pending snapshot has hit the disk. Tests + shutdown. */
   flush(): Promise<void>
 }
@@ -78,12 +84,15 @@ export function createPersistentAgentRegistry(opts: { file: string }): Persisten
       return onDisk
     },
 
-    async restore(rows: readonly Agent[]): Promise<void> {
-      inner = createInMemoryAgentRegistry({ seed: rows, onChange })
-      // Rewrite unconditionally: rows that did not come back must stop being
-      // offered on the next boot, and an empty restore is a legitimate answer.
-      writeAgentStore(opts.file, await inner.list())
-      log.info({ restored: rows.length, found: onDisk.length }, "agents restored")
+    async restore(live: readonly Agent[], retain: readonly Agent[] = []): Promise<void> {
+      inner = createInMemoryAgentRegistry({ seed: live, onChange })
+      // Rewrite to live + retained. Rows in neither list are genuinely gone —
+      // their socket was not in the directory — and must stop being offered.
+      writeAgentStore(opts.file, [...(await inner.list()), ...retain])
+      log.info(
+        { live: live.length, retained: retain.length, found: onDisk.length },
+        "agents restored",
+      )
     },
 
     async flush(): Promise<void> {

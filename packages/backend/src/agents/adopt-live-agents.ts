@@ -1,82 +1,130 @@
 /**
- * adopt-live-agents.ts — deciding which persisted agents come back at boot.
- *
- * This is the one-line swap the registry snapshot was built around: S2 wrote
- * every agent row to disk and then deliberately adopted **none** of them,
- * because at that point a row on disk described a process that no longer
- * existed. With sidecars it can describe one that does, and the question
- * becomes answerable — by asking.
+ * adopt-live-agents.ts — deciding which agents come back at boot.
  *
  * ```
  *   snapshot rows ─┐
- *                  ├─▶ adopt = rows whose socket answers _drive/ping
+ *                  ├─▶ adopt = whoever answers _drive/ping
  *   socket dir  ───┘
  * ```
  *
- * The two halves are both necessary and neither is sufficient: the directory
- * knows who is alive but not who they are, and the snapshot knows who they are
- * but not whether they still exist.
+ * ─── 🔴 The directory leads, the snapshot follows ────────────────────────────
  *
- * ─── 🔴 Adopting a row is not the same as being ready to use it ──────────────
+ * The first version of this read the snapshot first and only then looked at the
+ * sockets, which quietly inverted the design: with no rows it never scanned at
+ * all, and a socket whose row was missing was ignored. Reproduced 2026-09-08 —
+ * one boot where a probe missed was enough to delete the row, after which the
+ * live agent could never be seen again by anything except `systemctl`.
  *
- * `acpSessionIdCache` is an in-memory Map that dies with the backend. A row
- * restored without its ACP session id, handed to the HTTP path, would take the
- * cold branch and call `session/new` on an agent that is already mid-turn —
- * producing a *second* session on the same agent, which is worse than showing
- * nothing.
+ * So the scan starts from the directory. A row supplies the details we keep
+ * (roleLabel, acpSessionId, parentAgentId…); the sidecar's own meta file
+ * supplies enough to rebuild one when the row is gone. Losing the snapshot is
+ * now recoverable rather than terminal.
  *
- * So adoption restores the row and the connection, and nothing else: no session
- * host is created here. Rows that carry an `acpSessionId` from the snapshot keep
- * it and can be re-attached warm later; rows without one are adopted as
- * `starting`, which is honest — the agent is alive, the session is not yet
- * re-established.
+ * ─── Adopting a row is not the same as being ready to use it ─────────────────
+ *
+ * A restored agent comes back as `starting`, never `ready`: the process is real,
+ * but the ACP session has to be re-established before anything can be said about
+ * it. The caller re-seeds the session id separately.
  */
 
 import type { Agent } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
-import { agentSocketPath, listAgentSockets, probeAgentSocket } from "./agent-sockets.js"
+import {
+  type AgentSocketMeta,
+  agentSocketPath,
+  listAgentSockets,
+  probeAgentSocket,
+  readAgentMeta,
+} from "./agent-sockets.js"
 
 const log = createLogger("backend.agents.adopt")
 
-/**
- * Rows whose sidecar is alive right now.
- *
- * Sockets with no matching row are reaped: they belong to an agent whose record
- * is gone, so nothing will ever attach to them again. Rows with no live socket
- * are simply not adopted — the snapshot writer then drops them from disk.
- */
-export async function adoptLiveAgents(rows: readonly Agent[], socketDir: string): Promise<Agent[]> {
-  const ids = new Set(listAgentSockets(socketDir))
-  if (ids.size === 0) return []
+export type AdoptionResult = {
+  /** Agents confirmed alive — these go into the registry. */
+  adopted: Agent[]
+  /**
+   * Rows we could not confirm but must not delete: their socket file is still
+   * there, it just did not answer in time. Kept on disk, not made live.
+   */
+  retained: Agent[]
+  /** Live sidecars rebuilt from their meta file because the row was gone. */
+  recovered: string[]
+}
 
+/** Build a plausible row for a live sidecar whose record we lost. */
+function rowFromMeta(meta: AgentSocketMeta): Agent {
+  return {
+    id: meta.agentId,
+    cliKind: meta.cliKind,
+    cwd: meta.cwd,
+    modelOverride: null,
+    status: "starting",
+    createdAt: meta.startedAt,
+    persistent: false,
+  } as Agent
+}
+
+export async function adoptLiveAgents(
+  rows: readonly Agent[],
+  socketDir: string,
+): Promise<AdoptionResult> {
   const byId = new Map(rows.map((r) => [r.id, r]))
+  const ids = listAgentSockets(socketDir)
   const adopted: Agent[] = []
+  const retained: Agent[] = []
+  const recovered: string[] = []
+  const seen = new Set<string>()
 
   for (const id of ids) {
+    seen.add(id)
     const probe = await probeAgentSocket(agentSocketPath(socketDir, id))
     const row = byId.get(id)
 
+    if (probe.state === "stale") {
+      // The probe already unlinked the corpse. Its row goes with it.
+      log.info({ agentId: id }, "socket was an orphan file — reaped")
+      continue
+    }
     if (probe.state !== "alive") {
-      // stale was already unlinked by the probe; wedged/unknown are left alone
-      // rather than guessed at.
-      log.info({ agentId: id, state: probe.state }, "socket not adopted")
+      // 🔴 Present but unconfirmed. Deleting the row here is what stranded a
+      // live agent in the reproduction: dropping a record is immediate and
+      // permanent, while adopting needs a success inside one second. Keep it.
+      if (row !== undefined) retained.push(row)
+      log.warn(
+        { agentId: id, state: probe.state },
+        "socket did not answer — row retained, not live",
+      )
       continue
     }
-    if (row === undefined) {
-      log.warn({ agentId: id }, "live sidecar with no record — orphan, left running")
+
+    if (row !== undefined) {
+      adopted.push({ ...row, status: "starting", crashReason: undefined } as Agent)
       continue
     }
-    adopted.push({
-      ...row,
-      // The process is real; the ACP session is not re-established yet. Saying
-      // "ready" here would be a claim we have not earned.
-      status: row.acpSessionId !== undefined ? "starting" : "starting",
-      crashReason: undefined,
-    } as Agent)
+
+    // Live, and we have no record of it. Before the meta file this was a dead
+    // end; now the sidecar told us who it is.
+    const meta = readAgentMeta(socketDir, id)
+    if (meta === null) {
+      log.warn({ agentId: id }, "live sidecar with neither record nor meta — left running")
+      continue
+    }
+    recovered.push(id)
+    adopted.push(rowFromMeta(meta))
+    log.info({ agentId: id, cliKind: meta.cliKind }, "recovered a live sidecar from its meta file")
   }
 
-  if (adopted.length > 0) {
-    log.info({ count: adopted.length, ids: adopted.map((a) => a.id) }, "adopted live agents")
+  // Rows whose socket is not in the directory at all: the agent is genuinely
+  // gone, and the row should stop being offered.
+  for (const row of rows) {
+    if (!seen.has(row.id)) log.info({ agentId: row.id }, "no socket — row dropped")
   }
-  return adopted
+
+  if (adopted.length > 0 || retained.length > 0) {
+    log.info(
+      { adopted: adopted.length, retained: retained.length, recovered: recovered.length },
+      "adoption complete",
+    )
+  }
+  return { adopted, retained, recovered }
 }

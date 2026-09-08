@@ -14,7 +14,7 @@ import { decodePing, encodePong } from "@drive-coding/acp-wire"
 import type { Agent } from "@drive-coding/core"
 import { afterEach, describe, expect, it } from "vitest"
 import { adoptLiveAgents } from "../src/agents/adopt-live-agents.js"
-import { agentSocketPath } from "../src/agents/agent-sockets.js"
+import { agentSocketPath, writeAgentMeta } from "../src/agents/agent-sockets.js"
 
 const dirs: string[] = []
 const servers: Server[] = []
@@ -48,6 +48,13 @@ const row = (id: string, over: Partial<Agent> = {}): Agent => ({
   ...over,
 })
 
+/** Accepts and never answers — a blocked event loop. */
+function wedgedSidecar(path: string): Promise<Server> {
+  const srv = createServer(() => {})
+  servers.push(srv)
+  return new Promise((res) => srv.listen(path, () => res(srv)))
+}
+
 afterEach(() => {
   for (const s of servers) s.close()
   servers.length = 0
@@ -61,7 +68,7 @@ describe("adoptLiveAgents", () => {
     const id = "11111111-1111-4111-8111-111111111111"
     await liveSidecar(agentSocketPath(dir, id))
 
-    const adopted = await adoptLiveAgents([row(id, { acpSessionId: "s-1" })], dir)
+    const { adopted } = await adoptLiveAgents([row(id, { acpSessionId: "s-1" })], dir)
     expect(adopted).toHaveLength(1)
     expect(adopted[0]?.id).toBe(id)
     expect(adopted[0]?.acpSessionId).toBe("s-1")
@@ -76,7 +83,7 @@ describe("adoptLiveAgents", () => {
     const id = "11111111-1111-4111-8111-111111111111"
     await liveSidecar(agentSocketPath(dir, id))
 
-    const adopted = await adoptLiveAgents([row(id, { status: "busy" })], dir)
+    const { adopted } = await adoptLiveAgents([row(id, { status: "busy" })], dir)
     expect(adopted[0]?.status).toBe("starting")
   })
 
@@ -85,20 +92,58 @@ describe("adoptLiveAgents", () => {
     const id = "22222222-2222-4222-8222-222222222222"
     writeFileSync(agentSocketPath(dir, id), "")
 
-    expect(await adoptLiveAgents([row(id)], dir)).toEqual([])
+    expect((await adoptLiveAgents([row(id)], dir)).adopted).toEqual([])
   })
 
   it("does not adopt a row with no socket at all", async () => {
     const dir = tmpDir()
-    expect(await adoptLiveAgents([row("33333333-3333-4333-8333-333333333333")], dir)).toEqual([])
+    expect(
+      (await adoptLiveAgents([row("33333333-3333-4333-8333-333333333333")], dir)).adopted,
+    ).toEqual([])
   })
 
-  it("🔴 leaves a live socket with no record alone rather than inventing a row", async () => {
+  it("🔴 rebuilds a live sidecar from its meta when the row is gone", async () => {
+    // Before the meta file this was a dead end: the socket was live, nothing
+    // identified it, and it stayed running forever unseen by the product.
     const dir = tmpDir()
     const id = "44444444-4444-4444-8444-444444444444"
     await liveSidecar(agentSocketPath(dir, id))
+    writeAgentMeta(dir, {
+      agentId: id,
+      cliKind: "cursor",
+      cwd: "/tmp/somewhere",
+      pid: 4242,
+      startedAt: "2026-09-08T09:00:00.000Z",
+    })
 
-    expect(await adoptLiveAgents([], dir)).toEqual([])
+    const { adopted, recovered } = await adoptLiveAgents([], dir)
+    expect(recovered).toEqual([id])
+    expect(adopted).toHaveLength(1)
+    expect(adopted[0]?.cliKind).toBe("cursor")
+    expect(adopted[0]?.cwd).toBe("/tmp/somewhere")
+    expect(adopted[0]?.status).toBe("starting")
+  })
+
+  it("a live socket with neither record nor meta is left alone, not invented", async () => {
+    const dir = tmpDir()
+    const id = "44444444-4444-4444-8444-444444444445"
+    await liveSidecar(agentSocketPath(dir, id))
+
+    const { adopted, recovered } = await adoptLiveAgents([], dir)
+    expect(adopted).toEqual([])
+    expect(recovered).toEqual([])
+  })
+
+  it("🔴 a socket that exists but does not answer retains its row", async () => {
+    // Dropping it is what stranded a live agent: deleting a record is instant
+    // and permanent, adopting needs a success inside one second.
+    const dir = tmpDir()
+    const id = "44444444-4444-4444-8444-444444444446"
+    await wedgedSidecar(agentSocketPath(dir, id))
+
+    const { adopted, retained } = await adoptLiveAgents([row(id)], dir)
+    expect(adopted).toEqual([])
+    expect(retained.map((r) => r.id)).toEqual([id])
   })
 
   it("adopts only the live ones out of a mixed directory", async () => {
@@ -108,13 +153,13 @@ describe("adoptLiveAgents", () => {
     await liveSidecar(agentSocketPath(dir, alive))
     writeFileSync(agentSocketPath(dir, dead), "")
 
-    const adopted = await adoptLiveAgents([row(alive), row(dead)], dir)
+    const { adopted } = await adoptLiveAgents([row(alive), row(dead)], dir)
     expect(adopted.map((a) => a.id)).toEqual([alive])
   })
 
   it("an empty socket directory adopts nothing and costs no probes", async () => {
-    expect(await adoptLiveAgents([row("77777777-7777-4777-8777-777777777777")], tmpDir())).toEqual(
-      [],
-    )
+    const res = await adoptLiveAgents([row("77777777-7777-4777-8777-777777777777")], tmpDir())
+    expect(res.adopted).toEqual([])
+    expect(res.retained).toEqual([])
   })
 })
