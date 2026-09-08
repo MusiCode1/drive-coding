@@ -43,7 +43,7 @@
 import { spawn } from "node:child_process"
 import { listenUnix } from "@drive-coding/acp-wire/node"
 import { createLogger, initLogger, parseEnvConfig } from "@drive-coding/core/log"
-import { getCliCommand } from "@drive-coding/provider/config"
+import { getCliCommand, getCliSpec } from "@drive-coding/provider/config"
 
 initLogger(parseEnvConfig())
 const log = createLogger("sidecar")
@@ -78,9 +78,18 @@ export function parseSidecarArgs(argv: readonly string[]): Args {
 
 export async function runSidecar(args: Args): Promise<void> {
   const cli = getCliCommand(args.cliKind, args.modelOverride)
+
+  // Same env shaping spawn-core applies (cli-spec-env-parity): a spec may need
+  // a variable removed as much as added, and a sidecar that skipped this would
+  // resolve the CLI differently from the in-process path for the same cliKind.
+  const childEnv: NodeJS.ProcessEnv = { ...process.env, DRIVE_CODING_AGENT_ID: args.agentId }
+  const spec = getCliSpec(args.cliKind, process.env)
+  for (const key of spec?.unsetEnv ?? []) delete childEnv[key]
+  if (spec?.setEnv) Object.assign(childEnv, spec.setEnv)
+
   const child = spawn(cli.bin, [...cli.args], {
     cwd: args.cwd,
-    env: { ...process.env, DRIVE_CODING_AGENT_ID: args.agentId },
+    env: childEnv,
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   })
