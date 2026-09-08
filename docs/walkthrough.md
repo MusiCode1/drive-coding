@@ -67,6 +67,35 @@ decline מחזיר answers ריק והתור ממשיך, cancel מפיל את ק
 נפרד, ו-`loadConfig` מחזיר `errors` על סוד בקובץ הרגיל — הרלואודר **מסרב
 לרענן** במקרה כזה במקום לצאת.
 
+### סקירת-קוד — חמישה ממצאים, ארבעה תוקנו
+
+**🔴 מחיקת מפתח לא ביטלה אותו.** הלולאה ב-`reloadRuntimeConfig` עברה רק על
+מפתחות שקיימים ב-`envPatch` **החדש**, ולכן מפתח שהוסר מהקובץ נשאר
+ב-`process.env` עם ערכו הישן. במונחי אבטחה: מחיקת מפתח שדלף מ-`secrets.json`
+לא ביטלה אותו עד restart. **אומת חי** מול ה-preview לפני התיקון (המפתח
+המשיך להחזיר `available:true`) ואחריו (`no-key`, ואז חוזר עם החזרת הקובץ).
+התיקון: `lastPatchKeys` + נפילה חזרה ל-`ENV_SNAPSHOT` — לא ל-unset, כי
+המפתח עשוי להגיע גם מהסביבה והקובץ רק דרס אותו. `captureBootPatch` נוסף
+ב-bin כדי שגם הרענון הראשון יידע מה נמחק.
+
+**ה-FE ריענן את ה-VM הלא נכון.** ה-BE ניקה את מטמון ה-probe, אבל ה-FE קרא
+ל-`ttsStatus.refresh()` (subscription+usage) במקום ל-`ttsCapabilities.refresh()`
+— זה שמחזיק `available/reason` וחוסם את VoicePicker. תוקן: שניהם, capabilities
+ראשון.
+
+**`OPENCODE_ARGS` ו-`LOG_WIRE` היו קוד מת ב-`HOT_KEYS`** — אין להם ספק
+ב-`CONFIG_SPECS`, ולכן `buildConfigEnvPatch` לעולם לא מייצר אותם.
+`docs/configuration.md` הבטיח במפורש ש-`OPENCODE_ARGS` נטען חם. הוסרו, והתיעוד
+תוקן.
+
+**`changed: []` היה דו-משמעי** — שימש גם כ"backend ישן" וגם כ"לא הוחל כלום".
+הופרד: `undefined` = ישן (לרענן הכל), `[]` = הוחל כלום (לא לרענן).
+
+**מגבלת ה-watcher — תועדה ולא תוקנה.** הצפייה היא על
+`dirname(resolveCliSpecsPath())`, ולכן `--config`/`--secrets` מחוץ לתיקייה
+הזו (או `CLI_SPECS_FILE` אחר) לא מייצרים אירוע, ורק ה-endpoint עובד. נכנס
+ל-`configuration.md` ול-`AGENTS.md` כאזהרה.
+
 ### טסטים
 
 `runtime-config.test.ts` (18) — המרכזי מוכיח שהקובץ הערוך נקלט, ולצדו טסט
@@ -74,7 +103,9 @@ decline מחזיר answers ריק והתור ממשיך, cancel מפיל את ק
 `runtime-config.effects.test.ts` (6, `vi.hoisted` כי `vi.mock` מורם מעל consts).
 `cli-config-file.watch.test.ts` (+4) — **הראשונים בפרויקט על `fs.watch` אמיתי**,
 כולל שמירה אטומית וסינון קבצים. `session-host.test.ts` (+15 טבלאי, כולל
-`"Infinity"` ו-`"2147483648"` → `null`). `load-config.test.ts` (+6).
+`"Infinity"` ו-`"2147483648"` → `null`). `load-config.test.ts` (+6), ועוד 3 טסטי-רגרסיה למחיקת מפתח. **אומת שהם
+תופסים**: נטרול הלולאה החדשה מפיל את `deleting a key from the file stops it
+from being used` — טסט ירוק שלא נבדק מול הבאג אינו ראיה.
 
 ⚠️ **נלמד תוך כדי:** טסט שקורא ל-`loadConfig` בלי `secrets` מפורש נופל על
 `<stateDir>/secrets.json` האמיתי — המפתח האמיתי של המכונה דלף ל-assertion

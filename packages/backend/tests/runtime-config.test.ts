@@ -21,6 +21,7 @@ vi.mock("node:child_process", () => ({
 
 import { loadConfig } from "../src/config/load-config.js"
 import {
+  captureBootPatch,
   captureConfigInputs,
   HOT_KEYS,
   reloadRuntimeConfig,
@@ -55,6 +56,7 @@ function boot(configPath: string, env: NodeJS.ProcessEnv = {}, secretsPath = mis
   const argv = { config: configPath, secrets: secretsPath }
   captureConfigInputs(argv, env)
   const { envPatch } = loadConfig({ argv, env })
+  captureBootPatch(envPatch)
   for (const [k, v] of Object.entries(envPatch)) process.env[k] = v
 }
 
@@ -169,6 +171,46 @@ describe("reloadRuntimeConfig", () => {
     expect(process.env.ELEVENLABS_API_KEY).toBe("key-new")
   })
 
+  // 🔴 Regression: found by code review, then reproduced live against a running
+  // preview — deleting the key from secrets.json left it serving requests.
+  it("deleting a key from the file stops it from being used", () => {
+    const configPath = writeConfig({})
+    const secretsPath = writeConfig({ elevenLabsKey: "key-old" })
+    boot(configPath, {}, secretsPath)
+    expect(process.env.ELEVENLABS_API_KEY).toBe("key-old")
+
+    // The user removes the key — revoking it, not changing it.
+    fs.writeFileSync(secretsPath, JSON.stringify({}))
+    const outcome = reloadRuntimeConfig()
+
+    expect(outcome.applied).toContain("ELEVENLABS_API_KEY")
+    expect(process.env.ELEVENLABS_API_KEY).toBeUndefined()
+  })
+
+  it("a deleted key falls back to the environment, not to unset", () => {
+    const configPath = writeConfig({ elicitationTimeoutMs: 9000 })
+    // The file overrides a value that also genuinely exists in the environment.
+    boot(configPath, { ELICITATION_TIMEOUT_MS: "1234" })
+
+    fs.writeFileSync(configPath, JSON.stringify({}))
+    reloadRuntimeConfig()
+
+    // Precedence returns to where it was at boot — env still provides it.
+    expect(process.env.ELICITATION_TIMEOUT_MS).toBe("1234")
+  })
+
+  it("removing a cold key reports a restart rather than clearing it", () => {
+    const configPath = writeConfig({ port: 4100 })
+    boot(configPath)
+    expect(process.env.PORT).toBe("4100")
+
+    fs.writeFileSync(configPath, JSON.stringify({}))
+    const outcome = reloadRuntimeConfig()
+
+    expect(outcome.requiresRestart).toContain("PORT")
+    expect(process.env.PORT).toBe("4100")
+  })
+
   it("without a snapshot it declines rather than guessing", () => {
     resetConfigInputs()
     const outcome = reloadRuntimeConfig()
@@ -192,6 +234,10 @@ describe("HOT_KEYS", () => {
     "HTTP_OWNER_TTL_MS",
     "WIRE_RECORD",
     "FS_BROWSE_ALLOWED_BASE",
+    // No CONFIG_SPECS entry ⇒ never in an envPatch ⇒ listing them would be
+    // dead code that reads as a promise.
+    "OPENCODE_ARGS",
+    "LOG_WIRE",
   ]
 
   for (const key of coldKeys) {

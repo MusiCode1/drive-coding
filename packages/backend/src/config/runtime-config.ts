@@ -51,6 +51,8 @@ import { loadConfig, type RawArgs } from "./load-config.js"
 
 let envSnapshot: NodeJS.ProcessEnv | null = null
 let argvSnapshot: RawArgs = {}
+/** Keys the last envPatch produced — see the deletion handling in reloadRuntimeConfig. */
+let lastPatchKeys = new Set<string>()
 
 /**
  * Record the inputs a later reload has to replay.
@@ -65,10 +67,21 @@ export function captureConfigInputs(argv: RawArgs, env: NodeJS.ProcessEnv = proc
   envSnapshot = { ...env }
 }
 
+/**
+ * Record which keys the boot-time envPatch produced.
+ *
+ * Without this the FIRST reload cannot tell a deleted key from one that was
+ * never in the file, and a key removed before that reload would survive.
+ */
+export function captureBootPatch(envPatch: Record<string, string>): void {
+  lastPatchKeys = new Set(Object.keys(envPatch))
+}
+
 /** Test seam: forget the snapshots so a suite can re-capture cleanly. */
 export function resetConfigInputs(): void {
   argvSnapshot = {}
   envSnapshot = null
+  lastPatchKeys = new Set()
 }
 
 // ─── The allowlist ───────────────────────────────────────────────────────────
@@ -84,8 +97,10 @@ export const HOT_KEYS = new Set([
   "ELEVENLABS_API_KEY",
   "GEMINI_API_KEY",
   // Read per spawn, in cli-config.ts getCliCommand().
+  // ⚠️ OPENCODE_ARGS is deliberately absent: it has no CONFIG_SPECS entry, so
+  // buildConfigEnvPatch never emits it and listing it here would be dead code
+  // that reads as a promise.
   "OPENCODE_BIN",
-  "OPENCODE_ARGS",
   // Read per host, in createSessionHostFromConnection().
   "ELICITATION_TIMEOUT_MS",
   "PERMISSION_TIMEOUT_MS",
@@ -93,7 +108,6 @@ export const HOT_KEYS = new Set([
   "LOG_LEVEL",
   "LOG_NS",
   "LOG_FORMAT",
-  "LOG_WIRE",
   // Hot only because every reload path invalidates the cli-specs memo before
   // this runs: loadCliSpecsOverride checks that memo BEFORE it looks at env,
   // so without the reset this value would be ignored entirely.
@@ -140,15 +154,32 @@ export function reloadRuntimeConfig(): ReloadOutcome {
   const applied: string[] = []
   const requiresRestart: string[] = []
 
-  for (const [key, value] of Object.entries(envPatch)) {
-    if (process.env[key] === value) continue
-    if (HOT_KEYS.has(key)) {
-      process.env[key] = value
-      applied.push(key)
-    } else {
+  const apply = (key: string, value: string | undefined): void => {
+    if (process.env[key] === value) return
+    if (!HOT_KEYS.has(key)) {
       requiresRestart.push(key)
+      return
     }
+    if (value === undefined) delete process.env[key]
+    else process.env[key] = value
+    applied.push(key)
   }
+
+  for (const [key, value] of Object.entries(envPatch)) apply(key, value)
+
+  // 🔴 Keys the PREVIOUS patch produced and this one does not — i.e. the user
+  // deleted them from the file. Without this they keep their old value forever:
+  // deleting a leaked API key from secrets.json would leave it live until a
+  // restart, which is the opposite of what deleting it means.
+  //
+  // The correct value to fall back to is the snapshot's, not "unset": the key
+  // may also be present in the real environment, and the file merely overrode
+  // it. Restoring the snapshot returns precedence to where it was at boot.
+  for (const key of lastPatchKeys) {
+    if (key in envPatch) continue
+    apply(key, envSnapshot[key])
+  }
+  lastPatchKeys = new Set(Object.keys(envPatch))
 
   return { applied, requiresRestart, warnings }
 }
@@ -176,12 +207,7 @@ export function applyReloadEffects(outcome: ReloadOutcome): void {
 
   // initLogger rebuilds the config and both pino instances from process.env —
   // the cheapest hot path in the codebase.
-  if (
-    applied.has("LOG_LEVEL") ||
-    applied.has("LOG_NS") ||
-    applied.has("LOG_FORMAT") ||
-    applied.has("LOG_WIRE")
-  ) {
+  if (applied.has("LOG_LEVEL") || applied.has("LOG_NS") || applied.has("LOG_FORMAT")) {
     initLogger(parseEnvConfig())
   }
 }

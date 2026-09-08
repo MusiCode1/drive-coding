@@ -277,6 +277,15 @@ After `cd .worktrees/<name>`, run `bun install && bun run hooks:install`.
 - Adding a key to `HOT_KEYS` requires tracing it to a call site that re-reads it
   per request / per spawn / per session. A key captured in a module-level
   `const` or a closure will look reloadable and change nothing.
+- A key that vanishes from the file is reverted to its boot-time environment
+  value (or unset). Without that, deleting a leaked secret would leave it live
+  until a restart — there is a regression test for exactly this.
+- `HOT_KEYS` may only contain keys that some spec table can actually emit. A key
+  read per use but absent from `CONFIG_SPECS`/`SECRET_SPECS` (e.g. `OPENCODE_ARGS`,
+  `LOG_WIRE`) can never appear in an envPatch, so listing it is dead code that
+  reads as a promise.
+- The watcher only covers the directory containing `cli-specs.jsonc`. With
+  `--config`/`--secrets` elsewhere, `POST /api/reload-config` is the only trigger.
 - Tests that call `loadConfig` must pass `secrets` explicitly. Otherwise it
   falls back to the real `<stateDir>/secrets.json` and the machine's actual API
   keys leak into assertions.

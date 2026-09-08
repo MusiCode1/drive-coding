@@ -112,16 +112,28 @@ no restart, no dropped agents. Two triggers, same path:
 # 1. Just edit. A watcher on ~/.config/drive-coding/ picks it up (debounced
 #    150ms; atomic saves via write-temp+rename are handled).
 $EDITOR ~/.config/drive-coding/secrets.json
+#    ⚠️ The watcher only covers the directory holding cli-specs.jsonc. If you
+#    started the backend with --config or --secrets pointing elsewhere — or set
+#    CLI_SPECS_FILE to another directory — edits there are NOT noticed, and the
+#    endpoint below is the only trigger.
 
 # 2. Or ask explicitly:
 curl -X POST http://127.0.0.1:4002/api/reload-config
 ```
 
-**What reloads** — only values verified to be re-read on every use:
-`ELEVENLABS_API_KEY` and `GEMINI_API_KEY` (`resolveProviderAuth` is pure and
-called per request), `OPENCODE_BIN` / `OPENCODE_ARGS` (per spawn),
-`ELICITATION_TIMEOUT_MS` / `PERMISSION_TIMEOUT_MS` (per session host),
-`LOG_*` (the reload re-runs `initLogger`), and `CLI_SPECS_JSON`.
+**What reloads** — only values verified to be re-read on every use *and*
+present in `CONFIG_SPECS`/`SECRET_SPECS`: `ELEVENLABS_API_KEY` and
+`GEMINI_API_KEY` (`resolveProviderAuth` is pure and called per request),
+`OPENCODE_BIN` (per spawn), `ELICITATION_TIMEOUT_MS` /
+`PERMISSION_TIMEOUT_MS` (per session host), `LOG_LEVEL` / `LOG_NS` /
+`LOG_FORMAT` (the reload re-runs `initLogger`), and `CLI_SPECS_JSON`.
+
+`OPENCODE_ARGS` and `LOG_WIRE` are **not** reloadable despite being read
+per use: they have no `CONFIG_SPECS` entry, so no config file can produce them.
+
+**Deleting** a key from the file is honoured too — it reverts to whatever the
+environment provided at boot, or is unset if nothing did. That matters for
+secrets: removing a leaked key from `secrets.json` actually stops it being used.
 
 **What does not.** `PORT`, `DRIVE_CODING_HOST`, `DRIVE_CODING_HTTPS`,
 `CORS_ORIGINS`, `FE_STATIC_DIR`, `RSS_BUDGET_MB`, `HOTPATH_SLOW_MS`,

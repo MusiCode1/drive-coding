@@ -6,7 +6,7 @@ import path from "node:path"
 import { parseArgs } from "node:util"
 import { configDefault } from "@drive-coding/core/config/specs"
 import { buildVersion, isBinary } from "../binary.js"
-import { captureConfigInputs } from "../config/runtime-config.js"
+import { captureBootPatch, captureConfigInputs } from "../config/runtime-config.js"
 import { loadConfig, parseEnvFile } from "../config/load-config.js"
 
 // Peek BEFORE parseArgs. Subcommand flags (--json/--cli/--base) are unknown to
@@ -180,6 +180,7 @@ if (errors.length > 0) {
 // ---------------------------------------------------------------------------
 // Step 3: Write envPatch to process.env (these are the winning values)
 // ---------------------------------------------------------------------------
+captureBootPatch(envPatch)
 for (const [k, v] of Object.entries(envPatch)) {
   process.env[k] = v
 }

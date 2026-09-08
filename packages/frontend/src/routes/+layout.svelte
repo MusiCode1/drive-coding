@@ -328,7 +328,7 @@ onMount(() => {
 // ─── config-change-socket ─── (slice cli-specs-hot-reload)
 // Wiring only: the socket, lifecycle and reconnect live in the engine (golden rule
 // forbids WebSocket in routes). Here we only create it and pass the callback.
-const cfgTargets = { cliAvailability, ttsStatus }
+const cfgTargets = { cliAvailability, ttsCapabilities, ttsStatus }
 const configSocket = createConfigChangeRefresher(beWsUrl("/ws/echo"), cfgTargets)
 onMount(() => configSocket.start())
 onDestroy(() => configSocket.stop())
