@@ -30,9 +30,10 @@ import { describeCrash } from "@drive-coding/provider/spawn"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { buildAgentIdentityEnv } from "../agent-identity.js"
 import { clearGrantsFor } from "../agent-scope.js"
+import { stopAgentUnit } from "../agents/agent-launcher.js"
+import { loopbackBaseUrl, type UrlConfig } from "../delivery/public-url.js"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
-import { loopbackBaseUrl, type UrlConfig } from "../delivery/public-url.js"
 import type { ProjectsRegistry } from "./projects-registry.js"
 
 /** Loopback BASE env every child gets (never PUBLIC_BASE_URL). */
@@ -259,7 +260,12 @@ export function createAgentOrchestrator(deps: {
         // התעלם
       }
 
+      // 🔴 The kill half of the disconnect/kill split. `close()` only detaches a
+      // sidecar — deliberately, so the backend's own shutdown cannot take agents
+      // down with it. Ending an agent for good therefore has to stop its unit
+      // too, or a DELETE would leave a sidecar running with nobody to talk to.
       await deps.connectionRegistry.close(id)
+      stopAgentUnit(id)
 
       try {
         await deps.registry.delete(id)

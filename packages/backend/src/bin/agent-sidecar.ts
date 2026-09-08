@@ -102,11 +102,17 @@ export async function runSidecar(args: Args): Promise<void> {
 
   const handle = await listenUnix(args.socket)
   const startedAt = new Date().toISOString()
+  // 🔴 Two pids, and they are not interchangeable. `pid` is this process — the
+  // one that owns the socket and matches the systemd unit's MainPID, and the
+  // one a caller means when it says "the agent's process". `cliPid` is the CLI
+  // underneath, useful for diagnostics and for nothing else: it is our child,
+  // so signalling it from outside would bypass the sidecar's own teardown.
   handle.onPing(() => ({
     agentId: args.agentId,
     cliKind: args.cliKind,
     cwd: args.cwd,
-    pid: child.pid ?? null,
+    pid: process.pid,
+    cliPid: child.pid ?? null,
     startedAt,
     hasOwner: handle.current() !== undefined,
   }))

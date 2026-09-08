@@ -139,7 +139,13 @@ describe("agent-sidecar as a process", () => {
       cliKind: "cursor",
       hasOwner: false,
     })
-    expect(typeof answer.result.info.pid).toBe("number")
+    // 🔴 `pid` is the sidecar itself — the process the systemd unit tracks —
+    // and `cliPid` is the CLI under it. Measured 2026-09-08 that these were the
+    // wrong way round: the ping reported the child and the caller labelled it
+    // sidecarPid, which would have pointed a stop at the wrong process.
+    expect(answer.result.info.pid).toBe(kids[kids.length - 1]?.pid)
+    expect(typeof answer.result.info.cliPid).toBe("number")
+    expect(answer.result.info.cliPid).not.toBe(answer.result.info.pid)
   }, 30000)
 
   it("🔴 relays a frame to the CLI and the answer back", async () => {

@@ -8,11 +8,13 @@ import { createLogger } from "@drive-coding/core/log"
 import { stopWatching } from "@drive-coding/provider/config"
 import type { Hono } from "hono"
 import { createConnectionRegistry } from "../acp/connection-registry.js"
+import { stopAgentUnit } from "../agents/agent-launcher.js"
 import { resolveAgentsStoreFile } from "../agents/agents-store.js"
 import {
   createPersistentAgentRegistry,
   type PersistentAgentRegistry,
 } from "../agents/persistent-registry.js"
+import { shutdownAgents } from "../agents/shutdown-policy.js"
 import { type AgentOrchestrator, createAgentOrchestrator } from "../app/agent-orchestrator.js"
 import { createProjectsRegistry } from "../app/projects-registry.js"
 import { createRecordingsStore } from "../app/recordings-store.js"
@@ -29,7 +31,9 @@ import { wireRecorderDir } from "./config.js"
 
 const log = createLogger("backend.server")
 
-export type Disposable = { name: string; dispose(): void | Promise<void> }
+/** `ctx` carries the signal that started the shutdown; most disposables ignore it. */
+export type ShutdownCtx = { sig: string }
+export type Disposable = { name: string; dispose(ctx: ShutdownCtx): void | Promise<void> }
 
 export type BootDeps = {
   env: NodeJS.ProcessEnv
@@ -96,13 +100,11 @@ export function createDeps(
   const disposables: Disposable[] = [
     { name: "memoryGuard", dispose: () => memoryGuard.stop() },
     { name: "httpSweep", dispose: () => agentSessionRegistry.stop() },
+    // close() is *disconnect* for a sidecar and *kill* for a spawned child, so
+    // one call is correct for both; what happens to the survivors is policy.
     {
       name: "connectionRegistry",
-      dispose: async () => {
-        await Promise.allSettled(
-          connectionRegistry.list().map((id) => connectionRegistry.close(id)),
-        )
-      },
+      dispose: (ctx) => shutdownAgents(connectionRegistry, ctx, stopAgentUnit),
     },
     { name: "stopWatching", dispose: () => stopWatching() },
     { name: "usageStore", dispose: () => usageStore.flushUsageOnShutdown() },

@@ -76,11 +76,6 @@
       "impurity": 1,
       "class": "mixed"
     },
-    "packages/backend/src/boot/deps.ts": {
-      "metric": 124,
-      "impurity": 1,
-      "class": "mixed"
-    },
     "packages/backend/src/boot/shutdown.ts": {
       "metric": 57,
       "impurity": 3,
