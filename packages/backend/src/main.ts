@@ -5,6 +5,7 @@ import { createLogger } from "@drive-coding/core/log"
 import { type ServerType, serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
+import { restorePersistedAgents } from "./agents/restore-agents.js"
 import { resolveAppVersion } from "./app-version.js"
 import { buildApp } from "./boot/app.js"
 import { loadAppConfig } from "./boot/config.js"
@@ -56,14 +57,24 @@ preferPathClaudeExecutable()
 
 const app = new Hono()
 
-const corsOriginsRaw =
-  config.corsOrigins !== undefined ? config.corsOrigins.join(",") : undefined
-app.use("*", cors({ origin: effectiveCorsOrigins(corsOriginsRaw, config.publicBaseUrl), credentials: true }))
+const corsOriginsRaw = config.corsOrigins !== undefined ? config.corsOrigins.join(",") : undefined
+app.use(
+  "*",
+  cors({ origin: effectiveCorsOrigins(corsOriginsRaw, config.publicBaseUrl), credentials: true }),
+)
 
 const { deps, disposables } = createDeps(config, process.env, app)
+
 const ws = createWsStack()
 
-await buildApp(app, config, deps, { broadcastConfigChanged: ws.broadcastConfigChanged })
+// Routes and agent restoration are independent, and both must finish before the
+// server accepts anything: restoring brings back agents whose sidecar outlived
+// the previous process, so the first request sees the real list rather than an
+// empty one that fills in a moment later.
+await Promise.all([
+  buildApp(app, config, deps, { broadcastConfigChanged: ws.broadcastConfigChanged }),
+  restorePersistedAgents({ registry: deps.registry, connections: deps.connectionRegistry }),
+])
 ws.wireRoutes(app, deps)
 
 const port = config.port ?? configDefault("port")
