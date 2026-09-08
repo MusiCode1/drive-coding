@@ -5,20 +5,23 @@
  * the only place that knows how a row is stored, and this file only decides
  * *when* the snapshot is written and *which* rows come back at boot.
  *
- * ─── Adoption is deliberately opt-in ─────────────────────────────────────────
+ * ─── Loading is two-phase, and that is not an accident ───────────────────────
  *
- * 🔴 Reading a row back does NOT mean the agent is alive. Today every CLI dies
- * with the backend (`KillMode=control-group` in the unit file kills the whole
- * cgroup, and the child's stdio pipes die with the parent either way), so a
- * snapshot restored blindly would fill the agent list with rows whose process
- * is gone — a list that reads as truth and is not.
+ * 🔴 Reading a row back does NOT mean the agent is alive, and finding out costs
+ * a round trip: the only reliable test is whether its socket answers a ping.
+ * That is asynchronous, while building the boot dependencies is not — so the
+ * two are separated rather than forced together.
  *
- * Hence `adopt`: it receives the rows read from disk and returns the ones that
- * are genuinely re-attachable. The default is `adoptNone` — behaviour identical
- * to today, and the file is written but never trusted. The sidecar slice
- * replaces it with a probe over the socket directory, and that single swap is
- * what turns "the backend restarted" from "everything died" into "everything
- * reconnected".
+ *   construction → `pendingRows()`   rows on disk, none of them live yet
+ *   boot         → `restore(rows)`   the subset that answered, now live
+ *
+ * Until `restore` is called the registry is empty and the file is untouched.
+ * A backend that never calls it therefore behaves exactly as it did before any
+ * of this existed — which is the right failure mode, because the alternative is
+ * an agent list full of processes that are gone.
+ *
+ * `restore` also rewrites the snapshot to exactly what it was given, so rows
+ * that did not come back stop being offered on the next boot.
  */
 
 import type { Agent, AgentRegistry } from "@drive-coding/core"
@@ -28,26 +31,19 @@ import { createInMemoryAgentRegistry } from "./registry.js"
 
 const log = createLogger("backend.agents.persist")
 
-/** Which persisted rows may re-enter the live registry. Sync — boot is sync. */
-export type AdoptFn = (rows: readonly Agent[]) => readonly Agent[]
-
-/** Nothing survives the process. The honest default until agents outlive the BE. */
-export const adoptNone: AdoptFn = () => []
-
 export type PersistentAgentRegistry = AgentRegistry & {
+  /** Rows found on disk at construction. None of them are live yet. */
+  pendingRows(): readonly Agent[]
+  /** Make these rows live, and rewrite the snapshot to match exactly. */
+  restore(rows: readonly Agent[]): Promise<void>
   /** Resolves once every pending snapshot has hit the disk. Tests + shutdown. */
   flush(): Promise<void>
 }
 
-export function createPersistentAgentRegistry(opts: {
-  file: string
-  adopt?: AdoptFn
-}): PersistentAgentRegistry {
-  const adopt = opts.adopt ?? adoptNone
+export function createPersistentAgentRegistry(opts: { file: string }): PersistentAgentRegistry {
   const onDisk = readAgentStore(opts.file)
-  const seed = adopt(onDisk)
   if (onDisk.length > 0) {
-    log.info({ file: opts.file, found: onDisk.length, adopted: seed.length }, "agents store loaded")
+    log.info({ file: opts.file, found: onDisk.length }, "agents store loaded — awaiting restore")
   }
 
   // Coalescing: N mutations inside one tick produce one write, and a mutation
@@ -56,25 +52,40 @@ export function createPersistentAgentRegistry(opts: {
   let queued = false
   let chain: Promise<void> = Promise.resolve()
 
-  const inner = createInMemoryAgentRegistry({
-    seed,
-    onChange: () => {
-      if (queued) return
-      queued = true
-      chain = chain.then(async () => {
-        queued = false
-        writeAgentStore(opts.file, await inner.list())
-      })
-    },
-  })
+  const onChange = (): void => {
+    if (queued) return
+    queued = true
+    chain = chain.then(async () => {
+      queued = false
+      writeAgentStore(opts.file, await inner.list())
+    })
+  }
 
-  // The seed is not a mutation, so onChange never fires for it. Write once at
-  // boot anyway: without this, adopting a subset would leave the dropped rows
-  // on disk until the first unrelated mutation.
-  if (onDisk.length !== seed.length) writeAgentStore(opts.file, seed)
+  // Replaced wholesale by `restore`, because a restored row must keep its own
+  // id, createdAt and status — none of which `create()` would preserve. Hence
+  // the explicit delegation below rather than a spread: the spread would
+  // capture the methods of the registry that existed at construction time.
+  let inner = createInMemoryAgentRegistry({ onChange })
 
   return {
-    ...inner,
+    create: (input) => inner.create(input),
+    get: (id) => inner.get(id),
+    list: () => inner.list(),
+    update: (id, patch) => inner.update(id, patch),
+    delete: (id) => inner.delete(id),
+
+    pendingRows(): readonly Agent[] {
+      return onDisk
+    },
+
+    async restore(rows: readonly Agent[]): Promise<void> {
+      inner = createInMemoryAgentRegistry({ seed: rows, onChange })
+      // Rewrite unconditionally: rows that did not come back must stop being
+      // offered on the next boot, and an empty restore is a legitimate answer.
+      writeAgentStore(opts.file, await inner.list())
+      log.info({ restored: rows.length, found: onDisk.length }, "agents restored")
+    },
+
     async flush(): Promise<void> {
       // `chain` is re-read on every await: draining it can release a mutation
       // that queued while the previous write was still in flight.

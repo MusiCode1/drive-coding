@@ -14,6 +14,17 @@
  * so the Streamable HTTP client works in a browser too, not just on the server.
  */
 
+// Liveness control frame — pure codec, no platform dependency.
+export {
+  decodePing,
+  decodePong,
+  encodePing,
+  encodePong,
+  PING_METHOD,
+  type PingInfo,
+  type PingRequest,
+  type PongResult,
+} from "./control/ping.js"
 // fetch-based — browser-safe.
 export { createHttpClient, type HttpAcpClient } from "./streamable-http/client.js"
 // Protocol constants + routing rules — pure data and pure functions.

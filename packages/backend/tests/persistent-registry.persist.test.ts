@@ -28,8 +28,6 @@ afterEach(() => {
   dirs.length = 0
 })
 
-const adoptAll = (rows: readonly Agent[]): readonly Agent[] => rows
-
 describe("createPersistentAgentRegistry", () => {
   it("writes a created agent to disk", async () => {
     const file = tmpFile()
@@ -75,36 +73,46 @@ describe("createPersistentAgentRegistry", () => {
     expect(readAgentStore(file)).toHaveLength(20)
   })
 
-  it("🔴 adopts nothing by default — a stored row is not a live process", async () => {
+  it("🔴 loading is not restoring — rows are pending until someone vouches for them", async () => {
+    // A row on disk describes a process that may or may not still exist, and
+    // finding out costs a round trip. Until restore() is called the registry is
+    // empty, which is the honest state.
     const file = tmpFile()
     const first = createPersistentAgentRegistry({ file })
-    await first.create({ cliKind: "claude", cwd: os.tmpdir() })
+    const agent = await first.create({ cliKind: "claude", cwd: os.tmpdir() })
     await first.flush()
 
     const second = createPersistentAgentRegistry({ file })
     expect(await second.list()).toEqual([])
-    expect(adoptNone([{ id: "x" } as Agent])).toEqual([])
+    expect(second.pendingRows().map((r) => r.id)).toEqual([agent.id])
+    // …and the file is untouched until restore decides.
+    expect(readAgentStore(file)).toHaveLength(1)
   })
 
-  it("rewrites the snapshot at boot so dropped rows do not linger on disk", async () => {
+  it("an empty restore trims the snapshot so dead rows are not offered again", async () => {
     const file = tmpFile()
     const first = createPersistentAgentRegistry({ file })
     await first.create({ cliKind: "claude", cwd: os.tmpdir() })
     await first.flush()
     expect(readAgentStore(file)).toHaveLength(1)
 
-    createPersistentAgentRegistry({ file }) // adoptNone
+    const second = createPersistentAgentRegistry({ file })
+    await second.restore([])
     expect(readAgentStore(file)).toEqual([])
+    expect(await second.list()).toEqual([])
   })
 
-  it("an adopting boot restores id, createdAt and status verbatim", async () => {
+  it("🔴 restore keeps id, createdAt and acpSessionId verbatim", async () => {
+    // create() would mint a new id and a new createdAt. A restored row has to
+    // be the same row — the chat URL contains that id.
     const file = tmpFile()
     const first = createPersistentAgentRegistry({ file })
     const agent = await first.create({ cliKind: "claude", cwd: os.tmpdir() })
     await first.update(agent.id, { acpSessionId: "sess-42", status: "busy" })
     await first.flush()
 
-    const second = createPersistentAgentRegistry({ file, adopt: adoptAll })
+    const second = createPersistentAgentRegistry({ file })
+    await second.restore(second.pendingRows())
     const restored = await second.get(agent.id)
     expect(restored).not.toBeNull()
     expect(restored?.createdAt).toBe(agent.createdAt)
@@ -131,7 +139,23 @@ describe("createPersistentAgentRegistry", () => {
     const file = tmpFile()
     fs.mkdirSync(path.dirname(file), { recursive: true })
     fs.writeFileSync(file, "}{")
-    const reg = createPersistentAgentRegistry({ file, adopt: adoptAll })
+    const reg = createPersistentAgentRegistry({ file })
+    expect(reg.pendingRows()).toEqual([])
+    await reg.restore(reg.pendingRows())
     expect(await reg.list()).toEqual([])
+  })
+
+  it("mutations after a restore keep being mirrored", async () => {
+    const file = tmpFile()
+    const first = createPersistentAgentRegistry({ file })
+    const a = await first.create({ cliKind: "claude", cwd: os.tmpdir() })
+    await first.flush()
+
+    const second = createPersistentAgentRegistry({ file })
+    await second.restore(second.pendingRows())
+    await second.update(a.id, { status: "crashed" })
+    await second.flush()
+
+    expect(readAgentStore(file)[0]?.status).toBe("crashed")
   })
 })
