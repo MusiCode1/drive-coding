@@ -28,6 +28,21 @@ export type RestoreOpts = {
   /** Omit to restore rows without re-attaching — valid, but see the note below. */
   connections?: ReattachTarget
   env?: NodeJS.ProcessEnv
+  /**
+   * The in-memory acpSessionId cache, seeded from the restored rows.
+   *
+   * 🔴 Without this the re-attach is only half a re-attach. Measured live: the
+   * cursor process survived with the same pid, the row came back carrying
+   * `acpSessionId`, and `getOrCreateHost` still took the **cold** branch —
+   * because it asks this Map, not the row. The result was `session/new` on an
+   * agent that already had a session: a fresh, empty transcript, and the real
+   * conversation orphaned inside a process that was still running.
+   *
+   * Seeding it makes the same lookup return the persisted id, so the host takes
+   * `loadSession` instead. That is also the *safer* branch — it is precisely the
+   * duplicate session the design warned about.
+   */
+  acpSessionIds?: Map<string, string>
   /** Test seam. Production derives this from the port. */
   socketDir?: string
 }
@@ -61,6 +76,10 @@ export async function restorePersistedAgents(opts: RestoreOpts): Promise<void> {
   // take the cold branch and call session/new on an agent that may be mid-turn,
   // opening a second session on it. Re-establishing the ACP session is the next
   // slice; this one gets the pipe back.
+  for (const agent of adopted) {
+    if (agent.acpSessionId !== undefined) opts.acpSessionIds?.set(agent.id, agent.acpSessionId)
+  }
+
   if (connections === undefined) return
   for (const agent of adopted) {
     try {
