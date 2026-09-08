@@ -37,7 +37,7 @@
       "class": "mixed"
     },
     "packages/backend/src/agents/registry.ts": {
-      "metric": 65,
+      "metric": 64,
       "impurity": 2,
       "class": "mixed"
     },

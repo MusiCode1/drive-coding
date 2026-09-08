@@ -20,6 +20,10 @@ export const DriveCodingConfig = type({
   "rssBudgetMb?": "number",
   "httpOwnerTtlMs?": "number",
   "fsBrowseBase?": "string",
+  // Where the agent registry snapshot is written. Default: <stateDir>/agents/<port>.json.
+  // Overridable so two backends can share a port across containers, and so a
+  // test harness can keep its rows out of the real deployment's state dir.
+  "agentsStoreFile?": "string",
   // Prompt timeouts, in milliseconds. Omitted — or "never" / "off" / 0 — means
   // no timeout, which is the default: a question the user has not answered yet
   // must not answer itself. Two flat leaves rather than a `timeouts` object,
