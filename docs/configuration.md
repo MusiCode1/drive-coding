@@ -463,6 +463,19 @@ It adopts every live sidecar it finds there, with sessions intact.
 and client-wins means the last one to send a frame owns the session. This is for
 a handover with the outgoing side stopped, not for running a pair.
 
+⚠️ **Upgrading to this layout orphans whatever is already running.** The
+directory a backend looks in is where its agents are; change it — by naming a
+deployment, by moving the directory, or by taking this version at all if you
+were on the port-keyed one — and sidecars started under the old path keep
+running, unreachable. Observed while making exactly that change. **Close every
+agent before the switch** (`DELETE /api/agents`), or sweep the old path
+afterwards:
+
+```bash
+systemctl --user list-units 'dc-agent-*'   # anything still here has no backend
+systemctl --user stop 'dc-agent-*'
+```
+
 ⚠️ **The gap is not free.** Between stopping one backend and the next one
 attaching, output from a running turn is dropped rather than buffered. On a
 deployment whose `ExecStartPre` runs `bun install` and an FE build, that window
