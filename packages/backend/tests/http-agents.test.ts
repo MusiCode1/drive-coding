@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createInMemoryAgentRegistry } from "../src/agents/registry"
 import type { AgentOrchestrator, CreateAndSpawnResult } from "../src/app/agent-orchestrator"
+import { closeAllAgents } from "../src/app/close-all-agents.js"
 import { registerAgentsHttp } from "../src/delivery/http-agents"
 // slice liveness C2: ה-http-cache הוא module-level — מנקים בין טסטים כדי שלא ידלוף.
 import { httpCacheInvalidateAll } from "../src/delivery/http-cache"
@@ -45,10 +46,23 @@ function makeApp(opts?: { projectsRegistry?: ReturnType<typeof makeFakeProjectsR
     async deleteAndKill(id) {
       await registry.delete(id).catch(() => {})
     },
+    // Delegates to the real implementation so the route test exercises the
+    // actual bulk semantics, not a stub that always succeeds.
+    deleteAllAndKill() {
+      return closeAllAgents(
+        () => registry.list(),
+        (id) => this.deleteAndKill(id),
+      )
+    },
     getBridgePort: vi.fn(() => 7100),
   }
 
-  registerAgentsHttp(app, { registry, orchestrator, projectsRegistry: opts?.projectsRegistry, env: process.env })
+  registerAgentsHttp(app, {
+    registry,
+    orchestrator,
+    projectsRegistry: opts?.projectsRegistry,
+    env: process.env,
+  })
   return { app, registry, orchestrator }
 }
 
@@ -281,9 +295,7 @@ describe("HTTP /api/agents", () => {
         body: JSON.stringify({ cliKind: "claude", cwd: "/x" }),
       })
       expect(res.status).toBe(201)
-      expect(received).toEqual(
-        expect.objectContaining({ cliKind: "claude", cwd: "/x" }),
-      )
+      expect(received).toEqual(expect.objectContaining({ cliKind: "claude", cwd: "/x" }))
       expect(received).not.toHaveProperty("permissionPolicy")
     })
 
@@ -790,5 +802,50 @@ describe("HTTP /api/agents", () => {
       expect(body.agents[0].lastMessageAt).toBeNull()
       expect(body.agents[0].attachedVia).toBeUndefined()
     })
+  })
+})
+
+describe("DELETE /api/agents (bulk)", () => {
+  it("🔴 ends every agent and reports them by id", async () => {
+    const { app } = makeApp()
+    for (const _ of [1, 2, 3]) {
+      await app.request("/api/agents", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cliKind: "opencode", cwd: "/tmp" }),
+      })
+    }
+
+    const res = await app.request("/api/agents", { method: "DELETE" })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { closed: string[]; failed: unknown[] }
+    expect(body.closed).toHaveLength(3)
+    expect(body.failed).toEqual([])
+
+    const after = (await (await app.request("/api/agents")).json()) as { agents: unknown[] }
+    expect(after.agents).toEqual([])
+  })
+
+  it("an empty registry answers 200 with nothing closed, not 404", async () => {
+    const { app } = makeApp()
+    const res = await app.request("/api/agents", { method: "DELETE" })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ closed: [], failed: [] })
+  })
+
+  it("🔴 the bulk route does not shadow DELETE of a single agent", async () => {
+    // Hono matches in order; registering `:id` first would swallow `/api/agents`,
+    // and registering the bulk route without care could swallow the specific one.
+    const { app } = makeApp()
+    const created = (await (
+      await app.request("/api/agents", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cliKind: "opencode", cwd: "/tmp" }),
+      })
+    ).json()) as { agentId: string }
+
+    const one = await app.request(`/api/agents/${created.agentId}`, { method: "DELETE" })
+    expect(one.status).toBe(204)
   })
 })

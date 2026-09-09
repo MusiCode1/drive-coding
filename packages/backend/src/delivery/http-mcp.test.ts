@@ -13,13 +13,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { Hono } from "hono"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import * as readProcessRssMod from "../adapters/read-process-rss.js"
+import { AGENT_ID_HEADER, DRIVE_CODING_AGENT_ID_ENV } from "../agent-identity.js"
 import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
-import { AGENT_ID_HEADER, DRIVE_CODING_AGENT_ID_ENV } from "../agent-identity.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
-import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { createAgentEventBus } from "../session-host/agent-events.js"
-import * as readProcessRssMod from "../adapters/read-process-rss.js"
+import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { registerMcpHttp } from "./http-mcp.js"
 
 type HostStub = {
@@ -134,6 +134,7 @@ function makeOrchestrator(registry: AgentRegistry): AgentOrchestrator {
     deleteAndKill: vi.fn(async (id: string) => {
       await registry.delete(id).catch(() => {})
     }),
+    deleteAllAndKill: vi.fn(async () => ({ closed: [], failed: [] })),
     getBridgePort: vi.fn(() => 0),
   }
 }
@@ -318,7 +319,9 @@ describe("session_open / session_close (slice session-bus-mcp C1)", () => {
     expect(body.hint).toContain("configOptions")
     expect(body.hint).toContain("session_close")
     expect(body.configOptions).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: "model", description: "Which model to use" })]),
+      expect.arrayContaining([
+        expect.objectContaining({ id: "model", description: "Which model to use" }),
+      ]),
     )
     expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
