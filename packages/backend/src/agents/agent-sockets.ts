@@ -237,10 +237,18 @@ export function probeAgentSocket(path: string, timeoutMs = 1000): Promise<Socket
       if (code === "ECONNREFUSED") {
         // The listener is gone; the inode is not. Remove it so the next scan
         // does not have to re-learn the same thing.
-        try {
-          unlinkSync(path)
-        } catch {
-          /* someone else got there first — fine */
+        //
+        // 🔴 The meta file goes with it. A sidecar killed with SIGKILL never
+        // runs its own cleanup, so it leaves both behind — and taking only the
+        // socket left a `.json` describing an agent that no longer exists,
+        // accumulating one per hard kill. Worse than untidy: it names a pid,
+        // and pids get recycled.
+        for (const p of [path, `${path.slice(0, -SOCKET_SUFFIX.length)}${META_SUFFIX}`]) {
+          try {
+            unlinkSync(p)
+          } catch {
+            /* someone else got there first — fine */
+          }
         }
         finish({ state: "stale" })
         return

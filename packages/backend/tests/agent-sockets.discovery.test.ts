@@ -17,7 +17,9 @@ import {
   listAgentSockets,
   MAX_SOCKET_PATH,
   probeAgentSocket,
+  readAgentMeta,
   SocketPathTooLongError,
+  writeAgentMeta,
 } from "../src/agents/agent-sockets.js"
 import {
   deploymentDir,
@@ -171,6 +173,27 @@ describe("probeAgentSocket", () => {
     const path = join(tmpDir(), "a.sock")
     await wedgedSidecar(path)
     expect(await probeAgentSocket(path, 150)).toEqual({ state: "wedged" })
+  })
+
+  it("🔴 reaping a stale socket takes its meta with it", async () => {
+    // A SIGKILLed sidecar runs no cleanup and leaves both files. Removing only
+    // the socket left a .json per hard kill, each naming a pid that may since
+    // have been recycled onto some unrelated process.
+    const dir = tmpDir()
+    const id = "88888888-8888-4888-8888-888888888888"
+    writeFileSync(agentSocketPath(dir, id), "")
+    writeAgentMeta(dir, {
+      agentId: id,
+      cliKind: "cursor",
+      cwd: "/tmp",
+      pid: 999999,
+      startedAt: "2026-09-09T10:00:00.000Z",
+    })
+    expect(readAgentMeta(dir, id)).not.toBeNull()
+
+    expect((await probeAgentSocket(agentSocketPath(dir, id))).state).toBe("stale")
+    expect(existsSync(agentSocketPath(dir, id))).toBe(false)
+    expect(readAgentMeta(dir, id)).toBeNull()
   })
 
   it("🔴 a socket file whose listener is gone is stale — and gets unlinked", async () => {
