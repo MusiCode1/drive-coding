@@ -42,7 +42,9 @@ page but break voice. Put it behind HTTPS — a tunnel is enough for testing.
 | `FE_STATIC_DIR` | *(unset)* | Directory of the built frontend. When set, the backend serves the UI **and** the API on one origin. Unset = API only. |
 | `CORS_ORIGINS` | *(unset)* | Comma-separated allowed origins. Only needed when the UI is served from a **different** origin than the API. |
 | `DRIVE_CODING_HTTPS` | *(unset)* | TLS material as JSON, to serve HTTPS directly. Most setups terminate TLS at a tunnel or reverse proxy instead and leave this alone. |
-| `AGENTS_STORE_FILE` | `<stateDir>/agents/<port>.json` | Where the agent registry snapshot is written. Named by port so several deployments on one machine (4000 / 4001 / 4002) never overwrite each other's rows. |
+| `DC_DEPLOYMENT` | *(the port)* | Name of this deployment. Its agents — sockets, metadata and the registry snapshot — live in one directory under that name. |
+| `DC_DEPLOYMENT_DIR` | *(derived)* | Overrides that directory outright. Point a second backend at an existing one to hand its agents over. |
+| `AGENTS_STORE_FILE` | *(inside the deployment dir)* | Overrides just the snapshot path. |
 | `AGENT_SIDECAR` | *(unset)* | Comma-separated cliKinds to run as **sidecars** — separate processes that survive a restart of this one. See below. Unset = nothing changes. |
 | `SHUTDOWN_KILLS_AGENTS` | *(unset)* | `1` makes a shutdown stop every sidecar too. Unset leaves them running (an interactive Ctrl+C asks). |
 
@@ -355,8 +357,10 @@ Normally a CLI agent is a child of the backend and dies with it. Set
 transient systemd unit, listening on a Unix socket:
 
 ```
-backend ──connect──▶ $XDG_RUNTIME_DIR/drive-coding/agents-<port>/<agentId>.sock
-                       ──▶ [ sidecar, own unit ] ──stdio──▶ cursor
+backend ──connect──▶ $XDG_RUNTIME_DIR/drive-coding/deployments/<name>/
+                         agents.json        the registry snapshot
+                         <agentId>.sock  ──▶ [ sidecar, own unit ] ──▶ cursor
+                         <agentId>.json     what that sidecar says it is
 ```
 
 Restart the backend and the agents keep running; the new backend finds the
@@ -426,3 +430,41 @@ and `closeOnTurnEnd`) stop the unit as well. To do it by hand:
 ```bash
 systemctl --user stop dc-agent-<agentId>
 ```
+
+
+## Moving a deployment, or handing its agents to another one
+
+Everything about a deployment's agents lives in one directory, named by
+`DC_DEPLOYMENT` rather than keyed by the port.
+
+🔴 It used to be the port, and that was wrong in a specific way: the port is
+exactly what changes when you move a deployment. Bring the same backend up on a
+different port and every running agent became an orphan instantly — still alive,
+still listening, invisible to the backend that had just been looking for them in
+a directory that was never populated.
+
+A name does not change when the port does:
+
+```bash
+# same agents, whatever port this ends up on
+Environment=DC_DEPLOYMENT=edge
+```
+
+To hand agents from one deployment to another — the migration case — point the
+incoming backend at the outgoing one's directory:
+
+```bash
+DC_DEPLOYMENT_DIR=$XDG_RUNTIME_DIR/drive-coding/deployments/sidecar
+```
+
+It adopts every live sidecar it finds there, with sessions intact.
+
+⚠️ **One at a time.** Two backends on one directory both adopt the same agents,
+and client-wins means the last one to send a frame owns the session. This is for
+a handover with the outgoing side stopped, not for running a pair.
+
+⚠️ **The gap is not free.** Between stopping one backend and the next one
+attaching, output from a running turn is dropped rather than buffered. On a
+deployment whose `ExecStartPre` runs `bun install` and an FE build, that window
+is 45–60 seconds. Some of it comes back: `session/load` replays the transcript
+on CLIs that support it (claude does), while others reattach without replay.

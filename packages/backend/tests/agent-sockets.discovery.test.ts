@@ -13,14 +13,18 @@ import { join } from "node:path"
 import { decodePing, encodePong } from "@drive-coding/acp-wire"
 import { afterEach, describe, expect, it } from "vitest"
 import {
-  agentSocketDir,
   agentSocketPath,
-  ensureAgentSocketDir,
   listAgentSockets,
   MAX_SOCKET_PATH,
   probeAgentSocket,
   SocketPathTooLongError,
 } from "../src/agents/agent-sockets.js"
+import {
+  deploymentDir,
+  deploymentName,
+  ensureDeploymentDir,
+  snapshotPathIn,
+} from "../src/agents/deployment-dir.js"
 
 const dirs: string[] = []
 const servers: Server[] = []
@@ -59,29 +63,53 @@ afterEach(() => {
   dirs.length = 0
 })
 
-describe("agentSocketDir", () => {
-  it("prefers XDG_RUNTIME_DIR and keys the directory by port", () => {
-    const dir = agentSocketDir(4002, { XDG_RUNTIME_DIR: "/run/user/1001" })
-    expect(dir).toBe("/run/user/1001/drive-coding/agents-4002")
+describe("deploymentDir", () => {
+  it("prefers XDG_RUNTIME_DIR and names the directory after the deployment", () => {
+    expect(deploymentDir({ XDG_RUNTIME_DIR: "/run/user/1001", DC_DEPLOYMENT: "edge" }, 4000)).toBe(
+      "/run/user/1001/drive-coding/deployments/edge",
+    )
   })
 
-  it("🔴 two deployments never share a directory", () => {
+  it("🔴 defaults to the port, so an unconfigured backend stays isolated", () => {
+    // The port used to be the identity. Keeping it as the *default* preserves
+    // the isolation dev/edge/main relied on, without making it permanent.
     const env = { XDG_RUNTIME_DIR: "/run/user/1001" }
-    expect(agentSocketDir(4001, env)).not.toBe(agentSocketDir(4002, env))
+    expect(deploymentDir({ ...env, PORT: "4001" }, 4000)).not.toBe(
+      deploymentDir({ ...env, PORT: "4002" }, 4000),
+    )
+    expect(deploymentName({ PORT: "4002" }, 4000)).toBe("4002")
+  })
+
+  it("🔴 a name survives a port change — which is what the port could not do", () => {
+    // Move a deployment to another port and its agents must come with it.
+    // Keyed by port, they were instantly orphaned.
+    const a = deploymentDir({ XDG_RUNTIME_DIR: "/r", DC_DEPLOYMENT: "edge", PORT: "4002" }, 4000)
+    const b = deploymentDir({ XDG_RUNTIME_DIR: "/r", DC_DEPLOYMENT: "edge", PORT: "4004" }, 4000)
+    expect(a).toBe(b)
+  })
+
+  it("two deployments can be pointed at one directory on purpose", () => {
+    const shared = "/run/user/1001/drive-coding/deployments/handover"
+    expect(deploymentDir({ DC_DEPLOYMENT_DIR: shared, PORT: "4002" }, 4000)).toBe(shared)
+    expect(deploymentDir({ DC_DEPLOYMENT_DIR: shared, PORT: "4004" }, 4000)).toBe(shared)
   })
 
   it("falls back to the state dir when XDG_RUNTIME_DIR is absent or empty", () => {
     for (const env of [{}, { XDG_RUNTIME_DIR: "" }]) {
-      const dir = agentSocketDir(4002, env)
+      const dir = deploymentDir({ ...env, DC_DEPLOYMENT: "edge" }, 4000)
       expect(dir).not.toContain("/run/user")
-      expect(dir.endsWith("agents-4002")).toBe(true)
+      expect(dir.endsWith("deployments/edge")).toBe(true)
     }
   })
 
   it("creates the directory private", () => {
-    const dir = join(tmpDir(), "nested", "agents-4002")
-    ensureAgentSocketDir(dir)
+    const dir = join(tmpDir(), "nested", "edge")
+    ensureDeploymentDir(dir)
     expect(existsSync(dir)).toBe(true)
+  })
+
+  it("the snapshot sits beside the sockets it describes", () => {
+    expect(snapshotPathIn("/r/deployments/edge")).toBe("/r/deployments/edge/agents.json")
   })
 })
 
@@ -100,7 +128,7 @@ describe("agentSocketPath", () => {
 
   it("our real-world path is comfortably inside the limit", () => {
     const path = agentSocketPath(
-      agentSocketDir(4002, { XDG_RUNTIME_DIR: "/run/user/1001" }),
+      deploymentDir({ XDG_RUNTIME_DIR: "/run/user/1001", DC_DEPLOYMENT: "edge" }, 4000),
       "11111111-1111-4111-8111-111111111111",
     )
     expect(path.length).toBeLessThan(MAX_SOCKET_PATH)

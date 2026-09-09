@@ -24,6 +24,9 @@
  * the process being involved. `connect()` alone would call it healthy. That is
  * what `_drive/ping` is for — see `probeAgentSocket`.
  *
+ * The directory itself is chosen in deployment-dir.ts — one per deployment,
+ * named rather than keyed by port.
+ *
  * ─── 🛑 Not /tmp ─────────────────────────────────────────────────────────────
  *
  * The obvious home is `/tmp`, on the grounds that a reboot clears it and there
@@ -67,25 +70,6 @@ export class SocketPathTooLongError extends Error {
     )
     this.name = "SocketPathTooLongError"
   }
-}
-
-/**
- * Per-deployment socket directory.
- *
- * Keyed by port for the same reason the registry snapshot is: dev, edge and
- * main share this machine, and a shared directory would have each backend
- * adopting — and reaping — the others' agents.
- */
-export function agentSocketDir(port: number, env: NodeJS.ProcessEnv): string {
-  const xdg = env.XDG_RUNTIME_DIR
-  const base = xdg !== undefined && xdg !== "" ? join(xdg, "drive-coding") : getStateDir()
-  return join(base, `agents-${port}`)
-}
-
-/** Creates the directory 0700 if missing and returns it. */
-export function ensureAgentSocketDir(dir: string): string {
-  mkdirSync(dir, { recursive: true, mode: 0o700 })
-  return dir
 }
 
 /**

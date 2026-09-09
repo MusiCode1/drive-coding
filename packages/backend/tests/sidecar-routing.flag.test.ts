@@ -38,25 +38,33 @@ describe("sidecarKinds", () => {
     // where pipe mode returned -32601.
     expect(SIDECAR_CAPABLE.has("claude")).toBe(true)
     expect(SIDECAR_CAPABLE.has("codex")).toBe(true)
-    expect(sidecarKinds({ AGENT_SIDECAR: "claude,cursor" })).toEqual(
-      new Set(["claude", "cursor"]),
-    )
+    expect(sidecarKinds({ AGENT_SIDECAR: "claude,cursor" })).toEqual(new Set(["claude", "cursor"]))
   })
 })
 
 describe("socketDirForEnv", () => {
-  it("keys the directory by this deployment's port", () => {
-    const dir = socketDirForEnv({ PORT: "4002", XDG_RUNTIME_DIR: "/run/user/1001" })
-    expect(dir).toBe("/run/user/1001/drive-coding/agents-4002")
+  it("resolves to this deployment's directory", () => {
+    expect(socketDirForEnv({ PORT: "4002", XDG_RUNTIME_DIR: "/run/user/1001" })).toBe(
+      "/run/user/1001/drive-coding/deployments/4002",
+    )
+  })
+
+  it("a name beats the port, and survives a port change", () => {
+    const a = socketDirForEnv({ PORT: "4002", DC_DEPLOYMENT: "edge", XDG_RUNTIME_DIR: "/r" })
+    const b = socketDirForEnv({ PORT: "4004", DC_DEPLOYMENT: "edge", XDG_RUNTIME_DIR: "/r" })
+    expect(a).toBe(b)
+    expect(a).toBe("/r/drive-coding/deployments/edge")
   })
 
   it("falls back to the product default port, not to a shared directory", () => {
-    const dir = socketDirForEnv({ XDG_RUNTIME_DIR: "/run/user/1001" })
-    expect(dir).toBe(`/run/user/1001/drive-coding/agents-${configDefault("port")}`)
+    expect(socketDirForEnv({ XDG_RUNTIME_DIR: "/run/user/1001" })).toBe(
+      `/run/user/1001/drive-coding/deployments/${configDefault("port")}`,
+    )
   })
 
-  it("a nonsense PORT does not produce agents-NaN", () => {
+  it("a nonsense PORT does not produce a NaN directory", () => {
     const dir = socketDirForEnv({ PORT: "not-a-port", XDG_RUNTIME_DIR: "/run/user/1001" })
-    expect(dir).toBe(`/run/user/1001/drive-coding/agents-${configDefault("port")}`)
+    expect(dir).not.toContain("NaN")
+    expect(dir).toBe(`/run/user/1001/drive-coding/deployments/${configDefault("port")}`)
   })
 })

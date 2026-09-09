@@ -31,7 +31,8 @@ import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/con
 import { connectSidecar } from "@drive-coding/provider/connection"
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
 import { launchOrAttachAgent } from "../agents/agent-launcher.js"
-import { agentSocketDir, ensureAgentSocketDir, probeAgentSocket } from "../agents/agent-sockets.js"
+import { probeAgentSocket } from "../agents/agent-sockets.js"
+import { deploymentDir, ensureDeploymentDir } from "../agents/deployment-dir.js"
 
 const log = createLogger("backend.acp.sidecar")
 
@@ -68,10 +69,9 @@ export function sidecarKinds(env: NodeJS.ProcessEnv = process.env): Set<string> 
   return out
 }
 
-/** The socket directory for this deployment. Port-keyed, like the agent snapshot. */
+/** This deployment's directory — sockets, meta and snapshot all live in it. */
 export function socketDirForEnv(env: NodeJS.ProcessEnv = process.env): string {
-  const port = Number(env.PORT ?? configDefault("port"))
-  return agentSocketDir(Number.isFinite(port) ? port : configDefault("port"), env)
+  return deploymentDir(env, configDefault("port"))
 }
 
 /**
@@ -87,7 +87,7 @@ export async function connectViaSidecar(
   opts: ConnectOpts,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ProviderConnection> {
-  const socketDir = ensureAgentSocketDir(socketDirForEnv(env))
+  const socketDir = ensureDeploymentDir(socketDirForEnv(env))
   const launched = await launchOrAttachAgent({
     agentId,
     cliKind,
