@@ -24,22 +24,17 @@ import type { Agent } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import { Agent as AgentSchema } from "@drive-coding/core/schemas/agent"
 import { type } from "arktype"
-import { ensureStateSubdir } from "../paths.js"
+import { deploymentDir, ensureDeploymentDir, snapshotPathIn } from "./deployment-dir.js"
 
 const log = createLogger("backend.agents.store")
 
 /**
- * Where the snapshot lives: one file per deployment, named by port.
+ * Where the snapshot lives: inside this deployment's directory, beside the
+ * sockets it describes.
  *
- * dev/edge/main run side by side on this machine and the port is already what
- * tells them apart (4000/4001/4002 in the unit files). A shared file would have
- * each backend delete the others' agents on its first mutation.
- *
- * The env layer is consulted directly rather than only through the resolved
- * config, because callers that build deps by hand — every test that boots the
- * server — pass `{}` as config and would otherwise land in the real state dir
- * of a live deployment. Precedence still reads config-first, so a resolved
- * `agentsStoreFile` (which the env already fed) keeps winning.
+ * `AGENTS_STORE_FILE` still overrides it — the test suite points every backend
+ * it boots at a throwaway path with it, so a suite run cannot write into a live
+ * deployment's state (measured once: a run left a 45307.json in the real one).
  */
 export function resolveAgentsStoreFile(
   config: { agentsStoreFile?: string; port?: number },
@@ -48,7 +43,7 @@ export function resolveAgentsStoreFile(
 ): string {
   const explicit = config.agentsStoreFile ?? env.AGENTS_STORE_FILE
   if (explicit !== undefined && explicit !== "") return explicit
-  return join(ensureStateSubdir("agents"), `${config.port ?? fallbackPort}.json`)
+  return snapshotPathIn(ensureDeploymentDir(deploymentDir(env, config.port ?? fallbackPort)))
 }
 
 /** Bumped only on a breaking shape change; a mismatch drops the file, not the boot. */
