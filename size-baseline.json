@@ -32,12 +32,12 @@
       "class": "mixed"
     },
     "packages/backend/src/acp/connection-registry.ts": {
-      "metric": 375,
-      "impurity": 7,
+      "metric": 349,
+      "impurity": 6,
       "class": "mixed"
     },
     "packages/backend/src/agents/registry.ts": {
-      "metric": 65,
+      "metric": 64,
       "impurity": 2,
       "class": "mixed"
     },
@@ -73,11 +73,6 @@
     },
     "packages/backend/src/boot/config.ts": {
       "metric": 33,
-      "impurity": 1,
-      "class": "mixed"
-    },
-    "packages/backend/src/boot/deps.ts": {
-      "metric": 124,
       "impurity": 1,
       "class": "mixed"
     },
@@ -312,8 +307,8 @@
       "class": "mixed"
     },
     "packages/backend/src/session-host/registry.ts": {
-      "metric": 520,
-      "impurity": 11,
+      "metric": 518,
+      "impurity": 10,
       "class": "mixed"
     },
     "packages/backend/src/session-host/session-host.ts": {

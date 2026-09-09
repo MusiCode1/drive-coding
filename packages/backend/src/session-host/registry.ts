@@ -47,6 +47,7 @@ import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-bro
 import { buildAgentEventHostOpts } from "./agent-events-registry-opts.js"
 import { startAgentStallSweep } from "./agent-events-stall-sweep.js"
 import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
+import { initSession } from "./session-init.js"
 import { makePromptCharterHook } from "./session-host-charter.js"
 
 const log = createLogger("backend.session-host.registry")
@@ -395,16 +396,13 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     try {
       const broadcaster = _createBroadcasterFn(host.patches)
 
-      // Session init: warm reattach uses loadSession; cold uses newSession.
+      // Warm when a session id is remembered, cold otherwise — and cold as a
+      // fallback if the warm attempt fails, rather than leaving a live agent
+      // that nobody can open. See session-init.ts.
       // Skip if host already has a sessionId (injected-ready host in tests).
       if (!host.state.sessionId) {
         const mcpServers = optionalAgentMcpServers(agentId, getSelfBaseUrl, host.agentCapabilities) ?? []
-        const sessionBase = { cwd, mcpServers }
-        if (acpSessionId) {
-          await host.loadSession({ ...sessionBase, sessionId: acpSessionId })
-        } else {
-          await host.newSession(sessionBase)
-        }
+        await initSession(host, { cwd, mcpServers }, acpSessionId, agentId)
       }
 
       // slice remote-warm-reconnect C1: דיווח על ה-session — אחרי ה-if block כולו

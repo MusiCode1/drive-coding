@@ -42,6 +42,11 @@ page but break voice. Put it behind HTTPS — a tunnel is enough for testing.
 | `FE_STATIC_DIR` | *(unset)* | Directory of the built frontend. When set, the backend serves the UI **and** the API on one origin. Unset = API only. |
 | `CORS_ORIGINS` | *(unset)* | Comma-separated allowed origins. Only needed when the UI is served from a **different** origin than the API. |
 | `DRIVE_CODING_HTTPS` | *(unset)* | TLS material as JSON, to serve HTTPS directly. Most setups terminate TLS at a tunnel or reverse proxy instead and leave this alone. |
+| `DC_DEPLOYMENT` | *(the port)* | Name of this deployment. Its agents — sockets, metadata and the registry snapshot — live in one directory under that name. |
+| `DC_DEPLOYMENT_DIR` | *(derived)* | Overrides that directory outright. Point a second backend at an existing one to hand its agents over. |
+| `AGENTS_STORE_FILE` | *(inside the deployment dir)* | Overrides just the snapshot path. |
+| `AGENT_SIDECAR` | *(unset)* | Comma-separated cliKinds to run as **sidecars** — separate processes that survive a restart of this one. See below. Unset = nothing changes. |
+| `SHUTDOWN_KILLS_AGENTS` | *(unset)* | `1` makes a shutdown stop every sidecar too. Unset leaves them running (an interactive Ctrl+C asks). |
 
 > 🔴 **The backend has no authentication of its own.** This is deliberate: access
 > control is expected to live in front of it (Cloudflare Access, a VPN, or simply
@@ -137,7 +142,8 @@ secrets: removing a leaked key from `secrets.json` actually stops it being used.
 
 **What does not.** `PORT`, `DRIVE_CODING_HOST`, `DRIVE_CODING_HTTPS`,
 `CORS_ORIGINS`, `FE_STATIC_DIR`, `RSS_BUDGET_MB`, `HOTPATH_SLOW_MS`,
-`HTTP_OWNER_TTL_MS`, `WIRE_RECORD`, `FS_BROWSE_ALLOWED_BASE` — all baked into
+`HTTP_OWNER_TTL_MS`, `WIRE_RECORD`, `FS_BROWSE_ALLOWED_BASE`,
+`AGENTS_STORE_FILE`, `AGENT_SIDECAR` — all baked into
 the HTTP server at boot. Changing one logs `restart required to apply` and is
 **not** applied. Deliberately loud: a config change that appears to work and
 doesn't is worse than one that refuses.
@@ -313,3 +319,165 @@ no override in the specs file.
 
 **Changed the specs file and nothing happened.**
 It is read at startup. Restart the backend.
+
+
+## The agent registry snapshot
+
+Every agent row is mirrored to `AGENTS_STORE_FILE` on each create, update and
+delete, written whole and replaced by `rename(2)` so a reader never sees half a
+snapshot. Runtime fields — `title`, and the per-request enrichment (`pid`,
+`attached`, `busy`, `lastSeenAt`) — are stripped before writing: they describe a
+live process, and restoring them would state something about a process that is
+gone.
+
+🔴 **The file is written but not yet trusted.** On boot the rows are read and
+then handed to an *adoption* function, which decides which of them may re-enter
+the live registry. The default adopts **none**, so `GET /api/agents` after a
+restart is empty — exactly as before this existed. That is deliberate and not a
+placeholder: today every CLI dies with the backend, so a row read back from disk
+describes a process that no longer exists.
+
+Two independent reasons the process dies, both of which the sidecar work has to
+address before adoption can be turned on:
+
+1. `KillMode=control-group` in the systemd unit — `systemctl restart` sends
+   SIGTERM to **every** process in the unit's cgroup, not just the main one.
+   `detached: true` at spawn creates a new process *group*, which does not help.
+2. The child's stdin/stdout are pipes to the backend, and they die with it.
+
+When agents do outlive the backend, adoption becomes a probe over the live
+sockets and this same file is what restores their identity — including the
+`id` in the chat URL, which is why `POST /api/agents` accepts an explicit `id`.
+
+
+## Agents that survive a restart — `AGENT_SIDECAR`
+
+Normally a CLI agent is a child of the backend and dies with it. Set
+`AGENT_SIDECAR=cursor` and agents of that kind are launched instead as their own
+transient systemd unit, listening on a Unix socket:
+
+```
+backend ──connect──▶ $XDG_RUNTIME_DIR/drive-coding/deployments/<name>/
+                         agents.json        the registry snapshot
+                         <agentId>.sock  ──▶ [ sidecar, own unit ] ──▶ cursor
+                         <agentId>.json     what that sidecar says it is
+```
+
+Restart the backend and the agents keep running; the new backend finds the
+sockets, adopts the matching rows from `AGENTS_STORE_FILE`, re-attaches, and
+re-seeds their ACP session ids so the transcripts come back too.
+
+Measured on a deployment carrying the same `KillMode=control-group` as the real
+ones:
+
+```
+before   backend MainPID 2547046 · 3 agent units at 2547234 / 2547260 / 2547302
+         agent 1 told "remember the word PERSIMMON"
+restart  systemctl --user restart drive-coding-sidecar
+after    backend MainPID 2548618 — replaced
+         all three agent units: same MainPIDs, still active
+         same sessionId, same 3-message transcript
+         "What word did I ask you to remember?" → "PERSIMMON"
+```
+
+**Off by default.** Only stdio-ACP CLIs can be hosted this way — currently
+`cursor`, `opencode`, `gemini`. `claude` and `codex` run as in-process adapters
+and are rejected with a warning if listed.
+
+### Why a systemd unit and not just a detached child
+
+```
+$ systemctl --user show drive-coding-edge.service -p KillMode
+KillMode=control-group
+```
+
+systemd SIGTERMs **every process in the unit's cgroup** on restart. `detached:
+true` at spawn opens a new process *group*, which is a different thing and does
+not help. Measured with a stand-in backend carrying the same `KillMode`:
+
+| | before restart | after restart |
+|---|---|---|
+| launched via `systemd-run` | pid 2479811 | **pid 2479811** — same process |
+| spawned as a detached child | pid 2479822 | pid 2480296 — killed, replaced |
+
+A transient unit lands in `app.slice` as a *sibling* of the backend, out of
+reach of its cgroup kill.
+
+⚠️ **A transient unit does not inherit the caller's environment.** Measured: 19
+variables and a PATH without `~/.bun/bin` or `~/.local/bin`. The launcher
+therefore uses an absolute interpreter path and forwards a named allowlist
+(`PATH`, `CLI_SPECS_FILE`, `CLI_SPECS_JSON`, `OPENCODE_BIN`, `LOG_*`, …).
+
+### What this does not do yet
+
+- **Output emitted while no backend is attached is dropped, not buffered.** A
+  turn producing text in the window between one backend dying and the next
+  connecting loses that text.
+- **The conversation comes back, but only if the agent had one.** The row's
+  `acpSessionId` is persisted and re-seeded at boot, so re-opening the agent
+  takes `session/load` rather than `session/new`. Measured end to end: a restart,
+  then the same session id, the same transcript, and the agent still answering
+  from context set before the restart. An agent that never opened a session
+  comes back as `starting` — the process is real, the session is not yet.
+- **Windows is not covered.** Unix sockets only.
+
+### Ending an agent for good
+
+Closing a connection only *detaches* from a sidecar — which is what lets a
+restart keep agents alive. `DELETE /api/agents/:id` (and MCP `session_close`,
+and `closeOnTurnEnd`) stop the unit as well. To do it by hand:
+
+```bash
+systemctl --user stop dc-agent-<agentId>
+```
+
+
+## Moving a deployment, or handing its agents to another one
+
+Everything about a deployment's agents lives in one directory, named by
+`DC_DEPLOYMENT` rather than keyed by the port.
+
+🔴 It used to be the port, and that was wrong in a specific way: the port is
+exactly what changes when you move a deployment. Bring the same backend up on a
+different port and every running agent became an orphan instantly — still alive,
+still listening, invisible to the backend that had just been looking for them in
+a directory that was never populated.
+
+A name does not change when the port does:
+
+```bash
+# same agents, whatever port this ends up on
+Environment=DC_DEPLOYMENT=edge
+```
+
+To hand agents from one deployment to another — the migration case — point the
+incoming backend at the outgoing one's directory:
+
+```bash
+DC_DEPLOYMENT_DIR=$XDG_RUNTIME_DIR/drive-coding/deployments/sidecar
+```
+
+It adopts every live sidecar it finds there, with sessions intact.
+
+⚠️ **One at a time.** Two backends on one directory both adopt the same agents,
+and client-wins means the last one to send a frame owns the session. This is for
+a handover with the outgoing side stopped, not for running a pair.
+
+⚠️ **Upgrading to this layout orphans whatever is already running.** The
+directory a backend looks in is where its agents are; change it — by naming a
+deployment, by moving the directory, or by taking this version at all if you
+were on the port-keyed one — and sidecars started under the old path keep
+running, unreachable. Observed while making exactly that change. **Close every
+agent before the switch** (`DELETE /api/agents`), or sweep the old path
+afterwards:
+
+```bash
+systemctl --user list-units 'dc-agent-*'   # anything still here has no backend
+systemctl --user stop 'dc-agent-*'
+```
+
+⚠️ **The gap is not free.** Between stopping one backend and the next one
+attaching, output from a running turn is dropped rather than buffered. On a
+deployment whose `ExecStartPre` runs `bun install` and an FE build, that window
+is 45–60 seconds. Some of it comes back: `session/load` replays the transcript
+on CLIs that support it (claude does), while others reattach without replay.

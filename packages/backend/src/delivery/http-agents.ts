@@ -102,6 +102,19 @@ export function registerAgentsHttp(
     return c.json({ agent: toAgentPublic(agent) })
   })
 
+  /**
+   * DELETE /api/agents — end every agent at once.
+   *
+   * Registered before the `:id` route because Hono matches in order and `:id`
+   * would otherwise never let a bare `/api/agents` through.
+   *
+   * 200 with a per-agent report rather than 204: a bulk close whose whole point
+   * is "make sure nothing is left running" has to say which ones are left. The
+   * status stays 200 even with failures — the operation ran; the body is the
+   * result.
+   */
+  app.delete("/api/agents", (c) => deps.orchestrator.deleteAllAndKill().then((r) => c.json(r, 200)))
+
   // DELETE /api/agents/:id — מחיקה דרך orchestrator
   app.delete("/api/agents/:id", async (c) => {
     const id = c.req.param("id")

@@ -10,8 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
-import { defaultPublicUrl, loopbackBaseUrl } from "./public-url.js"
 import { registerMcpHttp } from "./http-mcp.js"
+import { defaultPublicUrl, loopbackBaseUrl } from "./public-url.js"
 
 function makeStubSessionRegistry(): AgentSessionRegistry {
   return {
@@ -55,6 +55,7 @@ function makeOrchestrator(registry: AgentRegistry): AgentOrchestrator {
       }
     }),
     deleteAndKill: vi.fn(async () => {}),
+    deleteAllAndKill: vi.fn(async () => ({ closed: [], failed: [] })),
     getBridgePort: vi.fn(() => 0),
   }
 }

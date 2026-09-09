@@ -98,6 +98,7 @@ export const CONFIG_SPECS = [
     serialize: (v: unknown) => (v as readonly string[]).join(","),
   },
   { key: "feStaticDir", env: "FE_STATIC_DIR", flag: "fe-static-dir" },
+  { key: "agentsStoreFile", env: "AGENTS_STORE_FILE", flag: "agents-store-file" },
   {
     key: "publicBaseUrl",
     env: "PUBLIC_BASE_URL",

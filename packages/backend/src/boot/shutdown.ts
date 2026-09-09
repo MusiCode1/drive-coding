@@ -33,7 +33,7 @@ export async function gracefulShutdown(opts: ShutdownOpts): Promise<void> {
   try {
     opts.removeInstance(opts.boundPort)
     for (const d of [...opts.disposables].reverse()) {
-      await Promise.resolve(d.dispose())
+      await Promise.resolve(d.dispose({ sig: opts.sig }))
     }
     opts.echoWss.close()
     opts.agentWss.close()

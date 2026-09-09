@@ -30,9 +30,11 @@ import { describeCrash } from "@drive-coding/provider/spawn"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { buildAgentIdentityEnv } from "../agent-identity.js"
 import { clearGrantsFor } from "../agent-scope.js"
+import { stopAgentUnit } from "../agents/agent-launcher.js"
+import { loopbackBaseUrl, type UrlConfig } from "../delivery/public-url.js"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
-import { loopbackBaseUrl, type UrlConfig } from "../delivery/public-url.js"
+import { type CloseAllResult, closeAllAgents } from "./close-all-agents.js"
 import type { ProjectsRegistry } from "./projects-registry.js"
 
 /** Loopback BASE env every child gets (never PUBLIC_BASE_URL). */
@@ -77,6 +79,15 @@ export type AgentOrchestrator = {
 
   /** מוחק סוכן + סוגר את ה-connection. */
   deleteAndKill(id: string): Promise<void>
+
+  /**
+   * End every agent. Returns what happened per id, because a bulk operation
+   * that reports only a count hides the one that failed.
+   *
+   * Independent per agent on purpose: one agent refusing to die must not leave
+   * the rest running, which is what a sequential loop with a throw would do.
+   */
+  deleteAllAndKill(): Promise<CloseAllResult>
 
   /**
    * מחזיר את פורט ה-bridge עבור מזהה סוכן נתון (עבור ניתוב ב-ws-agent).
@@ -259,13 +270,27 @@ export function createAgentOrchestrator(deps: {
         // התעלם
       }
 
+      // 🔴 The kill half of the disconnect/kill split. `close()` only detaches a
+      // sidecar — deliberately, so the backend's own shutdown cannot take agents
+      // down with it. Ending an agent for good therefore has to stop its unit
+      // too, or a DELETE would leave a sidecar running with nobody to talk to.
       await deps.connectionRegistry.close(id)
+      stopAgentUnit(id)
 
       try {
         await deps.registry.delete(id)
       } catch {
         // התעלם if already gone
       }
+    },
+
+    // No await here on purpose: the whole operation lives in closeAllAgents,
+    // and keeping this a single delegation keeps the orchestrator a router.
+    deleteAllAndKill(): Promise<CloseAllResult> {
+      return closeAllAgents(
+        () => deps.registry.list(),
+        (id) => this.deleteAndKill(id),
+      )
     },
 
     getBridgePort(_id: string): number | null {

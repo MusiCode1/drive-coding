@@ -8,32 +8,37 @@ import { createLogger } from "@drive-coding/core/log"
 import { stopWatching } from "@drive-coding/provider/config"
 import type { Hono } from "hono"
 import { createConnectionRegistry } from "../acp/connection-registry.js"
-import { createInMemoryAgentRegistry } from "../agents/registry.js"
+import { stopAgentUnit } from "../agents/agent-launcher.js"
+import { resolveAgentsStoreFile } from "../agents/agents-store.js"
 import {
-  createAgentOrchestrator,
-  type AgentOrchestrator,
-} from "../app/agent-orchestrator.js"
+  createPersistentAgentRegistry,
+  type PersistentAgentRegistry,
+} from "../agents/persistent-registry.js"
+import { shutdownAgents } from "../agents/shutdown-policy.js"
+import { type AgentOrchestrator, createAgentOrchestrator } from "../app/agent-orchestrator.js"
 import { createProjectsRegistry } from "../app/projects-registry.js"
 import { createRecordingsStore } from "../app/recordings-store.js"
 import { createEvictionController } from "../delivery/eviction-controller.js"
 import { createMemoryGuard, type MemoryGuard } from "../delivery/memory-guard.js"
 import { createWireRecorder } from "../delivery/wire-recorder.js"
 import { ensureStateSubdir } from "../paths.js"
-import { createAgentEventBus, type AgentEventBus } from "../session-host/agent-events.js"
+import { createSessionHostRegistryOpts } from "../server-session-host-opts.js"
+import { type AgentEventBus, createAgentEventBus } from "../session-host/agent-events.js"
 import { createAndRegisterSessionHostHttp } from "../session-host/http/index.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { createUsageStore, type UsageStore } from "../usage/usage-store.js"
-import { createSessionHostRegistryOpts } from "../server-session-host-opts.js"
 import { wireRecorderDir } from "./config.js"
 
 const log = createLogger("backend.server")
 
-export type Disposable = { name: string; dispose(): void | Promise<void> }
+/** `ctx` carries the signal that started the shutdown; most disposables ignore it. */
+export type ShutdownCtx = { sig: string }
+export type Disposable = { name: string; dispose(ctx: ShutdownCtx): void | Promise<void> }
 
 export type BootDeps = {
   env: NodeJS.ProcessEnv
   config: DriveCodingConfig
-  registry: ReturnType<typeof createInMemoryAgentRegistry>
+  registry: PersistentAgentRegistry
   wireRecorder: ReturnType<typeof createWireRecorder>
   connectionRegistry: ReturnType<typeof createConnectionRegistry>
   projectsRegistry: ReturnType<typeof createProjectsRegistry>
@@ -52,7 +57,9 @@ export function createDeps(
   env: NodeJS.ProcessEnv,
   app: Hono,
 ): { deps: BootDeps; disposables: Disposable[] } {
-  const registry = createInMemoryAgentRegistry()
+  const registry = createPersistentAgentRegistry({
+    file: resolveAgentsStoreFile(config, env, configDefault("port")),
+  })
   const wireRecorder = createWireRecorder({ dir: wireRecorderDir(config) })
   const connectionRegistry = createConnectionRegistry({ wireRecorder })
   const projectsRegistry = createProjectsRegistry(ensureStateSubdir("cache"))
@@ -93,14 +100,15 @@ export function createDeps(
   const disposables: Disposable[] = [
     { name: "memoryGuard", dispose: () => memoryGuard.stop() },
     { name: "httpSweep", dispose: () => agentSessionRegistry.stop() },
+    // close() is *disconnect* for a sidecar and *kill* for a spawned child, so
+    // one call is correct for both; what happens to the survivors is policy.
     {
       name: "connectionRegistry",
-      dispose: async () => {
-        await Promise.allSettled(connectionRegistry.list().map((id) => connectionRegistry.close(id)))
-      },
+      dispose: (ctx) => shutdownAgents(connectionRegistry, ctx, stopAgentUnit),
     },
     { name: "stopWatching", dispose: () => stopWatching() },
     { name: "usageStore", dispose: () => usageStore.flushUsageOnShutdown() },
+    { name: "agentsStore", dispose: () => registry.flush() },
   ]
 
   const deps: BootDeps = {
