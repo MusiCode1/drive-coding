@@ -40,12 +40,16 @@
  * this is an order, not a verdict.
  */
 
-import { spawn } from "node:child_process"
 import { dirname } from "node:path"
 import { listenUnix } from "@drive-coding/acp-wire/node"
 import { createLogger, initLogger, parseEnvConfig } from "@drive-coding/core/log"
-import { getCliCommand, getCliSpec, resolveVendoredAcpBridge } from "@drive-coding/provider/config"
 import { removeAgentFiles, writeAgentMeta } from "../agents/agent-sockets.js"
+import {
+  createBackend,
+  defaultModeFor,
+  lineSplitter,
+  type SidecarMode,
+} from "../agents/sidecar-backend.js"
 
 initLogger(parseEnvConfig())
 const log = createLogger("sidecar")
@@ -56,6 +60,7 @@ type Args = {
   cwd: string
   socket: string
   modelOverride: string | null
+  mode: SidecarMode | undefined
 }
 
 /** Minimal `--key value` parsing — no dependency, and the caller is our launcher. */
@@ -75,39 +80,20 @@ export function parseSidecarArgs(argv: readonly string[]): Args {
     cwd: required("cwd"),
     socket: required("socket"),
     modelOverride: get("model") ?? null,
+    mode: get("mode") === "pipe" ? "pipe" : get("mode") === "hosted" ? "hosted" : undefined,
   }
 }
 
 export async function runSidecar(args: Args): Promise<void> {
-  // Prefer the ACP bridge we ship over the one the spec would fetch: claude's
-  // spec says `npx -y …@latest`, which measured 23s and version 0.75.1 against
-  // the 0.58.1 we pin and test. See acp-bridge.ts.
-  const vendored = resolveVendoredAcpBridge(args.cliKind)
-  const cli = vendored ?? getCliCommand(args.cliKind, args.modelOverride)
-  if (vendored !== null) {
-    log.info({ cliKind: args.cliKind, bin: vendored.args[0] }, "using the bundled ACP bridge")
-  }
-
-  // Same env shaping spawn-core applies (cli-spec-env-parity): a spec may need
-  // a variable removed as much as added, and a sidecar that skipped this would
-  // resolve the CLI differently from the in-process path for the same cliKind.
-  const childEnv: NodeJS.ProcessEnv = { ...process.env, DRIVE_CODING_AGENT_ID: args.agentId }
-  const spec = getCliSpec(args.cliKind, process.env)
-  for (const key of spec?.unsetEnv ?? []) delete childEnv[key]
-  if (spec?.setEnv) Object.assign(childEnv, spec.setEnv)
-
-  const child = spawn(cli.bin, [...cli.args], {
+  const mode = args.mode ?? defaultModeFor(args.cliKind)
+  const backend = await createBackend({
+    cliKind: args.cliKind,
     cwd: args.cwd,
-    env: childEnv,
-    stdio: ["pipe", "pipe", "pipe"],
-    windowsHide: true,
+    agentId: args.agentId,
+    modelOverride: args.modelOverride,
+    mode,
   })
-  log.info({ agentId: args.agentId, pid: child.pid, bin: cli.bin }, "child spawned")
-
-  // stderr is the CLI's own diagnostics — surfaced in the sidecar's journal, not
-  // mixed into the ACP stream where it would corrupt framing.
-  child.stderr.setEncoding("utf8")
-  child.stderr.on("data", (text: string) => log.warn({ text: text.trimEnd() }, "child stderr"))
+  log.info({ agentId: args.agentId, cliKind: args.cliKind, mode }, "backend ready")
 
   const handle = await listenUnix(args.socket)
   const startedAt = new Date().toISOString()
@@ -133,18 +119,19 @@ export async function runSidecar(args: Args): Promise<void> {
     cliKind: args.cliKind,
     cwd: args.cwd,
     pid: process.pid,
-    cliPid: child.pid ?? null,
+    cliPid: backend.cliPid,
+    mode: backend.mode,
     startedAt,
     hasOwner: handle.current() !== undefined,
   }))
   log.info({ socket: args.socket }, "listening")
 
-  // Child → whoever currently owns the socket. No owner ⇒ dropped (see above).
-  child.stdout.on("data", (chunk: Buffer) => {
+  // Agent → whoever currently owns the socket. No owner ⇒ dropped (see above).
+  backend.onLine((line) => {
     const peer = handle.current()
     if (peer === undefined) return
     const w = peer.writable.getWriter()
-    void w.write(new Uint8Array(chunk)).catch(() => {
+    void w.write(new TextEncoder().encode(`${line}\n`)).catch(() => {
       /* the owner went away mid-write; the next connect replaces it */
     })
     w.releaseLock()
@@ -154,11 +141,13 @@ export async function runSidecar(args: Args): Promise<void> {
   handle.onAccept((peer) => {
     void (async () => {
       const reader = peer.readable.getReader()
+      const decoder = new TextDecoder()
+      const inbound = lineSplitter((line) => backend.write(line))
       try {
         for (;;) {
           const { done, value } = await reader.read()
           if (done) break
-          if (value !== undefined) child.stdin.write(value)
+          if (value !== undefined) inbound(decoder.decode(value, { stream: true }))
         }
       } catch {
         /* peer closed or was replaced — not an error for the child */
@@ -170,8 +159,8 @@ export async function runSidecar(args: Args): Promise<void> {
 
   // The sidecar exists to host this child. Without it there is nothing to serve,
   // and a socket that outlived its agent is exactly the ghost the probe hunts.
-  child.on("exit", (code, signal) => {
-    log.info({ code, signal }, "child exited — shutting down")
+  backend.onExit((code) => {
+    log.info({ code }, "agent ended — shutting down")
     handle.close()
     // Take the description with us: a meta file without a socket would advertise
     // an agent that no longer exists.
@@ -183,7 +172,7 @@ export async function runSidecar(args: Args): Promise<void> {
     log.info({ sig }, "signal — closing")
     handle.close()
     removeAgentFiles(socketDir, args.agentId)
-    child.kill(sig)
+    void backend.close()
   }
   process.on("SIGTERM", shutdown("SIGTERM"))
   process.on("SIGINT", shutdown("SIGINT"))

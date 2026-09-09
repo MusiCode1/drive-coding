@@ -18,13 +18,11 @@
  * a full turn, correct auth under a transient unit's minimal environment, and
  * `session/load` after the client died, transcript included.
  *
- * ⚠️ Known cost for `claude` on this route: `_drive/getQuota` and
- * `_drive/setThinkingTokens` answer `-32601 Method not found`. Both need direct
- * access to the SDK object, which only the in-process adapter has. Measured,
- * not assumed. Hosting the adapter's *library* inside the sidecar restores them
- * and is the next step.
- *
- * `codex` stays out: its adapter is in-process only here.
+ * `claude` and `codex` go further: the sidecar *hosts* their adapter rather than
+ * piping to it, which keeps `_drive/getQuota` and `_drive/setThinkingTokens`
+ * working — both need direct access to the SDK object. Measured on a live
+ * sidecar: in pipe mode they answer `-32601 Method not found`; hosted, they
+ * answer a real quota snapshot and `{ok:true}`.
  */
 
 import { configDefault } from "@drive-coding/core/config/specs"
@@ -38,7 +36,7 @@ import { agentSocketDir, ensureAgentSocketDir, probeAgentSocket } from "../agent
 const log = createLogger("backend.acp.sidecar")
 
 /** cliKinds that can currently be hosted in a sidecar. See the header. */
-export const SIDECAR_CAPABLE = new Set(["cursor", "opencode", "gemini", "claude"])
+export const SIDECAR_CAPABLE = new Set(["cursor", "opencode", "gemini", "claude", "codex"])
 
 /** How long to wait for a freshly launched sidecar to bind and answer. */
 const READY_TIMEOUT_MS = 30_000
