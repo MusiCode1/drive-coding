@@ -45,7 +45,11 @@ export class Mp3Segment implements PlayableSegment {
 
       if (this.#state !== "cancelled") {
         this.#streamDone = true
-        this.#blobUrl = URL.createObjectURL(new Blob(this.#chunks, { type: "audio/mpeg" }))
+        // TS 5.7 lib.dom: Uint8Array<ArrayBufferLike> אינו BlobPart (חשש SharedArrayBuffer).
+        // הצ'אנקים תמיד ArrayBuffer רגיל (new Uint8Array(value) בשורה 43) → cast בטוח.
+        this.#blobUrl = URL.createObjectURL(
+          new Blob(this.#chunks as BlobPart[], { type: "audio/mpeg" }),
+        )
         this.#chunks = []
         if (this.#state === "loading") {
           this.#state = "ready"
