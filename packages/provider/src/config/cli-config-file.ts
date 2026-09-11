@@ -13,7 +13,8 @@ import { EventEmitter } from "node:events"
 import * as fs from "node:fs"
 import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
-import type { CliSpec } from "@drive-coding/core"
+import { CLI_SPECS, type CliKind, type CliSpec } from "@drive-coding/core"
+import { collectSessionMetaConflicts } from "./session-meta-merge.js"
 
 /** ערך override — כל השדות אופציונליים (merge חלקי לתוך spec קיים). */
 export type CliSpecOverride = Partial<CliSpec>
@@ -58,6 +59,9 @@ type MutableOverride = {
   setEnv?: Record<string, string>
   displayName?: string
   logo?: string
+  sessionMeta?: Record<string, unknown>
+  injectDriveCodingMcp?: boolean
+  sessionMetaAllowDefaultOverride?: boolean
 }
 
 /**
@@ -152,7 +156,55 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
     }
   }
 
+  // sessionMeta: non-array object
+  if ("sessionMeta" in obj) {
+    const sessionMeta = obj["sessionMeta"]
+    if (typeof sessionMeta === "object" && sessionMeta !== null && !Array.isArray(sessionMeta)) {
+      result.sessionMeta = sessionMeta as Record<string, unknown>
+    } else {
+      console.warn(
+        `[cli-config-file] override["${kind}"].sessionMeta must be an object — skipping field`,
+      )
+    }
+  }
+
+  // injectDriveCodingMcp: boolean
+  if ("injectDriveCodingMcp" in obj) {
+    if (typeof obj["injectDriveCodingMcp"] === "boolean") {
+      result.injectDriveCodingMcp = obj["injectDriveCodingMcp"]
+    } else {
+      console.warn(
+        `[cli-config-file] override["${kind}"].injectDriveCodingMcp must be boolean — skipping field`,
+      )
+    }
+  }
+
+  // sessionMetaAllowDefaultOverride: boolean
+  if ("sessionMetaAllowDefaultOverride" in obj) {
+    if (typeof obj["sessionMetaAllowDefaultOverride"] === "boolean") {
+      result.sessionMetaAllowDefaultOverride = obj["sessionMetaAllowDefaultOverride"]
+    } else {
+      console.warn(
+        `[cli-config-file] override["${kind}"].sessionMetaAllowDefaultOverride must be boolean — skipping field`,
+      )
+    }
+  }
+
   return result
+}
+
+function warnSessionMetaConflicts(result: CliSpecsOverride): void {
+  for (const [kind, override] of Object.entries(result)) {
+    if (override.sessionMeta === undefined) continue
+    if (override.sessionMetaAllowDefaultOverride === true) continue
+    const base = CLI_SPECS[kind as CliKind]?.sessionMeta
+    if (base === undefined) continue
+    for (const conflict of collectSessionMetaConflicts(base, override.sessionMeta)) {
+      console.warn(
+        `[cli-config-file] sessionMeta conflict for "${kind}" at ${conflict.path}: built-in ${JSON.stringify(conflict.base)} overridden by ${JSON.stringify(conflict.override)}`,
+      )
+    }
+  }
 }
 
 // memoization — מוחזק ברמת המודול
@@ -317,6 +369,8 @@ export function loadCliSpecsOverride(env?: NodeJS.ProcessEnv): CliSpecsOverride 
 
   // --- Merge: file layer first, then inline-JSON overlay (inline wins per-key) ---
   const result: CliSpecsOverride = { ...fileSpecs, ...inlineSpecs }
+
+  warnSessionMetaConflicts(result)
 
   _cached = result
   return _cached
