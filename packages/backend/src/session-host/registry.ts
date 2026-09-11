@@ -41,7 +41,7 @@ import { createLogger } from "@drive-coding/core/log"
 import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
-import { buildAgentMcpServers, optionalAgentMcpServers } from "../agent-identity.js"
+import { buildAgentMcpServers } from "../agent-identity.js"
 import { getSelfBaseUrl } from "../instances.js"
 import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-broadcaster.js"
 import { buildAgentEventHostOpts } from "./agent-events-registry-opts.js"
@@ -401,8 +401,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       // that nobody can open. See session-init.ts.
       // Skip if host already has a sessionId (injected-ready host in tests).
       if (!host.state.sessionId) {
-        const mcpServers = optionalAgentMcpServers(agentId, getSelfBaseUrl, host.agentCapabilities) ?? []
-        await initSession(host, { cwd, mcpServers }, acpSessionId, agentId)
+        await initSession(host, { cwd }, acpSessionId, agentId, { cliKind: connectionRegistry.getCliKind(agentId) ?? "unknown", caps: host.agentCapabilities, getBaseUrl: getSelfBaseUrl })
       }
 
       // slice remote-warm-reconnect C1: דיווח על ה-session — אחרי ה-if block כולו

@@ -1,6 +1,7 @@
 import type { CliKind, CliSpec } from "@drive-coding/core"
 import { CLI_KINDS, CLI_SPECS } from "@drive-coding/core"
 import { type BinaryCache, resolveCliBinaryCached } from "@drive-coding/core/cli-resolve"
+import { deepMergeSessionMeta } from "./session-meta-merge.js"
 import { loadCliSpecsOverride } from "./cli-config-file.js"
 
 /**
@@ -79,6 +80,23 @@ export function getCliSpec(kind: string, env?: NodeJS.ProcessEnv): CliSpec | und
       ? { logo: override.logo }
       : base?.logo !== undefined
         ? { logo: base.logo }
+        : {}),
+    // sessionMeta (slice session-meta-config): deep-merge override; preserve base when no override.
+    ...(override?.sessionMeta !== undefined
+      ? { sessionMeta: deepMergeSessionMeta(base?.sessionMeta ?? {}, override.sessionMeta).merged }
+      : base?.sessionMeta !== undefined
+        ? { sessionMeta: base.sessionMeta }
+        : {}),
+    // injectDriveCodingMcp + sessionMetaAllowDefaultOverride: replace like displayName.
+    ...(override?.injectDriveCodingMcp !== undefined
+      ? { injectDriveCodingMcp: override.injectDriveCodingMcp }
+      : base?.injectDriveCodingMcp !== undefined
+        ? { injectDriveCodingMcp: base.injectDriveCodingMcp }
+        : {}),
+    ...(override?.sessionMetaAllowDefaultOverride !== undefined
+      ? { sessionMetaAllowDefaultOverride: override.sessionMetaAllowDefaultOverride }
+      : base?.sessionMetaAllowDefaultOverride !== undefined
+        ? { sessionMetaAllowDefaultOverride: base.sessionMetaAllowDefaultOverride }
         : {}),
   }
 }

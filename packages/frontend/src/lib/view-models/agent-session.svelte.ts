@@ -24,6 +24,7 @@ import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 // `error` הוא string גולמי שמוצג as-is (routes/+page.svelte:191, לא עובר t() ברכיב) —
 // כמו הודעות "WS closed (...)" הקיימות. חייב לעבור דרך core/i18n (לא Hebrew ליטרלי
 // בקוד — lint:i18n אוכף), ולא להשתמש ב-I18nVM (לא מוזרק ל-VM הזה).
+import { DEFAULT_CLAUDE_SESSION_META } from "@drive-coding/core"
 import { createI18n, detectLocale } from "@drive-coding/core/i18n"
 import {
   type AcpClient,
@@ -132,25 +133,8 @@ import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
  * Opus 4.7+ שינה default ל-display:"omitted"; זה מבקש "summarized" מפורשות.
  * provider-agnostic: ה-key claudeCode מתעלם ע"י ספקים אחרים.
  */
-const CLAUDE_SESSION_META = {
-  claudeCode: {
-    options: {
-      thinking: { type: "adaptive", display: "summarized" },
-      forwardSubagentText: true,
-    },
-    emitRawSDKMessages: [
-      { type: "system", subtype: "task_started" },
-      { type: "system", subtype: "task_progress" },
-      { type: "system", subtype: "task_notification" },
-      { type: "system", subtype: "task_updated" },
-      { type: "assistant" },
-      // ─── slice subagent-transcript-data-v2 Commit 0 ───
-      // בלי {type:"user"} תוצאות-הכלים (tool_result) של תת-הסוכן לא זורמות
-      // (spike Q2, decisions 2026-07-11 — "🐛 פער בקוד שנחת ב-acp-stack").
-      { type: "user" },
-    ],
-  },
-} as const
+/** Local FE path only — config file does not affect this (brief session-meta-config §4.6). */
+const CLAUDE_SESSION_META = DEFAULT_CLAUDE_SESSION_META
 
 // ─── slice subagent-tool-nesting: helper טהור לחילוץ parentToolUseId ───
 /**

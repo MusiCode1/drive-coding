@@ -26,6 +26,8 @@
  */
 
 import { createLogger } from "@drive-coding/core/log"
+import type { AgentMcpCapabilities } from "../agent-identity.js"
+import { buildSessionInitBase } from "./session-meta.js"
 
 const log = createLogger("backend.session-host.init")
 
@@ -36,6 +38,12 @@ type SessionOpener = {
 
 export type SessionInitOutcome = "warm" | "cold" | "cold-after-warm-failed"
 
+export type SessionInitEnrich = {
+  cliKind: string
+  caps: AgentMcpCapabilities | undefined | null
+  getBaseUrl: string | (() => string)
+}
+
 /**
  * Open a session, preferring warm reattach. Never throws for a warm failure —
  * only a cold failure is fatal, because at that point there is no session at all.
@@ -45,20 +53,25 @@ export async function initSession(
   base: { cwd: string } & Record<string, unknown>,
   acpSessionId: string | undefined,
   agentId: string,
+  enrich?: SessionInitEnrich,
 ): Promise<SessionInitOutcome> {
+  const payload =
+    enrich !== undefined
+      ? buildSessionInitBase(enrich.cliKind, agentId, base.cwd, enrich.caps, enrich.getBaseUrl)
+      : base
   if (acpSessionId === undefined) {
-    await host.newSession(base)
+    await host.newSession(payload)
     return "cold"
   }
   try {
-    await host.loadSession({ ...base, sessionId: acpSessionId })
+    await host.loadSession({ ...payload, sessionId: acpSessionId })
     return "warm"
   } catch (err) {
     log.warn(
       { err, agentId, acpSessionId },
       "session/load failed — starting a fresh session; the previous transcript is not recoverable",
     )
-    await host.newSession(base)
+    await host.newSession(payload)
     return "cold-after-warm-failed"
   }
 }

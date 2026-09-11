@@ -797,6 +797,39 @@ describe("POST /api/agents/:id/rpc", () => {
       expect(host.newSession).not.toHaveBeenCalled()
     })
 
+    it("GATE-B wiring: injectDriveCodingMcp:false in cli-specs → rpc newSession without drive-coding MCP", async () => {
+      vi.resetModules()
+      const fs = await import("node:fs")
+      const os = await import("node:os")
+      const path = await import("node:path")
+      const filePath = path.join(os.tmpdir(), `rpc-gate-b-${Date.now()}.jsonc`)
+      fs.writeFileSync(filePath, JSON.stringify({ claude: { injectDriveCodingMcp: false } }))
+      process.env.CLI_SPECS_FILE = filePath
+      try {
+        const { registerRpcRoute: registerRpc } = await import("./rpc.js")
+        const host = makeMockHost(makeMockState())
+        ;(host.newSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "s" })
+        const registry = makeMockRegistry(host, makeMockBroadcaster())
+        ;(registry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue("/c")
+        ;(registry.getCliKind as ReturnType<typeof vi.fn>).mockReturnValue("claude")
+        const app = new Hono()
+        registerRpc(app, registry, createInMemoryAgentRegistry())
+
+        await postRpc(app, "agent-1", { method: "newSession", params: {} })
+
+        expect(host.newSession).toHaveBeenCalledWith(
+          expect.objectContaining({
+            cwd: "/c",
+            mcpServers: [],
+          }),
+        )
+      } finally {
+        fs.unlinkSync(filePath)
+        delete process.env.CLI_SPECS_FILE
+        vi.resetModules()
+      }
+    })
+
     it("cliKind claude → injects _meta; other cliKinds omit it", async () => {
       const host = makeMockHost(makeMockState())
       ;(host.newSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "s" })

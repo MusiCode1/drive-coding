@@ -18,6 +18,8 @@ export {
   getEffectiveCliSpecs,
 } from "./cli-config.js"
 export type { CliSpecOverride, CliSpecsOverride } from "./cli-config-file.js"
+export { deepMergeSessionMeta } from "./session-meta-merge.js"
+export type { SessionMetaConflict } from "./session-meta-merge.js"
 export {
   invalidateCache,
   loadCliSpecsOverride,
