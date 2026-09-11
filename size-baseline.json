@@ -667,7 +667,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/engines/audio-playlist.svelte.ts": {
-      "metric": 921,
+      "metric": 924,
       "impurity": 10,
       "class": "mixed"
     },
@@ -727,13 +727,13 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/engines/segments/mp3-segment.ts": {
-      "metric": 219,
-      "impurity": 6,
+      "metric": 129,
+      "impurity": 4,
       "class": "mixed"
     },
     "packages/frontend/src/lib/engines/segments/pcm-segment.ts": {
-      "metric": 237,
-      "impurity": 5,
+      "metric": 139,
+      "impurity": 4,
       "class": "mixed"
     },
     "packages/frontend/src/lib/engines/wake-lock.ts": {
@@ -922,8 +922,8 @@
       "class": "mixed"
     },
     "packages/frontend/src/routes/+layout.svelte": {
-      "metric": 348,
-      "impurity": 18,
+      "metric": 405,
+      "impurity": 24,
       "class": "mixed"
     },
     "packages/frontend/src/routes/+page.svelte": {
@@ -1014,6 +1014,11 @@
     "packages/provider/src/shared/spawn-core.ts": {
       "metric": 323,
       "impurity": 6,
+      "class": "mixed"
+    },
+    "packages/frontend/src/routes/playlist-nav-chrome-test/+page.svelte": {
+      "metric": 194,
+      "impurity": 20,
       "class": "mixed"
     }
   }
