@@ -1,3 +1,11 @@
+## 2026-09-06 14:20 — private WebDAV FS browse (tzlev-remote-cloud)
+
+Opt-in remote folder picker: `GET /api/fs/browse?via=webdav` → rclone WebDAV on netcup via SSH tunnel. FE enables it when CLI is `tzlev-remote-cloud`. Spawn falls back to a local cwd when the session path exists only on the remote host.
+
+Ops (outside repo): systemd `tzlev-webdav` (netcup) + `tzlev-webdav-tunnel` (srv) + `FS_BROWSE_WEBDAV_*` on drive-coding-dev. See `agents-config/docs/tzlev-webdav-browse.md`.
+
+---
+
 ## 2026-08-27 12:25 — slice live-transcript-box · Commit 2 (data-live-entry) · סיום
 
 Phase 2: `data-live-entry` על כל רשומה + טסט DoD 4 נפרד.

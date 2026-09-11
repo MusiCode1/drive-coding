@@ -12,6 +12,8 @@
  */
 
 import { type ChildProcessWithoutNullStreams, spawn, spawnSync } from "node:child_process"
+import { existsSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
 import { createInterface } from "node:readline"
 import { createLogger } from "@drive-coding/core/log"
 import { getCliCommand, getCliSpec } from "../config/index.js"
@@ -139,10 +141,22 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
     // shapeEnv hook: consumer (e.g. drive-coding wrapper) injects product-specific vars.
     const childEnv = hooks?.shapeEnv ? hooks.shapeEnv(input.cliKind, baseEnv) : baseEnv
 
+    // Process cwd must exist on the BE host. For remote CLIs (SSH/WebDAV) the
+    // session cwd is a path on another machine — fall back so spawn still works.
+    // ACP session/new still receives input.cwd unchanged (remote workspace).
+    const spawnCwd = existsSync(input.cwd)
+      ? input.cwd
+      : existsSync(homedir())
+        ? homedir()
+        : tmpdir()
+    if (spawnCwd !== input.cwd) {
+      childLog.info({ requestedCwd: input.cwd, spawnCwd }, "spawn cwd fallback (path missing locally)")
+    }
+
     let child: ChildProcessWithoutNullStreams
     try {
       child = spawn(cli.bin, [...cli.args], {
-        cwd: input.cwd,
+        cwd: spawnCwd,
         env: childEnv,
         stdio: ["pipe", "pipe", "pipe"],
         // detached=true על POSIX יוצר process-group חדש לצאצא → killTree(-pid) הורג

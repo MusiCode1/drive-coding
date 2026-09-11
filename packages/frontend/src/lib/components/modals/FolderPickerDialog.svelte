@@ -22,7 +22,17 @@ import { browseFolder } from "$lib/adapters/fs-browse"
 import type { FsEntry } from "$lib/adapters/fs-browse"
 import { fetchServerOptions } from "$lib/adapters/options"
 
-let { startPath = "" }: { startPath?: string } = $props()
+let {
+  startPath = "",
+  /** When set, browse remote FS through BE WebDAV (?via=webdav). */
+  viaWebdav = false,
+  /** Default absolute path on the remote host when viaWebdav and start is local/empty. */
+  webdavRoot = "/home/user",
+}: {
+  startPath?: string
+  viaWebdav?: boolean
+  webdavRoot?: string
+} = $props()
 
 const t = getI18n().t
 const settings = getSettings()
@@ -55,7 +65,12 @@ $effect(() => {
 // startPath נקרא כאן בתוך untrack → לא הופך ל-dependency של ה-$effect.
 async function openAtStart() {
   let start = startPath.trim() || settings.lastCwd
-  if (!start) {
+  if (viaWebdav) {
+    const root = webdavRoot.replace(/\/+$/, "") || "/home/user"
+    if (!start || !(start === root || start.startsWith(`${root}/`))) {
+      start = root
+    }
+  } else if (!start) {
     try {
       const opts = await fetchServerOptions()
       start = opts.homeDir
@@ -92,7 +107,10 @@ async function loadFolder(path: string) {
   loading = true
   error = null
   try {
-    const result = await browseFolder(path, showHidden)
+    const result = await browseFolder(path, {
+      showHidden,
+      ...(viaWebdav ? { via: "webdav" as const } : {}),
+    })
     currentPath = result.path  // BE מחזיר realpath מנורמל
     entries = result.entries.filter((e) => e.isDir)
   } catch (err) {

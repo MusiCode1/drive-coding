@@ -18,6 +18,7 @@ import { join, relative, resolve } from "node:path"
 import type { Hono } from "hono"
 import type { ProjectsRegistry } from "../app/projects-registry.js"
 import type { RecordingsStore } from "../app/recordings-store.js"
+import { browseWebdav, readWebdavBrowseConfig } from "./webdav-browse.js"
 
 // ─── /api/projects ────────────────────────────────────────────────────────────
 
@@ -182,6 +183,20 @@ export function registerFsBrowseHttp(
       return c.json({ error: "path query param is required" }, 400)
     }
     const showHidden = c.req.query("showHidden") === "true"
+
+    // Private remote browse: WebDAV (rclone serve) via SSH tunnel — no local realpath.
+    // Opt-in per request (?via=webdav) + env FS_BROWSE_WEBDAV_*.
+    if (c.req.query("via") === "webdav") {
+      const cfg = readWebdavBrowseConfig()
+      if (!cfg) {
+        return c.json({ error: "webdav browse not configured" }, 503)
+      }
+      const result = await browseWebdav(rawPath, { showHidden, config: cfg })
+      if (!result.ok) {
+        return c.json({ error: result.error }, result.status)
+      }
+      return c.json(result.result)
+    }
 
     // המרה לנתיב אבסולוטי ואז realpath למעקב אחר סימלינקים (הגנת symlink — תמיד)
     const normalized = resolve(rawPath)

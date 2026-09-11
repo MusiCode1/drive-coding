@@ -413,7 +413,10 @@ $effect(() => {
   {/if}
 
   <!-- redesign-6: modals (SessionsDialog הוסר ב-slice sessions-inline) -->
-  <FolderPickerDialog />
+  <FolderPickerDialog
+    viaWebdav={settings.cliKind === "tzlev-remote-cloud"}
+    webdavRoot="/home/user"
+  />
   <!-- content-viewer (slice content-viewer) -->
   <ContentViewerDialog />
   <!-- ui-session-polish: loading spinner during session connect or history render -->
