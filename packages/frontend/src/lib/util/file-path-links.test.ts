@@ -26,6 +26,10 @@ describe("findFilePathMatches", () => {
     expect(raws("server.ts ו-index.html ו-notes.docx")).toEqual([])
   })
 
+  it("תופס נתיב אודיו אבסולוטי", () => {
+    expect(raws("play /tmp/a.mp3 and notes.md")).toEqual(["/tmp/a.mp3", "notes.md"])
+  })
+
   it("תופס נתיב עמוק עם מקפים ונקודות", () => {
     expect(raws("docs-for-llm/plans/brief-local-file-proxy.md")).toEqual([
       "docs-for-llm/plans/brief-local-file-proxy.md",
