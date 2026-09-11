@@ -292,7 +292,7 @@
       "class": "mixed"
     },
     "packages/backend/src/session-host/http/rpc.ts": {
-      "metric": 443,
+      "metric": 428,
       "impurity": 19,
       "class": "mixed"
     },
@@ -307,7 +307,7 @@
       "class": "mixed"
     },
     "packages/backend/src/session-host/registry.ts": {
-      "metric": 518,
+      "metric": 517,
       "impurity": 10,
       "class": "mixed"
     },
@@ -847,7 +847,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 3693,
+      "metric": 3677,
       "impurity": 92,
       "class": "scattered"
     },

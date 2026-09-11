@@ -68,6 +68,23 @@ describe("optionalAgentMcpServers", () => {
   it("returns undefined when agent did not declare http MCP", () => {
     expect(optionalAgentMcpServers("a", "http://127.0.0.1:4055", {})).toBeUndefined()
   })
+
+  it("GATE-B: injectDriveCodingMcp:false + caps.http → undefined (before caps check)", () => {
+    expect(
+      optionalAgentMcpServers(
+        "a",
+        "http://127.0.0.1:4055",
+        { mcpCapabilities: { http: true } },
+        { injectDriveCodingMcp: false },
+      ),
+    ).toBeUndefined()
+  })
+
+  it("GATE-B regression: caps.http without injectDriveCodingMcp:false still injects", () => {
+    expect(
+      optionalAgentMcpServers("a", "http://127.0.0.1:4055", { mcpCapabilities: { http: true } }),
+    ).toEqual(buildAgentMcpServers("a", "http://127.0.0.1:4055"))
+  })
 })
 
 describe("buildAgentIdentityEnv", () => {

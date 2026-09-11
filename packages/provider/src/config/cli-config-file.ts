@@ -197,7 +197,7 @@ function warnSessionMetaConflicts(result: CliSpecsOverride): void {
   for (const [kind, override] of Object.entries(result)) {
     if (override.sessionMeta === undefined) continue
     if (override.sessionMetaAllowDefaultOverride === true) continue
-    const base = CLI_SPECS[kind as CliKind]?.sessionMeta
+    const base = (CLI_SPECS[kind as CliKind] as CliSpec | undefined)?.sessionMeta
     if (base === undefined) continue
     for (const conflict of collectSessionMetaConflicts(base, override.sessionMeta)) {
       console.warn(

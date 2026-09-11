@@ -884,6 +884,76 @@ describe("AgentSessionRegistry", () => {
       expect(connectionRegistry.getCwd).toHaveBeenCalledWith("agent-1")
     })
 
+    it("GATE-A: claude cliKind injects _meta with summarized thinking on auto newSession", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      ;(connectionRegistry.getCliKind as ReturnType<typeof vi.fn>).mockReturnValue("claude")
+      const mockHost = makeMockHost(null)
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      await registry.getOrCreateHost("agent-1")
+
+      expect(mockHost.newSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cwd: "/tmp/mock-cwd",
+          _meta: expect.objectContaining({
+            claudeCode: expect.objectContaining({
+              options: expect.objectContaining({
+                thinking: expect.objectContaining({ display: "summarized" }),
+              }),
+            }),
+          }),
+        }),
+      )
+    })
+
+    it("GATE-B wiring: injectDriveCodingMcp:false in cli-specs → newSession without drive-coding MCP", async () => {
+      vi.resetModules()
+      const fs = await import("node:fs")
+      const os = await import("node:os")
+      const path = await import("node:path")
+      const filePath = path.join(os.tmpdir(), `registry-gate-b-${Date.now()}.jsonc`)
+      fs.writeFileSync(filePath, JSON.stringify({ claude: { injectDriveCodingMcp: false } }))
+      process.env.CLI_SPECS_FILE = filePath
+      try {
+        const { createAgentSessionRegistry: createReg } = await import("./registry.js")
+        const conn = makeMockConnection()
+        const connectionRegistry = makeMockConnectionRegistry(conn)
+        ;(connectionRegistry.getCliKind as ReturnType<typeof vi.fn>).mockReturnValue("claude")
+        const mockHost = makeMockHost(null)
+
+        const registry = createReg({
+          connectionRegistry,
+          _createHostFn: vi.fn().mockResolvedValue(mockHost),
+          _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+        })
+
+        await registry.getOrCreateHost("agent-1")
+
+        expect(mockHost.newSession).toHaveBeenCalledWith(
+          expect.objectContaining({
+            cwd: "/tmp/mock-cwd",
+            mcpServers: [],
+          }),
+        )
+        const call = (mockHost.newSession as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+          mcpServers?: unknown[]
+        }
+        expect(call.mcpServers?.some((s) => JSON.stringify(s).includes("drive-coding"))).toBe(
+          false,
+        )
+      } finally {
+        fs.unlinkSync(filePath)
+        delete process.env.CLI_SPECS_FILE
+        vi.resetModules()
+      }
+    })
+
     it("passes empty mcpServers when agent did not declare http MCP in initialize", async () => {
       const conn = makeMockConnection()
       const connectionRegistry = makeMockConnectionRegistry(conn)

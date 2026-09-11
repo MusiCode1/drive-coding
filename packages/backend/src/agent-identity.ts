@@ -64,7 +64,9 @@ export function optionalAgentMcpServers(
   agentId: string,
   baseUrl: string | (() => string),
   caps: AgentMcpCapabilities | undefined | null,
+  opts?: { injectDriveCodingMcp?: boolean },
 ): NewSessionRequest["mcpServers"] | undefined {
+  if (opts?.injectDriveCodingMcp === false) return undefined
   if (!agentDeclaresHttpMcp(caps)) return undefined
   const url = typeof baseUrl === "function" ? baseUrl() : baseUrl
   return buildAgentMcpServers(agentId, url)
