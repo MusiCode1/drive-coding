@@ -14,6 +14,7 @@
  *   - user with messageId="x" × 2 → 1 bubble with 2 segments (existing behavior preserved)
  */
 
+import { DEFAULT_CLAUDE_SESSION_META } from "@drive-coding/core"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { MessageBubble, ThoughtBubble, ToolBubble, UserBubble } from "$lib/types/bubble"
@@ -373,23 +374,7 @@ describe("AgentSession.newSession", () => {
 
 // ─── TDD: claude-thinking-meta — #sessionMeta + _meta injection ──────────────
 
-const EXPECTED_META = {
-  claudeCode: {
-    options: {
-      thinking: { type: "adaptive", display: "summarized" },
-      forwardSubagentText: true,
-    },
-    emitRawSDKMessages: [
-      { type: "system", subtype: "task_started" },
-      { type: "system", subtype: "task_progress" },
-      { type: "system", subtype: "task_notification" },
-      { type: "system", subtype: "task_updated" },
-      { type: "assistant" },
-      // slice subagent-transcript-data-v2 Commit 0: בלי זה, tool_result של תת-הסוכן לא זורם.
-      { type: "user" },
-    ],
-  },
-}
+const EXPECTED_META = DEFAULT_CLAUDE_SESSION_META
 
 describe("AgentSession._meta injection (claude-thinking-meta)", () => {
   beforeEach(() => {

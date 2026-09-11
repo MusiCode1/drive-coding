@@ -51,7 +51,40 @@ export type CliSpec = {
    * מחזיקה רק את השני. ר' slice-cli-bin-resolution-unify §0.
    */
   readonly fallbackBins?: readonly string[]
+  /**
+   * Full `_meta` object passed to ACP session/new|load for this CLI (passthrough).
+   * Only keys under this object are injected — never cwd/mcpServers even if nested here.
+   */
+  readonly sessionMeta?: Readonly<Record<string, unknown>>
+  /**
+   * When false, backend omits the drive-coding MCP server from session/new|load.
+   * Undefined = inject (today's behavior).
+   */
+  readonly injectDriveCodingMcp?: boolean
+  /**
+   * When true, suppresses conflict warnings when override.sessionMeta changes built-in defaults.
+   * Undefined/false = warn on conflicts at load/reload time.
+   */
+  readonly sessionMetaAllowDefaultOverride?: boolean
 }
+
+/** Default `_meta` for claude — parity with FE local path and rpc newSession (slice session-meta-config). */
+export const DEFAULT_CLAUDE_SESSION_META = {
+  claudeCode: {
+    options: {
+      thinking: { type: "adaptive", display: "summarized" },
+      forwardSubagentText: true,
+    },
+    emitRawSDKMessages: [
+      { type: "system", subtype: "task_started" },
+      { type: "system", subtype: "task_progress" },
+      { type: "system", subtype: "task_notification" },
+      { type: "system", subtype: "task_updated" },
+      { type: "assistant" },
+      { type: "user" },
+    ],
+  },
+} as const satisfies Readonly<Record<string, unknown>>
 
 export const CLI_SPECS = {
   opencode: { bin: "opencode", args: ["acp"], supportsModelFlag: false, envVar: "OPENCODE_BIN" },
@@ -60,6 +93,7 @@ export const CLI_SPECS = {
     args: ["-y", "@agentclientprotocol/claude-agent-acp@latest"],
     supportsModelFlag: true,
     detectBin: "claude",
+    sessionMeta: DEFAULT_CLAUDE_SESSION_META,
   },
   gemini: { bin: "gemini", args: ["--acp"], supportsModelFlag: true },
   codex: {

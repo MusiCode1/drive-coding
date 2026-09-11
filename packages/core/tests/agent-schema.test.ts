@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest"
-import { Agent, AgentPublic, CLI_KINDS, CreateAgentInput, toAgentPublic } from "../src"
+import {
+  Agent,
+  AgentPublic,
+  CLI_KINDS,
+  CLI_SPECS,
+  CreateAgentInput,
+  toAgentPublic,
+} from "../src"
+
+describe("CLI_SPECS sessionMeta (slice session-meta-config C0)", () => {
+  it("claude default sessionMeta requests summarized thinking", () => {
+    const meta = CLI_SPECS.claude.sessionMeta
+    expect(meta).toBeDefined()
+    const claudeCode = meta?.claudeCode as
+      | { options?: { thinking?: { display?: string } } }
+      | undefined
+    expect(claudeCode?.options?.thinking?.display).toBe("summarized")
+  })
+})
 
 describe("CreateAgentInput", () => {
   it("accepts valid input", () => {

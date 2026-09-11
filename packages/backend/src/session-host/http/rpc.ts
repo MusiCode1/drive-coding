@@ -55,9 +55,9 @@ import { canonicalRpcMethod, RPC_METHODS } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
 import type { Hono } from "hono"
-import { optionalAgentMcpServers } from "../../agent-identity.js"
 import { getSelfBaseUrl } from "../../instances.js"
 import type { AgentSessionRegistry } from "../registry.js"
+import { buildSessionInitBase } from "../session-meta.js"
 import { guardRpcRoute } from "./rpc-scope.js"
 import { parseWaitMs, raceKeepRunning } from "./rpc-wait.js"
 
@@ -99,27 +99,6 @@ const CancelParams = type({ sessionId: "string" })
 const LoadSessionParams = type({ sessionId: "string", "cwd?": "string" })
 const NewSessionParams = type({ "cwd?": "string" })
 const DeleteSessionParams = type({ sessionId: "string" })
-
-/**
- * Parity with FE local warm newSession (`CLAUDE_SESSION_META` in agent-session).
- * Injected only on session/new when registry.getCliKind === "claude".
- */
-const CLAUDE_SESSION_META = {
-  claudeCode: {
-    options: {
-      thinking: { type: "adaptive", display: "summarized" },
-      forwardSubagentText: true,
-    },
-    emitRawSDKMessages: [
-      { type: "system", subtype: "task_started" },
-      { type: "system", subtype: "task_progress" },
-      { type: "system", subtype: "task_notification" },
-      { type: "system", subtype: "task_updated" },
-      { type: "assistant" },
-      { type: "user" },
-    ],
-  },
-} as const
 
 // ─── slice remote-session-mgmt C3: JSON-RPC error mapping ───
 // A JSON-RPC error is not necessarily an Error instance — the `code` sits on a
@@ -358,12 +337,17 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry, agen
         const cwd = p.cwd ?? registry.getCwd(agentId)
         if (!cwd) return c.json({ error: "no cwd available" }, 400)
         try {
-          const mcpServers =
-            optionalAgentMcpServers(agentId, getSelfBaseUrl, host.agentCapabilities) ?? []
-          const r = await host.loadSession({
+          const cliKind = registry.getCliKind(agentId) ?? "unknown"
+          const base = buildSessionInitBase(
+            cliKind,
+            agentId,
             cwd,
+            host.agentCapabilities,
+            getSelfBaseUrl,
+          )
+          const r = await host.loadSession({
+            ...base,
             sessionId: p.sessionId,
-            mcpServers,
           })
           // The agents registry must learn the newly-attached session
           // (status/acpSessionId — remote-warm-reconnect plumbing). catch+warn:
@@ -390,15 +374,16 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry, agen
         const cwd = p.cwd ?? registry.getCwd(agentId)
         if (!cwd) return c.json({ error: "no cwd available" }, 400)
         try {
-          const mcpServers =
-            optionalAgentMcpServers(agentId, getSelfBaseUrl, host.agentCapabilities) ?? []
-          const claudeMeta =
-            registry.getCliKind(agentId) === "claude" ? CLAUDE_SESSION_META : undefined
-          const r = await host.newSession({
-            cwd,
-            mcpServers,
-            ...(claudeMeta !== undefined && { _meta: claudeMeta }),
-          })
+          const cliKind = registry.getCliKind(agentId) ?? "unknown"
+          const r = await host.newSession(
+            buildSessionInitBase(
+              cliKind,
+              agentId,
+              cwd,
+              host.agentCapabilities,
+              getSelfBaseUrl,
+            ),
+          )
           try {
             await registry.notifySessionAttached(agentId, r.sessionId, cwd)
           } catch (err) {
