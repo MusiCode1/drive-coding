@@ -279,6 +279,41 @@ Rule: `docs-for-llm/design-principles.md` §7 · `.cursor/rules/config-defaults.
 |---|--------|--------|
 | 1 | vitest (specs/resolve/load-config/mapping/registry/liveness) | **127 עברו** |
 | 2 | core typecheck | **עבר** |
+## 2026-08-29 15:10 — slice playlist-nav-chrome · Commit 2 (harness)
+
+Phase 2: 20 MP3 fixtures (ffmpeg) + `/playlist-nav-chrome-test` harness + `tests/smoke/playlist-nav-chrome.mjs` (PLAYLIST_NAV_CHROME=1 gate).
+
+#### בדיקות
+
+- smoke without flag: exit 0 `skipped: no-chrome`
+- chrome DoD: manual (linux-gui CDP)
+
+---
+
+## 2026-08-29 15:08 — slice playlist-nav-chrome · Commit 1 (contract)
+
+Phase 1: `#playLoop` replay branch includes `skipped`+`jumpTarget`+`isComplete`; `#navigate` resets `skipped`+!complete like done/error; `markReady` on `skipped`+`reconsiderable` → ready without cursor move.
+
+#### בדיקות
+
+- audio-playlist*: 50 passed
+- lint:i18n: pass
+
+---
+
+## 2026-08-29 15:07 — slice playlist-nav-chrome · Commit 0 (tdd red)
+
+Phase 0: `audio-playlist.late-arrive.test.ts` — 2 tests red on base `f7d49905`.
+
+| Case | Assert |
+|------|--------|
+| A | late markReady → no cursor jump; prev → sink.play(s1) |
+| B | noteBuffered without markReady; prev while skipped → sink.play(s1) |
+
+#### בדיקות
+
+- late-arrive: 2 failed (expected red)
+- lint:i18n: pass
 
 ---
 
