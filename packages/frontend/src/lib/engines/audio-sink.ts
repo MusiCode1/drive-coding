@@ -1,3 +1,5 @@
+import type { AudioEmbedRef } from "@drive-coding/core/voice/audio-embed"
+
 /**
  * audio-sink.ts — ממשק AudioSink + טיפוסים נלווים.
  *
@@ -39,4 +41,10 @@ export interface AudioSink {
    * RoutingAudioSink/PlayableSink מממשים; ‏AudioPlaylist קורא דרך `?.`.
    */
   isComplete?(segmentId: string): boolean
+  /** Inline local audio file (TTS queue kind:"file"). */
+  prepareFile?(
+    segmentId: string,
+    file: AudioEmbedRef,
+    ac: AbortController,
+  ): Promise<void>
 }

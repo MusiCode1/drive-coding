@@ -27,6 +27,8 @@
 
 import katex from "katex"
 import { marked, type Tokens } from "marked"
+import { resolveAudioEmbed } from "@drive-coding/core/voice/audio-embed"
+import { beUrl } from "./be-url"
 import { escapeHtml, highlightCode } from "./code-highlight"
 import { decideImageSrc } from "./markdown-image-src"
 
@@ -107,6 +109,11 @@ function buildImgPlaceholder(src: string, alt: string, title: string | null | un
   return storeImagePlaceholder(html)
 }
 
+function buildAudioPlaceholder(src: string, alt: string, uri: string): string {
+  const html = `<audio src="${escapeHtml(src)}" title="${escapeHtml(alt)}" controls preload="metadata" data-audio-ref="${escapeHtml(uri)}"></audio>`
+  return storeImagePlaceholder(html)
+}
+
 // ─── marked extension (נרשם פעם אחת ברמת מודול) ──────────────────────────────
 // ⚠️ block לפני inline — $$...$$ ו-\[..\] חייבים להיות ראשונים ברשימה,
 // אחרת $$ עלול להיתפס כ-2× $..$ (finding #3, אמות ע"י אביגיל).
@@ -130,6 +137,11 @@ marked.use({
       return storeCodePlaceholder(fullBlock)
     },
     image(token: Tokens.Image): string {
+      const embed = resolveAudioEmbed(token.href, currentCwd)
+      if (embed !== null) {
+        const src = beUrl(`/api/fs/file?uri=${encodeURIComponent(embed.uri)}`)
+        return buildAudioPlaceholder(src, token.text, embed.uri)
+      }
       const decision = decideImageSrc(token.href, currentCwd)
       if (decision.kind === "proxy" || decision.kind === "data") {
         return buildImgPlaceholder(decision.src, token.text, token.title)

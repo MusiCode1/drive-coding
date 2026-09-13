@@ -143,12 +143,11 @@ const voiceMode = new VoiceMode({ mic, session, speaker, playlist: audioPlaylist
 // ─── model-status ─── (msr-v2 — תלוי ב-session + speaker)
 const modelStatus = new ModelStatus({ session, speaker })
 
-// ─── bubble-player ─── (msr-v2 — תלוי ב-session + settings + audioPlaylist)
-// A4: playlist משותף עם Speaker — BubblePlayer יאוחד ב-Commit 3
 const bubblePlayer = new BubblePlayer({
   session,
   settings,
   playlist: audioPlaylist,
+  audioStream: sharedAudioStream,
   orderAlloc: sharedOrderAlloc,
 })
 

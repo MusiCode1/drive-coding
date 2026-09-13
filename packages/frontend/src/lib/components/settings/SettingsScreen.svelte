@@ -266,6 +266,11 @@ $effect(() => {
         onCheckedChange={(v) => settings.setTranslateThoughts(v)}
         disabled={translateDisabled}
       />
+      <SettingToggle
+        label={t("settings.toggle.autoPlayInlineAudio")}
+        checked={settings.autoPlayInlineAudio}
+        onCheckedChange={(v) => settings.setAutoPlayInlineAudio(v)}
+      />
       <!-- מצב רכב — מושבת זמנית (לא מחווט עדיין, slice 7) -->
       <SettingToggle
         label={t("settings.toggle.carMode")}

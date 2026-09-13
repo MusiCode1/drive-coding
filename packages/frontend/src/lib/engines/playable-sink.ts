@@ -14,6 +14,8 @@
 
 import { registerSink, type SinkDebugInfo } from "$lib/debug/playback-registry"
 import type { AudioSink, SegmentOpts } from "./audio-sink"
+import type { AudioEmbedRef } from "@drive-coding/core/voice/audio-embed"
+import { FileSegment } from "./segments/file-segment"
 import { Mp3Segment } from "./segments/mp3-segment"
 import { PcmSegment } from "./segments/pcm-segment"
 import type { PlayableSegment } from "./segments/playable-segment"
@@ -59,6 +61,24 @@ export class PlayableSink implements AudioSink {
       this.#ctx = new AudioContext({ sampleRate: 24000 })
     }
     return this.#ctx
+  }
+
+  async prepareFile(
+    segmentId: string,
+    file: AudioEmbedRef,
+    _ac: AbortController,
+  ): Promise<void> {
+    const prev = this.#segments.get(segmentId)
+    if (prev !== undefined) {
+      if (this.#current === prev) {
+        this.#current = null
+        this.#currentId = null
+      }
+      prev.dispose()
+    }
+    const seg = new FileSegment(segmentId, file)
+    this.#segments.set(segmentId, seg)
+    seg.markReady()
   }
 
   async prepareSegment(
