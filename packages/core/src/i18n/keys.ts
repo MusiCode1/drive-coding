@@ -184,6 +184,7 @@ export type MessageKey =
   | "settings.toggle.speakThoughts"
   | "settings.toggle.narrateTools"
   | "settings.toggle.translateThoughts"
+  | "settings.toggle.autoPlayInlineAudio"
   | "settings.toggle.carMode"
   | "settings.reset"
   | "settings.saveOpen"

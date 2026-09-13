@@ -171,6 +171,7 @@ export const he: Catalog = {
   "settings.toggle.speakThoughts": "הקראת מחשבות המודל",
   "settings.toggle.narrateTools": "קריינות פעולות (כלים)",
   "settings.toggle.translateThoughts": "תרגום מחשבות לעברית",
+  "settings.toggle.autoPlayInlineAudio": "ניגון אודיו מוטמע בהקראה",
   "settings.toggle.carMode": "מצב רכב (Play בבלוטוס = הקלטה)",
   "settings.reset": "איפוס",
   "settings.saveOpen": "שמור ופתח",

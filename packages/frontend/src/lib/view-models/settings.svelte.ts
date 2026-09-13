@@ -37,6 +37,7 @@ type Persisted = {
   speakThoughts: boolean
   narrateTools: boolean
   translateThoughts: boolean
+  autoPlayInlineAudio: boolean
   // ─── רכב ─── (redesign-3, חיווט מלא: slice 7)
   carMode: boolean
   // ─── שפה ─── (rtl-ltr-bidi)
@@ -93,6 +94,7 @@ const DEFAULTS: Persisted = {
   speakThoughts: true,
   narrateTools: true,
   translateThoughts: true,
+  autoPlayInlineAudio: true,
   // ─── רכב ───
   carMode: false,
   // ─── שפה ─── (rtl-ltr-bidi) — DEFAULT_LOCALE="he"; detectLocale() רץ רק כש-localStorage ריק
@@ -202,35 +204,19 @@ export class Settings {
   // ─── שרת ───
   beUrl = $state<string>(DEFAULTS.beUrl)
 
-  // ─── דיבור ─── (redesign-3 / 9a)
   speakThoughts = $state<boolean>(DEFAULTS.speakThoughts)
   narrateTools = $state<boolean>(DEFAULTS.narrateTools)
   translateThoughts = $state<boolean>(DEFAULTS.translateThoughts)
-
-  // ─── רכב ─── (redesign-3; חיווט מלא: slice 7)
+  autoPlayInlineAudio = $state<boolean>(DEFAULTS.autoPlayInlineAudio)
   carMode = $state<boolean>(DEFAULTS.carMode)
-
-  // ─── שפה ─── (rtl-ltr-bidi)
   locale = $state<Locale>(DEFAULTS.locale)
-
-  // ─── השתקה ─── (ui-polish-batch · C7)
   muted = $state<boolean>(DEFAULTS.muted)
-
-  // ─── מסך ─── (slice-wake-lock)
   screenWakeLock = $state<boolean>(DEFAULTS.screenWakeLock)
-
-  // ─── תצוגת צ'אט ─── (display-toggle-consistency — פולריות חיובית: ON=מציג)
   showThoughts = $state<boolean>(DEFAULTS.showThoughts)
   showTools = $state<boolean>(DEFAULTS.showTools)
   compactActivity = $state<boolean>(DEFAULTS.compactActivity)
-
-  // ─── session-memo ─── (slice session-memo-pad)
   showSessionMemo = $state<boolean>(DEFAULTS.showSessionMemo)
-
-  // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend = $state<boolean>(DEFAULTS.enterToSend)
-
-  // ─── תמונות מרוחקות ─── (slice msg-media)
   autoLoadRemoteImages = $state<boolean>(DEFAULTS.autoLoadRemoteImages)
 
   // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
@@ -284,6 +270,7 @@ export class Settings {
     this.speakThoughts = loaded.speakThoughts
     this.narrateTools = loaded.narrateTools
     this.translateThoughts = loaded.translateThoughts
+    this.autoPlayInlineAudio = loaded.autoPlayInlineAudio
     this.carMode = loaded.carMode
     this.locale = loaded.locale
     this.muted = loaded.muted
@@ -435,8 +422,6 @@ export class Settings {
     }
   }
 
-  // ─── דיבור ─── (redesign-3 / 9a)
-
   setSpeakThoughts = (v: boolean): void => {
     this.speakThoughts = v
     this.#persist()
@@ -452,7 +437,10 @@ export class Settings {
     this.#persist()
   }
 
-  // ─── רכב ─── (redesign-3)
+  setAutoPlayInlineAudio = (v: boolean): void => {
+    this.autoPlayInlineAudio = v
+    this.#persist()
+  }
 
   setCarMode = (v: boolean): void => {
     this.carMode = v
@@ -650,6 +638,7 @@ export class Settings {
       speakThoughts: this.speakThoughts,
       narrateTools: this.narrateTools,
       translateThoughts: this.translateThoughts,
+      autoPlayInlineAudio: this.autoPlayInlineAudio,
       carMode: this.carMode,
       locale: this.locale,
       muted: this.muted,

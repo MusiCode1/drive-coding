@@ -85,16 +85,24 @@ function makeSession(extra?: Partial<AgentSession>): AgentSession {
   } as AgentSession
 }
 
-function makeMockSink(): AudioSink & { prepared: Set<string> } {
+function makeMockSink(): AudioSink & { prepared: Set<string>; filePrepared: string[] } {
   const prepared = new Set<string>()
+  const filePrepared: string[] = []
   return {
     prepared,
+    filePrepared,
     prepareSegment: async (segmentId: string) => {
       prepared.add(segmentId)
     },
+    prepareFile: async (segmentId: string) => {
+      filePrepared.push(segmentId)
+    },
     play: async () => {},
     cancel: () => {},
-    clear: () => prepared.clear(),
+    clear: () => {
+      prepared.clear()
+      filePrepared.length = 0
+    },
     pause: () => {},
     resume: () => {},
     isComplete: () => false,
@@ -112,12 +120,16 @@ function createHarness(
   initial?: Bubble[],
   extraSession?: Partial<AgentSession>,
   live?: { isOpen: boolean },
+  settingsPatch?: Partial<Pick<Settings, "autoPlayInlineAudio">>,
 ): Harness {
   sessionBubbles = initial ?? []
   const settings = new Settings()
   settings.ttsProvider = "google"
   settings.muted = false
   settings.narrateTools = true
+  if (settingsPatch?.autoPlayInlineAudio !== undefined) {
+    settings.autoPlayInlineAudio = settingsPatch.autoPlayInlineAudio
+  }
   const sink = makeMockSink()
   const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
   const speaker = new Speaker({
@@ -294,5 +306,45 @@ describe("Speaker — live-secretary §4.3", () => {
     await flush()
     expect(mockSynthesize).not.toHaveBeenCalled()
     expect(active.playlist.items).toHaveLength(0)
+  })
+})
+
+describe("Speaker — inline audio embed", () => {
+  const AUDIO_MSG = "hello ![clip](/tmp/a.mp3) world."
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 206 }) as Response),
+    )
+  })
+
+  it("one string: text before file, then file, then text after", async () => {
+    active = createHarness([messageBubble(AUDIO_MSG)])
+    await flush()
+    expect(active.playlist.items).toHaveLength(3)
+    expect(mockSynthesize).toHaveBeenCalledTimes(2)
+    expect(mockSynthesize.mock.calls[0]?.[0]?.text).toBe("hello")
+    expect(active.sink.filePrepared).toHaveLength(1)
+    expect(mockSynthesize.mock.calls[1]?.[0]?.text).toBe("world.")
+  })
+
+  it("setting OFF → zero prepareFile calls", async () => {
+    active = createHarness([messageBubble(AUDIO_MSG)], undefined, undefined, {
+      autoPlayInlineAudio: false,
+    })
+    await flush()
+    expect(active.sink.filePrepared).toHaveLength(0)
+  })
+
+  it("probe non-2xx → synthesize alt, not prepareFile", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 404 }) as Response),
+    )
+    active = createHarness([messageBubble(AUDIO_MSG)])
+    await flush()
+    expect(active.sink.filePrepared).toHaveLength(0)
+    expect(mockSynthesize.mock.calls.some((c) => c[0]?.text === "clip")).toBe(true)
   })
 })

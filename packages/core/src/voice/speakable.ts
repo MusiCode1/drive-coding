@@ -1,3 +1,7 @@
+import { IMAGE_LINK, resolveAudioEmbed, type SpeakablePart } from "./audio-embed.js"
+
+export type { SpeakablePart } from "./audio-embed.js"
+
 /**
  * speakable.ts — טקסט-מרקדאון → טקסט **בר-הקראה**.
  *
@@ -50,6 +54,8 @@ export type SpeakableOpts = {
    * נדבקות ("הנההסברקצר"). נמדד ב-`speakable-stream.test.ts`.
    */
   stream?: boolean
+  /** Session cwd — required to resolve relative audio embed hrefs. */
+  cwd?: string | null
 }
 
 /** תווית אחת, נקודה אחת — שני מסלולי-הגדר השתמשו בהעתק זהה. */
@@ -59,7 +65,8 @@ function labelFor(lang: string, labels: SpeakableLabels): string {
   return l.length > 0 ? ` ${labels.codeBlockWithLang(l)} ` : ` ${labels.codeBlock} `
 }
 
-export function toSpeakable(text: string, labels: SpeakableLabels, opts?: SpeakableOpts): string {
+/** Markdown → speakable string, excluding image syntax (handled by caller). */
+function processSpeakableText(text: string, labels: SpeakableLabels, opts?: SpeakableOpts): string {
   let out = text
 
   // ─── 1. בלוקי-קוד מגודרים ───
@@ -103,25 +110,20 @@ export function toSpeakable(text: string, labels: SpeakableLabels, opts?: Speaka
     out = out.replace(new RegExp(`\\n+[ \\t]*(${cb}[^\\n]*?)[ \\t]*(\\n+|$)`, "g"), " $1 ")
   }
 
-  // ─── 2. תמונות — לפני קישורים, כי התחביר שלהן מכיל תחביר-קישור ───
-  out = out.replace(/!\[([^\]]*)\]\([^)]*\)/g, (_m, alt: string) =>
-    alt.trim().length > 0 ? ` ${labels.image}: ${alt.trim()} ` : ` ${labels.image} `,
-  )
-
-  // ─── 3. קישורים — הטקסט נקרא, ה-URL נזרק ───
+  // ─── 2. קישורים — הטקסט נקרא, ה-URL נזרק ───
   out = out.replace(/\[([^\]]*)\]\([^)]*\)/g, (_m, label: string) =>
     label.trim().length > 0 ? label.trim() : ` ${labels.link} `,
   )
 
-  // ─── 4. קוד-inline ───
+  // ─── 3. קוד-inline ───
   out = out.replace(/`([^`\n]+)`/g, (_m, code: string) =>
     code.length <= INLINE_CODE_MAX ? code : ` ${labels.codeBlock} `,
   )
 
-  // ─── 5. URL חשוף ───
+  // ─── 4. URL חשוף ───
   out = out.replace(BARE_URL, ` ${labels.link} `)
 
-  // ─── 6. סימוני-הדגשה ותחביר-כותרת ───
+  // ─── 5. סימוני-הדגשה ותחביר-כותרת ───
   // ⚠️ רק הסימנים יורדים, **הטקסט נשאר** — זו הקראה, לא תקציר.
   out = out.replace(/^\s{0,3}#{1,6}\s+/gm, "")
   out = out.replace(/^\s{0,3}>\s?/gm, "")
@@ -132,7 +134,7 @@ export function toSpeakable(text: string, labels: SpeakableLabels, opts?: Speaka
   out = out.replace(/\*(?!\s)(.+?)(?<!\s)\*/g, "$1")
   out = out.replace(/~~(.+?)~~/g, "$1")
 
-  // ─── 7. ניקוי רווחים שנוצרו מההחלפות ───
+  // ─── 6. ניקוי רווחים שנוצרו מההחלפות ───
   out = out.replace(/[ \t]{2,}/g, " ")
   // התוויות מוזרקות עם רווחים משני צדדיהן (כדי לא להידבק למילה קודמת);
   // ליד שורה-חדשה הרווח הזה מיותר ונשמע כהיסוס.
@@ -141,6 +143,75 @@ export function toSpeakable(text: string, labels: SpeakableLabels, opts?: Speaka
   out = out.replace(/\n{3,}/g, "\n\n")
   // ⚠️ בזרימה **אין** trim — ר' SpeakableOpts.stream.
   return opts?.stream === true ? out : out.trim()
+}
+
+function appendTextPart(parts: SpeakablePart[], chunk: string): void {
+  if (chunk.length === 0) return
+  const last = parts[parts.length - 1]
+  if (last?.kind === "text") {
+    last.text += chunk
+  } else {
+    parts.push({ kind: "text", text: chunk })
+  }
+}
+
+function speakableImageText(alt: string, labels: SpeakableLabels): string {
+  return alt.trim().length > 0 ? ` ${labels.image}: ${alt.trim()} ` : ` ${labels.image} `
+}
+
+/**
+ * Markdown → ordered text + local-audio file parts.
+ * Non-audio images stay inline text (same as `toSpeakable` image step).
+ */
+export function toSpeakableParts(
+  text: string,
+  labels: SpeakableLabels,
+  opts?: SpeakableOpts,
+): SpeakablePart[] {
+  const cwd = opts?.cwd ?? null
+  const parts: SpeakablePart[] = []
+  let lastIndex = 0
+  IMAGE_LINK.lastIndex = 0
+  let m: RegExpExecArray | null = IMAGE_LINK.exec(text)
+  while (m !== null) {
+    const before = text.slice(lastIndex, m.index)
+    if (before.length > 0) {
+      appendTextPart(parts, processSpeakableText(before, labels, { ...opts, stream: true }))
+    }
+    const alt = m[1] ?? ""
+    const href = m[2] ?? ""
+    const embed = resolveAudioEmbed(href, cwd)
+    if (embed !== null) {
+      parts.push({
+        kind: "file",
+        title: alt.trim().length > 0 ? alt.trim() : embed.title,
+        href: embed.href,
+        uri: embed.uri,
+      })
+    } else {
+      appendTextPart(parts, speakableImageText(alt, labels))
+    }
+    lastIndex = m.index + m[0].length
+    m = IMAGE_LINK.exec(text)
+  }
+  const tail = text.slice(lastIndex)
+  if (tail.length > 0) {
+    appendTextPart(parts, processSpeakableText(tail, labels, { ...opts, stream: true }))
+  }
+  return parts
+}
+
+export function toSpeakable(text: string, labels: SpeakableLabels, opts?: SpeakableOpts): string {
+  const joined = toSpeakableParts(text, labels, opts)
+    .map((p) =>
+      p.kind === "file"
+        ? p.title.length > 0
+          ? ` ${p.title} `
+          : " "
+        : p.text,
+    )
+    .join("")
+  return opts?.stream === true ? joined : joined.trim()
 }
 
 /**

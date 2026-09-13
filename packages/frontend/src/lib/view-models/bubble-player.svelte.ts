@@ -21,13 +21,16 @@
  */
 
 import { createI18n, detectLocale } from "@drive-coding/core/i18n"
-import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
-import { toSpeakable } from "@drive-coding/core/voice/speakable"
+import type { AudioEmbedRef } from "@drive-coding/core/voice/audio-embed"
+import { toSpeakableParts } from "@drive-coding/core/voice/speakable"
 import type { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { playUserRecording } from "$lib/adapters/voice/play-bubble"
 import { resolveTts } from "$lib/adapters/voice/tts-resolve"
 import type { AudioPlaylist, SegmentOwner } from "$lib/engines/audio-playlist.svelte"
+import type { AudioSink } from "$lib/engines/audio-sink"
 import type { Bubble } from "$lib/types/bubble"
+import { bubbleInlineAudioHooks, fetchInlineAudioForBubble } from "$lib/adapters/voice/inline-audio-fetch"
+import { buildInlineAudioQueue } from "$lib/engines/inline-audio-queue"
 import { safeUUID } from "$lib/util/uuid"
 import type { AgentSession } from "./agent-session.svelte"
 import { ttsCapabilities } from "./capabilities.svelte"
@@ -44,6 +47,7 @@ export class BubblePlayer implements SegmentOwner {
   readonly #settings: Settings
   /** A4: פלייליסט משותף עם Speaker. */
   readonly #playlist: AudioPlaylist
+  readonly #audioStream: AudioSink
   #audioEl: HTMLAudioElement | null = null
   #abortCtrl: AbortController | null = null
   /** A4: OrderAllocator לסגמנטים שלנו — seq נפרד מ-Speaker. */
@@ -54,12 +58,14 @@ export class BubblePlayer implements SegmentOwner {
     session: AgentSession
     settings: Settings
     playlist: AudioPlaylist
+    audioStream: AudioSink
     orderAlloc: OrderAllocator
   }) {
     this.#orderAlloc = opts.orderAlloc
     this.#session = opts.session
     this.#settings = opts.settings
     this.#playlist = opts.playlist
+    this.#audioStream = opts.audioStream
   }
 
   /**
@@ -157,39 +163,18 @@ export class BubblePlayer implements SegmentOwner {
   }
 
   async #reserveAndPlay(bubbleId: string, text: string, abortCtrl: AbortController): Promise<void> {
-    // ─── slice tts-speakable-text ───
-    // ⚠️ **מסלול נפרד מה-Speaker, וצריך את הצמצום בעצמו.** ‏BubblePlayer
-    // מקריא בועה **קיימת**, ולכן הוא לא עובר דרך החוצץ הזורם — ובלי השורה
-    // הזו לחיצה על ▶ מאייתת קוד גם אחרי שהזרימה החיה תוקנה. נמצא בזכות
-    // שאלת המשתמש ("בהשמעת הודעה קיימת זה עובד אותו דבר?").
-    //
-    // ⚠️ ואין כאן `splitAtOpenFence`, **במכוון**: הטקסט כאן **שלם**, ואין
-    // גדר שממתינה להיסגר. החזקה כאן הייתה בולעת בלוק אחרון לתמיד.
-    const speakable = toSpeakable(text, {
+    const labels = {
       codeBlock: this.#t("speakable.codeBlock"),
-      codeBlockWithLang: (lang) => `${this.#t("speakable.codeBlock")} ${lang}`,
+      codeBlockWithLang: (lang: string) => `${this.#t("speakable.codeBlock")} ${lang}`,
       link: this.#t("speakable.link"),
       image: this.#t("speakable.image"),
-    })
-    const { sentences, remaining } = splitIntoSentences(speakable, {
+    }
+    const parts = toSpeakableParts(text, labels, { cwd: this.#session.cwd })
+    const queue = buildInlineAudioQueue(parts, {
       minChars: MIN_CHARS,
       maxChars: MAX_CHARS,
+      autoPlayInlineAudio: this.#settings.autoPlayInlineAudio,
     })
-    // אם אין משפטים (טקסט קצר) — השתמש בטקסט המלא כסגמנט אחד
-    const parts =
-      sentences.length > 0
-        ? [...sentences, ...(remaining.trim() ? [remaining.trim()] : [])]
-        : [speakable.trim()]
-    // ⚠️ אותו כלל כמו ב-Speaker, בגרסת טקסט-שלם: פרגמנט קצר-מהרצפה בזנב
-    // אינו נשלח לבד (Gemini לא מקריא פרגמנט כזה — נמדד). כאן אין "טקסט
-    // שיבוא אחריו", ולכן הוא מצטרף ל**קודם** ולא לבא.
-    if (parts.length > 1) {
-      const tail = parts[parts.length - 1]
-      if (tail !== undefined && tail.trim().length < MIN_CHARS) {
-        parts.pop()
-        parts[parts.length - 1] = `${parts[parts.length - 1]} ${tail.trim()}`
-      }
-    }
 
     // V4b: העברת geminiVoice לresolveTts (נשמר מ-dev בזמן reconcile)
     const { provider, voiceId, modelId } = resolveTts(
@@ -210,41 +195,60 @@ export class BubblePlayer implements SegmentOwner {
     // שלב 1: reserve כל הסגמנטים לפלייליסט (reserve-on-enqueue)
     // nav-retain: כל reserve מקבל refetch thunk עם הטקסט + provider בסקופ (finding #1)
     const segmentIds: string[] = []
-    for (let i = 0; i < parts.length; i++) {
+    for (const part of queue) {
       const segmentId = safeUUID()
       const orderKey = this.#orderAlloc.next(bubbleId)
-      const partText = parts[i]
-      if (partText === undefined) continue
-      this.#refetchBySegment.set(segmentId, () => {
-        const freshAc = new AbortController()
-        void (async () => {
-          try {
-            const stream = await provider.synthesize({
-              text: partText,
-              voiceId,
-              modelId,
-              signal: freshAc.signal,
-              directing: { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
-            })
-            await this.#playlist.prepareSegmentForBubble(segmentId, stream, freshAc, {
-              format: provider.format,
-            })
-            this.#playlist.markReady(segmentId)
-          } catch {
-            if (freshAc.signal.aborted) {
-              this.#playlist.markAbandoned(segmentId)
-            } else {
-              this.#playlist.markError(segmentId)
+      if (part.kind === "text") {
+        const partText = part.text
+        this.#refetchBySegment.set(segmentId, () => {
+          const freshAc = new AbortController()
+          void (async () => {
+            try {
+              const stream = await provider.synthesize({
+                text: partText,
+                voiceId,
+                modelId,
+                signal: freshAc.signal,
+                directing: { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
+              })
+              await this.#playlist.prepareSegmentForBubble(segmentId, stream, freshAc, {
+                format: provider.format,
+              })
+              this.#playlist.markReady(segmentId)
+            } catch {
+              if (freshAc.signal.aborted) {
+                this.#playlist.markAbandoned(segmentId)
+              } else {
+                this.#playlist.markError(segmentId)
+              }
             }
-          }
-        })()
-      })
+          })()
+        })
+      } else {
+        const fileRef: AudioEmbedRef = {
+          title: part.file.title,
+          href: part.file.href,
+          uri: part.file.uri,
+        }
+        this.#refetchBySegment.set(segmentId, () => {
+          const freshAc = new AbortController()
+          void fetchInlineAudioForBubble(
+            segmentId,
+            fileRef,
+            freshAc,
+            provider,
+            voiceId,
+            modelId,
+            { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
+            bubbleInlineAudioHooks(this.#playlist, this.#audioStream),
+          )
+        })
+      }
       this.#playlist.reserve(segmentId, orderKey, bubbleId, this)
       segmentIds.push(segmentId)
     }
 
-    // שלב 2: fetch כל סגמנט ב-parallel (כמו Speaker.#pumpFetchLoop)
-    const fetchPromises = parts.map(async (part, i) => {
+    const fetchPromises = queue.map(async (part, i) => {
       const segId = segmentIds[i]
       if (segId === undefined) return
       try {
@@ -252,16 +256,30 @@ export class BubblePlayer implements SegmentOwner {
           this.#playlist.markAbandoned(segId)
           return
         }
+        if (part.kind === "file") {
+          const fileRef: AudioEmbedRef = {
+            title: part.file.title,
+            href: part.file.href,
+            uri: part.file.uri,
+          }
+          return fetchInlineAudioForBubble(
+            segId,
+            fileRef,
+            abortCtrl,
+            provider,
+            voiceId,
+            modelId,
+            { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
+            bubbleInlineAudioHooks(this.#playlist, this.#audioStream),
+          )
+        }
         const stream = await provider.synthesize({
-          text: part,
+          text: part.text,
           voiceId,
           modelId,
           signal: abortCtrl.signal,
           directing: { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
         })
-        // prepareSegment דרך ה-audioStream של ה-playlist (sharedAudioStream מ-+layout)
-        // BubblePlayer לא מחזיק ref ל-audioStream — #playlist מחזיק אותו פנימי.
-        // נעשה זאת דרך wrapper method חדש ב-AudioPlaylist.
         await this.#playlist.prepareSegmentForBubble(segId, stream, abortCtrl, {
           format: provider.format,
         })

@@ -383,4 +383,12 @@ describe("renderMarkdown", () => {
     expect(out).toContain("<code>![c](c.png)</code>")
     expect(out).not.toContain('<img src=')
   })
+
+  it("local audio embed renders controls audio without autoplay", () => {
+    const out = renderMarkdown("![clip](/tmp/a.mp3)")
+    expect(out).toContain("<audio")
+    expect(out).toContain("controls")
+    expect(out).not.toContain("autoplay")
+    expect(out).not.toContain("<img")
+  })
 })

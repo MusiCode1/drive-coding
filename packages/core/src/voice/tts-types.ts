@@ -5,6 +5,8 @@
  * ב-core/async/with-timeout.ts. אין browser-global runtime כאן.
  */
 
+export type { AudioEmbedRef, SpeakablePart } from "./audio-embed.js"
+
 /** רמת קצב-דיבור — גנרי; כל ספק מפרש (Gemini→Director's-Notes, ElevenLabs→מתעלם). */
 export type SpeechPace = "very-slow" | "slow" | "normal" | "fast" | "very-fast"
 /** טון-דיבור — גנרי; ר' SpeechPace. */

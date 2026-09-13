@@ -28,61 +28,40 @@
  */
 
 import { createI18n, detectLocale } from "@drive-coding/core/i18n"
-import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
 import { DEFAULT_VOICE_CONFIG } from "@drive-coding/core/voice/capabilities"
 import type { NarrateContext, ToolCallForNarrate } from "@drive-coding/core/voice/narration-prompt"
 import { select } from "@drive-coding/core/voice/select"
-import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
+import type { AudioEmbedRef } from "@drive-coding/core/voice/audio-embed"
 import {
   type SpeakableLabels,
   splitStreamable,
   toSpeakable,
+  toSpeakableParts,
 } from "@drive-coding/core/voice/speakable"
 import type { OrderAllocator, OrderKey } from "@drive-coding/core/voice/tts-queue"
 import { untrack } from "svelte"
 import { registerSpeaker, type SpeakerDebugInfo } from "$lib/debug/playback-registry"
 import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
+import { runSpeakerFetchJob } from "$lib/adapters/voice/speaker-fetch-job"
+import {
+  enqueueSpeakerFileJob,
+  ingestSpeakerSpeakableChunk,
+} from "$lib/engines/speaker-inline-audio"
+import type { FetchOutcome, TtsJob, TtsJobStatus } from "$lib/engines/tts-job-types"
 import { safeUUID } from "$lib/util/uuid"
 import { narrate } from "../adapters/voice/narrate"
-import { translate } from "../adapters/voice/translate"
-import { resolveTts } from "../adapters/voice/tts-resolve"
 import type { AudioPlaylist, SegmentOwner } from "../engines/audio-playlist.svelte"
 import type { AudioSink } from "../engines/audio-sink"
 import type { CuesEngine } from "../engines/cues"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
 import type { Live } from "./live.svelte"
-import { ttsCapabilities } from "./capabilities.svelte"
 import type { Settings } from "./settings.svelte"
 
-const TARGET_LANG = "he" as const
 const MIN_CHARS = 20
 const MAX_CHARS = 200
 const LOOKAHEAD = 2
 
-export type TtsJobStatus = "pending" | "fetching" | "ready" | "error" | "stale"
-
-/** תוצאת #fetchJob — כל מסלול חייב לדווח (אין return שקט). */
-export type FetchOutcome =
-  | { kind: "ready" }
-  /** ננטש ביוזמת הפלייליסט (ניווט/עצירה) — הפריט נשאר reserved וניתן לשחזור. */
-  | { kind: "abandoned" }
-  /** כשל אמיתי — markError, הפריט מדולג. */
-  | { kind: "error"; reason: "narration-null" | "provider-unavailable" | "synthesize-failed" }
-
-export type TtsJob = {
-  segmentId: string
-  kind: "message" | "thought" | "tool" // slice 22: הוסף "tool"
-  messageId: string | null
-  text: string
-  status: TtsJobStatus
-  abort: AbortController
-  /** Slice 4: מזהה בועה, בשימוש jobs של מחשבות לכתיבת טקסט מתורגם חזרה. */
-  bubbleId?: string
-  // ─── slice 22 ───
-  orderKey: OrderKey // (seq, segmentIndex)
-  /** ל-tool: toolCallId לכתיבת narration חזרה לבועה אחרי ה-fetch. */
-  toolCallId?: string
-}
+export type { FetchOutcome, TtsJob, TtsJobStatus } from "$lib/engines/tts-job-types"
 
 type BubbleState = {
   processedSegments: number
@@ -350,56 +329,21 @@ export class Speaker implements SegmentOwner {
         continue
       }
 
-      // ─── slice tts-speakable-text ───
-      // ⚠️ **שני חוצצים, וזה העיקר.** `buffer` נשאר **גולמי לנצח**; טקסט
-      // מעובד לעולם לא חוזר אליו. `speakPending` מחזיק טקסט שכבר עובר
-      // ומחכה להשלים משפט.
-      //
-      // 🔴 גרסה קודמת החזירה טקסט מעובד לחוצץ ועיבדה אותו שוב — וכל סיבוב
-      // שבר מבנה במקום אחר: ה-`trim` אכל את הרווח שלפני ה-chunk הבא
-      // (מילים נדבקו), והשרשור איבד את השורה-החדשה שלפני הגדר הבאה (הקוד
-      // דלף להקראה). כאן כל קטע-גולמי מעובד **בדיוק פעם אחת**.
+      // slice tts-speakable-text — buffer גולמי, speakPending מעובד, פעם אחת לקטע.
       state.buffer += newChunks
       const { ready, held } = splitStreamable(state.buffer)
       state.buffer = held
       if (ready.length > 0) {
-        state.speakPending += toSpeakable(ready, this.#speakableLabels(), { stream: true })
-      }
-      const { sentences, remaining } = splitIntoSentences(state.speakPending, {
-        minChars: MIN_CHARS,
-        maxChars: MAX_CHARS,
-      })
-      // ⚠️ **אין כאן עיכוב.** גרסה קודמת החזיקה מקטע קצר-מהרצפה לסיבוב הבא
-      // (כדי ש-Gemini לא יקבל פרגמנט בודד) — וזה עיכב **בדיוק את הזנב**,
-      // שהוא הקצר ביותר. התסמין: "שומעים את ההודעה, לא את סופה". מדוד.
-      // ⇒ עדיף פרגמנט שאולי לא ייאמר מאשר זנב שנעלם.
-      state.speakPending = remaining
-
-      for (const sentence of sentences) {
-        this.#enqueue(bubble.kind, bubble.messageId, sentence, bubble.id)
+        this.#ingestSpeakableParts(state, bubble.kind, bubble.messageId, bubble.id, ready)
       }
 
-      // ─── slice tts-tail-after-idle ───
-      // ⚠️ **אחרי לולאת המשפטים, לא לפניה.** ‏`OrderAllocator` מקצה
-      // `segmentIndex` עולה לפי סדר הקריאה — ולכן פליטת הזנב לפני הלולאה
-      // נתנה לו מפתח **נמוך** מהמשפטים שקדמו לו, והפלייליסט השמיע אותו
-      // **ראשון**. תיקון ה"סוף לא נשמע" הפך ל"סוף נשמע ראשון". נתפס
-      // ב-code review, בדיוק במקרה שבשבילו נכתב.
-      // 🔴 **התור כבר הסתיים? אין מי שיפלוש אחרינו — לפלוש כאן.**
-      //
-      // `justFinished` יורה **פעם אחת בלבד** (מעבר `!== idle` → `idle`).
-      // ב-HTTP הפריים `state_update: idle` והצ'אנק האחרון יכולים להגיע
-      // באותה מנה, וה-flush רץ ב-`$effect` נפרד מהזרימה. אם הוא מקדים,
-      // הזנב שמגיע אחריו נתקע לנצח. זה #47.
-      //
-      // ⚠️ הסרתי את זה פעם אחת בחשד שגוי (חשבתי שהוא מרוקן חוצץ בין
-      // הודעות) — והריוויו הראה שההסרה **החזירה** את הבאג. השורש היה
-      // במקום אחר לגמרי (בדיקת ה-`[`). מוחזר.
+      // slice tts-tail-after-idle — flush אחרי ingest; OrderAllocator דורש סדר קריאה.
       if (turnState === "idle") {
-        const finalTail = (
-          state.speakPending + toSpeakable(state.buffer, this.#speakableLabels(), { stream: true })
-        ).trim()
-        state.buffer = ""
+        if (state.buffer.length > 0) {
+          this.#ingestSpeakableParts(state, bubble.kind, bubble.messageId, bubble.id, state.buffer)
+          state.buffer = ""
+        }
+        const finalTail = state.speakPending.trim()
         state.speakPending = ""
         if (finalTail.length > 0) {
           this.#enqueue(bubble.kind, bubble.messageId, finalTail, bubble.id)
@@ -453,6 +397,51 @@ export class Speaker implements SegmentOwner {
       }
       this.#pumpFetchLoop()
     }
+  }
+
+  #fileJobSink(bubbleId: string) {
+    return {
+      pushJob: (job: Parameters<typeof this.#jobs.push>[0]) => {
+        this.#jobs.push(job)
+      },
+      reserve: (segmentId: string, orderKey: OrderKey, bid: string) =>
+        this.#player.reserve(segmentId, orderKey, bid, this),
+      bumpPending: () => {
+        this.#pendingCount += 1
+      },
+      noteRecent: (title: string, bid: string) => {
+        this.#recentTexts.push(title.slice(0, 60))
+        if (this.#recentTexts.length > 8) this.#recentTexts.shift()
+        this.#recentSources.push(bid)
+        if (this.#recentSources.length > 8) this.#recentSources.shift()
+      },
+    }
+  }
+
+  #ingestSpeakableParts(
+    state: BubbleState,
+    kind: "message" | "thought",
+    messageId: string | null,
+    bubbleId: string,
+    raw: string,
+  ): void {
+    ingestSpeakerSpeakableChunk(state, raw, {
+      labels: this.#speakableLabels(),
+      cwd: this.#session.cwd,
+      minChars: MIN_CHARS,
+      maxChars: MAX_CHARS,
+      autoPlayInlineAudio: this.#settings.autoPlayInlineAudio,
+      enqueueText: (text) => this.#enqueue(kind, messageId, text, bubbleId),
+      enqueueFile: (file) =>
+        enqueueSpeakerFileJob(
+          file,
+          messageId,
+          bubbleId,
+          this.#orderAlloc.next(bubbleId),
+          safeUUID,
+          this.#fileJobSink(bubbleId),
+        ),
+    })
   }
 
   #enqueue(
@@ -620,96 +609,16 @@ export class Speaker implements SegmentOwner {
     }
   }
 
-  async #fetchJob(job: TtsJob): Promise<FetchOutcome> {
-    try {
-      let text = job.text
-
-      if (job.kind === "thought") {
-        // redesign-3 / slice 9a: תרגום מחשבות מותנה ב-toggle.
-        // כבוי → הקרא טקסט מקורי (אנגלית). נקרא ברגע ה-fetch (לא tracked).
-        if (this.#settings.translateThoughts) {
-          // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
-          const result = await translate(
-            text,
-            TARGET_LANG,
-            select("translate", DEFAULT_VOICE_CONFIG),
-            job.abort.signal,
-            job.messageId,
-          )
-          if (result !== null && result.status === "translated") {
-            // Slice 4: כתיבה חזרה למקטע כדי ש-ThoughtBubble יוכל להציג HE+EN.
-            if (job.bubbleId !== undefined) {
-              this.#persistThoughtTranslation(job.bubbleId, job.text, result.text)
-            }
-            text = result.text
-          }
-          // already_in_target או null → שמור טקסט מקורי (originalText נשאר undefined)
-        }
-      } else if (job.kind === "tool") {
-        // slice 22: narration נוצר כאן (best-effort). null → דלג על ה-job.
-        const narrationText = await this.#narrateForJob(job)
-        if (narrationText === null) {
-          job.status = "error"
-          return { kind: "error", reason: "narration-null" }
-        }
-        text = narrationText
-      }
-
-      if (job.abort.signal.aborted) {
-        job.status = "error"
-        return { kind: "abandoned" }
-      }
-
-      // V4a-unify: בחר ספק דרך resolveTts (מקור-אמת יחיד); V4b: העברת geminiVoice
-      const { provider, voiceId, modelId } = resolveTts(
-        this.#settings.ttsProvider,
-        this.#settings.voiceId,
-        this.#settings.geminiVoice,
-      )
-      // Commit 4 capability-gate: אל תנסה synthesize לספק לא-זמין.
-      // undefined caps → optimistic (true) → ממשיך (לא חוסם בהתחלה).
-      if (!ttsCapabilities.isAvailable(this.#settings.ttsProvider)) {
-        job.status = "error"
-        console.warn("[Speaker] TTS provider unavailable, skipping segment", {
-          provider: this.#settings.ttsProvider,
-          id: job.segmentId,
-        })
-        return { kind: "error", reason: "provider-unavailable" }
-      }
-      // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
-      const textHash = await cacheKeyFor(text, voiceId, modelId)
-      // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
-      const stream = await provider.synthesize({
-        text,
-        voiceId,
-        modelId,
-        messageId: job.messageId,
-        signal: job.abort.signal,
-        directing: { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
-      })
-      await this.#audioStream.prepareSegment(job.segmentId, stream, job.abort, {
-        messageId: job.messageId,
-        textHash,
-        format: provider.format,
-      })
-      job.status = "ready"
-      return { kind: "ready" }
-    } catch (e) {
-      if (job.abort.signal.aborted) {
-        job.status = "error"
-        return { kind: "abandoned" }
-      }
-      // MIN-5: דלג + המשך, אל תזרוק.
-      job.status = "error"
-      console.warn("TTS job failed, skipping segment", {
-        id: job.segmentId,
-        err: e instanceof Error ? e.message : String(e),
-      })
-      return { kind: "error", reason: "synthesize-failed" }
-    } finally {
-      // msr-v2: הפחת ספירה (job הסתיים — גם אם שגיאה)
-      if (this.#pendingCount > 0) this.#pendingCount -= 1
-    }
+  #fetchJob(job: TtsJob): Promise<FetchOutcome> {
+    return runSpeakerFetchJob(job, {
+      settings: this.#settings,
+      audioStream: this.#audioStream,
+      narrateForJob: (j) => this.#narrateForJob(j),
+      persistThoughtTranslation: (bid, en, he) => this.#persistThoughtTranslation(bid, en, he),
+      onPendingDone: () => {
+        if (this.#pendingCount > 0) this.#pendingCount -= 1
+      },
+    })
   }
 
   /**

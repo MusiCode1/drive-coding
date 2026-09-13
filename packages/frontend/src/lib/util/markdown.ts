@@ -157,9 +157,10 @@ const KATEX_ATTR = [
 const CODE_TAGS = ["pre", "code", "span"]
 const CODE_ATTR = ["class"]
 
-// IMG_ALLOW: images from renderer.image only — img + src/alt/title.
 const IMG_TAGS = ["img"]
 const IMG_ATTR = ["src", "alt", "title"]
+const AUDIO_TAGS = ["audio"]
+const AUDIO_ATTR = ["src", "title", "controls", "preload", "data-audio-ref"]
 
 // ─── DOMPurify hook (נרשם פעם אחת ברמת מודול) ────────────────────────────────
 if (typeof document !== "undefined") {
@@ -230,11 +231,10 @@ export function renderMarkdown(text: string, opts?: MarkdownRenderOptions): stri
     }),
   )
 
-  // Pass 3c: sanitize image fragments — img + src/alt/title only
   const cleanImage = imageFragments.map((imageHtml) =>
     DOMPurify.sanitize(imageHtml, {
-      ALLOWED_TAGS: IMG_TAGS,
-      ALLOWED_ATTR: IMG_ATTR,
+      ALLOWED_TAGS: [...IMG_TAGS, ...AUDIO_TAGS],
+      ALLOWED_ATTR: [...IMG_ATTR, ...AUDIO_ATTR],
       ALLOW_DATA_ATTR: false,
     }),
   )

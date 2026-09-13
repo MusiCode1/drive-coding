@@ -897,13 +897,13 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/settings.svelte.ts": {
-      "metric": 681,
+      "metric": 670,
       "impurity": 6,
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/speaker.svelte.ts": {
-      "metric": 902,
-      "impurity": 8,
+      "metric": 811,
+      "impurity": 3,
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/theme.svelte.ts": {
@@ -922,7 +922,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/routes/+layout.svelte": {
-      "metric": 348,
+      "metric": 347,
       "impurity": 18,
       "class": "mixed"
     },

@@ -176,6 +176,7 @@ export const en: Catalog = {
   "settings.toggle.speakThoughts": "Speak model thoughts",
   "settings.toggle.narrateTools": "Narrate tool actions",
   "settings.toggle.translateThoughts": "Translate thoughts to Hebrew",
+  "settings.toggle.autoPlayInlineAudio": "Play inline audio during speech",
   "settings.toggle.carMode": "Car mode (Play on Bluetooth = record)",
   "settings.reset": "Reset",
   "settings.saveOpen": "Save & Open",
