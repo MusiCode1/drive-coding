@@ -4,7 +4,12 @@
  * ⚠️ הקיבוע הוא על **מה שנשמע**, לא על תווים: הטקסט נשאר, הסימנים יורדים.
  */
 import { describe, expect, it } from "vitest"
-import { type SpeakableLabels, splitStreamable, toSpeakable } from "./speakable.js"
+import {
+  type SpeakableLabels,
+  splitStreamable,
+  toSpeakable,
+  toSpeakableParts,
+} from "./speakable.js"
 
 const L: SpeakableLabels = {
   codeBlock: "[code]",
@@ -213,5 +218,31 @@ describe("toSpeakable — קו-תחתון אינו הדגשה", () => {
 
   it("הדגשה בכוכביות עדיין עובדת", () => {
     expect(s("זה *מודגש* וזהו.")).toBe("זה מודגש וזהו.")
+  })
+})
+
+describe("toSpeakableParts — audio embed", () => {
+  it("splits text around local audio image syntax", () => {
+    expect(toSpeakableParts("hello ![clip](/tmp/a.mp3) world", L)).toEqual([
+      { kind: "text", text: "hello " },
+      { kind: "file", title: "clip", href: "/tmp/a.mp3", uri: "file:///tmp/a.mp3" },
+      { kind: "text", text: " world" },
+    ])
+  })
+
+  it("toSpeakable reads alt for audio, not [image]", () => {
+    const out = s("hello ![clip](/tmp/a.mp3) world")
+    expect(out).toContain("clip")
+    expect(out).not.toContain("[image]")
+  })
+
+  it("non-audio image keeps [image]: alt regression", () => {
+    expect(s("![diagram](/a.png)")).toBe("[image]: diagram")
+  })
+
+  it("malformed incomplete image stays a single text part", () => {
+    expect(toSpeakableParts("see ![clip](/tmp/a.mp", L)).toEqual([
+      { kind: "text", text: "see ![clip](/tmp/a.mp" },
+    ])
   })
 })
