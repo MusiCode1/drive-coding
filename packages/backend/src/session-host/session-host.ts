@@ -61,7 +61,7 @@ import { createTurnLifecycleHandlers, type TurnTimingHost } from "./turn-lifecyc
 import { msgOf } from "./error-message.js"
 import { createPendingRequests } from "./pending-requests.js"
 import { attachScopePermission, type ScopePermissionHost } from "./session-host-scope.js"
-import { captureSessionHostCwd, reduceSessionNotificationUpdate, seedSessionHostCwd } from "./session-host-media.js"
+import { bindSessionMedia, captureSessionHostCwd, emitSessionSwitchResetMedia, seedSessionHostCwd, wrapTurnEndClear } from "./session-host-media.js"
 // ─── C2: createSessionHost ───────────────────────────────────────────────────
 
 export type SessionHostDeps = {
@@ -127,6 +127,7 @@ export type SessionHost = {
  * Returns after the client is ready (createClient has resolved).
  */
 export async function createSessionHost(deps: SessionHostDeps): Promise<SessionHost> {
+  const media = bindSessionMedia()
   // Internal mutable state (replaced on each update — immutable pattern)
   let currentState: SessionState = createInitialSessionState({ sessionId: null })
 
@@ -158,7 +159,7 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
 
   function handleUpdate(notification: SessionNotification): void {
     if (disposed) return // slice handoff-foundations C1: no updates after dispose
-    const result = reduceSessionNotificationUpdate(currentState, notification, null)
+    const result = media.reduce(currentState, notification, null)
     currentState = result.state
     emitPatches(result.patches)
   }
@@ -210,6 +211,7 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
       meta?: Record<string, unknown>,
     ): Promise<void> {
       if (disposed) throw new Error("SessionHost disposed")
+      media.clear()
       const msg = synthesizeUserMessage(currentState, content, meta)
       const result = applyUserMessage(currentState, msg)
       currentState = result.state
@@ -401,6 +403,7 @@ export async function createSessionHostFromConnection(
     transformPromptForAcp,
   } = opts
 
+  const media = bindSessionMedia()
   // Internal mutable state (same pattern as createSessionHost)
   seedSessionHostCwd(warmReattach?.cwd ?? null); let currentState: SessionState = createInitialSessionState({ sessionId: null })
   let patchController: ReadableStreamDefaultController<Patch> | null = null
@@ -441,7 +444,7 @@ export async function createSessionHostFromConnection(
     if (sid !== undefined && currentState.sessionId !== null && sid !== currentState.sessionId) {
       return
     }
-    const result = reduceSessionNotificationUpdate(currentState, notification)
+    const result = media.reduce(currentState, notification)
     currentState = result.state
     emitPatches(result.patches)
   }
@@ -469,6 +472,8 @@ export async function createSessionHostFromConnection(
       getState: () => currentState, emit, closeOnTurnEnd, onScheduleCloseOnTurnEnd,
       onTurnEnded, disposed: () => disposed,
     })
+
+  const emitTurnEndWithMediaClear = wrapTurnEndClear(media, emitTurnEnd)
 
   // ── PendingRequests for permission + elicitation ──────────────────────────
   // slice session-host-pending-surface C4: מונה requestId משותף יחיד — לא שני
@@ -712,22 +717,10 @@ export async function createSessionHostFromConnection(
     return Boolean(openPermission || openElicitation)
   }
 
-  function emitSessionSwitchReset(): {
-    oldSessionId: string | null
-    preResetConfigOptions: SessionConfigOption[]
-  } {
-    const oldSessionId = currentState.sessionId
-    const preResetConfigOptions = currentState.configOptions
-    const resetPatch: Patch = {
-      op: "reset",
-      version: currentState.version + 1,
-      messages: [],
-      nextMessageSeq: 0,
-      nextSegmentSeq: 0,
-    }
-    currentState = applyPatch(currentState, resetPatch)
-    emitPatches([resetPatch])
-    return { oldSessionId, preResetConfigOptions }
+  function emitSessionSwitchReset() {
+    return emitSessionSwitchResetMedia(media, () => currentState, (s) => {
+      currentState = s
+    }, emitPatches)
   }
 
   function rollbackSessionSwitch(oldSessionId: string | null): void {
@@ -768,6 +761,7 @@ export async function createSessionHostFromConnection(
       meta?: Record<string, unknown>,
     ): Promise<void> {
       if (disposed) throw new Error("SessionHost disposed")
+      media.clear()
       const turn = ++turnLifecycle.turnSeq
       stampTurnStart()
       emit(applyTurnStart(currentState)) // 1. waiting — לפני ה-await, ולפני add-message (hotfix)
@@ -779,7 +773,7 @@ export async function createSessionHostFromConnection(
         const acpContent = transformPromptForAcp?.(content) ?? content
         await client.prompt(sessionId, acpContent)
         if (turn === turnLifecycle.turnSeq) {
-          emitTurnEnd(applyTurnEnd(currentState), { stopReason: "end_turn" }) // 3א. הצלחה
+          emitTurnEndWithMediaClear(applyTurnEnd(currentState), { stopReason: "end_turn" }) // 3א. הצלחה
           maybeScheduleCloseOnTurnEnd()
           // slice http-state-gaps C3: refresh quota at turn end — the brief asked for
           // it and it was missing (calev finding 7). A turn is exactly when usage
@@ -792,7 +786,7 @@ export async function createSessionHostFromConnection(
             turn === turnLifecycle.cancelledTurn
               ? undefined
               : { message: msgOf(err), at: Date.now() }
-          emitTurnEnd(applyTurnEnd(currentState, error), {
+          emitTurnEndWithMediaClear(applyTurnEnd(currentState, error), {
             stopReason: error?.message,
             lastTurnError: error ?? null,
           }) // 3ב. שגיאה — אין closeOnTurnEnd (הסוכן נשאר כראיה)
@@ -949,7 +943,7 @@ export async function createSessionHostFromConnection(
         // best-effort — תואם ל-local
       }
       if (turn === turnLifecycle.turnSeq) {
-        emitTurnEnd(applyTurnEnd(currentState), { stopReason: "cancelled" }) // אותה גדר בדיוק כמו ב-prompt
+        emitTurnEndWithMediaClear(applyTurnEnd(currentState), { stopReason: "cancelled" }) // אותה גדר בדיוק כמו ב-prompt
         maybeScheduleCloseOnTurnEnd()
       }
     },
