@@ -391,4 +391,12 @@ describe("renderMarkdown", () => {
     expect(out).not.toContain("autoplay")
     expect(out).not.toContain("<img")
   })
+
+  it("catalog hit audio/* without extension renders audio element", () => {
+    const out = renderMarkdown("![clip](file:///tmp/noext)", {
+      catalog: [{ uri: "file:///tmp/noext", mime: "audio/mpeg" }],
+    })
+    expect(out).toContain("<audio")
+    expect(out).not.toContain("<img")
+  })
 })

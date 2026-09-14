@@ -426,8 +426,7 @@ export class Speaker implements SegmentOwner {
     raw: string,
   ): void {
     ingestSpeakerSpeakableChunk(state, raw, {
-      labels: this.#speakableLabels(),
-      cwd: this.#session.cwd,
+      labels: this.#speakableLabels(), cwd: this.#session.cwd, catalog: this.#session.mediaCatalog,
       minChars: MIN_CHARS,
       maxChars: MAX_CHARS,
       autoPlayInlineAudio: this.#settings.autoPlayInlineAudio,

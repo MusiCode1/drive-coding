@@ -61,7 +61,7 @@ import { createTurnLifecycleHandlers, type TurnTimingHost } from "./turn-lifecyc
 import { msgOf } from "./error-message.js"
 import { createPendingRequests } from "./pending-requests.js"
 import { attachScopePermission, type ScopePermissionHost } from "./session-host-scope.js"
-
+import { captureSessionHostCwd, reduceSessionNotificationUpdate, seedSessionHostCwd } from "./session-host-media.js"
 // ─── C2: createSessionHost ───────────────────────────────────────────────────
 
 export type SessionHostDeps = {
@@ -158,7 +158,7 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
 
   function handleUpdate(notification: SessionNotification): void {
     if (disposed) return // slice handoff-foundations C1: no updates after dispose
-    const result = reduce(currentState, notification.update)
+    const result = reduceSessionNotificationUpdate(currentState, notification, null)
     currentState = result.state
     emitPatches(result.patches)
   }
@@ -402,7 +402,7 @@ export async function createSessionHostFromConnection(
   } = opts
 
   // Internal mutable state (same pattern as createSessionHost)
-  let currentState: SessionState = createInitialSessionState({ sessionId: null })
+  seedSessionHostCwd(warmReattach?.cwd ?? null); let currentState: SessionState = createInitialSessionState({ sessionId: null })
   let patchController: ReadableStreamDefaultController<Patch> | null = null
 
   // slice handoff-foundations C1: disposed flag — once set, all I/O is rejected.
@@ -441,7 +441,7 @@ export async function createSessionHostFromConnection(
     if (sid !== undefined && currentState.sessionId !== null && sid !== currentState.sessionId) {
       return
     }
-    const result = reduce(currentState, notification.update)
+    const result = reduceSessionNotificationUpdate(currentState, notification)
     currentState = result.state
     emitPatches(result.patches)
   }
@@ -808,7 +808,7 @@ export async function createSessionHostFromConnection(
      * transcript; sessionId parked on a sentinel until the CLI returns the id.
      */
     async newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts) {
-      if (disposed) throw new Error("SessionHost disposed")
+      if (disposed) throw new Error("SessionHost disposed"); captureSessionHostCwd(opts.cwd)
       const hadSession = currentState.sessionId !== null
       const sessionOpts = { ...opts, mcpServers: opts.mcpServers ?? [] }
 
@@ -882,7 +882,7 @@ export async function createSessionHostFromConnection(
       sessionId: string
       _meta?: Record<string, unknown>
     } & SessionMcpOpts): Promise<{ sessionId: string; version: number }> {
-      if (disposed) throw new Error("SessionHost disposed")
+      if (disposed) throw new Error("SessionHost disposed"); captureSessionHostCwd(opts.cwd)
       beginSessionSwitchInvalidate()
       if (cancelOpenPendingSync()) {
         await Promise.resolve()

@@ -13,6 +13,7 @@
  * **אינם** ב-map, ואין sniffing: הסיומת קובעת את ה-Content-Type. לא-מוכר → 415.
  */
 
+import { mimeFromExt } from "@drive-coding/core/fs/media-catalog"
 import { readFile, realpath, stat } from "node:fs/promises"
 import { extname, relative, resolve } from "node:path"
 import type { Hono } from "hono"
@@ -25,30 +26,6 @@ export { parseBytesRange } from "./http-fs-file-range.js"
 const MAX_FILE_BYTES = 8 * 1024 * 1024 // 8MB
 export const MAX_AUDIO_FULL_BYTES = 32 * 1024 * 1024 // 32MB — GET without Range
 export const MAX_AUDIO_FILE_BYTES = 512 * 1024 * 1024 // 512MB — file cap when Range is used
-
-/**
- * 🔴 allowlist סגור. אין כאן — ולעולם לא יהיה — text/html או כל סוג שמריץ קוד
- * ב-origin שלנו. הוספת סיומת חדשה מחייבת לשאול: "האם הדפדפן מריץ אותה?"
- */
-const EXT_TO_CONTENT_TYPE: Record<string, string> = {
-  ".md": "text/markdown",
-  ".markdown": "text/markdown",
-  ".txt": "text/plain",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".svg": "image/svg+xml",
-  ".webp": "image/webp",
-  ".gif": "image/gif",
-  ".pdf": "application/pdf",
-  ".mp3": "audio/mpeg",
-  ".wav": "audio/wav",
-  ".ogg": "audio/ogg",
-  ".m4a": "audio/mp4",
-  ".aac": "audio/aac",
-  ".flac": "audio/flac",
-  ".webm": "audio/webm",
-}
 
 /**
  * הסוגים שעבורם charset בכלל רלוונטי. `image/svg+xml` **אינו** כאן בכוונה:
@@ -139,8 +116,8 @@ export function registerFsFileHttp(
 
     // 2. allowlist סיומות — לפני כל IO. הסיומת קובעת את ה-Content-Type; אין sniffing.
     const ext = extname(rawPath).toLowerCase()
-    const contentType = EXT_TO_CONTENT_TYPE[ext]
-    if (contentType === undefined) {
+    const contentType = mimeFromExt(rawPath)
+    if (contentType == null) {
       return c.json({ error: "unsupported file type" }, 415)
     }
 

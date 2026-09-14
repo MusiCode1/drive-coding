@@ -16,7 +16,7 @@
  * ─── slice/markdown-content-unify (Commit 2) — מרקדאון מלא בבועת-מחשבה ───
  */
 import type { ThoughtBubble } from "$lib/types/bubble"
-import { getI18n, getSettings, getChatScroll } from "$lib/context"
+import { getChatScroll, getI18n, getSettings } from "$lib/context"
 import { joinSegmentText, visibleThoughtSegments } from "./bubble-rendering"
 import MarkdownContent from "./MarkdownContent.svelte"
 import { settingBackedOpen } from "./setting-backed-open.svelte"

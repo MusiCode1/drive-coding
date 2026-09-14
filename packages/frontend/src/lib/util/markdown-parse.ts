@@ -27,6 +27,7 @@
 
 import katex from "katex"
 import { marked, type Tokens } from "marked"
+import type { DriveMediaRef } from "@drive-coding/core/fs/media-catalog"
 import { resolveAudioEmbed } from "@drive-coding/core/voice/audio-embed"
 import { beUrl } from "./be-url"
 import { escapeHtml, highlightCode } from "./code-highlight"
@@ -50,8 +51,9 @@ let currentMap: string[] = []
 let fragmentKinds: ("katex" | "code" | "image")[] = []
 // currentCwd — נקבע בכל parseToHtml; משמש renderer.image לפתרון נתיבים יחסיים.
 let currentCwd: string | null = null
+let currentCatalog: DriveMediaRef[] | undefined
 
-export type MarkdownRenderOptions = { cwd?: string | null }
+export type MarkdownRenderOptions = { cwd?: string | null; catalog?: DriveMediaRef[] }
 
 // ─── allowlist לשמות שפות ב-class (אבטחה: injection ל-class="language-X") ───
 // רק תווים בטוחים: אותיות, מספרים, מקף, פלוס, hash
@@ -137,7 +139,7 @@ marked.use({
       return storeCodePlaceholder(fullBlock)
     },
     image(token: Tokens.Image): string {
-      const embed = resolveAudioEmbed(token.href, currentCwd)
+      const embed = resolveAudioEmbed(token.href, { cwd: currentCwd, catalog: currentCatalog })
       if (embed !== null) {
         const src = beUrl(`/api/fs/file?uri=${encodeURIComponent(embed.uri)}`)
         return buildAudioPlaceholder(src, token.text, embed.uri)
@@ -308,6 +310,7 @@ export function parseToHtml(text: string, opts?: MarkdownRenderOptions): {
   currentMap = []
   fragmentKinds = []
   currentCwd = opts?.cwd ?? null
+  currentCatalog = opts?.catalog
   const normalized = normalizeInvisibles(text)
   const html = marked.parse(normalized, {
     async: false,

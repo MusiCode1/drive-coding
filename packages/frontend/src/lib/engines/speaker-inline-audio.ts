@@ -1,3 +1,4 @@
+import type { DriveMediaRef } from "@drive-coding/core/fs/media-catalog"
 import type { AudioEmbedRef } from "@drive-coding/core/voice/audio-embed"
 import type { OrderKey } from "@drive-coding/core/voice/tts-queue"
 import type { SpeakableLabels } from "@drive-coding/core/voice/speakable"
@@ -11,6 +12,7 @@ export type SpeakerBubbleState = {
 export type SpeakerEnqueueCtx = {
   labels: SpeakableLabels
   cwd: string | null
+  catalog?: DriveMediaRef[]
   minChars: number
   maxChars: number
   autoPlayInlineAudio: boolean
@@ -23,7 +25,11 @@ export function ingestSpeakerSpeakableChunk(
   raw: string,
   ctx: SpeakerEnqueueCtx,
 ): void {
-  const parts = toSpeakableParts(raw, ctx.labels, { stream: true, cwd: ctx.cwd })
+  const parts = toSpeakableParts(raw, ctx.labels, {
+    stream: true,
+    cwd: ctx.cwd,
+    catalog: ctx.catalog,
+  })
   const items = drainSpeakablePartsChunk(parts, state, {
     minChars: ctx.minChars,
     maxChars: ctx.maxChars,

@@ -117,7 +117,7 @@ import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 import { createExtClient, type ExtClient } from "$lib/adapters/ext"
 // ─── slice session-state-reducer C4: FE patch applicator + mappers ─── (additive)
 import { applyPatchMutable } from "$lib/session/apply-patch-mutable"
-import { mapLocations, mapToolContent } from "$lib/session/map-tool-content"
+import { mapLocations, mapToolContent, MediaCatalogStore } from "$lib/session/map-tool-content"
 // ─── slice subagent-transcript-data-v2: פרסר+reducer טהורים (additive) ───
 import {
   type ClaudeSubagentEvent,
@@ -215,10 +215,8 @@ export class AgentSession {
   #remoteView(): SessionView | null {
     return this.#isRemote ? this.#view : null
   }
-
   /** @internal For testing — called on every notification entering #onSessionUpdate. */
-  #onUpdateObserved?: (update: unknown) => void
-
+  #onUpdateObserved?: (update: unknown) => void; readonly #mediaCatalog = new MediaCatalogStore()
   constructor(opts?: {
     view?: SessionView
     cues?: CuesEngine
@@ -275,6 +273,7 @@ export class AgentSession {
   get historyMark(): HistoryMark {
     return this.#historyMark
   }
+  get mediaCatalog() { return this.#mediaCatalog.catalog }
   /** טקסט הפרומפט האחרון שנשלח על ידי המשתמש — משמש את ה-Speaker להקשר עבור קריינות. */
   lastUserMessage = $state("")
 
@@ -3161,7 +3160,7 @@ export class AgentSession {
   }
 
   #onSessionUpdate = (notification: SessionNotification): void => {
-    this.#onUpdateObserved?.(notification.update)
+    this.#onUpdateObserved?.(notification.update); this.#mediaCatalog.mergeFromUpdate(notification.update as Record<string, unknown>)
     this.#noteAgentActivity() // watchdog §2 — מסלול WS (כל session/update)
 
     // slice meta-passthrough Commit 4: ext notifications re-enter via HTTP wire wrapper.

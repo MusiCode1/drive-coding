@@ -51,6 +51,7 @@ export function createWsStack(): WsStack {
       connectionRegistry,
       sessionHostRegistry: agentSessionRegistry,
       evictionController,
+      fsFileAllowedBase: deps.env.FS_FILE_ALLOWED_BASE,
     })
     const onAgentConnect = agentWs.onConnect
     registerConnectionRoute(app, connectionRegistry, {

@@ -1,3 +1,4 @@
+import type { DriveMediaRef } from "../fs/media-catalog.js"
 import { IMAGE_LINK, resolveAudioEmbed, type SpeakablePart } from "./audio-embed.js"
 
 export type { SpeakablePart } from "./audio-embed.js"
@@ -56,6 +57,8 @@ export type SpeakableOpts = {
   stream?: boolean
   /** Session cwd — required to resolve relative audio embed hrefs. */
   cwd?: string | null
+  /** `_drive/media` catalog from session updates — checked before extension fallback. */
+  catalog?: DriveMediaRef[]
 }
 
 /** תווית אחת, נקודה אחת — שני מסלולי-הגדר השתמשו בהעתק זהה. */
@@ -180,7 +183,7 @@ export function toSpeakableParts(
     }
     const alt = m[1] ?? ""
     const href = m[2] ?? ""
-    const embed = resolveAudioEmbed(href, cwd)
+    const embed = resolveAudioEmbed(href, { cwd, catalog: opts?.catalog })
     if (embed !== null) {
       parts.push({
         kind: "file",
