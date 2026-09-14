@@ -6,10 +6,12 @@
  */
 
 import { randomUUID } from "node:crypto"
+import { enrichUpdateWithMedia } from "@drive-coding/core/fs/media-catalog"
 import { createLogger } from "@drive-coding/core/log"
 import type { WebSocket } from "ws"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
+import { createMediaStatFn } from "./media-stat.js"
 import type { EvictionController } from "./eviction-controller.js"
 
 const log = createLogger("backend.ws.agent")
@@ -32,6 +34,30 @@ type ActiveFeWsEntry = {
   connectionId: string
 }
 
+function enrichFeLine(
+  line: string,
+  agentId: string,
+  connectionRegistry: ConnectionRegistry,
+  mediaStat: (uri: string) => { bytes: number } | null,
+): string {
+  try {
+    const envelope = JSON.parse(line) as Record<string, unknown>
+    if (envelope.method !== "session/update") return line
+    const params =
+      typeof envelope.params === "object" && envelope.params !== null
+        ? (envelope.params as Record<string, unknown>)
+        : undefined
+    if (params === undefined) return line
+    const inner = params.update
+    if (typeof inner !== "object" || inner === null) return line
+    const cwd = connectionRegistry.getCwd(agentId) ?? null
+    params.update = enrichUpdateWithMedia(inner as Record<string, unknown>, cwd, mediaStat)
+    return JSON.stringify(envelope)
+  } catch {
+    return line
+  }
+}
+
 export function createAgentWsHandler(deps: {
   orchestrator: AgentOrchestrator
   connectionRegistry: ConnectionRegistry
@@ -41,12 +67,14 @@ export function createAgentWsHandler(deps: {
     unregisterHost(agentId: string): void
   }
   evictionController?: EvictionController
+  fsFileAllowedBase?: string
 }): {
   onConnect: (ws: WebSocket, agentId: string, connectionId?: string) => Promise<void>
   isWsSocketActive: (agentId: string) => boolean
   closeLiveSocket: (agentId: string, connectionId: string) => void
 } {
   const activeFeWs = new Map<string, ActiveFeWsEntry>()
+  const mediaStat = createMediaStatFn(deps.fsFileAllowedBase)
 
   const sweep = setInterval(() => {
     const now = Date.now()
@@ -125,7 +153,8 @@ export function createAgentWsHandler(deps: {
     const unsub = conn.wire.onLine((line) => {
       if (line.length === 0) return
       try {
-        feWs.send(`${line}\n`)
+        const out = enrichFeLine(line, agentId, deps.connectionRegistry, mediaStat)
+        feWs.send(`${out}\n`)
       } catch {
         /* feWs closed */
       }
