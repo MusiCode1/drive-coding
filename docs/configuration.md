@@ -132,6 +132,108 @@ file serving together.
 > This supersedes the global `AGENT_SIDECAR` env below for any cliKind that
 > declares a `transport`. `AGENT_SIDECAR` still applies to cliKinds without one.
 
+### The three transport modes
+
+| `mode` | Where the CLI runs | Reaches it via | Status |
+|---|---|---|---|
+| `stdio` | in-process / a child of the backend | stdio pipes | default (today) |
+| `unix` | a sidecar process/unit | a Unix-domain socket | implemented |
+| `http` | a remote process | Streamable HTTP | 🚧 reserved — errors at connect |
+
+`unix` is the one that crosses a container boundary: the socket is a file, and a
+file can be shared between containers through a bind-mount. `http` is for the
+case where there is **no** shared filesystem at all (not implemented yet).
+
+### Topology A — sidecars on the same host (survive a restart)
+
+The simplest use of `unix`: the backend launches each agent as its own transient
+systemd unit, so agents outlive a backend restart. Same host, same filesystem —
+no `fs` needed.
+
+```jsonc
+"claude": { "transport": { "mode": "unix", "socketDir": "/run/user/1000/drive-coding/agents" } }
+```
+
+`socketDir` holds one socket per agent (`<agentId>.sock`). Omit it and the
+deployment's default runtime dir is used. This is what the global `AGENT_SIDECAR`
+env does too — a `transport` just makes it per-CLI and explicit.
+
+### Topology B — backend and agents in separate containers
+
+The goal behind per-CLI `transport`/`fs`: run the backend in one container and a
+CLI's agents in another (a "tools" container with the CLI, its auth, and the
+working tree), while the backend still drives them and shows their files.
+
+```
+┌─ backend container ─────────┐        ┌─ agent (tools) container ───────────┐
+│ drive-coding BE             │        │ agent-sidecar  ──stdio──▶ cursor CLI │
+│                             │        │   binds <shared>/<agentId>.sock      │
+│  connect ──unix socket──────┼────────┼─▶ (same path, bind-mounted)          │
+│                             │        │                                      │
+│  GET /api/fs/file ──webdav──┼────────┼─▶ rclone serve webdav  (the tree)    │
+└─────────────────────────────┘        └──────────────────────────────────────┘
+        shared volume: <shared>            + tunnel/shared-net for the webdav URL
+```
+
+Three independent wires, three config knobs:
+
+1. **ACP wire — a socket in a shared bind-mount.** Mount one directory into
+   **both** containers at the **same absolute path**, and point `socketDir`
+   there. The agent container runs `agent-sidecar` (the binary at
+   `packages/backend/src/bin/agent-sidecar.ts`) which binds
+   `<socketDir>/<agentId>.sock`; the backend attaches to that same path.
+
+2. **Lifecycle — `attachOnly: true`.** The backend never launches across the
+   boundary; it only attaches. The **agent container owns** starting a sidecar
+   per agent. Creating an agent whose socket is not yet bound fails cleanly
+   ("attach-only target: no live sidecar…") rather than starting anything on the
+   backend host.
+
+3. **Files — `fs.webdav`.** The agent container exposes its tree with an
+   **external** `rclone serve webdav` (we do not manage it); the backend browses
+   and serves through it. Reach it over an SSH tunnel or a shared container
+   network, and put the URL/credentials in `fs`.
+
+```jsonc
+"cursor-tools": {
+  "bin": "cursor-agent", "args": ["acp"], "displayName": "Cursor (tools container)",
+  "transport": {
+    "mode": "unix",
+    "socketDir": "/shared/agents",   // bind-mounted into BOTH containers, same path
+    "attachOnly": true               // the tools container spawns the sidecars
+  },
+  "fs": {
+    "kind": "webdav",
+    "url": "http://tools:17654",     // tunnel or shared-network address of rclone serve
+    "user": "dc", "passEnv": "TOOLS_WEBDAV_PASS",
+    "root": "/home/dev"              // rclone serve's document root
+  }
+}
+```
+
+Podman/Quadlet sketch (rootless; mirrors `deploy/container/drive-coding-edge.container`):
+
+```ini
+# backend container — mount the shared socket dir + the config
+Volume=%h/agents-shared:/shared/agents:Z
+Volume=%h/.config/drive-coding:/data/.config/drive-coding:Z
+```
+```ini
+# tools container — same shared dir at the same path; runs rclone + spawns sidecars
+Volume=%h/agents-shared:/shared/agents:Z
+PublishPort=127.0.0.1:17654:17654   # rclone serve webdav, reached by the tunnel/BE
+```
+
+**Caveats.**
+- Use `socketDir`, not `socketPath`, for more than one agent: sockets are named
+  per agent (`<agentId>.sock`) and discovered by that name. A fixed `socketPath`
+  is a single-agent knob and is **not** auto-restored on a backend restart.
+- The tools-container half (spawning a sidecar per agentId, running rclone) is
+  **deployment-specific** — drive-coding ships the backend side and the
+  `agent-sidecar` binary, not a ready-made tools image.
+- `fs.root` is the rclone document root; the folder picker starts there, and
+  paths outside it are refused (403).
+
 ---
 
 ## Logging and diagnostics
