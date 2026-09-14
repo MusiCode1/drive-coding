@@ -5,11 +5,13 @@
 import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
 import { createLogger } from "@drive-coding/core/log"
 import { onConfigChange } from "@drive-coding/provider/config"
-import { applyReloadEffects, reloadRuntimeConfig } from "../config/runtime-config.js"
 import { serveStatic } from "@hono/node-server/serve-static"
 import type { Hono } from "hono"
 import { isBinary } from "../binary.js"
+import { applyReloadEffects, reloadRuntimeConfig } from "../config/runtime-config.js"
+import { bootAgentEvents } from "../delivery/agent-events-boot.js"
 import { registerHttp } from "../delivery/http.js"
+import { registerAgentPromptHttp } from "../delivery/http-agent-prompt.js"
 import { registerAgentsHttp } from "../delivery/http-agents.js"
 import { registerCliAvailabilityHttp } from "../delivery/http-cli-availability.js"
 import { registerCliLogoHttp } from "../delivery/http-cli-logo.js"
@@ -23,8 +25,6 @@ import {
   registerRecordingsPostHttp,
 } from "../delivery/http-history.js"
 import { registerLiveTokenHttp } from "../delivery/http-live-token.js"
-import { registerAgentPromptHttp } from "../delivery/http-agent-prompt.js"
-import { bootAgentEvents } from "../delivery/agent-events-boot.js"
 import { registerMcpHttp } from "../delivery/http-mcp.js"
 import { registerHttpOptions } from "../delivery/http-options.js"
 import { registerProxyHttp } from "../delivery/http-proxy.js"
@@ -92,8 +92,9 @@ export async function buildApp(
   registerRecordingsPostHttp(app, { recordingsStore })
   registerFsBrowseHttp(app, {
     allowedBase: config.fsBrowseBase ?? env.FS_BROWSE_ALLOWED_BASE,
+    env,
   })
-  registerFsFileHttp(app, { allowedBase: env.FS_FILE_ALLOWED_BASE })
+  registerFsFileHttp(app, { allowedBase: env.FS_FILE_ALLOWED_BASE, env })
 
   registerProxyHttp(app, {
     cacheBaseDir: ensureStateSubdir("cache", "proxy"),

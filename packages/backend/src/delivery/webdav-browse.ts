@@ -134,6 +134,56 @@ function isHiddenName(name: string): boolean {
   return name.startsWith(".") || NOISE_DIRS.has(name)
 }
 
+/**
+ * Fetch a single file's bytes over WebDAV (slice cli-transport, fs serve).
+ *
+ * Confines to `config.root` (403 outside), then GETs with a Range header capped
+ * at `maxBytes` so an oversized remote file does not stream in full; the byte
+ * length is re-checked after read as a backstop (a server that ignores Range
+ * still fails cleanly with 413). Mirrors `browseWebdav`'s error mapping.
+ */
+export async function fetchWebdavFile(
+  absPath: string,
+  opts: { config: WebdavBrowseConfig; maxBytes: number; fetchImpl?: typeof fetch },
+): Promise<
+  | { ok: true; bytes: Uint8Array }
+  | { ok: false; status: 400 | 403 | 404 | 413 | 502; error: string }
+> {
+  const root = opts.config.root
+  const path = normalizeAbs(absPath)
+  if (!path.startsWith("/")) return { ok: false, status: 400, error: "path must be absolute" }
+  if (!isUnderRoot(path, root)) return { ok: false, status: 403, error: "access denied" }
+
+  const davPath = absToWebdavPath(path, root)
+  const url = `${opts.config.baseUrl}${davPath}`
+  const auth = Buffer.from(`${opts.config.user}:${opts.config.pass}`, "utf8").toString("base64")
+  const fetchFn = opts.fetchImpl ?? fetch
+  let res: Response
+  try {
+    res = await fetchFn(url, {
+      method: "GET",
+      headers: { Authorization: `Basic ${auth}`, Range: `bytes=0-${opts.maxBytes - 1}` },
+    })
+  } catch (err) {
+    return {
+      ok: false,
+      status: 502,
+      error: `webdav unreachable: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+  if (res.status === 404) return { ok: false, status: 404, error: "file not found" }
+  if (res.status === 401 || res.status === 403)
+    return { ok: false, status: 502, error: "webdav auth failed" }
+  // 206 Partial (honored Range) and 200 (ignored it) are both usable.
+  if (res.status !== 200 && res.status !== 206) {
+    return { ok: false, status: 502, error: `webdav HTTP ${res.status}` }
+  }
+  const bytes = new Uint8Array(await res.arrayBuffer())
+  // Backstop: a server that ignored Range could still hand back too much.
+  if (bytes.length > opts.maxBytes) return { ok: false, status: 413, error: "file too large" }
+  return { ok: true, bytes }
+}
+
 export async function browseWebdav(
   absPath: string,
   opts: { showHidden: boolean; config: WebdavBrowseConfig; fetchImpl?: typeof fetch },

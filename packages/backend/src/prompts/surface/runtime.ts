@@ -25,6 +25,12 @@ export type SurfaceRuntimeInfo = {
   publicBaseUrl?: string
   /** This agent's id when known (DRIVE_CODING_AGENT_ID / X-Drive-Coding-Agent). */
   agentId?: string
+  /**
+   * This agent's cliKind, when known. Appended to /api/fs/file links so the
+   * backend serves from this CLI's filesystem (slice cli-transport). Omit for
+   * local-fs agents.
+   */
+  cliKind?: string
   /** Parent agent id when this agent was opened as a child. */
   parentAgentId?: string
   /**
@@ -43,12 +49,18 @@ function envCell(value: string | undefined): string {
   return `\`${value}\``
 }
 
-/** Build a clickable `/api/fs/file` URL for an absolute local path. */
-export function buildFsFileUrl(origin: string, absolutePath: string): string {
+/**
+ * Build a clickable `/api/fs/file` URL for an absolute path. Pass `cliKind`
+ * (slice cli-transport) so the backend serves from that CLI's filesystem
+ * (webdav) rather than its own local disk; omit for local-fs agents.
+ */
+export function buildFsFileUrl(origin: string, absolutePath: string, cliKind?: string): string {
   const fileUri = absolutePath.startsWith("file:")
     ? absolutePath
     : `file://${absolutePath.startsWith("/") ? "" : "/"}${absolutePath}`
-  return `${stripTrailingSlash(origin)}/api/fs/file?uri=${encodeURIComponent(fileUri)}`
+  const cliKindQuery =
+    cliKind !== undefined && cliKind !== "" ? `&cliKind=${encodeURIComponent(cliKind)}` : ""
+  return `${stripTrailingSlash(origin)}/api/fs/file?uri=${encodeURIComponent(fileUri)}${cliKindQuery}`
 }
 
 /**
@@ -57,9 +69,7 @@ export function buildFsFileUrl(origin: string, absolutePath: string): string {
  */
 export function resolveSurfaceRuntimeEnv(info: SurfaceRuntimeInfo): SurfaceRuntimeEnv {
   const base = stripTrailingSlash(info.baseUrl)
-  const publicOrigin = info.publicBaseUrl
-    ? stripTrailingSlash(info.publicBaseUrl)
-    : undefined
+  const publicOrigin = info.publicBaseUrl ? stripTrailingSlash(info.publicBaseUrl) : undefined
   const derived: SurfaceRuntimeEnv = {
     DRIVE_CODING_BASE: base,
     DC_BASE: base,
@@ -78,12 +88,10 @@ export function resolveSurfaceRuntimeEnv(info: SurfaceRuntimeInfo): SurfaceRunti
 
 export function buildSurfaceRuntime(info: SurfaceRuntimeInfo): string {
   const base = stripTrailingSlash(info.baseUrl)
-  const publicOrigin = info.publicBaseUrl
-    ? stripTrailingSlash(info.publicBaseUrl)
-    : undefined
+  const publicOrigin = info.publicBaseUrl ? stripTrailingSlash(info.publicBaseUrl) : undefined
   const linkOrigin = publicOrigin ?? base
   const examplePath = "/home/user/Projects/example/README.md"
-  const exampleLink = buildFsFileUrl(linkOrigin, examplePath)
+  const exampleLink = buildFsFileUrl(linkOrigin, examplePath, info.cliKind)
   const env = resolveSurfaceRuntimeEnv(info)
 
   const lines = [
@@ -118,8 +126,8 @@ export function buildSurfaceRuntime(info: SurfaceRuntimeInfo): string {
     `| \`PUBLIC_BASE_URL\` | ${envCell(env.PUBLIC_BASE_URL)} | User-facing HTTPS origin (links the user opens) |`,
     `| \`DC_PARENT\` | ${envCell(env.DC_PARENT)} | Parent agent id when you were opened as a child |`,
     "",
-    "- Prefer **\`DRIVE_CODING_BASE\`** for HTTP/MCP to this BE (loopback; no Cloudflare Access).",
-    "- Prefer **\`PUBLIC_BASE_URL\`** (when set) for markdown links the **user** clicks in a browser.",
+    "- Prefer **`DRIVE_CODING_BASE`** for HTTP/MCP to this BE (loopback; no Cloudflare Access).",
+    "- Prefer **`PUBLIC_BASE_URL`** (when set) for markdown links the **user** clicks in a browser.",
     "- If a row says *(unset)*, that key is not known here — do not invent it.",
     "",
     "When you want the user to **open a local file in the browser**, give a markdown",

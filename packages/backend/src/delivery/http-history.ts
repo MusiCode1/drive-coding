@@ -15,10 +15,11 @@
 
 import { readdir, realpath } from "node:fs/promises"
 import { join, relative, resolve } from "node:path"
+import { cliFs } from "@drive-coding/provider/config"
 import type { Hono } from "hono"
 import type { ProjectsRegistry } from "../app/projects-registry.js"
 import type { RecordingsStore } from "../app/recordings-store.js"
-import { browseWebdav, readWebdavBrowseConfig } from "./webdav-browse.js"
+import { browseWebdav, readWebdavBrowseConfig, resolveCliFsWebdav } from "./webdav-browse.js"
 
 // ─── /api/projects ────────────────────────────────────────────────────────────
 
@@ -171,11 +172,14 @@ export function registerFsBrowseHttp(
      * realpath נשמר תמיד (הגנת symlink).
      */
     allowedBase?: string
+    /** Env for per-cliKind fs resolution (slice cli-transport). Defaults to process.env. */
+    env?: NodeJS.ProcessEnv
   } = {},
 ): void {
   // opt-in restriction: opts.allowedBase when set.
   // undefined = allow-all (Q1 decision: default allows everything).
   const allowedBase = opts.allowedBase
+  const env = opts.env ?? process.env
 
   app.get("/api/fs/browse", async (c) => {
     const rawPath = c.req.query("path")
@@ -184,10 +188,26 @@ export function registerFsBrowseHttp(
     }
     const showHidden = c.req.query("showHidden") === "true"
 
-    // Private remote browse: WebDAV (rclone serve) via SSH tunnel — no local realpath.
-    // Opt-in per request (?via=webdav) + env FS_BROWSE_WEBDAV_*.
+    // Per-cliKind remote browse (slice cli-transport): a cliKind whose CliSpec.fs
+    // is webdav browses over WebDAV (rclone serve), no local realpath. The FE
+    // passes ?cliKind of the selected agent. A local-fs cliKind falls through.
+    const cliKind = c.req.query("cliKind")
+    if (cliKind !== undefined && cliKind !== "" && cliFs(cliKind, env).kind === "webdav") {
+      const cfg = resolveCliFsWebdav(cliKind, env)
+      if (!cfg) {
+        return c.json({ error: "webdav browse not configured" }, 503)
+      }
+      const result = await browseWebdav(rawPath, { showHidden, config: cfg })
+      if (!result.ok) {
+        return c.json({ error: result.error }, result.status)
+      }
+      return c.json(result.result)
+    }
+
+    // Legacy remote browse: global FS_BROWSE_WEBDAV_* via ?via=webdav. Kept for
+    // backward compatibility; superseded per-cliKind by the branch above.
     if (c.req.query("via") === "webdav") {
-      const cfg = readWebdavBrowseConfig()
+      const cfg = readWebdavBrowseConfig(env)
       if (!cfg) {
         return c.json({ error: "webdav browse not configured" }, 503)
       }

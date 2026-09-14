@@ -15,8 +15,10 @@
 
 import { readFile, realpath, stat } from "node:fs/promises"
 import { extname, relative, resolve } from "node:path"
+import { cliFs } from "@drive-coding/provider/config"
 import type { Hono } from "hono"
 import { isAbsolutePath, normalizeRealpath } from "./http-history.js"
+import { fetchWebdavFile, resolveCliFsWebdav } from "./webdav-browse.js"
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024 // 8MB
 
@@ -68,6 +70,40 @@ function isValidUtf8(bytes: Uint8Array): boolean {
   }
 }
 
+/**
+ * bytes → Response, shared by the local and WebDAV paths (slice cli-transport).
+ *
+ * 🔴 The one place the charset ladder, `nosniff`, and the SVG CSP live, so the
+ * two sources cannot drift on the security-critical part. `contentType` is the
+ * allowlist value already resolved from `ext` (the 415 gate runs earlier, before
+ * any IO, for both paths).
+ */
+function serveBytes(bytes: Uint8Array, ext: string, contentType: string): Response {
+  // 🔴 מדרג-ה-charset. שלוש תוצאות, ואף אחת מהן אינה ניחוש:
+  //   · לא-טקסט            → הסוג כפי שהוא (תמונות/PDF/SVG לא נוגעים)
+  //   · טקסט + UTF-8 חוקי  → `; charset=utf-8` — **מדידה, לא הנחה**
+  //   · טקסט שאינו UTF-8   → `application/octet-stream`
+  let effectiveContentType = contentType
+  if (TEXT_EXTS.has(ext)) {
+    effectiveContentType = isValidUtf8(bytes)
+      ? `${contentType}; charset=utf-8`
+      : "application/octet-stream"
+  }
+
+  const headers: Record<string, string> = {
+    "Content-Type": effectiveContentType,
+    "Content-Length": String(bytes.length),
+    "Cache-Control": "no-cache",
+    // 🔴 מונע רינדור-כדף גם אם סוג כלשהו יפורש כ-HTML ע"י דפדפן סורר.
+    "X-Content-Type-Options": "nosniff",
+  }
+  if (ext === ".svg") {
+    // 🔴 ה-CSP מגן רק על ניווט ישיר ל-endpoint (במסלול blob: ה-headers נזרקים).
+    headers["Content-Security-Policy"] = "script-src 'none'; sandbox"
+  }
+  return new Response(bytes, { status: 200, headers })
+}
+
 export function registerFsFileHttp(
   app: Hono,
   opts: {
@@ -78,9 +114,12 @@ export function registerFsFileHttp(
      * הפרמטר קיים כדי שהטסט השלילי יהיה בר-הרצה בלי restart של התהליך.
      */
     allowedBase?: string
+    /** Env for per-cliKind fs resolution (slice cli-transport). Defaults to process.env. */
+    env?: NodeJS.ProcessEnv
   } = {},
 ): void {
   const allowedBase = opts.allowedBase
+  const env = opts.env ?? process.env
 
   app.get("/api/fs/file", async (c) => {
     const uri = c.req.query("uri")
@@ -127,6 +166,19 @@ export function registerFsFileHttp(
       return c.json({ error: "unsupported file type" }, 415)
     }
 
+    // 2b. Per-cliKind remote serve (slice cli-transport): a webdav cliKind fetches
+    // the bytes over WebDAV instead of local disk, then runs the identical
+    // serveBytes pipeline (allowlist already applied above). Path confinement
+    // (isUnderRoot → 403) and the size cap happen inside fetchWebdavFile.
+    const cliKind = c.req.query("cliKind")
+    if (cliKind !== undefined && cliKind !== "" && cliFs(cliKind, env).kind === "webdav") {
+      const cfg = resolveCliFsWebdav(cliKind, env)
+      if (!cfg) return c.json({ error: "webdav serve not configured" }, 503)
+      const fetched = await fetchWebdavFile(rawPath, { config: cfg, maxBytes: MAX_FILE_BYTES })
+      if (!fetched.ok) return c.json({ error: fetched.error }, fetched.status)
+      return serveBytes(fetched.bytes, ext, contentType)
+    }
+
     // 3. realpath — פתרון-symlink + בדיקת-קיום.
     let real: string
     try {
@@ -157,48 +209,9 @@ export function registerFsFileHttp(
       return c.json({ error: "file too large" }, 413)
     }
 
-    // 6. הגשה.
-    // 🔴 דלתא 5 — r2 כתב `{…}.filter(…)` על אובייקט-ליטרל. נמדד:
-    // TypeError: ({a:"1"}).filter is not a function ⇒ כל 200 היה נופל ל-500.
-    // הבנייה כאן היא Record רגיל + השמה מותנית.
+    // 6. הגשה — דרך ה-helper המשותף (זהה למסלול ה-webdav).
+    // bytes.length ולא size מ-stat — הקובץ יכול להשתנות בין stat ל-readFile.
     const bytes = new Uint8Array(await readFile(real))
-
-    // 🔴 מדרג-ה-charset. שלוש תוצאות, ואף אחת מהן אינה ניחוש:
-    //   · לא-טקסט            → הסוג כפי שהוא (תמונות/PDF/SVG לא נוגעים)
-    //   · טקסט + UTF-8 חוקי  → `; charset=utf-8` — **מדידה, לא הנחה**
-    //   · טקסט שאינו UTF-8   → `application/octet-stream`
-    //
-    // הענף השלישי הוא הכרעה, לא פשרה: הכלל הוא כמו של git — בתים שאינם UTF-8
-    // חוקי **אינם טקסט**. השמטת ה-charset לבדה הייתה מחזירה את הדפדפן לניחוש-
-    // לפי-לוקאל, כלומר בדיוק לכשל שאנחנו מתקנים; ואמרנו לו `nosniff` ("אל
-    // תנחש"), אז שלא ננחש גם אנחנו.
-    //
-    // 🔴 והבסיס המכריע לצד-הלקוח: `Response.text()` מפענח UTF-8 **תמיד**
-    // ומתעלם מה-charset (spec של fetch) ⇒ קובץ שאינו UTF-8 יפיק ג'יבריש בענף
-    // הטקסט **בכל מקרה**. לכן ההפניה ל-blob אינה החמרה — היא הדבר היחיד שנותן
-    // למשתמש תוצאה שמישה: קובץ שאפשר לפתוח בכלי שיודע את הקידוד.
-    let effectiveContentType = contentType
-    if (TEXT_EXTS.has(ext)) {
-      effectiveContentType = isValidUtf8(bytes)
-        ? `${contentType}; charset=utf-8`
-        : "application/octet-stream"
-    }
-
-    const headers: Record<string, string> = {
-      "Content-Type": effectiveContentType,
-      // bytes.length ולא size מ-stat — הקובץ יכול להשתנות בין stat ל-readFile.
-      "Content-Length": String(bytes.length),
-      "Cache-Control": "no-cache",
-      // 🔴 מונע רינדור-כדף גם אם סוג כלשהו יפורש כ-HTML ע"י דפדפן סורר.
-      "X-Content-Type-Options": "nosniff",
-    }
-    if (ext === ".svg") {
-      // 🔴 ממצא-אביגיל 9 — טווח מדויק: ה-CSP מגן **רק על ניווט ישיר** ל-endpoint.
-      // במסלול ה-FE (fetch → blob:) ה-headers של ה-response **נזרקים**, ולכן ה-CSP
-      // אינו נוסע עם ה-blob. זה לא חור: SVG ב-<img> רץ ב-secure-static-mode ממילא.
-      headers["Content-Security-Policy"] = "script-src 'none'; sandbox"
-    }
-
-    return new Response(bytes, { status: 200, headers })
+    return serveBytes(bytes, ext, contentType)
   })
 }
