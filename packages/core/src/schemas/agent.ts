@@ -1,4 +1,5 @@
 import { type } from "arktype"
+import type { CliFs, CliTransport } from "./cli-transport"
 
 export const PermissionPolicy = type.enumerated("allow_once", "allow_always", "reject_once", "ask")
 export type PermissionPolicy = typeof PermissionPolicy.infer
@@ -66,6 +67,16 @@ export type CliSpec = {
    * Undefined/false = warn on conflicts at load/reload time.
    */
   readonly sessionMetaAllowDefaultOverride?: boolean
+  /**
+   * How the backend carries the ACP wire to this CLI's agent (slice cli-transport).
+   * Undefined → { mode: "stdio" } = today's in-process/spawn behavior.
+   */
+  readonly transport?: CliTransport
+  /**
+   * Where this CLI's files live, for /api/fs browse + serve (slice cli-transport).
+   * Undefined → { kind: "local" } = the backend's own filesystem (today).
+   */
+  readonly fs?: CliFs
 }
 
 /** Default `_meta` for claude — parity with FE local path and rpc newSession (slice session-meta-config). */

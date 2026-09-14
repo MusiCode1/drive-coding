@@ -274,3 +274,117 @@ describe("loadCliSpecsOverride", () => {
     warnSpy.mockRestore()
   })
 })
+
+// ── slice cli-transport: transport / fs overrides + getCliSpec merge + helpers ──
+describe("cli-transport (transport / fs)", () => {
+  const tmpFiles: string[] = []
+  const originalEnv = { ...process.env }
+
+  function writeTmpFile(content: string): string {
+    const filePath = path.join(
+      os.tmpdir(),
+      `cli-transport-test-${Date.now()}-${Math.random().toString(36).slice(2)}.jsonc`,
+    )
+    fs.writeFileSync(filePath, content, "utf8")
+    tmpFiles.push(filePath)
+    return filePath
+  }
+
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  afterEach(() => {
+    for (const f of tmpFiles) {
+      try {
+        fs.unlinkSync(f)
+      } catch {
+        // ignore
+      }
+    }
+    tmpFiles.length = 0
+    for (const key of Object.keys(process.env)) {
+      if (!(key in originalEnv)) delete process.env[key]
+    }
+    Object.assign(process.env, originalEnv)
+  })
+
+  it("valid transport (unix + socketPath) and webdav fs (passEnv) are kept", async () => {
+    const content = JSON.stringify({
+      "cursor-netcup": {
+        bin: "cursor-agent",
+        transport: { mode: "unix", sidecar: true, socketPath: "/shared/a.sock", attachOnly: true },
+        fs: {
+          kind: "webdav",
+          url: "http://127.0.0.1:17654/",
+          user: "dc",
+          passEnv: "WD_PASS",
+          root: "/home/user",
+        },
+      },
+    })
+    process.env.CLI_SPECS_FILE = writeTmpFile(content)
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+    expect(result["cursor-netcup"]?.transport).toEqual({
+      mode: "unix",
+      sidecar: true,
+      socketPath: "/shared/a.sock",
+      attachOnly: true,
+    })
+    expect(result["cursor-netcup"]?.fs).toEqual({
+      kind: "webdav",
+      url: "http://127.0.0.1:17654/",
+      user: "dc",
+      passEnv: "WD_PASS",
+      root: "/home/user",
+    })
+  })
+
+  it("invalid transport.mode → transport dropped + warning", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    process.env.CLI_SPECS_FILE = writeTmpFile(
+      JSON.stringify({ x: { transport: { mode: "carrier-pigeon" } } }),
+    )
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+    expect(result["x"]?.transport).toBeUndefined()
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it('transport mode="unix" without socketPath/socketDir → dropped + warning', async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    process.env.CLI_SPECS_FILE = writeTmpFile(
+      JSON.stringify({ x: { transport: { mode: "unix" } } }),
+    )
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+    expect(result["x"]?.transport).toBeUndefined()
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it("webdav fs without pass/passEnv → fs dropped + warning", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    process.env.CLI_SPECS_FILE = writeTmpFile(
+      JSON.stringify({ x: { fs: { kind: "webdav", url: "http://h", user: "u", root: "/r" } } }),
+    )
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+    expect(result["x"]?.fs).toBeUndefined()
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it("getCliSpec merges transport/fs; cliTransport/cliFs default to stdio/local", async () => {
+    process.env.CLI_SPECS_FILE = writeTmpFile(
+      JSON.stringify({ "cursor-netcup": { transport: { mode: "unix", socketDir: "/d" } } }),
+    )
+    const { getCliSpec, cliTransport, cliFs } = await import("./src/config/cli-config.js")
+    expect(getCliSpec("cursor-netcup")?.transport).toEqual({ mode: "unix", socketDir: "/d" })
+    // a built-in with no override → defaults
+    expect(cliTransport("claude")).toEqual({ mode: "stdio" })
+    expect(cliFs("claude")).toEqual({ kind: "local" })
+  })
+})

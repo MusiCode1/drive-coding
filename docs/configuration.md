@@ -91,6 +91,47 @@ existing key changes how that agent is launched.
 > they read the backend's own environment. Per-agent environment for those is not
 > supported today.
 
+### Per-CLI transport and filesystem (`transport` / `fs`)
+
+A spec can also declare **how** the backend reaches the agent and **where** that
+agent's files live. Both are optional; omitting them is exactly today's behavior
+(`stdio` transport reading the backend's own local disk). The cliKind is the
+selector — picking it in the create form drives the wire, the folder picker, and
+file serving together.
+
+```jsonc
+"cursor-netcup": {
+  "bin": "cursor-agent", "args": ["acp"], "displayName": "Cursor @ netcup",
+  "transport": {
+    "mode": "unix",            // stdio | unix | http (http reserved, not implemented)
+    "sidecar": true,           // separate unit; implied true for unix/http
+    "socketPath": "/shared/agents/cursor-netcup.sock", // put in a shared bind-mount
+    "attachOnly": true         // the agent container owns the sidecar; BE only attaches
+  },
+  "fs": {
+    "kind": "webdav",          // local | webdav
+    "url": "http://127.0.0.1:17654", "user": "dc",
+    "passEnv": "NETCUP_WEBDAV_PASS",   // prefer passEnv over inline pass
+    "root": "/home/user"
+  }
+}
+```
+
+- **`transport.mode`** — `stdio` (in-process/spawn), `unix` (sidecar over a Unix
+  socket, the cross-container path), or `http` (🚧 reserved; selecting it errors
+  at connect time rather than falling back silently). `unix` requires
+  `socketPath` **or** `socketDir`.
+- **`transport.attachOnly`** — the backend never launches; it only attaches to a
+  socket the agent container already bound. That container runs the sidecar and
+  owns its lifecycle; a create against a target with no live socket fails cleanly.
+- **`fs.kind: "webdav"`** — the backend browses and *serves* this CLI's files
+  over an **external** WebDAV (`rclone serve webdav`, typically behind an SSH
+  tunnel). We do not manage that server; the backend is a client only. The
+  password comes from `passEnv` (recommended) or inline `pass` (dev).
+
+> This supersedes the global `AGENT_SIDECAR` env below for any cliKind that
+> declares a `transport`. `AGENT_SIDECAR` still applies to cliKinds without one.
+
 ---
 
 ## Logging and diagnostics

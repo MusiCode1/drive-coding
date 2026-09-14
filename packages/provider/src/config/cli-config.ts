@@ -1,8 +1,8 @@
-import type { CliKind, CliSpec } from "@drive-coding/core"
+import type { CliFs, CliKind, CliSpec, CliTransport } from "@drive-coding/core"
 import { CLI_KINDS, CLI_SPECS } from "@drive-coding/core"
 import { type BinaryCache, resolveCliBinaryCached } from "@drive-coding/core/cli-resolve"
-import { deepMergeSessionMeta } from "./session-meta-merge.js"
 import { loadCliSpecsOverride } from "./cli-config-file.js"
+import { deepMergeSessionMeta } from "./session-meta-merge.js"
 
 /**
  * cli-config.ts — resolution של פקודת ההרצה בזמן-ריצה.
@@ -98,7 +98,34 @@ export function getCliSpec(kind: string, env?: NodeJS.ProcessEnv): CliSpec | und
       : base?.sessionMetaAllowDefaultOverride !== undefined
         ? { sessionMetaAllowDefaultOverride: base.sessionMetaAllowDefaultOverride }
         : {}),
+    // transport / fs (slice cli-transport): override replaces base wholesale, like displayName.
+    ...(override?.transport !== undefined
+      ? { transport: override.transport }
+      : base?.transport !== undefined
+        ? { transport: base.transport }
+        : {}),
+    ...(override?.fs !== undefined
+      ? { fs: override.fs }
+      : base?.fs !== undefined
+        ? { fs: base.fs }
+        : {}),
   }
+}
+
+/**
+ * The transport for a cliKind (slice cli-transport). Undefined spec/transport →
+ * `{ mode: "stdio" }`, i.e. today's in-process/spawn behavior.
+ */
+export function cliTransport(kind: string, env?: NodeJS.ProcessEnv): CliTransport {
+  return getCliSpec(kind, env)?.transport ?? { mode: "stdio" }
+}
+
+/**
+ * The filesystem descriptor for a cliKind (slice cli-transport). Undefined
+ * spec/fs → `{ kind: "local" }`, i.e. the backend's own disk.
+ */
+export function cliFs(kind: string, env?: NodeJS.ProcessEnv): CliFs {
+  return getCliSpec(kind, env)?.fs ?? { kind: "local" }
 }
 
 /**

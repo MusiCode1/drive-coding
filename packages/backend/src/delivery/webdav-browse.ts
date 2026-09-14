@@ -1,15 +1,17 @@
 /**
- * WebDAV directory listing for GET /api/fs/browse?via=webdav (private remote FS).
+ * WebDAV directory listing for GET /api/fs/browse (private remote FS).
  *
- * Env (all required when via=webdav is used):
- *   FS_BROWSE_WEBDAV_URL   — e.g. http://127.0.0.1:17654 (SSH tunnel to rclone serve)
- *   FS_BROWSE_WEBDAV_USER  — Basic auth user
- *   FS_BROWSE_WEBDAV_PASS  — Basic auth password
- *   FS_BROWSE_WEBDAV_ROOT  — absolute root on the remote host (e.g. /home/user)
+ * Two config sources, same shape (`WebdavBrowseConfig`):
+ *   - per-cliKind CliSpec.fs (slice cli-transport) — the current path, via
+ *     `resolveCliFsWebdav`.
+ *   - legacy global env FS_BROWSE_WEBDAV_* — via `readWebdavBrowseConfig` (the
+ *     original ?via=webdav shortcut; kept for backward compatibility).
  *
  * Maps absolute remote paths under ROOT to WebDAV hrefs relative to that root.
  * No local realpath — the path may not exist on the BE machine.
  */
+
+import { cliFs } from "@drive-coding/provider/config"
 
 export type WebdavBrowseEntry = { name: string; isDir: boolean }
 export type WebdavBrowseResult = { path: string; entries: WebdavBrowseEntry[] }
@@ -33,6 +35,22 @@ export function readWebdavBrowseConfig(
   const root = env.FS_BROWSE_WEBDAV_ROOT?.trim()
   if (!baseUrl || !user || pass === undefined || pass === "" || !root) return null
   return { baseUrl: baseUrl.replace(/\/+$/, ""), user, pass, root: normalizeAbs(root) }
+}
+
+/**
+ * Resolve a WebDAV browse config from a cliKind's CliSpec.fs (slice cli-transport).
+ * Returns null when the cliKind's fs is not webdav, or its password cannot be
+ * resolved (`passEnv` unset). The password comes from inline `pass` or `passEnv`.
+ */
+export function resolveCliFsWebdav(
+  cliKind: string,
+  env: NodeJS.ProcessEnv = process.env,
+): WebdavBrowseConfig | null {
+  const fs = cliFs(cliKind, env)
+  if (fs.kind !== "webdav") return null
+  const pass = fs.pass ?? (fs.passEnv !== undefined ? env[fs.passEnv] : undefined)
+  if (pass === undefined || pass === "") return null
+  return { baseUrl: fs.url.replace(/\/+$/, ""), user: fs.user, pass, root: normalizeAbs(fs.root) }
 }
 
 function normalizeAbs(p: string): string {
@@ -72,10 +90,7 @@ function decodeHrefPath(href: string): string {
 /**
  * Parse a Depth:1 PROPFIND multistatus body into child entries (excluding self).
  */
-export function parsePropfindEntries(
-  xml: string,
-  webdavDirPath: string,
-): WebdavBrowseEntry[] {
+export function parsePropfindEntries(xml: string, webdavDirPath: string): WebdavBrowseEntry[] {
   const selfNorm = normalizeAbs(webdavDirPath === "" ? "/" : webdavDirPath)
   const entries: WebdavBrowseEntry[] = []
   const responseRe = /<D:response\b[^>]*>([\s\S]*?)<\/D:response>/gi
@@ -122,7 +137,10 @@ function isHiddenName(name: string): boolean {
 export async function browseWebdav(
   absPath: string,
   opts: { showHidden: boolean; config: WebdavBrowseConfig; fetchImpl?: typeof fetch },
-): Promise<{ ok: true; result: WebdavBrowseResult } | { ok: false; status: 400 | 403 | 404 | 502; error: string }> {
+): Promise<
+  | { ok: true; result: WebdavBrowseResult }
+  | { ok: false; status: 400 | 403 | 404 | 502; error: string }
+> {
   const root = opts.config.root
   const path = normalizeAbs(absPath)
   if (!path.startsWith("/")) {

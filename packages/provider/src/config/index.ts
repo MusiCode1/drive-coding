@@ -11,6 +11,8 @@
 export { resolveVendoredAcpBridge } from "./acp-bridge.js"
 export type { CliCommand } from "./cli-config.js"
 export {
+  cliFs,
+  cliTransport,
   getBinaryCache,
   getCliCommand,
   getCliSpec,

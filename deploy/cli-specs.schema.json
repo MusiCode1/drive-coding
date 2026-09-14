@@ -63,9 +63,84 @@
         "sessionMetaAllowDefaultOverride": {
           "type": "boolean",
           "description": "When true, suppresses warnings when sessionMeta override changes built-in default values. Omitted/false = warn on conflicts at load."
+        },
+        "transport": {
+          "$ref": "#/definitions/cliTransport"
+        },
+        "fs": {
+          "$ref": "#/definitions/cliFs"
         }
       },
       "additionalProperties": false
+    },
+    "cliTransport": {
+      "type": "object",
+      "description": "How the backend carries the ACP wire to this CLI's agent (slice cli-transport). Omitted → stdio (in-process/spawn, today's behavior).",
+      "properties": {
+        "mode": {
+          "enum": ["stdio", "unix", "http"],
+          "description": "stdio = local in-process/spawn. unix = sidecar over a Unix-domain socket. http = reserved, NOT implemented yet (errors at connect time)."
+        },
+        "sidecar": {
+          "type": "boolean",
+          "description": "Run the agent as a separate process/unit. Omitted defaults to false for stdio and true for unix/http."
+        },
+        "socketPath": {
+          "type": "string",
+          "description": "Explicit socket file path for unix. Put it in a directory bind-mounted into both the backend and agent containers. Takes precedence over socketDir."
+        },
+        "socketDir": {
+          "type": "string",
+          "description": "Alternative to socketPath: a directory; the socket is <dir>/<agentId>.sock."
+        },
+        "attachOnly": {
+          "type": "boolean",
+          "description": "Never launch — only attach to a socket another process already bound (the agent container owns the sidecar's lifecycle). Meaningful only with a sidecar transport."
+        },
+        "httpUrl": {
+          "type": "string",
+          "description": "Reserved for mode=http — the base URL of the remote wire."
+        }
+      },
+      "required": ["mode"],
+      "additionalProperties": false
+    },
+    "cliFs": {
+      "description": "Where this CLI's files live, for /api/fs browse + serve (slice cli-transport). Omitted → local (the backend's own disk).",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": { "kind": { "const": "local" } },
+          "required": ["kind"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Browse/serve over WebDAV (an external rclone serve). The backend is a client only.",
+          "properties": {
+            "kind": { "const": "webdav" },
+            "url": {
+              "type": "string",
+              "description": "Base URL, e.g. an SSH-tunneled http://127.0.0.1:17654."
+            },
+            "user": { "type": "string", "description": "Basic auth user." },
+            "pass": {
+              "type": "string",
+              "description": "Inline password — dev only. Prefer passEnv."
+            },
+            "passEnv": {
+              "type": "string",
+              "description": "Name of the env var holding the password — the recommended, committable form."
+            },
+            "root": {
+              "type": "string",
+              "description": "Absolute path on the remote host that is the WebDAV document root."
+            }
+          },
+          "required": ["kind", "url", "user", "root"],
+          "additionalProperties": false
+        }
+      ]
     }
   }
 }

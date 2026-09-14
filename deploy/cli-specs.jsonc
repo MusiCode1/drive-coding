@@ -12,4 +12,24 @@
   // "cursor": { "bin": "C:/Users/<you>/AppData/Local/cursor-agent/agent.cmd" }
   // Grok Build — binary often under ~/.grok/bin (not always on PATH):
   // "grok": { "bin": "C:/Users/<you>/.grok/bin/grok.exe" }
+  //
+  // ── Per-CLI transport + filesystem (slice cli-transport) ──────────────────
+  // A cliKind that runs its agent in a remote tools container, reached over a
+  // Unix socket in a shared bind-mount, whose files the BE browses/serves over
+  // an external WebDAV (rclone serve behind an SSH tunnel):
+  // "cursor-netcup": {
+  //   "bin": "cursor-agent", "args": ["acp"], "displayName": "Cursor @ netcup",
+  //   "transport": {
+  //     "mode": "unix", "sidecar": true,
+  //     "socketPath": "/shared/agents/cursor-netcup.sock",
+  //     "attachOnly": true       // the agent container runs the sidecar; the BE only attaches
+  //   },
+  //   "fs": {
+  //     "kind": "webdav", "url": "http://127.0.0.1:17654", "user": "dc",
+  //     "passEnv": "NETCUP_WEBDAV_PASS", "root": "/home/user"
+  //   }
+  // }
+  // A local sidecar (survives a BE restart) that still reads the local disk:
+  // "claude-sidecar": { "transport": { "mode": "unix", "socketDir": "/run/dc/agents" } }
+  // mode "http" is reserved and not implemented yet.
 }

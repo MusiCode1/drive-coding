@@ -13,7 +13,8 @@ import { EventEmitter } from "node:events"
 import * as fs from "node:fs"
 import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
-import { CLI_SPECS, type CliKind, type CliSpec } from "@drive-coding/core"
+import { CLI_SPECS, type CliFs, type CliKind, type CliSpec, type CliTransport } from "@drive-coding/core"
+import { validateFs, validateTransport } from "./cli-transport-validate.js"
 import { collectSessionMetaConflicts } from "./session-meta-merge.js"
 
 /** ערך override — כל השדות אופציונליים (merge חלקי לתוך spec קיים). */
@@ -62,6 +63,8 @@ type MutableOverride = {
   sessionMeta?: Record<string, unknown>
   injectDriveCodingMcp?: boolean
   sessionMetaAllowDefaultOverride?: boolean
+  transport?: CliTransport
+  fs?: CliFs
 }
 
 /**
@@ -188,6 +191,16 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
         `[cli-config-file] override["${kind}"].sessionMetaAllowDefaultOverride must be boolean — skipping field`,
       )
     }
+  }
+
+  // transport / fs (slice cli-transport)
+  if ("transport" in obj) {
+    const transport = validateTransport(kind, obj["transport"])
+    if (transport !== undefined) result.transport = transport
+  }
+  if ("fs" in obj) {
+    const fs = validateFs(kind, obj["fs"])
+    if (fs !== undefined) result.fs = fs
   }
 
   return result
