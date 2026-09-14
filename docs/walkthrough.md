@@ -1,3 +1,54 @@
+## 2026-09-14 — cli-transport: טרנספורט + מערכת-קבצים פר-CLI
+
+ענף: `slice/tzlev-webdav-browse` (מוזג עליו `edge`). המטרה: להוציא כל סוכן
+לקונטיינר/מכונה משלו, כך שה-BE ידבר איתו מעבר לגבול-קונטיינר — גם על חוט
+ה-ACP וגם על הגשת-הקבצים. הקונפיג הוא **פר-CLI**: מרחיבים את `CliSpec`
+ב-`cli-specs.jsonc`; ה-cliKind הוא "היעד". ברירת-מחדל (בלי transport/fs) =
+ההתנהגות הנוכחית בדיוק.
+
+### הסכמה (schemas/cli-transport.ts)
+- `transport`: `mode` (`stdio` מקומי · `unix` sidecar על Unix socket · `http`
+  🚧 שמור, לא ממומש — שגיאה ב-connect), `sidecar`, `socketPath`/`socketDir`,
+  `attachOnly`, `httpUrl`.
+- `fs`: `local` (דיסק ה-BE) או `webdav` (url/user/pass|passEnv/root — rclone
+  serve **חיצוני**; ה-BE לקוח בלבד).
+- JSON Schema ידני (`deploy/cli-specs.schema.json`, `additionalProperties:false`)
+  + תבנית + `docs/configuration.md` מסונכרנים.
+
+### ניתוב (open-connection.ts)
+מנתב לפי `CliSpec.transport` במקום `AGENT_SIDECAR` הגלובלי: unix/sidecar→
+`connectViaSidecar`, http→שגיאה, stdio→in-process/spawn. cliKind בלי transport
+נופל ל-`AGENT_SIDECAR` (תאימות-אחורה). `agent-launcher` קיבל `socketPath`
+(סוקט מפורש ב-bind-mount) ו-`attachOnly` (רק להתחבר, לא לשגר).
+
+### טופולוגיית ההרצה המרוחקת (attach-only)
+קונטיינר-הסוכן מריץ את `bin/agent-sidecar.ts` ומאזין על סוקט בתיקייה
+**bind-mounted** לשני הקונטיינרים (`transport.socketDir` — סוקט פר-agent
+`<agentId>.sock`; ה-`socketPath` הקבוע הוא knob יחיד-agent שלא מתגלה אוטומטית
+ב-restore). ה-BE עם `attachOnly:true` רק בודק-ומתחבר; מחזור-החיים בבעלות
+קונטיינר-הסוכן, ויצירה מול יעד ללא סוקט חי מחזירה `failed` נקי. אין SSH launch
+מ-BE (מסלול עתידי). דרישת-תשתית: `rclone serve webdav` + מנהרת-SSH בצד המרוחק.
+
+### הגשת-קבצים (סגירת הפער)
+`/api/fs/browse` ו-`/api/fs/file` נעשו מודעי-cliKind: cliKind שה-fs שלו webdav
+מדפדף ומגיש דרך WebDAV במקום דיסק ה-BE. `fetchWebdavFile` (GET+Range+תקרת 8MB+
+confinement) ו-`serveBytes` משותף (allowlist/nosniff/utf8/SVG-CSP במקום אחד).
+ה-FE: בורר-התיקיות מונחה-cliKind (שולח `?cliKind`), שורש ה-webdav מגיע
+מ-`cli-availability.details.fsRoot` — ההזרקה הקשיחה `tzlev-remote-cloud`/
+`/home/user` נמחקה.
+
+### מה לא נכלל (follow-up)
+- השחלת `&cliKind` לקישורי `/api/fs/file` בצד ה-FE (תמונות-markdown ו-lightbox
+  בצ'אט) — שינוי בצינור-הרינדור. `buildFsFileUrl` כבר מקבל `cliKind?`.
+- מימוש `http` transport (יש `streamable-http` ב-acp-wire; חסר צרכן ב-BE).
+- SSH launch יזום מ-BE ליעד מרוחק.
+
+### בדיקות
+טסטי-יחידה: לוֹדר transport/fs, `isSidecarCliKind`, `launchOrAttachAgent`
+(attachOnly/socketPath), `fetchWebdavFile` (ok/403/404/413). tsc build נקי;
+frontend typecheck — 21 שגיאות פרה-קיימות בלבד (test-harness/playlist מ-edge),
+אף אחת בקוד הסלייס.
+
 ## 2026-09-08 14:20 (ביטול טיימר-השאלות + טעינה חמה של קונפיגורציה)
 
 ענף: `integration/run-config-hot-reload`, worktree `edge/.worktrees/config-hot-reload`,
