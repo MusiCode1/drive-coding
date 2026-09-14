@@ -82,6 +82,9 @@ const settings = getSettings()
     font-family: ui-monospace, monospace; font-size: 0.88em;
     background: rgba(0,0,0,0.25); padding: 0.1em 0.3em; border-radius: 3px;
     overflow-wrap: anywhere;   /* inline code עדיין נשבר — רק block code גולש */
+    direction: ltr;
+    text-align: left;
+    unicode-bidi: isolate;
   }
   /* ── req #1: code BLOCK — no-wrap + גלילה אופקית (היה white-space:pre-wrap) ── */
   .md-content :global(pre) {
@@ -188,8 +191,23 @@ const settings = getSettings()
   .md-content :global(.remote-image-load:active) { opacity: 0.75; }
 
   .md-content :global(hr) { border: none; border-top: 1px solid var(--border); margin: 0.5em 0; }
-  /* code blocks כיוון LTR — מניעת ערבוב RTL בקוד */
-  .md-content :global(pre), .md-content :global(code) { direction: ltr; text-align: left; }
+  /*
+   * Block + inline code are LTR. Inline spans must be bidi-isolated (like .file-link)
+   * or Hebrew around `backtick` runs reorders (notify handoffs, mixed RTL+LTR).
+   */
+  .md-content :global(pre) { direction: ltr; text-align: left; }
+  /* Per-block dir=auto from markdown.ts; plaintext avoids inheriting a stale row direction. */
+  .md-content :global(p),
+  .md-content :global(li),
+  .md-content :global(blockquote),
+  .md-content :global(h1),
+  .md-content :global(h2),
+  .md-content :global(h3),
+  .md-content :global(h4),
+  .md-content :global(h5),
+  .md-content :global(h6) {
+    unicode-bidi: plaintext;
+  }
   /* GFM tables */
   .md-content :global(table) {
     border-collapse: collapse; margin: 0.4em 0; font-size: 0.92em;

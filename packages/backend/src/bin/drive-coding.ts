@@ -4,7 +4,9 @@ import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { parseArgs } from "node:util"
+import { configDefault } from "@drive-coding/core/config/specs"
 import { buildVersion, isBinary } from "../binary.js"
+import { captureBootPatch, captureConfigInputs } from "../config/runtime-config.js"
 import { loadConfig, parseEnvFile } from "../config/load-config.js"
 
 // Peek BEFORE parseArgs. Subcommand flags (--json/--cli/--base) are unknown to
@@ -29,6 +31,7 @@ Options:
       --opencode-bin <bin>      Agent binary to look for       (env: OPENCODE_BIN, default: opencode)
       --fe-static-dir <dir>     Override served web-UI dir     (env: FE_STATIC_DIR)
       --cors-origins <list>     Comma-separated CORS origins   (env: CORS_ORIGINS)
+      --public-base-url <origin>  Public origin of this backend  (env: PUBLIC_BASE_URL)
       --config <path>           Config file (JSONC)            (default: ~/.config/drive-coding/config.jsonc)
       --config-json <json>      Inline JSON config (overrides --config file)
       --secrets <path>          Secrets file (JSON)            (default: ~/.config/drive-coding/secrets.json)
@@ -63,6 +66,7 @@ try {
       "opencode-bin": { type: "string" },
       "fe-static-dir": { type: "string" },
       "cors-origins": { type: "string" },
+      "public-base-url": { type: "string" },
       config: { type: "string" },
       "config-json": { type: "string" },
       secrets: { type: "string" },
@@ -150,6 +154,14 @@ if (envFilePath !== undefined) {
 // ---------------------------------------------------------------------------
 // Step 2: loadConfig — resolve all layers, get envPatch
 // ---------------------------------------------------------------------------
+// 🔴 Snapshot BEFORE Step 3. A later reload must replay the ORIGINAL env, not
+// the one Step 3 is about to overwrite: layer precedence is file < env < flag,
+// so feeding process.env back in would let the previous run's derived values
+// beat the freshly edited config file — a reload that silently does nothing.
+// `values` is captured too because it is module-local and never exported, and
+// a reloader without it would lose `--config` / `--secrets`.
+captureConfigInputs(values)
+
 const { envPatch, warnings, errors } = loadConfig({ argv: values, env: process.env })
 
 // Print warnings (visible in logs, but not fatal).
@@ -168,6 +180,7 @@ if (errors.length > 0) {
 // ---------------------------------------------------------------------------
 // Step 3: Write envPatch to process.env (these are the winning values)
 // ---------------------------------------------------------------------------
+captureBootPatch(envPatch)
 for (const [k, v] of Object.entries(envPatch)) {
   process.env[k] = v
 }
@@ -191,15 +204,15 @@ if (!isBinary()) {
   process.env.FE_STATIC_DIR ??= feBuildDir
 }
 // Binary + explicit FE_STATIC_DIR (flag/env already set above) — no further action needed.
-process.env.PORT ??= "4000"
+process.env.PORT ??= String(configDefault("port"))
 
 const port = process.env.PORT
-const host = process.env.DRIVE_CODING_HOST ?? "127.0.0.1"
+const host = process.env.DRIVE_CODING_HOST ?? configDefault("host")
 
 // Preflight: check that the default AI agent (opencode) is reachable.
 // The user may override via OPENCODE_BIN. If missing — warn but do not block
 // (they might use claude/codex which are typically invoked via npx).
-const agentBin = process.env.OPENCODE_BIN ?? "opencode"
+const agentBin = process.env.OPENCODE_BIN ?? configDefault("opencodeBin")
 try {
   // On POSIX: `which <bin>`; on Windows: `where <bin>` — both exit 0 if found.
   const isWindows = process.platform === "win32"

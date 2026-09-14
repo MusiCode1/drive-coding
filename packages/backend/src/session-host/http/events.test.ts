@@ -22,6 +22,7 @@ import {
 import { type } from "arktype"
 import { Hono } from "hono"
 import { describe, expect, it, vi } from "vitest"
+import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
 import { createPatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
@@ -47,12 +48,18 @@ function makeMockHost(state: SessionState): ExtendedSessionHost {
     setConfigOption: vi.fn().mockResolvedValue(undefined),
     setSessionModel: vi.fn().mockResolvedValue(undefined),
     extMethod: vi.fn().mockResolvedValue({}),
+    emitExtNotification: vi.fn(),
     respondPermission: vi.fn(),
     respondElicitation: vi.fn(),
+    isScopeRequest: () => false,
+    requestScopePermission: vi.fn().mockResolvedValue("deny"),
     listSessions: vi.fn().mockResolvedValue({}),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),
     agentCapabilities: {},
+    getTurnStartedAt: () => 0,
+    getStallReported: () => false,
+    markStallReported: () => {},
   }
 }
 
@@ -89,9 +96,38 @@ function makeMockRegistry(
     unregisterHost: vi.fn(),
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),
     getCwd: vi.fn().mockReturnValue(undefined),
+    getCliKind: vi.fn(),
     getEpoch: vi.fn().mockReturnValue(0),
-    touchOwner: vi.fn(),
+    touchConnection: vi.fn(),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
+    getConnectionCount: vi.fn().mockReturnValue(0),
+    stop: vi.fn(),
+  }
+}
+
+function makeMockConnectionRegistry(): ConnectionRegistry {
+  return {
+    addConnection: vi.fn(),
+    removeConnection: vi.fn(),
+    touchConnection: vi.fn(),
+    clearAllConnections: vi.fn(),
+    getConnectionCount: vi.fn(() => 0),
+    connect: vi.fn(),
+    get: vi.fn(),
+    getCwd: vi.fn(),
+    getCharter: vi.fn(() => undefined),
+    consumeCharter: vi.fn(() => undefined),
+    getCliKind: vi.fn(),
+    list: vi.fn(() => []),
+    isAttached: vi.fn(() => false),
+    getEpoch: vi.fn(() => 0),
+    isOwnedByWs: vi.fn(() => false),
+    getRuntimeInfo: vi.fn(() => null),
+    getLastSeenAt: vi.fn(() => null),
+    listHttpConnectionIds: vi.fn(() => []),
+    close: vi.fn(),
+    onCrash: vi.fn(() => () => {}),
+    setWsSocketChecker: vi.fn(),
   }
 }
 
@@ -160,7 +196,7 @@ function makeRawSseReader(response: Response) {
 
 function makeApp(registry: AgentSessionRegistry, opts?: RegisterEventsRouteOptions): Hono {
   const app = new Hono()
-  registerEventsRoute(app, registry, opts)
+  registerEventsRoute(app, registry, makeMockConnectionRegistry(), opts)
   return app
 }
 
@@ -263,12 +299,18 @@ describe("GET /api/agents/:id/events", () => {
         setConfigOption: vi.fn().mockResolvedValue(undefined),
         setSessionModel: vi.fn().mockResolvedValue(undefined),
         extMethod: vi.fn().mockResolvedValue({}),
+        emitExtNotification: vi.fn(),
         respondPermission: vi.fn(),
         respondElicitation: vi.fn(),
+        isScopeRequest: () => false,
+        requestScopePermission: vi.fn().mockResolvedValue("deny"),
         listSessions: vi.fn().mockResolvedValue({}),
         deleteSession: vi.fn().mockResolvedValue(undefined),
         dispose: vi.fn().mockResolvedValue(undefined),
         agentCapabilities: {},
+        getTurnStartedAt: () => 0,
+        getStallReported: () => false,
+        markStallReported: () => {},
       }
 
       const registry = makeMockRegistry({ host, broadcaster })

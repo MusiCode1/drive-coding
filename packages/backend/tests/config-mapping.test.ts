@@ -129,14 +129,14 @@ describe("CONFIG_SPECS mapping invariants", () => {
     }
   })
 
-  it('8. PORT="abc" and PORT="" → port absent, no envPatch.PORT', () => {
+  it('8. PORT="abc" and PORT="" → layer skipped, product default applied', () => {
     for (const portEnv of ["abc", ""]) {
       const { config, envPatch } = loadConfig({
         argv: { config: "/nonexistent-config.jsonc", ...noopSecrets },
         env: { PORT: portEnv },
       })
-      expect(config.port).toBeUndefined()
-      expect(envPatch["PORT"]).toBeUndefined()
+      expect(config.port).toBe(4000)
+      expect(envPatch["PORT"]).toBe("4000")
     }
   })
 

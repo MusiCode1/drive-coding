@@ -22,10 +22,10 @@ export type ReconnectState = "disabled" | "reconnect" | "takeover"
 export { isAgentConnected, isAgentResumable, isAgentRunning }
 
 export function reconnectState(
-  agent: Pick<AgentPublic, "acpSessionId" | "attached">,
+  agent: Pick<AgentPublic, "acpSessionId" | "attached" | "attachedVia">,
 ): ReconnectState {
   if (!agent.acpSessionId) return "disabled"
-  if (agent.attached === true) return "takeover"
+  if (agent.attached === true && agent.attachedVia === "ws") return "takeover"
   return "reconnect"
 }
 

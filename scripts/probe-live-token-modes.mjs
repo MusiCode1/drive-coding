@@ -93,6 +93,7 @@ const SESSION_CONFIG = {
   tools: TOOLS,
   systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
   thinkingConfig: { thinkingBudget: 0 },
+  contextWindowCompression: { slidingWindow: {} },
 }
 
 function constraintsFor(mode) {

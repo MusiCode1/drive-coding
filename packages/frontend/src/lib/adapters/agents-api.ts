@@ -184,17 +184,33 @@ export type PresenceResponse = {
   machine: MachineStats | null
 }
 
+export const CONNECTION_ID_HEADER = "Acp-Connection-Id"
+
+export async function releaseConnection(agentId: string, connectionId: string): Promise<void> {
+  await fetch(beUrl(`/api/agents/${agentId}/connection`), {
+    method: "DELETE",
+    headers: { [CONNECTION_ID_HEADER]: connectionId },
+    keepalive: true,
+  })
+}
+
 const PRESENCE_TIMEOUT_MS = 5000
 
-export async function postPresence(agentId: string, signal?: AbortSignal): Promise<PresenceResponse> {
+export async function postPresence(
+  agentId: string,
+  opts?: { connectionId?: string; signal?: AbortSignal },
+): Promise<PresenceResponse> {
+  const headers: Record<string, string> = {}
+  if (opts?.connectionId) headers[CONNECTION_ID_HEADER] = opts.connectionId
   const res = await withTimeout(
     (s) =>
       fetch(beUrl(`/api/agents/${agentId}/presence`), {
         method: "POST",
+        headers,
         signal: s,
       }),
     PRESENCE_TIMEOUT_MS,
-    { signal, label: "postPresence" },
+    { signal: opts?.signal, label: "postPresence" },
   )
   if (!res.ok) {
     const body = await res.text().catch(() => "")

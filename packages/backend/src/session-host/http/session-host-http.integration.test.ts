@@ -25,7 +25,9 @@ import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import { setSelfBaseUrlForTests } from "../../instances.js"
+import { createInMemoryAgentRegistry } from "../../agents/registry.js"
 import { createPatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import {
@@ -130,6 +132,28 @@ async function setup(): Promise<{
 
   const broadcaster = createPatchesBroadcaster(host.patches)
 
+  const connectionRegistry = {
+    addConnection: vi.fn(),
+    removeConnection: vi.fn(),
+    touchConnection: vi.fn(),
+    clearAllConnections: vi.fn(),
+    getConnectionCount: vi.fn(() => 0),
+    connect: vi.fn(),
+    get: vi.fn(() => ({})),
+    getCwd: vi.fn(),
+    getCliKind: vi.fn(),
+    list: vi.fn(() => []),
+    isAttached: vi.fn(() => false),
+    getEpoch: vi.fn(() => 0),
+    isOwnedByWs: vi.fn(() => false),
+    getRuntimeInfo: vi.fn(() => null),
+    getLastSeenAt: vi.fn(() => null),
+    listHttpConnectionIds: vi.fn(() => []),
+    close: vi.fn(),
+    onCrash: vi.fn(() => () => {}),
+    setWsSocketChecker: vi.fn(),
+  } as unknown as ConnectionRegistry
+
   const registry: AgentSessionRegistry = {
     getHost: (id) => (id === AGENT_ID ? host : undefined),
     isHeld: (id) => id === AGENT_ID,
@@ -139,13 +163,20 @@ async function setup(): Promise<{
     unregisterHost: () => {},
     notifySessionAttached: async () => {},
     getCwd: (id) => (id === AGENT_ID ? "/connection/cwd" : undefined),
+    getCliKind: () => undefined,
     getEpoch: (_id) => 0,
-    touchOwner: (_id) => {},
+    touchConnection: (_id, _cid) => {},
     getRuntimeInfo: (_id) => null,
+    getConnectionCount: (_id) => 0,
+    stop: () => {},
   }
 
   const app = new Hono()
-  registerSessionHostHttp(app, { agentSessionRegistry: registry })
+  registerSessionHostHttp(app, {
+    agentSessionRegistry: registry,
+    connectionRegistry,
+    agentRegistry: createInMemoryAgentRegistry(),
+  })
 
   return { app, host, mockClient, callbacks: capturedCallbacks }
 }
@@ -409,7 +440,11 @@ describe("session-host HTTP — remote-session-mgmt C3 (real host + real route)"
     expect(json.sessionId).toBe("s2")
     expect(json.version).toBe(host.state.version)
     expect(host.state.sessionId).toBe("s2") // the switch landed on the real host
-    expect(mockClient.loadSession).toHaveBeenCalledWith({ cwd: "/other/dir", sessionId: "s2" })
+    expect(mockClient.loadSession).toHaveBeenCalledWith({
+      cwd: "/other/dir",
+      sessionId: "s2",
+      mcpServers: [],
+    })
   })
 
   it("loadSession without params.cwd falls back to registry.getCwd (the connection's cwd)", async () => {
@@ -424,6 +459,7 @@ describe("session-host HTTP — remote-session-mgmt C3 (real host + real route)"
     expect(mockClient.loadSession).toHaveBeenCalledWith({
       cwd: "/connection/cwd",
       sessionId: "s2",
+      mcpServers: [],
     })
   })
 

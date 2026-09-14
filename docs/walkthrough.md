@@ -1,3 +1,322 @@
+## 2026-09-08 14:20 (ביטול טיימר-השאלות + טעינה חמה של קונפיגורציה)
+
+ענף: `integration/run-config-hot-reload`, worktree `edge/.worktrees/config-hot-reload`,
+בסיס `edge` @ `5373830b`. שני סלייסים קשורים בענף אחד, כי השני נולד מהראשון.
+
+### 1 — הטיימר שסגר שאלות
+
+באג מהשטח: שאלות `AskUserQuestion` ואישורי-הרשאה **נעלמו אחרי ~30 שניות**,
+בלי הודעה. חקירה קודמת כיוונה ל-AFK של ה-TUI של Claude Code
+(`askUserQuestionTimeout`) — אבל במסלול הזה אין TUI: כל תהליכי ה-CLI רצים
+`--output-format stream-json` מתחת ל-drive-coding.
+
+השורש: `DEFAULT_PERMISSION_TIMEOUT_MS` / `DEFAULT_ELICITATION_TIMEOUT_MS`
+= `30_000` ב-`session-host.ts`. הוחלפו ב-`resolveRequestTimeoutMs` (טהורה
+ומיוצאת, בתבנית `resolveHttpOwnerTtlMs`) + `MAX_TIMEOUT_MS`. ברירת המחדל
+היא עכשיו **`null` — בלי טיימר**; `never`/`off`/`0`/ריק זהים.
+`pending-requests.ts` קיבל `timeoutMs: number | null`, וכש-`null` הוא
+**לא קורא ל-`setTimeout` כלל**.
+
+🛑 **המלכודת ששולטת בעיצוב:** Node מכווץ כל השהיית `setTimeout` מעל
+`2_147_483_647` — וגם `Infinity` — ל-**1ms** עם `TimeoutOverflowWarning`
+(נמדד, Node 25.9). "ערך ענק כדי לבטל טיימר" הופך את הבאג ממעצבן ל**מיָדי**.
+לכן ערכים כאלה נדחים ונופלים ל"בלי טיימר", ו"בלי טיימר" הוא `null` ולא מספר.
+
+פקיעה (רק כשמוגדר טיימר) עברה מ-`{action:"cancel"}` ל-`{action:"decline"}`:
+decline מחזיר answers ריק והתור ממשיך, cancel מפיל את קריאת-הכלי.
+⚠️ מסלולי ה-**dispose** (`session-host.integration.test.ts:1546,1586`) נשארו
+`cancel` — שם זו ההתנהגות הנכונה.
+
+### 2 — טעינה חמה
+
+הרציונל: התיקון דורש restart, ו-restart על `edge` סוגר את כל הסוכנים החיים.
+אם משלמים את המחיר, שה-restart יביא גם טעינה חמה — ולא יידרש עוד אחד.
+
+**הממצא:** מפתחות ה-API כבר חמים. `resolveProviderAuth`
+(`delivery/proxy-auth.ts`) טהורה ומקבלת `env` כפרמטר, ו-`http-proxy.ts`
+קורא לה **פר-בקשה**. חסרה הייתה רק נקודת-כתיבה.
+
+🔴 **הבאג המרכזי — לולאת-משוב.** ה-bin כותב `envPatch` ל-`process.env`
+(Step 3). הקדימות `file < env < flag`, ולכן קריאה שנייה של
+`loadConfig({env: process.env})` בונה `envLayer` מהערכים שהריצה כתבה,
+ו**שכבת ה-env מנצחת את הקובץ המעודכן**. עריכה בזמן ריצה לא נקלטת, בשקט.
+
+`config/runtime-config.ts` (חדש) — `captureConfigInputs(argv, env)` נקרא
+ב-bin **אחרי** בלוק `--env-file` ו**לפני** Step 3. `reloadRuntimeConfig()`
+מריץ `loadConfig` על ה-snapshot, ולכן הקובץ שוב מנצח. `loadConfig` לא נגע —
+הוא כבר חסר state. `ARGV_SNAPSHOT` שומר את `--config`/`--secrets`.
+
+`HOT_KEYS` — allowlist שכל ערך בו אומת מול אתר-קריאה: מפתחות API (פר-בקשה),
+`OPENCODE_BIN`/`OPENCODE_ARGS` (פר-spawn), הטיימאאוטים (פר-host), `LOG_*`
+(עם `initLogger`), `CLI_SPECS_JSON` (עם איפוס memo). מפתח מחוץ לרשימה מדווח
+`restart required to apply` ו**אינו מוחל**.
+
+🛑 **רקורסיה שנחסמה:** `applyReloadEffects` **אינו** קורא ל-`invalidateCache()`
+— זו הפונקציה ש**פולטת** את האירוע, וה-effects רצים מהמאזין שלה.
+
+`http-tts-capabilities.ts` — `invalidateCapabilitiesCache()`. בלעדיו המטמון
+בן 60 השניות מחזיר `reason:"auth"` דקה אחרי שהמפתח תוקן.
+
+ה-watcher (`cli-config-file.ts`) מזהה עכשיו גם `config.jsonc` ו-`secrets.json`
+דרך `WATCHED_FILENAMES` — לא watcher שני. `config_changed` נושאת
+`changed?: string[]`, וה-FE מרענן `ttsStatus` בנוסף ל-`cliAvailability`.
+
+**התאמות לארכיטקטורה של edge:** ההגדרות נוספו ל-`CONFIG_SPECS`
+(`core/config/specs.ts`) ולא לשלוש פונקציות נפרדות; `AssertCovered` תפס
+בזמן קומפילציה שהסכימה חייבת כיסוי. הסודות ב-edge חיים ב-`secrets.json`
+נפרד, ו-`loadConfig` מחזיר `errors` על סוד בקובץ הרגיל — הרלואודר **מסרב
+לרענן** במקרה כזה במקום לצאת.
+
+### סקירת-קוד — חמישה ממצאים, ארבעה תוקנו
+
+**🔴 מחיקת מפתח לא ביטלה אותו.** הלולאה ב-`reloadRuntimeConfig` עברה רק על
+מפתחות שקיימים ב-`envPatch` **החדש**, ולכן מפתח שהוסר מהקובץ נשאר
+ב-`process.env` עם ערכו הישן. במונחי אבטחה: מחיקת מפתח שדלף מ-`secrets.json`
+לא ביטלה אותו עד restart. **אומת חי** מול ה-preview לפני התיקון (המפתח
+המשיך להחזיר `available:true`) ואחריו (`no-key`, ואז חוזר עם החזרת הקובץ).
+התיקון: `lastPatchKeys` + נפילה חזרה ל-`ENV_SNAPSHOT` — לא ל-unset, כי
+המפתח עשוי להגיע גם מהסביבה והקובץ רק דרס אותו. `captureBootPatch` נוסף
+ב-bin כדי שגם הרענון הראשון יידע מה נמחק.
+
+**ה-FE ריענן את ה-VM הלא נכון.** ה-BE ניקה את מטמון ה-probe, אבל ה-FE קרא
+ל-`ttsStatus.refresh()` (subscription+usage) במקום ל-`ttsCapabilities.refresh()`
+— זה שמחזיק `available/reason` וחוסם את VoicePicker. תוקן: שניהם, capabilities
+ראשון.
+
+**`OPENCODE_ARGS` ו-`LOG_WIRE` היו קוד מת ב-`HOT_KEYS`** — אין להם ספק
+ב-`CONFIG_SPECS`, ולכן `buildConfigEnvPatch` לעולם לא מייצר אותם.
+`docs/configuration.md` הבטיח במפורש ש-`OPENCODE_ARGS` נטען חם. הוסרו, והתיעוד
+תוקן.
+
+**`changed: []` היה דו-משמעי** — שימש גם כ"backend ישן" וגם כ"לא הוחל כלום".
+הופרד: `undefined` = ישן (לרענן הכל), `[]` = הוחל כלום (לא לרענן).
+
+**מגבלת ה-watcher — תועדה ולא תוקנה.** הצפייה היא על
+`dirname(resolveCliSpecsPath())`, ולכן `--config`/`--secrets` מחוץ לתיקייה
+הזו (או `CLI_SPECS_FILE` אחר) לא מייצרים אירוע, ורק ה-endpoint עובד. נכנס
+ל-`configuration.md` ול-`AGENTS.md` כאזהרה.
+
+### טסטים
+
+`runtime-config.test.ts` (18) — המרכזי מוכיח שהקובץ הערוך נקלט, ולצדו טסט
+ש**מקבע את הבאג**: המסלול הנאיבי מחזיר את הערך הישן.
+`runtime-config.effects.test.ts` (6, `vi.hoisted` כי `vi.mock` מורם מעל consts).
+`cli-config-file.watch.test.ts` (+4) — **הראשונים בפרויקט על `fs.watch` אמיתי**,
+כולל שמירה אטומית וסינון קבצים. `session-host.test.ts` (+15 טבלאי, כולל
+`"Infinity"` ו-`"2147483648"` → `null`). `load-config.test.ts` (+6), ועוד 3 טסטי-רגרסיה למחיקת מפתח. **אומת שהם
+תופסים**: נטרול הלולאה החדשה מפיל את `deleting a key from the file stops it
+from being used` — טסט ירוק שלא נבדק מול הבאג אינו ראיה.
+
+⚠️ **נלמד תוך כדי:** טסט שקורא ל-`loadConfig` בלי `secrets` מפורש נופל על
+`<stateDir>/secrets.json` האמיתי — המפתח האמיתי של המכונה דלף ל-assertion
+ונתפס בהרצה הראשונה. כל טסט מצביע עכשיו לנתיב-סודות שאינו קיים.
+
+**מגבלה שנרשמה:** סוכן שכבר רץ מחזיק את הסביבה שאיתה נוצר
+(`spawn-core.ts` מעתיק `{...process.env}` ב-spawn). חדשים מקבלים, קיימים לא.
+
+## 2026-09-04 22:05
+
+### פריסת קונטיינר — Containerfile רב-שלבי + יוניט Quadlet
+
+הרצת ה-BE וה-FE הבנוי כאימג' אחד תחת podman rootless, כמקבילה
+ל-`deploy/systemd/drive-coding-*.service`. עלה ואומת על VPS חיצוני.
+
+#### מה בוצע?
+
+`deploy/container/` — שלושה קבצים חדשים, בלי לגעת בקוד קיים:
+
+- **`Containerfile`** — builder (`bun install` + FE build) ו-runtime נפרדים.
+  כל עבודת ה-`ExecStartPre` עוברת לזמן בנייה.
+- **`drive-coding-edge.container`** — יוניט Quadlet.
+- **`healthcheck.js`** — probe.
+
+`packages/backend/Dockerfile` נשאר stub מ-Slice 10; לא נגעתי בו.
+
+#### ארבע החלטות שנקבעו מבדיקה
+
+| ממצא | נגזרת |
+|---|---|
+| ל-`oven/bun:1` אין node, git או curl | ה-FE נבנה ב-`bun scripts/dc-build-fe.mjs` (מייבא רק `node:` builtins); ה-probe הוא bun ולא curl |
+| `cli-config-file.ts:30` משתמש ב-`os.homedir()`, **לא** ב-`XDG_CONFIG_HOME` | `HOME=/data` באימג', נפח ב-`/data/.config/drive-coding` |
+| `FE_ENV`/`FE_PREVIEW_LABEL` נקראים ב-`vite.config.ts` בזמן בנייה | `ARG` ב-builder, לא `ENV` בריצה |
+| `DRIVE_CODING_HOST=127.0.0.1` לא עובד בקונטיינר — loopback הוא ה-netns | `0.0.0.0` בפנים, `PublishPort=127.0.0.1:4002:4000` בחוץ |
+
+#### שלוש מלכודות שנצרבו
+
+**1. `acp-wire/dist` חסר.** `exports` הצביע ל-`dist/`, שנמצא ב-`.gitignore`.
+בעץ עבודה קיים הוא שורד מבנייה ידנית; checkout נקי נשבר. נוסף
+`RUN cd packages/acp-wire && bun run build` — **זמני**, ראה הערה בקובץ.
+
+**2. `Memory` אינו מפתח Quadlet.** podman 5.4 דוחה את **כל הקובץ** בגללו,
+ו-`daemon-reload` נכשל **בשקט** — היוניט פשוט לא נוצר. לאבחון:
+`/usr/libexec/podman/quadlet -user -dryrun`. הועבר ל-`MemoryMax` ב-`[Service]`,
+ו-`StartLimit*` הועברו ל-`[Unit]` ששם systemd מצפה להם.
+
+**3. Quadlet קוטע ציטוט מקונן.** `HealthCmd=bun -e "..."` הגיע ל-podman חתוך
+בגרש הסוגר, וכל probe החזיר `unhealthy`. לכן `healthcheck.js` כקובץ, בלי ציטוט.
+בנוסף podman מזהיר ש-`HEALTHCHECK` **מתעלמים ממנו בפורמט OCI** — מה שרץ בפועל
+הוא `HealthCmd` של Quadlet.
+
+#### אימות
+
+`/api/health` מחזיר `{"status":"ok","version":"0.19.0"}`, ה-FE מוגש `HTTP 200`,
+הקונטיינר `Up (healthy)`. צריכה: **197MB RAM**, 21 תהליכים. אימג' 1.93GB.
+
+הגרסה `0.19.0` ולא `0.39.0` היא תקינה ומתועדת: `resolveAppVersion()` במצב
+לא-מבונדל קורא את ה-`package.json` הקרוב, כלומר של `@drive-coding/backend`.
+
+#### מה לא בפנים
+
+אין CLIs של סוכנים ואין אישורי claude/codex — **סוכנים לא עובדים בהרצה הזו**.
+זו מגבלה עקרונית ולא השמטה: `connection-registry.ts:33-34` ממפה
+`claude → connectInProcess` ו-`codex → connectCodexInProcess`, כלומר הם רצים
+**בתוך תהליך ה-BE**. שורה 168 מתעלמת מ-`override.bin/args` עבורם. בידוד
+אמיתי לשניים האלה דורש את אימוץ `acp-wire`, לא Dockerfile.
+## 2026-09-04 21:54
+
+### acp-wire — שלוש כניסות סימטריות, והשורש מפסיק להיות מלכודת
+
+מיזוג `integration/run-acp-wire-be` אל edge, ובאותה הזדמנות פיצול ה-`exports`
+של `@drive-coding/acp-wire` לשלוש כניסות: שורש ניטרלי, `/browser`, `/node`.
+
+הרקע: ה-`exports` הצביעו ל-`dist/`, ו-`dist/` ב-`.gitignore`. בעץ עבודה קיים
+זה לא מורגש (הוא שרד מבנייה ידנית), אבל **checkout נקי נשבר** —
+`Rollup failed to resolve import "@drive-coding/acp-wire/browser"`. התגלה
+בבניית קונטיינר, שהיא הדבר היחיד שמתחיל באמת מאפס. `ExecStartPre` ביוניט
+מריץ רק `bun install` + `dc-build-fe.mjs` ואף פעם לא בונה את החבילה.
+
+#### מה בוצע?
+
+**1. מיזוג `integration/run-acp-wire-be`**
+
+- `in-process-acp-transport.ts` (147 שורות) נמחק; הפונקציונליות עברה ל-`acp-wire`
+  כ-`from-line-wire.ts`, והטסט עבר איתה.
+- `SessionHost` מייבא `createFromLineWire` + `AcpTransport` מהחבילה.
+- התנגשות יחידה: `packages/acp-wire/package.json` → `exports`.
+  **לא נלקח "theirs"** — הענף מסיר את `./browser`, שמיובא ב-22 קבצי FE.
+
+**2. פיצול לשלוש כניסות**
+
+מיפוי תלויות `node:` בפועל — רק 4 מתוך 11 קבצים תלויים:
+
+| קובץ | תלות |
+|---|---|
+| `transport/stdio.ts` | `node:stream` |
+| `transport/unix-socket.ts` | `node:fs`, `node:fs/promises`, `node:net` |
+| `transport/node-streams.ts` | `node:net` |
+| `streamable-http/server.ts` | `node:crypto`, `node:http` |
+
+- `.` → `src/index.ts` — `AcpTransport`, `createFromLineWire`,
+  `createInProcessAcpTransport`, `ACP_*`, `FORBIDDEN_HTTP_PORTS`,
+  `inboundKind`/`outboundSink`, `createHttpClient`.
+- `./browser` → `src/browser.ts` — `WsAcpTransport`, `wsToWebStreams`.
+- `./node` → `src/node.ts` (חדש) — stdio · unix · net · http server.
+
+`createHttpClient` בשורש **במכוון**: הוא מדבר `fetch` + `ReadableStream`,
+מייבא רק `./headers.js`, ולכן עובד גם בדפדפן. `named-pipe.ts` הוא stub שזורק.
+
+**3. אפס שינוי בצרכנים**
+
+מהשורש מיובאים רק `AcpTransport` ו-`createFromLineWire`, ושניהם נשארו שם.
+`agent-session.svelte.ts` ו-21 קבצי FE נוספים כבר מייבאים מ-`/browser`.
+השינוי היחיד: `index.test.ts` → `browser-entry.test.ts`, מייבא מ-`./browser.js`
+(המסלול שה-FE באמת עובר בו).
+
+#### אימות
+
+מדידה מול edge נקי ב-worktree נפרד, לא מול הזיכרון:
+
+| שער | edge | הענף |
+|---|---|---|
+| typecheck | 10 errors | 10 errors — **רשימות זהות** |
+| טסטים | 2 failed (`http-mcp.test.ts`) | אותם 2 בדיוק |
+| `bun run fe:build` | — | ✅ built in 43s |
+| טסטי acp-wire | — | 7 files / 45 tests ✅ |
+
+שני הכשלים (`session_list`, `session_open`) קיימים מראש ב-edge.
+
+**בדיקת הדליפה שהמבנה נועד למנוע:** בתוצר הלקוח נמצאה הפניה אחת ל-`node:`,
+והיא ב-sourcemap בלבד, בקוד מת מאחורי `if(!1)`, מספרייה חיצונית — אפס
+אזכורי acp-wire.
+
+#### נגזרת
+
+`Containerfile` מכיל כרגע `RUN cd packages/acp-wire && bun run build` כעקיפה.
+אחרי המיזוג הוא **מיותר** — אין יותר `dist` ב-`exports`. להסיר ולבנות מחדש.
+
+## 2026-09-03 01:32
+
+### מתג מחשבות/כלים פותח וסוגר בועות שכבר בתצוגה
+
+שינוי `showThoughts` / `showTools` מעדכן את `<details>` של בועות mounted, לא רק של בועות ש-virtua יוצר מחדש בגלילה.
+
+#### מה בוצע?
+
+**1. ממשק**
+
+- `setting-backed-open.svelte.ts` — `$state` + `$effect` צר על ה-boolean בלבד.
+- `ThoughtBubble` / `ToolBubble` — `bind:open={open.value}`.
+- לא `$derived`: לחיצה ידנית על בועה אחת נשארת.
+
+**2. ratchet**
+
+- `$effect` הוצא מהקומפוננטה (`ToolBubble` היה 54/0 → impurity). baseline נכתב למטה ל-53/0.
+
+#### בדיקות
+
+- lint:size + lint:i18n עברו.
+- פריוויו חי על edge (עין משתמשת: להשאיר).
+
+---
+
+## 2026-08-31 — config defaults live only in CONFIG_SPECS
+
+Product defaults for catalogued config keys (`port`, `host`, `rssBudgetMb`, `httpOwnerTtlMs`, `opencodeBin`) now live on `CONFIG_SPECS[].default` and are applied in `resolveConfig`. Consumers call `configDefault(...)` — no more `?? 4000` / `DEFAULT_HTTP_OWNER_TTL_MS` at the call site.
+
+Rule: `docs-for-llm/design-principles.md` §7 · `.cursor/rules/config-defaults.mdc`.
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | vitest (specs/resolve/load-config/mapping/registry/liveness) | **127 עברו** |
+| 2 | core typecheck | **עבר** |
+## 2026-08-29 15:10 — slice playlist-nav-chrome · Commit 2 (harness)
+
+Phase 2: 20 MP3 fixtures (ffmpeg) + `/playlist-nav-chrome-test` harness + `tests/smoke/playlist-nav-chrome.mjs` (PLAYLIST_NAV_CHROME=1 gate).
+
+#### בדיקות
+
+- smoke without flag: exit 0 `skipped: no-chrome`
+- chrome DoD: manual (linux-gui CDP)
+
+---
+
+## 2026-08-29 15:08 — slice playlist-nav-chrome · Commit 1 (contract)
+
+Phase 1: `#playLoop` replay branch includes `skipped`+`jumpTarget`+`isComplete`; `#navigate` resets `skipped`+!complete like done/error; `markReady` on `skipped`+`reconsiderable` → ready without cursor move.
+
+#### בדיקות
+
+- audio-playlist*: 50 passed
+- lint:i18n: pass
+
+---
+
+## 2026-08-29 15:07 — slice playlist-nav-chrome · Commit 0 (tdd red)
+
+Phase 0: `audio-playlist.late-arrive.test.ts` — 2 tests red on base `f7d49905`.
+
+| Case | Assert |
+|------|--------|
+| A | late markReady → no cursor jump; prev → sink.play(s1) |
+| B | noteBuffered without markReady; prev while skipped → sink.play(s1) |
+
+#### בדיקות
+
+- late-arrive: 2 failed (expected red)
+- lint:i18n: pass
+
+---
+
 ## 2026-09-06 14:20 — private WebDAV FS browse (tzlev-remote-cloud)
 
 Opt-in remote folder picker: `GET /api/fs/browse?via=webdav` → rclone WebDAV on netcup via SSH tunnel. FE enables it when CLI is `tzlev-remote-cloud`. Spawn falls back to a local cwd when the session path exists only on the remote host.

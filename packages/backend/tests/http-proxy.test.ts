@@ -325,7 +325,7 @@ describe("Gemini proxy tap (proxy-tap-memory)", () => {
 
     const { Hono } = await import("hono")
     const app = new Hono()
-    registerProxyHttp(app, { cacheBaseDir: tmpDir, usageStore })
+    registerProxyHttp(app, { cacheBaseDir: tmpDir, usageStore, env: process.env })
 
     // Act: send streamGenerateContent request
     const req = new Request(
@@ -363,7 +363,7 @@ describe("Gemini proxy tap (proxy-tap-memory)", () => {
     const { Hono } = await import("hono")
     const app3 = new Hono()
     const mod2 = await import("../src/delivery/http-proxy.js")
-    mod2.registerProxyHttp(app3, { cacheBaseDir: tmpDir, memoryGuard: overBudgetGuard })
+    mod2.registerProxyHttp(app3, { cacheBaseDir: tmpDir, memoryGuard: overBudgetGuard, env: process.env })
 
     const req3 = new Request(
       "http://localhost/proxy/google/v1beta/models/gemini-flash:streamGenerateContent?alt=sse",
@@ -403,7 +403,7 @@ describe("Gemini proxy tap (proxy-tap-memory)", () => {
     const { Hono } = await import("hono")
     const app4 = new Hono()
     const mod3 = await import("../src/delivery/http-proxy.js")
-    mod3.registerProxyHttp(app4, { cacheBaseDir: tmpDir, memoryGuard: notOverBudgetGuard })
+    mod3.registerProxyHttp(app4, { cacheBaseDir: tmpDir, memoryGuard: notOverBudgetGuard, env: process.env })
 
     const req4 = new Request(
       "http://localhost/proxy/google/v1beta/models/gemini-flash:streamGenerateContent?alt=sse",
@@ -473,7 +473,7 @@ describe("Gemini proxy tap (proxy-tap-memory)", () => {
 
     const { Hono } = await import("hono")
     const app2 = new Hono()
-    registerProxyHttp(app2, { cacheBaseDir: tmpDir, usageStore })
+    registerProxyHttp(app2, { cacheBaseDir: tmpDir, usageStore, env: process.env })
 
     const rssBefore = process.memoryUsage().rss
 

@@ -22,7 +22,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { AgentSession } from "./agent-session.svelte"
 import { Live } from "./live.svelte"
 import type { Mic } from "./mic.svelte"
-import { type Palette, ThemeVM } from "./theme.svelte"
+import type { Settings } from "./settings.svelte"
+import type { Palette, ThemeVM } from "./theme.svelte"
 
 vi.mock("../adapters/voice/live-token", () => ({
   fetchLiveToken: vi.fn(async () => ({
@@ -55,8 +56,11 @@ vi.mock("../engines/mic-frames", () => ({
     sampleRate = 16_000
     start = vi.fn(async () => {})
     stop = vi.fn(async () => {})
-    on(_event: "frame", _h: (f: Float32Array) => void) {
-      return () => {}
+    on(_event: "frame", h: (f: Float32Array) => void) {
+      micFrameHandler = h
+      return () => {
+        micFrameHandler = null
+      }
     }
     get level() {
       return 0
@@ -64,9 +68,27 @@ vi.mock("../engines/mic-frames", () => ({
   },
 }))
 
+let micFrameHandler: ((f: Float32Array) => void) | null = null
+const vadResetMock = vi.fn()
+const vadIngestMock = vi.fn(async (frame: Float32Array) => [frame] as readonly Float32Array[])
+
+vi.mock("../engines/live-vad", () => ({
+  LiveVad: class {
+    loadFailed = false
+    load = vi.fn(async () => {})
+    ingest = (frame: Float32Array) => vadIngestMock(frame)
+    reset = vadResetMock
+    armPrime = vi.fn()
+  },
+}))
+
 beforeEach(() => {
   providerSend.mockClear()
   sessionSend.mockClear()
+  micFrameHandler = null
+  vadResetMock.mockClear()
+  vadIngestMock.mockClear()
+  vadIngestMock.mockImplementation(async (frame: Float32Array) => [frame])
 })
 
 function mockMic(state: "idle" | "recording" | "transcribing" = "idle") {
@@ -100,14 +122,14 @@ function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return base as unknown as AgentSession
 }
 
-function mockSettings(overrides: Record<string, unknown> = {}) {
+function mockSettings(overrides: Record<string, unknown> = {}): Settings {
   return {
     screenWakeLock: false,
     locale: "he" as const,
     setScreenWakeLock: vi.fn(),
     setLocale: vi.fn(),
     ...overrides,
-  }
+  } as unknown as Settings
 }
 
 function mockTheme(overrides: { palette?: Palette; setPalette?: ReturnType<typeof vi.fn> } = {}) {
@@ -122,7 +144,7 @@ function createLive(opts: {
   mic?: Mic
   session: AgentSession
   getVoiceName?: () => string
-  getSettings?: () => ReturnType<typeof mockSettings>
+  getSettings?: () => Settings
   getTheme?: () => ThemeVM
 }): {
   live: Live
@@ -758,7 +780,9 @@ describe("Live agent secretary prompt (agent-secretary-prompt)", () => {
           id: "u1",
           messageId: null,
           createdAt: 0,
-          segments: [{ id: "s1", text: formatSecretaryDispatch("earlier", { includePreamble: true }) }],
+          segments: [
+            { id: "s1", text: formatSecretaryDispatch("earlier", { includePreamble: true }) },
+          ],
         },
       ] as AgentSession["bubbles"],
     })
@@ -1037,9 +1061,7 @@ describe("Live getVoiceName at mint", () => {
       await live.toggle()
       expect(live.state).toBe("open")
       expect(getVoiceName).toHaveBeenCalled()
-      expect(fetchLiveToken).toHaveBeenCalledWith(
-        expect.objectContaining({ voiceName: "Charon" }),
-      )
+      expect(fetchLiveToken).toHaveBeenCalledWith(expect.objectContaining({ voiceName: "Charon" }))
     } finally {
       dispose()
     }
@@ -1058,7 +1080,7 @@ describe("Live config control (live-config-control)", () => {
       },
       applyConfigOption: vi.fn(async () => {}),
       configOptions: [],
-      supports: { thinkingTokens: false },
+      supports: { thinkingTokens: false } as AgentSession["supports"],
     })
   }
 
@@ -1229,5 +1251,101 @@ describe("Live config control (live-config-control)", () => {
     } finally {
       dispose()
     }
+  })
+})
+
+describe("Live pause/resume (live-silence-cost)", () => {
+  it("pause does not close the session", async () => {
+    const session = mockSession()
+    const live = await openLive(session)
+    live.pause()
+    expect(live.paused).toBe(true)
+    expect(live.state).toBe("open")
+  })
+
+  it("resume resets filter and forwards audio again", async () => {
+    const session = mockSession()
+    const live = await openLive(session)
+    providerSend.mockClear()
+
+    live.pause()
+    micFrameHandler?.(new Float32Array(1280))
+    await Promise.resolve()
+    expect(providerSend).not.toHaveBeenCalledWith(expect.objectContaining({ type: "audio" }))
+
+    live.resume()
+    expect(live.paused).toBe(false)
+    expect(vadResetMock).toHaveBeenCalled()
+
+    micFrameHandler?.(new Float32Array(1280))
+    await Promise.resolve()
+    expect(providerSend).toHaveBeenCalledWith(expect.objectContaining({ type: "audio" }))
+  })
+
+  it("pause_live sends result then pauses without closing", async () => {
+    const session = mockSession()
+    const live = await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "p1",
+      name: "pause_live",
+      args: {},
+    })
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "p1",
+      name: "pause_live",
+      result: { status: "paused" },
+    })
+    expect(live.paused).toBe(true)
+    expect(live.state).toBe("open")
+  })
+
+  it("pause_live when already paused returns already_paused", async () => {
+    const session = mockSession()
+    const live = await openLive(session)
+    live.pause()
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "p2",
+      name: "pause_live",
+      args: {},
+    })
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "p2",
+      name: "pause_live",
+      result: { status: "already_paused" },
+    })
+  })
+
+  it("close_live sends closing then closes like Stop", async () => {
+    const session = mockSession()
+    const live = await openLive(session)
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "c1",
+      name: "close_live",
+      args: {},
+    })
+
+    expect(providerSend).toHaveBeenCalledWith({
+      type: "action_result",
+      id: "c1",
+      name: "close_live",
+      result: { status: "closing" },
+    })
+    expect(live.state).toBe("open")
+    await vi.waitFor(() => {
+      expect(live.state).toBe("closed")
+    })
   })
 })

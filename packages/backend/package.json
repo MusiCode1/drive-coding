@@ -17,6 +17,7 @@
     "@ai-sdk/elevenlabs": "^2.0.33",
     "@ai-sdk/google": "^3.0.75",
     "@ai-sdk/provider": "^3.0.10",
+    "@drive-coding/acp-wire": "workspace:*",
     "@drive-coding/core": "workspace:*",
     "@drive-coding/provider": "workspace:*",
     "@google/genai": "^2.3.0",

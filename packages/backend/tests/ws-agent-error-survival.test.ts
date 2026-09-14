@@ -98,13 +98,13 @@ describe("ws-agent — feWs error handler + idempotent detach (CUT-3b-ii)", () =
 
     const closeSpy = vi.spyOn(conn!, "close")
 
-    const handler = createAgentWsHandler({
+    const { onConnect } = createAgentWsHandler({
       orchestrator: { getBridgePort: vi.fn(() => 0) } as never,
       connectionRegistry: reg,
     })
 
     const mockWs = createMockWs()
-    handler(mockWs, agentId)
+    await onConnect(mockWs, agentId)
 
     mockWs.emit("error", new Error("ECONNRESET"))
 
@@ -116,27 +116,27 @@ describe("ws-agent — feWs error handler + idempotent detach (CUT-3b-ii)", () =
     expect(reg.get(agentId)).not.toBeUndefined()
   }, 15000)
 
-  it("detach is idempotent: error + close both fire → markDetached called exactly once", async () => {
+  it("detach is idempotent: error + close both fire → removeConnection called exactly once", async () => {
     const reg = createConnectionRegistry()
     const agentId = "error-survival-2"
     await spawnConn(reg, agentId)
 
-    const markDetachedSpy = vi.spyOn(reg, "markDetached")
+    const removeConnectionSpy = vi.spyOn(reg, "removeConnection")
 
-    const handler = createAgentWsHandler({
+    const { onConnect } = createAgentWsHandler({
       orchestrator: { getBridgePort: vi.fn(() => 0) } as never,
       connectionRegistry: reg,
     })
 
     const mockWs = createMockWs()
-    handler(mockWs, agentId)
+    await onConnect(mockWs, agentId)
 
     mockWs.emit("error", new Error("ECONNRESET"))
     mockWs.emit("close")
 
     await new Promise((r) => setTimeout(r, 50))
 
-    expect(markDetachedSpy).toHaveBeenCalledTimes(1)
+    expect(removeConnectionSpy).toHaveBeenCalledTimes(1)
   }, 15000)
 
   it("after error-detach, a second connection to same agentId succeeds (activeFeWs cleared)", async () => {
@@ -144,19 +144,19 @@ describe("ws-agent — feWs error handler + idempotent detach (CUT-3b-ii)", () =
     const agentId = "error-survival-3"
     await spawnConn(reg, agentId)
 
-    const handler = createAgentWsHandler({
+    const { onConnect } = createAgentWsHandler({
       orchestrator: { getBridgePort: vi.fn(() => 0) } as never,
       connectionRegistry: reg,
     })
 
     const mockWs1 = createMockWs()
-    handler(mockWs1, agentId)
+    await onConnect(mockWs1, agentId)
 
     mockWs1.emit("error", new Error("ECONNRESET"))
     await new Promise((r) => setTimeout(r, 50))
 
     const mockWs2 = createMockWs()
-    handler(mockWs2, agentId)
+    await onConnect(mockWs2, agentId)
 
     const closeCalls = (mockWs2.close as ReturnType<typeof vi.fn>).mock.calls as Array<unknown[]>
     const rejectedAsInUse = closeCalls.some(
@@ -176,13 +176,13 @@ describe("ws-agent — feWs error handler + idempotent detach (CUT-3b-ii)", () =
     const conn = reg.get(agentId)
     const closeSpy = vi.spyOn(conn!, "close")
 
-    const handler = createAgentWsHandler({
+    const { onConnect } = createAgentWsHandler({
       orchestrator: { getBridgePort: vi.fn(() => 0) } as never,
       connectionRegistry: reg,
     })
 
     const mockWs = createMockWs()
-    handler(mockWs, agentId)
+    await onConnect(mockWs, agentId)
 
     mockWs.emit("close")
 

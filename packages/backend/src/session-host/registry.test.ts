@@ -13,16 +13,18 @@
  */
 
 import type { ProviderConnection } from "@drive-coding/provider/connection"
+import type { AcpClient } from "@drive-coding/provider/client"
 import { Hono } from "hono"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
+import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import { buildAgentMcpServers } from "../agent-identity.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
 import { registerRpcRoute } from "./http/rpc.js"
 import type { PatchesBroadcaster } from "./patches-broadcaster.js"
 import type { HostEntry, HostResult } from "./registry.js"
 import { createAgentSessionRegistry, resolveHttpOwnerTtlMs } from "./registry.js"
-import type { ExtendedSessionHost } from "./session-host.js"
+import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
 
 // slice host-result-reason C1: getOrCreateHost now returns a discriminated
 // HostResult instead of HostEntry | undefined. Most existing tests only care
@@ -62,7 +64,7 @@ function makeMockConnection(): ProviderConnection {
 
 /**
  * makeTouchState — מצב-חיות אמיתי ל-mock: `touch()` כותב את הזמן הנוכחי,
- * `get()` מחזיר את מה שנכתב. בלי זה טסט "touchOwner מונע פקיעה" עובר תמיד.
+ * `get()` מחזיר את מה שנכתב. בלי זה טסט "touchConnection מונע פקיעה" עובר תמיד.
  */
 function makeTouchState(initial: number | null = null) {
   let last: number | null = initial
@@ -81,75 +83,92 @@ function makeMockConnectionRegistry(
   conn?: ProviderConnection,
   attached = false,
   touchState = makeTouchState(),
-  owner: { via: "ws" | "http"; since: number } | null = null,
+  initialVia: "ws" | "http" = "http",
 ): ConnectionRegistry {
+  const rows = new Map<string, { via: "ws" | "http"; lastSeenAt: number }>()
+  if (attached) rows.set("mock", { via: initialVia, lastSeenAt: touchState.get() ?? Date.now() })
+
   return {
     connect: vi.fn(),
     get: vi.fn().mockReturnValue(conn),
     getCwd: vi.fn().mockReturnValue("/tmp/mock-cwd"),
+    getCharter: vi.fn().mockReturnValue(undefined),
+    consumeCharter: vi.fn().mockReturnValue(undefined),
     list: vi.fn().mockReturnValue([]),
-    markAttached: vi.fn(),
-    markDetached: vi.fn(),
-    markOwned: vi.fn(),
-    // slice ownership-handoff C4b: ה-mock מחזיק **מצב אמיתי** —
-    // ⚠️ mock ש-getLastSeenAt שלו מחזיר Date.now() בכל קריאה הופך כל טסט-חיות
-    // ל-false-positive: now-lastSeen=0 תמיד, גם אם touchOwner הוא no-op.
-    // (כלב NO-GO). כאן touchOwner **כותב** ו-getLastSeenAt **קורא**.
-    touchOwner: touchState.touch,
-    getLastSeenAt: touchState.get,
-    isAttached: vi.fn().mockReturnValue(attached),
-    getOwner: vi.fn().mockReturnValue(owner),
+    addConnection: vi.fn((_id, cid, via, stream) => {
+      rows.set(cid, { via, lastSeenAt: Date.now(), ...(stream !== undefined ? { stream } : {}) })
+    }),
+    removeConnection: vi.fn((_id, cid) => {
+      rows.delete(cid)
+    }),
+    touchConnection: vi.fn((_id, cid) => {
+      const row = rows.get(cid)
+      if (row) row.lastSeenAt = Date.now()
+      touchState.touch()
+    }),
+    clearAllConnections: vi.fn(() => rows.clear()),
+    getConnectionCount: vi.fn(() => rows.size),
+    getLastSeenAt: vi.fn(() => {
+      if (rows.size === 0) return null
+      return Math.max(...[...rows.values()].map((r) => r.lastSeenAt))
+    }),
+    listHttpConnectionIds: vi.fn(() =>
+      [...rows.entries()]
+        .filter(([, r]) => r.via === "http")
+        .map(([connectionId, r]) => ({ connectionId, lastSeenAt: r.lastSeenAt })),
+    ),
+    isAttached: vi.fn(() => rows.size > 0),
     getEpoch: vi.fn().mockReturnValue(0),
-    isOwnedByWs: vi.fn().mockReturnValue(attached),
+    isOwnedByWs: vi.fn().mockReturnValue(false),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
     getCliKind: vi.fn().mockReturnValue("opencode"),
     close: vi.fn().mockResolvedValue(undefined),
     onCrash: vi.fn(() => () => {}),
+    setWsSocketChecker: vi.fn(),
   } as unknown as ConnectionRegistry
 }
 
-/**
- * makeStatefulConnReg — slice ttl-ownership: a REAL-behaving connection-registry
- * fake, needed because after the fix the sweep's loop guard (`via === "http"`)
- * runs on EVERY pass, and the static `makeMockConnectionRegistry` mock never
- * changes what `getOwner`/`getLastSeenAt` return — so a sweep that fires 15
- * times over `advanceTimersByTimeAsync(300)` would call `broadcaster.close()`
- * 15 times, and `toHaveBeenCalledTimes(1)` would fail on a CORRECT
- * implementation. This fake tracks real state: markOwned sets an owner (and
- * bumps epoch + lastSeenAt), markDetached clears it, getOwner/getLastSeenAt
- * read it back (getLastSeenAt is null when there's no owner — the real
- * semantics in connection-registry.ts, and what makes the sweep's
- * `if (lastSeen === null) continue` guard actually mean something here).
- */
 function makeStatefulConnReg(conn: ProviderConnection) {
-  let owner: { via: "ws" | "http"; since: number } | null = null
-  let lastSeenAt: number | null = Date.now() - 10_000 // starts stale
+  const rows = new Map<
+    string,
+    { via: "ws" | "http"; lastSeenAt: number; stream?: ReadableStream }
+  >()
   let epoch = 0
-  const markOwned = vi.fn((_id: string, via: "ws" | "http") => {
-    owner = { via, since: Date.now() }
-    epoch++
-    lastSeenAt = Date.now()
+  const addConnection = vi.fn((_id: string, cid: string, via: "ws" | "http", stream?: ReadableStream) => {
+    const hadHttp = [...rows.values()].some((r) => r.via === "http")
+    rows.set(cid, { via, lastSeenAt: Date.now(), ...(stream !== undefined ? { stream } : {}) })
+    if (via === "http" && !hadHttp) epoch++
+    if (via === "ws") epoch++
   })
-  const markDetached = vi.fn(() => {
-    owner = null
+  const removeConnection = vi.fn((_id: string, cid: string) => {
+    rows.delete(cid)
   })
   const reg = {
-    // 🔴 this spread is mandatory, not a convenience. doCreate also calls
-    // `get`, `isOwnedByWs`, `getCwd` (and `getCliKind` on the error path) —
-    // without them all six new tests fail on `TypeError:
-    // connectionRegistry.get is not a function` on the very first line, and
-    // `as unknown as` hides this from typecheck.
     ...makeMockConnectionRegistry(conn),
-    markOwned,
-    markDetached,
-    getOwner: vi.fn(() => owner),
-    getLastSeenAt: vi.fn(() => (owner ? lastSeenAt : null)),
-    touchOwner: vi.fn(() => {
-      if (owner) lastSeenAt = Date.now()
+    addConnection,
+    removeConnection,
+    getConnectionCount: vi.fn(() => rows.size),
+    getLastSeenAt: vi.fn(() => {
+      if (rows.size === 0) return null
+      return Math.max(...[...rows.values()].map((r) => r.lastSeenAt))
+    }),
+    listHttpConnectionIds: vi.fn(() =>
+      [...rows.entries()]
+        .filter(([, r]) => r.via === "http")
+        .map(([connectionId, r]) => ({
+          connectionId,
+          lastSeenAt: r.lastSeenAt,
+          stream: r.stream,
+        })),
+    ),
+    touchConnection: vi.fn((_id: string, cid: string) => {
+      const row = rows.get(cid)
+      if (row) row.lastSeenAt = Date.now()
     }),
     getEpoch: vi.fn(() => epoch),
+    isAttached: vi.fn(() => rows.size > 0),
   } as unknown as ConnectionRegistry
-  return { reg, markOwned, markDetached }
+  return { reg, addConnection, removeConnection }
 }
 
 function makeMockHost(sessionId: string | null = null): ExtendedSessionHost {
@@ -167,12 +186,18 @@ function makeMockHost(sessionId: string | null = null): ExtendedSessionHost {
     setConfigOption: vi.fn().mockResolvedValue(undefined),
     setSessionModel: vi.fn().mockResolvedValue(undefined),
     extMethod: vi.fn().mockResolvedValue({}),
+    emitExtNotification: vi.fn(),
     respondPermission: vi.fn(),
     respondElicitation: vi.fn(),
+    isScopeRequest: () => false,
+    requestScopePermission: vi.fn().mockResolvedValue("deny"),
     listSessions: vi.fn().mockResolvedValue({}),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),
     agentCapabilities: { mcpCapabilities: { http: true } },
+    getTurnStartedAt: () => 0,
+    getStallReported: () => false,
+    markStallReported: () => {},
   }
   return host
 }
@@ -183,6 +208,17 @@ function makeMockBroadcaster(): PatchesBroadcaster {
     unsubscribe: vi.fn(),
     close: vi.fn(),
   }
+}
+
+/** Seed an HTTP viewer row — connection-set: rows come from SSE/WS, not doCreate. */
+function seedHttpViewer(
+  connectionRegistry: ConnectionRegistry,
+  agentId: string,
+  stream = new ReadableStream(),
+  connectionId = "http-viewer-1",
+): ReadableStream {
+  connectionRegistry.addConnection(agentId, connectionId, "http", stream)
+  return stream
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -264,7 +300,10 @@ describe("AgentSessionRegistry", () => {
 
       // slice ownership-handoff C4: _createHostFn מקבל עכשיו גם opts
       // (acpSessionId למסלול warm). הבדיקה על ה-conn בלבד.
-      expect(createHostFn).toHaveBeenCalledWith(conn, undefined)
+      expect(createHostFn).toHaveBeenCalledWith(
+        conn,
+        expect.objectContaining({ transformPromptForAcp: expect.any(Function) }),
+      )
     })
 
     // ─── slice ownership-handoff C4 (post-calev): מסלול warm ─────────────────
@@ -328,9 +367,103 @@ describe("AgentSessionRegistry", () => {
 
       await registry.getOrCreateHost("agent-1")
 
-      expect(createHostFn).toHaveBeenCalledWith(conn, undefined)
+      expect(createHostFn).toHaveBeenCalledWith(
+        conn,
+        expect.objectContaining({ transformPromptForAcp: expect.any(Function) }),
+      )
       expect(mockHost.newSession).toHaveBeenCalled()
       expect(mockHost.loadSession).not.toHaveBeenCalled()
+    })
+
+    // ─── slice agent-charter C2: charter prepend wired via getOrCreateHost ───
+
+    it("gate 5: first prompt prepends consumed charter to ACP; bubble stays clean", async () => {
+      const conn = makeMockConnection()
+      let charterLeft: string | undefined = "CHARTER_X"
+      const connectionRegistry = {
+        ...makeMockConnectionRegistry(conn),
+        consumeCharter: vi.fn(() => {
+          const text = charterLeft
+          charterLeft = undefined
+          return text
+        }),
+      } as unknown as ConnectionRegistry
+      const mockClient = {
+        newSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
+        loadSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
+        prompt: vi.fn().mockResolvedValue(undefined),
+        cancel: vi.fn().mockResolvedValue(undefined),
+        setSessionMode: vi.fn().mockResolvedValue(undefined),
+        setSessionConfigOption: vi.fn().mockResolvedValue({ configOptions: [] }),
+        setSessionModel: vi.fn().mockResolvedValue(undefined),
+        extMethod: vi.fn().mockResolvedValue({}),
+        listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
+        deleteSession: vi.fn().mockResolvedValue(undefined),
+        capabilities: { mcpCapabilities: { http: true } },
+      } as unknown as AcpClient
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: async (c, opts) =>
+          createSessionHostFromConnection(c, {
+            ...opts,
+            _createAcpClient: async () => mockClient,
+          }),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      const result = await registry.getOrCreateHost("agent-1")
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      await result.entry.host.prompt("s1", "hello")
+
+      expect(mockClient.prompt).toHaveBeenCalledWith("s1", "CHARTER_X\n\nhello")
+      const msg = result.entry.host.state.messages[0]
+      expect(msg?.role).toBe("user")
+      if (msg?.role === "user") {
+        expect(msg.segments[0]?.text).toBe("hello")
+      }
+
+      await result.entry.host.prompt("s1", "again")
+      expect(mockClient.prompt).toHaveBeenLastCalledWith("s1", "again")
+    })
+
+    it("mutation gate 9: consumeCharter noop → first ACP prompt lacks charter text", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = {
+        ...makeMockConnectionRegistry(conn),
+        consumeCharter: vi.fn(() => undefined),
+      } as unknown as ConnectionRegistry
+      const mockClient = {
+        newSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
+        loadSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
+        prompt: vi.fn().mockResolvedValue(undefined),
+        cancel: vi.fn().mockResolvedValue(undefined),
+        setSessionMode: vi.fn().mockResolvedValue(undefined),
+        setSessionConfigOption: vi.fn().mockResolvedValue({ configOptions: [] }),
+        setSessionModel: vi.fn().mockResolvedValue(undefined),
+        extMethod: vi.fn().mockResolvedValue({}),
+        listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
+        deleteSession: vi.fn().mockResolvedValue(undefined),
+        capabilities: { mcpCapabilities: { http: true } },
+      } as unknown as AcpClient
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: async (c, opts) =>
+          createSessionHostFromConnection(c, {
+            ...opts,
+            _createAcpClient: async () => mockClient,
+          }),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      const result = await registry.getOrCreateHost("agent-1")
+      expect(result.ok).toBe(true)
+      if (!result.ok) return
+      await result.entry.host.prompt("s1", "hello")
+
+      expect(mockClient.prompt).toHaveBeenCalledWith("s1", "hello")
     })
 
     // ─── slice ownership-handoff C4b (post-calev): מנגנון החיות ─────────────
@@ -338,17 +471,14 @@ describe("AgentSessionRegistry", () => {
     // 🔴 הדרישה הקשיחה: פקיעה משחררת בעלות — ולעולם לא נוגעת בסוכן.
 
     // 🔴 slice ttl-ownership: mutated. `dispose` is no longer called on expiry
-    // (holder is retained) — the signal moves to `markDetached`/`broadcaster.close`.
-    it("http liveness: stale owner is released (markDetached + broadcaster.close), agent NOT killed", async () => {
+    // (holder is retained) — the signal moves to `removeConnection`/`broadcaster.close`.
+    it("http liveness: stale owner is released (removeConnection + broadcaster.close), agent NOT killed", async () => {
       vi.useFakeTimers()
       try {
         const conn = makeMockConnection()
         // נראה לאחרונה הרבה לפני ה-TTL ⇒ פקוע
         const touchState = makeTouchState(Date.now() - 10_000)
-        const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState, {
-          via: "http",
-          since: Date.now(),
-        })
+        const connectionRegistry = makeMockConnectionRegistry(conn, true, touchState)
         const mockHost = makeMockHost()
         const broadcaster = makeMockBroadcaster()
 
@@ -367,8 +497,8 @@ describe("AgentSessionRegistry", () => {
 
         // הבעלות שוחררה והצינור פונה — אבל host.dispose לעולם לא נקרא (הוא נשמר)
         expect(mockHost.dispose).not.toHaveBeenCalled()
-        expect(connectionRegistry.markDetached).toHaveBeenCalled()
-        expect(broadcaster.close).toHaveBeenCalled()
+        expect(connectionRegistry.removeConnection).toHaveBeenCalled()
+        expect(broadcaster.close).not.toHaveBeenCalled()
         // 🔴 הגבול הקשיח — הסוכן חי
         expect(conn.close).not.toHaveBeenCalled()
       } finally {
@@ -376,20 +506,17 @@ describe("AgentSessionRegistry", () => {
       }
     })
 
-    // ⚠️ הטסט הזה חייב להיכשל אם touchOwner הוא no-op — לכן ה-mock מחזיק מצב
+    // ⚠️ הטסט הזה חייב להיכשל אם touchConnection הוא no-op — לכן ה-mock מחזיק מצב
     // אמיתי, ומתחיל **פקוע**. רק ה-touch מציל אותו. (כלב NO-GO)
     // 🔴 slice ttl-ownership: mutated. `dispose.not.toHaveBeenCalled()` passes
     // vacuously now (dispose is never called on expiry) — replaced with the
     // two assertions that actually detect a stale-but-touched owner being evicted.
-    it("http liveness: touchOwner keeps the owner alive past the TTL", async () => {
+    it("http liveness: touchConnection keeps the owner alive past the TTL", async () => {
       vi.useFakeTimers()
       try {
         const conn = makeMockConnection()
         const touchState = makeTouchState(Date.now() - 10_000) // מתחיל פקוע
-        const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState, {
-          via: "http",
-          since: Date.now(),
-        })
+        const connectionRegistry = makeMockConnectionRegistry(conn, true, touchState)
         const mockHost = makeMockHost()
         const broadcaster = makeMockBroadcaster()
 
@@ -402,15 +529,15 @@ describe("AgentSessionRegistry", () => {
         })
 
         await registry.getOrCreateHost("agent-1")
-        registry.touchOwner("agent-1") // touch ראשון מיד — מרענן את המצב הפקוע
+        registry.touchConnection("agent-1", "mock") // touch ראשון מיד — מרענן את המצב הפקוע
 
         // נוגעים כל 40ms — מתחת ל-TTL של 100ms
         for (let i = 0; i < 6; i++) {
           await vi.advanceTimersByTimeAsync(40)
-          registry.touchOwner("agent-1")
+          registry.touchConnection("agent-1", "mock")
         }
 
-        expect(connectionRegistry.markDetached).not.toHaveBeenCalled()
+        expect(connectionRegistry.removeConnection).not.toHaveBeenCalled()
         expect(broadcaster.close).not.toHaveBeenCalled()
       } finally {
         vi.useRealTimers()
@@ -420,7 +547,7 @@ describe("AgentSessionRegistry", () => {
     // 🔴 DoD 7 — slice liveness C1 §2.1: הסויפ המאוחד **לעולם לא** מפנה בעלי-WS.
     // גם אם ה-WS לא דיווח 200ש׳ (lastSeen פקוע) — ה-WS הוא סימן-החיים של עצמו
     // (sweep של סוקטים ב-ws-agent.ts, תפקיד נפרד). בלי בדיקת-התעבורה המפורשת
-    // (getOwner().via !== "http") הטסט הזה היה נכשל — touchOwner אגנוסטי גרם
+    // (getConnectionCount().via !== "http") הטסט הזה היה נכשל — touchConnection אגנוסטי גרם
     // ל-getLastSeenAt להחזיר מספר גם ל-WS. (mutant 21ב).
     // 🔴 slice ttl-ownership: mutated — same replacement as the two tests above.
     it("🔴 sweep does NOT evict a WS owner even with a stale stamp", async () => {
@@ -430,10 +557,7 @@ describe("AgentSessionRegistry", () => {
         const touchState = makeTouchState(Date.now() - 10_000) // פקוע
         // attached=false ⇒ יצירת ה-host מותרת; owner={via:"ws"} ⇒ הסויפ חייב לדלג
         // על בעל-ה-WS הזה (הבדיקה המפורשת של התעבורה, §2.1).
-        const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState, {
-          via: "ws",
-          since: Date.now(),
-        })
+        const connectionRegistry = makeMockConnectionRegistry(conn, true, touchState, "ws")
         const mockHost = makeMockHost()
         const broadcaster = makeMockBroadcaster()
 
@@ -449,7 +573,7 @@ describe("AgentSessionRegistry", () => {
 
         await vi.advanceTimersByTimeAsync(300)
 
-        expect(connectionRegistry.markDetached).not.toHaveBeenCalled()
+        expect(connectionRegistry.removeConnection).not.toHaveBeenCalled()
         expect(broadcaster.close).not.toHaveBeenCalled()
         expect(registry.getHost("agent-1")).toBe(mockHost)
       } finally {
@@ -463,7 +587,7 @@ describe("AgentSessionRegistry", () => {
       vi.useFakeTimers()
       try {
         const conn = makeMockConnection()
-        const { reg: connectionRegistry, markDetached } = makeStatefulConnReg(conn)
+        const { reg: connectionRegistry, removeConnection } = makeStatefulConnReg(conn)
         const mockHost = makeMockHost()
         const broadcaster = makeMockBroadcaster()
 
@@ -476,6 +600,7 @@ describe("AgentSessionRegistry", () => {
         })
 
         await registry.getOrCreateHost("agent-1")
+        seedHttpViewer(connectionRegistry, "agent-1")
 
         await vi.advanceTimersByTimeAsync(300)
 
@@ -483,16 +608,16 @@ describe("AgentSessionRegistry", () => {
         expect(registry.getHost("agent-1")).toBe(mockHost)
         expect(registry.getBroadcaster("agent-1")).toBe(broadcaster)
         // ⚠️ this is the handle makeStatefulConnReg returns (`const { reg,
-        // markOwned, markDetached } = makeStatefulConnReg(conn)`), NOT
-        // `connectionRegistry.markDetached`.
-        expect(markDetached).toHaveBeenCalled()
+        // addConnection, removeConnection } = makeStatefulConnReg(conn)`), NOT
+        // `connectionRegistry.removeConnection`.
+        expect(removeConnection).toHaveBeenCalled()
         expect(conn.close).not.toHaveBeenCalled()
       } finally {
         vi.useRealTimers()
       }
     })
 
-    it("TTL expiry severs abandoned SSE subscribers (broadcaster.close) without ending the source", async () => {
+    it("TTL expiry severs abandoned SSE subscribers (unsubscribe per row) without ending the source", async () => {
       vi.useFakeTimers()
       try {
         const conn = makeMockConnection()
@@ -509,10 +634,12 @@ describe("AgentSessionRegistry", () => {
         })
 
         await registry.getOrCreateHost("agent-1")
+        const stream = seedHttpViewer(connectionRegistry, "agent-1")
 
         await vi.advanceTimersByTimeAsync(300)
 
-        expect(broadcaster.close).toHaveBeenCalledTimes(1)
+        expect(broadcaster.unsubscribe).toHaveBeenCalledWith(stream)
+        expect(broadcaster.close).not.toHaveBeenCalled()
       } finally {
         vi.useRealTimers()
       }
@@ -548,13 +675,13 @@ describe("AgentSessionRegistry", () => {
       }
     })
 
-    it("a reconnect after expiry re-claims http ownership (markOwned), and a further reconnect while owned does not", async () => {
+    it("a reconnect after expiry re-claims http ownership (addConnection), and a further reconnect while owned does not", async () => {
       vi.useFakeTimers()
       try {
         const conn = makeMockConnection()
-        // ⚠️ needs a STATEFUL getOwner (not the static `.mockReturnValue`
-        // helper) — markOwned writes, markDetached clears, getOwner reads.
-        const { reg: connectionRegistry, markOwned } = makeStatefulConnReg(conn)
+        // ⚠️ needs a STATEFUL getConnectionCount (not the static `.mockReturnValue`
+        // helper) — addConnection writes, removeConnection clears, getConnectionCount reads.
+        const { reg: connectionRegistry, addConnection } = makeStatefulConnReg(conn)
         const mockHost = makeMockHost()
 
         const registry = createAgentSessionRegistry({
@@ -565,25 +692,24 @@ describe("AgentSessionRegistry", () => {
           _httpSweepMs: 20,
         })
 
-        await registry.getOrCreateHost("agent-1") // 1st markOwned (doCreate)
-        await vi.advanceTimersByTimeAsync(300) // expiry — releases ownership
-
-        await registry.getOrCreateHost("agent-1") // 2nd connection — re-claims
-        // ⚠️ passes even without the fix — doCreate itself calls markOwned.
-        // Positive control, not the detector.
-        expect(markOwned).toHaveBeenCalledWith("agent-1", "http")
-
-        // 🔴 the actual detector of mutation 4: a THIRD connection right after
-        // the second, with NO advanceTimersByTimeAsync in between (that would
-        // let the sweep evict again and inflate the count to 3).
         await registry.getOrCreateHost("agent-1")
-        expect(markOwned).toHaveBeenCalledTimes(2)
+        seedHttpViewer(connectionRegistry, "agent-1")
+        await vi.advanceTimersByTimeAsync(300) // expiry
+
+        await registry.getOrCreateHost("agent-1") // 2nd viewer — re-claims
+        seedHttpViewer(connectionRegistry, "agent-1", new ReadableStream(), "http-viewer-2")
+        expect(addConnection).toHaveBeenCalledTimes(2)
+
+        // 🔴 third viewer while still owned — no extra expiry between
+        seedHttpViewer(connectionRegistry, "agent-1", new ReadableStream(), "http-viewer-3")
+        await registry.getOrCreateHost("agent-1")
+        expect(addConnection).toHaveBeenCalledTimes(3)
       } finally {
         vi.useRealTimers()
       }
     })
 
-    it("the sweep fires at most once per expiry (markDetached makes the next pass skip)", async () => {
+    it("the sweep fires at most once per expiry (removeConnection makes the next pass skip)", async () => {
       vi.useFakeTimers()
       try {
         const conn = makeMockConnection()
@@ -600,20 +726,22 @@ describe("AgentSessionRegistry", () => {
         })
 
         await registry.getOrCreateHost("agent-1")
+        const stream = seedHttpViewer(connectionRegistry, "agent-1")
 
         await vi.advanceTimersByTimeAsync(300) // ≥10 sweep passes
 
-        expect(broadcaster.close).toHaveBeenCalledTimes(1)
+        expect(broadcaster.unsubscribe).toHaveBeenCalledWith(stream)
+        expect(broadcaster.unsubscribe).toHaveBeenCalledTimes(1)
       } finally {
         vi.useRealTimers()
       }
     })
 
-    it("POST /rpc re-claims ownership after expiry — through the real route, not the registry API", async () => {
+    it("POST /rpc does NOT re-claim ownership (D4 — rows come from SSE/WS only)", async () => {
       vi.useFakeTimers()
       try {
         const conn = makeMockConnection()
-        const { reg: connectionRegistry, markOwned } = makeStatefulConnReg(conn)
+        const { reg: connectionRegistry, addConnection } = makeStatefulConnReg(conn)
         const mockHost = makeMockHost()
 
         const registry = createAgentSessionRegistry({
@@ -625,10 +753,11 @@ describe("AgentSessionRegistry", () => {
         })
 
         await registry.getOrCreateHost("agent-1")
+        seedHttpViewer(connectionRegistry, "agent-1")
         await vi.advanceTimersByTimeAsync(300) // expiry — ownership released
 
         const app = new Hono()
-        registerRpcRoute(app, registry)
+        registerRpcRoute(app, registry, createInMemoryAgentRegistry())
         const res = await app.request(`/api/agents/agent-1/rpc`, {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -636,7 +765,7 @@ describe("AgentSessionRegistry", () => {
         })
 
         expect(res.status).toBe(200)
-        expect(markOwned).toHaveBeenCalledWith("agent-1", "http")
+        expect(addConnection).toHaveBeenCalledTimes(1)
       } finally {
         vi.useRealTimers()
       }
@@ -755,7 +884,77 @@ describe("AgentSessionRegistry", () => {
       expect(connectionRegistry.getCwd).toHaveBeenCalledWith("agent-1")
     })
 
-    it("omits mcpServers when agent did not declare http MCP in initialize", async () => {
+    it("GATE-A: claude cliKind injects _meta with summarized thinking on auto newSession", async () => {
+      const conn = makeMockConnection()
+      const connectionRegistry = makeMockConnectionRegistry(conn)
+      ;(connectionRegistry.getCliKind as ReturnType<typeof vi.fn>).mockReturnValue("claude")
+      const mockHost = makeMockHost(null)
+
+      const registry = createAgentSessionRegistry({
+        connectionRegistry,
+        _createHostFn: vi.fn().mockResolvedValue(mockHost),
+        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+      })
+
+      await registry.getOrCreateHost("agent-1")
+
+      expect(mockHost.newSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cwd: "/tmp/mock-cwd",
+          _meta: expect.objectContaining({
+            claudeCode: expect.objectContaining({
+              options: expect.objectContaining({
+                thinking: expect.objectContaining({ display: "summarized" }),
+              }),
+            }),
+          }),
+        }),
+      )
+    })
+
+    it("GATE-B wiring: injectDriveCodingMcp:false in cli-specs → newSession without drive-coding MCP", async () => {
+      vi.resetModules()
+      const fs = await import("node:fs")
+      const os = await import("node:os")
+      const path = await import("node:path")
+      const filePath = path.join(os.tmpdir(), `registry-gate-b-${Date.now()}.jsonc`)
+      fs.writeFileSync(filePath, JSON.stringify({ claude: { injectDriveCodingMcp: false } }))
+      process.env.CLI_SPECS_FILE = filePath
+      try {
+        const { createAgentSessionRegistry: createReg } = await import("./registry.js")
+        const conn = makeMockConnection()
+        const connectionRegistry = makeMockConnectionRegistry(conn)
+        ;(connectionRegistry.getCliKind as ReturnType<typeof vi.fn>).mockReturnValue("claude")
+        const mockHost = makeMockHost(null)
+
+        const registry = createReg({
+          connectionRegistry,
+          _createHostFn: vi.fn().mockResolvedValue(mockHost),
+          _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+        })
+
+        await registry.getOrCreateHost("agent-1")
+
+        expect(mockHost.newSession).toHaveBeenCalledWith(
+          expect.objectContaining({
+            cwd: "/tmp/mock-cwd",
+            mcpServers: [],
+          }),
+        )
+        const call = (mockHost.newSession as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
+          mcpServers?: unknown[]
+        }
+        expect(call.mcpServers?.some((s) => JSON.stringify(s).includes("drive-coding"))).toBe(
+          false,
+        )
+      } finally {
+        fs.unlinkSync(filePath)
+        delete process.env.CLI_SPECS_FILE
+        vi.resetModules()
+      }
+    })
+
+    it("passes empty mcpServers when agent did not declare http MCP in initialize", async () => {
       const conn = makeMockConnection()
       const connectionRegistry = makeMockConnectionRegistry(conn)
       const mockHost = makeMockHost(null)
@@ -769,7 +968,7 @@ describe("AgentSessionRegistry", () => {
 
       await registry.getOrCreateHost("agent-1")
 
-      expect(mockHost.newSession).toHaveBeenCalledWith({ cwd: "/tmp/mock-cwd" })
+      expect(mockHost.newSession).toHaveBeenCalledWith({ cwd: "/tmp/mock-cwd", mcpServers: [] })
     })
 
     it("does not call host.newSession again if host already has a sessionId", async () => {
@@ -1060,7 +1259,8 @@ describe("AgentSessionRegistry", () => {
   describe("attached-agent refusal (slice remote-warm-reconnect C2)", () => {
     it("refuses to create a host for a WS-owned agent (WS holds the wire) — reason:'ws-owned'", async () => {
       const conn = makeMockConnection()
-      const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ true)
+      const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ false)
+      ;(connectionRegistry.isOwnedByWs as ReturnType<typeof vi.fn>).mockReturnValue(true)
       const createHostFn = vi.fn().mockResolvedValue(makeMockHost())
 
       const registry = createAgentSessionRegistry({
@@ -1100,7 +1300,8 @@ describe("AgentSessionRegistry", () => {
   describe("evict-timeout (slice host-result-reason C1)", () => {
     it("evictAndWait rejecting → {ok:false, reason:'evict-timeout'} (NOT ws-owned, NOT 404-equivalent)", async () => {
       const conn = makeMockConnection()
-      const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ true)
+      const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ false)
+      ;(connectionRegistry.isOwnedByWs as ReturnType<typeof vi.fn>).mockReturnValue(true)
       const createHostFn = vi.fn().mockResolvedValue(makeMockHost())
       const evictAndWait = vi.fn().mockRejectedValue(new Error("evict timed out"))
 
@@ -1120,7 +1321,8 @@ describe("AgentSessionRegistry", () => {
 
     it("evictAndWait resolving → HTTP takeover proceeds normally (regression: injecting the controller does not break the happy path)", async () => {
       const conn = makeMockConnection()
-      const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ true)
+      const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ false)
+      ;(connectionRegistry.isOwnedByWs as ReturnType<typeof vi.fn>).mockReturnValue(true)
       const mockHost = makeMockHost()
       const evictAndWait = vi.fn().mockResolvedValue(undefined)
 
@@ -1201,10 +1403,10 @@ describe("AgentSessionRegistry", () => {
   // ─── slice ownership-truth C2: host registers/releases ownership ──────────
 
   describe("ownership registration (slice ownership-truth C2)", () => {
-    it("doCreate marks ownership as http after successful host creation", async () => {
+    it("doCreate does NOT register a connection row (D4 — rows from SSE/WS only)", async () => {
       const conn = makeMockConnection()
       const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ false)
-      const markOwnedSpy = connectionRegistry.markOwned as ReturnType<typeof vi.fn>
+      const addConnectionSpy = connectionRegistry.addConnection as ReturnType<typeof vi.fn>
 
       const registry = createAgentSessionRegistry({
         connectionRegistry,
@@ -1214,18 +1416,13 @@ describe("AgentSessionRegistry", () => {
 
       await registry.getOrCreateHost("agent-own-1")
 
-      expect(markOwnedSpy).toHaveBeenCalledWith("agent-own-1", "http")
+      expect(addConnectionSpy).not.toHaveBeenCalled()
     })
 
-    it("unregisterHost calls markDetached when owner is http", () => {
+    it("unregisterHost calls clearAllConnections", () => {
       const conn = makeMockConnection()
       const connectionRegistry = makeMockConnectionRegistry(conn)
-      // Simulate http ownership
-      ;(connectionRegistry.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
-        via: "http",
-        since: Date.now(),
-      })
-      const markDetachedSpy = connectionRegistry.markDetached as ReturnType<typeof vi.fn>
+      const clearAllSpy = connectionRegistry.clearAllConnections as ReturnType<typeof vi.fn>
 
       const registry = createAgentSessionRegistry({
         connectionRegistry,
@@ -1233,26 +1430,15 @@ describe("AgentSessionRegistry", () => {
         _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
       })
 
-      // Create then unregister
-      // Need to set map entry — use getOrCreateHost
-      // But we need isOwnedByWs=false for creation to succeed (already set via attached=false)
-      // Actually the mock's isOwnedByWs returns attached (false), so creation succeeds
-      // But markOwned is a mock — it doesn't actually set owner. So getOwner mock is what matters.
-      // We already set getOwner to return http. After unregister:
       registry.unregisterHost("test-agent")
 
-      expect(markDetachedSpy).toHaveBeenCalledWith("test-agent")
+      expect(clearAllSpy).toHaveBeenCalledWith("test-agent")
     })
 
-    it("unregisterHost does NOT call markDetached when owner is ws (not http)", () => {
+    it("unregisterHost always clears connections (ws owner too)", () => {
       const conn = makeMockConnection()
       const connectionRegistry = makeMockConnectionRegistry(conn)
-      // Simulate WS ownership — unregisterHost should NOT clear it
-      ;(connectionRegistry.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
-        via: "ws",
-        since: Date.now(),
-      })
-      const markDetachedSpy = connectionRegistry.markDetached as ReturnType<typeof vi.fn>
+      const clearAllSpy = connectionRegistry.clearAllConnections as ReturnType<typeof vi.fn>
 
       const registry = createAgentSessionRegistry({
         connectionRegistry,
@@ -1262,14 +1448,13 @@ describe("AgentSessionRegistry", () => {
 
       registry.unregisterHost("test-agent-ws")
 
-      expect(markDetachedSpy).not.toHaveBeenCalled()
+      expect(clearAllSpy).toHaveBeenCalledWith("test-agent-ws")
     })
 
-    it("unregisterHost does NOT call markDetached when owner is null", () => {
+    it("unregisterHost clears connections even when count is zero", () => {
       const conn = makeMockConnection()
       const connectionRegistry = makeMockConnectionRegistry(conn)
-      // getOwner already returns null by default
-      const markDetachedSpy = connectionRegistry.markDetached as ReturnType<typeof vi.fn>
+      const clearAllSpy = connectionRegistry.clearAllConnections as ReturnType<typeof vi.fn>
 
       const registry = createAgentSessionRegistry({
         connectionRegistry,
@@ -1279,7 +1464,7 @@ describe("AgentSessionRegistry", () => {
 
       registry.unregisterHost("test-agent-null")
 
-      expect(markDetachedSpy).not.toHaveBeenCalled()
+      expect(clearAllSpy).toHaveBeenCalledWith("test-agent-null")
     })
   })
 })
@@ -1423,70 +1608,55 @@ describe("resolveHttpOwnerTtlMs", () => {
   }
 
   // 🔴 default path: NO _httpOwnerTtlMs injected — the sweep must honour
-  // process.env.HTTP_OWNER_TTL_MS directly. Run-1's lesson (`Illegal
-  // invocation`) was a suite of green tests that all injected a mock and
-  // never once ran the default path.
+  // HTTP_OWNER_TTL_MS from deps.env (not direct process.env).
   it("🔴 default path: with no _httpOwnerTtlMs, the sweep honours HTTP_OWNER_TTL_MS from the env", async () => {
     vi.useFakeTimers()
-    const prev = process.env.HTTP_OWNER_TTL_MS
-    process.env.HTTP_OWNER_TTL_MS = "50"
     try {
       const conn = makeMockConnection()
       const touchState = makeTouchState(Date.now() - 10_000) // already stale
-      const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState, {
-        via: "http",
-        since: Date.now(),
-      })
+      const connectionRegistry = makeMockConnectionRegistry(conn, true, touchState)
       const mockHost = makeMockHost()
 
       const registry = createAgentSessionRegistry({
         connectionRegistry,
         _createHostFn: vi.fn().mockResolvedValue(mockHost),
         _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+        env: { HTTP_OWNER_TTL_MS: "50" },
         _httpSweepMs: 20, // only the TTL comes from env — sweep interval still injected
       })
 
       await registry.getOrCreateHost("agent-1")
       await vi.advanceTimersByTimeAsync(300)
 
-      expect(connectionRegistry.markDetached).toHaveBeenCalled()
+      expect(connectionRegistry.removeConnection).toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
-      if (prev === undefined) delete process.env.HTTP_OWNER_TTL_MS
-      else process.env.HTTP_OWNER_TTL_MS = prev
     }
   })
 
-  // 🔴 the guard against "an accidentally tiny default" — a mutation of
-  // DEFAULT_HTTP_OWNER_TTL_MS to 600 MUST fail this.
+  // 🔴 guard: a mutation of CONFIG_SPECS httpOwnerTtlMs default to 600 MUST fail this.
   it("🔴 default path: with the env unset, the default is 600_000 (a 100s-stale owner is NOT released)", async () => {
     vi.useFakeTimers()
-    const prev = process.env.HTTP_OWNER_TTL_MS
-    delete process.env.HTTP_OWNER_TTL_MS
     try {
       const conn = makeMockConnection()
       const touchState = makeTouchState(Date.now() - 100_000)
-      const connectionRegistry = makeMockConnectionRegistry(conn, false, touchState, {
-        via: "http",
-        since: Date.now(),
-      })
+      const connectionRegistry = makeMockConnectionRegistry(conn, true, touchState)
       const mockHost = makeMockHost()
 
       const registry = createAgentSessionRegistry({
         connectionRegistry,
         _createHostFn: vi.fn().mockResolvedValue(mockHost),
         _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
+        env: {},
         _httpSweepMs: 20,
       })
 
       await registry.getOrCreateHost("agent-1")
       await vi.advanceTimersByTimeAsync(300)
 
-      expect(connectionRegistry.markDetached).not.toHaveBeenCalled()
+      expect(connectionRegistry.removeConnection).not.toHaveBeenCalled()
     } finally {
       vi.useRealTimers()
-      if (prev === undefined) delete process.env.HTTP_OWNER_TTL_MS
-      else process.env.HTTP_OWNER_TTL_MS = prev
     }
   })
 })

@@ -33,7 +33,9 @@ import type { ContentViewerVM } from "./view-models/content-viewer.svelte"
 import type { RecentProjects } from "./view-models/recent-projects.svelte"
 import type { AudioPlaylist } from "./engines/audio-playlist.svelte"
 import type { PresencePoller } from "./view-models/presence-poller.svelte"
+import type { NotifyEngine } from "./engines/notify.svelte"
 import type { ComposerDraft } from "./view-models/composer-draft.svelte"
+import type { SessionMemoVM } from "./view-models/session-memo.svelte"
 import type { Dictate } from "./view-models/dictate.svelte"
 
 // ─── i18n ──────────────────────────────────────────
@@ -101,8 +103,14 @@ export const [getCliAvailability, setCliAvailability] = createContext<CliAvailab
 // ─── presence-poller ─── (slice liveness C3)
 export const [getPresencePoller, setPresencePoller] = createContext<PresencePoller>()
 
+// ─── notifications ─── (slice notify-local)
+export const [getNotify, setNotify] = createContext<NotifyEngine>()
+
 // ─── composer-draft ─── (slice dictate-to-input)
 export const [getComposerDraft, setComposerDraft] = createContext<ComposerDraft>()
+
+// ─── session-memo ─── (slice session-memo-pad)
+export const [getSessionMemo, setSessionMemo] = createContext<SessionMemoVM>()
 
 // ─── dictate ─── (slice dictate-to-input)
 export const [getDictate, setDictate] = createContext<Dictate>()

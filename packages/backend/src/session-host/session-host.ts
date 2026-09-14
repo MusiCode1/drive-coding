@@ -30,6 +30,7 @@ import type {
   SessionNotification,
 } from "@agentclientprotocol/sdk"
 import type { Patch, SessionConfigOption, SessionState } from "@drive-coding/core/session"
+import { defaultRequestTimeouts } from "./request-timeout.js"
 import {
   applyPatch,
   applyPendingRequest,
@@ -52,12 +53,14 @@ import type {
 import { createAcpClient, createAttachedAcpClient } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { parseExtResult } from "@drive-coding/provider/extensions"
-import type { AcpTransport } from "@drive-coding/provider/transport"
-import { createInProcessAcpTransport } from "./in-process-acp-transport.js"
+import type { AcpTransport } from "@drive-coding/acp-wire"
+import { createFromLineWire } from "@drive-coding/acp-wire"
 
 type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
-import { isCleanTurnEndForClose } from "./close-on-turn-end.js"
+import { createTurnLifecycleHandlers, type TurnTimingHost } from "./turn-lifecycle.js"
+import { msgOf } from "./error-message.js"
 import { createPendingRequests } from "./pending-requests.js"
+import { attachScopePermission, type ScopePermissionHost } from "./session-host-scope.js"
 
 // ─── C2: createSessionHost ───────────────────────────────────────────────────
 
@@ -216,14 +219,20 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
 
     async newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts) {
       if (disposed) throw new Error("SessionHost disposed")
-      return client.newSession(opts) as Promise<{ sessionId: string }>
+      return client.newSession({
+        ...opts,
+        mcpServers: opts.mcpServers ?? [],
+      }) as Promise<{ sessionId: string }>
     },
 
     async loadSession(
       opts: { cwd: string; sessionId: string; _meta?: Record<string, unknown> } & SessionMcpOpts,
     ) {
       if (disposed) throw new Error("SessionHost disposed")
-      return client.loadSession(opts) as Promise<{ sessionId: string }>
+      return client.loadSession({
+        ...opts,
+        mcpServers: opts.mcpServers ?? [],
+      }) as Promise<{ sessionId: string }>
     },
     async cancel(sessionId: string) {
       if (disposed) throw new Error("SessionHost disposed")
@@ -234,19 +243,13 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
 
 // ─── C4: createSessionHostFromConnection ─────────────────────────────────────
 
-/** Default timeout for permission/elicitation requests (30 seconds) */
-const DEFAULT_PERMISSION_TIMEOUT_MS = 30_000
-
-/** Default timeout for elicitation requests */
-const DEFAULT_ELICITATION_TIMEOUT_MS = 30_000
-
 export type SessionHostFromConnOptions = {
   /** ACP initialize timeout (passed to createAcpClient). */
   initTimeoutMs?: number
-  /** Timeout for requestPermission before auto-deny. Default: 30s */
-  permissionTimeoutMs?: number
-  /** Timeout for elicitation before auto-cancel. Default: 30s */
-  elicitationTimeoutMs?: number
+  /** requestPermission timeout; null = none. Default: PERMISSION_TIMEOUT_MS env. */
+  permissionTimeoutMs?: number | null
+  /** elicitation timeout; null = none. Default: ELICITATION_TIMEOUT_MS env. */
+  elicitationTimeoutMs?: number | null
   /**
    * slice session-create-contract: auto-resolve permission by ACP option kind
    * before entering pending. "ask" / absent = today's behavior (pending).
@@ -259,6 +262,11 @@ export type SessionHostFromConnOptions = {
   closeOnTurnEnd?: boolean
   /** Called once after the first eligible turn end — server wires deleteAndKill. */
   onScheduleCloseOnTurnEnd?: () => void
+  /**
+   * slice be-events-subscribe C1: called after applyTurnEnd when patches.length > 0.
+   * Always wired for every host — independent of closeOnTurnEnd / notifyOnDone.
+   */
+  onTurnEnded?: (info: import("./agent-events-turn.js").TurnEndedInfo) => void
   /**
    * slice ownership-handoff C4: warm reattach — agent already initialized.
    * Uses createAttachedAcpClient (skips initialize) + loadSession (restores state).
@@ -274,6 +282,8 @@ export type SessionHostFromConnOptions = {
     callbacks: AcpClientCallbacks,
     opts?: AcpClientOptions,
   ) => Promise<AcpClient>
+  /** slice agent-charter C2: transform ACP prompt content (not the user bubble). */
+  transformPromptForAcp?: (content: string | PromptBlocks) => string | PromptBlocks
 }
 
 /**
@@ -281,7 +291,7 @@ export type SessionHostFromConnOptions = {
  * and for driving session configuration.
  * S4 exposes these via HTTP endpoints.
  */
-export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
+export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & TurnTimingHost & ScopePermissionHost & {
   /**
    * slice remote-session-mgmt C2: loadSession as a SWITCH (not a bare delegate).
    * Order: turnSeq++ → pending cleanup → full-state reset → sessionId flip
@@ -361,6 +371,7 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & {
    * ships them in the listSessions response so the FE can gate the delete button.
    */
   readonly agentCapabilities: AcpClient["capabilities"]
+  emitExtNotification(method: string, params: Record<string, unknown>): void
 }
 
 /**
@@ -379,13 +390,15 @@ export async function createSessionHostFromConnection(
 ): Promise<ExtendedSessionHost> {
   const {
     initTimeoutMs,
-    permissionTimeoutMs = DEFAULT_PERMISSION_TIMEOUT_MS,
-    elicitationTimeoutMs = DEFAULT_ELICITATION_TIMEOUT_MS,
+    permissionTimeoutMs = defaultRequestTimeouts().permission,
+    elicitationTimeoutMs = defaultRequestTimeouts().elicitation,
     permissionPolicy,
     closeOnTurnEnd,
     onScheduleCloseOnTurnEnd,
+    onTurnEnded,
     warmReattach,
     _createAcpClient = createAcpClient,
+    transformPromptForAcp,
   } = opts
 
   // Internal mutable state (same pattern as createSessionHost)
@@ -444,44 +457,18 @@ export async function createSessionHostFromConnection(
     emitPatches(result.patches)
   }
 
-  // ── C3: turn boundaries ─────────────────────────────────────────────────
-  // turnSeq — מקודם רק ב-prompt (תור חדש). cancelledTurn — מסומן (❌ לא מקודם)
-  // ע"י cancel, ומשפיע רק על מטען-השגיאה — לעולם לא על הפליטה עצמה.
-  let turnSeq = 0
-  let cancelledTurn = -1
-  /** slice session-lifecycle-fields C1: only the first clean turn end may close. */
-  let closeOnTurnEndScheduled = false
-
-  /**
-   * After applyTurnEnd emit on success (720) or cancel (912) — NOT error path (729).
-   * Error-path agents stay in the list as evidence (Avigail finding 2).
-   */
-  function maybeScheduleCloseOnTurnEnd(): void {
-    if (!closeOnTurnEnd || closeOnTurnEndScheduled || disposed) return
-    if (!isCleanTurnEndForClose(currentState)) return
-    closeOnTurnEndScheduled = true
-    onScheduleCloseOnTurnEnd?.()
-  }
-
   /** מיישם {state,patches} על currentState + פולט — עוזר-IO מקומי. */
   function emit(r: { state: SessionState; patches: Patch[] }): void {
     currentState = r.state
     emitPatches(r.patches)
   }
 
-  /** אותה קדימות כמו formatAcpError ב-FE: data.details → data.message → message → String(e). */
-  function msgOf(err: unknown): string {
-    if (err && typeof err === "object") {
-      const e = err as { message?: unknown; data?: unknown }
-      if (e.data && typeof e.data === "object") {
-        const data = e.data as { details?: unknown; message?: unknown }
-        if (typeof data.details === "string" && data.details.length > 0) return data.details
-        if (typeof data.message === "string" && data.message.length > 0) return data.message
-      }
-      if (typeof e.message === "string" && e.message.length > 0) return e.message
-    }
-    return String(err)
-  }
+  // ── C3: turn boundaries ─────────────────────────────────────────────────
+  const { turn: turnLifecycle, emitTurnEnd, maybeScheduleCloseOnTurnEnd, stampTurnStart, turnHostMethods } =
+    createTurnLifecycleHandlers({
+      getState: () => currentState, emit, closeOnTurnEnd, onScheduleCloseOnTurnEnd,
+      onTurnEnded, disposed: () => disposed,
+    })
 
   // ── PendingRequests for permission + elicitation ──────────────────────────
   // slice session-host-pending-surface C4: מונה requestId משותף יחיד — לא שני
@@ -495,9 +482,10 @@ export async function createSessionHostFromConnection(
     defaultValue: { outcome: { outcome: "cancelled" } },
   })
 
+  // Expiry declines, not cancels: decline keeps the turn alive. See request-timeout.ts.
   const elicitPending = createPendingRequests<CreateElicitationResponse>({
     timeoutMs: elicitationTimeoutMs,
-    defaultValue: { action: "cancel" },
+    defaultValue: { action: "decline" },
   })
 
   // ── slice http-state-gaps C3: quota via state channel ───────────────────────
@@ -512,16 +500,7 @@ export async function createSessionHostFromConnection(
   // timeout: abort getQuota if the CLI does not respond within this window.
   const QUOTA_FETCH_TIMEOUT_MS = 5_000
 
-  /**
-   * Fires an async getQuota call after a successful session start/load.
-   * Non-blocking: does NOT await here — caller proceeds immediately.
-   * Five invariants (brief §5/C3):
-   *   1. Not part of newSession/loadSession success condition.
-   *   2. Timeout: race against QUOTA_FETCH_TIMEOUT_MS.
-   *   3. Guard-gen: response arriving after session switch or dispose is discarded.
-   *   4. Dedupe: only one in-flight call at a time.
-   *   5. Validate { snapshot } shape before writing to state.
-   */
+  /** Non-blocking quota fetch after session start/load (slice http-state-gaps C3). */
   function startQuotaFetch(sessionId: string): void {
     // condition 4: dedupe — one in-flight call per generation.
     // ⚠️ Must be scoped to the CURRENT generation. A plain boolean starves the
@@ -566,7 +545,7 @@ export async function createSessionHostFromConnection(
 
   // ── Transport + AcpClient ─────────────────────────────────────────────────
 
-  const transport = createInProcessAcpTransport({
+  const transport = createFromLineWire({
     wire: conn.wire,
     onCrash: conn.onCrash.bind(conn),
   })
@@ -705,6 +684,72 @@ export async function createSessionHostFromConnection(
     }
   }
 
+  // ─── session switch preamble (shared by newSession + loadSession) ───
+  //  1. turnSeq++ + cancelledTurn=-1 — invalidate outgoing turns.
+  //  2. Pending cleanup — cancelled defaults before reset.
+  //  3. Reset via applyPatch + emit (❌ no manual version bump).
+  // ⚠️ Steps 1+3 MUST stay synchronous with the caller's sessionId flip when
+  // there is no pending — `await` of a helper always yields one microtask and
+  // would let old-session tails / permissions land before the flip (C2 tests).
+  // Failure path (rollbackSessionSwitch): sessionId only + second monotonic
+  // reset + idle — ❌ no snapshot restore (versions never rewind).
+  function beginSessionSwitchInvalidate(): void {
+    turnLifecycle.turnSeq++
+    turnLifecycle.cancelledTurn = -1
+    quotaGeneration++
+  }
+
+  /** Returns true if a microtask flush is required before reset. */
+  function cancelOpenPendingSync(): boolean {
+    const openPermission = currentState.pending.permission
+    const openElicitation = currentState.pending.elicitation
+    if (openPermission) {
+      permPending.respond(openPermission.requestId, { outcome: { outcome: "cancelled" } })
+    }
+    if (openElicitation) {
+      elicitPending.respond(openElicitation.requestId, { action: "cancel" })
+    }
+    return Boolean(openPermission || openElicitation)
+  }
+
+  function emitSessionSwitchReset(): {
+    oldSessionId: string | null
+    preResetConfigOptions: SessionConfigOption[]
+  } {
+    const oldSessionId = currentState.sessionId
+    const preResetConfigOptions = currentState.configOptions
+    const resetPatch: Patch = {
+      op: "reset",
+      version: currentState.version + 1,
+      messages: [],
+      nextMessageSeq: 0,
+      nextSegmentSeq: 0,
+    }
+    currentState = applyPatch(currentState, resetPatch)
+    emitPatches([resetPatch])
+    return { oldSessionId, preResetConfigOptions }
+  }
+
+  function rollbackSessionSwitch(oldSessionId: string | null): void {
+    currentState = { ...currentState, sessionId: oldSessionId }
+    const resetPatch2: Patch = {
+      op: "reset",
+      version: currentState.version + 1,
+      messages: [],
+      nextMessageSeq: 0,
+      nextSegmentSeq: 0,
+    }
+    currentState = applyPatch(currentState, resetPatch2)
+    emitPatches([resetPatch2])
+    const idlePatch: Patch = {
+      op: "update-session",
+      version: currentState.version + 1,
+      changes: { turnState: "idle" },
+    }
+    currentState = applyPatch(currentState, idlePatch)
+    emitPatches([idlePatch])
+  }
+
   // ── ExtendedSessionHost ───────────────────────────────────────────────────
 
   return {
@@ -715,39 +760,26 @@ export async function createSessionHostFromConnection(
     patches: patchStream,
 
     dispose,
-    // ── C3: turn boundaries — mirrors LocalSessionView.prompt/cancel (waiting
-    // לפני ה-await, idle בשני הענפים), עם סטייה אחת מוצהרת: שתי הפליטות (הצלחה
-    // וגם cancel) מגודרות ב-`turn === turnSeq` — "התור שלי עדיין הנוכחי". ─────
-    //
-    // ⚠️ hotfix (אחרי C4, avigail): הסדר הוא waiting **לפני** add-message —
-    // ההפך מהניסוח המקורי של "מלכודת ג'" ("הסדר הזה בטוח", לא "הכרחי"). הסיבה
-    // לא הייתה מספר-ה-patches (שניהם עדיין שני emit נפרדים — ReadableStream לא
-    // מאחד enqueue-ים סמוכים לקריאה אחת, אין "batch" אמיתי על ה-wire) אלא
-    // **הערך שנצפה ביניהם**: ה-FE מסנכרן turnState פר-patch. בסדר הישן
-    // (add-message ואז waiting) הסנכרון הראשון קורא turnState שעדיין `idle`,
-    // ורק הסנכרון השני (אחרי ה-patch השני) מעלה אותו ל-`waiting` — הבהוב
-    // `waiting → idle → waiting` שמצית flush מזויף של סוף-תור ב-Speaker
-    // וצליל-חשיבה כפול. בסדר החדש שני הסנכרונים רואים `waiting`:
-    // apply-patch.ts's add-message branch גוזר turnState מ-role, ול-role:"user"
-    // (תמיד המקרה כאן) הוא **משמר** את הערך הקיים — כלומר add-message שמגיע
-    // *אחרי* waiting לא דורס אותו. אותה עובדה בדיוק (role=user = no-op)
-    // שהפכה את הסדר הישן ל"בטוח" הופכת את הסדר החדש ל"מתקן".
+    // C3 turn boundaries — waiting before add-message (hotfix).
+    // slice agent-charter C2: transformPromptForAcp prepends charter to ACP only.
     async prompt(
       sessionId: string,
       content: string | PromptBlocks,
       meta?: Record<string, unknown>,
     ): Promise<void> {
       if (disposed) throw new Error("SessionHost disposed")
-      const turn = ++turnSeq
+      const turn = ++turnLifecycle.turnSeq
+      stampTurnStart()
       emit(applyTurnStart(currentState)) // 1. waiting — לפני ה-await, ולפני add-message (hotfix)
       const msg = synthesizeUserMessage(currentState, content, meta)
       const applied = applyUserMessage(currentState, msg)
       currentState = applied.state
       emitPatches(applied.patches) // 2. add-message — role="user" משמר waiting (מלכודת ג')
       try {
-        await client.prompt(sessionId, content)
-        if (turn === turnSeq) {
-          emit(applyTurnEnd(currentState)) // 3א. הצלחה
+        const acpContent = transformPromptForAcp?.(content) ?? content
+        await client.prompt(sessionId, acpContent)
+        if (turn === turnLifecycle.turnSeq) {
+          emitTurnEnd(applyTurnEnd(currentState), { stopReason: "end_turn" }) // 3א. הצלחה
           maybeScheduleCloseOnTurnEnd()
           // slice http-state-gaps C3: refresh quota at turn end — the brief asked for
           // it and it was missing (calev finding 7). A turn is exactly when usage
@@ -755,127 +787,119 @@ export async function createSessionHostFromConnection(
           if (currentState.sessionId) startQuotaFetch(currentState.sessionId)
         }
       } catch (err) {
-        if (turn === turnSeq) {
-          const error = turn === cancelledTurn ? undefined : { message: msgOf(err), at: Date.now() }
-          emit(applyTurnEnd(currentState, error)) // 3ב. שגיאה — אין closeOnTurnEnd (הסוכן נשאר כראיה)
+        if (turn === turnLifecycle.turnSeq) {
+          const error =
+            turn === turnLifecycle.cancelledTurn
+              ? undefined
+              : { message: msgOf(err), at: Date.now() }
+          emitTurnEnd(applyTurnEnd(currentState, error), {
+            stopReason: error?.message,
+            lastTurnError: error ?? null,
+          }) // 3ב. שגיאה — אין closeOnTurnEnd (הסוכן נשאר כראיה)
         }
         throw err // rethrow — הקורא הישיר עדיין רואה את השגיאה
       }
     },
 
+    /**
+     * Cold create (no prior sessionId): thin path — ACP session/new + optional
+     * configOptions patch (registry getOrCreateHost). Warm (already had a
+     * session): switch preamble like loadSession so HTTP "new session" clears
+     * transcript; sessionId parked on a sentinel until the CLI returns the id.
+     */
     async newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts) {
       if (disposed) throw new Error("SessionHost disposed")
-      const result = (await client.newSession(opts)) as {
-        sessionId: string
-        // הסוכן הוא הסמכות על ה-configOptions שלו, והם נשמרים ב-currentState
-        // כפי שהם. המיזוג מ-dev הידק את הטיפוסים, ולכן ההצהרה מפורשת כאן
-        // במקום `unknown[]` שנשפך אל תוך SessionState.
-        configOptions?: SessionConfigOption[]
-      }
-      // Update currentState.sessionId so setMode/setConfigOption can use it
-      // Also capture configOptions from session/new response (capabilities.ts:17)
-      const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
-      currentState = { ...currentState, sessionId: result.sessionId, configOptions }
-      if (configOptions.length > 0) {
-        emitPatches([
-          {
-            version: currentState.version + 1,
+      const hadSession = currentState.sessionId !== null
+      const sessionOpts = { ...opts, mcpServers: opts.mcpServers ?? [] }
+
+      if (!hadSession) {
+        const result = (await client.newSession(sessionOpts)) as {
+          sessionId: string
+          configOptions?: SessionConfigOption[]
+        }
+        const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
+        currentState = { ...currentState, sessionId: result.sessionId, configOptions }
+        if (configOptions.length > 0) {
+          const updatePatch: Patch = {
             op: "update-session",
+            version: currentState.version + 1,
             changes: { configOptions },
-          },
-        ])
-        currentState = { ...currentState, version: currentState.version + 1 }
+          }
+          currentState = applyPatch(currentState, updatePatch)
+          emitPatches([updatePatch])
+        }
+        quotaGeneration++
+        startQuotaFetch(result.sessionId)
+        return result
       }
-      // slice http-state-gaps C3: advance generation + fire quota fetch (non-blocking)
-      quotaGeneration++
-      startQuotaFetch(result.sessionId as string)
-      return result
+
+      beginSessionSwitchInvalidate()
+      if (cancelOpenPendingSync()) {
+        // One microtask: let handlers' finally (clearPendingRequest + emit) land
+        // before the reset. ❌ Do not await when there is no pending — that would
+        // yield and let old-session tails land before the sessionId flip.
+        await Promise.resolve()
+      }
+      const { oldSessionId } = emitSessionSwitchReset()
+      // Sentinel ≠ any real ACP sessionId → handleUpdate drops outgoing tails.
+      // null would pass the filter (host-with-no-session pass-through) and re-fill.
+      currentState = { ...currentState, sessionId: "__drive_switching__" }
+
+      try {
+        const result = (await client.newSession(sessionOpts)) as {
+          sessionId: string
+          configOptions?: SessionConfigOption[]
+        }
+        const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
+        currentState = { ...currentState, sessionId: result.sessionId, configOptions }
+        const updatePatch: Patch = {
+          op: "update-session",
+          version: currentState.version + 1,
+          changes: {
+            turnState: "idle",
+            lastTurnError: null,
+            quota: null,
+            title: "",
+            ...(configOptions.length > 0 ? { configOptions } : {}),
+          },
+        }
+        currentState = applyPatch(currentState, updatePatch)
+        emitPatches([updatePatch])
+        startQuotaFetch(result.sessionId)
+        return result
+      } catch (err) {
+        rollbackSessionSwitch(oldSessionId)
+        throw err
+      }
     },
 
     // ─── slice remote-session-mgmt C2: loadSession as a SWITCH ───
-    // Mandatory order (brief C2):
-    //  1. turnSeq++ + cancelledTurn=-1 — cancels every open turn of the outgoing
-    //     session: turnSeq advances only in prompt, so a stale turn ending AFTER
-    //     the switch would otherwise land applyTurnEnd/lastTurnError on the new
-    //     session (the `turn === turnSeq` guard alone does not protect).
-    //  2. Pending cleanup — open permission/elicitation answered with their
-    //     cancelled defaults (respond resolves the promise + clears the timer;
-    //     clearPendingRequest inside the handler's finally clears the state and
-    //     emits the clear patch, legitimately BEFORE the reset).
-    //  3. Reset on the full state via pure core applyPatch + emit (❌ no manual
-    //     version bump — applyPatch owns it).
-    //  4. Flip sessionId BEFORE the await — otherwise the step-5 filter would
-    //     drop the new session's replay (arriving during the await; streamHistory
-    //     runs inside the CLI's loadSession handler) and let in old-session tails.
-    //  5. (sessionId filter in handleUpdate + guards in the permission/elicitation
-    //     handlers — see above.)
-    //  6. await client.loadSession.
-    //  7. Success: capture configOptions + ONE update-session
-    //     {configOptions?, turnState:"idle", lastTurnError:null} — idle because
-    //     the replay ends in an assistant message (derives "responding");
-    //     lastTurnError:null because reset does not clear it and the outgoing
-    //     session's "prompt failed" banner must not survive. ❌ sessionId is NOT
-    //     re-written from the response — the flip (4) and the rollback (8) are
-    //     the ONLY sessionId writes (overlapping switches could otherwise revert).
-    //  8. Failure: rollback sessionId ONLY. ❌ NO snapshot restore — it would
-    //     rewind the version counter and every future patch would be dropped at
-    //     the FE watermark (remote-session-view.ts #applyIncoming). Instead: a
-    //     SECOND reset at a continuing version (monotonic — passes the watermark
-    //     and realigns the FE, which already got part of the replay, with the
-    //     empty host) + turnState:"idle" + rethrow (route → 502 → VM error).
-    //     Documented edge: the rendered history is gone — the user picks a session
-    //     again; the CLI's data is untouched.
+    // Mandatory order (brief C2): prepareSessionSwitch (1–3) → flip sessionId
+    // BEFORE await (4) → await client.loadSession (6) → success update-session
+    // (7) / rollbackSessionSwitch (8). See prepareSessionSwitch comment above.
     async loadSession(opts: {
       cwd: string
       sessionId: string
       _meta?: Record<string, unknown>
     } & SessionMcpOpts): Promise<{ sessionId: string; version: number }> {
       if (disposed) throw new Error("SessionHost disposed")
-      // 1. Invalidate turns of the outgoing session.
-      turnSeq++
-      cancelledTurn = -1
-      // slice http-state-gaps: invalidate the outgoing session's quota fetch HERE,
-      // before any await. Advancing it only after client.loadSession resolves left a
-      // window where session A's quota response passed the guard and was written onto
-      // session B's state (calev finding 9).
-      quotaGeneration++
-
-      // 2. Pending cleanup (cancelled defaults; the clear patches land before the
-      //    reset — the one legitimate pre-reset emission).
-      const openPermission = currentState.pending.permission
-      const openElicitation = currentState.pending.elicitation
-      if (openPermission) {
-        permPending.respond(openPermission.requestId, { outcome: { outcome: "cancelled" } })
-      }
-      if (openElicitation) {
-        elicitPending.respond(openElicitation.requestId, { action: "cancel" })
-      }
-      if (openPermission || openElicitation) {
-        // One microtask: let the handlers' finally (clearPendingRequest + emit)
-        // land before the reset so the patch order stays deterministic.
+      beginSessionSwitchInvalidate()
+      if (cancelOpenPendingSync()) {
         await Promise.resolve()
       }
+      const { oldSessionId, preResetConfigOptions } = emitSessionSwitchReset()
 
-      // 3. Reset the full state.
-      // slice http-state-gaps C2: capture configOptions BEFORE reset (for same-session merge)
-      const oldSessionId = currentState.sessionId
-      const preResetConfigOptions = currentState.configOptions
-      const resetPatch: Patch = {
-        op: "reset",
-        version: currentState.version + 1,
-        messages: [],
-        nextMessageSeq: 0,
-        nextSegmentSeq: 0,
-      }
-      currentState = applyPatch(currentState, resetPatch)
-      emitPatches([resetPatch])
-
-      // 4. Flip sessionId BEFORE the await (see the long comment above).
+      // 4. Flip sessionId BEFORE the await — otherwise the step-5 filter would
+      //    drop the new session's replay (arriving during the await; streamHistory
+      //    runs inside the CLI's loadSession handler) and let in old-session tails.
       currentState = { ...currentState, sessionId: opts.sessionId }
 
       // 6.
       try {
-        const result = (await client.loadSession(opts)) as {
+        const result = (await client.loadSession({
+          ...opts,
+          mcpServers: opts.mcpServers ?? [],
+        })) as {
           sessionId: string
           configOptions?: unknown[]
         }
@@ -910,38 +934,22 @@ export async function createSessionHostFromConnection(
         return { sessionId: opts.sessionId, version: currentState.version }
       } catch (err) {
         // 8. Failure — rollback sessionId only + second monotonic reset + idle.
-        currentState = { ...currentState, sessionId: oldSessionId }
-        const resetPatch2: Patch = {
-          op: "reset",
-          version: currentState.version + 1,
-          messages: [],
-          nextMessageSeq: 0,
-          nextSegmentSeq: 0,
-        }
-        currentState = applyPatch(currentState, resetPatch2)
-        emitPatches([resetPatch2])
-        const idlePatch: Patch = {
-          op: "update-session",
-          version: currentState.version + 1,
-          changes: { turnState: "idle" },
-        }
-        currentState = applyPatch(currentState, idlePatch)
-        emitPatches([idlePatch])
+        rollbackSessionSwitch(oldSessionId)
         throw err
       }
     },
 
     async cancel(sessionId: string) {
       if (disposed) throw new Error("SessionHost disposed")
-      const turn = turnSeq // מסמן, ❌ לא מקדם
-      cancelledTurn = turn
+      const turn = turnLifecycle.turnSeq // מסמן, ❌ לא מקדם
+      turnLifecycle.cancelledTurn = turn
       try {
         await client.cancel(sessionId)
       } catch {
         // best-effort — תואם ל-local
       }
-      if (turn === turnSeq) {
-        emit(applyTurnEnd(currentState)) // אותה גדר בדיוק כמו ב-prompt
+      if (turn === turnLifecycle.turnSeq) {
+        emitTurnEnd(applyTurnEnd(currentState), { stopReason: "cancelled" }) // אותה גדר בדיוק כמו ב-prompt
         maybeScheduleCloseOnTurnEnd()
       }
     },
@@ -951,7 +959,7 @@ export async function createSessionHostFromConnection(
       permPending.respond(requestId, response)
     },
 
-    respondElicitation(requestId: number, response: CreateElicitationResponse): void {
+    ...attachScopePermission({ isDisposed: () => disposed, getState: () => currentState, setState: (s) => { currentState = s }, emitPatches, nextRequestId: () => nextRequestId++, permPending }),    respondElicitation(requestId: number, response: CreateElicitationResponse): void {
       if (disposed) return // slice handoff-foundations C1: no-op after dispose
       elicitPending.respond(requestId, response)
     },
@@ -1015,5 +1023,7 @@ export async function createSessionHostFromConnection(
     get agentCapabilities(): AcpClient["capabilities"] {
       return client.capabilities
     },
+    ...{ emitExtNotification: handleExtNotification },
+    ...turnHostMethods,
   }
 }

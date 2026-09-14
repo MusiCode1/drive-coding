@@ -55,12 +55,12 @@ const MODE_TABS: ReadonlyArray<{
 ]
 
 const tabIconSize = $derived(responsive.isMobile ? 22 : 13)
-
 function switchInputMode(mode: InputMode): void {
   if (uiShell.inputMode === "live" && mode !== "live" && live.isOpen) {
     void live.toggle()
   }
   uiShell.setInputMode(mode)
+  settings.setInputMode(mode)
 }
 </script>
 

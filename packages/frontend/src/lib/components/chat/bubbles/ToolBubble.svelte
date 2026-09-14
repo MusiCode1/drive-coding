@@ -17,6 +17,7 @@ import { prettyJson, formatLocation } from "$lib/util/tool-format"
 import { normalizeToolCall } from "$lib/util/tool-call-view"
 import Maximize2Icon from "@lucide/svelte/icons/maximize-2"
 import ToolKindIcon from "./ToolKindIcon.svelte"
+import { settingBackedOpen } from "./setting-backed-open.svelte"
 import { onMount } from "svelte"
 
 let { bubble }: { bubble: ToolBubble } = $props()
@@ -34,9 +35,7 @@ const showRawOutput = $derived(
   tc.result !== undefined && outputView.kind !== "json",
 )
 
-// local state — מאותחל פעם אחת מה-setting, לא נגזר ממנו reactively.
-// מונע snap-back כשה-effect של tc.status/tc.narration רץ מחדש.
-let open = $state(settings.showTools)
+const open = settingBackedOpen(() => settings.showTools)
 
 // ─── toggle-intent (slice chat-virtualization, Commit 3 / fix) ───
 // chatScroll נקרא ב-component init (חוקי) — לא בתוך ה-callback.
@@ -60,7 +59,7 @@ function asFencedCode(text: string): string {
   style="background:var(--bg-card); border-color:var(--border)"
 >
     <!-- summary שורה: status dot + narration/title -->
-    <details class="group" bind:open ontoggle={onUserToggle}>
+    <details class="group" bind:open={open.value} ontoggle={onUserToggle}>
       <summary class="flex items-center gap-2 px-3 py-2 cursor-pointer list-none select-none">
         <!-- status dot -->
         <span

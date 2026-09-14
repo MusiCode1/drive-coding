@@ -13,10 +13,12 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { Hono } from "hono"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import * as readProcessRssMod from "../adapters/read-process-rss.js"
+import { AGENT_ID_HEADER, DRIVE_CODING_AGENT_ID_ENV } from "../agent-identity.js"
 import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
-import { AGENT_ID_HEADER } from "../agent-identity.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
+import { createAgentEventBus } from "../session-host/agent-events.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { registerMcpHttp } from "./http-mcp.js"
 
@@ -107,9 +109,12 @@ function makeStubSessionRegistry(): AgentSessionRegistry & { hosts: Map<string, 
     }),
     notifySessionAttached: vi.fn(async () => {}),
     getCwd: vi.fn(() => undefined),
+    getCliKind: vi.fn(() => undefined),
     getEpoch: vi.fn(() => 0),
-    touchOwner: vi.fn(),
+    touchConnection: vi.fn(),
     getRuntimeInfo: vi.fn(() => null),
+    getConnectionCount: vi.fn(() => 0),
+    stop: vi.fn(),
   } as unknown as AgentSessionRegistry & { hosts: Map<string, HostStub> }
 }
 
@@ -129,22 +134,28 @@ function makeOrchestrator(registry: AgentRegistry): AgentOrchestrator {
     deleteAndKill: vi.fn(async (id: string) => {
       await registry.delete(id).catch(() => {})
     }),
+    deleteAllAndKill: vi.fn(async () => ({ closed: [], failed: [] })),
     getBridgePort: vi.fn(() => 0),
   }
 }
 
 function makeApp(opts?: { mcpHttp?: string }) {
-  const prev = process.env.MCP_HTTP
-  if (opts?.mcpHttp !== undefined) process.env.MCP_HTTP = opts.mcpHttp
-  else delete process.env.MCP_HTTP
+  const env: NodeJS.ProcessEnv = {}
+  if (opts?.mcpHttp !== undefined) env.MCP_HTTP = opts.mcpHttp
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
   const orchestrator = makeOrchestrator(registry)
   const agentSessionRegistry = makeStubSessionRegistry()
-  registerMcpHttp(app, { registry, orchestrator, agentSessionRegistry })
-  if (prev === undefined) delete process.env.MCP_HTTP
-  else process.env.MCP_HTTP = prev
-  return { app, registry, orchestrator, agentSessionRegistry }
+  const eventBus = createAgentEventBus()
+  registerMcpHttp(app, {
+    registry,
+    orchestrator,
+    agentSessionRegistry,
+    env,
+    urlConfig: { port: 4000, host: "127.0.0.1" },
+    eventBus,
+  })
+  return { app, registry, orchestrator, agentSessionRegistry, eventBus }
 }
 
 function honoFetch(app: Hono): typeof fetch {
@@ -206,12 +217,16 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     expect(version?.title).toBeTruthy()
     expect(instructions).toContain("session_open")
     expect(instructions).toContain("configOptions")
+    expect(instructions).toContain("session_whoami")
     expect(tools.map((t) => t.name).sort()).toEqual([
       "session_close",
       "session_list",
       "session_open",
       "session_send",
       "session_state",
+      "session_subscribe",
+      "session_surface",
+      "session_whoami",
     ])
     const openTool = tools.find((t) => t.name === "session_open")
     const schema = openTool?.inputSchema as { properties?: { cli?: { description?: string } } }
@@ -254,6 +269,18 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     expect(body.agents[0]?.displayName).toBe("cursor")
   })
 
+  it("session_list exposes roleLabel via toAgentPublic", async () => {
+    const { app, registry } = makeApp()
+    await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-role", roleLabel: "executor" })
+    const client = await connectClient(app)
+    const result = await client.callTool({ name: "session_list", arguments: {} })
+    await client.close()
+    const body = JSON.parse(toolText(result)) as {
+      agents: Array<{ roleLabel?: string }>
+    }
+    expect(body.agents[0]?.roleLabel).toBe("executor")
+  })
+
   it("source has no self-call via HTTP", () => {
     const src = readFileSync(fileURLToPath(new URL("./http-mcp.ts", import.meta.url)), "utf8")
     expect(src.match(/fetch\(/g) ?? []).toHaveLength(0)
@@ -292,7 +319,9 @@ describe("session_open / session_close (slice session-bus-mcp C1)", () => {
     expect(body.hint).toContain("configOptions")
     expect(body.hint).toContain("session_close")
     expect(body.configOptions).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: "model", description: "Which model to use" })]),
+      expect.arrayContaining([
+        expect.objectContaining({ id: "model", description: "Which model to use" }),
+      ]),
     )
     expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -344,6 +373,80 @@ describe("session_open / session_close (slice session-bus-mcp C1)", () => {
     await client.close()
     expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
       expect.objectContaining({ closeOnTurnEnd: true }),
+    )
+  })
+
+  it("session_open passes notifyOnDone through to createAndSpawn", async () => {
+    const { app, orchestrator } = makeApp()
+    const subscriberId = "00000000-0000-4000-8000-000000000099"
+    const client = await connectClient(app)
+    await client.callTool({
+      name: "session_open",
+      arguments: {
+        cli: "cursor",
+        cwd: "/tmp/mcp-c1-notify-done",
+        notifyOnDone: subscriberId,
+      },
+    })
+    await client.close()
+    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({ notifyOnDone: subscriberId }),
+    )
+  })
+
+  it("session_open passes systemPrompt through to createAndSpawn", async () => {
+    const { app, orchestrator } = makeApp()
+    const client = await connectClient(app)
+    await client.callTool({
+      name: "session_open",
+      arguments: {
+        cli: "cursor",
+        cwd: "/tmp/mcp-charter",
+        systemPrompt: "CHARTER_X",
+      },
+    })
+    await client.close()
+    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({ systemPrompt: "CHARTER_X" }),
+    )
+  })
+
+  it("session_open passes notifyOnDone and includeLastAssistantText through to createAndSpawn", async () => {
+    const { app, orchestrator } = makeApp()
+    const subscriberId = "00000000-0000-4000-8000-000000000088"
+    const client = await connectClient(app)
+    await client.callTool({
+      name: "session_open",
+      arguments: {
+        cli: "cursor",
+        cwd: "/tmp/mcp-c1-notify-text",
+        notifyOnDone: subscriberId,
+        includeLastAssistantText: true,
+      },
+    })
+    await client.close()
+    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notifyOnDone: subscriberId,
+        includeLastAssistantText: true,
+      }),
+    )
+  })
+
+  it("session_open passes roleLabel through to createAndSpawn", async () => {
+    const { app, orchestrator } = makeApp()
+    const client = await connectClient(app)
+    await client.callTool({
+      name: "session_open",
+      arguments: {
+        cli: "cursor",
+        cwd: "/tmp/mcp-role-label",
+        roleLabel: "planner",
+      },
+    })
+    await client.close()
+    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({ roleLabel: "planner" }),
     )
   })
 
@@ -576,6 +679,53 @@ describe("agent-identity-mcp (C2/C3)", () => {
     expect(toolText(result)).toMatch(/conflicts/)
   })
 
+  it("session_subscribe registers a subscriber on the event bus", async () => {
+    const { app, registry } = makeApp()
+    const target = await registry.create({ cliKind: "cursor", cwd: "/tmp/target-sub" })
+    const subscriber = await registry.create({ cliKind: "cursor", cwd: "/tmp/subscriber" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: subscriber.id })
+    const result = await client.callTool({
+      name: "session_subscribe",
+      arguments: { agent: target.id },
+    })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as { ok: boolean; agent: string; subscriber: string }
+    expect(body.ok).toBe(true)
+    expect(body.agent).toBe(target.id)
+    expect(body.subscriber).toBe(subscriber.id)
+  })
+
+  it("session_subscribe without includeLastAssistantText defaults options to false", async () => {
+    const { app, registry, eventBus } = makeApp()
+    const target = await registry.create({ cliKind: "cursor", cwd: "/tmp/target-sub-default" })
+    const subscriber = await registry.create({ cliKind: "cursor", cwd: "/tmp/subscriber-default" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: subscriber.id })
+    await client.callTool({
+      name: "session_subscribe",
+      arguments: { agent: target.id },
+    })
+    await client.close()
+    expect(eventBus.optionsOf(target.id, subscriber.id)).toEqual({
+      includeLastAssistantText: false,
+    })
+  })
+
+  it("session_subscribe with includeLastAssistantText sets bus options", async () => {
+    const { app, registry, eventBus } = makeApp()
+    const target = await registry.create({ cliKind: "cursor", cwd: "/tmp/target-sub-flag" })
+    const subscriber = await registry.create({ cliKind: "cursor", cwd: "/tmp/subscriber-flag" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: subscriber.id })
+    await client.callTool({
+      name: "session_subscribe",
+      arguments: { agent: target.id, includeLastAssistantText: true },
+    })
+    await client.close()
+    expect(eventBus.optionsOf(target.id, subscriber.id)).toEqual({
+      includeLastAssistantText: true,
+    })
+  })
+
   it("notify_parent appears only for caller with parent", async () => {
     const { app, registry, agentSessionRegistry } = makeApp()
     const parent = await registry.create({ cliKind: "cursor", cwd: "/tmp/parent-np" })
@@ -602,5 +752,315 @@ describe("agent-identity-mcp (C2/C3)", () => {
     expect(isToolError(notified)).toBe(false)
     const parentHost = agentSessionRegistry.hosts.get(parent.id)
     expect(parentHost?.prompt).toHaveBeenCalledWith(`sess-${parent.id}`, "hello parent")
+  })
+})
+
+describe("session_whoami (slice mcp-whoami)", () => {
+  afterEach(() => {
+    delete process.env[DRIVE_CODING_AGENT_ID_ENV]
+  })
+
+  it("listTools includes session_whoami without caller header", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const { tools } = await client.listTools()
+    await client.close()
+    expect(tools.map((t) => t.name)).toContain("session_whoami")
+  })
+
+  it("without header returns isError", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(true)
+    expect(toolText(result)).toMatch(new RegExp(AGENT_ID_HEADER))
+  })
+
+  it("unknown header id returns isError", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app, {
+      [AGENT_ID_HEADER]: "00000000-0000-4000-8000-000000000099",
+    })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(true)
+  })
+
+  it("registered caller returns agent equal to header uuid", async () => {
+    const { app, registry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-self" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as {
+      agent: string
+      cliKind: string
+      cwd: string
+      hasParent: boolean
+    }
+    expect(body.agent).toBe(agent.id)
+    expect(body.cliKind).toBe("cursor")
+    expect(body.cwd).toBe("/tmp/whoami-self")
+    expect(body.hasParent).toBe(false)
+  })
+
+  it("two agents: header of A returns A.id not B.id", async () => {
+    const { app, registry } = makeApp()
+    const agentA = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-a" })
+    await registry.create({ cliKind: "codex", cwd: "/tmp/whoami-b" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agentA.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as { agent: string; cliKind: string }
+    expect(body.agent).toBe(agentA.id)
+    expect(body.cliKind).toBe("cursor")
+  })
+
+  it("ENV DRIVE_CODING_AGENT_ID alone does not invent identity", async () => {
+    const { app, registry } = makeApp()
+    const agentA = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-env" })
+    const envOnlyId = "00000000-0000-4000-8000-000000000088"
+    process.env[DRIVE_CODING_AGENT_ID_ENV] = envOnlyId
+
+    const anonClient = await connectClient(app)
+    const anonResult = await anonClient.callTool({ name: "session_whoami", arguments: {} })
+    await anonClient.close()
+    expect(isToolError(anonResult)).toBe(true)
+
+    const headerClient = await connectClient(app, { [AGENT_ID_HEADER]: agentA.id })
+    const headerResult = await headerClient.callTool({ name: "session_whoami", arguments: {} })
+    await headerClient.close()
+    expect(isToolError(headerResult)).toBe(false)
+    const body = JSON.parse(toolText(headerResult)) as { agent: string }
+    expect(body.agent).toBe(agentA.id)
+    expect(body.agent).not.toBe(envOnlyId)
+  })
+
+  it("includes parentAgentId and sessionId when present", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const parent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-parent" })
+    const child = await registry.create({
+      cliKind: "cursor",
+      cwd: "/tmp/whoami-child",
+      parentAgentId: parent.id,
+    })
+    agentSessionRegistry.hosts.set(child.id, {
+      state: {
+        sessionId: `sess-${child.id}`,
+        turnState: "idle",
+        modes: {},
+        configOptions: [],
+        title: "",
+        status: "connected",
+        lastTurnError: null,
+        pending: { permission: null, elicitation: null },
+        commands: [],
+        messages: [],
+      },
+      prompt: vi.fn(),
+      setConfigOption: vi.fn(),
+    })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: child.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as {
+      agent: string
+      hasParent: boolean
+      parentAgentId?: string
+      sessionId?: string
+    }
+    expect(body.agent).toBe(child.id)
+    expect(body.hasParent).toBe(true)
+    expect(body.parentAgentId).toBe(parent.id)
+    expect(body.sessionId).toBe(`sess-${child.id}`)
+  })
+})
+
+describe("session_whoami runtime envelope (slice mcp-whoami-runtime)", () => {
+  it("includes backend.pid equal to process.pid and backend.memory.rssMB > 0", async () => {
+    const { app, registry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-backend" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as {
+      agent: string
+      backend?: {
+        pid: number
+        port: number
+        memory?: { rssMB: number; heapUsedMB: number; rssBudgetMB: number; overBudget: boolean }
+      }
+    }
+    expect(body.agent).toBe(agent.id)
+    expect(body.backend?.pid).toBe(process.pid)
+    expect(typeof body.backend?.memory?.rssMB).toBe("number")
+    expect(body.backend?.memory?.rssMB).toBeGreaterThan(0)
+    expect(body.backend?.port).toBe(4000)
+  })
+
+  it("backend.port comes from urlConfig not getSelfBaseUrl", async () => {
+    const env: NodeJS.ProcessEnv = {}
+    const app = new Hono()
+    const registry = createInMemoryAgentRegistry()
+    registerMcpHttp(app, {
+      registry,
+      orchestrator: makeOrchestrator(registry),
+      agentSessionRegistry: makeStubSessionRegistry(),
+      env,
+      urlConfig: { port: 4007, host: "127.0.0.1" },
+      eventBus: createAgentEventBus(),
+    })
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-port" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as { backend?: { port: number } }
+    expect(body.backend?.port).toBe(4007)
+  })
+
+  it("with cli running: runtime.cliPid is a number and memory has proc source", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-runtime" })
+    vi.mocked(agentSessionRegistry.getRuntimeInfo).mockReturnValue({
+      pid: 250735,
+      attached: true,
+      busy: false,
+      lastMessageAt: Date.now(),
+      lastSeenAt: Date.now(),
+      via: "http",
+    })
+    const rssSpy = vi
+      .spyOn(readProcessRssMod, "readProcessRss")
+      .mockReturnValue({ rssMB: 1840, source: "proc" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    rssSpy.mockRestore()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as {
+      runtime?: {
+        cliPid: number
+        attached: boolean
+        busy: boolean
+        via: string
+        memory: { rssMB: number; source: string } | null
+        source?: string
+      }
+    }
+    expect(typeof body.runtime?.cliPid).toBe("number")
+    expect(body.runtime?.cliPid).toBe(250735)
+    expect(body.runtime?.attached).toBe(true)
+    expect(body.runtime?.via).toBe("http")
+    expect(body.runtime?.memory).toEqual(
+      expect.objectContaining({ rssMB: expect.any(Number), source: "proc" }),
+    )
+    expect(body.runtime).not.toHaveProperty("memorySource")
+  })
+
+  it("without runtime info: runtime.memory null and source unavailable", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-no-rt" })
+    vi.mocked(agentSessionRegistry.getRuntimeInfo).mockReturnValue(null)
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as {
+      runtime?: { cliPid: null; memory: null; source: string }
+    }
+    expect(body.runtime?.cliPid).toBeNull()
+    expect(body.runtime?.memory).toBeNull()
+    expect(body.runtime?.source).toBe("unavailable")
+  })
+
+  it("publicBaseUrl omitted when urlConfig.publicBaseUrl unset", async () => {
+    const { app, registry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-pub" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as { backend?: { publicBaseUrl?: string } }
+    expect(body.backend).toBeDefined()
+    expect(body.backend).not.toHaveProperty("publicBaseUrl")
+  })
+
+  it("publicBaseUrl from urlConfig when set", async () => {
+    const env: NodeJS.ProcessEnv = {}
+    const app = new Hono()
+    const registry = createInMemoryAgentRegistry()
+    registerMcpHttp(app, {
+      registry,
+      orchestrator: makeOrchestrator(registry),
+      agentSessionRegistry: makeStubSessionRegistry(),
+      env,
+      urlConfig: { port: 4000, host: "127.0.0.1", publicBaseUrl: "https://public.example.com" },
+      eventBus: createAgentEventBus(),
+    })
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-pub-set" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as { backend?: { publicBaseUrl?: string } }
+    expect(body.backend?.publicBaseUrl).toBe("https://public.example.com")
+  })
+})
+
+describe("session_surface (slice mcp-surface-tool)", () => {
+  afterEach(() => {
+    delete process.env[DRIVE_CODING_AGENT_ID_ENV]
+  })
+
+  it("listTools includes session_surface without caller header", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const { tools } = await client.listTools()
+    await client.close()
+    expect(tools.map((t) => t.name)).toContain("session_surface")
+  })
+
+  it("without header returns isError", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const result = await client.callTool({ name: "session_surface", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(true)
+    expect(toolText(result)).toMatch(new RegExp(AGENT_ID_HEADER))
+  })
+
+  it("unknown header id returns isError", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app, {
+      [AGENT_ID_HEADER]: "00000000-0000-4000-8000-000000000098",
+    })
+    const result = await client.callTool({ name: "session_surface", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(true)
+  })
+
+  it("registered caller gets the surface prompt as plain text", async () => {
+    const { app, registry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/surface-self" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_surface", arguments: {} })
+    await client.close()
+
+    expect(isToolError(result)).toBe(false)
+    const text = toolText(result)
+    // The caller must be able to act on this without a second lookup:
+    // who it is, how to reach the BE, and how to hand the user a file.
+    expect(text).toContain(agent.id)
+    expect(text).toContain("/api/mcp")
+    expect(text).toContain("/api/fs/file")
+    // Text, not JSON — a stringified body would escape every newline.
+    expect(text).not.toMatch(/^\s*[{[]/)
+    expect(text).toContain("\n")
   })
 })

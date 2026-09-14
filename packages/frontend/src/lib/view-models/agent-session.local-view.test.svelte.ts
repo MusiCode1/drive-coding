@@ -86,7 +86,7 @@ const vh = vi.hoisted(() => {
   return { state }
 })
 
-vi.mock("$lib/engines/ws-transport", () => ({
+vi.mock("@drive-coding/acp-wire/browser", () => ({
   WsAcpTransport: vi.fn(function MockTransport() {
     const behavior = vh.state.queue.shift() ?? { mode: "open" }
     let closeCb: ((code: number, reason: string) => void) | null = null
@@ -552,7 +552,7 @@ describe("DoD 13 — authMethods · _meta · captureSessionConfig · notify · a
       rename: false,
       thinkingTokens: false,
       image: false,
-      systemPrompt: false,
+      systemPrompt: "unsupported",
     } as never)
     await session.refreshQuota()
     expect(vh.state.client.extMethod).toHaveBeenCalledWith(

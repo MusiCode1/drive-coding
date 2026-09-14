@@ -5,8 +5,18 @@
  * mermaid לא מרנדר ב-jsdom (getBBox חסר) — כל הטסטים כאן מזריקים `render` ולא
  * נוגעים ב-mermaid.render האמיתי בכלל.
  */
+import type { ActionReturn } from "svelte/action"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { enhanceMermaid } from "./enhance-mermaid"
+import { enhanceMermaid, type MermaidParams } from "./enhance-mermaid"
+
+/**
+ * Svelte's `Action` type returns `void | ActionReturn`, so `.update`/`.destroy`
+ * are unreadable off the raw call. `enhanceMermaid` always returns the object
+ * form — narrow once here rather than at each of the call sites below.
+ */
+function attach(node: HTMLElement, params: MermaidParams): ActionReturn<MermaidParams> {
+  return enhanceMermaid(node, params) as ActionReturn<MermaidParams>
+}
 
 afterEach(() => {
   // כל טסט מוסיף node ל-document.body ולא מנקה — jsdom חי לכל אורך הקובץ.
@@ -28,7 +38,7 @@ describe("enhanceMermaid", () => {
   it("בלוק language-mermaid → ה-<pre> הוחלף ב-wrapper עם data-mermaid-state=ready", async () => {
     const node = makeNode(mermaidBlock("flowchart TD\n  A-->B"))
     const render = vi.fn(async () => "<svg><g/></svg>")
-    const action = enhanceMermaid(node, { text: "x", render })
+    const action = attach(node, { text: "x", render })
 
     await vi.waitFor(() => {
       const wrapper = node.querySelector<HTMLElement>(".mermaid-diagram")
@@ -42,7 +52,7 @@ describe("enhanceMermaid", () => {
   it("בלוק שאינו mermaid (language-ts) → לא נגעו בו", async () => {
     const node = makeNode(`<pre><code class="hljs language-ts">const x = 1</code></pre>`)
     const render = vi.fn(async () => "<svg/>")
-    const action = enhanceMermaid(node, { text: "x", render })
+    const action = attach(node, { text: "x", render })
 
     expect(render).not.toHaveBeenCalled()
     expect(node.querySelector("pre code.language-ts")).not.toBeNull()
@@ -70,7 +80,7 @@ describe("enhanceMermaid", () => {
     const code = "flowchart TD\n  Cache-->Twice"
     const node = makeNode(mermaidBlock(code))
     const render = vi.fn(async () => "<svg><g/></svg>")
-    const action = enhanceMermaid(node, { text: "1", render })
+    const action = attach(node, { text: "1", render })
 
     await vi.waitFor(() => {
       expect(node.querySelector(".mermaid-diagram")).not.toBeNull()
@@ -92,7 +102,7 @@ describe("enhanceMermaid", () => {
   it("מסמך בלי mermaid כלל → render לא נקרא אף פעם (שער-העצלות)", () => {
     const node = makeNode(`<p>plain text, no code blocks at all</p>`)
     const render = vi.fn(async () => "<svg/>")
-    const action = enhanceMermaid(node, { text: "x", render })
+    const action = attach(node, { text: "x", render })
 
     expect(render).not.toHaveBeenCalled()
     action.destroy?.()
@@ -101,7 +111,7 @@ describe("enhanceMermaid", () => {
   it("ה-SVG שנכנס ל-DOM עבר sanitizeMermaidSvg — script לא נכנס", async () => {
     const node = makeNode(mermaidBlock("flowchart TD\n  Xss-->Attempt"))
     const render = vi.fn(async () => "<svg><script>alert(1)</script><g/></svg>")
-    const action = enhanceMermaid(node, { text: "x", render })
+    const action = attach(node, { text: "x", render })
 
     await vi.waitFor(() => {
       const wrapper = node.querySelector<HTMLElement>(".mermaid-diagram")
@@ -145,24 +155,24 @@ describe("enhanceMermaid", () => {
       const node = makeNode(mermaidBlock("flowchart TD\n  Expand-->Click"))
       const render = vi.fn(async () => "<svg><g/></svg>")
       const onExpand = vi.fn()
-      const action = enhanceMermaid(node, {
+      const action = attach(node, {
         text: "x",
         render,
         onExpand,
         expandLabel: "הגדל תרשים",
       })
 
-      let wrapper: HTMLElement | null = null
-      await vi.waitFor(() => {
-        wrapper = node.querySelector<HTMLElement>(".mermaid-diagram")
-        expect(wrapper).not.toBeNull()
+      const wrapper = await vi.waitFor(() => {
+        const el = node.querySelector<HTMLElement>(".mermaid-diagram")
+        expect(el).not.toBeNull()
+        return el as HTMLElement
       })
 
-      expect(wrapper?.getAttribute("role")).toBe("button")
-      expect(wrapper?.tabIndex).toBe(0)
-      expect(wrapper?.getAttribute("aria-label")).toBe("הגדל תרשים")
+      expect(wrapper.getAttribute("role")).toBe("button")
+      expect(wrapper.tabIndex).toBe(0)
+      expect(wrapper.getAttribute("aria-label")).toBe("הגדל תרשים")
 
-      wrapper?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+      wrapper.dispatchEvent(new MouseEvent("click", { bubbles: true }))
       expect(onExpand).toHaveBeenCalledTimes(1)
       expect(onExpand).toHaveBeenCalledWith(expect.stringContaining("<svg>"))
       action.destroy?.()
@@ -172,15 +182,15 @@ describe("enhanceMermaid", () => {
       const node = makeNode(mermaidBlock("flowchart TD\n  Keyboard-->Access"))
       const render = vi.fn(async () => "<svg><g/></svg>")
       const onExpand = vi.fn()
-      const action = enhanceMermaid(node, { text: "x", render, onExpand })
+      const action = attach(node, { text: "x", render, onExpand })
 
-      let wrapper: HTMLElement | null = null
-      await vi.waitFor(() => {
-        wrapper = node.querySelector<HTMLElement>(".mermaid-diagram")
-        expect(wrapper).not.toBeNull()
+      const wrapper = await vi.waitFor(() => {
+        const el = node.querySelector<HTMLElement>(".mermaid-diagram")
+        expect(el).not.toBeNull()
+        return el as HTMLElement
       })
 
-      wrapper?.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+      wrapper.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
       expect(onExpand).toHaveBeenCalledTimes(1)
       action.destroy?.()
     })
@@ -188,16 +198,16 @@ describe("enhanceMermaid", () => {
     it("בלי onExpand — אין role/tabindex/aria-label (התרשים לא לחיץ)", async () => {
       const node = makeNode(mermaidBlock("flowchart TD\n  No-->Expand"))
       const render = vi.fn(async () => "<svg><g/></svg>")
-      const action = enhanceMermaid(node, { text: "x", render })
+      const action = attach(node, { text: "x", render })
 
-      let wrapper: HTMLElement | null = null
-      await vi.waitFor(() => {
-        wrapper = node.querySelector<HTMLElement>(".mermaid-diagram")
-        expect(wrapper).not.toBeNull()
+      const wrapper = await vi.waitFor(() => {
+        const el = node.querySelector<HTMLElement>(".mermaid-diagram")
+        expect(el).not.toBeNull()
+        return el as HTMLElement
       })
 
-      expect(wrapper?.getAttribute("role")).toBeNull()
-      expect(wrapper?.getAttribute("aria-label")).toBeNull()
+      expect(wrapper.getAttribute("role")).toBeNull()
+      expect(wrapper.getAttribute("aria-label")).toBeNull()
       action.destroy?.()
     })
   })

@@ -8,13 +8,15 @@ import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
-import type { MessageBubble } from "$lib/types/bubble"
+import type { Bubble, MessageBubble } from "$lib/types/bubble"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
 import { Settings } from "./settings.svelte"
 import { Speaker } from "./speaker.svelte"
 
 const mockSynthesize = vi.fn()
-const mockIsAvailable = vi.fn(() => true)
+// params declared so the spread into it typechecks against the real
+// `isAvailable(provider)` signature on ttsCapabilities
+const mockIsAvailable = vi.fn((_provider: "elevenlabs" | "google") => true)
 const mockNarrate = vi.fn()
 
 vi.mock("$lib/adapters/voice/tts-resolve", () => ({
@@ -34,7 +36,7 @@ vi.mock("./capabilities.svelte", async (importOriginal) => {
     ...actual,
     ttsCapabilities: {
       ...actual.ttsCapabilities,
-      isAvailable: (...args: unknown[]) => mockIsAvailable(...args),
+      isAvailable: (provider: "elevenlabs" | "google") => mockIsAvailable(provider),
     },
   }
 })
@@ -67,7 +69,7 @@ vi.stubGlobal("localStorage", localStorageMock)
 const LONG_TEXT =
   "This is a long enough sentence for the speaker to enqueue a TTS job without waiting for turn end."
 
-let sessionBubbles = $state<MessageBubble[]>([])
+let sessionBubbles = $state<Bubble[]>([])
 
 function makeSession(extra?: Partial<AgentSession>): AgentSession {
   return {
@@ -106,7 +108,11 @@ type Harness = {
   destroy: () => void
 }
 
-function createHarness(initial?: MessageBubble[], extraSession?: Partial<AgentSession>, live?: { isOpen: boolean }): Harness {
+function createHarness(
+  initial?: Bubble[],
+  extraSession?: Partial<AgentSession>,
+  live?: { isOpen: boolean },
+): Harness {
   sessionBubbles = initial ?? []
   const settings = new Settings()
   settings.ttsProvider = "google"
@@ -195,6 +201,8 @@ describe("Speaker.#fetchJob — FetchOutcome (commit 0)", () => {
           createdAt: Date.now(),
           toolCall: {
             toolCallId: "tc-1",
+            name: "run",
+            args: {},
             kind: "other",
             status: "completed",
             title: "run",

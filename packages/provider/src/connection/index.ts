@@ -18,5 +18,6 @@ export { decodeWireLine } from "../shared/wire-decode.js"
 // ProviderConnection factories + types
 export { connectCodexInProcess, resolveCodexPath } from "./connect-codex-in-process.js"
 export { connectInProcess } from "./connect-in-process.js"
+export { connectSidecar, type SidecarConnectOpts } from "./sidecar.js"
 export { connectSpawn } from "./spawn.js"
 export type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"

@@ -36,14 +36,19 @@
  * so concurrent callers share the same in-flight creation.
  */
 
+import { configDefault } from "@drive-coding/core/config/specs"
 import { createLogger } from "@drive-coding/core/log"
 import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
-import { buildAgentMcpServers, optionalAgentMcpServers } from "../agent-identity.js"
+import { buildAgentMcpServers } from "../agent-identity.js"
 import { getSelfBaseUrl } from "../instances.js"
 import { createPatchesBroadcaster, type PatchesBroadcaster } from "./patches-broadcaster.js"
+import { buildAgentEventHostOpts } from "./agent-events-registry-opts.js"
+import { startAgentStallSweep } from "./agent-events-stall-sweep.js"
 import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
+import { initSession } from "./session-init.js"
+import { makePromptCharterHook } from "./session-host-charter.js"
 
 const log = createLogger("backend.session-host.registry")
 
@@ -129,15 +134,19 @@ export type AgentSessionRegistry = {
    */
   getCwd(agentId: string): string | undefined
   /**
+   * Passthrough ל-connectionRegistry.getCliKind(agentId).
+   * נחוץ ל-session/new ב-rpc — הזרקת _meta של Claude (parity עם FE מקומי).
+   */
+  getCliKind(agentId: string): string | undefined
+  /**
    * slice ownership-handoff C3: passthrough to connectionRegistry.getEpoch(agentId).
    * Returns the ownership generation counter (0 for unknown agentId).
    */
   getEpoch(agentId: string): number
   /**
-   * slice liveness C1: passthrough to connectionRegistry.touchOwner(agentId).
-   * Updates lastSeenAt for any owned agent (ws or http). No-op if no owner.
+   * slice connection-set C0: passthrough to connectionRegistry.touchConnection.
    */
-  touchOwner(agentId: string): void
+  touchConnection(agentId: string, connectionId: string): void
   /**
    * slice liveness C1: passthrough to connectionRegistry.getRuntimeInfo(agentId).
    * Used by POST …/presence to report the agent's runtime state (attached/via/pid)
@@ -151,6 +160,10 @@ export type AgentSessionRegistry = {
     lastSeenAt: number | null
     via: "ws" | "http" | null
   } | null
+  getConnectionCount(agentId: string): number
+
+  /** slice boot-layer C2: stop the HTTP ownership TTL sweep interval. */
+  stop(): void
 }
 
 type AgentSessionRegistryDeps = {
@@ -202,6 +215,13 @@ type AgentSessionRegistryDeps = {
   getCloseOnTurnEnd?: (agentId: string) => boolean | Promise<boolean>
   /** slice session-lifecycle-fields C1: server wires grace timer + deleteAndKill. */
   onScheduleCloseOnTurnEnd?: (agentId: string) => void
+  /** slice be-events-subscribe C1 — see buildAgentEventHostOpts */
+  onTurnEnded?: Parameters<typeof buildAgentEventHostOpts>[0]["onTurnEnded"]
+  /** slice be-events-subscribe C2: stall-suspected callback — must not kill the agent */
+  onStallSuspected?: (agentId: string, silentMs: number) => void
+  /** slice be-events-subscribe C2: test knobs */
+  _stallSweepMs?: number
+  _stallSuspectMs?: number
   /**
    * slice ownership-handoff C4b: HTTP ownership TTL (ms).
    * Default: `HTTP_OWNER_TTL_MS` env, else 600_000ms (slice ttl-ownership).
@@ -213,10 +233,9 @@ type AgentSessionRegistryDeps = {
    * Exposed for tests to control sweep timing.
    */
   _httpSweepMs?: number
+  /** slice boot-layer C5: env reference for TTL fallback (no direct process.env). */
+  env?: NodeJS.ProcessEnv
 }
-
-/** slice ttl-ownership: the default HTTP ownership TTL (10 minutes). */
-export const DEFAULT_HTTP_OWNER_TTL_MS = 600_000
 
 /**
  * resolveHttpOwnerTtlMs — parses HTTP_OWNER_TTL_MS.
@@ -226,14 +245,15 @@ export const DEFAULT_HTTP_OWNER_TTL_MS = 600_000
  * of 30 green tests that all injected a mock and never once ran the default.
  *
  * Accepts only a finite, strictly-positive number. Anything else — missing,
- * blank, NaN, 0, negative, Infinity — falls back to the default.
+ * blank, NaN, 0, negative, Infinity — falls back to configDefault("httpOwnerTtlMs").
  */
 export function resolveHttpOwnerTtlMs(raw: string | undefined): number {
-  if (raw === undefined) return DEFAULT_HTTP_OWNER_TTL_MS
+  const fallback = configDefault("httpOwnerTtlMs")
+  if (raw === undefined) return fallback
   const trimmed = raw.trim()
-  if (trimmed === "") return DEFAULT_HTTP_OWNER_TTL_MS
+  if (trimmed === "") return fallback
   const n = Number(trimmed)
-  if (!Number.isFinite(n) || n <= 0) return DEFAULT_HTTP_OWNER_TTL_MS
+  if (!Number.isFinite(n) || n <= 0) return fallback
   return n
 }
 
@@ -247,6 +267,8 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     getPermissionPolicy,
     getCloseOnTurnEnd,
     onScheduleCloseOnTurnEnd,
+    onTurnEnded,
+    onStallSuspected,
   } = deps
 
   const map = new Map<string, HostEntry>()
@@ -254,48 +276,36 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
   // callers so only one host + one ACP session get created per agentId.
   const inFlight = new Map<string, Promise<HostResult>>()
 
-  // slice ownership-handoff C4b + slice liveness C1: unified ownership TTL sweep.
-  // Owners must send a liveness signal (WS $/ping or HTTP presence → touchOwner)
-  // within TTL_MS or lose ownership. On expiry: dispose + unregisterHost +
-  // markDetached (NOT deleteAndKill, NOT epoch++).
-  // 🔴 slice liveness C1 §2.1: the transport check is EXPLICIT — a WS owner must
-  // never be evicted here (WS has its own socket sweep in ws-agent.ts, a different
-  // role). Detecting "WS" indirectly via `getLastSeenAt() === null` no longer
-  // works now that touchOwner is transport-agnostic (a WS owner also has a stamp).
+  // slice connection-set D8: per-row HTTP TTL sweep — removes stale http rows only.
   const HTTP_OWNER_TTL_MS =
-    deps._httpOwnerTtlMs ?? resolveHttpOwnerTtlMs(process.env.HTTP_OWNER_TTL_MS)
+    deps._httpOwnerTtlMs ?? resolveHttpOwnerTtlMs(deps.env?.HTTP_OWNER_TTL_MS)
   const HTTP_SWEEP_MS = deps._httpSweepMs ?? 30_000 // sweep every 30s
   const httpSweep = setInterval(() => {
     const now = Date.now()
     for (const [agentId, entry] of map) {
-      // 🔴 explicit transport guard — without it, WS owners get evicted here (DoD 7).
-      if (connectionRegistry.getOwner(agentId)?.via !== "http") continue
-      const lastSeen = connectionRegistry.getLastSeenAt(agentId)
-      if (lastSeen === null) continue
-      if (now - lastSeen <= HTTP_OWNER_TTL_MS) continue
-      log.info(
-        { agentId, staleMs: now - lastSeen },
-        "HTTP owner stale — releasing ownership (holder retained)",
-      )
-      // 🔴 slice ttl-ownership: ownership and state are two lifecycles.
-      // Expiry releases OWNERSHIP and severs the abandoned stream — the host
-      // and broadcaster STAY in the map, so the next connection is a pure
-      // continuation (no loadSession, no fresh host, no version reset).
-      // Both calls are SYNCHRONOUS and land in the same tick, so their order
-      // does not matter: the next sweep pass (30s later) sees markDetached and
-      // skips this agent via the `via !== "http"` guard, which is what keeps
-      // close() from firing twice. The guarantee is same-tick, not ordering.
-      connectionRegistry.markDetached(agentId)
-      // Sever abandoned SSE subscribers + their keepalive timers. WITHOUT this,
-      // (1) events.ts's read-loop never ends (hono's write() swallows errors —
-      // see §0) so a live client never reconnects and never re-claims, and
-      // (2) the subscriber + its setInterval leak — the exact leak sse-liveness
-      // Commit 3 closed in unregisterHost. close() does NOT end the source:
-      // the broadcaster stays fully usable for the next subscribe().
-      entry.broadcaster.close()
+      for (const row of connectionRegistry.listHttpConnectionIds(agentId)) {
+        if (now - row.lastSeenAt <= HTTP_OWNER_TTL_MS) continue
+        log.info(
+          { agentId, connectionId: row.connectionId, staleMs: now - row.lastSeenAt },
+          "HTTP connection stale — removing row (holder retained)",
+        )
+        if (row.stream !== undefined)
+          entry.broadcaster.unsubscribe(row.stream as Parameters<PatchesBroadcaster["unsubscribe"]>[0])
+        connectionRegistry.removeConnection(agentId, row.connectionId)
+      }
     }
   }, HTTP_SWEEP_MS)
   httpSweep.unref() // don't prevent process exit
+
+  const stallSweep = onStallSuspected
+    ? startAgentStallSweep({
+        map,
+        connectionRegistry,
+        onStallSuspected,
+        _stallSweepMs: deps._stallSweepMs,
+        _stallSuspectMs: deps._stallSuspectMs,
+      })
+    : undefined
 
   async function doCreate(agentId: string): Promise<HostResult> {
     // Look up connection
@@ -351,19 +361,14 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // slice handoff-foundations C3: if session creation fails below, the host is
     // already subscribed to the wire (created by _createHostFn). Rollback MUST call
     // host.dispose() to remove the crash subscription and close the patches stream.
-    const hostOpts =
-      acpSessionId || permissionPolicy !== undefined || closeOnTurnEnd
-        ? {
-            ...(acpSessionId ? { warmReattach: { acpSessionId, cwd } } : {}),
-            ...(permissionPolicy !== undefined ? { permissionPolicy } : {}),
-            ...(closeOnTurnEnd
-              ? {
-                  closeOnTurnEnd: true,
-                  onScheduleCloseOnTurnEnd: () => onScheduleCloseOnTurnEnd?.(agentId),
-                }
-              : {}),
-          }
-        : undefined
+    // slice agent-charter C2: always wire charter prepend (cold session_open too).
+    const hostOpts = {
+      transformPromptForAcp: makePromptCharterHook(connectionRegistry, agentId),
+      ...buildAgentEventHostOpts({
+        agentId, cwd, acpSessionId, permissionPolicy, closeOnTurnEnd,
+        onScheduleCloseOnTurnEnd, onTurnEnded,
+      }),
+    }
     // 🔴 הקשר-אבחון (2026-08-16): יצירת ה-host היא שמריצה את ה-ACP initialize,
     // ולכן כאן נופלות פקיעות ה-initialize/authenticate. עד עכשיו השגיאה עלתה מכאן
     // **בלי שום סימן זיהוי**: נתקלנו בשני כשלים חיים ולא הצלחנו לקבוע בדיעבד
@@ -391,16 +396,12 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     try {
       const broadcaster = _createBroadcasterFn(host.patches)
 
-      // Session init: warm reattach uses loadSession; cold uses newSession.
+      // Warm when a session id is remembered, cold otherwise — and cold as a
+      // fallback if the warm attempt fails, rather than leaving a live agent
+      // that nobody can open. See session-init.ts.
       // Skip if host already has a sessionId (injected-ready host in tests).
       if (!host.state.sessionId) {
-        const mcpServers = optionalAgentMcpServers(agentId, getSelfBaseUrl(), host.agentCapabilities)
-        const sessionBase = { cwd, ...(mcpServers !== undefined && { mcpServers }) }
-        if (acpSessionId) {
-          await host.loadSession({ ...sessionBase, sessionId: acpSessionId })
-        } else {
-          await host.newSession(sessionBase)
-        }
+        await initSession(host, { cwd }, acpSessionId, agentId, { cliKind: connectionRegistry.getCliKind(agentId) ?? "unknown", caps: host.agentCapabilities, getBaseUrl: getSelfBaseUrl })
       }
 
       // slice remote-warm-reconnect C1: דיווח על ה-session — אחרי ה-if block כולו
@@ -417,10 +418,8 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
         }
       }
 
-      // slice ownership-truth C2: ה-host נוצר בהצלחה — סמן בעלות http.
-      // זה הופך את attached ל-true, כך שה-FE רואה את הסוכן כתפוס (takeover ring).
-      connectionRegistry.markOwned(agentId, "http")
-
+      // slice connection-set C0: host creation does not register a viewer row —
+      // rows are born from GET /events or WS attach (D4).
       const entry: HostEntry = { host, broadcaster }
       map.set(agentId, entry)
       return { ok: true, entry }
@@ -447,32 +446,11 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       // Return existing entry if already created
       const existing = map.get(agentId)
       if (existing) {
-        // slice remote-warm-reconnect C2b: liveness check — ה-connection אולי מת
-        // (crash/DELETE) אחרי שה-host נוצר. בלי הניקוי, GET /events היה מחזיר 200
-        // עם host מת + snapshot ישן, וה-FE "מתחבר" לסשן מת (פרומפטים נכשלים רק
-        // בהמשך). מסירים את ה-entry ⇒ {ok:false, reason:"conn-dead"} → 404 → fail-fast ב-VM.
+        // slice remote-warm-reconnect C2b: liveness check — connection may have died.
         if (!connectionRegistry.get(agentId)) {
-          // = unregisterHost body, minus the markDetached/owner check (מכאן אי
-          // אפשר לקרוא ל-unregisterHost — בתוך ה-object literal). slice
-          // sse-liveness Commit 3: this is a documented second abandonment site
-          // (brief §3, Commit 3, note 2+2ב) — "unify, not just document": it's
-          // the same broadcaster.close() call for the same reason (a dead
-          // connection must not leave a leaked SSE stream + keepalive timer
-          // behind), so it gets the fix too instead of drifting from it.
           existing.broadcaster.close()
           map.delete(agentId)
           return { ok: false, reason: "conn-dead" }
-        }
-        // 🔴 slice ttl-ownership: re-claim. The TTL sweep now releases ownership
-        // but KEEPS the holder, so a reconnect lands here — and doCreate(), the
-        // only place that ever calls markOwned, no longer runs. Without this,
-        // ownership stays null forever after one expiry: `attached` never
-        // returns to true, touchOwner becomes a no-op (it needs an owner), and
-        // the sweep skips the agent for good (via !== "http").
-        // Guarded on `=== null`: never steal the wire from a WS owner, and
-        // never bump the epoch on an ordinary second connection.
-        if (connectionRegistry.getOwner(agentId) === null) {
-          connectionRegistry.markOwned(agentId, "http")
         }
         return { ok: true, entry: existing }
       }
@@ -502,19 +480,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // would read the OLD epoch before it's bumped). `broadcaster.close()`
     // closes every subscriber controller synchronously — no `await` needed.
     unregisterHost(agentId: string): void {
-      // slice ownership-truth C2: שחרר בעלות — אך רק אם הבעלים הוא http.
-      // אחרת שחרור host היה מוחק בעלות WS שאינה שלו (WS יכול להיות הבעלים אם
-      // הוא השתלט על host קודם — שלב ב', אך השמירה כאן מונעת תקלות עתידיות).
-      if (connectionRegistry.getOwner(agentId)?.via === "http") {
-        connectionRegistry.markDetached(agentId)
-      }
-      // slice sse-liveness Commit 3: terminate the broadcaster BEFORE removing
-      // the entry — two of the three call sites (deleteAndKill, the crash
-      // handler in agent-orchestrator.ts) never call host.dispose() first, so
-      // without this nothing ever ended the SSE stream for them: the keepalive
-      // timer (registerEventsRoute's setInterval) leaked forever, and a client
-      // reconnecting mid-session got a dead host with a stale snapshot instead
-      // of a clean 404/taken-over.
+      connectionRegistry.clearAllConnections(agentId)
       const entry = map.get(agentId)
       entry?.broadcaster.close()
       map.delete(agentId)
@@ -526,14 +492,26 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     getCwd(agentId: string): string | undefined {
       return connectionRegistry.getCwd(agentId)
     },
+    getCliKind(agentId: string): string | undefined {
+      return connectionRegistry.getCliKind(agentId)
+    },
     getEpoch(agentId: string): number {
       return connectionRegistry.getEpoch(agentId)
     },
-    touchOwner(agentId: string): void {
-      connectionRegistry.touchOwner(agentId)
+    touchConnection(agentId: string, connectionId: string): void {
+      connectionRegistry.touchConnection(agentId, connectionId)
     },
     getRuntimeInfo(agentId: string) {
       return connectionRegistry.getRuntimeInfo(agentId)
     },
+    getConnectionCount(agentId: string) {
+      return connectionRegistry.getConnectionCount(agentId)
+    },
+
+  /** slice boot-layer C2: stop the HTTP ownership TTL sweep interval. */
+  stop(): void {
+    clearInterval(httpSweep)
+    if (stallSweep) clearInterval(stallSweep)
+  },
   }
 }

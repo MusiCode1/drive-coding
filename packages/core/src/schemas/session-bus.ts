@@ -42,6 +42,12 @@ export const AgentOpenInput = type({
   "closeOnTurnEnd?": optBool(
     "When true, automatically close this agent after its first clean turn end.",
   ),
+  "notifyOnDone?": optStr(
+    "UUID of the agent to notify when this agent's turn ends (auto-subscribe on create).",
+  ),
+  "includeLastAssistantText?": optBool(
+    "When true with notifyOnDone, turn-ended prompts include a truncated preview of the last assistant message.",
+  ),
   "base?": optStr(
     "Public base URL of this drive-coding backend (legacy alias for publicUrl). Used to build chat url and DC_BASE env.",
   ),
@@ -49,6 +55,12 @@ export const AgentOpenInput = type({
   "json?": optBool("Ignored over MCP — MCP always returns JSON in content[].text."),
   "publicUrl?": optStr(
     "Public base URL of this drive-coding backend, e.g. http://127.0.0.1:4001. Default: loopback on PORT.",
+  ),
+  "systemPrompt?": type("string | null").describe(
+    "Optional project charter (system prompt) forwarded to createAndSpawn — same as POST /api/agents.",
+  ),
+  "roleLabel?": optStr(
+    "Optional display label for the agent tree (e.g. planner, executor) — metadata only, not sent to the model.",
   ),
 })
 export type AgentOpenInput = typeof AgentOpenInput.infer
@@ -118,6 +130,14 @@ export type AgentStateInput = typeof AgentStateInput.infer
 /** MCP session_list — no parameters (HTTP discovery flags are CLI-only). */
 export const McpSessionListInput = type({})
 export type McpSessionListInput = typeof McpSessionListInput.infer
+
+/** MCP session_whoami — no parameters; identity from X-Drive-Coding-Agent header only. */
+export const McpSessionWhoamiInput = type({})
+export type McpSessionWhoamiInput = typeof McpSessionWhoamiInput.infer
+
+/** MCP session_surface — no parameters; the caller's own surface prompt, by header identity. */
+export const McpSessionSurfaceInput = type({})
+export type McpSessionSurfaceInput = typeof McpSessionSurfaceInput.infer
 
 /** @deprecated Use McpSessionListInput — base/port/json are not used by MCP. */
 export const AgentListInput = McpSessionListInput

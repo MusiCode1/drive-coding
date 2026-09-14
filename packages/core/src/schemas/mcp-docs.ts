@@ -50,13 +50,54 @@ To apply a change, pass those ids on \`session_send.sets\` before the prompt. If
 
 When drive-coding injects this server into a child agent, requests include \`X-Drive-Coding-Agent: <uuid>\`.
 That sets the caller identity for **session_open** (\`parentAgentId\`) and enables **notify_parent** for child agents.
+Call **session_whoami** (no parameters) to discover your own agent UUID and runtime context from that header — the server does not guess from ENV.
 
-There is **no authentication** — any client that can reach the URL can list, open, prompt, or close agents.
+Example response (fields may be omitted when unavailable):
+
+\`\`\`json
+{
+  "agent": "<uuid>",
+  "cliKind": "cursor",
+  "cwd": "/abs/agent/cwd",
+  "hasParent": false,
+  "sessionId": "<acp-session>",
+  "backend": {
+    "pid": 591395,
+    "port": 4004,
+    "version": "0.19.0",
+    "uptimeSec": 323,
+    "publicBaseUrl": "https://example.test",
+    "cwd": "/path/to/backend",
+    "memory": {
+      "rssMB": 412,
+      "heapUsedMB": 89,
+      "rssBudgetMB": 1500,
+      "overBudget": false
+    }
+  },
+  "runtime": {
+    "cliPid": 250735,
+    "attached": true,
+    "busy": false,
+    "via": "http",
+    "memory": { "rssMB": 1840, "source": "proc" }
+  }
+}
+\`\`\`
+
+When child RSS cannot be measured (Windows, stale pid, /proc failure): \`runtime.memory\` is \`null\` and \`runtime.source\` is \`"unavailable"\`. Child memory is Linux-only in v1.
+
+The header is caller **identity**, not a login.
+
+Write calls (**session_close**, **session_send**) are limited to agents you spawned — your own
+subtree. Writing to any other agent raises a permission prompt to **your user**; until they
+answer, the call blocks, and a refusal comes back as \`scope-denied\`. Reads (**session_list**,
+**session_state**) are never restricted.
 
 ## Limits
 
 - **Stateless HTTP** — no live push notifications; poll with session_state or session_send.
-- **session_close** refuses when \`turnState !== idle\` unless \`force: true\`. Any caller can close any agent by id.
+- **session_close** refuses when \`turnState !== idle\` unless \`force: true\`, and is subject to the scope rule above.
 - **session_send** defaults to 1800s wait; \`file\`, \`marker\`, \`idleTimeoutSec\`, \`keep\` are ignored (CLI-only).
 - Kill switch: backend owner sets \`MCP_HTTP=0\` to disable the endpoint.
 `
@@ -67,6 +108,9 @@ export type McpToolName =
   | "session_send"
   | "session_state"
   | "session_close"
+  | "session_subscribe"
+  | "session_whoami"
+  | "session_surface"
   | "notify_parent"
 
 export const MCP_TOOL_META: Record<
@@ -97,6 +141,21 @@ export const MCP_TOOL_META: Record<
     title: "Close agent session",
     description:
       "Delete the agent record and kill its CLI process (deleteAndKill). Refuses when turnState is not idle unless force: true — wait for the turn to finish or pass force. Missing agent returns { ok: true, alreadyClosed: true }. No ownership check: any caller can close any agent id.",
+  },
+  session_subscribe: {
+    title: "Subscribe to agent events",
+    description:
+      "Register the caller (or an explicit subscriber UUID) to receive turn-ended and stall-suspected events for the target agent. Duplicate subscribe with the same options is a no-op; repeating with new options (e.g. includeLastAssistantText) updates the subscription. Requires agent (target). subscriber defaults to X-Drive-Coding-Agent when present.",
+  },
+  session_whoami: {
+    title: "Who am I",
+    description:
+      "Discovery only — not authentication. Return the caller's identity (agent UUID, cliKind, cwd, parent, sessionId) plus backend envelope (pid, port, version, uptimeSec, publicBaseUrl, memory budget) and runtime envelope (cli pid, attached, busy, via, child RSS on Linux). No parameters. Missing or unknown header → error; the server does not guess from ENV. Child memory is Linux-only in v1; Windows returns runtime.memory null with source unavailable.",
+  },
+  session_surface: {
+    title: "Read this UI's surface prompt",
+    description:
+      "Return the drive-coding surface prompt for the calling agent: what this product is, how to reach this backend (loopback base, MCP endpoint, file proxy, public origin, your agent id), the session-bus tools, and the display capabilities of the chat UI — how to give the user a clickable link to a local file, embed an image, or render a mermaid diagram. Same body as GET /api/agent-prompt, which normally arrives through a CLI hook; call this when that hook is not wired. No parameters; identity comes from X-Drive-Coding-Agent. Read it before dumping a raw filesystem path at the user.",
   },
 }
 

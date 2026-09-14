@@ -11,6 +11,7 @@
  *     across layers (allows partial overrides per CLI).
  *   - Other keys (https): wholesale override — entire value from the highest
  *     layer that defines the key wins.
+ *   - After merge: CONFIG_SPECS[].default fills any still-absent leaf.
  *
  * Returns Result<DriveCodingConfig, string[]> (neverthrow).
  * Validation errors accumulate before returning Err.
@@ -20,7 +21,7 @@ import { type } from "arktype"
 import type { Result } from "neverthrow"
 import { err, ok } from "neverthrow"
 import { DriveCodingConfig } from "./schema.js"
-import { CONFIG_SPECS, type ConfigLeafKey, getLeaf, setLeaf } from "./specs.js"
+import { CONFIG_SPECS, type ConfigLeafKey, type ConfigSpec, getLeaf, setLeaf } from "./specs.js"
 
 const WHOLESALE_KEYS = new Set(["cliSpecs", "https"])
 
@@ -63,6 +64,14 @@ export function resolveConfig(
   }
   if (cliSpecsMerged !== undefined) {
     merged["cliSpecs"] = cliSpecsMerged
+  }
+
+  for (const spec of CONFIG_SPECS) {
+    const s: ConfigSpec = spec
+    if (s.default === undefined) continue
+    if (getLeaf(merged, spec.key) === undefined) {
+      setLeaf(merged, spec.key, s.default)
+    }
   }
 
   const validated = DriveCodingConfig(merged)

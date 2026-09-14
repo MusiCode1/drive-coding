@@ -80,7 +80,7 @@ export function registerFsFileHttp(
     allowedBase?: string
   } = {},
 ): void {
-  const allowedBase = opts.allowedBase ?? process.env.FS_FILE_ALLOWED_BASE
+  const allowedBase = opts.allowedBase
 
   app.get("/api/fs/file", async (c) => {
     const uri = c.req.query("uri")

@@ -31,7 +31,7 @@ function mockResponse(body = "ok", status = 200): Response {
 
 function buildApp(cacheBaseDir: string): Hono {
   const app = new Hono()
-  registerProxyHttp(app, { cacheBaseDir })
+  registerProxyHttp(app, { cacheBaseDir, env: process.env })
   return app
 }
 

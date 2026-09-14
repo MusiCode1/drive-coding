@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ActionReturn } from "svelte/action"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { enhanceFileLinks } from "./enhance-file-links"
 import { enhanceRemoteImages, type RemoteImageParams } from "./enhance-remote-images"
@@ -55,7 +56,7 @@ describe("enhanceRemoteImages", () => {
     const { node, handle, params } = mount("<p>![a](https://a.test/1.png)</p>")
     node.innerHTML = "<p>![b](https://b.test/2.png)</p>"
     handle?.update?.({ ...params, text: "![b](https://b.test/2.png)" })
-    expect(node.querySelector("[data-remote-src]")?.dataset["remoteSrc"]).toBe(
+    expect(node.querySelector<HTMLElement>("[data-remote-src]")?.dataset["remoteSrc"]).toBe(
       "https://b.test/2.png",
     )
   })
@@ -76,7 +77,9 @@ describe("enhanceRemoteImages", () => {
       text: node.textContent ?? "",
       label: "Load image",
     }
-    const remoteHandle = enhanceRemoteImages(node, remoteParams)
+    // `Action` returns `void | ActionReturn`; this action always returns the
+    // object form — narrow so `.destroy` is readable.
+    const remoteHandle = enhanceRemoteImages(node, remoteParams) as ActionReturn<RemoteImageParams>
 
     enhanceFileLinks(node, {
       text: node.textContent ?? "",
@@ -120,7 +123,9 @@ describe("enhanceRemoteImages", () => {
   })
 
   it("autoLoad:true does not touch code contexts", () => {
-    const { node } = mount("<p><code>![c](https://example.com/c.png)</code></p>", { autoLoad: true })
+    const { node } = mount("<p><code>![c](https://example.com/c.png)</code></p>", {
+      autoLoad: true,
+    })
     expect(node.querySelector("img")).toBeNull()
     expect(node.textContent).toContain("![c](https://example.com/c.png)")
   })

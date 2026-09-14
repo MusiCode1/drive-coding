@@ -13,7 +13,8 @@ import { EventEmitter } from "node:events"
 import * as fs from "node:fs"
 import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
-import type { CliSpec } from "@drive-coding/core"
+import { CLI_SPECS, type CliKind, type CliSpec } from "@drive-coding/core"
+import { collectSessionMetaConflicts } from "./session-meta-merge.js"
 
 /** ערך override — כל השדות אופציונליים (merge חלקי לתוך spec קיים). */
 export type CliSpecOverride = Partial<CliSpec>
@@ -58,6 +59,9 @@ type MutableOverride = {
   setEnv?: Record<string, string>
   displayName?: string
   logo?: string
+  sessionMeta?: Record<string, unknown>
+  injectDriveCodingMcp?: boolean
+  sessionMetaAllowDefaultOverride?: boolean
 }
 
 /**
@@ -152,7 +156,55 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
     }
   }
 
+  // sessionMeta: non-array object
+  if ("sessionMeta" in obj) {
+    const sessionMeta = obj["sessionMeta"]
+    if (typeof sessionMeta === "object" && sessionMeta !== null && !Array.isArray(sessionMeta)) {
+      result.sessionMeta = sessionMeta as Record<string, unknown>
+    } else {
+      console.warn(
+        `[cli-config-file] override["${kind}"].sessionMeta must be an object — skipping field`,
+      )
+    }
+  }
+
+  // injectDriveCodingMcp: boolean
+  if ("injectDriveCodingMcp" in obj) {
+    if (typeof obj["injectDriveCodingMcp"] === "boolean") {
+      result.injectDriveCodingMcp = obj["injectDriveCodingMcp"]
+    } else {
+      console.warn(
+        `[cli-config-file] override["${kind}"].injectDriveCodingMcp must be boolean — skipping field`,
+      )
+    }
+  }
+
+  // sessionMetaAllowDefaultOverride: boolean
+  if ("sessionMetaAllowDefaultOverride" in obj) {
+    if (typeof obj["sessionMetaAllowDefaultOverride"] === "boolean") {
+      result.sessionMetaAllowDefaultOverride = obj["sessionMetaAllowDefaultOverride"]
+    } else {
+      console.warn(
+        `[cli-config-file] override["${kind}"].sessionMetaAllowDefaultOverride must be boolean — skipping field`,
+      )
+    }
+  }
+
   return result
+}
+
+function warnSessionMetaConflicts(result: CliSpecsOverride): void {
+  for (const [kind, override] of Object.entries(result)) {
+    if (override.sessionMeta === undefined) continue
+    if (override.sessionMetaAllowDefaultOverride === true) continue
+    const base = (CLI_SPECS[kind as CliKind] as CliSpec | undefined)?.sessionMeta
+    if (base === undefined) continue
+    for (const conflict of collectSessionMetaConflicts(base, override.sessionMeta)) {
+      console.warn(
+        `[cli-config-file] sessionMeta conflict for "${kind}" at ${conflict.path}: built-in ${JSON.stringify(conflict.base)} overridden by ${JSON.stringify(conflict.override)}`,
+      )
+    }
+  }
 }
 
 // memoization — מוחזק ברמת המודול
@@ -168,6 +220,18 @@ const changeEmitter = new EventEmitter()
 
 let watcher: fs.FSWatcher | null = null
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * Filenames in the state directory that trigger a config-change event.
+ *
+ * `cli-specs.jsonc` invalidates this module's memo. `config.jsonc` and
+ * `secrets.json` belong to the backend's loadConfig — nothing here reads them —
+ * but they live in the very same directory, and watching it here reuses this watcher's debounce, its
+ * ENOENT guard and its directory-level watch (which is what makes atomic saves
+ * via write-temp+rename work). A second watcher would duplicate all three.
+ * The listener in server.ts decides what to actually do with the event.
+ */
+const WATCHED_FILENAMES = new Set(["config.jsonc", "secrets.json"])
 
 /** Clears the memoized override and emits to listeners — the only broadcast path. */
 export function invalidateCache(): void {
@@ -188,13 +252,17 @@ function startWatching(): void {
   if (watcher !== null) return
   const filePath = resolveCliSpecsPath()
   const dir = dirname(filePath)
+  // Resolved per call: CLI_SPECS_FILE can point the specs file anywhere, and
+  // tests rely on that. config.jsonc is a fixed name in the same directory.
+  WATCHED_FILENAMES.add(basename(filePath))
   // fs.watch on a missing directory throws ENOENT synchronously — guard before watching.
   if (!fs.existsSync(dir)) return
   try {
     watcher = fs.watch(dir, { persistent: false }, (_eventType, filename) => {
       // Directory-level watch fires for other files in the same dir too
-      // (cache/, recordings/, wire-recordings/, usage/). React only to the config file.
-      if (filename !== null && filename !== basename(filePath)) return
+      // (cache/, recordings/, wire-recordings/, usage/). React only to the
+      // config files.
+      if (filename !== null && !WATCHED_FILENAMES.has(filename)) return
       scheduleInvalidate()
     })
     watcher.unref()
@@ -301,6 +369,8 @@ export function loadCliSpecsOverride(env?: NodeJS.ProcessEnv): CliSpecsOverride 
 
   // --- Merge: file layer first, then inline-JSON overlay (inline wins per-key) ---
   const result: CliSpecsOverride = { ...fileSpecs, ...inlineSpecs }
+
+  warnSessionMetaConflicts(result)
 
   _cached = result
   return _cached

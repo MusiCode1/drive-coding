@@ -1,0 +1,18 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "bash \"$HOME/Projects/drive-coding/dev/packages/provider/hooks/claude/session-start.sh\"",
+            "timeout": 5,
+            "statusMessage": "drive-coding surface"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -64,10 +64,17 @@ describe("BubbleRenderer — alignment rail integration (Commit 2 gates)", () =>
     expect(readBubble("ToolBubble.svelte")).toMatch(/rounded-xl[\s\S]*max-w-\[78%\]/)
   })
 
-  it("User max-w-[85%] on flex wrapper with bubble-actions, no Avatar", () => {
+  it("User bubble caps with 85cqw (not cyclic max-w-[85%]) and has bubble-actions, no Avatar", () => {
     const src = readBubble("UserBubble.svelte")
-    expect(src).toMatch(/max-w-\[85%\]/)
+    expect(src).toMatch(/85cqw/)
+    expect(src).not.toMatch(/max-w-\[85%\]/)
     expect(src).toMatch(/bubble-actions/)
     expect(src).not.toMatch(/<Avatar/)
+  })
+
+  it("User bubble actions sit in bubble-meta (not a sibling flex track beside the card)", () => {
+    const markup = readBubbleMarkup("UserBubble.svelte")
+    expect(markup).not.toMatch(/user-bubble-outer flex gap-2/)
+    expect(markup).toMatch(/bubble-meta[\s\S]*bubble-actions/)
   })
 })

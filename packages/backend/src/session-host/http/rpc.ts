@@ -20,6 +20,7 @@
  * and break the contract. Management methods ignore `waitMs` silently (valid or invalid).
  *   - session/list   → 200 {sessions, sessionCapabilities} | 502 {error, code?}
  *   - session/load   → 200 {sessionId, version} | 400 (bad params / no cwd) | 502
+ *   - session/new    → 200 {sessionId, version} | 400 (no cwd) | 502
  *   - session/delete → 200 {ok:true} | 200 {ok:false, unsupported:true} (-32601) | 502
  *
  * Returns 404 if connection not found (registry.getOrCreateHost → {ok:false}),
@@ -48,14 +49,16 @@
  * ─── slice rpc-wait (TDD): optional waitMs on the six fire-and-forget methods ───
  */
 
+import type { AgentRegistry } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import { canonicalRpcMethod, RPC_METHODS } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
 import type { Hono } from "hono"
-import { optionalAgentMcpServers } from "../../agent-identity.js"
 import { getSelfBaseUrl } from "../../instances.js"
 import type { AgentSessionRegistry } from "../registry.js"
+import { buildSessionInitBase } from "../session-meta.js"
+import { guardRpcRoute } from "./rpc-scope.js"
 import { parseWaitMs, raceKeepRunning } from "./rpc-wait.js"
 
 const log = createLogger("backend.session-host.rpc")
@@ -94,6 +97,7 @@ const PromptParams = type({
 })
 const CancelParams = type({ sessionId: "string" })
 const LoadSessionParams = type({ sessionId: "string", "cwd?": "string" })
+const NewSessionParams = type({ "cwd?": "string" })
 const DeleteSessionParams = type({ sessionId: "string" })
 
 // ─── slice remote-session-mgmt C3: JSON-RPC error mapping ───
@@ -154,11 +158,9 @@ async function respondRpcWait<T>(
 /**
  * registerRpcRoute — registers POST /api/agents/:id/rpc on the Hono app.
  */
-export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): void {
+export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry, agentRegistry: AgentRegistry): void {
   app.post("/api/agents/:id/rpc", async (c) => {
     const agentId = c.req.param("id")
-
-    // Look up or create host
     const result = await registry.getOrCreateHost(agentId)
     if (!result.ok) {
       // slice host-result-reason C1: evict-timeout is transient (a stuck WS tab,
@@ -167,8 +169,6 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
       return c.json({ error: "Agent connection not found" }, status)
     }
     const { host } = result.entry
-    // slice ownership-handoff C4b: touch lastSeenAt — rpc extends HTTP ownership TTL
-    registry.touchOwner(agentId)
 
     // Parse request body
     let raw: unknown
@@ -191,7 +191,7 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
     }
     const waitMs = waitParsed === "invalid" ? null : waitParsed
 
-    // Dispatch to host method
+    return guardRpcRoute(c, agentId, method, agentRegistry, registry, async () => {
     switch (method) {
       case RPC_METHODS.prompt: {
         const p = PromptParams(params)
@@ -312,6 +312,18 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
             200,
           )
         } catch (e) {
+          // -32601 (CLI without list) → empty list, not 502.
+          // Cloudflare often replaces origin 502 with HTML, stripping `{code:-32601}`
+          // so the FE cannot degrade gently — return 200 here like deleteSession.
+          if (codeOf(e) === -32601) {
+            return c.json(
+              {
+                sessions: [],
+                sessionCapabilities: host.agentCapabilities?.sessionCapabilities ?? null,
+              },
+              200,
+            )
+          }
           const code = codeOf(e)
           return c.json(
             code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
@@ -325,15 +337,17 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
         const cwd = p.cwd ?? registry.getCwd(agentId)
         if (!cwd) return c.json({ error: "no cwd available" }, 400)
         try {
-          const mcpServers = optionalAgentMcpServers(
+          const cliKind = registry.getCliKind(agentId) ?? "unknown"
+          const base = buildSessionInitBase(
+            cliKind,
             agentId,
-            getSelfBaseUrl(),
+            cwd,
             host.agentCapabilities,
+            getSelfBaseUrl,
           )
           const r = await host.loadSession({
-            cwd,
+            ...base,
             sessionId: p.sessionId,
-            ...(mcpServers !== undefined && { mcpServers }),
           })
           // The agents registry must learn the newly-attached session
           // (status/acpSessionId — remote-warm-reconnect plumbing). catch+warn:
@@ -344,6 +358,36 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
             await registry.notifySessionAttached(agentId, r.sessionId, cwd)
           } catch (err) {
             log.warn({ err, agentId }, "notifySessionAttached after loadSession failed")
+          }
+          return c.json({ sessionId: r.sessionId, version: host.state.version }, 200)
+        } catch (e) {
+          const code = codeOf(e)
+          return c.json(
+            code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
+            502,
+          )
+        }
+      }
+      case RPC_METHODS.newSession: {
+        const p = NewSessionParams(params)
+        if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
+        const cwd = p.cwd ?? registry.getCwd(agentId)
+        if (!cwd) return c.json({ error: "no cwd available" }, 400)
+        try {
+          const cliKind = registry.getCliKind(agentId) ?? "unknown"
+          const r = await host.newSession(
+            buildSessionInitBase(
+              cliKind,
+              agentId,
+              cwd,
+              host.agentCapabilities,
+              getSelfBaseUrl,
+            ),
+          )
+          try {
+            await registry.notifySessionAttached(agentId, r.sessionId, cwd)
+          } catch (err) {
+            log.warn({ err, agentId }, "notifySessionAttached after newSession failed")
           }
           return c.json({ sessionId: r.sessionId, version: host.state.version }, 200)
         } catch (e) {
@@ -378,7 +422,7 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry): voi
       }
     }
 
-    // 202 Accepted — fire and forget; version for client sync
-    return c.json({ version: host.state.version }, 202)
+    return c.json({ version: host.state.version }, 202) // fire-and-forget; version for client sync
+    })
   })
 }

@@ -6,7 +6,6 @@
  * ChatInput נמחק ב-C4; TypeArea מחליף אותו.
  *
  * ─── record-footer (redesign-4) ───
- *
  * slice-image-paste (Commit 2):
  *  - tray thumbnails מעל ה-form (מחוץ ל-<form items-end>)
  *  - onpaste / ondrop / file-picker → fileToImageAttachment → tray
@@ -38,6 +37,7 @@ import {
 import { runTypeAreaSubmit } from "$lib/actions/type-area-submit"
 import { applySlashSelection, matchSlashCommands } from "$lib/engines/slash-commands"
 import SlashCommandMenu from "./SlashCommandMenu.svelte"
+import PendingCaptureBanner from "./PendingCaptureBanner.svelte"
 
 const session = getSession()
 const settings = getSettings()
@@ -140,6 +140,7 @@ const isDisabled = $derived(session.status !== "connected")
 
 const dictateListening = $derived(dictate.state === "listening")
 const dictateBusy = $derived(dictate.state === "busy")
+const dictateRequesting = $derived(dictate.state === "requesting")
 const dictateBtnEnabled = $derived(
   !isDisabled &&
     mic.state === "idle" &&
@@ -150,7 +151,9 @@ const dictateBtnLabel = $derived(
     ? "dictate.stop"
     : dictateBusy
       ? "dictate.transcribing"
-      : "dictate.start",
+      : dictateRequesting && dictate.awaitingPermissionDialog
+        ? "dictate.requesting"
+        : "dictate.start",
 )
 
 $effect(() => {
@@ -246,8 +249,20 @@ function openFilePicker(): void {
 
 <!-- container אנכי: tray מעל, form מתחת (לשמר items-end בתוך ה-form) -->
 <div class="flex flex-col gap-1 w-full">
+  <PendingCaptureBanner
+    error={dictate.error}
+    canRetry={dictate.canRetry}
+    restored={dictate.pendingRestored}
+    onRetry={() => void dictate.retryTranscribe()}
+    onDismiss={() => void dictate.dismiss()}
+    {t}
+  />
+  {#if dictateRequesting && dictate.awaitingPermissionDialog}
+    <p class="text-xs px-1" style="color:var(--fg-dim)" role="status">{t("dictate.requesting")}</p>
+  {:else if !dictate.error && mic.permissionHint}
+    <p class="text-xs px-1" style="color:var(--fg-dim)" role="status">{t(mic.permissionHint)}</p>
+  {/if}
 
-  <!-- ─── attachment tray (slice-image-paste) ─── -->
   {#if attachments.length > 0}
     <div class="flex flex-wrap gap-1.5 px-1">
       {#each attachments as att (att.id)}
@@ -272,7 +287,6 @@ function openFilePicker(): void {
     </div>
   {/if}
 
-  <!-- ─── form (autogrow נשמר — items-end, taEl, MAX_ROWS, rows=1) ─── -->
   <form
     onsubmit={onSubmit}
     class="type-area-form flex gap-2 items-stretch w-full"
@@ -313,10 +327,11 @@ function openFilePicker(): void {
       onclick={() => void dictate.toggle()}
       disabled={!dictateBtnEnabled}
       aria-pressed={dictateListening ? true : undefined}
-      aria-busy={dictateBusy ? true : undefined}
+      aria-busy={dictateBusy || dictateRequesting ? true : undefined}
       aria-label={t(dictateBtnLabel)}
       title={t(dictateBtnLabel)}
       class="type-area-control type-area-icon-control shrink-0 rounded-xl p-2 flex items-center"
+      class:dictate-arming={dictateRequesting && !dictateBusy}
       style="color:{dictateListening ? 'var(--recording)' : 'var(--fg-dim)'}; min-height:var(--control-h)"
     >
       {#if dictateBusy}
@@ -326,9 +341,6 @@ function openFilePicker(): void {
       {/if}
     </button>
     </div>
-    {#if dictate.error}
-      <span aria-live="polite" class="sr-only">{t(dictate.error)}</span>
-    {/if}
 
     <!-- ─── wrapper: מארח את ה-textarea (ה-dropdown עצמו portal-ל-body — ר' SlashCommandMenu.svelte) ─── -->
     <div class="type-area-prompt flex-1 relative min-w-0">
@@ -513,5 +525,20 @@ function openFilePicker(): void {
     color: var(--recording);
     background: transparent;
     cursor: pointer;
+  }
+
+  button.dictate-arming {
+    animation: dictate-arm-pulse 1s ease-in-out infinite;
+    cursor: wait;
+  }
+
+  @keyframes dictate-arm-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
   }
 </style>

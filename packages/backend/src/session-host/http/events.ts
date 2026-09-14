@@ -57,9 +57,12 @@ import {
   snapshotFrame,
   updateFrame,
 } from "@drive-coding/core/session"
+import { randomUUID } from "node:crypto"
 import type { Hono } from "hono"
 import { stream } from "hono/streaming"
+import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import type { AgentSessionRegistry } from "../registry.js"
+import { CONNECTION_ID_HEADER, readConnectionId } from "./connection-id.js"
 
 /**
  * slice host-result-reason C2: the keepalive `setInterval` was hardcoded inside
@@ -81,6 +84,7 @@ export type RegisterEventsRouteOptions = {
 export function registerEventsRoute(
   app: Hono,
   registry: AgentSessionRegistry,
+  connectionRegistry: ConnectionRegistry,
   opts: RegisterEventsRouteOptions = {},
 ): void {
   // slice sse-liveness (NO-GO fix): עטיפה בחץ, לא הפניה חשופה ל-native.
@@ -117,13 +121,14 @@ export function registerEventsRoute(
     }
     const { host, broadcaster } = result.entry
 
-    // Current epoch at connection time — used in snapshot frame-zero id
-    const currentEpoch = registry.getEpoch(agentId)
+    // slice connection-set D2: client supplies id or server generates one for this SSE view.
+    const connectionId = readConnectionId(c) ?? randomUUID()
 
     // Set SSE headers
     c.header("Content-Type", "text/event-stream")
     c.header("Cache-Control", "no-cache")
     c.header("Connection", "keep-alive")
+    c.header(CONNECTION_ID_HEADER, connectionId)
 
     return stream(c, async (s) => {
       // ── snapshot-then-filtered-subscribe ───────────────────────────────────
@@ -133,6 +138,10 @@ export function registerEventsRoute(
       // only after drain()'s async read, so nothing races between the two calls.
       const snapshot = host.state
       const patchStream = broadcaster.subscribe(snapshot.version)
+      connectionRegistry.addConnection(agentId, connectionId, "http", patchStream)
+
+      // Epoch after this viewer row is registered — taken-over only when a *later* owner bumps it.
+      const currentEpoch = registry.getEpoch(agentId)
 
       // slice liveness C1: keepalive keeps the connection alive through proxies.
       // NO touchOwner here — the server-side keepalive timer was a dead liveness
@@ -203,6 +212,7 @@ export function registerEventsRoute(
         doClearInterval(keepaliveTimer)
         reader.releaseLock()
         broadcaster.unsubscribe(patchStream)
+        connectionRegistry.removeConnection(agentId, connectionId, { onlyIfStream: patchStream })
         void streamEndedByTakeover // used above — suppress unused warning
       }
     })

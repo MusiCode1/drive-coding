@@ -7,6 +7,8 @@
  * Slice: live-ears, Commit 0.
  */
 
+import { liveInfo } from "../util/live-log"
+
 export type MicFrame = Float32Array
 
 const SAMPLE_RATE = 16_000
@@ -81,7 +83,14 @@ export class MicFrames {
 
   on(event: "frame", handler: (f: MicFrame) => void): () => void
   on(event: "level", handler: (rms: number) => void): () => void
-  on(event: "frame" | "level", handler: (payload: MicFrame | number) => void): () => void {
+  // The impl signature takes a UNION of the two handler types, not a handler of
+  // the union: under strictFunctionTypes `(f: MicFrame) => void` is NOT
+  // assignable to `(p: MicFrame | number) => void` (params are contravariant),
+  // so the old form left overload 1 incompatible with its own implementation.
+  on(
+    event: "frame" | "level",
+    handler: ((f: MicFrame) => void) | ((rms: number) => void),
+  ): () => void {
     if (event === "frame") {
       return this.#emitter.on("frame", handler as Handler<MicFrame>)
     }
@@ -112,11 +121,17 @@ export class MicFrames {
     }
 
     source.connect(node)
-    node.connect(ctx.destination)
+    // Keep the node in the graph so process() runs, but mute loopback —
+    // playing the mic into destination trips echo-cancellation on phones.
+    const mute = ctx.createGain()
+    mute.gain.value = 0
+    node.connect(mute)
+    mute.connect(ctx.destination)
 
     this.#stream = stream
     this.#ctx = ctx
     this.#node = node
+    liveInfo("mic-context", { requested: SAMPLE_RATE, actual: ctx.sampleRate })
   }
 
   async stop(): Promise<void> {

@@ -20,12 +20,16 @@ export type ElicitationFieldKind = "text" | "select" | "boolean" | "number"
 export type ElicitationFieldOption = {
   value: string
   label: string
+  /** תיאור אפשרות — מ-oneOf[].description (אם קיים). */
+  description?: string
 }
 
 export type ElicitationFieldView = {
   key: string
   kind: ElicitationFieldKind
   label: string
+  /** תיאור שאלה — מ-property.description (אם קיים). */
+  description?: string
   required: boolean
   /** אפשרויות בחירה — רק כש-kind==="select" (string+enum/oneOf). */
   options?: ElicitationFieldOption[]
@@ -67,12 +71,17 @@ function propTitle(prop: ElicitationPropertySchema): string | null | undefined {
   return "title" in prop && typeof prop.title === "string" ? prop.title : undefined
 }
 
+function propDescription(prop: ElicitationPropertySchema): string | undefined {
+  return "description" in prop && typeof prop.description === "string" ? prop.description : undefined
+}
+
 function mapProperty(
   key: string,
   prop: ElicitationPropertySchema,
   required: boolean,
 ): ElicitationFieldView | null {
   const label = propTitle(prop) ?? key
+  const description = propDescription(prop)
 
   if (prop.type === "string") {
     // ⚠️ SDK union quirk: control-flow narrowing על `type === "string"` לא מסלק את
@@ -82,15 +91,15 @@ function mapProperty(
     const stringProp = prop as Extract<ElicitationPropertySchema, { type: "string" }>
     const options = mapEnumOptions(stringProp.enum, stringProp.oneOf)
     if (options) {
-      return { key, kind: "select", label, required, options }
+      return { key, kind: "select", label, description, required, options }
     }
-    return { key, kind: "text", label, required }
+    return { key, kind: "text", label, description, required }
   }
   if (prop.type === "number" || prop.type === "integer") {
-    return { key, kind: "number", label, required }
+    return { key, kind: "number", label, description, required }
   }
   if (prop.type === "boolean") {
-    return { key, kind: "boolean", label, required }
+    return { key, kind: "boolean", label, description, required }
   }
   // array (multi-select) / custom type — מחוץ ל-scope (§2), מדולג.
   return null
@@ -99,10 +108,17 @@ function mapProperty(
 /** enum (untitled) / oneOf (titled) — אחד מהם נוכח → Select. אחרת undefined → text. */
 function mapEnumOptions(
   enumValues: ReadonlyArray<string> | null | undefined,
-  oneOf: ReadonlyArray<{ const: string; title: string }> | null | undefined,
+  oneOf:
+    | ReadonlyArray<{ const: string; title: string; description?: string }>
+    | null
+    | undefined,
 ): ElicitationFieldOption[] | undefined {
   if (oneOf && oneOf.length > 0) {
-    return oneOf.map((o) => ({ value: o.const, label: o.title }))
+    return oneOf.map((o) => ({
+      value: o.const,
+      label: o.title,
+      ...(typeof o.description === "string" ? { description: o.description } : {}),
+    }))
   }
   if (enumValues && enumValues.length > 0) {
     return enumValues.map((v) => ({ value: v, label: v }))

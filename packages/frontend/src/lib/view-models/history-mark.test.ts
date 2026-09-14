@@ -35,11 +35,12 @@ describe("historyMarkFromReset", () => {
       {
         id: "tc_bubble",
         role: "tool",
+        messageId: null,
         toolCall: {
           toolCallId: "tc_1",
           name: "bash",
           status: "completed",
-          arguments: {},
+          args: {},
         },
       },
     ])
@@ -58,11 +59,12 @@ describe("historyMarkFromReset", () => {
       {
         id: "tc_bubble",
         role: "tool",
+        messageId: null,
         toolCall: {
           toolCallId: "tc_1",
           name: "bash",
           status: "completed",
-          arguments: {},
+          args: {},
         },
       },
     ])

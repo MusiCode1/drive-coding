@@ -1,88 +1,36 @@
 /**
- * mp3-segment.ts — segment MP3 עם MediaSource/HTMLAudioElement.
+ * mp3-segment.ts — משפט MP3 כ-blob, ניגון על SharedAudioOutput (src-swap).
  *
- * לוגיקה מ-AudioStream, מתואמת ל-PlayableSegment interface.
- *
- * isComplete(): state ∈ {ready, playing, ended} — כלומר endOfStream() נקרא
- * (finding #4: ended אחרי ניגון ראשון הוא עדיין "complete" לניגון-מחדש).
- *
- * replay: audio.currentTime = 0 + audio.play() + האזנה חדשה ל-"ended".
- * revokeObjectURL רק ב-dispose() — לא ב-cancel של ניווט.
+ * isComplete(): כל הבייטים נקלטו וה-blob נוצר.
+ * play(): src על האלמנט המשותף, נפתר על ended.
+ * dispose(): abort + revoke של ה-blob של הסגמנט הזה — לא pause של האלמנט המשותף.
  */
 
-import type { PlayableSegment } from "./playable-segment"
+import type { SharedAudioOutput } from "../shared-audio-output.js"
+import type { PlayableSegment } from "./playable-segment.js"
 
 type Mp3State = "loading" | "ready" | "playing" | "ended" | "cancelled"
-
-const SOURCEOPEN_TIMEOUT_MS = 5000
 
 export class Mp3Segment implements PlayableSegment {
   readonly segmentId: string
   #state: Mp3State = "loading"
-  #audio: HTMLAudioElement
-  #mediaSource: MediaSource
-  #sourceBuffer: SourceBuffer | null = null
+  #output: SharedAudioOutput
   #abortController: AbortController | null = null
-  #objectUrl: string
+  #chunks: Uint8Array[] = []
+  #blobUrl: string | null = null
+  #streamDone = false
 
-  constructor(segmentId: string) {
+  constructor(segmentId: string, output: SharedAudioOutput) {
     this.segmentId = segmentId
-    this.#audio = new Audio()
-    this.#mediaSource = new MediaSource()
-    this.#objectUrl = URL.createObjectURL(this.#mediaSource)
-    this.#audio.src = this.#objectUrl
+    this.#output = output
   }
 
-  /** מכין את ה-segment מ-stream. אסינכרוני ברקע — חוזר מיד אחרי sourceopen. */
   prepare(stream: ReadableStream<Uint8Array>, ac: AbortController): void {
     this.#abortController = ac
     void this.#doPrepare(stream, ac)
   }
 
   async #doPrepare(stream: ReadableStream<Uint8Array>, ac: AbortController): Promise<void> {
-    // המתן ל-sourceopen
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new Error(`sourceopen timeout for segment ${this.segmentId}`))
-      }, SOURCEOPEN_TIMEOUT_MS)
-
-      if (this.#mediaSource.readyState === "open") {
-        clearTimeout(timer)
-        try {
-          this.#sourceBuffer = this.#mediaSource.addSourceBuffer("audio/mpeg")
-        } catch (e) {
-          reject(e)
-          return
-        }
-        resolve()
-        return
-      }
-
-      this.#mediaSource.addEventListener(
-        "sourceopen",
-        () => {
-          clearTimeout(timer)
-          try {
-            this.#sourceBuffer = this.#mediaSource.addSourceBuffer("audio/mpeg")
-          } catch (e) {
-            reject(e)
-            return
-          }
-          resolve()
-        },
-        { once: true },
-      )
-    }).catch(() => {
-      this.#state = "cancelled"
-    })
-
-    if (this.#state === "cancelled") return
-
-    // צרוך stream ברקע
-    void this.#consumeStream(stream, ac)
-  }
-
-  async #consumeStream(stream: ReadableStream<Uint8Array>, ac: AbortController): Promise<void> {
     const reader = stream.getReader()
     try {
       while (true) {
@@ -91,16 +39,18 @@ export class Mp3Segment implements PlayableSegment {
         const { value, done } = await reader.read()
         if (done) break
         if (!value) break
-        // #state עשוי להשתנה ל-"cancelled" מ-dispose() בזמן ה-await (task אחר).
-        // cast שובר narrowing שגוי של TS שגורר את הבדיקה שלפני ה-await.
         if ((this.#state as Mp3State) === "cancelled") break
-        const sb = this.#sourceBuffer
-        if (sb && value) {
-          await this.#appendBuffer(sb, value)
-        }
+        this.#chunks.push(new Uint8Array(value))
       }
-      if (this.#state !== "cancelled" && this.#mediaSource.readyState === "open") {
-        this.#mediaSource.endOfStream()
+
+      if (this.#state !== "cancelled") {
+        this.#streamDone = true
+        // TS 5.7 lib.dom: Uint8Array<ArrayBufferLike> אינו BlobPart (חשש SharedArrayBuffer).
+        // הצ'אנקים תמיד ArrayBuffer רגיל (new Uint8Array(value) בשורה 43) → cast בטוח.
+        this.#blobUrl = URL.createObjectURL(
+          new Blob(this.#chunks as BlobPart[], { type: "audio/mpeg" }),
+        )
+        this.#chunks = []
         if (this.#state === "loading") {
           this.#state = "ready"
         }
@@ -114,100 +64,60 @@ export class Mp3Segment implements PlayableSegment {
     }
   }
 
-  /** מנגן מה-התחלה. ניתן לקרוא שוב (replay: currentTime=0). */
   async play(): Promise<void> {
-    // המתן עד שהמקטע מוכן או בוטל
     await this.#waitForReady()
 
     if (this.#state === "cancelled") {
       throw new Error(`Mp3Segment ${this.segmentId} was cancelled`)
     }
 
-    // replay: אפס מיקום
-    this.#audio.currentTime = 0
-    this.#state = "playing"
+    const url = this.#blobUrl
+    if (!url) {
+      throw new Error(`Mp3Segment ${this.segmentId} has no blob`)
+    }
 
-    return new Promise<void>((resolve, reject) => {
-      const audio = this.#audio
-      const onEnded = () => {
-        audio.removeEventListener("error", onError)
-        this.#state = "ended"
-        resolve()
-      }
-      const onError = (e: Event) => {
-        audio.removeEventListener("ended", onEnded)
-        reject(e)
-      }
-      audio.addEventListener("ended", onEnded, { once: true })
-      audio.addEventListener("error", onError, { once: true })
-      audio.play().catch(reject)
-    })
+    this.#state = "playing"
+    await this.#output.playBlob(url)
+    this.#state = "ended"
   }
 
   pause(): void {
-    this.#audio.pause()
+    this.#output.pause()
   }
 
-  /** עוצר קול, שומר MediaSource/buffer ל-replay (currentTime יאופס ב-play הבא). */
+  /** מסמן לא-נוכחי — לא pause על output משותף. */
   stop(): void {
-    this.#audio.pause()
+    if (this.#state === "playing") {
+      this.#state = "ready"
+    }
   }
 
   resume(): void {
-    void this.#audio.play()
+    this.#output.resume()
   }
 
-  /**
-   * isComplete: true כש-state ∈ {ready, playing, ended}.
-   * "ended" אחרי ניגון הוא עדיין מוכן ל-replay (finding #4).
-   */
   isComplete(): boolean {
-    return (
-      this.#state === "ready" || this.#state === "playing" || this.#state === "ended"
-    )
+    return this.#streamDone && this.#blobUrl !== null && this.#state !== "cancelled"
   }
 
-  /** Teardown מלא — abort + revoke URL. */
   dispose(): void {
     this.#state = "cancelled"
     this.#abortController?.abort()
-    this.#audio.pause()
-    try {
-      URL.revokeObjectURL(this.#objectUrl)
-    } catch {
-      /* התעלם */
-    }
-    if (this.#mediaSource.readyState === "open") {
+    this.#chunks = []
+    if (this.#blobUrl) {
       try {
-        this.#mediaSource.endOfStream()
+        URL.revokeObjectURL(this.#blobUrl)
       } catch {
-        /* התעלם */
+        /* ignore */
       }
+      this.#blobUrl = null
     }
-  }
-
-  #appendBuffer(sb: SourceBuffer, chunk: Uint8Array): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const onEnd = () => {
-        sb.removeEventListener("updateend", onEnd)
-        resolve()
-      }
-      sb.addEventListener("updateend", onEnd)
-      try {
-        const buf = new ArrayBuffer(chunk.byteLength)
-        new Uint8Array(buf).set(chunk)
-        sb.appendBuffer(buf)
-      } catch (e) {
-        sb.removeEventListener("updateend", onEnd)
-        reject(e)
-      }
-    })
   }
 
   #waitForReady(): Promise<void> {
     return new Promise((resolve) => {
       const check = () => {
-        if (this.#state !== "loading") {
+        if (this.#state !== "loading" || (this.#streamDone && this.#blobUrl !== null)) {
           resolve()
         } else {
           setTimeout(check, 50)

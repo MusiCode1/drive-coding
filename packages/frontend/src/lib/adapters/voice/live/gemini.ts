@@ -13,6 +13,7 @@ import type {
   LiveSession,
 } from "@drive-coding/core/voice/live-types"
 import { GoogleGenAI } from "@google/genai"
+import { liveInfo, liveNoteEmptyGemini, liveWarn } from "../../../util/live-log.js"
 import { base64ToBytes, bytesToBase64 } from "../base64.js"
 
 type GeminiPart = {
@@ -28,6 +29,7 @@ type GeminiMessage = {
     modelTurn?: { parts?: GeminiPart[] }
     interrupted?: boolean
     turnComplete?: boolean
+    generationComplete?: boolean
   }
   usageMetadata?: { totalTokenCount?: number; promptTokenCount?: number }
 }
@@ -89,6 +91,25 @@ function pcmToBase64(pcm: Uint8Array): string {
   return bytesToBase64(pcm)
 }
 
+function describeGeminiMessage(message: unknown): Record<string, unknown> {
+  const rec = message as { text?: unknown; data?: unknown }
+  let json = ""
+  try {
+    json = JSON.stringify(message, (_k, v) =>
+      typeof v === "string" && v.length > 80 ? `${v.slice(0, 24)}…(${v.length})` : v,
+    )
+    if (json.length > 360) json = `${json.slice(0, 360)}…`
+  } catch {
+    json = "(unserializable)"
+  }
+  return {
+    json,
+    text: typeof rec.text === "string" ? rec.text.slice(0, 80) : "",
+    dataN: typeof rec.data === "string" ? rec.data.length : 0,
+    ctor: Object.getPrototypeOf(message)?.constructor?.name ?? "",
+  }
+}
+
 /**
  * Gemini `sendToolResponse` expects a protobuf `Struct` — a map, not a primitive
  * and not a list. Anything else closes the session, and the wire error names the
@@ -103,9 +124,9 @@ function pcmToBase64(pcm: Uint8Array): string {
  * `Array.isArray` is load-bearing: `typeof [] === "object"`, so a bare
  * `typeof` check lets lists straight through to the failure above.
  */
-export function wrapActionResultResponse(result: unknown): unknown {
+export function wrapActionResultResponse(result: unknown): Record<string, unknown> {
   if (result !== null && typeof result === "object" && !Array.isArray(result)) {
-    return result
+    return result as Record<string, unknown>
   }
   return { value: result }
 }
@@ -160,17 +181,35 @@ export const geminiLive: LiveProvider = {
           model: opts.model,
           config: opts.providerConfig,
           callbacks: {
-            onopen: () => {},
+            onopen: () => {
+              liveInfo("socket-open")
+            },
             onmessage: (message) => {
-              for (const event of normalizeGeminiFrame(message as GeminiMessage)) {
+              const events = normalizeGeminiFrame(message as GeminiMessage)
+              if (events.length === 0) {
+                const sc = (message as GeminiMessage).serverContent
+                const raw = describeGeminiMessage(message)
+                liveNoteEmptyGemini(Object.keys(message as object), {
+                  sc: sc ? Object.keys(sc).join(",") : "",
+                  gen: sc?.generationComplete === true,
+                  turn: sc?.turnComplete === true,
+                  inN: sc?.inputTranscription?.text?.length ?? 0,
+                  outN: sc?.outputTranscription?.text?.length ?? 0,
+                  parts: sc?.modelTurn?.parts?.length ?? 0,
+                  ...raw,
+                })
+              }
+              for (const event of events) {
                 opts.onEvent(event)
               }
             },
-            onerror: (err: Error) => {
+            onerror: (err: ErrorEvent) => {
+              liveWarn("socket-error", { message: String(err?.message ?? err) })
               opts.onEvent({ type: "error", message: String(err?.message ?? err) })
               failOnce(String(err?.message ?? err))
             },
             onclose: (evt: { reason?: string }) => {
+              liveInfo("socket-close", { reason: evt?.reason ?? "" })
               opts.onEvent({ type: "closed", reason: evt?.reason })
               failOnce(evt?.reason ?? "live session closed before it was ready")
             },

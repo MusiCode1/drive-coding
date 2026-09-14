@@ -33,6 +33,8 @@ export const LIVE_ACTION_SHAPES: readonly LiveActionShape[] = [
   },
   { name: "forward", params: [] },
   { name: "cancel_turn", params: [] },
+  { name: "pause_live", params: [] },
+  { name: "close_live", params: [] },
   {
     name: "answer_permission",
     params: [{ name: "optionId", type: "string", required: true }],

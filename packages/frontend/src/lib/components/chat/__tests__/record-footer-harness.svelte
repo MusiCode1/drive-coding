@@ -6,6 +6,8 @@
  */
 import {
   setAudioPlaylist,
+  setComposerDraft,
+  setDictate,
   setI18n,
   setLive,
   setMic,
@@ -22,6 +24,8 @@ import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import type { I18nVM } from "$lib/view-models/i18n.svelte"
 import type { Live } from "$lib/view-models/live.svelte"
 import type { Mic } from "$lib/view-models/mic.svelte"
+import type { Dictate } from "$lib/view-models/dictate.svelte"
+import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
 import type { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import type { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
@@ -67,8 +71,11 @@ const fakeMic = {
   state: "idle",
   error: null,
   canRetry: false,
+  pendingRestored: false,
   cancel: () => {},
   retryTranscribe: async () => {},
+  dismiss: async () => {},
+  hydratePending: async () => {},
 } as unknown as Mic
 
 const liveState = $state({ open: liveOpen })
@@ -113,13 +120,30 @@ const fakeSettings = {
   enterToSend: false,
   liveVoice: "Puck",
   setLiveVoice: () => {},
+  setInputMode: () => {},
 } as unknown as Settings
 
 const fakeSpeaker = {} as unknown as Speaker
 
+const fakeDictate = {
+  state: "idle",
+  error: null,
+  canRetry: false,
+  pendingRestored: false,
+  toggle: async () => {},
+  cancel: () => {},
+  finishListening: async () => ({ ok: true as const, text: "" }),
+  retryTranscribe: async () => {},
+  dismiss: async () => {},
+  hydratePending: async () => {},
+} as unknown as Dictate
+
 const fakePlaylist = { items: [], transport: "stopped" as const }
+const composerDraft = new ComposerDraft()
 
 setI18n(fakeI18n)
+setComposerDraft(composerDraft)
+setDictate(fakeDictate)
 setSession(fakeSession)
 setResponsive(fakeResponsive)
 setUiShell(uiShell)

@@ -36,16 +36,19 @@ function makeBubble(text: string): MessageBubbleType {
 
 describe("MessageBubble — mount() אמיתי (Commit 0ב)", () => {
   it("מרכיב בלי לזרוק lifecycle_function_unavailable, ומרנדר את הטקסט", () => {
-    target = document.createElement("div")
-    document.body.appendChild(target)
+    // local const: the module-level `let target` is `HTMLDivElement | null`, and
+    // TS drops that narrowing inside the closure below (mutable capture).
+    const el = document.createElement("div")
+    target = el
+    document.body.appendChild(el)
 
     expect(() => {
       app = mount(MessageBubbleHarness, {
-        target,
+        target: el,
         props: { bubble: makeBubble("hello world") },
       })
     }).not.toThrow()
 
-    expect(target.textContent).toContain("hello world")
+    expect(el.textContent).toContain("hello world")
   })
 })

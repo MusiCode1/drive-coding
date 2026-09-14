@@ -23,8 +23,9 @@ import { untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
-import SessionCard from "$lib/components/modals/SessionCard.svelte"
 import MachineStatsBar from "$lib/components/connect/MachineStatsBar.svelte"
+import SessionsFilterBar from "$lib/components/layout/SessionsFilterBar.svelte"
+import SessionCard from "$lib/components/modals/SessionCard.svelte"
 import CliBadge from "$lib/components/ui/CliBadge.svelte"
 import Select, { type SelectGroup, type SelectOption } from "$lib/components/ui/Select.svelte"
 import {
@@ -39,11 +40,13 @@ import {
 } from "$lib/context"
 import { readSessionTransport } from "$lib/session/session-transport-read"
 import { sessionPathWithTransport } from "$lib/session/session-url"
+import { shouldWarnOnLeave } from "$lib/session/should-warn-on-leave"
+import { filterSessions } from "$lib/util/filter-sessions"
+import DisplayOptionsRow from "./DisplayOptionsRow.svelte"
 
 const t = getI18n().t
 const session = getSession()
 const poller = getPresencePoller()
-// slice cli-branding (Commit 3): displayName ב-"רץ על" — ה-panel חסר-props ל-CLI
 const cliAvailability = getCliAvailability()
 // ─── redesign-fix: disconnect + audio הועברו מ-AppHeader (פדיון חוב redesign-2/3) ───
 const speaker = getSpeaker()
@@ -53,6 +56,21 @@ const uiShell = getUiShell()
 // ─── slice sessions-inline: settings לקבלת cliKind לבחירת סשן ───
 const settings = getSettings()
 const onSettings = $derived(page.url.pathname === "/settings")
+
+let sessionsSearchQuery = $state("")
+const filteredSessions = $derived(
+  filterSessions(session.sessions, {
+    query: sessionsSearchQuery,
+    currentCwd: session.cwd,
+    currentCwdOnly: settings.sessionsCurrentCwdOnly,
+  }),
+)
+const sessionsFilteredEmpty = $derived(
+  !session.sessionsLoading &&
+    !session.sessionsError &&
+    session.sessions.length > 0 &&
+    filteredSessions.length === 0,
+)
 
 function onDisconnect() {
   session.detach()
@@ -70,10 +88,17 @@ let leaveConfirmOpen = $state(false)
 let dontShowAgain = $state(false)
 
 function onLeaveRunning() {
-  if (session.bypassActive || settings.suppressLeaveWarning || session.turnState === "idle") {
-    doLeaveRunning() // bypass / suppressed / אין תור פעיל → צא ישר
+  if (
+    shouldWarnOnLeave({
+      isRemote: session.isRemoteView,
+      bypassActive: session.bypassActive,
+      turnIdle: session.turnState === "idle",
+      suppress: settings.suppressLeaveWarning,
+    })
+  ) {
+    leaveConfirmOpen = true
   } else {
-    leaveConfirmOpen = true // לא-bypass + תור פעיל → אזהר קודם
+    doLeaveRunning()
   }
 }
 
@@ -238,9 +263,7 @@ async function selectSession(info: { sessionId: string; cwd: string; title?: str
 /**
  * סשן חדש: warm new-session על החיבור הקיים — ללא detach/respawn.
  * נשאר ב-/chat עם בועות ריקות, מוכן לפרומפט.
- *
- * slice agent-patch-unify C4 ממצא 3: ב-remote, newSession() הוא no-op שמציב this.error
- * (מחרוזת i18n) בלי לשנות sessionId — לא לנווט במקרה הזה (הודעה גלויה בלבד).
+ * ב-remote: rpc session/new על ה-host; כשל → session.error, בלי ניווט.
  */
 async function onNewSession() {
   await session.newSession({ cliKind: settings.cliKind })
@@ -306,7 +329,6 @@ $effect(() => {
     {/if}
   </button>
 
-  <!-- הגדרות — toggle, בראש הרשימה בכל המצבים (ירד מ-AppHeader) -->
   <button
     class="flex-1 flex items-center justify-center gap-2 px-2.5 py-2 rounded-lg text-[13px] border"
     style="border-color:var(--border); color:{onSettings ? 'var(--accent)' : 'var(--fg-dim)'}"
@@ -358,9 +380,11 @@ $effect(() => {
   </BitsDialog.Portal>
 </BitsDialog.Root>
 
-<!-- אזור גלילה מאוחד: אפשרויות סוכן + סשנים. הגלילה מתחילה מכאן (מסקשן אפשרויות סוכן),
-     כך שכשהגובה קטן ראש הרשימה לא נחתך אלא נגלל. שורת הפעולות מעל נשארת קבועה (shrink-0). -->
+<!-- אזור גלילה מאוחד: תצוגה + אפשרויות סוכן + סשנים.
+     שורת הפעולות מעל נשארת קבועה (shrink-0); מתגי התצוגה נגללים — במובייל הם אוכלים גובה. -->
 <div class="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto chat-scroll -mx-1 px-1">
+
+<DisplayOptionsRow />
 
 <!-- ─── cli-name-in-chat: שם ה-CLI מעל אפשרויות סוכן ─── -->
 {#if session.cliKind}
@@ -458,7 +482,7 @@ $effect(() => {
     </label>
     {/if}
 
-    <!-- שאר configOptions (לא model/mode) -->
+    <!-- שאר configOptions (לא הבורר הראשי של mode/model; כולל אחים באותה קטגוריה — #63) -->
     {#each extraOptions as opt (opt.id)}
       {#if opt.type === "select"}
         {@const choices = flattenSelectOptions(opt)}
@@ -533,6 +557,15 @@ $effect(() => {
     </button>
   </div>
 
+  <SessionsFilterBar
+    query={sessionsSearchQuery}
+    onQueryChange={(v) => {
+      sessionsSearchQuery = v
+    }}
+    currentCwdOnly={settings.sessionsCurrentCwdOnly}
+    onCurrentCwdOnlyChange={(v) => settings.setSessionsCurrentCwdOnly(v)}
+  />
+
   <!-- סשן חדש — warm new-session על החיבור הקיים; disabled כשלא connected -->
   <button
     class="shrink-0 text-start rounded-lg p-2.5 text-[13px] font-medium border border-dashed disabled:opacity-40 disabled:cursor-not-allowed"
@@ -549,8 +582,12 @@ $effect(() => {
       <div class="text-[12px] opacity-50 px-1">{t("modal.sessions.loading")}</div>
     {:else if session.sessionsError}
       <div class="text-[12px] px-1" style="color:var(--recording)">{t("modal.sessions.error")}: {session.sessionsError}</div>
+    {:else if session.sessions.length === 0}
+      <div class="text-[12px] opacity-50 px-1">{t("modal.sessions.empty")}</div>
+    {:else if sessionsFilteredEmpty}
+      <div class="text-[12px] opacity-50 px-1">{t("sidebar.sessionsNoMatches")}</div>
     {:else}
-      {#each session.sessions as s (s.sessionId)}
+      {#each filteredSessions as s (s.sessionId)}
         <SessionCard
           session={s}
           isActive={false}

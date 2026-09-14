@@ -86,6 +86,36 @@ describe("mapElicitationFields", () => {
     ])
   })
 
+  it("4b. string עם description + oneOf descriptions → נשמר במיפוי", () => {
+    const schema: ElicitationSchema = {
+      type: "object",
+      properties: {
+        language: {
+          type: "string",
+          title: "Language",
+          description: "Which interface language do you prefer?",
+          oneOf: [
+            { const: "he", title: "Hebrew", description: "ממשק בעברית בלבד" },
+            { const: "en", title: "English", description: "English-only interface" },
+          ],
+        },
+      },
+    }
+    expect(mapElicitationFields(schema)).toEqual([
+      {
+        key: "language",
+        kind: "select",
+        label: "Language",
+        description: "Which interface language do you prefer?",
+        required: false,
+        options: [
+          { value: "he", label: "Hebrew", description: "ממשק בעברית בלבד" },
+          { value: "en", label: "English", description: "English-only interface" },
+        ],
+      },
+    ])
+  })
+
   it("5. number/integer → number field", () => {
     const schema: ElicitationSchema = {
       type: "object",

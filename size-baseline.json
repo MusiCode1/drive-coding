@@ -1,18 +1,48 @@
 {
   "generatedFrom": "lint-file-size --init-baseline",
   "files": {
+    "packages/acp-wire/src/streamable-http/client.ts": {
+      "metric": 365,
+      "impurity": 20,
+      "class": "scattered"
+    },
+    "packages/acp-wire/src/streamable-http/server.ts": {
+      "metric": 501,
+      "impurity": 5,
+      "class": "mixed"
+    },
+    "packages/acp-wire/src/transport/browser-ws.ts": {
+      "metric": 147,
+      "impurity": 4,
+      "class": "mixed"
+    },
+    "packages/acp-wire/src/transport/node-streams.ts": {
+      "metric": 90,
+      "impurity": 1,
+      "class": "mixed"
+    },
+    "packages/acp-wire/src/transport/stdio.ts": {
+      "metric": 46,
+      "impurity": 1,
+      "class": "mixed"
+    },
+    "packages/acp-wire/src/transport/unix-socket.ts": {
+      "metric": 131,
+      "impurity": 4,
+      "class": "mixed"
+    },
     "packages/backend/src/acp/connection-registry.ts": {
-      "metric": 459,
-      "impurity": 9,
+      "metric": 349,
+      "impurity": 6,
       "class": "mixed"
     },
     "packages/backend/src/agents/registry.ts": {
-      "metric": 62,
+      "metric": 64,
       "impurity": 2,
       "class": "mixed"
     },
     "packages/backend/src/app/agent-orchestrator.ts": {
-      "metric": 257,
+      "metric": 275,
       "impurity": 11,
       "class": "mixed"
     },
@@ -32,8 +62,28 @@
       "class": "mixed"
     },
     "packages/backend/src/bin/drive-coding.ts": {
-      "metric": 218,
+      "metric": 221,
       "impurity": 16,
+      "class": "mixed"
+    },
+    "packages/backend/src/boot/app.ts": {
+      "metric": 150,
+      "impurity": 1,
+      "class": "mixed"
+    },
+    "packages/backend/src/boot/config.ts": {
+      "metric": 33,
+      "impurity": 1,
+      "class": "mixed"
+    },
+    "packages/backend/src/boot/shutdown.ts": {
+      "metric": 57,
+      "impurity": 3,
+      "class": "mixed"
+    },
+    "packages/backend/src/boot/ws.ts": {
+      "metric": 115,
+      "impurity": 1,
       "class": "mixed"
     },
     "packages/backend/src/cli/discover.ts": {
@@ -47,8 +97,8 @@
       "class": "mixed"
     },
     "packages/backend/src/cli/index.ts": {
-      "metric": 371,
-      "impurity": 33,
+      "metric": 372,
+      "impurity": 34,
       "class": "scattered"
     },
     "packages/backend/src/cli/wait-for-turn.ts": {
@@ -57,12 +107,22 @@
       "class": "mixed"
     },
     "packages/backend/src/config/load-config.ts": {
-      "metric": 394,
+      "metric": 396,
       "impurity": 2,
       "class": "mixed"
     },
-    "packages/backend/src/delivery/create-agent-input.ts": {
-      "metric": 85,
+    "packages/backend/src/delivery/agent-events-http.ts": {
+      "metric": 51,
+      "impurity": 2,
+      "class": "mixed"
+    },
+    "packages/backend/src/delivery/agent-events-mcp-tools.ts": {
+      "metric": 121,
+      "impurity": 2,
+      "class": "mixed"
+    },
+    "packages/backend/src/delivery/agent-events-orchestrator.ts": {
+      "metric": 24,
       "impurity": 1,
       "class": "mixed"
     },
@@ -71,8 +131,13 @@
       "impurity": 1,
       "class": "mixed"
     },
+    "packages/backend/src/delivery/http-agent-prompt.ts": {
+      "metric": 100,
+      "impurity": 1,
+      "class": "mixed"
+    },
     "packages/backend/src/delivery/http-agents.ts": {
-      "metric": 226,
+      "metric": 228,
       "impurity": 11,
       "class": "mixed"
     },
@@ -81,14 +146,9 @@
       "impurity": 2,
       "class": "mixed"
     },
-    "packages/backend/src/delivery/http-cli-availability.ts": {
-      "metric": 36,
-      "impurity": 3,
-      "class": "mixed"
-    },
     "packages/backend/src/delivery/http-cli-logo.ts": {
       "metric": 109,
-      "impurity": 7,
+      "impurity": 5,
       "class": "mixed"
     },
     "packages/backend/src/delivery/http-client-log.ts": {
@@ -98,7 +158,7 @@
     },
     "packages/backend/src/delivery/http-fs-file.ts": {
       "metric": 204,
-      "impurity": 7,
+      "impurity": 6,
       "class": "mixed"
     },
     "packages/backend/src/delivery/http-health.ts": {
@@ -108,37 +168,37 @@
     },
     "packages/backend/src/delivery/http-history.ts": {
       "metric": 240,
-      "impurity": 16,
-      "class": "scattered"
+      "impurity": 15,
+      "class": "mixed"
     },
     "packages/backend/src/delivery/http-live-token.ts": {
       "metric": 155,
-      "impurity": 12,
+      "impurity": 11,
       "class": "mixed"
     },
     "packages/backend/src/delivery/http-mcp.ts": {
-      "metric": 471,
-      "impurity": 26,
-      "class": "scattered"
+      "metric": 372,
+      "impurity": 15,
+      "class": "mixed"
     },
     "packages/backend/src/delivery/http-options.ts": {
-      "metric": 20,
-      "impurity": 3,
+      "metric": 14,
+      "impurity": 1,
       "class": "mixed"
     },
     "packages/backend/src/delivery/http-proxy.ts": {
-      "metric": 326,
-      "impurity": 11,
+      "metric": 331,
+      "impurity": 10,
       "class": "mixed"
     },
     "packages/backend/src/delivery/http-tts-capabilities.ts": {
-      "metric": 199,
-      "impurity": 11,
+      "metric": 202,
+      "impurity": 9,
       "class": "mixed"
     },
     "packages/backend/src/delivery/memory-guard.ts": {
-      "metric": 68,
-      "impurity": 3,
+      "metric": 66,
+      "impurity": 1,
       "class": "mixed"
     },
     "packages/backend/src/delivery/proxy-cache.ts": {
@@ -152,8 +212,8 @@
       "class": "mixed"
     },
     "packages/backend/src/delivery/ws-agent.ts": {
-      "metric": 274,
-      "impurity": 6,
+      "metric": 193,
+      "impurity": 7,
       "class": "mixed"
     },
     "packages/backend/src/delivery/ws-echo.ts": {
@@ -162,8 +222,13 @@
       "class": "mixed"
     },
     "packages/backend/src/instances.ts": {
-      "metric": 149,
+      "metric": 144,
       "impurity": 7,
+      "class": "mixed"
+    },
+    "packages/backend/src/main.ts": {
+      "metric": 107,
+      "impurity": 5,
       "class": "mixed"
     },
     "packages/backend/src/paths.ts": {
@@ -181,23 +246,43 @@
       "impurity": 3,
       "class": "mixed"
     },
-    "packages/backend/src/server.ts": {
-      "metric": 467,
-      "impurity": 21,
+    "packages/backend/src/server-on-session-attached.ts": {
+      "metric": 35,
+      "impurity": 4,
+      "class": "mixed"
+    },
+    "packages/backend/src/server-session-host-opts.ts": {
+      "metric": 54,
+      "impurity": 4,
+      "class": "mixed"
+    },
+    "packages/backend/src/session-host/agent-events-stall-sweep.ts": {
+      "metric": 33,
+      "impurity": 2,
+      "class": "mixed"
+    },
+    "packages/backend/src/session-host/agent-events-stall.ts": {
+      "metric": 60,
+      "impurity": 2,
+      "class": "mixed"
+    },
+    "packages/backend/src/session-host/agent-events-turn.ts": {
+      "metric": 28,
+      "impurity": 1,
       "class": "mixed"
     },
     "packages/backend/src/session-host/http/events.ts": {
-      "metric": 210,
-      "impurity": 6,
+      "metric": 220,
+      "impurity": 7,
       "class": "mixed"
     },
     "packages/backend/src/session-host/http/presence.ts": {
-      "metric": 57,
+      "metric": 60,
       "impurity": 1,
       "class": "mixed"
     },
     "packages/backend/src/session-host/http/reply.ts": {
-      "metric": 59,
+      "metric": 57,
       "impurity": 1,
       "class": "mixed"
     },
@@ -207,8 +292,8 @@
       "class": "mixed"
     },
     "packages/backend/src/session-host/http/rpc.ts": {
-      "metric": 384,
-      "impurity": 17,
+      "metric": 428,
+      "impurity": 19,
       "class": "mixed"
     },
     "packages/backend/src/session-host/patches-broadcaster.ts": {
@@ -222,14 +307,19 @@
       "class": "mixed"
     },
     "packages/backend/src/session-host/registry.ts": {
-      "metric": 539,
-      "impurity": 12,
+      "metric": 517,
+      "impurity": 10,
       "class": "mixed"
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 1019,
-      "impurity": 20,
+      "metric": 1029,
+      "impurity": 22,
       "class": "scattered"
+    },
+    "packages/backend/src/session-host/turn-lifecycle.ts": {
+      "metric": 93,
+      "impurity": 1,
+      "class": "mixed"
     },
     "packages/backend/src/tls.ts": {
       "metric": 117,
@@ -277,7 +367,7 @@
       "class": "mixed"
     },
     "packages/core/src/log/config.ts": {
-      "metric": 123,
+      "metric": 127,
       "impurity": 2,
       "class": "mixed"
     },
@@ -297,13 +387,13 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/actions/open-session-url.ts": {
-      "metric": 124,
+      "metric": 129,
       "impurity": 9,
       "class": "mixed"
     },
     "packages/frontend/src/lib/adapters/agents-api.ts": {
-      "metric": 204,
-      "impurity": 22,
+      "metric": 220,
+      "impurity": 24,
       "class": "scattered"
     },
     "packages/frontend/src/lib/adapters/cli-availability.ts": {
@@ -357,7 +447,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/adapters/voice/live/gemini.ts": {
-      "metric": 233,
+      "metric": 272,
       "impurity": 2,
       "class": "mixed"
     },
@@ -417,12 +507,12 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/chat/ChatScreen.svelte": {
-      "metric": 109,
+      "metric": 115,
       "impurity": 9,
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/chat/ElicitationDialog.svelte": {
-      "metric": 128,
+      "metric": 127,
       "impurity": 1,
       "class": "mixed"
     },
@@ -452,7 +542,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/chat/TypeArea.svelte": {
-      "metric": 243,
+      "metric": 246,
       "impurity": 10,
       "class": "mixed"
     },
@@ -467,7 +557,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/chat/bubbles/ToolBubble.svelte": {
-      "metric": 54,
+      "metric": 53,
       "impurity": 0,
       "class": "pure"
     },
@@ -507,7 +597,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/layout/AppShell.svelte": {
-      "metric": 347,
+      "metric": 350,
       "impurity": 12,
       "class": "mixed"
     },
@@ -522,7 +612,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/layout/SessionOptionsPanel.svelte": {
-      "metric": 262,
+      "metric": 285,
       "impurity": 8,
       "class": "mixed"
     },
@@ -547,8 +637,8 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/settings/SettingsScreen.svelte": {
-      "metric": 143,
-      "impurity": 3,
+      "metric": 199,
+      "impurity": 6,
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/settings/TtsStatusCard.svelte": {
@@ -557,7 +647,7 @@
       "class": "pure"
     },
     "packages/frontend/src/lib/components/ui/CliBadge.svelte": {
-      "metric": 68,
+      "metric": 51,
       "impurity": 1,
       "class": "mixed"
     },
@@ -567,7 +657,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/debug/dc.ts": {
-      "metric": 97,
+      "metric": 112,
       "impurity": 8,
       "class": "mixed"
     },
@@ -577,7 +667,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/engines/audio-playlist.svelte.ts": {
-      "metric": 922,
+      "metric": 924,
       "impurity": 10,
       "class": "mixed"
     },
@@ -596,8 +686,18 @@
       "impurity": 3,
       "class": "mixed"
     },
+    "packages/frontend/src/lib/engines/live-audio-sink.ts": {
+      "metric": 137,
+      "impurity": 7,
+      "class": "mixed"
+    },
     "packages/frontend/src/lib/engines/live-session.ts": {
-      "metric": 241,
+      "metric": 362,
+      "impurity": 3,
+      "class": "mixed"
+    },
+    "packages/frontend/src/lib/engines/live-vad.ts": {
+      "metric": 175,
       "impurity": 2,
       "class": "mixed"
     },
@@ -607,8 +707,13 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/engines/mic-frames.ts": {
-      "metric": 138,
+      "metric": 153,
       "impurity": 4,
+      "class": "mixed"
+    },
+    "packages/frontend/src/lib/engines/notify.svelte.ts": {
+      "metric": 131,
+      "impurity": 13,
       "class": "mixed"
     },
     "packages/frontend/src/lib/engines/rec-probe.ts": {
@@ -622,13 +727,13 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/engines/segments/mp3-segment.ts": {
-      "metric": 219,
-      "impurity": 6,
+      "metric": 129,
+      "impurity": 4,
       "class": "mixed"
     },
     "packages/frontend/src/lib/engines/segments/pcm-segment.ts": {
-      "metric": 237,
-      "impurity": 5,
+      "metric": 139,
+      "impurity": 4,
       "class": "mixed"
     },
     "packages/frontend/src/lib/engines/wake-lock.ts": {
@@ -651,9 +756,9 @@
       "impurity": 11,
       "class": "mixed"
     },
-    "packages/frontend/src/lib/engines/ws-transport.ts": {
-      "metric": 147,
-      "impurity": 4,
+    "packages/frontend/src/lib/log.ts": {
+      "metric": 38,
+      "impurity": 2,
       "class": "mixed"
     },
     "packages/frontend/src/lib/session/__contract__/session-view-contract.ts": {
@@ -672,8 +777,8 @@
       "class": "scattered"
     },
     "packages/frontend/src/lib/session/remote-session-view.ts": {
-      "metric": 604,
-      "impurity": 18,
+      "metric": 620,
+      "impurity": 19,
       "class": "scattered"
     },
     "packages/frontend/src/lib/session/session-transport-read.ts": {
@@ -682,7 +787,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/session/sse-reader.ts": {
-      "metric": 637,
+      "metric": 648,
       "impurity": 18,
       "class": "scattered"
     },
@@ -697,13 +802,18 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/util/conn-log.ts": {
-      "metric": 54,
+      "metric": 59,
       "impurity": 1,
       "class": "mixed"
     },
     "packages/frontend/src/lib/util/formatting.ts": {
       "metric": 137,
       "impurity": 3,
+      "class": "mixed"
+    },
+    "packages/frontend/src/lib/util/live-log.ts": {
+      "metric": 319,
+      "impurity": 7,
       "class": "mixed"
     },
     "packages/frontend/src/lib/util/markdown.ts": {
@@ -737,8 +847,8 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 3586,
-      "impurity": 88,
+      "metric": 3677,
+      "impurity": 92,
       "class": "scattered"
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
@@ -762,17 +872,17 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/live.svelte.ts": {
-      "metric": 688,
-      "impurity": 5,
+      "metric": 767,
+      "impurity": 7,
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/mic.svelte.ts": {
-      "metric": 157,
-      "impurity": 5,
+      "metric": 194,
+      "impurity": 6,
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/presence-poller.svelte.ts": {
-      "metric": 258,
+      "metric": 261,
       "impurity": 8,
       "class": "mixed"
     },
@@ -787,7 +897,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/settings.svelte.ts": {
-      "metric": 643,
+      "metric": 681,
       "impurity": 6,
       "class": "mixed"
     },
@@ -812,8 +922,8 @@
       "class": "mixed"
     },
     "packages/frontend/src/routes/+layout.svelte": {
-      "metric": 331,
-      "impurity": 13,
+      "metric": 405,
+      "impurity": 24,
       "class": "mixed"
     },
     "packages/frontend/src/routes/+page.svelte": {
@@ -836,13 +946,18 @@
       "impurity": 5,
       "class": "mixed"
     },
+    "packages/frontend/src/service-worker.ts": {
+      "metric": 65,
+      "impurity": 7,
+      "class": "mixed"
+    },
     "packages/provider/src/client/client-impl.ts": {
       "metric": 114,
       "impurity": 2,
       "class": "mixed"
     },
     "packages/provider/src/client/client.ts": {
-      "metric": 524,
+      "metric": 526,
       "impurity": 7,
       "class": "mixed"
     },
@@ -901,9 +1016,9 @@
       "impurity": 6,
       "class": "mixed"
     },
-    "packages/provider/src/transport/ws.ts": {
-      "metric": 129,
-      "impurity": 4,
+    "packages/frontend/src/routes/playlist-nav-chrome-test/+page.svelte": {
+      "metric": 194,
+      "impurity": 20,
       "class": "mixed"
     }
   }

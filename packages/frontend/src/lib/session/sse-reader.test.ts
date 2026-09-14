@@ -23,7 +23,14 @@ import {
 import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { SSE_WATCHDOG_THRESHOLD_MS } from "$lib/engines/liveness-thresholds"
-import { SSEReader, type SSEReaderOptions, type WireUpdateBatch } from "./sse-reader.js"
+import {
+  type ClearIntervalFn,
+  type IntervalId,
+  type SetIntervalFn,
+  SSEReader,
+  type SSEReaderOptions,
+  type WireUpdateBatch,
+} from "./sse-reader.js"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -195,23 +202,23 @@ function makeControllableSSEBody(signal?: AbortSignal): {
  * after close()/taken-over" DoD.
  */
 function makeMockInterval(): {
-  _setInterval: typeof setInterval
-  _clearInterval: typeof clearInterval
+  _setInterval: SetIntervalFn
+  _clearInterval: ClearIntervalFn
   tick: () => void
   activeCount: () => number
 } {
   let nextId = 0
   const active = new Set<number>()
   let latestCallback: (() => void) | undefined
-  const _setInterval = ((fn: () => void) => {
+  const _setInterval: SetIntervalFn = (fn) => {
     nextId++
     active.add(nextId)
     latestCallback = fn
-    return nextId as unknown as ReturnType<typeof setInterval>
-  }) as unknown as typeof setInterval
-  const _clearInterval = ((id: unknown) => {
-    active.delete(id as number)
-  }) as unknown as typeof clearInterval
+    return nextId as unknown as IntervalId
+  }
+  const _clearInterval: ClearIntervalFn = (id) => {
+    active.delete(id as unknown as number)
+  }
   return {
     _setInterval,
     _clearInterval,
@@ -298,7 +305,7 @@ describe("test fixture — makeAbortableSSEBody (Commit 4a)", () => {
         makeAbortableSSEResponse(
           [{ event: "snapshot", data: JSON.stringify(snapshot) }],
           { keepOpen: true }, // stays open — nothing but abort would ever end #drainFrames
-          init?.signal,
+          init?.signal ?? undefined,
         ),
       )
     })
@@ -957,7 +964,7 @@ describe("SSEReader — silence-watchdog (Commit 4)", () => {
         makeAbortableSSEResponse(
           [{ event: "snapshot", data: JSON.stringify(snapshot) }],
           { keepOpen: true }, // stays open, sends nothing more — total silence
-          init?.signal,
+          init?.signal ?? undefined,
         ),
       )
     })

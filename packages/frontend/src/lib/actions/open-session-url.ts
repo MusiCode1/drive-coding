@@ -70,7 +70,12 @@ export async function openSessionUrl(params: {
 
   const ownedId =
     typeof sessionStorage !== "undefined" ? sessionStorage.getItem(OWNED_AGENT_KEY) : null
-  if (agent.attached === true && ownedId !== agent.id && !confirmedTakeover) {
+  if (
+    agent.attached === true &&
+    agent.attachedVia === "ws" &&
+    ownedId !== agent.id &&
+    !confirmedTakeover
+  ) {
     return "needs-takeover"
   }
 

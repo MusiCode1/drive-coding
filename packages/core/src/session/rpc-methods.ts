@@ -18,7 +18,7 @@
  */
 
 /**
- * שבע המתודות שיש להן שם קנוני ב-ACP, ושתיים שאין להן.
+ * שמונה המתודות שיש להן שם קנוני ב-ACP, ושתיים שאין להן.
  *
  * ⚠️ **התחילית `_` היא הקונבנציה של ACP עצמו** להרחבה תלוית-מימוש — כך אומרת
  * הסכימה במפורש על ערכים לא-מוכרים: *"Values beginning with `_` are reserved
@@ -32,6 +32,7 @@ export const RPC_METHODS = {
   setMode: "session/set_mode",
   setConfigOption: "session/set_config_option",
   loadSession: "session/load",
+  newSession: "session/new",
   listSessions: "session/list",
   deleteSession: "session/delete",
 

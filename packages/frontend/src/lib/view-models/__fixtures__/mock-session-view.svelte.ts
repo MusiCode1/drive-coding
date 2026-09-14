@@ -40,7 +40,11 @@ export class MockSessionView implements SessionView {
     .fn<(content: string | PromptBlocks, meta?: Record<string, unknown>) => Promise<void>>()
     .mockResolvedValue(undefined)
   readonly cancelMock = vi.fn().mockResolvedValue(undefined)
-  readonly newSessionMock = vi.fn().mockResolvedValue(undefined)
+  readonly newSessionMock = vi
+    .fn<(cwd?: string) => Promise<void>>()
+    .mockImplementation(async () => {
+      this.state = { ...this.state, sessionId: "remote-new-sess" }
+    })
   readonly loadSessionMock = vi.fn().mockResolvedValue(undefined)
   readonly closeMock = vi.fn().mockResolvedValue(undefined)
   readonly respondMock = vi.fn().mockResolvedValue(undefined)
@@ -121,8 +125,8 @@ export class MockSessionView implements SessionView {
   extMethod(method: string, params: unknown): Promise<unknown> {
     return this.extMethodMock(method, params)
   }
-  newSession(): Promise<void> {
-    return this.newSessionMock()
+  newSession(cwd?: string): Promise<void> {
+    return this.newSessionMock(cwd)
   }
   loadSession(sessionId: string, cwd?: string): Promise<void> {
     return this.loadSessionMock(sessionId, cwd)

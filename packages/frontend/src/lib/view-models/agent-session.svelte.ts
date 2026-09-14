@@ -18,11 +18,13 @@ import type {
   SessionNotification,
   UsageUpdate,
 } from "@agentclientprotocol/sdk"
+import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 // ─── slice reconnect-ws-takeover: תרגום נקודתי להודעת "נפתח במקום אחר" ───
 // ה-VM לרוב לא מייבא t() (i18n שייך לשכבת-הרכיב — ר' #appendUserPlaceholder), אבל
 // `error` הוא string גולמי שמוצג as-is (routes/+page.svelte:191, לא עובר t() ברכיב) —
 // כמו הודעות "WS closed (...)" הקיימות. חייב לעבור דרך core/i18n (לא Hebrew ליטרלי
 // בקוד — lint:i18n אוכף), ולא להשתמש ב-I18nVM (לא מוזרק ל-VM הזה).
+import { DEFAULT_CLAUDE_SESSION_META } from "@drive-coding/core"
 import { createI18n, detectLocale } from "@drive-coding/core/i18n"
 import {
   type AcpClient,
@@ -39,6 +41,7 @@ import {
   listAgents,
   notifySessionAttached,
   patchAgent,
+  releaseConnection,
 } from "$lib/adapters/agents-api"
 // ─── slice sessions-inline: ייבוא טיפוס + normalize ───
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
@@ -52,7 +55,6 @@ import {
   onTurnStarted,
   type TurnActivityState,
 } from "$lib/engines/turn-watchdog"
-import { WsAcpTransport } from "$lib/engines/ws-transport"
 // ─── slice view-switch C3: createRemoteView (attachRemote) ─── (additive)
 import { createRemoteView } from "$lib/session/create-session-view"
 // ─── slice local-view-wiring: LocalSessionView + tee ───
@@ -131,25 +133,8 @@ import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
  * Opus 4.7+ שינה default ל-display:"omitted"; זה מבקש "summarized" מפורשות.
  * provider-agnostic: ה-key claudeCode מתעלם ע"י ספקים אחרים.
  */
-const CLAUDE_SESSION_META = {
-  claudeCode: {
-    options: {
-      thinking: { type: "adaptive", display: "summarized" },
-      forwardSubagentText: true,
-    },
-    emitRawSDKMessages: [
-      { type: "system", subtype: "task_started" },
-      { type: "system", subtype: "task_progress" },
-      { type: "system", subtype: "task_notification" },
-      { type: "system", subtype: "task_updated" },
-      { type: "assistant" },
-      // ─── slice subagent-transcript-data-v2 Commit 0 ───
-      // בלי {type:"user"} תוצאות-הכלים (tool_result) של תת-הסוכן לא זורמות
-      // (spike Q2, decisions 2026-07-11 — "🐛 פער בקוד שנחת ב-acp-stack").
-      { type: "user" },
-    ],
-  },
-} as const
+/** Local FE path only — config file does not affect this (brief session-meta-config §4.6). */
+const CLAUDE_SESSION_META = DEFAULT_CLAUDE_SESSION_META
 
 // ─── slice subagent-tool-nesting: helper טהור לחילוץ parentToolUseId ───
 /**
@@ -182,6 +167,16 @@ export type AgentSessionStatus =
 
 /** מה המודל עושה בתור הנוכחי. מופרד מ-status (חיבור) — §1 ב-brief. */
 export type TurnState = "idle" | "waiting" | "thinking" | "responding" | "calling-tool"
+
+/** slice session-scope-core S1 — reason passed to onSessionEnd listeners. "navigate" reserved for S2. */
+export type SessionEndReason =
+  | "detach"
+  | "leave-running"
+  | "switch"
+  | "new"
+  | "load"
+  | "delete"
+  | "navigate"
 
 /**
  * ─── עיצוב תוספתי בטוח למקביליות ───
@@ -414,8 +409,8 @@ export class AgentSession {
    * ─── slice systemprompt-capability ───
    * **שלושה מצבים, לא שניים** (ממצא אביגיל):
    * - `capabilities === null` — טרם ידוע ⇒ **שקט**. לא אזהרה ולא הבטחה.
-   * - `systemPrompt === true`  — נתמך ⇒ שקט.
-   * - `systemPrompt === false` — לא נתמך ⇒ אזהרה.
+   * - `systemPrompt === "native" | "prepended"` — charter handled ⇒ שקט.
+   * - `systemPrompt === "unsupported"` — לא נתמך ⇒ אזהרה.
    *
    * ⚠️ **לא להשתמש כאן ב-`supports`** — הוא מחזיר all-false כשהיכולות טרם
    * הגיעו, ולכן היה מציג אזהרת-שווא ב-claude/codex בכל חיבור וחיבור-מחדש.
@@ -425,7 +420,7 @@ export class AgentSession {
    */
   get showsSystemPromptWarning(): boolean {
     const caps = this.#capabilities
-    return caps !== null && caps.systemPrompt === false
+    return caps !== null && caps.systemPrompt === "unsupported"
   }
 
   /** Test hook ל-spike: כמה raw Claude SDK ext notifications התקבלו בחיבור הנוכחי. */
@@ -448,7 +443,7 @@ export class AgentSession {
         rename: false,
         thinkingTokens: false,
         image: false,
-        systemPrompt: false,
+        systemPrompt: "unsupported",
       }
     )
   }
@@ -540,6 +535,9 @@ export class AgentSession {
   // ─── slice ws-reconnect-fix-nbug2: ref ל-transport החי (NBug2 root fix) ───
   /** ref ל-transport הפעיל — נשמר בכל יצירת transport, מנוקה עם #client. */
   #transport: WsAcpTransport | null = null
+  /** slice connection-set C2: one id per VM lifetime — SSE header, presence, WS query, DELETE. */
+  readonly #connectionId = safeUUID()
+  #pageHideReleaseBound = false
   #sessionId: string | null = null
   /**
    * הערך הוא True בין detach() ל-attach() הבא. משתיק
@@ -853,9 +851,58 @@ export class AgentSession {
     this.#sseReconnectedListener = listener
   }
 
-  #remoteViewOpts(): { onSseReconnected?: () => void } {
+  // ─── slice session-scope-core S1: session-end boundary (additive) ───
+  #sessionEndListeners: Array<(reason: SessionEndReason) => void> = []
+
+  /** Registers a listener for session-scope end. Returns unsubscribe. Listeners run in registration order. */
+  onSessionEnd(cb: (reason: SessionEndReason) => void): () => void {
+    this.#sessionEndListeners.push(cb)
+    return () => {
+      const i = this.#sessionEndListeners.indexOf(cb)
+      if (i >= 0) this.#sessionEndListeners.splice(i, 1)
+    }
+  }
+
+  #endSessionScope(reason: SessionEndReason): void {
+    for (const cb of this.#sessionEndListeners) {
+      try {
+        cb(reason)
+      } catch {
+        // one listener must not break teardown
+      }
+    }
+  }
+
+  #remoteViewOpts(): { headers: Record<string, string>; onSseReconnected?: () => void } {
+    const headers = { "Acp-Connection-Id": this.#connectionId }
     const listener = this.#sseReconnectedListener
-    return listener ? { onSseReconnected: () => listener() } : {}
+    return listener ? { headers, onSseReconnected: () => listener() } : { headers }
+  }
+
+  #agentWsUrl(agentId: string): string {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:"
+    const params = new URLSearchParams({ connectionId: this.#connectionId })
+    return `${proto}//${location.host}/ws/agent/${agentId}?${params}`
+  }
+
+  get connectionId(): string {
+    return this.#connectionId
+  }
+
+  releaseConnection(): void {
+    const agentId = this.agentId
+    if (!agentId) return
+    void releaseConnection(agentId, this.#connectionId)
+  }
+
+  bindConnectionRelease(): void {
+    if (typeof window === "undefined" || this.#pageHideReleaseBound) return
+    this.#pageHideReleaseBound = true
+    window.addEventListener("pagehide", this.#onPageHideRelease)
+  }
+
+  #onPageHideRelease = (): void => {
+    this.releaseConnection()
   }
 
   /** @internal */ _setStatusForTest(s: AgentSessionStatus): void {
@@ -1249,8 +1296,7 @@ export class AgentSession {
       // idempotent (no-op בסבבי retry נוספים אחרי שכבר נפתר בסבב הראשון).
       this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
       this.#resolvePendingElicitation({ action: "cancel" })
-      const proto = location.protocol === "https:" ? "wss:" : "ws:"
-      const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      const transport = new WsAcpTransport(this.#agentWsUrl(agentId))
       this.#transport = transport // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
 
       // ⚠️ תיקון אביגיל #1 — DEADLOCK: waitForOpen (ws-transport.ts:70-78) מאזין רק
@@ -1335,6 +1381,7 @@ export class AgentSession {
           const loadResult = await this.#client.loadSession({
             sessionId: this.#sessionId!,
             cwd: this.cwd!,
+            mcpServers: [],
             ...(m && { _meta: m }),
           })
           this.#captureSessionConfig(loadResult)
@@ -1409,8 +1456,7 @@ export class AgentSession {
       this.#cliKind = input.cliKind // slice ws-reconnect-infra: שמור ל-cold reconnect
 
       // 2. פתח תעבורת WS
-      const proto = location.protocol === "https:" ? "wss:" : "ws:"
-      const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      const transport = new WsAcpTransport(this.#agentWsUrl(agentId))
       this.#transport = transport // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
       transport.onClose((code, reason) => {
         if (this.#detached) return
@@ -1443,6 +1489,7 @@ export class AgentSession {
       const m = this.#sessionMeta()
       const sessionResult = await this.#client.newSession({
         cwd: input.cwd,
+        mcpServers: [],
         ...(m && { _meta: m }),
       })
       this.#sessionId = (sessionResult as { sessionId?: string }).sessionId ?? null
@@ -1504,6 +1551,7 @@ export class AgentSession {
     this.cwd = input.cwd
     this.#cliKind = input.cliKind
 
+    let attached = false
     try {
       // 3. HTTP בלבד. מיד אחריו: agentId מוצב — #cleanup מוחק לפיו; אם ההשמה נדחית
       // לשלב 6, כשל-מהיר (שלב 5) וה-catch (שלב 8) קוראים #cleanup() בלי מה למחוק,
@@ -1539,6 +1587,7 @@ export class AgentSession {
       this.#isRemote = true // slice local-view-wiring C1: view של remote מוצב כאן
       void this.#consumeViewPatches(view)
       this.#setStatus("connected")
+      attached = true
       // 7. ❌ אין WsAcpTransport/#client/#transport, ❌ אין #scheduleReconnect
     } catch (e) {
       // 8. כל שלבים 3-6 עטופים — createAgent/connect() שנדחים לא ישאירו status="connecting" לנצח
@@ -1550,7 +1599,10 @@ export class AgentSession {
     // slice http-cold-parity: שחזור-בחירות best-effort — בכוונה מחוץ ל-try. גרסה
     // שמניחה את זה בתוך ה-try הופכת כשל-RPC חולף אחד לחיבור-מוצלח→status="error"+
     // #cleanup() — הורגת agent+host+child שזה עתה נוצרו. ר' הבריף §4/Commit 1#4.
-    if (this.status === "connected") {
+    // ⚠️ דגל מקומי ולא `this.status === "connected"`: השומר בראש המתודה מצמצם את
+    // הטיפוס של this.status, ו-TS אינו עוקב אחרי ההשמה שבתוך #setStatus — לכן
+    // ההשוואה סומנה כ"בלתי-אפשרית". הדגל מבטא את אותו תנאי בדיוק, ונראה ל-TS.
+    if (attached) {
       try {
         await this.#applyRememberedConfig()
       } catch {
@@ -1644,6 +1696,11 @@ export class AgentSession {
   }
 
   detach = (): void => {
+    this.#detachWith("detach")
+  }
+
+  #detachWith(reason: SessionEndReason): void {
+    this.#endSessionScope(reason)
     this.#detached = true // ‏לפני ה-cleanup — ‏ה-WS close fires async
     // ─── slice ws-reconnect-infra: ביטול לולאת reconnect ───
     this.#clearReconnectTimer()
@@ -1664,6 +1721,7 @@ export class AgentSession {
    *  ⚠️ סנכרן גוף זה מול detach() אם detach() משתנה. הבדלים מ-detach: cleanup({keepAgent:true})
    *  + flush של permission ה-pending לפני הסגירה (למטה). */
   leaveRunning = async (): Promise<void> => {
+    this.#endSessionScope("leave-running")
     this.#detached = true
     this.#clearReconnectTimer()
     this.#reconnecting = false
@@ -1946,6 +2004,9 @@ export class AgentSession {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot loadSession in status ${this.status}`)
     }
+    if (!opts?.preserveContextOnError) {
+      this.#endSessionScope("load")
+    }
     this.#setStatus("connecting")
     this.error = null
     this.authMethods = [] // slice auth-guidance: נקה לפני חיבור חדש — נלכד מחדש אחרי createAcpClient
@@ -1971,8 +2032,7 @@ export class AgentSession {
       this.#cliKind = input.cliKind // slice ws-reconnect-infra: שמור ל-cold reconnect
 
       // 2. פתח תעבורת WS + הוסף מאזין onClose (זהה ל-attach)
-      const proto = location.protocol === "https:" ? "wss:" : "ws:"
-      const transport = new WsAcpTransport(`${proto}//${location.host}/ws/agent/${agentId}`)
+      const transport = new WsAcpTransport(this.#agentWsUrl(agentId))
       this.#transport = transport // slice ws-reconnect-fix-nbug2: שמור ref ל-closeAndWait
       transport.onClose((code, reason) => {
         if (this.#detached) return
@@ -2013,6 +2073,7 @@ export class AgentSession {
         const loadResult = await this.#client.loadSession({
           sessionId: input.sessionId,
           cwd: input.cwd,
+          mcpServers: [],
           ...(m && { _meta: m }),
         })
         this.#captureSessionConfig(loadResult) // slice 23: לכוד config (sessionId מ-input, לא מ-response)
@@ -2136,6 +2197,7 @@ export class AgentSession {
       if (this.status !== "connected" || this.isLoadingHistory) {
         throw new Error(`cannot switchSession in status ${this.status}`)
       }
+      this.#endSessionScope("switch")
       this.error = null // parity with the local path — a stale error must not survive
       this.isLoadingHistory = true // silences TTS during the replay (like local)
       try {
@@ -2169,6 +2231,7 @@ export class AgentSession {
     }
 
     this.#resetTurnTracking() // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
+    this.#endSessionScope("switch")
     this.#setStatus("connecting")
     this.error = null
     this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
@@ -2186,6 +2249,7 @@ export class AgentSession {
         const loadResult = await this.#client.loadSession({
           sessionId: input.sessionId,
           cwd: input.cwd,
+          mcpServers: [],
           ...(m && { _meta: m }),
         })
         this.#captureSessionConfig(loadResult)
@@ -2232,20 +2296,40 @@ export class AgentSession {
    * למה לא detach+attach: detach הורג bridge + גורם ל-race "WS closed (1005)" + spawn מיותר.
    */
   newSession = async (input: { cwd?: string; cliKind: string }): Promise<void> => {
-    // ─── slice view-switch C3-ה: חסימת נתיבי-WS ב-remote ───
-    // slice agent-patch-unify C4, ממצא 3: המימוש ב-remote עצמו אינו ב-scope — המינימום
-    // המוסכם הוא הודעה גלויה (i18n) בלי ניווט, במקום no-op שקט שהשאיר את הפאנל מנווט
-    // בשקט לסשן הנוכחי (sessionId לא משתנה כאן).
-    if (this.#remoteView()) {
-      this.error = createI18n({ locale: this.#settings?.locale ?? detectLocale() }).t(
-        "session.newSessionUnsupportedRemote",
-      )
+    // Warm new-session on the existing HTTP host (rpc session/new) — parity with
+    // remote switchSession. Bubbles clear via SSE reset from the host.
+    const remoteView = this.#remoteView()
+    if (remoteView) {
+      if (this.status !== "connected" || this.isLoadingHistory) {
+        throw new Error(`cannot newSession in status ${this.status}`)
+      }
+      const cwd = input.cwd ?? this.cwd
+      if (!cwd) throw new Error("newSession: no cwd")
+      this.error = null
+      this.#errorSurfaced = false
+      this.sessionTitle = ""
+      this.isLoadingHistory = true
+      try {
+        await remoteView.newSession(cwd)
+        const newId = remoteView.state.sessionId
+        if (!newId) throw new Error("newSession returned no sessionId")
+        this.#sessionId = newId
+        this.cwd = cwd
+        // Empty title: skip #pushTitleToServer (it no-ops on !title) — host already
+        // cleared title via update-session; agent list stays blank until a real title.
+        await this.#applyRememberedConfig()
+      } catch (e) {
+        this.error = `newSession failed: ${formatAcpError(e)}`
+      } finally {
+        this.isLoadingHistory = false
+      }
       return
     }
     const cwd = input.cwd ?? this.cwd
     // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
     if (this.#client === null) {
       if (!cwd) throw new Error("newSession: no cwd available for fallback attach")
+      this.#endSessionScope("new")
       return this.attach({ cwd, cliKind: input.cliKind })
     }
     // לא לפתוח סשן חדש באמצע thinking/connecting
@@ -2254,6 +2338,7 @@ export class AgentSession {
     }
     if (!cwd) throw new Error("newSession: no cwd")
 
+    this.#endSessionScope("new")
     this.#setStatus("connecting")
     this.error = null
     this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
@@ -2262,7 +2347,11 @@ export class AgentSession {
 
     try {
       const m = this.#sessionMeta()
-      const result = await this.#client.newSession({ cwd, ...(m && { _meta: m }) })
+      const result = await this.#client.newSession({
+        cwd,
+        mcpServers: [],
+        ...(m && { _meta: m }),
+      })
       const newId = (result as { sessionId?: string }).sessionId ?? null
       if (!newId) throw new Error("newSession returned no sessionId")
       this.#sessionId = newId
@@ -2656,7 +2745,7 @@ export class AgentSession {
       this.sessions = this.sessions.filter((s) => s.sessionId !== sessionId)
       const wasActive = sessionId === this.#sessionId
       if (wasActive) {
-        this.detach() // navigates out — same wasActive logic as local
+        this.#detachWith("delete") // navigates out — same wasActive logic as local
       }
       return wasActive
     }
@@ -2672,7 +2761,7 @@ export class AgentSession {
     this.sessions = this.sessions.filter((s) => s.sessionId !== sessionId)
     const wasActive = sessionId === this.#sessionId
     if (wasActive) {
-      this.detach() // מנקה גם sessions/sessionsLoaded/sessionsError — עקבי עם onDisconnect
+      this.#detachWith("delete") // מנקה גם sessions/sessionsLoaded/sessionsError — עקבי עם onDisconnect
     }
     return wasActive // הקומפוננטה מנווטת החוצה כשזה true
   }
@@ -2876,6 +2965,8 @@ export class AgentSession {
     if (opts?.keepAgent && this.#transport) {
       this.#transport.sendRaw(`${JSON.stringify({ jsonrpc: "2.0", method: "$/detach" })}
 `)
+    } else if (opts?.keepAgent && this.#isRemote) {
+      this.releaseConnection()
     }
     try {
       this.#client?.close()
@@ -2971,7 +3062,7 @@ export class AgentSession {
             rename: false,
             thinkingTokens: false,
             image: false,
-            systemPrompt: false,
+            systemPrompt: "unsupported",
             ...data.mockState.capabilities,
           }
         }

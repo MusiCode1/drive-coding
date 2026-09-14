@@ -7,9 +7,9 @@
  *                                  session/set_config_option · _drive/ext · _drive/set_session_model
  * - POST /api/agents/:id/reply   — respond ל-permission/elicitation
  *
- * Session management (slice remote-session-mgmt C4): listSessions/loadSession/
- * deleteSession go through the BE rpc (blocking mappings, real results);
- * newSession still throws — session creation stays BE-owned (§5.1).
+ * Session management (slice remote-session-mgmt C4 + remote warm newSession):
+ * listSessions/loadSession/deleteSession/newSession go through the BE rpc
+ * (blocking mappings, real results).
  *
  * Reactivity: RemoteSessionView רק מתחזק state + מזרים patches (עוטף כל Patch בודד
  * מ-SSEReader ל-[patch] כדי להתאים ל-VM's ReadableStream<Patch[]>). ה-VM עושה את
@@ -36,10 +36,11 @@ import type { SessionView, ViewEmission } from "./session-view.js"
 import type { WireUpdateBatch } from "./sse-reader"
 import { SSEReader } from "./sse-reader.js"
 
+export const ACP_CONNECTION_ID_HEADER = "Acp-Connection-Id"
+
 /** ext methods שדורשות return value אמיתי — לא נתמכות ב-remote mode (§C2 decision #3). */
 const RETURN_VALUE_EXT_METHODS = new Set<string>(["_drive/getQuota"])
 
-const NOT_SUPPORTED_SESSION_MGMT = "not supported in remote mode — backend manages sessions"
 const NOT_SUPPORTED_EXT_RETURN_VALUE = "not supported in remote mode — use state instead"
 
 export type RemoteSessionViewOptions = {
@@ -72,6 +73,7 @@ export class RemoteSessionView implements SessionView {
   readonly #agentId: string
   readonly #baseUrl: string
   readonly #headers: Record<string, string>
+  readonly #connectionId: string
   readonly #onSseReconnected?: () => void
   readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly #reader: SSEReader
@@ -99,7 +101,13 @@ export class RemoteSessionView implements SessionView {
     this.#agentId = agentId
     this.#baseUrl = baseUrl
     registerView(this) // תצפית בלבד — ר' debug/session-registry.ts
-    this.#headers = opts.headers ?? {}
+    this.#connectionId =
+      opts.headers?.[ACP_CONNECTION_ID_HEADER] ??
+      (typeof crypto !== "undefined" ? crypto.randomUUID() : "remote-view")
+    this.#headers = {
+      [ACP_CONNECTION_ID_HEADER]: this.#connectionId,
+      ...opts.headers,
+    }
     this.#onSseReconnected = opts.onSseReconnected
     this.#doFetch = opts._fetch ?? ((u, init) => globalThis.fetch(u, init))
     // replaced on connect() by the SSE snapshot — this is just a safe pre-connect default
@@ -387,14 +395,22 @@ export class RemoteSessionView implements SessionView {
     this.#onSseReconnected?.()
   }
 
-  // ─── Session management — slice remote-session-mgmt C4 ───
+  // ─── Session management — slice remote-session-mgmt C4 + remote warm newSession ───
 
   /**
-   * ❌ newSession stays throwing (documented): creating a session means a fresh
-   * connection through createAgent — out of this slice's scope.
+   * Warm ACP session/new on the existing HTTP host (BE reset + session/new).
+   * cwd optional — route falls back to connection cwd (400 if neither).
+   * Updates #sessionId and state.sessionId from the rpc response (same as loadSession).
    */
-  newSession(): Promise<void> {
-    return Promise.reject(new Error(NOT_SUPPORTED_SESSION_MGMT))
+  async newSession(cwd?: string): Promise<void> {
+    const res = (await this.#rpc(RPC_METHODS.newSession, {
+      ...(cwd && { cwd }),
+    })) as { sessionId?: unknown } | undefined
+    const attached =
+      typeof res?.sessionId === "string" && res.sessionId.length > 0 ? res.sessionId : null
+    if (!attached) throw new Error("RemoteSessionView: newSession returned no sessionId")
+    this.#sessionId = attached
+    this.#state = { ...this.#state, sessionId: attached }
   }
 
   /**

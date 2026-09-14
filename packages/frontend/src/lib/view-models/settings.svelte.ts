@@ -21,6 +21,7 @@ import { DEFAULT_GEMINI_VOICE, DEFAULT_LIVE_VOICE } from "../adapters/voice/voic
 import { setBeUrlBase } from "../util/be-url"
 import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH_REM } from "../util/sidebar-width"
 import { ttsCapabilities } from "./capabilities.svelte"
+import { coerceInputMode, type InputMode } from "./ui-shell.svelte"
 
 const STORAGE_KEY = "drive-coding-v2-settings"
 
@@ -47,11 +48,11 @@ type Persisted = {
   // ─── תצוגת צ'אט ─── (display-toggle-consistency — פולריות חיובית: ON=מציג)
   showThoughts: boolean
   showTools: boolean
+  compactActivity: boolean
+  // ─── session-memo ─── (slice session-memo-pad)
+  showSessionMemo: boolean
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend: boolean
-  // ─── תמונות מרוחקות ─── (slice msg-media)
-  // 🔴 כיבוי מכוון של בקרת-אבטחה, בבקשת המשתמש. ON = הדפדפן מושך לבד כל כתובת
-  // שהסוכן פלט (ערוץ הזרקת-פרומפט → דליפה). ברירת-המחדל false = click-to-load.
   autoLoadRemoteImages: boolean
   // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
   // מפה: cliKind → { configId/category → value }
@@ -66,8 +67,6 @@ type Persisted = {
   geminiVoice: string
   // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker) — נפרד מ-TTS כדי למנוע Kore↔Kore
   liveVoice: string
-  // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
-  // מפה: cwd → טקסט הפרומפט (מתווסף להוראות ברירת-המחדל של הסוכן, ר' provider/connection).
   projectSystemPrompt: Record<string, string>
   // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
   recentPanelHeight: number
@@ -77,15 +76,16 @@ type Persisted = {
   // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
   geminiPace: SpeechPace
   geminiTone: SpeechTone
-  // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4)
-  // null = לא נבחרה העדפה → קדימות ממשיכה ל-env. ws/http כותב דרך ה-Select בהגדרות.
   sessionTransport: SessionTransport | null
+  // ─── notifications ─── (slice notify-local)
+  notifications: boolean
+  // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
+  sessionsCurrentCwdOnly: boolean
+  inputMode: InputMode
 }
 
 const DEFAULTS: Persisted = {
   cliKind: "opencode",
-  // Slice 24: lastCwd נשלף מ-GET /api/options.homeDir ב-+page.svelte (async, אחרי init).
-  // ריק עד אז — המשתמש ימלא ידנית אם ה-fetch נכשל.
   lastCwd: "",
   voiceId: DEFAULT_VOICE_ID,
   beUrl: "",
@@ -104,7 +104,9 @@ const DEFAULTS: Persisted = {
   // ─── תצוגת צ'אט ─── (display-toggle-consistency) — ברירות מחדל = התנהגות נוכחית (מחשבות פתוחות, כלים סגורים)
   showThoughts: true,
   showTools: false,
-  // ─── Enter toggle ─── (slice-enter-toggle) — ברירת מחדל = התנהגות נוכחית (Enter שולח)
+  compactActivity: false,
+  // אופט-אין: כבוי כברירת מחדל; ערך שמור גובר (load עושה {...DEFAULTS, ...parsed}).
+  showSessionMemo: false,
   enterToSend: true,
   // ─── תמונות מרוחקות ─── (slice msg-media) — ברירת מחדל = בטוח (click-to-load)
   autoLoadRemoteImages: false,
@@ -130,6 +132,11 @@ const DEFAULTS: Persisted = {
   geminiTone: "neutral",
   // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4) — null = env נבחר
   sessionTransport: "http",
+  // ─── notifications ─── (slice notify-local) — opt-in
+  notifications: false,
+  // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
+  sessionsCurrentCwdOnly: false,
+  inputMode: "record",
 }
 
 /**
@@ -215,6 +222,10 @@ export class Settings {
   // ─── תצוגת צ'אט ─── (display-toggle-consistency — פולריות חיובית: ON=מציג)
   showThoughts = $state<boolean>(DEFAULTS.showThoughts)
   showTools = $state<boolean>(DEFAULTS.showTools)
+  compactActivity = $state<boolean>(DEFAULTS.compactActivity)
+
+  // ─── session-memo ─── (slice session-memo-pad)
+  showSessionMemo = $state<boolean>(DEFAULTS.showSessionMemo)
 
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend = $state<boolean>(DEFAULTS.enterToSend)
@@ -256,6 +267,13 @@ export class Settings {
   // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4)
   sessionTransport = $state<SessionTransport | null>(DEFAULTS.sessionTransport)
 
+  // ─── notifications ─── (slice notify-local)
+  notifications = $state<boolean>(DEFAULTS.notifications)
+
+  // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
+  sessionsCurrentCwdOnly = $state<boolean>(DEFAULTS.sessionsCurrentCwdOnly)
+  inputMode = $state<InputMode>(DEFAULTS.inputMode)
+
   constructor() {
     const loaded = load()
     this.cliKind = loaded.cliKind
@@ -263,48 +281,36 @@ export class Settings {
     this.voiceId = loaded.voiceId
     this.beUrl = loaded.beUrl
     setBeUrlBase(this.beUrl)
-    // ─── דיבור ───
     this.speakThoughts = loaded.speakThoughts
     this.narrateTools = loaded.narrateTools
     this.translateThoughts = loaded.translateThoughts
-    // ─── רכב ───
     this.carMode = loaded.carMode
-    // ─── שפה ───
     this.locale = loaded.locale
-    // ─── השתקה ───
     this.muted = loaded.muted
-    // ─── מסך ───
     this.screenWakeLock = loaded.screenWakeLock
-    // ─── תצוגת צ'אט ───
     this.showThoughts = loaded.showThoughts
     this.showTools = loaded.showTools
-    // ─── Enter toggle ───
+    this.compactActivity = loaded.compactActivity
+    this.showSessionMemo = loaded.showSessionMemo
     this.enterToSend = loaded.enterToSend
-    // ─── תמונות מרוחקות ───
     this.autoLoadRemoteImages = loaded.autoLoadRemoteImages
-    // ─── config אחרון פר-CLI ───
     this.lastConfig = loaded.lastConfig
-    // ─── TTS provider ───
     this.ttsProvider = loaded.ttsProvider
-    // ─── תיקיות אחרונות ───
     this.recentCollapsed = loaded.recentCollapsed
-    // ─── leave-running ───
     this.suppressLeaveWarning = loaded.suppressLeaveWarning
-    // ─── קול Gemini ───
     this.geminiVoice = loaded.geminiVoice
-    // ─── קול Gemini Live ───
     this.liveVoice = loaded.liveVoice
-    // ─── פרומפט-מערכת פר-פרויקט ───
     this.projectSystemPrompt = loaded.projectSystemPrompt
-    // ─── גובה פאנלים נגרר ───
     this.recentPanelHeight = loaded.recentPanelHeight
     this.activePanelHeight = loaded.activePanelHeight
     this.sidebarWidthRem = Number.isFinite(loaded.sidebarWidthRem)
       ? clampSidebarWidth(loaded.sidebarWidthRem)
       : DEFAULTS.sidebarWidthRem
     this.geminiTone = loaded.geminiTone
-    // ─── טרנספורט סשן ─── (slice transport-polish C4)
     this.sessionTransport = loaded.sessionTransport
+    this.notifications = loaded.notifications
+    this.sessionsCurrentCwdOnly = loaded.sessionsCurrentCwdOnly
+    this.inputMode = coerceInputMode(loaded.inputMode)
   }
 
   // ─── טופס חיבור ───
@@ -485,6 +491,14 @@ export class Settings {
     this.showTools = v
     this.#persist()
   }
+  setCompactActivity = (v: boolean): void => {
+    this.compactActivity = v
+    this.#persist()
+  }
+  setShowSessionMemo = (v: boolean): void => {
+    this.showSessionMemo = v
+    this.#persist()
+  }
 
   // ─── תמונות מרוחקות ─── (slice msg-media)
 
@@ -606,6 +620,25 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── notifications ─── (slice notify-local)
+
+  setNotifications = (v: boolean): void => {
+    this.notifications = v
+    this.#persist()
+  }
+
+  // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
+
+  setSessionsCurrentCwdOnly = (v: boolean): void => {
+    this.sessionsCurrentCwdOnly = v
+    this.#persist()
+  }
+
+  setInputMode = (mode: InputMode): void => {
+    this.inputMode = coerceInputMode(mode)
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -623,6 +656,8 @@ export class Settings {
       screenWakeLock: this.screenWakeLock,
       showThoughts: this.showThoughts,
       showTools: this.showTools,
+      compactActivity: this.compactActivity,
+      showSessionMemo: this.showSessionMemo,
       enterToSend: this.enterToSend,
       autoLoadRemoteImages: this.autoLoadRemoteImages,
       lastConfig: this.lastConfig,
@@ -638,6 +673,9 @@ export class Settings {
       geminiPace: this.geminiPace,
       geminiTone: this.geminiTone,
       sessionTransport: this.sessionTransport,
+      notifications: this.notifications,
+      sessionsCurrentCwdOnly: this.sessionsCurrentCwdOnly,
+      inputMode: this.inputMode,
     })
   }
 }

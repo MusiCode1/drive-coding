@@ -224,6 +224,12 @@ export type AudioRecordingSavedMessage = typeof AudioRecordingSavedMessage.infer
 export const ConfigChangedMessage = type({
   type: "'config_changed'",
   timestamp: "number",
+  /**
+   * Env keys that were actually applied by the reload. Optional for backward
+   * compatibility — an older backend sends none, and the FE treats that as
+   * "something changed, refresh what you know about".
+   */
+  "changed?": "string[]",
 })
 export type ConfigChangedMessage = typeof ConfigChangedMessage.infer
 

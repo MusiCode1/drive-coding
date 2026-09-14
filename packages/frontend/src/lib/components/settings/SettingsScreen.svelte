@@ -12,18 +12,19 @@
  * כפתורי איפוס ושמור.
  * ─── settings-redesign (redesign-3) · redesign-fix · V4a (TTS provider) · tts-provider-availability ───
  */
-import { env } from "$env/dynamic/public"
+
 import { onMount } from "svelte"
-import { resolveSessionTransport, type SessionTransport } from "$lib/session/session-transport"
 import { version } from "$app/environment"
 import { goto } from "$app/navigation"
-import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
+import { env } from "$env/dynamic/public"
 import GeminiVoicePicker from "$lib/components/chat/GeminiVoicePicker.svelte"
-import { getI18n, getSettings } from "$lib/context"
+import VoicePicker from "$lib/components/chat/VoicePicker.svelte"
 import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
+import { getI18n, getNotify, getSettings } from "$lib/context"
+import { resolveSessionTransport, type SessionTransport } from "$lib/session/session-transport"
+import { ttsReasonMessage } from "$lib/util/tts-reason"
 import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { ttsStatus } from "$lib/view-models/tts-status.svelte"
-import { ttsReasonMessage } from "$lib/util/tts-reason"
 import GeminiDirectingControls from "./GeminiDirectingControls.svelte"
 import LanguageSelect from "./LanguageSelect.svelte"
 import PalettePicker from "./PalettePicker.svelte"
@@ -32,9 +33,8 @@ import SettingToggle from "./SettingToggle.svelte"
 import TtsStatusCard from "./TtsStatusCard.svelte"
 
 const settings = getSettings()
+const notify = getNotify()
 const t = getI18n().t
-
-// translateThoughts disabled כש-speakThoughts כבוי
 const translateDisabled = $derived(!settings.speakThoughts)
 
 // ─── TTS provider + availability ─── (V4a + tts-provider-availability)
@@ -142,6 +142,62 @@ const sessionTransportDisplay = $derived(
   settings.sessionTransport ??
     resolveSessionTransport({ stored: null, env: env.PUBLIC_SESSION_TRANSPORT }),
 )
+
+// ─── notifications quiet-block ─── (slice notify-quiet-prompt)
+let quietHint = $state(false)
+let pendingEnable = $state(false)
+
+function clearQuietHint() {
+  quietHint = false
+  pendingEnable = false
+}
+
+async function onNotificationsChange(v: boolean) {
+  if (v) {
+    if (notify.permission === "default") {
+      // Quiet UI (Edge/Chrome): requestPermission() often does not resolve until
+      // the user clicks the address-bar bell — show the hint *before* awaiting.
+      settings.setNotifications(false)
+      quietHint = true
+      pendingEnable = true
+      const result = await notify.requestPermission()
+      if (result === "granted") {
+        settings.setNotifications(true)
+        clearQuietHint()
+      } else if (result === "denied") {
+        settings.setNotifications(false)
+        clearQuietHint()
+      }
+      // else still default — keep quietHint + pendingEnable
+    } else if (notify.permission === "granted") {
+      settings.setNotifications(true)
+    }
+  } else {
+    settings.setNotifications(false)
+    clearQuietHint()
+  }
+}
+
+async function retryNotifications() {
+  settings.setNotifications(false)
+  quietHint = true
+  pendingEnable = true
+  const result = await notify.requestPermission()
+  if (result === "granted") {
+    settings.setNotifications(true)
+    clearQuietHint()
+  } else if (result === "denied") {
+    settings.setNotifications(false)
+    clearQuietHint()
+  }
+}
+
+$effect(() => {
+  if (notify.permission === "granted" && pendingEnable) {
+    settings.setNotifications(true)
+    clearQuietHint()
+  }
+})
 </script>
 
 
@@ -234,18 +290,55 @@ const sessionTransportDisplay = $derived(
     />
   </SettingsCard>
 
-  <!-- כרטיס תצוגת צ'אט — display-toggle-consistency -->
+  <!-- כרטיס התראות — notify-local · notify-quiet-prompt -->
+  <SettingsCard title={t("settings.notifications.title")}>
+    <SettingToggle
+      label={t("settings.toggle.notifications")}
+      checked={settings.notifications}
+      disabled={notify.permission === "unsupported" || notify.permission === "denied"}
+      onCheckedChange={onNotificationsChange}
+    />
+    {#if notify.permission === "denied"}
+      <p class="text-sm" style="color:var(--fg-dim)">{t("settings.notifications.blocked")}</p>
+    {:else if quietHint}
+      <p class="text-sm mt-2" role="status" style="color:var(--fg)">
+        {t("settings.notifications.quietHint")}
+      </p>
+      <button
+        type="button"
+        class="text-sm font-medium mt-1"
+        style="color:var(--accent)"
+        onclick={() => void retryNotifications()}
+      >
+        {t("settings.notifications.retry")}
+      </button>
+    {/if}
+  </SettingsCard>
+
+  <!-- כרטיס תצוגת צ'אט — display-toggle-consistency · compact-activity -->
   <SettingsCard title={t("settings.chatDisplay")}>
     <div class="flex flex-col">
       <SettingToggle
         label={t("settings.toggle.showThoughts")}
         checked={settings.showThoughts}
+        disabled={settings.compactActivity}
         onCheckedChange={(v) => settings.setShowThoughts(v)}
       />
       <SettingToggle
         label={t("settings.toggle.showTools")}
         checked={settings.showTools}
+        disabled={settings.compactActivity}
         onCheckedChange={(v) => settings.setShowTools(v)}
+      />
+      <SettingToggle
+        label={t("settings.toggle.compactActivity")}
+        checked={settings.compactActivity}
+        onCheckedChange={(v) => settings.setCompactActivity(v)}
+      />
+      <SettingToggle
+        label={t("settings.toggle.sessionMemo")}
+        checked={settings.showSessionMemo}
+        onCheckedChange={(v) => settings.setShowSessionMemo(v)}
       />
       <SettingToggle
         label={t("settings.toggle.autoLoadRemoteImages")}
@@ -317,6 +410,7 @@ const sessionTransportDisplay = $derived(
         settings.setCarMode(false)
         settings.setShowThoughts(true)
         settings.setShowTools(false)
+        settings.setCompactActivity(false)
         settings.setEnterToSend(true)
       }}
     >

@@ -9,7 +9,6 @@ import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
 import type { ProjectsRegistry } from "../app/projects-registry"
-// slice liveness C2: short response cache + no-store on GET /api/agents.
 import { parseCreateAgentBody } from "./create-agent-input.js"
 import { httpCacheGet, httpCacheSet } from "./http-cache.js"
 
@@ -36,7 +35,9 @@ export function registerAgentsHttp(
         lastSeenAt: number | null
         via: "ws" | "http" | null
       } | null
+      getConnectionCount(id: string): number
     }
+    env: NodeJS.ProcessEnv
   },
 ): void {
   // GET /api/agents — רשימה (מועשרת ב-pid+attached+via אם bridgeManager זמין)
@@ -60,6 +61,7 @@ export function registerAgentsHttp(
           lastMessageAt: rt?.lastMessageAt ?? null,
           lastSeenAt: rt?.lastSeenAt ?? null,
           attachedVia: rt?.via,
+          connectionCount: deps.bridgeManager?.getConnectionCount(a.id) ?? 0,
         }
       }),
     }
@@ -77,7 +79,7 @@ export function registerAgentsHttp(
     }
 
     // מאמת מול הסכימה המלאה (כולל existingSessionId אופציונלי עבור Slice 8a)
-    const parsed = parseCreateAgentBody(body)
+    const parsed = parseCreateAgentBody(body, deps.env)
     if (!parsed.ok) {
       return c.json(parsed.error.body, parsed.error.status)
     }
@@ -99,6 +101,19 @@ export function registerAgentsHttp(
     if (!agent) return c.json({ error: "agent not found" }, 404)
     return c.json({ agent: toAgentPublic(agent) })
   })
+
+  /**
+   * DELETE /api/agents — end every agent at once.
+   *
+   * Registered before the `:id` route because Hono matches in order and `:id`
+   * would otherwise never let a bare `/api/agents` through.
+   *
+   * 200 with a per-agent report rather than 204: a bulk close whose whole point
+   * is "make sure nothing is left running" has to say which ones are left. The
+   * status stays 200 even with failures — the operation ran; the body is the
+   * result.
+   */
+  app.delete("/api/agents", (c) => deps.orchestrator.deleteAllAndKill().then((r) => c.json(r, 200)))
 
   // DELETE /api/agents/:id — מחיקה דרך orchestrator
   app.delete("/api/agents/:id", async (c) => {

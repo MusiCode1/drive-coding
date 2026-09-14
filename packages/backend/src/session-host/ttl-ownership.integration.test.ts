@@ -32,7 +32,7 @@ import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { ConnectionRegistry, Owner } from "../acp/connection-registry.js"
+import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
 import { registerEventsRoute } from "./http/events.js"
 import { createAgentSessionRegistry } from "./registry.js"
@@ -102,39 +102,47 @@ function makeMockConnection(): ProviderConnection {
  * this fake gets that null-when-unowned behaviour right.
  */
 function makeStatefulConnectionRegistry(conn: ProviderConnection, cwd: string): ConnectionRegistry {
-  let owner: Owner | null = null
+  const rows = new Map<string, { via: "ws" | "http"; lastSeenAt: number; stream?: ReadableStream<unknown> }>()
   let epoch = 0
-  let lastSeenAt: number | null = null
   return {
     connect: vi.fn(),
     get: vi.fn(() => conn),
     getCwd: vi.fn(() => cwd),
+    getCharter: vi.fn(() => undefined),
+    consumeCharter: vi.fn(() => undefined),
     getCliKind: vi.fn(() => "opencode"),
     list: vi.fn(() => []),
-    markOwned: vi.fn((_id: string, via: "ws" | "http") => {
-      owner = { via, since: Date.now() }
-      epoch++
-      lastSeenAt = Date.now()
+    addConnection: vi.fn((_id: string, cid: string, via: "ws" | "http", stream?: ReadableStream<unknown>) => {
+      const hadHttp = [...rows.values()].some((r) => r.via === "http")
+      rows.set(cid, { via, lastSeenAt: Date.now(), stream })
+      if (via === "http" && !hadHttp) epoch++
+      if (via === "ws") epoch++
     }),
-    markDetached: vi.fn(() => {
-      owner = null
+    removeConnection: vi.fn((_id: string, cid: string) => {
+      rows.delete(cid)
     }),
-    markAttached: vi.fn(() => {
-      owner = { via: "ws", since: Date.now() }
-      epoch++
-      lastSeenAt = Date.now()
+    touchConnection: vi.fn((_id: string, cid: string) => {
+      const row = rows.get(cid)
+      if (row) row.lastSeenAt = Date.now()
     }),
-    isAttached: vi.fn(() => owner !== null),
-    getOwner: vi.fn(() => owner),
+    clearAllConnections: vi.fn(() => rows.clear()),
+    getConnectionCount: vi.fn(() => rows.size),
+    isAttached: vi.fn(() => rows.size > 0),
     getEpoch: vi.fn(() => epoch),
-    isOwnedByWs: vi.fn(() => owner?.via === "ws"),
+    isOwnedByWs: vi.fn(() => false),
     getRuntimeInfo: vi.fn(() => null),
-    touchOwner: vi.fn(() => {
-      if (owner) lastSeenAt = Date.now()
+    getLastSeenAt: vi.fn(() => {
+      if (rows.size === 0) return null
+      return Math.max(...[...rows.values()].map((r) => r.lastSeenAt))
     }),
-    getLastSeenAt: vi.fn(() => (owner ? lastSeenAt : null)),
+    listHttpConnectionIds: vi.fn(() =>
+      [...rows.entries()]
+        .filter(([, r]) => r.via === "http")
+        .map(([connectionId, r]) => ({ connectionId, lastSeenAt: r.lastSeenAt, stream: r.stream })),
+    ),
     close: vi.fn().mockResolvedValue(undefined),
     onCrash: vi.fn(() => () => {}),
+    setWsSocketChecker: vi.fn(),
   } as unknown as ConnectionRegistry
 }
 
@@ -249,17 +257,12 @@ describe("ttl-ownership integration (real registry + real broadcaster + real SSE
   // AGAIN before assertions 7-8 run. 500 keeps the whole test under a second
   // while leaving a comfortable margin over the ~150ms of real I/O involved.
   const TTL_MS = "500"
-  let prevTtl: string | undefined
 
   beforeEach(() => {
-    prevTtl = process.env.HTTP_OWNER_TTL_MS
-    process.env.HTTP_OWNER_TTL_MS = TTL_MS
     setSelfBaseUrlForTests("http://127.0.0.1:4055")
   })
 
   afterEach(() => {
-    if (prevTtl === undefined) delete process.env.HTTP_OWNER_TTL_MS
-    else process.env.HTTP_OWNER_TTL_MS = prevTtl
     setSelfBaseUrlForTests(undefined)
   })
 
@@ -286,14 +289,14 @@ describe("ttl-ownership integration (real registry + real broadcaster + real SSE
             return mockClient
           },
         }),
-      // TTL itself is deliberately NOT injected — it must come from
-      // process.env.HTTP_OWNER_TTL_MS (the default path). The sweep
-      // interval IS injected: real timers, but no reason to wait 30s.
+      // TTL itself is deliberately NOT injected — it must come from deps.env.
+      // The sweep interval IS injected: real timers, but no reason to wait 30s.
+      env: { HTTP_OWNER_TTL_MS: TTL_MS },
       _httpSweepMs: 20,
     })
 
     const app = new Hono()
-    registerEventsRoute(app, registry)
+    registerEventsRoute(app, registry, connectionRegistry)
 
     // ── 1. creation + a real update pushed through the captured callbacks ──
     const created = await registry.getOrCreateHost(AGENT_ID)
@@ -331,7 +334,7 @@ describe("ttl-ownership integration (real registry + real broadcaster + real SSE
     expect(registry.getHost(AGENT_ID)).toBe(host)
 
     // ── 5. ownership is released ──
-    expect(connectionRegistry.getOwner(AGENT_ID)).toBeNull()
+    expect(connectionRegistry.getConnectionCount(AGENT_ID)).toBe(0)
 
     // ── 6 + 7. reconnect is a continuation — same session, no second init ──
     const res2 = await req(app, `/api/agents/${AGENT_ID}/events`)
@@ -347,6 +350,6 @@ describe("ttl-ownership integration (real registry + real broadcaster + real SSE
     expect(mockClient.newSession).toHaveBeenCalledTimes(1)
 
     // ── 8. ownership is re-claimed as http ──
-    expect(connectionRegistry.getOwner(AGENT_ID)?.via).toBe("http")
+    expect(connectionRegistry.getConnectionCount(AGENT_ID)).toBeGreaterThan(0)
   })
 })

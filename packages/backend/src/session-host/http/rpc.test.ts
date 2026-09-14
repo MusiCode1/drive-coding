@@ -26,6 +26,7 @@ import {
 import type { AcpClient, AcpClientCallbacks, PromptBlocks } from "@drive-coding/provider/client"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { createInMemoryAgentRegistry } from "../../agents/registry.js"
 import { buildAgentMcpServers } from "../../agent-identity.js"
 import { setSelfBaseUrlForTests } from "../../instances.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
@@ -56,12 +57,18 @@ function makeMockHost(state: SessionState): ExtendedSessionHost {
     setConfigOption: vi.fn().mockResolvedValue(undefined),
     setSessionModel: vi.fn().mockResolvedValue(undefined),
     extMethod: vi.fn().mockResolvedValue({ result: "ok" }),
+    emitExtNotification: vi.fn(),
     respondPermission: vi.fn(),
     respondElicitation: vi.fn(),
+    isScopeRequest: () => false,
+    requestScopePermission: vi.fn().mockResolvedValue("deny"),
     listSessions: vi.fn().mockResolvedValue({}),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),
     agentCapabilities: { mcpCapabilities: { http: true } },
+    getTurnStartedAt: () => 0,
+    getStallReported: () => false,
+    markStallReported: () => {},
   }
 }
 
@@ -93,15 +100,18 @@ function makeMockRegistry(
     unregisterHost: vi.fn(),
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),
     getCwd: vi.fn(),
+    getCliKind: vi.fn(),
     getEpoch: vi.fn().mockReturnValue(0),
-    touchOwner: vi.fn(),
+    touchConnection: vi.fn(),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
+    getConnectionCount: vi.fn().mockReturnValue(0),
+    stop: vi.fn(),
   }
 }
 
 function makeApp(registry: AgentSessionRegistry): Hono {
   const app = new Hono()
-  registerRpcRoute(app, registry)
+  registerRpcRoute(app, registry, createInMemoryAgentRegistry())
   return app
 }
 
@@ -534,7 +544,7 @@ describe("POST /api/agents/:id/rpc", () => {
       expect(json.sessionCapabilities).toBeNull()
     })
 
-    it("host.listSessions rejecting → 502 with {error, code}", async () => {
+    it("host.listSessions -32601 → 200 {sessions:[], sessionCapabilities} (CF-safe)", async () => {
       const host = makeMockHost(makeMockState())
       ;(host.listSessions as ReturnType<typeof vi.fn>).mockRejectedValue(
         Object.assign(new Error("Method not found"), { code: -32601 }),
@@ -543,10 +553,28 @@ describe("POST /api/agents/:id/rpc", () => {
       const app = makeApp(registry)
 
       const res = await postRpc(app, "agent-1", { method: "listSessions", params: {} })
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as unknown as {
+        sessions: unknown[]
+        sessionCapabilities: unknown
+      }
+      expect(json.sessions).toEqual([])
+      expect(json.sessionCapabilities).toBeNull()
+    })
+
+    it("host.listSessions rejecting non-32601 → 502 with {error, code}", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.listSessions as ReturnType<typeof vi.fn>).mockRejectedValue(
+        Object.assign(new Error("boom"), { code: -32000 }),
+      )
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "listSessions", params: {} })
       expect(res.status).toBe(502)
       const json = (await res.json()) as unknown as { error: string; code: number }
-      expect(json.code).toBe(-32601)
-      expect(json.error).toBe("Method not found")
+      expect(json.code).toBe(-32000)
+      expect(json.error).toBe("boom")
     })
   })
 
@@ -637,7 +665,7 @@ describe("POST /api/agents/:id/rpc", () => {
       expect(host.loadSession).not.toHaveBeenCalled()
     })
 
-    it("omits mcpServers when agent did not declare http MCP in initialize", async () => {
+    it("passes empty mcpServers when agent did not declare http MCP in initialize", async () => {
       const host = makeMockHost(makeMockState())
       ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = {}
       ;(host.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -652,7 +680,11 @@ describe("POST /api/agents/:id/rpc", () => {
         params: { sessionId: "sess-9", cwd: "/from/params" },
       })
       expect(res.status).toBe(200)
-      expect(host.loadSession).toHaveBeenCalledWith({ cwd: "/from/params", sessionId: "sess-9" })
+      expect(host.loadSession).toHaveBeenCalledWith({
+        cwd: "/from/params",
+        sessionId: "sess-9",
+        mcpServers: [],
+      })
     })
 
     it("missing sessionId in params → 400 (ArkType), host.loadSession never called", async () => {
@@ -700,6 +732,142 @@ describe("POST /api/agents/:id/rpc", () => {
         params: { sessionId: "sess-9", cwd: "/x" },
       })
       expect(res.status).toBe(200)
+    })
+  })
+
+  describe("newSession (blocking, cwd resolution, notifySessionAttached, Claude _meta)", () => {
+    const TEST_SELF_BASE = "http://127.0.0.1:4055"
+    const expectedMcp = () => buildAgentMcpServers("agent-1", TEST_SELF_BASE)
+
+    beforeEach(() => {
+      setSelfBaseUrlForTests(TEST_SELF_BASE)
+    })
+    afterEach(() => {
+      setSelfBaseUrlForTests(undefined)
+    })
+
+    it("happy path: 200 {sessionId, version}; cwd from params; notifySessionAttached", async () => {
+      const host = makeMockHost(makeMockState(7))
+      ;(host.newSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "sess-new" })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "newSession",
+        params: { cwd: "/from/params" },
+      })
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as unknown as { sessionId: string; version: number }
+      expect(json.sessionId).toBe("sess-new")
+      expect(json.version).toBe(7)
+      expect(host.newSession).toHaveBeenCalledWith({
+        cwd: "/from/params",
+        mcpServers: expectedMcp(),
+      })
+      expect(registry.notifySessionAttached).toHaveBeenCalledWith(
+        "agent-1",
+        "sess-new",
+        "/from/params",
+      )
+    })
+
+    it("cwd missing → falls back to registry.getCwd", async () => {
+      const host = makeMockHost(makeMockState(1))
+      ;(host.newSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "sess-fb" })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      ;(registry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue("/fallback-cwd")
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "newSession", params: {} })
+      expect(res.status).toBe(200)
+      expect(host.newSession).toHaveBeenCalledWith({
+        cwd: "/fallback-cwd",
+        mcpServers: expectedMcp(),
+      })
+    })
+
+    it("no cwd available → 400; host.newSession never called", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      ;(registry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue(undefined)
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "newSession", params: {} })
+      expect(res.status).toBe(400)
+      expect(host.newSession).not.toHaveBeenCalled()
+    })
+
+    it("GATE-B wiring: injectDriveCodingMcp:false in cli-specs → rpc newSession without drive-coding MCP", async () => {
+      vi.resetModules()
+      const fs = await import("node:fs")
+      const os = await import("node:os")
+      const path = await import("node:path")
+      const filePath = path.join(os.tmpdir(), `rpc-gate-b-${Date.now()}.jsonc`)
+      fs.writeFileSync(filePath, JSON.stringify({ claude: { injectDriveCodingMcp: false } }))
+      process.env.CLI_SPECS_FILE = filePath
+      try {
+        const { registerRpcRoute: registerRpc } = await import("./rpc.js")
+        const host = makeMockHost(makeMockState())
+        ;(host.newSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "s" })
+        const registry = makeMockRegistry(host, makeMockBroadcaster())
+        ;(registry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue("/c")
+        ;(registry.getCliKind as ReturnType<typeof vi.fn>).mockReturnValue("claude")
+        const app = new Hono()
+        registerRpc(app, registry, createInMemoryAgentRegistry())
+
+        await postRpc(app, "agent-1", { method: "newSession", params: {} })
+
+        expect(host.newSession).toHaveBeenCalledWith(
+          expect.objectContaining({
+            cwd: "/c",
+            mcpServers: [],
+          }),
+        )
+      } finally {
+        fs.unlinkSync(filePath)
+        delete process.env.CLI_SPECS_FILE
+        vi.resetModules()
+      }
+    })
+
+    it("cliKind claude → injects _meta; other cliKinds omit it", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.newSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "s" })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      ;(registry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue("/c")
+      ;(registry.getCliKind as ReturnType<typeof vi.fn>).mockReturnValue("claude")
+      const app = makeApp(registry)
+
+      await postRpc(app, "agent-1", { method: "newSession", params: {} })
+      expect(host.newSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cwd: "/c",
+          _meta: expect.objectContaining({ claudeCode: expect.any(Object) }),
+        }),
+      )
+
+      ;(host.newSession as ReturnType<typeof vi.fn>).mockClear()
+      ;(registry.getCliKind as ReturnType<typeof vi.fn>).mockReturnValue("cursor")
+      await postRpc(app, "agent-1", { method: "newSession", params: {} })
+      const call = (host.newSession as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as Record<
+        string,
+        unknown
+      >
+      expect(call._meta).toBeUndefined()
+    })
+
+    it("host.newSession rejecting → 502; notifySessionAttached NOT called", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.newSession as ReturnType<typeof vi.fn>).mockRejectedValue(
+        Object.assign(new Error("cli boom"), { code: -32000 }),
+      )
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      ;(registry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue("/c")
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "newSession", params: {} })
+      expect(res.status).toBe(502)
+      expect(registry.notifySessionAttached).not.toHaveBeenCalled()
     })
   })
 

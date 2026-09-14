@@ -1,4 +1,5 @@
 export * from "./agent"
+export * from "./agent-events"
 export * from "./mcp-docs"
 export * from "./session-bus"
 export * from "./ws-messages"

@@ -33,4 +33,10 @@ export interface AudioSink {
   pause(): void
   /** A3: ממשיך ניגון אחרי pause. */
   resume(): void
+  /**
+   * nav-retain: האם ה-sink עדיין מחזיק buffer מוכן ל-replay של הסגמנט.
+   * **אופציונלי** — מימוש שאינו מספק אותו נחשב כ-false (backward compat).
+   * RoutingAudioSink/PlayableSink מממשים; ‏AudioPlaylist קורא דרך `?.`.
+   */
+  isComplete?(segmentId: string): boolean
 }

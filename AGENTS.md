@@ -74,6 +74,27 @@ The current slice roadmap is `docs-for-llm/frontend/slices.md`.
 - No `any` — use `unknown` + ArkType to refine.
 - No deep `null` — `T | undefined` or Option pattern.
 
+### 🔴 A fail-open path is not implemented until its silence is pinned
+
+Fail-open is the right default for anything that must not block the user — hooks,
+prompt injection, optional fetches. It is also the most dangerous shape we have:
+**a broken fail-open path looks exactly like a healthy one that had nothing to do.**
+Both are "exit 0, no output". Nothing goes red, so nothing gets looked at.
+
+Three mechanisms were found dead on 2026-09-01, all the same shape: a scoped-write
+escalation the child could answer itself, a watcher that never notified on the MCP
+path, and a surface hook that reached one CLI out of three. None of them had a test,
+and all three had been silently useless for days.
+
+⇒ **Every fail-open path needs one of these before it counts as done:**
+
+1. a test that asserts the silent branches (not just the happy one), or
+2. a live probe whose result is written down with a date.
+
+`packages/provider/hooks/cursor/inject-prompt.test.ts` is the reference shape:
+five of its nine cases assert `exit 0 + empty stdout` — no agent id, backend down,
+non-2xx, wrong content-type, empty body. The happy path was never the risk.
+
 ## Versioning — מספור גרסאות (טקס מיזוג)
 
 > ה-bump קורה **בכל מיזוג ל-dev** (לא בכל commit) — חלק מטקס-המיזוג של מרדכי, אחרי calev GO + אישור משתמשת.
@@ -101,12 +122,18 @@ git push origin dev
 bun install
 bun run dev           # all packages
 bun run test          # all tests
-bun run typecheck
+bun run typecheck     # tsc --build (core/backend/provider) + svelte-check (frontend)
+bun run typecheck:fe  # frontend only — svelte-check
 bun run lint          # Biome
 bun run lint:i18n     # scripts/lint-no-hebrew-in-code.sh — blocks Hebrew in code
 bun run format
 bun run hooks:install # one-time: set core.hooksPath=.githooks (runs pre-commit lint)
 ```
+
+> ⚠️ **The frontend is inside `typecheck` since 2026-08-31.** `tsconfig.json` at the root
+> references only `core` and `backend`, so `tsc --build` never saw `packages/frontend` —
+> it is checked by `svelte-check`, which nothing ran automatically. 63 type errors
+> accumulated there unnoticed. `typecheck` now chains both; keep it that way.
 
 > **Per-package commands** stay PM-agnostic via `node scripts/pm.mjs run-filter <pkg> <script>`
 > (it detects bun from the user-agent), or directly as `bun run --filter <pkg> <script>`.
@@ -153,6 +180,20 @@ the FE for the **user** to inspect, follow these rules:
 
 3. **Hand over a URL the user can actually open over HTTPS** — that is the deliverable
    of a preview, not a "it builds" report.
+
+4. **Close the preview the moment the user approves.** The preview exists for the
+   approval moment; once the user says "merge", nothing consumes it. Kill the BE and
+   the tunnel (only PIDs you launched — other agents run here too). Closing it is part
+   of the merge ritual, not an afterthought: an open preview holds a port, a tunnel,
+   and **a worktree that cannot be removed while it lives** — which is the usual reason
+   post-merge cleanup "didn't work". Merge is not done until preview + worktree +
+   branch are all closed (method: `brief-driven-slices` → `workflow.md`
+   §ניקוי-אחרי-מיזוג).
+
+   > Measured 2026-08-31: worktrees had piled to **95**, about **50 of them merged and
+   > clean** — leftovers. A one-off sweep took it back to 51. Use
+   > `bun run worktrees:prune` (it refuses to remove a worktree with a live process
+   > inside — `git worktree remove` does **not** check that).
 
 > **TODO (after `ui-session-polish` is merged):** make the preview target
 > **environment-variable driven** (localhost vs. tunnel, and the tunnel URL) so the
@@ -211,11 +252,43 @@ After `cd .worktrees/<name>`, run `bun install && bun run hooks:install`.
 
 - **`HTTP_OWNER_TTL_MS`** — how long an HTTP owner may go without a liveness
   signal (`POST /api/agents/:id/presence` → `touchOwner`) before the backend
-  **releases ownership**. Default `600000` (10 min). Expiry releases ownership
+  **releases ownership**. Default: `configDefault("httpOwnerTtlMs")` in
+  `CONFIG_SPECS` (10 min). Expiry releases ownership
   and severs abandoned SSE streams — it does **not** destroy the session host,
   kill the agent, or reset `version`; the next connection is a continuation.
   Set it low (e.g. `HTTP_OWNER_TTL_MS=5000`) to exercise the path without a
   10-minute wait. The sweep interval itself is fixed at 30s.
+
+### Config hot reload
+
+- `packages/backend/src/config/runtime-config.ts` re-resolves `config.jsonc` +
+  `secrets.json` while the process is live and applies only the keys in
+  `HOT_KEYS`. Triggers: the file watcher, and `POST /api/reload-config`. Both go
+  through `onConfigChange` — **do not add a second emitter**.
+- 🔴 **Why the env snapshot exists.** The bin writes `envPatch` into
+  `process.env` at boot. Precedence is `file < env < flag`, so calling
+  `loadConfig({ env: process.env })` again rebuilds the env layer from those
+  written-back values and the env layer beats the freshly edited file — a reload
+  that silently does nothing. `captureConfigInputs` snapshots `process.env`
+  *before* that write. There is a test pinning the broken behaviour.
+- 🛑 **`applyReloadEffects` must never call `invalidateCache()`.**
+  `invalidateCache` is what *emits* the config-change event, and the effects run
+  from that event's listener — calling it there recurses forever.
+- Adding a key to `HOT_KEYS` requires tracing it to a call site that re-reads it
+  per request / per spawn / per session. A key captured in a module-level
+  `const` or a closure will look reloadable and change nothing.
+- A key that vanishes from the file is reverted to its boot-time environment
+  value (or unset). Without that, deleting a leaked secret would leave it live
+  until a restart — there is a regression test for exactly this.
+- `HOT_KEYS` may only contain keys that some spec table can actually emit. A key
+  read per use but absent from `CONFIG_SPECS`/`SECRET_SPECS` (e.g. `OPENCODE_ARGS`,
+  `LOG_WIRE`) can never appear in an envPatch, so listing it is dead code that
+  reads as a promise.
+- The watcher only covers the directory containing `cli-specs.jsonc`. With
+  `--config`/`--secrets` elsewhere, `POST /api/reload-config` is the only trigger.
+- Tests that call `loadConfig` must pass `secrets` explicitly. Otherwise it
+  falls back to the real `<stateDir>/secrets.json` and the machine's actual API
+  keys leak into assertions.
 
 ### Running parallel worktrees
 
@@ -238,6 +311,30 @@ BE_PORT=4001 bun run --filter @drive-coding/frontend dev
 
 Each worktree's FE will get a different OS-assigned Vite port — no conflict
 on the FE side. Tunnels (if used) point at each FE's specific Vite port.
+
+## Agent scopes — a guard rail, not a lock
+
+Spawned agents carry a signed `DC_TOKEN` (env) / `X-Drive-Coding-Scope` (MCP header), and
+write calls — `DELETE`/`PATCH /api/agents/:id`, `/reply`, `/rpc`, and the MCP `session_close`
+/ `session_send` tools — are limited to the caller's own subtree. Anything outside it raises
+a permission prompt on the caller's session. Entry point: `authorizeWrite()` in
+`packages/backend/src/agent-scope.ts`.
+
+> ⚠️ **This is not a security boundary, and it is not meant to become one.** A spawned agent
+> runs as the same OS user as the backend, inherits its whole environment (`spawn-core.ts`
+> builds the child env as `{ ...process.env }`, so `DC_MASTER_KEY` and `DC_SCOPE_SECRET` are
+> readable by any child), can call the HTTP API with no header at all — `authorizeWrite()`
+> returns `"allow"` when there is no token — and can edit the guard itself. The backend has
+> no authentication of any kind.
+
+What it *is* for: a confused agent pursuing an unrelated task should not close, prompt or
+reconfigure a **stranger's** session by accident. That is the whole goal, and it is worth
+having on its own.
+
+**If you are reviewing this code: the bypasses above are known and accepted. Do not report
+them as findings.** A real boundary needs a separate uid or container per agent, a secret
+that never enters the child env, and an authenticated FE — a project, not a patch. Grep
+`NOT_A_SECURITY_BOUNDARY` for the canonical statement in code.
 
 ## Backend needs API credentials — OneCLI is **one** way, not the only way
 
@@ -271,6 +368,12 @@ config file < `process.env` < CLI flags. `--env-file` is applied first and is
 
 **On this machine (srv1812097)**: both deployments run under systemd
 (`drive-coding-{main,dev}.service`) and use **`--env-file`**. `onecli` is absent.
+
+**`PUBLIC_BASE_URL`** — the backend's public origin (`https://host`, no path). Set via
+env, `--public-base-url`, or `publicBaseUrl` in `config.jsonc`. It is **automatically
+unioned into effective CORS** even when omitted from `CORS_ORIGINS`, and drives the chat
+URL that `session_open` returns. It is **not** `DRIVE_CODING_BASE` / `DC_BASE` — child
+CLI processes still receive loopback for those.
 
 ### Running BE with CORS for deployed CF Pages FE
 
@@ -386,6 +489,7 @@ public clone. Paths under `packages/` are real files here.
 |--------------|------|--------|
 | **Code design rules** — layers, what an "engine" is, when to use `$effect` vs a method, state-machine pattern, primary-vs-derived VMs | `docs-for-llm/design-principles.md` §1-5 | **canonical** |
 | **The 50 architectural decisions (D1-D50)** | `docs-for-llm/design-principles.md` §6 | **canonical** |
+| **Config defaults** — product default of a `CONFIG_SPECS` key lives only there | `docs-for-llm/design-principles.md` §7 · `.cursor/rules/config-defaults.mdc` | **canonical** |
 | **FE five golden rules** (the short, injected version) | `packages/frontend/AGENTS.md` | canonical (design-principles expands it) |
 | **UX spec** — drive-first, colors, mic states, bubbles, car mode | `docs-for-llm/frontend-spec.md` | canonical |
 | **FE↔BE protocol, schemas, ports** | `docs-for-llm/vnext-spec.md` | canonical (§8.5 slices is OBSOLETE) |

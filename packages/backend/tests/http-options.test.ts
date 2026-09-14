@@ -1,5 +1,5 @@
 import * as os from "node:os"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 
 const { Hono } = await import("hono")
 const { registerHttpOptions, getHomeDir } = await import("../src/delivery/http-options")
@@ -11,10 +11,6 @@ function makeApp() {
 }
 
 describe("HTTP GET /api/options", () => {
-  beforeEach(() => {
-    vi.unstubAllEnvs()
-  })
-
   it("returns 200 + { homeDir } only", async () => {
     const app = makeApp()
     const res = await app.request("/api/options")
@@ -22,7 +18,6 @@ describe("HTTP GET /api/options", () => {
     const body = await res.json()
     expect(typeof body.homeDir).toBe("string")
     expect(body.homeDir.length).toBeGreaterThan(0)
-    // regression-guard: העבודה היקרה נמחקה — אין יותר models/projects על ה-wire
     expect(body.models).toBeUndefined()
     expect(body.projects).toBeUndefined()
   })
@@ -34,7 +29,6 @@ describe("HTTP GET /api/options", () => {
 
     expect(typeof body.homeDir).toBe("string")
     expect(body.homeDir.length).toBeGreaterThan(0)
-    // cross-platform: homeDir מנורמל מ-os.homedir() — absolute, אך לא בהכרח Unix "/"
     const isAbsolute =
       body.homeDir.startsWith("/") ||
       /^[a-zA-Z]:[\\/]/.test(body.homeDir) ||
@@ -52,19 +46,7 @@ describe("HTTP GET /api/options", () => {
 })
 
 describe("getHomeDir", () => {
-  it("prefers HOME env", () => {
-    vi.stubEnv("HOME", "/custom/home")
-    expect(getHomeDir()).toBe("/custom/home")
-    vi.unstubAllEnvs()
+  it("returns os.homedir() (boot-layer C5 — no HOME/USERPROFILE env reads)", () => {
+    expect(getHomeDir()).toBe(os.homedir())
   })
-
-  it("falls back to USERPROFILE when HOME is empty/unset", () => {
-    vi.stubEnv("HOME", "")
-    vi.stubEnv("USERPROFILE", "D:\\Users\\Bob")
-    expect(getHomeDir()).toBe("D:\\Users\\Bob")
-    vi.unstubAllEnvs()
-  })
-
-  // הערה: לא בודקים "both empty → os.homedir()" — על Windows os.homedir() עצמו
-  // קורא USERPROFILE, אז stub שלו ל-"" משבש את ה-fallback. ה-`|| os.homedir()` טריוויאלי.
 })

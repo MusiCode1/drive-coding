@@ -1,18 +1,8 @@
 <script lang="ts">
 /**
- * Composition root — מאתחל (instantiates) את כל ה-view-models הראשיים ומחבר
- * אותם לקונטקסט. זהו המקום היחיד באפליקציה שבו קוראים ל-`new <VM>()`.
- *
- * ─── עיצוב תוספתי בטוח למקביליות ───
- *
- * הוספת VM חדש:
- *   1. הוסף `import { Foo } from "$lib/view-models/foo.svelte"` לייבואים.
- *   2. הוסף בלוק `// ─── <domain> ───` חדש באזור למטה.
- *      לסדר יש חשיבות רק כאשר VM תלוי באחר (הצהר קודם על תלויות).
- *   3. הוסף `setFoo(foo)` בבלוק ה-setContext המתאים.
- *
- * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
+ * Composition root — view-models + setContext. Additive-only; see parallel-safe-code.md.
  */
+import "$lib/log"
 import PlaybackDebugPanel from "$lib/components/debug/PlaybackDebugPanel.svelte"
 import "../app.css"
 import type { Locale } from "@drive-coding/core/i18n"
@@ -28,12 +18,14 @@ import {
   setCliAvailability,
   setContentViewer,
   setComposerDraft,
+  setSessionMemo,
   setCues,
   setDictate,
   setI18n,
   setLive,
   setMic,
   setModals,
+  setNotify,
   setModelStatus,
   setPresencePoller,
   setRecentProjects,
@@ -47,13 +39,19 @@ import {
 } from "$lib/context"
 import { installDebugSurface } from "$lib/debug/dc"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
-import { createConfigChangeSocket } from "$lib/engines/config-change-socket"
+import { createConfigChangeRefresher } from "$lib/engines/config-change-socket"
+import { ttsStatus } from "$lib/view-models/tts-status.svelte"
 import { CuesEngine } from "$lib/engines/cues"
+import { createPendingCaptureWiring } from "$lib/engines/pending-capture-wiring"
+import { MediaSessionPlaylistBridge } from "$lib/engines/media-session-playlist.js"
 import { PlayableSink } from "$lib/engines/playable-sink"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
+import { NotifyEngine } from "$lib/engines/notify.svelte"
+import { notifyTexts } from "$lib/notify-texts"
 import { normalizeSessionTransport } from "$lib/session/session-transport"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { beWsUrl } from "$lib/util/be-url"
+import { bindSessionScope } from "$lib/actions/session-scope"
 import { isPageHidden } from "$lib/util/page-visibility.svelte"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
@@ -66,6 +64,7 @@ import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Live } from "$lib/view-models/live.svelte"
 import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
+import { SessionMemoVM } from "$lib/view-models/session-memo.svelte"
 import { Dictate } from "$lib/view-models/dictate.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
@@ -99,19 +98,21 @@ const session = new AgentSession({ cues, settings })
 // AudioPlaylist נוצר לפני Speaker כי Speaker מקבל אותו כ-dependency.
 const sharedAudioStream = new PlayableSink()
 const sharedOrderAlloc = new OrderAllocator()
-// onPlaybackStart: cue "speaking" — guard #spokeThisTurn ב-Speaker
-// (Speaker יגדיר callback דרך onPlaybackStart בלבד — לא מוגדר כאן ישירות,
-//  כי Speaker צריך לבדוק #spokeThisTurn שלו. פתרון: Speaker ירשום callback לאחר init.)
 const audioPlaylist = new AudioPlaylist(sharedAudioStream)
 
-// ─── mic ─── (slice 3 — תלוי ב-session + cues)
-const mic = new Mic({ session, cues })
+// ─── mic ─── (slice 3; voice-pending-persistence recovery)
+const { micRecovery, dictateRecovery } = createPendingCaptureWiring()
+const mic = new Mic({ session, cues, recovery: micRecovery })
 
 // ─── composer-draft ─── (slice dictate-to-input)
 const composerDraft = new ComposerDraft()
 
+// ─── session-memo ─── (slice session-memo-pad)
+// המעקב אחרי הסשן הפעיל יושב בתוך ה-VM (חוק זהב #4) — כאן רק הרכבה.
+const sessionMemo = new SessionMemoVM(session)
+
 // ─── dictate ─── (slice dictate-to-input — תלוי ב-composerDraft + mic)
-const dictate = new Dictate({ draft: composerDraft, mic })
+const dictate = new Dictate({ draft: composerDraft, mic, recovery: dictateRecovery })
 
 // ─── theme ─── (redesign-1) — declared before Live getter; instance assigned below Live block
 let theme!: ThemeVM
@@ -152,6 +153,62 @@ const bubblePlayer = new BubblePlayer({
   orderAlloc: sharedOrderAlloc,
 })
 
+function titleForCurrentPlaylistSegment(): string | undefined {
+  const item = audioPlaylist.items[audioPlaylist.cursor]
+  if (!item) return undefined
+  const bubble = session.renderBubbles.find((b) => b.id === item.bubbleId)
+  if (!bubble || (bubble.kind !== "message" && bubble.kind !== "thought")) return undefined
+  const text = bubble.segments.map((s) => s.text).join("")
+  return text.slice(0, 80) || undefined
+}
+
+// ─── bt-chat-playback-nav: Media Session ↔ playlist (car mode, no keepalive) ───
+const mediaSessionBridge = new MediaSessionPlaylistBridge({
+  controls: {
+    next: () => audioPlaylist.next(),
+    prev: () => audioPlaylist.prev(),
+    pause: () => audioPlaylist.pause(),
+    resume: () => audioPlaylist.resume(),
+  },
+  onStop: () => bubblePlayer.stop(),
+  getState: () => audioPlaylist.state,
+  getTransport: () => audioPlaylist.transport,
+  getCursor: () => audioPlaylist.cursor,
+  getItemCount: () => audioPlaylist.items.length,
+  getTitle: () => titleForCurrentPlaylistSegment(),
+})
+
+$effect(() => {
+  const hasMediaSession = typeof navigator !== "undefined" && "mediaSession" in navigator
+  if (!hasMediaSession) {
+    mediaSessionBridge.detach()
+    return
+  }
+  const transport = audioPlaylist.transport
+  if (transport !== "stopped") {
+    mediaSessionBridge.attach()
+  } else {
+    mediaSessionBridge.detach()
+  }
+})
+
+$effect(() => {
+  const hasMediaSession = typeof navigator !== "undefined" && "mediaSession" in navigator
+  if (!hasMediaSession) return
+
+  // reactive deps for sync()
+  void audioPlaylist.transport
+  void audioPlaylist.state
+  void audioPlaylist.cursor
+  void audioPlaylist.items.length
+
+  if (audioPlaylist.transport !== "stopped") {
+    mediaSessionBridge.sync()
+  }
+})
+
+onDestroy(() => mediaSessionBridge.detach())
+
 // ─── car-mode ─── (slice 7)
 
 theme = new ThemeVM()
@@ -161,6 +218,7 @@ const responsive = new ResponsiveVM()
 
 // ─── ui-shell ─── (redesign-2)
 const uiShell = new UiShellVM()
+uiShell.setInputMode(settings.inputMode)
 
 // ─── modals ─── (redesign-6)
 const modals = new ModalsVM()
@@ -189,7 +247,9 @@ void ttsCapabilities.refresh()
 // ─── presence-poller ─── (slice liveness C3 — חי לכל אורך הסשן, גם כשהפאנל סגור)
 const presencePoller = new PresencePoller(session)
 presencePoller.init()
+session.bindConnectionRelease()
 session.setSseReconnectedListener(() => presencePoller.onSseReconnected())
+bindSessionScope({ session, speaker, orderAlloc: sharedOrderAlloc })
 
 // ─── wake-lock ─── (Track C — drive-first chrome)
 const wakeLock = new WakeLockEngine()
@@ -197,6 +257,15 @@ $effect(() => {
   wakeLock.setEnabled(settings.screenWakeLock) // קריאה ריאקטיבית של $state
   return () => wakeLock.dispose()
 })
+
+// ─── notifications ─── (slice notify-local · notify-quiet-prompt)
+const notify = new NotifyEngine({ text: (kind) => notifyTexts(i18n.t, kind) })
+notify.watchPermission()
+$effect(() => notify.setEnabled(settings.notifications))
+$effect(() => () => notify.dispose())
+$effect(() => notify.notifyTurn(session.turnState))
+$effect(() => notify.notifyPermissionPending(session.pendingPermission !== null))
+$effect(() => notify.notifyElicitationPending(session.pendingElicitation !== null))
 
 // ─── dir/lang sync ─── (rtl-ltr-bidi)
 // סנכרון <html dir> ו-<html lang> ל-locale — הקסם של הדו-כיווניות.
@@ -252,12 +321,11 @@ $effect(() => {
 })
 $effect(() => () => presencePoller.dispose())
 
-// ─── ui-shell inputMode reset ─── (slice playback-dock-scope)
-// RecordFooter mode was local $state — unmount on idle reset it. Singleton survives
-// navigation; reset when agentId is set/changed (attach, new session, switch).
+// ─── ui-shell inputMode reset ─── (slice ui-shell-session-prefs)
+// Close mobile sheet on session attach/switch; inputMode hydrates at boot only.
 $effect(() => {
   const agentId = session.agentId
-  if (agentId) uiShell.resetInputModeForSession()
+  if (agentId) uiShell.closeSheet()
 })
 
 // ─── חיווט ───────────────────────────────────────
@@ -281,7 +349,9 @@ setActiveAgents(activeAgents)
 setRecentProjects(recentProjects)
 setCliAvailability(cliAvailability)
 setPresencePoller(presencePoller)
+setNotify(notify)
 setComposerDraft(composerDraft)
+setSessionMemo(sessionMemo)
 setDictate(dictate)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
@@ -306,13 +376,17 @@ if (__DC_ENABLED__ || dcOptIn) {
   void installDebugSurface()
 }
 
+// ─── pending-capture ─── (slice voice-pending-persistence)
+onMount(() => {
+  void mic.hydratePending()
+  void dictate.hydratePending()
+})
+
 // ─── config-change-socket ─── (slice cli-specs-hot-reload)
 // Wiring only: the socket, lifecycle and reconnect live in the engine (golden rule
 // forbids WebSocket in routes). Here we only create it and pass the callback.
-const configSocket = createConfigChangeSocket({
-  url: beWsUrl("/ws/echo"),
-  onConfigChanged: () => void cliAvailability.reload(),
-})
+const cfgTargets = { cliAvailability, ttsCapabilities, ttsStatus }
+const configSocket = createConfigChangeRefresher(beWsUrl("/ws/echo"), cfgTargets)
 onMount(() => configSocket.start())
 onDestroy(() => configSocket.stop())
 </script>

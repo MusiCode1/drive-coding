@@ -54,6 +54,7 @@ describe("BubbleRow — CSS contract", () => {
     expect(base).toMatch(/display:\s*flex/)
     expect(base).toMatch(/width:\s*100%/)
     expect(base).toMatch(/justify-content:\s*start/)
+    expect(base).toMatch(/container-type:\s*inline-size/)
     expect(base).not.toMatch(/grid-template-columns/)
     expect(styles).toMatch(/\.bubble-row-cluster\s*\{/)
     expect(styles).toMatch(/width:\s*fit-content/)

@@ -30,25 +30,4 @@ describe("UiShellVM — inputMode", () => {
     expect(vm.sheetDetent).toBe("half")
     expect(vm.sheetDragPx).toBe(120)
   })
-
-  it("resetInputModeForSession restores record from typing", () => {
-    const vm = new UiShellVM()
-    vm.setInputMode("typing")
-    vm.resetInputModeForSession()
-    expect(vm.inputMode).toBe("record")
-  })
-
-  it("resetInputModeForSession restores record from hidden", () => {
-    const vm = new UiShellVM()
-    vm.setInputMode("hidden")
-    vm.resetInputModeForSession()
-    expect(vm.inputMode).toBe("record")
-  })
-
-  it("resetInputModeForSession restores record from live", () => {
-    const vm = new UiShellVM()
-    vm.setInputMode("live")
-    vm.resetInputModeForSession()
-    expect(vm.inputMode).toBe("record")
-  })
 })

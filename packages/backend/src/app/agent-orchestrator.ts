@@ -29,9 +29,22 @@ import { createLogger } from "@drive-coding/core/log"
 import { describeCrash } from "@drive-coding/provider/spawn"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { buildAgentIdentityEnv } from "../agent-identity.js"
+import { clearGrantsFor } from "../agent-scope.js"
+import { stopAgentUnit } from "../agents/agent-launcher.js"
+import { loopbackBaseUrl, type UrlConfig } from "../delivery/public-url.js"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
+import { type CloseAllResult, closeAllAgents } from "./close-all-agents.js"
 import type { ProjectsRegistry } from "./projects-registry.js"
+
+/** Loopback BASE env every child gets (never PUBLIC_BASE_URL). */
+export function buildChildBaseEnv(urlConfig: UrlConfig): Record<string, string> {
+  const base = loopbackBaseUrl(urlConfig).replace(/\/$/, "")
+  return {
+    DRIVE_CODING_BASE: base,
+    DC_BASE: base,
+  }
+}
 
 const log = createLogger("backend.orchestrator")
 
@@ -66,6 +79,15 @@ export type AgentOrchestrator = {
 
   /** מוחק סוכן + סוגר את ה-connection. */
   deleteAndKill(id: string): Promise<void>
+
+  /**
+   * End every agent. Returns what happened per id, because a bulk operation
+   * that reports only a count hides the one that failed.
+   *
+   * Independent per agent on purpose: one agent refusing to die must not leave
+   * the rest running, which is what a sequential loop with a throw would do.
+   */
+  deleteAllAndKill(): Promise<CloseAllResult>
 
   /**
    * מחזיר את פורט ה-bridge עבור מזהה סוכן נתון (עבור ניתוב ב-ws-agent).
@@ -123,7 +145,9 @@ export function createAgentOrchestrator(deps: {
    * lazy, אבל כאן סוגרים את החלון במיידי). אופציונלי — טסטים/נתיבים בלי host.
    */
   sessionHostRegistry?: { unregisterHost(agentId: string): void }
+  urlConfig?: UrlConfig
 }): AgentOrchestrator {
+  const urlConfig = deps.urlConfig ?? { port: 4000, host: "127.0.0.1" }
   // מאזין התרסקויות: כש-connection מת, סמן סוכן כ-crashed + עדכן registry.
   deps.connectionRegistry.onCrash(async (agentId, info: BridgeCrashInfo) => {
     try {
@@ -180,19 +204,25 @@ export function createAgentOrchestrator(deps: {
       const agent = await deps.registry.create(input)
       await deps.registry.update(agent.id, { status: "starting" })
       const identityEnv = buildAgentIdentityEnv(agent.id)
+      // Caller env first; identity + loopback BASE always win (public-base-url split).
+      const childEnv = {
+        ...input.env,
+        ...identityEnv,
+        ...buildChildBaseEnv(urlConfig),
+      }
 
       try {
         // ── הפעלת connection (connectSpawn דרך connectionRegistry) ──────────────
         // modelOverride (🔴 avigail): מועבר מ-input — לא מקובע null.
-        // shapeEnv: spawn-only (opencode config + DRIVE_CODING_AGENT_ID).
-        // agentEnv: same identity keys for in-process bridges (claude).
+        // shapeEnv: spawn-only (opencode config + DRIVE_CODING_AGENT_ID + BASE).
+        // agentEnv: same identity/BASE keys for in-process bridges (claude).
         // systemPrompt (slice project-system-prompt): גנרי — הצורה הספציפית-לספק
         // (מיפוי-meta לקלוד / config.developer_instructions לcodex) נכתבת בתוך provider בלבד.
         await deps.connectionRegistry.connect(agent.id, input.cliKind, {
           cwd: input.cwd,
           modelOverride: input.modelOverride ?? null,
-          shapeEnv: composeShapeEnv({ ...input.env, ...identityEnv }),
-          agentEnv: identityEnv,
+          shapeEnv: composeShapeEnv(childEnv),
+          agentEnv: childEnv,
           systemPrompt: input.systemPrompt ?? null,
         })
 
@@ -229,6 +259,7 @@ export function createAgentOrchestrator(deps: {
 
     async deleteAndKill(id: string): Promise<void> {
       log.info({ agentId: id }, "deleteAndKill")
+      clearGrantsFor(id)
       // slice remote-warm-reconnect C2b: הסרת host מיד (לפני close) — אין חלון
       // שבו GET /events מחזיר host של סוכן שנמחק.
       deps.sessionHostRegistry?.unregisterHost(id)
@@ -239,13 +270,27 @@ export function createAgentOrchestrator(deps: {
         // התעלם
       }
 
+      // 🔴 The kill half of the disconnect/kill split. `close()` only detaches a
+      // sidecar — deliberately, so the backend's own shutdown cannot take agents
+      // down with it. Ending an agent for good therefore has to stop its unit
+      // too, or a DELETE would leave a sidecar running with nobody to talk to.
       await deps.connectionRegistry.close(id)
+      stopAgentUnit(id)
 
       try {
         await deps.registry.delete(id)
       } catch {
         // התעלם if already gone
       }
+    },
+
+    // No await here on purpose: the whole operation lives in closeAllAgents,
+    // and keeping this a single delegation keeps the orchestrator a router.
+    deleteAllAndKill(): Promise<CloseAllResult> {
+      return closeAllAgents(
+        () => deps.registry.list(),
+        (id) => this.deleteAndKill(id),
+      )
     },
 
     getBridgePort(_id: string): number | null {

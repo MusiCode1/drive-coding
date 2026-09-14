@@ -26,6 +26,10 @@ export const he: Catalog = {
   "chat.bubble.user": "אני",
   "chat.bubble.thought": "מחשבה",
   "chat.bubble.agent": "סוכן",
+  "chat.activityGroup.tools": "פעולות",
+  "chat.activityGroup.thoughts": "מחשבות",
+  "chat.activityGroup.expand": "הצג פעולות",
+  "chat.activityGroup.collapse": "הסתר פעולות",
   "chat.empty": "התחל לכתוב למטה…",
   "chat.error.dismiss": "סגור שגיאה",
   "chat.prompt.placeholder": "כתוב prompt…",
@@ -43,6 +47,7 @@ export const he: Catalog = {
   "mic.error.notFound": "לא נמצא מיקרופון. חבר מיקרופון ונסה שוב.",
   "mic.error.transcribe": "התמלול נכשל. נסה שוב.",
   "mic.error.generic": "שגיאה במיקרופון. נסה שוב.",
+  "mic.hint.needsAllow": "הגישה למיקרופון עדיין לא אושרה. בלחיצה תופיע בקשת אישור.",
   // ─── mic retry ─── (slice sessions-inline)
   "mic.retry": "נסה שוב",
 
@@ -53,6 +58,7 @@ export const he: Catalog = {
   "voiceMode.status.thinking": "חושב…",
   "voiceMode.status.speaking": "מדבר…",
   "voiceMode.status.cancelling": "מבטל…",
+  "voiceMode.status.requesting": "ממתינים לאישור גישה למיקרופון…",
   // ─── tool-bubble ─── (slice 4)
   "chat.tool.status.pending": "ממתין",
   "chat.tool.status.in_progress": "בתהליך",
@@ -138,12 +144,16 @@ export const he: Catalog = {
   "record.reconnectAttempt": "ניסיון",
   "live.toggle.open": "שיחה חיה",
   "live.toggle.close": "סגור שיחה חיה",
+  // live-silence-cost
+  "live.toggle.pause": "השהה",
+  "live.toggle.resume": "המשך",
   "live.status.connecting": "מתחבר…",
   "live.ear.listening": "מקשיב…",
   "live.transcript.user": "אתה",
   "live.transcript.assistant": "מזכיר",
   "live.error.connect": "חיבור Live נכשל",
   "live.error.noApiKey": "חסר מפתח Gemini בשרת",
+  "live.error.vadLoad": "סינון שקט לא נטען — האודיו נשלח במלואו",
   "mic.stop": "עצור",
   "mic.discard": "בטל הקלטה",
   "speakable.codeBlock": "בלוק קוד",
@@ -178,6 +188,7 @@ export const he: Catalog = {
   "header.audioOff": "הפעל שמע",
   "sidebar.collapse": "קפל פאנל",
   "sidebar.agentOptions": "אפשרויות סוכן",
+  "sidebar.display": "תצוגה",
   "sidebar.sessions": "סשנים",
   "sidebar.refresh": "רענן",
   "sidebar.newSession": "סשן חדש",
@@ -226,6 +237,7 @@ export const he: Catalog = {
   // ─── agent-tree-display ─── (slice agent-tree-display)
   "connect.agents.subAgentsOf": "סוכני משנה",
   "connect.agents.childCount": "סוכני משנה",
+  "connect.agents.watcherCount": "צופים",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "מסך",
   "settings.toggle.keepScreenOn": "השאר מסך דלוק",
@@ -235,6 +247,7 @@ export const he: Catalog = {
   "settings.toggle.autoLoadRemoteImages":
     "טען תמונות מרוחקות אוטומטית — הדפדפן יפנה לכל כתובת שהסוכן פלט, וכך עלול לחשוף אותך",
   "settings.toggle.showTools": "הצג כלים כברירת מחדל",
+  "settings.toggle.compactActivity": "קריאה נקייה",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter שולח הודעה",
   // ─── content-viewer ─── (slice content-viewer)
@@ -439,11 +452,11 @@ export const he: Catalog = {
   "sessionUrl.notFound.body": "הסשן שביקשת אינו זמין כרגע. ייתכן שהוא נסגר או שהסוכן לא פועל.",
   "sessionUrl.notFound.back": "חזרה לדף הבית",
   "sessionUrl.takeover.title": "יש חיבור פעיל",
-  "sessionUrl.takeover.body": "סשן זה מחובר כבר ממכשיר או טאב אחר. להתחבר כאן ינתק את החיבור הקיים.",
+  "sessionUrl.takeover.body":
+    "סשן זה מחובר כבר ממכשיר או טאב אחר. להתחבר כאן ינתק את החיבור הקיים.",
   "sessionUrl.takeover.confirm": "התחבר בכל זאת",
   "sessionUrl.takeover.cancel": "ביטול",
   // ─── agent-patch-unify C4: ממצא 3 — newSession ב-remote אינו נתמך ─── (הודעה בלבד, בלי ניווט)
-  "session.newSessionUnsupportedRemote": "פתיחת סשן חדש אינה נתמכת עדיין במצב remote.",
   // ─── sidebar-resize ───
   "sidebar.resizeHandle": "גרור לשינוי רוחב",
   // ─── cwd-path-combo ───
@@ -455,6 +468,19 @@ export const he: Catalog = {
   "chat.tool.output.exitCode": "קוד יציאה",
   "chat.tool.output.stderr": "stderr",
   "chat.tool.output.empty": "אין פלט",
+  // ─── notifications ─── (slice notify-local)
+  "notify.permission.title": "נדרשת הרשאה",
+  "notify.permission.body": "הסוכן מבקש אישור — חזרי לאפליקציה כדי להמשיך.",
+  "notify.elicitation.title": "נדרשת תשובה",
+  "notify.elicitation.body": "הסוכן ממתין לקלט — חזרי לאפליקציה כדי להמשיך.",
+  "notify.turnEnd.title": "התור הסתיים",
+  "notify.turnEnd.body": "הסוכן סיים — חזרי לאפליקציה כדי לראות את התשובה.",
+  "settings.notifications.title": "התראות",
+  "settings.toggle.notifications": "התראות כשהטאב מוסתר",
+  "settings.notifications.blocked": "ההתראות חסומות בדפדפן. אפשרי אותן בהגדרות הדפדפן.",
+  "settings.notifications.quietHint":
+    'ייתכן שהדפדפן הציג פעמון בשורת הכתובת ("אתר לא מוכר"). לחצי עליו כדי לאשר התראות.',
+  "settings.notifications.retry": "נסי שוב",
   // ─── dictate ─── (slice dictate-to-input)
   "dictate.start": "הכתבה",
   "dictate.stop": "עצור הכתבה",
@@ -464,4 +490,20 @@ export const he: Catalog = {
   "dictate.error.transcribe": "התמלול נכשל",
   "dictate.error.generic": "ההכתבה נכשלה",
   "dictate.transcribing": "מתמלל…",
+  "dictate.requesting": "ממתינים לאישור גישה למיקרופון…",
+  // ─── sessions filter ─── (slice sessions-search-filter)
+  "sidebar.sessionsSearch": "חיפוש בכותרות…",
+  "sidebar.sessionsFilterAll": "כל השיחות",
+  "sidebar.sessionsFilterCwd": "רק נתיב נוכחי",
+  "sidebar.sessionsNoMatches": "אין התאמות",
+  // ─── pending-capture ─── (slice voice-pending-persistence)
+  "pendingCapture.retry": "נסה שוב",
+  "pendingCapture.dismiss": "מחק",
+  "pendingCapture.restored": "הקלטה שלא הושלמה שוחזרה",
+  // ─── session-memo ─── (slice session-memo-pad)
+  "sessionMemo.title": "ממו",
+  "sessionMemo.open": "פתח ממו",
+  "sessionMemo.minimize": "צמצם ממו",
+  "sessionMemo.placeholder": "תזכורות או תקציר על נושא הסשן…",
+  "settings.toggle.sessionMemo": "פתק ממו בסשן",
 }

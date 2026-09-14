@@ -1,0 +1,26 @@
+---
+description: Configurable defaults live only in CONFIG_SPECS — never at the consumer
+alwaysApply: true
+---
+
+# Config defaults — one place
+
+If a key is in `DriveCodingConfig` / `CONFIG_SPECS`, its **product default**
+lives only on `CONFIG_SPECS[].default` (applied in `resolveConfig`).
+Read it with `configDefault("port")`. Do not write `?? 4000` / `DEFAULT_* = 600_000`
+next to a consumer.
+
+```ts
+// ❌
+const port = config.port ?? 4000
+const DEFAULT_HTTP_OWNER_TTL_MS = 600_000
+
+// ✅
+const port = config.port ?? configDefault("port")
+```
+
+- Schema stays optional (layer merge). Defaults are not ArkType defaults.
+- Test overrides (`_httpOwnerTtlMs: 100`) are fine — not product defaults.
+- A constant **without** a config key (sweep 30s, shutdown 8s) stays local.
+  Do not invent a config key just to "comply".
+- Exception: `LOG_*` before config exists (boot chicken-egg).

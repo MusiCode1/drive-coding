@@ -105,7 +105,7 @@ function injectModelOverride(
 
 /**
  * injectSystemPrompt — מוסיף _meta.systemPrompt:{append} ל-session/new params (קלוד בלבד).
- * המתאם claude-agent-acp@0.58.1 (acp-agent.js:2808) קורא params._meta.systemPrompt:
+ * המתאם (^0.58.1 ⇒ בפועל 0.70.0, acp-agent.js:4747) קורא params._meta.systemPrompt. 🔴 חובה **אובייקט** {append} — מחרוזת דורסת את פרומפט-המערכת כולו כולל preset claude_code. אומת חי 01/09.
  *   object {append} → מתווסף ל-preset claude_code. אומת חי 2026-07-19.
  * null/undefined/מחרוזת-ריקה → params ללא שינוי (no-op).
  * additive: משמר _meta.claudeCode ושדות _meta קיימים (deep-spread כמו injectModelOverride).

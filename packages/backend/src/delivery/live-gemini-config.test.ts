@@ -78,6 +78,15 @@ describe("buildGeminiLiveConfig()", () => {
       voiceName: "Puck",
     })
     const tools = built.tools as { functionDeclarations: unknown[] }[]
-    expect(tools[0]?.functionDeclarations.length).toBe(11)
+    expect(tools[0]?.functionDeclarations.length).toBe(13)
+  })
+
+  it("includes contextWindowCompression.slidingWindow for long sessions", () => {
+    const built = buildGeminiLiveConfig({
+      actions: buildLiveActions(["forward"]),
+      systemInstruction: "x",
+      voiceName: "Puck",
+    })
+    expect(built.contextWindowCompression).toEqual({ slidingWindow: {} })
   })
 })

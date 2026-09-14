@@ -25,6 +25,9 @@ export const CreateAgentInputFull = type({
   "env?": { "[string]": "string" },
   "parentAgentId?": "string",
   "closeOnTurnEnd?": "boolean",
+  "notifyOnDone?": "string.uuid",
+  "includeLastAssistantText?": "boolean",
+  "roleLabel?": "string",
 })
 export type CreateAgentInputFull = typeof CreateAgentInputFull.infer
 
@@ -35,13 +38,14 @@ export type ParseCreateAgentFailure = {
 
 export function parseCreateAgentBody(
   body: unknown,
+  env: NodeJS.ProcessEnv,
 ): { ok: true; value: CreateAndSpawnInput } | { ok: false; error: ParseCreateAgentFailure } {
   const parsed = CreateAgentInputFull(body)
   if (parsed instanceof type.errors) {
     return { ok: false, error: { status: 400, body: { error: parsed.summary } } }
   }
 
-  if (getCliSpec(parsed.cliKind, process.env) === undefined) {
+  if (getCliSpec(parsed.cliKind, env) === undefined) {
     return {
       ok: false,
       error: {
@@ -80,6 +84,15 @@ export function parseCreateAgentBody(
   }
   if (parsed.closeOnTurnEnd === true) {
     input.closeOnTurnEnd = true
+  }
+  if (parsed.notifyOnDone !== undefined && parsed.notifyOnDone !== "") {
+    input.notifyOnDone = parsed.notifyOnDone
+  }
+  if (parsed.includeLastAssistantText === true) {
+    input.includeLastAssistantText = true
+  }
+  if (parsed.roleLabel !== undefined && parsed.roleLabel !== "") {
+    input.roleLabel = parsed.roleLabel
   }
   return { ok: true, value: input }
 }

@@ -23,8 +23,8 @@
  *   - turn-boundary: בועת user חדשה → following=true + קפיצה (גובר על hold)
  */
 
-// ─── redesign-7: smart-scroll ───
 import ArrowDownIcon from "@lucide/svelte/icons/arrow-down"
+import { groupActivityRuns } from "$lib/components/chat/bubbles/activity-groups"
 // ─── content-viewer ─── (slice content-viewer)
 import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
 // ─── redesign-6: modals (SessionsDialog הוסר ב-slice sessions-inline — סשנים עכשיו inline) ───
@@ -37,7 +37,7 @@ import {
   getI18n,
   getModelStatus,
   getResponsive,
-  getSession,
+  getSession, getSettings,
   getUiShell,
 } from "$lib/context"
 import type { Bubble } from "$lib/types/bubble"
@@ -51,13 +51,16 @@ import Sidebar from "./Sidebar.svelte"
 let {
   children,
   footer,
+  overlay,
 }: {
   children: import("svelte").Snippet
   footer?: import("svelte").Snippet
+  /** slice session-memo-pad: overlay צף מעל אזור-הגלילה (לא נגלל, מעל ה-footer). */
+  overlay?: import("svelte").Snippet
 } = $props()
 
 const responsive = getResponsive()
-const session = getSession()
+const session = getSession(), settings = getSettings()
 const modelStatus = getModelStatus()
 const playlist = getAudioPlaylist()
 const uiShell = getUiShell()
@@ -160,7 +163,7 @@ function checkEdges(): void {
  */
 function jumpToBottom(): void {
   const handle = chatScroll.handle
-  const len = session.renderBubbles.length
+  const len = groupActivityRuns(session.renderBubbles, settings.compactActivity).length
   if (handle && len > 0) {
     handle.scrollToIndex(len - 1, { align: "end" })
   } else if (scrollEl) {
@@ -398,6 +401,7 @@ $effect(() => {
             {t("chat.jumpDown")}
           </button>
         {/if}
+
       </div>
 
       <!-- footer slot — sibling של ה-scroll (shrink-0), מעוגן בתחתית העמודה.
@@ -421,4 +425,7 @@ $effect(() => {
   <ContentViewerDialog />
   <!-- ui-session-polish: loading spinner during session connect or history render -->
   <LoadingModal open={session.status === "connecting" || session.isLoadingHistory} />
+  <!-- overlay slot (slice session-memo-fullscreen): ילד של שורש ה-shell ⇒
+       offsetParent = כל המסך. רק ChatScreen מעביר אותו. -->
+  {@render overlay?.()}
 </div>

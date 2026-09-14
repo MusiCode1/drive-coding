@@ -30,6 +30,10 @@ export const en: Catalog = {
   "chat.bubble.user": "Me",
   "chat.bubble.thought": "Thought",
   "chat.bubble.agent": "Agent",
+  "chat.activityGroup.tools": "actions",
+  "chat.activityGroup.thoughts": "thoughts",
+  "chat.activityGroup.expand": "Show actions",
+  "chat.activityGroup.collapse": "Hide actions",
   "chat.empty": "Start typing below…",
   "chat.error.dismiss": "Dismiss error",
   "chat.prompt.placeholder": "Type a prompt…",
@@ -47,6 +51,7 @@ export const en: Catalog = {
   "mic.error.notFound": "No microphone found. Connect a microphone and try again.",
   "mic.error.transcribe": "Transcription failed. Please try again.",
   "mic.error.generic": "Microphone error. Please try again.",
+  "mic.hint.needsAllow": "Microphone access is not granted yet. Tap to allow when prompted.",
   // ─── mic retry ─── (slice sessions-inline)
   "mic.retry": "Try again",
 
@@ -57,6 +62,7 @@ export const en: Catalog = {
   "voiceMode.status.thinking": "Thinking…",
   "voiceMode.status.speaking": "Speaking…",
   "voiceMode.status.cancelling": "Cancelling…",
+  "voiceMode.status.requesting": "Waiting for microphone permission…",
   // ─── tool-bubble ─── (slice 4)
   "chat.tool.status.pending": "Pending",
   "chat.tool.status.in_progress": "In progress",
@@ -143,12 +149,16 @@ export const en: Catalog = {
   "record.reconnectAttempt": "attempt",
   "live.toggle.open": "Live conversation",
   "live.toggle.close": "Close live",
+  // live-silence-cost
+  "live.toggle.pause": "Pause",
+  "live.toggle.resume": "Resume",
   "live.status.connecting": "Connecting…",
   "live.ear.listening": "Listening…",
   "live.transcript.user": "You",
   "live.transcript.assistant": "Secretary",
   "live.error.connect": "Live connection failed",
   "live.error.noApiKey": "Gemini API key missing on server",
+  "live.error.vadLoad": "Silence filter failed to load — sending all audio",
   "mic.stop": "Stop",
   "mic.discard": "Discard recording",
   "speakable.codeBlock": "code block",
@@ -183,6 +193,7 @@ export const en: Catalog = {
   "header.audioOff": "Unmute audio",
   "sidebar.collapse": "Collapse panel",
   "sidebar.agentOptions": "Agent options",
+  "sidebar.display": "Display",
   "sidebar.sessions": "Sessions",
   "sidebar.refresh": "Refresh",
   "sidebar.newSession": "New session",
@@ -231,6 +242,7 @@ export const en: Catalog = {
   // ─── agent-tree-display ─── (slice agent-tree-display)
   "connect.agents.subAgentsOf": "Sub-agents",
   "connect.agents.childCount": "sub-agents",
+  "connect.agents.watcherCount": "viewers",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "Screen",
   "settings.toggle.keepScreenOn": "Keep screen on",
@@ -240,6 +252,7 @@ export const en: Catalog = {
   "settings.toggle.autoLoadRemoteImages":
     "Load remote images automatically — your browser will fetch any URL the agent emits, which can expose you",
   "settings.toggle.showTools": "Show tools by default",
+  "settings.toggle.compactActivity": "Clean reading",
   // ─── Enter toggle ─── (slice-enter-toggle)
   "settings.toggle.enterToSend": "Enter sends message",
   // ─── content-viewer ─── (slice content-viewer)
@@ -451,7 +464,6 @@ export const en: Catalog = {
   "sessionUrl.takeover.confirm": "Connect anyway",
   "sessionUrl.takeover.cancel": "Cancel",
   // ─── agent-patch-unify C4: finding 3 — newSession over remote is not supported yet ─── (message only, no navigation)
-  "session.newSessionUnsupportedRemote": "Starting a new session is not supported yet in remote mode.",
   // ─── sidebar-resize ───
   "sidebar.resizeHandle": "Drag to resize width",
   // ─── cwd-path-combo ───
@@ -463,6 +475,20 @@ export const en: Catalog = {
   "chat.tool.output.exitCode": "Exit code",
   "chat.tool.output.stderr": "stderr",
   "chat.tool.output.empty": "No output",
+  // ─── notifications ─── (slice notify-local)
+  "notify.permission.title": "Permission required",
+  "notify.permission.body": "The agent needs approval — return to the app to continue.",
+  "notify.elicitation.title": "Input required",
+  "notify.elicitation.body": "The agent is waiting for input — return to the app to continue.",
+  "notify.turnEnd.title": "Turn finished",
+  "notify.turnEnd.body": "The agent finished — return to the app to see the response.",
+  "settings.notifications.title": "Notifications",
+  "settings.toggle.notifications": "Notify when tab is hidden",
+  "settings.notifications.blocked":
+    "Notifications are blocked in the browser. Enable them in browser settings.",
+  "settings.notifications.quietHint":
+    'The browser may have shown a bell in the address bar ("unrecognized site"). Click it to allow notifications.',
+  "settings.notifications.retry": "Try again",
   // ─── dictate ─── (slice dictate-to-input)
   "dictate.start": "Dictate",
   "dictate.stop": "Stop dictation",
@@ -472,4 +498,20 @@ export const en: Catalog = {
   "dictate.error.transcribe": "Transcription failed",
   "dictate.error.generic": "Dictation failed",
   "dictate.transcribing": "Transcribing…",
+  "dictate.requesting": "Waiting for microphone permission…",
+  // ─── sessions filter ─── (slice sessions-search-filter)
+  "sidebar.sessionsSearch": "Search titles…",
+  "sidebar.sessionsFilterAll": "All sessions",
+  "sidebar.sessionsFilterCwd": "Current path only",
+  "sidebar.sessionsNoMatches": "No matches",
+  // ─── pending-capture ─── (slice voice-pending-persistence)
+  "pendingCapture.retry": "Try again",
+  "pendingCapture.dismiss": "Dismiss",
+  "pendingCapture.restored": "Unfinished recording restored",
+  // ─── session-memo ─── (slice session-memo-pad)
+  "sessionMemo.title": "Memo",
+  "sessionMemo.open": "Open memo",
+  "sessionMemo.minimize": "Minimize memo",
+  "sessionMemo.placeholder": "Reminders or a summary of this session…",
+  "settings.toggle.sessionMemo": "Session memo pad",
 }

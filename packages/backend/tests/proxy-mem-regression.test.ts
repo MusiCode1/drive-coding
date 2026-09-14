@@ -95,7 +95,7 @@ describe("proxy-mem-regression — 256MB stream, client disconnected", () => {
 
       const { Hono } = await import("hono")
       const app = new Hono()
-      registerProxyHttp(app, { cacheBaseDir: tmpDir, usageStore })
+      registerProxyHttp(app, { cacheBaseDir: tmpDir, usageStore, env: process.env })
 
       // Warmup: one full request so JIT and allocators stabilise before measuring
       {

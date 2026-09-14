@@ -8,22 +8,31 @@
 
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 import type { MessageKey } from "@drive-coding/core/i18n"
-import { canDispatchPrompt } from "@drive-coding/core/voice/live-dispatch"
-import {
-  formatListConfigSnapshot,
-  validateAppSetting,
-  type ListConfigInput,
-  type SelectChoiceInput,
-} from "@drive-coding/core/voice/live-config"
 import {
   conversationHasLiveAgentPreamble,
   formatSecretaryDispatch,
 } from "@drive-coding/core/voice/live-agent-prompt"
-import { formatAgentDelivery, formatConfigSeedProse, formatPermissionPending } from "@drive-coding/core/voice/live-prompt"
-import { buildLiveSeed } from "@drive-coding/core/voice/live-seed"
+import {
+  type ConfigChoice,
+  formatListConfigSnapshot,
+  type ListConfigInput,
+  type ListConfigOptionInput,
+  validateAppSetting,
+} from "@drive-coding/core/voice/live-config"
+import { canDispatchPrompt } from "@drive-coding/core/voice/live-dispatch"
 import { formatMemoryForPrompt, type MemoryItem } from "@drive-coding/core/voice/live-memory"
+import {
+  formatAgentDelivery,
+  formatConfigSeedProse,
+  formatPermissionPending,
+} from "@drive-coding/core/voice/live-prompt"
+import {
+  parseRecentBool,
+  parseRecentCount,
+  readRecentBubbles,
+} from "@drive-coding/core/voice/live-read-recent"
 import { searchSessionBubbles } from "@drive-coding/core/voice/live-search"
-import { parseRecentBool, parseRecentCount, readRecentBubbles } from "@drive-coding/core/voice/live-read-recent"
+import { buildLiveSeed } from "@drive-coding/core/voice/live-seed"
 import { isUnpromptedSend } from "@drive-coding/core/voice/unprompted-guard"
 import {
   loadAlwaysMemory,
@@ -46,7 +55,9 @@ import {
   type LiveSessionState,
   type LiveTranscriptEntry,
 } from "../engines/live-session"
+import { LiveVad } from "../engines/live-vad"
 import { MicFrames } from "../engines/mic-frames"
+import { liveInfo } from "../util/live-log"
 import type { AgentSession } from "./agent-session.svelte"
 import type { Mic } from "./mic.svelte"
 import type { Settings } from "./settings.svelte"
@@ -74,7 +85,7 @@ function flattenSelectOptions(option: SessionConfigOption): SelectOpt[] {
   )
 }
 
-function toConfigChoices(items: SelectOpt[]): SelectChoiceInput[] {
+function toConfigChoices(items: SelectOpt[]): ConfigChoice[] {
   return items.map((o) => ({ id: o.value, name: o.name }))
 }
 
@@ -86,6 +97,8 @@ export class Live {
   readonly #engine: LiveSessionEngine
   readonly #frames: MicFrames
   readonly #sink: LiveAudioSink
+  readonly #vad: LiveVad
+  readonly #vadLoad: Promise<void>
   #pendingAgentDelivery = false
   #notifiedPermissionKey: string | null = null
   /** Set when agent delivery is sent; cleared on first user transcript fragment. */
@@ -95,8 +108,11 @@ export class Live {
   #sessionMemory: MemoryItem[] = []
   /** Cross-session memory — loaded from localStorage on construct. */
   #alwaysMemory: MemoryItem[] = loadAlwaysMemory()
+  /** Bumped by Stop / toggle so a pending close_live wait does not fire after. */
+  #closeAfterSpeechEpoch = 0
 
   state: LiveSessionState = $state("closed")
+  paused = $state(false)
   transcript: LiveTranscriptEntry[] = $state([])
   error: MessageKey | null = $state(null)
   /** Reactive bridge — fed by LiveAudioSink, not read from sink.isPlaying directly. */
@@ -125,6 +141,8 @@ export class Live {
         this.isSpeaking = playing
       },
     })
+    this.#vad = new LiveVad()
+    this.#vadLoad = this.#vad.load()
     this.#engine = new LiveSessionEngine({
       connector: {
         fetchToken: async () => {
@@ -142,11 +160,13 @@ export class Live {
       },
       frames: this.#frames,
       audioSink: this.#sink,
+      speechFilter: this.#vad,
     })
 
     this.#engine.on("state", (s) => {
       this.state = s
       if (s === "open") this.error = null
+      if (s === "closed") this.paused = false
     })
     this.#engine.on("transcript", (entry) => {
       this.transcript = [...this.#engine.transcript]
@@ -183,6 +203,8 @@ export class Live {
 
   async toggle(): Promise<void> {
     if (this.isOpen) {
+      this.#closeAfterSpeechEpoch++
+      this.paused = false
       this.#engine.close()
       return
     }
@@ -190,7 +212,12 @@ export class Live {
 
     this.error = null
     try {
+      await this.#vadLoad
+      if (this.#vad.loadFailed) {
+        this.error = "live.error.vadLoad"
+      }
       await this.#frames.start()
+      this.#vad.armPrime()
       await this.#engine.open()
       if (this.state === "error") {
         this.error = "live.error.connect"
@@ -204,6 +231,33 @@ export class Live {
           : "live.error.connect"
       this.#engine.close()
     }
+  }
+
+  /** Pause mic forwarding while keeping the Live socket open. */
+  pause(): void {
+    if (this.state !== "open") return
+    this.#engine.setPaused(true)
+    this.paused = true
+  }
+
+  /** Resume mic forwarding after manual pause (button only — no voice resume). */
+  resume(): void {
+    if (!this.paused) return
+    this.#engine.setPaused(false)
+    this.#vad.reset()
+    this.paused = false
+  }
+
+  /** Tool result first; disconnect only after farewell audio finishes (or grace/timeout). */
+  async #closeAfterSecretarySpeech(): Promise<void> {
+    const epoch = ++this.#closeAfterSpeechEpoch
+    liveInfo("close-live-wait")
+    await this.#sink.whenQuiet({ graceMs: 400, timeoutMs: 12_000 })
+    if (epoch !== this.#closeAfterSpeechEpoch) return
+    if (this.state !== "open") return
+    liveInfo("close-live-after-speech")
+    this.paused = false
+    this.#engine.close()
   }
 
   #dispatchGate(text: string) {
@@ -291,6 +345,24 @@ export class Live {
         void this.#session.cancelTurn()
         this.#pendingAgentDelivery = false
         this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
+        break
+      }
+      case "pause_live": {
+        if (this.state !== "open") {
+          this.#engine.sendActionResult(action.id, action.name, { status: "not_open" })
+          break
+        }
+        if (this.paused) {
+          this.#engine.sendActionResult(action.id, action.name, { status: "already_paused" })
+          break
+        }
+        this.#engine.sendActionResult(action.id, action.name, { status: "paused" })
+        this.pause()
+        break
+      }
+      case "close_live": {
+        this.#engine.sendActionResult(action.id, action.name, { status: "closing" })
+        void this.#closeAfterSecretarySpeech()
         break
       }
       case "answer_permission": {
@@ -402,7 +474,11 @@ export class Live {
             break
           }
           void this.#session.setThinkingTokens(THINKING_TOKEN_VALUES[level] ?? null)
-          this.#engine.sendActionResult(action.id, action.name, { status: "ok", id, value: rawValue })
+          this.#engine.sendActionResult(action.id, action.name, {
+            status: "ok",
+            id,
+            value: rawValue,
+          })
           break
         }
         const validation = this.#validateSessionConfigValue(id, rawValue)
@@ -505,9 +581,12 @@ export class Live {
     const settings = this.#getSettings()
     const theme = this.#getTheme()
 
-    const sessionPart: ListConfigInput["session"] = {
+    // `options` is `readonly` on ListConfigInput — accumulate in a mutable local
+    // and assign once, instead of pushing through the readonly view.
+    const options: ListConfigOptionInput[] = []
+    const sessionPart: ListConfigInput["session"] & { options: ListConfigOptionInput[] } = {
       connected: s.status === "connected",
-      options: [],
+      options,
     }
 
     const configOptions = s.configOptions ?? []
@@ -563,7 +642,7 @@ export class Live {
       if (opt.type === "select") {
         const choices = flattenSelectOptions(opt)
         if (choices.length === 0) continue
-        sessionPart.options.push({
+        options.push({
           id: opt.id,
           name: opt.name,
           type: "select",
@@ -571,7 +650,7 @@ export class Live {
           choices: toConfigChoices(choices),
         })
       } else if (opt.type === "boolean") {
-        sessionPart.options.push({
+        options.push({
           id: opt.id,
           name: opt.name,
           type: "boolean",
