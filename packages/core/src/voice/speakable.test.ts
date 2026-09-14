@@ -4,12 +4,7 @@
  * ⚠️ הקיבוע הוא על **מה שנשמע**, לא על תווים: הטקסט נשאר, הסימנים יורדים.
  */
 import { describe, expect, it } from "vitest"
-import {
-  type SpeakableLabels,
-  splitStreamable,
-  toSpeakable,
-  toSpeakableParts,
-} from "./speakable.js"
+import { type SpeakableLabels, toSpeakable, toSpeakableParts } from "./speakable.js"
 
 const L: SpeakableLabels = {
   codeBlock: "[code]",
@@ -95,90 +90,6 @@ describe("toSpeakable — שלמות", () => {
   })
 })
 
-describe("splitStreamable — זרימה חיה", () => {
-  // 🔴 זה הבאג שנשמע בפועל: הקוד הוקרא מאויית, כי כל chunk בנפרד לא הכיל
-  // גדר-סוגרת ולכן `toSpeakable` לא זיהה בלוק כלל.
-  it("גדר פתוחה — התוכן מוחזק ולא יוצא להקראה", () => {
-    const { ready, held } = splitStreamable("הנה קוד:\n```ts\nconst a = 1")
-    expect(ready).toBe("הנה קוד:\n")
-    expect(held).toBe("```ts\nconst a = 1")
-  })
-
-  // ⚠️ **מוחזק רק מה שיש בו תחביר פתוח.** גרסה קודמת החזיקה כל שורה
-  // חלקית — והודעה חד-פסקתית (אין בה `\n` עד הסוף) לא הוקראה כלל עד
-  // סוף-התור. נתפס ע"י `speaker.test.svelte.ts`.
-  it("גדר סגורה וטקסט נקי אחריה — הכול מוכן", () => {
-    const txt = "לפני\n```ts\nconst a = 1\n```\nאחרי"
-    expect(splitStreamable(txt)).toEqual({ ready: txt, held: "" })
-  })
-
-  it("שורה אחת בלי סיום ובלי תחביר פתוח — מוכנה, לא מוחזקת", () => {
-    expect(splitStreamable("סתם טקסט.")).toEqual({ ready: "סתם טקסט.", held: "" })
-  })
-
-  it("קוד-inline שטרם נסגר — מוחזק", () => {
-    const { ready, held } = splitStreamable("קרא ל-`useSta")
-    expect(ready).toBe("")
-    expect(held).toBe("קרא ל-`useSta")
-  })
-
-  // 🔴 נמדד בשדה: המשפט האחרון נכנס לתור כ-`**המשפט… סיום.` — הפותח נשאר
-  // והסוגר נעלם, כי ההדגשה נחתכה בין chunks ושני החצאים עובדו לחוד.
-  it("הדגשה שטרם נסגרה — מוחזקת", () => {
-    const { ready, held } = splitStreamable("זה **חשוב מא")
-    expect(ready).toBe("")
-    expect(held).toBe("זה **חשוב מא")
-  })
-
-  it("הדגשה סגורה — לא מוחזקת", () => {
-    expect(splitStreamable("זה **חשוב** ותו לא.")).toEqual({
-      ready: "זה **חשוב** ותו לא.",
-      held: "",
-    })
-  })
-
-  it("קישור שטרם נסגר — מוחזק", () => {
-    const { held } = splitStreamable("ראה [את התיע")
-    expect(held).toBe("ראה [את התיע")
-  })
-
-  it("בלוק סגור ואז אחד פתוח — מוחזק מהגדר הפתוחה", () => {
-    const { ready, held } = splitStreamable("a\n```js\nx\n```\nb\n```py\ny")
-    expect(ready).toBe("a\n```js\nx\n```\nb\n")
-    expect(held).toBe("```py\ny")
-  })
-
-  // ⚠️ החזקה בלי שחרור היא דליפה: אם הבלוק לעולם לא ייסגר, `toSpeakable`
-  // בסוף-התור הוא זה שמטפל בו (יש לו ענף לגדר שלא נסגרה).
-  it("מה שמוחזק עדיין מצטמצם נכון כשמפלטים אותו", () => {
-    const { held } = splitStreamable("```python\nimport os")
-    expect(s(held)).toBe("[code] python")
-  })
-})
-
-// ─── רגרסיות מ-code review (2026-08-21) ────────────────────────────────
-//
-// ⚠️ שלושתן נמצאו ע"י ריוויו חיצוני **אחרי** שחמישה סבבי-תיקון שלי פספסו
-// אותן. המשותף להן: הטסטים שכתבתי **אישרו את ההנחה שלי** במקום לנסות
-// להפריך אותה. כאן ההפך.
-describe("splitStreamable — סוגריים שאינם קישור", () => {
-  // 🔴 השורש של חמישה סבבים: כל `[` הדליק "קישור פתוח", וההודעה כולה
-  // נעצרה עד סוף-התור. `[` הוא סימן של סוגר-מרובע, לא של קישור.
-  for (const txt of ["סעיף [3] בתקנון.", "מערך[0] ריק.", "[א] ראשית.", "הפאנל מציג [code]."]) {
-    it(`"${txt}" — זורם, לא מוחזק`, () => {
-      expect(splitStreamable(txt)).toEqual({ ready: txt, held: "" })
-    })
-  }
-
-  it("קישור שבאמת נחתך — עדיין מוחזק", () => {
-    expect(splitStreamable("ראה [את התיע").held).toBe("ראה [את התיע")
-  })
-
-  it("URL שנחתך אחרי ]( — מוחזק", () => {
-    expect(splitStreamable("ראה [כאן](https://exa").held).toBe("ראה [כאן](https://exa")
-  })
-})
-
 describe("toSpeakable — הסוגרת עם טקסט אחריה", () => {
   // 🔴 `FENCE_LINE` ספר ``` (סוף) כגדר, אבל רגקס-הבלוק דרש `[ \t]*$`
   // ולכן לא התאים אותה כסוגרת — הזוג לא נסגר, ענף הגדר-הפתוחה בלע
@@ -191,21 +102,6 @@ describe("toSpeakable — הסוגרת עם טקסט אחריה", () => {
 
   it("גדר של ארבע גרשיים — לא מדליפה גרש להקראה", () => {
     expect(s2("````\ncode\n````")).not.toContain("`")
-  })
-})
-
-// ─── code review #2 (2026-08-21) ────────────────────────────────────────
-describe("splitStreamable — כוכבית היא כפל, לא הדגשה", () => {
-  // 🔴 אותה טעות בדיוק כמו ב-`[`, שהוספתי בעצמי סבב אחר כך.
-  // ‏probe של ה-review: "The result of 2 * 3 …" הזרים רק "The result of 2".
-  for (const txt of ["The result of 2 * 3 is six.", "מכפילים 4 * 5 ומקבלים.", "a * b * c."]) {
-    it(`"${txt}" — זורם`, () => {
-      expect(splitStreamable(txt)).toEqual({ ready: txt, held: "" })
-    })
-  }
-
-  it("הדגשה כפולה שטרם נסגרה — עדיין מוחזקת", () => {
-    expect(splitStreamable("זה **חשוב מא").held).toBe("זה **חשוב מא")
   })
 })
 

@@ -1,7 +1,9 @@
 import type { DriveMediaRef } from "../fs/media-catalog.js"
-import { IMAGE_LINK, resolveAudioEmbed, type SpeakablePart } from "./audio-embed.js"
+import { IMAGE_LINK } from "../markdown/image-link.js"
+import { resolveAudioEmbed, type SpeakablePart } from "./audio-embed.js"
 
 export type { SpeakablePart } from "./audio-embed.js"
+export { splitStreamable } from "../markdown/split-streamable.js"
 
 /**
  * speakable.ts — טקסט-מרקדאון → טקסט **בר-הקראה**.
@@ -46,8 +48,6 @@ const BARE_URL = /https?:\/\/[^\s<>()[\]]+/g
  * הזיווג: הבלוק הראשון נסגר מוקדם, השני נפתח באמצע קוד, והתוצאה היא גם
  * דליפת-קוד להקראה וגם בליעת טקסט תמים שביניהם. נשמע בפועל.
  */
-const FENCE_LINE = /^[ \t]{0,3}```/gm
-
 export type SpeakableOpts = {
   /**
    * ⚠️ **חובה בזרימה.** בלעדיו `toSpeakable` מסיים ב-`trim()`, ועל חוצץ
@@ -215,108 +215,4 @@ export function toSpeakable(text: string, labels: SpeakableLabels, opts?: Speaka
     )
     .join("")
   return opts?.stream === true ? joined : joined.trim()
-}
-
-/**
- * מפריד טקסט-**גולמי** זורם לחלק בטוח-לעיבוד ולחלק שיש להחזיק.
- *
- * ─── slice tts-speakable-text ───
- *
- * 🔴 **שני כללים, ושניהם נלמדו בדם.**
- *
- * 1. **גדר פתוחה מוחזקת.** בלוק-קוד מגיע פרוס על עשרות chunks; אם המפצל
- *    יראה את תוכנו לפני שהגדר נסגרה, נקודות ושורות שבתוך הקוד ייחתכו
- *    כמשפטים וייצאו להקראה. נשמע בפועל.
- *
- * 2. **שורה חלקית מוחזקת.** כל שאר תחביר-המרקדאון (קישור, תמונה,
- *    קוד-inline) **אינו חוצה שורות** — ולכן עיבוד של טקסט שנחתך באמצע
- *    שורה מפרק אותו לחצאים ומשאיר סוגריים חשופים בהקראה.
- *
- * ⚠️ **וזה מה שמאפשר לחוצץ להישאר גולמי.** הניסיון הקודם החזיר טקסט
- * *מעובד* לחוצץ ואז עיבד אותו שוב — וכל סיבוב שבר מבנה במקום אחר
- * (‏trim אכל רווחים, שרשור איבד את העיגון-לשורה של הגדר הבאה, וכן הלאה).
- * כאן כל קטע-גולמי מעובד **בדיוק פעם אחת**, והתוצאה לעולם לא חוזרת.
- */
-export function splitStreamable(text: string): { ready: string; held: string } {
-  const fences: number[] = []
-  FENCE_LINE.lastIndex = 0
-  for (;;) {
-    const m = FENCE_LINE.exec(text)
-    if (m === null) break
-    fences.push(m.index + (m[0].length - 3))
-  }
-
-  // (1) גדר לא-מזווגת — מחזיקים ממנה והלאה.
-  if (fences.length % 2 === 1) {
-    const open = fences[fences.length - 1] as number
-    return { ready: text.slice(0, open), held: text.slice(open) }
-  }
-
-  // (2) 🔴 **הגדר הסוגרת הגיעה אבל שורתה טרם נסגרה.**
-  //
-  // זה המקרה שהפיל את הכול כשה-ACP שולח **תו בכל פעם** (קורה בשטח).
-  // החיתוך "עד השורה-החדשה האחרונה" נפל אז **בתוך הבלוק**: ‏`ready` יצא עם
-  // מספר גדרות אי-זוגי, ענף הגדר-הפתוחה בלע ממנו והלאה (`[\s\S]*$`),
-  // והגדר-הסוגרת נשארה ב-`held` והתחזתה שם ל**פותחת** — ומכאן תוויות
-  // כפולות וטקסט שנעלם.
-  //
-  // ⇒ אם אחרי הגדר האחרונה אין עדיין שורה-חדשה, מחזיקים מה**פותחת** שלה.
-  if (fences.length > 0) {
-    const lastFence = fences[fences.length - 1] as number
-    if (text.indexOf("\n", lastFence) === -1) {
-      const open = fences[fences.length - 2] as number
-      return { ready: text.slice(0, open), held: text.slice(open) }
-    }
-  }
-
-  // (3) שורה חלקית — מחזיקים **רק אם יש בה תחביר פתוח**.
-  //
-  // 🔴 גרסה קודמת החזיקה כל שורה חלקית, וזו הייתה רגרסיה קשה: הודעה
-  // חד-פסקתית **אין בה `\n` עד הסוף**, ולכן שום דבר לא הוקרא עד סוף-התור.
-  // נתפס ע"י `speaker.test.svelte.ts` (‏markReady נקרא 0 פעמים).
-  //
-  // ⇒ מה שבאמת צריך הגנה הוא **תחביר שנחתך באמצע**: קוד-inline, קישור
-  //   או תמונה שטרם נסגרו. עיבודם כחצי היה משאיר סוגריים חשופים בהקראה.
-  //   שורה בלי תחביר פתוח בטוחה לחלוטין, ומזרימה מיָדית.
-  const nl = text.lastIndexOf("\n")
-  const tail = nl === -1 ? text : text.slice(nl + 1)
-  // ⚠️ שורה שמתחילה בגרש-אחורי היא **או** קוד-inline **או** גדר שטרם
-  // הושלמה (``` בדרך). שתיהן חייבות להיסגר לפני עיבוד: שתי גרשיים בלבד
-  // אינן מזוהות כגדר, עוברות הלאה, והגדר נחתכת לשניים — הקוד דלף.
-  // ⚠️ **סימני-הדגשה נספרים גם הם.** נמדד בשדה: המשפט האחרון נכנס לתור
-  // כ-`**המשפט… סיום.` — הפותח נשאר, הסוגר נעלם. הדגשה שנחתכה בין chunks
-  // עוברת כשני חצאים, וכל חצי מעובד לחוד. זה בולט דווקא **בזנב**, כי שם
-  // נופלים גבולות-ה-chunk האחרונים.
-  // ⚠️ **רק `**` ו-`~~` — לא כוכבית בודדת.**
-  //
-  // 🔴 אותה טעות בדיוק כמו ב-`[`: כוכבית אינה סימן-הדגשה, היא סימן-כפל.
-  // ‏`"The result of 2 * 3"` הקפיא את כל שארית ההודעה עד סוף-התור (אומת
-  // ב-probe של ה-review). וכשהיא כן הדגשה — `*טקסט*` — המחיר של החמצה
-  // הוא כוכבית אחת שנשמעת, לעומת הודעה שלמה שלא זורמת.
-  const openEmphasis =
-    (tail.match(/\*\*/g)?.length ?? 0) % 2 === 1 || (tail.match(/~~/g)?.length ?? 0) % 2 === 1
-  const startsBacktick = /^[ \t]{0,3}`/.test(tail)
-  const openInline = startsBacktick || (tail.match(/`/g)?.length ?? 0) % 2 === 1
-  // 🔴 **`[` אינו סימן של קישור — הוא סימן של סוגר-מרובע.**
-  //
-  // הגרסה הקודמת בדקה "יש `[` שאחריו אין `](…)`" והסיקה קישור-פתוח. אבל
-  // `סעיף [3]`, `מערך[0]`, `[א] ראשית` — כולם `[` שאינם קישור, וכולם
-  // הדליקו את הדגל. ומכיוון שההחזקה בינארית, **הודעה שלמה עם `[` בודד לא
-  // זרמה כלל**: היא נצברה עד סוף-התור ונפלטה כגוש אחד, ולפעמים אבדה.
-  // זה היה השורש של חמישה סבבי-רדיפה. אותר ב-code review.
-  //
-  // ⚠️ והטסט שלי אישר את ההנחה במקום להפריך אותה: הוא בדק `[` ש**כן**
-  // מתחיל קישור, ולא את המקרה השכיח בהרבה.
-  //
-  // קישור פתוח הוא **רק** אחד משניים:
-  //   [ בלי ] אחריו        →  "ראה [את התיע"
-  //   ]( בלי ) סוגר        →  "[טקסט](https://exa"
-  const lastBracket = tail.lastIndexOf("[")
-  const unclosedBracket = lastBracket !== -1 && !tail.includes("]", lastBracket)
-  const lastParen = tail.lastIndexOf("](")
-  const unclosedParen = lastParen !== -1 && !tail.includes(")", lastParen)
-  const openLink = unclosedBracket || unclosedParen
-  if (!openInline && !openLink && !openEmphasis) return { ready: text, held: "" }
-  if (nl === -1) return { ready: "", held: text }
-  return { ready: text.slice(0, nl + 1), held: tail }
 }

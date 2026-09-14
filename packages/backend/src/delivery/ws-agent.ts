@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "node:crypto"
-import { enrichUpdateWithMedia } from "@drive-coding/core/fs/media-catalog"
+import { enrichStreamUpdateWithMedia } from "@drive-coding/core/fs/media-catalog"
 import { createLogger } from "@drive-coding/core/log"
 import type { WebSocket } from "ws"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
@@ -34,11 +34,21 @@ type ActiveFeWsEntry = {
   connectionId: string
 }
 
+const TEXT_CHUNK_KINDS = new Set(["agent_message_chunk", "agent_thought_chunk"])
+
+function streamHoldKey(agentId: string, update: Record<string, unknown>): string | null {
+  const kind = update.sessionUpdate
+  if (typeof kind !== "string" || !TEXT_CHUNK_KINDS.has(kind)) return null
+  const mid = typeof update.messageId === "string" ? update.messageId : ""
+  return `${agentId}:${kind}:${mid}`
+}
+
 function enrichFeLine(
   line: string,
   agentId: string,
   connectionRegistry: ConnectionRegistry,
   mediaStat: (uri: string) => { bytes: number } | null,
+  streamHolds: Map<string, string>,
 ): string {
   try {
     const envelope = JSON.parse(line) as Record<string, unknown>
@@ -51,7 +61,19 @@ function enrichFeLine(
     const inner = params.update
     if (typeof inner !== "object" || inner === null) return line
     const cwd = connectionRegistry.getCwd(agentId) ?? null
-    params.update = enrichUpdateWithMedia(inner as Record<string, unknown>, cwd, mediaStat)
+    const key = streamHoldKey(agentId, inner as Record<string, unknown>)
+    const prevHeld = key !== null ? (streamHolds.get(key) ?? "") : ""
+    const { update, held: nextHeld } = enrichStreamUpdateWithMedia(
+      inner as Record<string, unknown>,
+      prevHeld,
+      cwd,
+      mediaStat,
+    )
+    if (key !== null) {
+      if (nextHeld === "") streamHolds.delete(key)
+      else streamHolds.set(key, nextHeld)
+    }
+    params.update = update
     return JSON.stringify(envelope)
   } catch {
     return line
@@ -136,6 +158,7 @@ export function createAgentWsHandler(deps: {
     deps.connectionRegistry.addConnection(agentId, connectionId, "ws")
     childLog.info({ pid: conn.pid, connectionId }, "WS connect → pipe attached")
 
+    const streamHolds = new Map<string, string>()
     const evictionReg = deps.evictionController?.register(agentId, feWs)
 
     try {
@@ -153,7 +176,7 @@ export function createAgentWsHandler(deps: {
     const unsub = conn.wire.onLine((line) => {
       if (line.length === 0) return
       try {
-        const out = enrichFeLine(line, agentId, deps.connectionRegistry, mediaStat)
+        const out = enrichFeLine(line, agentId, deps.connectionRegistry, mediaStat, streamHolds)
         feWs.send(`${out}\n`)
       } catch {
         /* feWs closed */
@@ -211,6 +234,7 @@ export function createAgentWsHandler(deps: {
       }
       unsub()
       unsubCrash()
+      streamHolds.clear()
       evictionReg?.notifyDetached()
     }
 

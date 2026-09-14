@@ -4,7 +4,8 @@
  * slice media-meta-rpc Commit 0
  */
 
-import { IMAGE_LINK } from "../voice/audio-embed.js"
+import { IMAGE_LINK } from "../markdown/image-link.js"
+import { splitStreamable } from "../markdown/split-streamable.js"
 
 export type DriveMediaRef = {
   uri: string
@@ -153,8 +154,9 @@ function parseExistingMedia(meta: Record<string, unknown> | undefined): DriveMed
   return out
 }
 
-export function enrichUpdateWithMedia(
+function enrichUpdateMetaFromText(
   update: Record<string, unknown>,
+  textForExtract: string,
   cwd: string | null,
   stat: (uri: string) => { bytes: number } | null,
 ): Record<string, unknown> {
@@ -162,28 +164,65 @@ export function enrichUpdateWithMedia(
     typeof update._meta === "object" && update._meta !== null
       ? (update._meta as Record<string, unknown>)
       : undefined
-  let incoming: DriveMediaRef[] = []
-
-  const content = update.content
-  if (typeof content === "object" && content !== null) {
-    const block = content as Record<string, unknown>
-    if (block.type === "resource_link") {
-      const fromLink = mediaFromResourceLink(block as { uri?: string; mimeType?: string; name?: string; size?: number })
-      if (fromLink !== null) incoming.push(fromLink)
-    } else if (block.type === "text" && typeof block.text === "string") {
-      for (const cand of extractMediaCandidates(block.text, cwd)) {
-        const ref = refFromHref(cand.href, cand.title, cwd, stat)
-        if (ref !== null) incoming.push(ref)
-      }
-    }
+  const incoming: DriveMediaRef[] = []
+  for (const cand of extractMediaCandidates(textForExtract, cwd)) {
+    const ref = refFromHref(cand.href, cand.title, cwd, stat)
+    if (ref !== null) incoming.push(ref)
   }
-
   if (incoming.length === 0) return update
-
   const merged = mergeMedia(parseExistingMedia(existingMeta), incoming)
   const nextMeta = mergeMeta(existingMeta, { "_drive/media": merged })
   if (nextMeta === undefined) return update
   return { ...update, _meta: nextMeta }
+}
+
+export function enrichUpdateWithMedia(
+  update: Record<string, unknown>,
+  cwd: string | null,
+  stat: (uri: string) => { bytes: number } | null,
+): Record<string, unknown> {
+  const content = update.content
+  if (typeof content !== "object" || content === null) return update
+  const block = content as Record<string, unknown>
+  if (block.type === "resource_link") {
+    const fromLink = mediaFromResourceLink(block as { uri?: string; mimeType?: string; name?: string; size?: number })
+    if (fromLink === null) return update
+    const existingMeta =
+      typeof update._meta === "object" && update._meta !== null
+        ? (update._meta as Record<string, unknown>)
+        : undefined
+    const merged = mergeMedia(parseExistingMedia(existingMeta), [fromLink])
+    const nextMeta = mergeMeta(existingMeta, { "_drive/media": merged })
+    if (nextMeta === undefined) return update
+    return { ...update, _meta: nextMeta }
+  }
+  if (block.type === "text" && typeof block.text === "string") {
+    return enrichUpdateMetaFromText(update, block.text, cwd, stat)
+  }
+  return update
+}
+
+export function enrichStreamUpdateWithMedia(
+  update: Record<string, unknown>,
+  held: string,
+  cwd: string | null,
+  stat: (uri: string) => { bytes: number } | null,
+): { update: Record<string, unknown>; held: string } {
+  const content = update.content
+  if (typeof content !== "object" || content === null) {
+    return { update, held }
+  }
+  const block = content as Record<string, unknown>
+  if (block.type === "resource_link") {
+    return { update: enrichUpdateWithMedia(update, cwd, stat), held }
+  }
+  if (block.type !== "text" || typeof block.text !== "string") {
+    return { update, held }
+  }
+  const text = block.text
+  const { ready, held: nextHeld } = splitStreamable(held + text)
+  const enriched = enrichUpdateMetaFromText(update, ready, cwd, stat)
+  return { update: enriched, held: nextHeld }
 }
 
 /** Parse `_drive/media` rows from update `_meta` for FE catalog merge. */
