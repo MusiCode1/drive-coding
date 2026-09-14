@@ -25,8 +25,11 @@
  * answer a real quota snapshot and `{ok:true}`.
  */
 
+import { dirname } from "node:path"
+import { transportUsesSidecar } from "@drive-coding/core"
 import { configDefault } from "@drive-coding/core/config/specs"
 import { createLogger } from "@drive-coding/core/log"
+import { cliTransport, getCliSpec } from "@drive-coding/provider/config"
 import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/connection"
 import { connectSidecar } from "@drive-coding/provider/connection"
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
@@ -75,6 +78,38 @@ export function socketDirForEnv(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /**
+ * Whether a cliKind is hosted in a sidecar (slice cli-transport). A declared
+ * `transport` decides it per-CLI (`unix`/`sidecar:true` → yes; `http` is not
+ * restorable so → no); with no declared transport, the legacy `AGENT_SIDECAR`
+ * env decides.
+ */
+export function isSidecarCliKind(cliKind: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  const declared = getCliSpec(cliKind, env)?.transport
+  if (declared === undefined) return sidecarKinds(env).has(cliKind)
+  if (declared.mode === "http") return false
+  return transportUsesSidecar(declared)
+}
+
+/**
+ * Where an agent's socket lives, and whether we may launch it — resolved from
+ * the cliKind's CliTransport (slice cli-transport). An explicit `socketPath`
+ * (shared bind-mount) wins; otherwise `socketDir` or the deployment default.
+ * `attachOnly` marks a remote target the agent container launches itself.
+ */
+export function sidecarSocketPlacement(
+  cliKind: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { socketDir: string; socketPath?: string; attachOnly: boolean } {
+  const t = cliTransport(cliKind, env)
+  const socketDir = t.socketDir ?? socketDirForEnv(env)
+  return {
+    socketDir,
+    ...(t.socketPath !== undefined ? { socketPath: t.socketPath } : {}),
+    attachOnly: t.attachOnly ?? false,
+  }
+}
+
+/**
  * Launch (or attach to) the agent's sidecar and return a ProviderConnection.
  *
  * Attaching and probing are the same act — `launchOrAttachAgent` answers "is one
@@ -87,13 +122,19 @@ export async function connectViaSidecar(
   opts: ConnectOpts,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ProviderConnection> {
-  const socketDir = ensureDeploymentDir(socketDirForEnv(env))
+  const placement = sidecarSocketPlacement(cliKind, env)
+  // Ensure the directory that will hold the socket exists. For an explicit
+  // socketPath that is its parent (a shared bind-mount — mkdir -p is harmless if
+  // the mount is already there); otherwise the deployment/socket dir itself.
+  ensureDeploymentDir(placement.socketPath ? dirname(placement.socketPath) : placement.socketDir)
   const launched = await launchOrAttachAgent({
     agentId,
     cliKind,
     cwd: opts.cwd,
     modelOverride: opts.modelOverride ?? null,
-    socketDir,
+    socketDir: placement.socketDir,
+    ...(placement.socketPath !== undefined ? { socketPath: placement.socketPath } : {}),
+    attachOnly: placement.attachOnly,
     env,
   })
   if (launched.kind === "failed") {

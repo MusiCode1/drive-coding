@@ -17,7 +17,7 @@ import { CLI_SPECS } from "./schemas/agent.js"
 export interface CliAvailabilityDetails {
   found: boolean
   path?: string
-  source: "path" | "override" | "not-found"
+  source: "path" | "override" | "not-found" | "remote"
   /** שם-תצוגה (slice cli-branding). מגיע מ-spec.displayName, לא תלוי ב-found. */
   displayName?: string
   /** נתיב-לוגו (slice cli-branding). מגיע מ-spec.logo, לא תלוי ב-found; לא מוגש עדיין. */
@@ -56,6 +56,21 @@ export function detectAvailableClis(
   for (const kind of Object.keys(specs) as CliKind[]) {
     const spec = specs[kind]
     if (spec === undefined) continue
+
+    // slice cli-transport: an attach-only target runs its binary in another
+    // container, so local bin detection is meaningless — availability means the
+    // target is configured, not that a binary exists here. Marked "remote".
+    if (spec.transport?.attachOnly === true) {
+      details[kind] = {
+        found: true,
+        source: "remote",
+        ...(spec.displayName !== undefined ? { displayName: spec.displayName } : {}),
+        ...(spec.logo !== undefined ? { logo: spec.logo } : {}),
+      }
+      available.push(kind)
+      continue
+    }
+
     const isOverride = overrideKinds?.includes(kind) ?? false
 
     // isOverride: המשתמשת כתבה bin מפורש בקונפיג — בחרה בינארי, אין לנחש fallbacks.

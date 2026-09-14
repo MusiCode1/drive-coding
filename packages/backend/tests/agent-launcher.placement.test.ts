@@ -124,6 +124,54 @@ describe("launcher contract", () => {
   })
 })
 
+describe("launcher — cli-transport (socketPath / attachOnly)", () => {
+  it("attaches on an explicit socketPath instead of the derived <agentId>.sock", async () => {
+    const dir = tmpDir()
+    const socketPath = join(dir, "shared-agent.sock")
+    await fakeSidecar(socketPath)
+
+    const res = await launchOrAttachAgent({
+      agentId: randomUUID(),
+      cliKind: "cursor",
+      cwd: "/tmp",
+      socketDir: dir,
+      socketPath,
+    })
+    expect(res.kind).toBe("attached")
+    expect(res.socket).toBe(socketPath)
+  })
+
+  it("🔴 attachOnly never launches — a missing socket is a clean failure", async () => {
+    const dir = tmpDir()
+    const socketPath = join(dir, "not-bound.sock")
+    const res = await launchOrAttachAgent({
+      agentId: randomUUID(),
+      cliKind: "cursor",
+      cwd: "/tmp",
+      socketDir: dir,
+      socketPath,
+      attachOnly: true,
+    })
+    expect(res.kind).toBe("failed")
+    expect(res.kind === "failed" && res.reason).toMatch(/attach-only/)
+  })
+
+  it("attachOnly still attaches when the socket is live", async () => {
+    const dir = tmpDir()
+    const socketPath = join(dir, "live.sock")
+    await fakeSidecar(socketPath)
+    const res = await launchOrAttachAgent({
+      agentId: randomUUID(),
+      cliKind: "cursor",
+      cwd: "/tmp",
+      socketDir: dir,
+      socketPath,
+      attachOnly: true,
+    })
+    expect(res.kind).toBe("attached")
+  })
+})
+
 describe.skipIf(!hasSystemdUser())("launcher placement (systemd)", () => {
   it("🔴 lands in its own cgroup, not the caller's", async () => {
     // The property the whole slice rests on. KillMode=control-group means the

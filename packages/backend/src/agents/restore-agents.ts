@@ -10,9 +10,14 @@
  * which is exactly the behaviour of the backend before any of this existed.
  */
 
-import type { CliKind } from "@drive-coding/core"
+import type { Agent, CliKind } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
-import { sidecarKinds, socketDirForEnv } from "../acp/connect-via-sidecar.js"
+import {
+  isSidecarCliKind,
+  sidecarKinds,
+  sidecarSocketPlacement,
+  socketDirForEnv,
+} from "../acp/connect-via-sidecar.js"
 import { adoptLiveAgents } from "./adopt-live-agents.js"
 import type { PersistentAgentRegistry } from "./persistent-registry.js"
 
@@ -54,17 +59,42 @@ export async function restorePersistedAgents(opts: RestoreOpts): Promise<void> {
   // 🔴 No early return on an empty snapshot. The directory is the registry, and
   // a scan that only happens when we already have rows cannot ever discover a
   // sidecar whose row was lost — which is exactly how one got stranded.
-  if (sidecarKinds(env).size === 0) {
+  const sidecarRows = rows.filter((r) => isSidecarCliKind(r.cliKind, env))
+  if (sidecarKinds(env).size === 0 && sidecarRows.length === 0) {
     // Nothing can have survived: every agent was a child of the process that
     // just died. Saying so beats probing a directory that will not exist.
     log.info({ found: rows.length }, "sidecar route off — persisted agents not restored")
     await registry.restore([])
     return
   }
-  const { adopted, retained, recovered } = await adoptLiveAgents(
-    rows,
-    opts.socketDir ?? socketDirForEnv(env),
-  )
+
+  // Per-cliKind transports may place sockets in different directories (a shared
+  // bind-mount for a remote target). Group rows by their socket dir and scan
+  // each; always include the deployment default so a legacy AGENT_SIDECAR
+  // sidecar whose row was lost is still discovered there. A test seam
+  // (opts.socketDir) forces a single dir.
+  const byDir = new Map<string, Agent[]>()
+  const addRow = (dir: string, row: Agent): void => {
+    const list = byDir.get(dir)
+    if (list) list.push(row)
+    else byDir.set(dir, [row])
+  }
+  if (opts.socketDir !== undefined) {
+    byDir.set(opts.socketDir, [...sidecarRows])
+  } else {
+    byDir.set(socketDirForEnv(env), [])
+    for (const r of sidecarRows) addRow(sidecarSocketPlacement(r.cliKind, env).socketDir, r)
+  }
+
+  const adopted: Agent[] = []
+  const retained: Agent[] = []
+  const recovered: string[] = []
+  for (const [dir, dirRows] of byDir) {
+    const res = await adoptLiveAgents(dirRows, dir)
+    adopted.push(...res.adopted)
+    retained.push(...res.retained)
+    recovered.push(...res.recovered)
+  }
   await registry.restore(adopted, retained)
   if (recovered.length > 0) {
     log.warn(

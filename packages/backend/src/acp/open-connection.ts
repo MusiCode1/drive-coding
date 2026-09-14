@@ -14,9 +14,9 @@
  * hosting appeared.
  */
 
-import type { CliKind } from "@drive-coding/core"
+import { type CliKind, transportUsesSidecar } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
-import { loadCliSpecsOverride } from "@drive-coding/provider/config"
+import { cliTransport, getCliSpec, loadCliSpecsOverride } from "@drive-coding/provider/config"
 import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/connection"
 import {
   connectCodexInProcess,
@@ -47,17 +47,35 @@ export function overrideHasEnv(kind: string): boolean {
 /**
  * Open a connection to `agentId`'s agent, by whichever route applies.
  *
- * `AGENT_SIDECAR` wins when it names the cliKind: the agent then lives outside
- * this process entirely, and "opening" may mean re-attaching to one that was
- * already running before this backend started.
+ * A cliKind's `CliSpec.transport` (slice cli-transport) decides the route:
+ *   - `unix` (or `sidecar:true`) → sidecar; "opening" may mean re-attaching to
+ *     one that was already running before this backend started.
+ *   - `http` → not implemented yet; errors rather than falling back silently.
+ *   - `stdio` → in-process/spawn, below.
+ * A cliKind with **no** declared transport keeps the legacy behavior: the global
+ * `AGENT_SIDECAR` env decides sidecar-vs-not.
  */
 export async function openProviderConnection(
   agentId: string,
   cliKind: SpawnBridgeInput["cliKind"],
   opts: ConnectOpts,
 ): Promise<ProviderConnection> {
-  if (sidecarKinds().has(cliKind)) {
-    return connectViaSidecar(agentId, cliKind, opts)
+  const declaredTransport = getCliSpec(cliKind)?.transport
+  if (declaredTransport === undefined) {
+    // Legacy path: no per-CLI transport declared → AGENT_SIDECAR decides.
+    if (sidecarKinds().has(cliKind)) {
+      return connectViaSidecar(agentId, cliKind, opts)
+    }
+  } else {
+    if (declaredTransport.mode === "http") {
+      throw new Error(
+        `http transport is not implemented yet (cliKind "${cliKind}") — use stdio or unix`,
+      )
+    }
+    if (transportUsesSidecar(cliTransport(cliKind))) {
+      return connectViaSidecar(agentId, cliKind, opts)
+    }
+    // mode "stdio" without sidecar → fall through to in-process/spawn.
   }
 
   const inProcess = IN_PROCESS_CONNECTORS[cliKind as keyof typeof IN_PROCESS_CONNECTORS]

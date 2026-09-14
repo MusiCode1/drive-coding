@@ -94,6 +94,18 @@ export type LaunchOpts = {
   cwd: string
   modelOverride?: string | null
   socketDir: string
+  /**
+   * Explicit socket file path (slice cli-transport, CliTransport.socketPath).
+   * Overrides the `<socketDir>/<agentId>.sock` derivation — used to place the
+   * socket in a directory bind-mounted between the backend and agent containers.
+   */
+  socketPath?: string
+  /**
+   * Never launch — only attach to a socket another process already bound (the
+   * agent container owns the sidecar's lifecycle). A non-alive socket returns
+   * `failed` instead of starting a unit.
+   */
+  attachOnly?: boolean
   env?: NodeJS.ProcessEnv
 }
 
@@ -131,12 +143,22 @@ function buildSidecarArgv(opts: LaunchOpts, socket: string): string[] {
  */
 export async function launchOrAttachAgent(opts: LaunchOpts): Promise<LaunchResult> {
   const env = opts.env ?? process.env
-  const socket = agentSocketPath(opts.socketDir, opts.agentId)
+  const socket = opts.socketPath ?? agentSocketPath(opts.socketDir, opts.agentId)
 
   const probe = await probeAgentSocket(socket)
   if (probe.state === "alive") {
     log.info({ agentId: opts.agentId, socket }, "attaching to running sidecar")
     return { kind: "attached", socket, probe }
+  }
+  if (opts.attachOnly === true) {
+    // Remote target: the agent container binds this socket and owns the
+    // sidecar's lifecycle. We only attach — never launch — so anything but a
+    // live socket is a clean failure, not a reason to start a unit here.
+    return {
+      kind: "failed",
+      socket,
+      reason: `attach-only target: no live sidecar at ${socket} (state: ${probe.state})`,
+    }
   }
   if (probe.state !== "stale" && probe.state !== "absent") {
     // 🔴 Launch only when the slot is provably free: nothing there (`absent`) or
