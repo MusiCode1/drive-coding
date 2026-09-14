@@ -22,6 +22,12 @@ export interface CliAvailabilityDetails {
   displayName?: string
   /** נתיב-לוגו (slice cli-branding). מגיע מ-spec.logo, לא תלוי ב-found; לא מוגש עדיין. */
   logo?: string
+  /**
+   * WebDAV document root when this CLI's fs is remote (slice cli-transport). The
+   * folder picker starts here so it lands inside the remote root, not a local
+   * path the remote would reject. Absent for local-fs CLIs.
+   */
+  fsRoot?: string
 }
 
 export interface CliAvailabilityResult {
@@ -57,6 +63,10 @@ export function detectAvailableClis(
     const spec = specs[kind]
     if (spec === undefined) continue
 
+    // slice cli-transport: WebDAV document root, surfaced so the folder picker
+    // starts inside the remote root. Independent of availability/transport.
+    const fsRoot = spec.fs?.kind === "webdav" ? spec.fs.root : undefined
+
     // slice cli-transport: an attach-only target runs its binary in another
     // container, so local bin detection is meaningless — availability means the
     // target is configured, not that a binary exists here. Marked "remote".
@@ -66,6 +76,7 @@ export function detectAvailableClis(
         source: "remote",
         ...(spec.displayName !== undefined ? { displayName: spec.displayName } : {}),
         ...(spec.logo !== undefined ? { logo: spec.logo } : {}),
+        ...(fsRoot !== undefined ? { fsRoot } : {}),
       }
       available.push(kind)
       continue
@@ -103,12 +114,14 @@ export function detectAvailableClis(
           source,
           ...(spec.displayName !== undefined ? { displayName: spec.displayName } : {}),
           ...(spec.logo !== undefined ? { logo: spec.logo } : {}),
+          ...(fsRoot !== undefined ? { fsRoot } : {}),
         }
       : {
           found,
           source,
           ...(spec.displayName !== undefined ? { displayName: spec.displayName } : {}),
           ...(spec.logo !== undefined ? { logo: spec.logo } : {}),
+          ...(fsRoot !== undefined ? { fsRoot } : {}),
         }
     if (found) available.push(kind)
   }

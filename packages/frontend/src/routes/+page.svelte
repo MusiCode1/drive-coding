@@ -281,10 +281,11 @@ async function refreshCliAvailability() {
 
 <!-- C10: בורר תיקיות (מרונדר כאן כי דף החיבור אינו עטוף ב-AppShell) -->
 <!-- folder-picker-fixes: startPath={cwd} → הבורר נפתח בנתיב שהוזן ידנית -->
+<!-- cli-transport: cliKind drives browse routing; fsRoot (remote webdav) sets the start path. -->
 <FolderPickerDialog
   startPath={cwd}
-  viaWebdav={cliKind === "tzlev-remote-cloud"}
-  webdavRoot="/home/user"
+  {cliKind}
+  fsRoot={cliAvailability.details[cliKind]?.fsRoot}
 />
 <!-- content-viewer (slice content-viewer — כמו FolderPickerDialog: מסך connect אינו עטוף ב-AppShell) -->
 <ContentViewerDialog />

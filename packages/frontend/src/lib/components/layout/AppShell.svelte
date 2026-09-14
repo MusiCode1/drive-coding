@@ -34,6 +34,7 @@ import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
 import {
   getAudioPlaylist,
   getChatScroll,
+  getCliAvailability,
   getI18n,
   getModelStatus,
   getResponsive,
@@ -61,6 +62,7 @@ let {
 
 const responsive = getResponsive()
 const session = getSession(), settings = getSettings()
+const cliAvailability = getCliAvailability()
 const modelStatus = getModelStatus()
 const playlist = getAudioPlaylist()
 const uiShell = getUiShell()
@@ -417,9 +419,10 @@ $effect(() => {
   {/if}
 
   <!-- redesign-6: modals (SessionsDialog הוסר ב-slice sessions-inline) -->
+  <!-- cli-transport: cliKind drives browse routing; fsRoot (remote webdav) sets the start path. -->
   <FolderPickerDialog
-    viaWebdav={settings.cliKind === "tzlev-remote-cloud"}
-    webdavRoot="/home/user"
+    cliKind={settings.cliKind}
+    fsRoot={cliAvailability.details[settings.cliKind]?.fsRoot}
   />
   <!-- content-viewer (slice content-viewer) -->
   <ContentViewerDialog />

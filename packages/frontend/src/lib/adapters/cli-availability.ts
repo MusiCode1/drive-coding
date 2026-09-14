@@ -11,11 +11,16 @@ import { beUrl } from "$lib/util/be-url"
 export type CliAvailabilityDetails = {
   found: boolean
   path?: string
-  source: "path" | "override" | "not-found"
+  source: "path" | "override" | "not-found" | "remote"
   /** שם-תצוגה (slice cli-branding). חסר → ה-FE מציג את המזהה. */
   displayName?: string
   /** נתיב-לוגו (slice cli-branding). נקרא בלבד; ההגשה בסלייס cli-logo-serving. */
   logo?: string
+  /**
+   * שורש ה-WebDAV כשה-fs של ה-CLI מרוחק (slice cli-transport). בורר-התיקיות
+   * מתחיל כאן. חסר ל-CLIs עם fs מקומי.
+   */
+  fsRoot?: string
 }
 
 export type CliAvailabilityResult = {

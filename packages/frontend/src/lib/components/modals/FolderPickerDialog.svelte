@@ -24,14 +24,14 @@ import { fetchServerOptions } from "$lib/adapters/options"
 
 let {
   startPath = "",
-  /** When set, browse remote FS through BE WebDAV (?via=webdav). */
-  viaWebdav = false,
-  /** Default absolute path on the remote host when viaWebdav and start is local/empty. */
-  webdavRoot = "/home/user",
+  /** cliKind whose filesystem to browse (slice cli-transport); passed to /api/fs/browse. */
+  cliKind = undefined,
+  /** WebDAV document root when this cliKind's fs is remote; the picker starts here. */
+  fsRoot = undefined,
 }: {
   startPath?: string
-  viaWebdav?: boolean
-  webdavRoot?: string
+  cliKind?: string
+  fsRoot?: string
 } = $props()
 
 const t = getI18n().t
@@ -65,8 +65,10 @@ $effect(() => {
 // startPath נקרא כאן בתוך untrack → לא הופך ל-dependency של ה-$effect.
 async function openAtStart() {
   let start = startPath.trim() || settings.lastCwd
-  if (viaWebdav) {
-    const root = webdavRoot.replace(/\/+$/, "") || "/home/user"
+  if (fsRoot !== undefined && fsRoot !== "") {
+    // Remote fs (webdav): start inside the document root, not a local path the
+    // remote would reject with 403.
+    const root = fsRoot.replace(/\/+$/, "") || "/"
     if (!start || !(start === root || start.startsWith(`${root}/`))) {
       start = root
     }
@@ -109,7 +111,7 @@ async function loadFolder(path: string) {
   try {
     const result = await browseFolder(path, {
       showHidden,
-      ...(viaWebdav ? { via: "webdav" as const } : {}),
+      ...(cliKind ? { cliKind } : {}),
     })
     currentPath = result.path  // BE מחזיר realpath מנורמל
     entries = result.entries.filter((e) => e.isDir)
