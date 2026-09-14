@@ -5,10 +5,9 @@
  */
 
 import { lookupMedia, type DriveMediaRef } from "../fs/media-catalog.js"
+import { IMAGE_LINK } from "../markdown/image-link.js"
 
 const AUDIO_EXT = /\.(?:mp3|wav|ogg|m4a|aac|flac|webm)$/i
-
-const IMAGE_LINK = /!\[([^\]]*)\]\(([^)]*)\)/g
 
 export type AudioEmbedRef = {
   title: string
@@ -68,5 +67,3 @@ export function resolveAudioEmbed(
   if (!AUDIO_EXT.test(path)) return null
   return { title: "", href: href.trim(), uri }
 }
-
-export { IMAGE_LINK }

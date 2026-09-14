@@ -4,7 +4,7 @@
  * slice media-meta-rpc Commit 0
  */
 
-import { IMAGE_LINK } from "../voice/audio-embed.js"
+import { IMAGE_LINK } from "../markdown/image-link.js"
 
 export type DriveMediaRef = {
   uri: string

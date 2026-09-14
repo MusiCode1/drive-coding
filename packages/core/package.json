@@ -9,6 +9,7 @@
     ".": "./src/index.ts",
     "./schemas/*": "./src/schemas/*.ts",
     "./voice/*": "./src/voice/*.ts",
+    "./markdown/*": "./src/markdown/*.ts",
     "./fs/*": "./src/fs/*.ts",
     "./ui/*": "./src/ui/*.ts",
     "./cache/*": "./src/cache/*.ts",
