@@ -100,20 +100,21 @@ describe("media enrich — HTTP FromConnection sessionCwd", () => {
 describe("media enrich — WS onLine", () => {
   function makeMockConn() {
     const lineListeners = new Set<(line: string) => void>()
-    const conn: ProviderConnection = {
+    const conn = {
       wire: {
-        onLine(cb) {
+        onLine(cb: (line: string) => void) {
           lineListeners.add(cb)
           return () => lineListeners.delete(cb)
         },
         write: vi.fn(),
       },
       capabilities: {},
+      onFrame: vi.fn(() => () => {}),
       onCrash: vi.fn(() => () => {}),
       turn: { isBusy: vi.fn(), lastActivityAt: vi.fn(), onChange: vi.fn(() => () => {}) },
       close: vi.fn(),
       pid: 1,
-    } as ProviderConnection
+    } as unknown as ProviderConnection
     return {
       conn,
       pushLine: (line: string) => {

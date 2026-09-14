@@ -117,7 +117,7 @@ export function registerFsFileHttp(
     // 2. allowlist סיומות — לפני כל IO. הסיומת קובעת את ה-Content-Type; אין sniffing.
     const ext = extname(rawPath).toLowerCase()
     const contentType = mimeFromExt(rawPath)
-    if (contentType === undefined) {
+    if (contentType == null) {
       return c.json({ error: "unsupported file type" }, 415)
     }
 

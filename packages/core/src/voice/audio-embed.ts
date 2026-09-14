@@ -44,10 +44,12 @@ export function resolveAudioEmbed(
   cwdOrOpts: string | null | AudioEmbedOpts = null,
   catalog?: DriveMediaRef[],
 ): AudioEmbedRef | null {
-  const cwd =
+  const cwd: string | null =
     typeof cwdOrOpts === "object" && cwdOrOpts !== null && !Array.isArray(cwdOrOpts)
       ? (cwdOrOpts.cwd ?? null)
-      : cwdOrOpts
+      : typeof cwdOrOpts === "string"
+        ? cwdOrOpts
+        : null
   const list =
     typeof cwdOrOpts === "object" && cwdOrOpts !== null && !Array.isArray(cwdOrOpts)
       ? cwdOrOpts.catalog
