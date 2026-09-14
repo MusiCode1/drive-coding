@@ -245,4 +245,25 @@ describe("toSpeakableParts — audio embed", () => {
       { kind: "text", text: "see ![clip](/tmp/a.mp" },
     ])
   })
+
+  it("catalog hit audio/* without audio extension yields file part", () => {
+    expect(
+      toSpeakableParts("![clip](file:///tmp/noext)", L, {
+        catalog: [{ uri: "file:///tmp/noext", mime: "audio/mpeg" }],
+      }),
+    ).toEqual([
+      {
+        kind: "file",
+        title: "clip",
+        href: "file:///tmp/noext",
+        uri: "file:///tmp/noext",
+      },
+    ])
+  })
+
+  it("catalog miss keeps extension fallback behavior", () => {
+    expect(toSpeakableParts("![clip](/tmp/a.mp3)", L, { catalog: [] })).toEqual([
+      { kind: "file", title: "clip", href: "/tmp/a.mp3", uri: "file:///tmp/a.mp3" },
+    ])
+  })
 })

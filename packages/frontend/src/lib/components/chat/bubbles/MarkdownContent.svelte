@@ -21,7 +21,7 @@
  * ─── slice/msg-diagrams (Commit 2) — prop onExpand (opt-in) → use:enhanceMermaid ───
  */
 import { renderMarkdown } from "$lib/util/markdown"
-import { getI18n, getSettings } from "$lib/context"
+import { getI18n, getSession, getSettings } from "$lib/context"
 import { enhanceCodeBlocks } from "./enhance-code-blocks"
 import { enhanceFileLinks, type FileLinkParams } from "./enhance-file-links"
 import { enhanceMermaid } from "./enhance-mermaid"
@@ -47,7 +47,7 @@ let {
 } = $props()
 
 const t = getI18n().t
-// slice msg-media — מתג-הכיבוי של click-to-load. ברירת-מחדל false (בטוח).
+const session = getSession()
 const settings = getSettings()
 </script>
 
@@ -70,7 +70,7 @@ const settings = getSettings()
     absoluteOnly: fileLinks?.absoluteOnly ?? false,
   }}
   use:enhanceMermaid={{ text, onExpand, expandLabel: t("contentViewer.expand") }}
->{@html renderMarkdown(text, { cwd: imageCwd })}</div>
+>{@html renderMarkdown(text, { cwd: imageCwd, catalog: session.mediaCatalog })}</div>
 
 <style>
   .md-content :global(p) { margin: 0.25em 0; }

@@ -89,3 +89,5 @@ export function mapLocations(raw: unknown): ToolLocation[] {
   }
   return out
 }
+
+export { MediaCatalogStore } from "./media-catalog-store"

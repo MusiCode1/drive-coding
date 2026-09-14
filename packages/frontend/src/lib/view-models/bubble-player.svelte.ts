@@ -169,7 +169,10 @@ export class BubblePlayer implements SegmentOwner {
       link: this.#t("speakable.link"),
       image: this.#t("speakable.image"),
     }
-    const parts = toSpeakableParts(text, labels, { cwd: this.#session.cwd })
+    const parts = toSpeakableParts(text, labels, {
+      cwd: this.#session.cwd,
+      catalog: this.#session.mediaCatalog,
+    })
     const queue = buildInlineAudioQueue(parts, {
       minChars: MIN_CHARS,
       maxChars: MAX_CHARS,
