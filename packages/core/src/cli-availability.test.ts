@@ -288,3 +288,46 @@ describe("detectAvailableClis: displayName + logo", () => {
     expect(result.details.claude).not.toHaveProperty("logo")
   })
 })
+
+// slice cli-transport / bug #69: remote cliKinds are "available if configured",
+// not gated by a local bin. existsSync is mocked to false throughout, so any
+// "found:true" here comes from the remote rule, not a local binary.
+describe("detectAvailableClis: remote cliKinds (bug #69)", () => {
+  const remoteSpecs = {
+    "cursor-attach": {
+      bin: "cursor-agent",
+      args: ["acp"],
+      supportsModelFlag: false,
+      transport: { mode: "unix", socketDir: "/shared", attachOnly: true },
+    },
+    "cursor-unix": {
+      bin: "cursor-agent",
+      args: ["acp"],
+      supportsModelFlag: false,
+      transport: { mode: "unix", socketDir: "/shared" },
+    },
+    "tzlev-agents": {
+      bin: "/usr/local/bin/tzlev-agents-acp",
+      args: [],
+      supportsModelFlag: false,
+      // stdio + SSH wrapper, but a webdav fs → the CLI lives elsewhere.
+      transport: { mode: "stdio" },
+      fs: { kind: "webdav", url: "http://h", user: "u", pass: "p", root: "/home/user/projects" },
+    },
+    "local-plain": { bin: "nope", args: [], supportsModelFlag: false },
+  } as unknown as Record<CliKind, CliSpec>
+
+  it("attachOnly / unix / webdav-fs → found:true source:remote without a local bin", () => {
+    const result = detectAvailableClis(remoteSpecs, { PATH: "/fake/bin", PATHEXT: "" })
+    for (const k of ["cursor-attach", "cursor-unix", "tzlev-agents"]) {
+      expect(result.available).toContain(k)
+      expect(result.details[k as CliKind]?.source).toBe("remote")
+      expect(result.details[k as CliKind]?.found).toBe(true)
+    }
+    // webdav fs also surfaces fsRoot for the folder picker.
+    expect(result.details["tzlev-agents" as CliKind]?.fsRoot).toBe("/home/user/projects")
+    // a plain stdio + local-fs cliKind is NOT remote — stays not-found (no bin).
+    expect(result.available).not.toContain("local-plain")
+    expect(result.details["local-plain" as CliKind]?.source).toBe("not-found")
+  })
+})

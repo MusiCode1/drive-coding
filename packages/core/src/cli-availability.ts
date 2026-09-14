@@ -67,10 +67,17 @@ export function detectAvailableClis(
     // starts inside the remote root. Independent of availability/transport.
     const fsRoot = spec.fs?.kind === "webdav" ? spec.fs.root : undefined
 
-    // slice cli-transport: an attach-only target runs its binary in another
-    // container, so local bin detection is meaningless — availability means the
-    // target is configured, not that a binary exists here. Marked "remote".
-    if (spec.transport?.attachOnly === true) {
+    // slice cli-transport (bug #69): a remote cliKind runs its binary in another
+    // container/host, so local bin detection is meaningless — availability means
+    // the target is configured, not that a binary exists here. Marked "remote".
+    // Remote iff any of: attachOnly, a non-stdio transport (unix/http), or a
+    // webdav fs (the filesystem — and thus the CLI — lives elsewhere, e.g. the
+    // stdio+SSH-wrapper case like tzlev-agents).
+    const isRemote =
+      spec.transport?.attachOnly === true ||
+      (spec.transport !== undefined && spec.transport.mode !== "stdio") ||
+      spec.fs?.kind === "webdav"
+    if (isRemote) {
       details[kind] = {
         found: true,
         source: "remote",
