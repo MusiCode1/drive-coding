@@ -848,7 +848,7 @@
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
       "metric": 3677,
-      "impurity": 92,
+      "impurity": 89,
       "class": "scattered"
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
