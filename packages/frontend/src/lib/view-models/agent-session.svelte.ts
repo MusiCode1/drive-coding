@@ -126,6 +126,7 @@ import {
   reduceSubagent,
 } from "./claude-subagent-parse"
 import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
+import { watchPageVisibility } from "./page-visibility.js"
 
 /**
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
@@ -235,12 +236,8 @@ export class AgentSession {
       this.#isRemote = true // slice local-view-wiring C1: DI של view == remote (כל 5 הקונסטרוקציות)
       void this.#consumeViewPatches(opts.view)
     }
-    // ─── slice ws-reconnect-infra: visibility tracking ───
+    // ─── slice ws-reconnect-infra: visibility tracking (עבר ל-#visibility) ───
     if (typeof document !== "undefined") {
-      this.#pageHidden = document.hidden
-      document.addEventListener("visibilitychange", () => {
-        this.#pageHidden = document.hidden
-      })
       // watchdog §2 — רק בדפדפן. בטסטים/SSR אין טיימר רקע שידלוף.
       this.#startStallWatch()
     }
@@ -580,8 +577,11 @@ export class AgentSession {
   /** ה-cliKind של ה-attach/loadSession האחרון — נדרש ל-cold reconnect.
    * $state כדי שה-getter הציבורי יהיה ריאקטיבי (slice cli-name-in-chat). */
   #cliKind = $state<string | null>(null)
-  /** True כשה-document.hidden (הדף ברקע). */
-  #pageHidden = false
+  /** slice reconnect-on-visible: רקע/פוקוס. חזרה לפוקוס מחמשת reconnect חולף בלבד
+   * (error!==null = טרמינלי: takeover / session-host-active. חימוש שם = ping-pong). */
+  #visibility = watchPageVisibility(() => {
+    if (this.status === "disconnected" && this.error === null) this.#scheduleReconnect()
+  })
   /** טיימר לניסיון reconnect הבא. */
   #reconnectTimer: ReturnType<typeof setTimeout> | undefined
   /** Guard למניעת שתי לולאות reconnect מקבילות. */
@@ -1108,7 +1108,7 @@ export class AgentSession {
       this.error = null
       connWarn("ws-closed", { code, reason: reason || "no reason", agentId: this.agentId })
     }
-    if (this.#pageHidden) {
+    if (this.#visibility.hidden) {
       this.#setStatus("disconnected") // רקע — לא אוטו
       return
     }
