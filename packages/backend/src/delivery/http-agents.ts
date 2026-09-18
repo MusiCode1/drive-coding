@@ -5,12 +5,19 @@ import {
   toAgentPublic,
   validateCwd,
 } from "@drive-coding/core"
+import { createLogger } from "@drive-coding/core/log"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
 import type { ProjectsRegistry } from "../app/projects-registry"
 import { parseCreateAgentBody } from "./create-agent-input.js"
 import { httpCacheGet, httpCacheSet } from "./http-cache.js"
+import {
+  CF_ACCESS_EMAIL_HEADER,
+  readOpenedByEmail,
+} from "./opened-by-email.js"
+
+const log = createLogger("backend.agents.http")
 
 /**
  * הרחבת צד-שרת בלבד של CreateAgentInput — כולל existingSessionId
@@ -82,6 +89,15 @@ export function registerAgentsHttp(
     const parsed = parseCreateAgentBody(body, deps.env)
     if (!parsed.ok) {
       return c.json(parsed.error.body, parsed.error.status)
+    }
+
+    const email = readOpenedByEmail(c.req.header(CF_ACCESS_EMAIL_HEADER))
+    log.info(
+      { accessEmailHeader: email ? CF_ACCESS_EMAIL_HEADER : "none" },
+      "openedByEmail attribution",
+    )
+    if (email) {
+      parsed.value.openedByEmail = email
     }
 
     try {

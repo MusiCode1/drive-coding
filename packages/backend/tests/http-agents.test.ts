@@ -1,14 +1,25 @@
-import { Hono } from "hono"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+
+const { mockLogInfo } = vi.hoisted(() => ({
+  mockLogInfo: vi.fn(),
+}))
+
+vi.mock("@drive-coding/core/log", () => ({
+  createLogger: () => ({ info: mockLogInfo, warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}))
+
+import { Hono } from "hono"
 import { createInMemoryAgentRegistry } from "../src/agents/registry"
 import type { AgentOrchestrator, CreateAndSpawnResult } from "../src/app/agent-orchestrator"
 import { closeAllAgents } from "../src/app/close-all-agents.js"
 import { registerAgentsHttp } from "../src/delivery/http-agents"
+import { CF_ACCESS_EMAIL_HEADER } from "../src/delivery/opened-by-email.js"
 // slice liveness C2: ה-http-cache הוא module-level — מנקים בין טסטים כדי שלא ידלוף.
 import { httpCacheInvalidateAll } from "../src/delivery/http-cache"
 
 beforeEach(() => {
   httpCacheInvalidateAll()
+  mockLogInfo.mockClear()
 })
 
 // עזר-בדיקה: זיוף projectsRegistry עם ריגול (vi.fn) — עדיף על דיסק אמיתי
@@ -319,6 +330,84 @@ describe("HTTP /api/agents", () => {
       expect(res.status).toBe(500)
       const body = await res.json()
       expect(body.error).toContain("bridge spawn failed")
+    })
+
+    // slice session-attribution-core C1 — fail-open header attribution (AGENTS.md silent-branch pin)
+    describe("openedByEmail from CF Access header", () => {
+      async function postAndList(
+        app: ReturnType<typeof makeApp>["app"],
+        opts: { headers?: Record<string, string>; body?: Record<string, unknown> } = {},
+      ) {
+        const res = await app.request("/api/agents", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...opts.headers,
+          },
+          body: JSON.stringify(opts.body ?? { cliKind: "opencode", cwd: "/tmp/attr" }),
+        })
+        expect(res.status).toBe(201)
+        const listRes = await app.request("/api/agents")
+        return listRes.json() as Promise<{ agents: Array<{ openedByEmail?: string }> }>
+      }
+
+      it("no header — GET omits openedByEmail and logs none", async () => {
+        const { app } = makeApp()
+        const body = await postAndList(app)
+        expect(body.agents[0]).not.toHaveProperty("openedByEmail")
+        expect(mockLogInfo).toHaveBeenCalledWith(
+          { accessEmailHeader: "none" },
+          "openedByEmail attribution",
+        )
+      })
+
+      it("empty or whitespace header — same as no header", async () => {
+        const { app } = makeApp()
+        for (const value of ["", "   "]) {
+          mockLogInfo.mockClear()
+          const body = await postAndList(app, {
+            headers: { [CF_ACCESS_EMAIL_HEADER]: value },
+          })
+          expect(body.agents.at(-1)).not.toHaveProperty("openedByEmail")
+          expect(mockLogInfo).toHaveBeenCalledWith(
+            { accessEmailHeader: "none" },
+            "openedByEmail attribution",
+          )
+        }
+      })
+
+      it("header present — stores email on agent", async () => {
+        const { app } = makeApp()
+        const body = await postAndList(app, {
+          headers: { [CF_ACCESS_EMAIL_HEADER]: "test@x.com" },
+        })
+        expect(body.agents[0]?.openedByEmail).toBe("test@x.com")
+        expect(mockLogInfo).toHaveBeenCalledWith(
+          { accessEmailHeader: CF_ACCESS_EMAIL_HEADER },
+          "openedByEmail attribution",
+        )
+      })
+
+      it("body openedByEmail without header — ignored (not from body)", async () => {
+        const { app } = makeApp()
+        const body = await postAndList(app, {
+          body: { cliKind: "opencode", cwd: "/tmp/evil", openedByEmail: "evil@x.com" },
+        })
+        expect(body.agents[0]).not.toHaveProperty("openedByEmail")
+        expect(mockLogInfo).toHaveBeenCalledWith(
+          { accessEmailHeader: "none" },
+          "openedByEmail attribution",
+        )
+      })
+
+      it("body openedByEmail with real header — value from header, not body", async () => {
+        const { app } = makeApp()
+        const body = await postAndList(app, {
+          headers: { [CF_ACCESS_EMAIL_HEADER]: "real@x.com" },
+          body: { cliKind: "opencode", cwd: "/tmp/both", openedByEmail: "evil@x.com" },
+        })
+        expect(body.agents[0]?.openedByEmail).toBe("real@x.com")
+      })
     })
   })
 

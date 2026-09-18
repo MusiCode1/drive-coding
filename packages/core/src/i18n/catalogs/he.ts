@@ -238,6 +238,7 @@ export const he: Catalog = {
   "connect.agents.subAgentsOf": "סוכני משנה",
   "connect.agents.childCount": "סוכני משנה",
   "connect.agents.watcherCount": "צופים",
+  "connect.agents.openedBy": "נפתח על ידי",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "מסך",
   "settings.toggle.keepScreenOn": "השאר מסך דלוק",
