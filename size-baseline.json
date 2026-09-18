@@ -612,7 +612,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/layout/SessionOptionsPanel.svelte": {
-      "metric": 281,
+      "metric": 280,
       "impurity": 8,
       "class": "mixed"
     },
@@ -847,7 +847,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 3676,
+      "metric": 3675,
       "impurity": 92,
       "class": "scattered"
     },

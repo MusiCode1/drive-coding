@@ -283,6 +283,8 @@ export const he: Catalog = {
   "connect.recent.expand": "הרחב",
   // ─── leave-running (slice leave-running-background) ───
   "session.titleLabel": "כותרת",
+  "session.fieldsLabel": "שדות",
+  "session.fieldsEmpty": "אין שדות",
   "session.leaveRunning": "צא — השאר רץ",
   "session.closeSession": "כבה לגמרי את התהליך",
   "session.leaveWarning.title": "הסוכן ימשיך לרוץ",

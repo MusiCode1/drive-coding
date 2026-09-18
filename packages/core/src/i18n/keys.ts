@@ -303,6 +303,8 @@ export type MessageKey =
   | "connect.recent.expand"
   // ─── leave-running (slice leave-running-background) ───
   | "session.titleLabel" // slice session-title-manual: editable session title in options panel
+  | "session.fieldsLabel" // slice session-memory: read-only agent fields in options panel
+  | "session.fieldsEmpty"
   | "session.leaveRunning" // תווית כפתור "צא — השאר רץ" (חדש)
   | "session.closeSession" // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
   | "session.leaveWarning.title"
