@@ -38,6 +38,7 @@ export function buildAgentRow(opts: {
       ? { notifyOnDone: input.notifyOnDone }
       : {}),
     ...(input.roleLabel !== undefined ? { roleLabel: input.roleLabel } : {}),
+    ...(input.openedByEmail !== undefined ? { openedByEmail: input.openedByEmail } : {}),
     ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
   }
 }
