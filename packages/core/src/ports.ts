@@ -27,7 +27,14 @@ export interface AgentRegistry {
     patch: Partial<
       Pick<
         Agent,
-        "status" | "bridgePort" | "acpSessionId" | "crashReason" | "persistent" | "title" | "cwd"
+        | "status"
+        | "bridgePort"
+        | "acpSessionId"
+        | "crashReason"
+        | "persistent"
+        | "title"
+        | "titleManual"
+        | "cwd"
       >
     >,
   ): Promise<Agent>

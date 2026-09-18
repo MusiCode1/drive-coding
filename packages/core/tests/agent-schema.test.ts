@@ -347,6 +347,37 @@ describe("CreateAgentInput — roleLabel field (slice agent-role-label C0)", () 
   })
 })
 
+describe("toAgentPublic — titleManual field (slice session-title-manual C0)", () => {
+  it("copies titleManual from agent to pub", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440017",
+      cliKind: "cursor" as const,
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T05:00:00.000Z",
+      titleManual: true,
+      title: "My title",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub.titleManual).toBe(true)
+    expect(pub.title).toBe("My title")
+  })
+
+  it("omits titleManual from pub when not set on agent", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440018",
+      cliKind: "cursor" as const,
+      cwd: "/project",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T10:00:00.000Z",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub).not.toHaveProperty("titleManual")
+  })
+})
+
 describe("toAgentPublic — openedByEmail field (slice session-attribution-core C0)", () => {
   it("copies openedByEmail from agent to pub", () => {
     const agent = {

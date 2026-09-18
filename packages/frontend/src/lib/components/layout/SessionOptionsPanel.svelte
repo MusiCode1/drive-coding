@@ -24,6 +24,7 @@ import { goto } from "$app/navigation"
 import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import MachineStatsBar from "$lib/components/connect/MachineStatsBar.svelte"
+import SessionTitleField from "$lib/components/layout/SessionTitleField.svelte"
 import SessionsFilterBar from "$lib/components/layout/SessionsFilterBar.svelte"
 import SessionCard from "$lib/components/modals/SessionCard.svelte"
 import CliBadge from "$lib/components/ui/CliBadge.svelte"
@@ -232,12 +233,7 @@ async function onCheckboxChange(configId: string, e: Event) {
 
 // ─── slice sessions-inline: טעינת סשנים inline ───
 
-/**
- * פותר את דגל sessionTransport (query ← override ← stored ← env ← "ws") — אותו עזר
- * ואותם ארגומנטים כמו connect-agent.ts / handleReconnect (+page.svelte). C4 ממצא 2:
- * בלי זה, ניווט מהפאנל פולט נתיב עירום, ורענון (F5) אחרי בחירת-סשן ב-http מאבד
- * את דגל-התעבורה (נופל בחזרה ל-ws בפעם הבאה).
- */
+/** sessionTransport: query ← override ← stored ← env ← "ws" (same as handleReconnect). */
 function currentTransport() {
   return readSessionTransport({
     env: env.PUBLIC_SESSION_TRANSPORT,
@@ -288,6 +284,7 @@ $effect(() => {
 
 <!-- machine stats from presence poller (slice machine-stats-in-session) -->
 <MachineStatsBar stats={poller.machine} />
+<SessionTitleField />
 
 <!-- שורת פעולות עליונה: נתק · השאר-רץ · השתק · ⚙ — בראש בכל המצבים (redesign-fix) -->
 <!-- סדר DOM ב-RTL: disconnect=ימני-קיצוני, leave-running משמאלו, audio, settings -->

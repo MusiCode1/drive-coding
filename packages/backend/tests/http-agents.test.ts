@@ -588,6 +588,24 @@ describe("HTTP /api/agents", () => {
 
   // slice session-title-in-process-list: PATCH /api/agents/:id (generic, whitelist: title)
   describe("PATCH /api/agents/:id", () => {
+    it("sets titleManual + title → GET reflects both (slice session-title-manual C0)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titleManual: true, title: "manual x" }),
+      })
+      expect(res.status).toBe(200)
+
+      const listRes = await app.request("/api/agents")
+      const listBody = await listRes.json()
+      const found = listBody.agents.find((a: { id: string }) => a.id === agent.id)
+      expect(found.titleManual).toBe(true)
+      expect(found.title).toBe("manual x")
+    })
+
     it("sets title → 200 {ok}, and GET /api/agents reflects it", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })

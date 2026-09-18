@@ -175,6 +175,8 @@ export const Agent = type({
   "roleLabel?": "string",
   // slice session-attribution-core: CF Access email at creation (attribution, not auth).
   "openedByEmail?": "string",
+  // slice session-title-manual: user-set title must survive ACP session_info_update + BE restart.
+  "titleManual?": "boolean",
   // slice charter-in-hook: the charter text is kept on the record so the surface
   // endpoint can serve it to provider hooks. Deliberately NOT on AgentPublic —
   // it is content, not display metadata, and can be long.
@@ -223,6 +225,8 @@ export const AgentPublic = type({
   "roleLabel?": "string",
   // slice session-attribution-core: CF Access email at creation (attribution, not auth).
   "openedByEmail?": "string",
+  // slice session-title-manual: user-set title must survive ACP session_info_update + BE restart.
+  "titleManual?": "boolean",
 })
 export type AgentPublic = typeof AgentPublic.infer
 
@@ -295,6 +299,9 @@ export function toAgentPublic(agent: Agent): AgentPublic {
   }
   if (agent.openedByEmail !== undefined) {
     pub.openedByEmail = agent.openedByEmail
+  }
+  if (agent.titleManual !== undefined) {
+    pub.titleManual = agent.titleManual
   }
   return pub
 }

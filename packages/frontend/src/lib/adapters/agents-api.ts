@@ -115,13 +115,10 @@ export async function deleteAgent(agentId: string): Promise<void> {
   }
 }
 
-/**
- * הגוף הכולל של ה-PATCH הגנרי (slice agent-patch-unify, C3) — דלת אחת במקום שלוש
- * (POST …/session-attached, POST …/persistent, PATCH {title}). תואם 1:1 ל-`PatchAgentInput`
- * ב-http-agents.ts. `replace` הוא דגל-בקרה (D3) — לא שדה-רישום.
- */
+/** PATCH body — 1:1 with `PatchAgentInput` in http-agents.ts (`replace` is control-only). */
 export type PatchAgentBody = {
   title?: string | null
+  titleManual?: boolean
   persistent?: boolean
   acpSessionId?: string
   status?: "ready"

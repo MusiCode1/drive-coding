@@ -156,4 +156,21 @@ describe("AgentSession — session_info_update handler", () => {
 
     expect(session.sessionTitle).toBe("Fix auth bug")
   })
+
+  it("after setManualTitle, session_info_update string does not change sessionTitle", async () => {
+    const session = await buildConnectedSession()
+    session.setManualTitle("User title")
+    expect(session.sessionTitle).toBe("User title")
+
+    inject({ sessionUpdate: "session_info_update", title: "ACP overwrite" })
+    expect(session.sessionTitle).toBe("User title")
+  })
+
+  it("after setManualTitle, session_info_update null does not clear sessionTitle", async () => {
+    const session = await buildConnectedSession()
+    session.setManualTitle("User title")
+
+    inject({ sessionUpdate: "session_info_update", title: null })
+    expect(session.sessionTitle).toBe("User title")
+  })
 })
