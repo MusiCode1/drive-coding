@@ -8,6 +8,7 @@ import { env } from "$env/dynamic/public"
 import { readSessionTransport } from "$lib/session/session-transport-read"
 import { sessionPath } from "$lib/session/session-url"
 import { connectAgent } from "$lib/actions/connect-agent"
+import { manualTitleAttach } from "$lib/actions/open-session-url"
 import { fetchServerOptions } from "$lib/adapters/options"
 import type { RecentProject } from "$lib/adapters/recent-projects"
 import { postReloadConfig } from "$lib/adapters/cli-availability"
@@ -108,10 +109,6 @@ $effect(() => {
 const isRtl = $derived(settings.locale === "he")
 
 async function handleReconnect(agent: AgentPublic) {
-  // ─── slice remote-warm-reconnect C4 / transport-polish C2: ניתוב לפי דגל sessionTransport ───
-  // פתירת הדגל דרך הפונקציה המשותפת — query ← override(sessionStorage) ←
-  // stored(settings) ← env ← "ws". http → warm reconnect דרך SSE
-  // (attachRemoteToLiveAgent, בלי WS); ws → הנתיב הקיים (attachToLiveAgent).
   const transport = readSessionTransport({
     env: env.PUBLIC_SESSION_TRANSPORT,
     stored: settings.sessionTransport,
@@ -122,6 +119,7 @@ async function handleReconnect(agent: AgentPublic) {
       agentId: agent.id,
       cwd: agent.cwd,
       cliKind: agent.cliKind,
+      ...manualTitleAttach(agent),
     })
     if (session.status === "connected") {
       await goto(
@@ -139,6 +137,7 @@ async function handleReconnect(agent: AgentPublic) {
     sessionId: agent.acpSessionId,
     cwd: agent.cwd,
     cliKind: agent.cliKind,
+    ...manualTitleAttach(agent),
   })
   if (session.status === "connected") {
     await goto(

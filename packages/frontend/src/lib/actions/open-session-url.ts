@@ -8,6 +8,7 @@
  * לא הפרה של connect-agent.ts. ר' connect-agent.ts להערה מעודכנת.
  */
 
+import type { AgentPublic } from "@drive-coding/core"
 import { env } from "$env/dynamic/public"
 import { listAgents } from "$lib/adapters/agents-api"
 import { readSessionTransport } from "$lib/session/session-transport-read"
@@ -18,6 +19,14 @@ import type { Settings } from "$lib/view-models/settings.svelte"
 export type OpenSessionOutcome = "connected" | "not-found" | "needs-takeover" | "error"
 
 const OWNED_AGENT_KEY = "dc.ownedAgentId"
+
+export function manualTitleAttach(agent: AgentPublic) {
+  if (agent.titleManual !== true) return {}
+  return {
+    titleManual: true as const,
+    ...(agent.title != null ? { title: agent.title } : {}),
+  }
+}
 
 function connectionFailed(session: AgentSession): boolean {
   return session.status !== "connected" || session.error !== null
@@ -92,6 +101,7 @@ export async function openSessionUrl(params: {
       agentId: agent.id,
       cwd: agent.cwd,
       cliKind: agent.cliKind,
+      ...manualTitleAttach(agent),
     })
   } else {
     await session.attachToLiveAgent({
@@ -99,6 +109,7 @@ export async function openSessionUrl(params: {
       sessionId: attachSessionId,
       cwd: agent.cwd,
       cliKind: agent.cliKind,
+      ...manualTitleAttach(agent),
     })
   }
 

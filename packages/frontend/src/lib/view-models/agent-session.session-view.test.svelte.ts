@@ -111,6 +111,18 @@ describe("AgentSession as SessionView consumer (C3)", () => {
     expect(agent.sessionTitle).toBe("My Session Title")
   })
 
+  it("after setManualTitle, session_info_update via update-session patch does not overwrite", async () => {
+    agent.setManualTitle("User title")
+    expect(agent.sessionTitle).toBe("User title")
+
+    mockView.fireUpdate({
+      sessionUpdate: "session_info_update",
+      title: "ACP overwrite",
+    })
+    await delay()
+    expect(agent.sessionTitle).toBe("User title")
+  })
+
   it("usage_update → contextUsage updated", async () => {
     mockView.fireUpdate({
       sessionUpdate: "usage_update",

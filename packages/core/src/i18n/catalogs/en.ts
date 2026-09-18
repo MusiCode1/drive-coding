@@ -287,6 +287,7 @@ export const en: Catalog = {
   "connect.recent.collapse": "Collapse",
   "connect.recent.expand": "Expand",
   // ─── leave-running (slice leave-running-background) ───
+  "session.titleLabel": "Title",
   "session.leaveRunning": "Leave — keep running",
   "session.closeSession": "Shut the process down completely",
   "session.leaveWarning.title": "Agent will keep running",
