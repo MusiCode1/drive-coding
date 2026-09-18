@@ -392,7 +392,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/adapters/agents-api.ts": {
-      "metric": 220,
+      "metric": 217,
       "impurity": 24,
       "class": "scattered"
     },

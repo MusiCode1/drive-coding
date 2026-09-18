@@ -168,6 +168,7 @@ export function registerAgentsHttp(
    */
   const PatchAgentInput = type({
     "title?": "string | null",
+    "titleManual?": "boolean",
     "persistent?": "boolean",
     "acpSessionId?": "string >= 1",
     "status?": "'ready'", // D1 — ליטרל, לא string
@@ -229,11 +230,13 @@ export function registerAgentsHttp(
     }
 
     // D4 — שכבה (ג): extract מפורש שדה-שדה. מפתח שערכו undefined אינו נכנס לפatch.
-    const patch: Partial<Pick<Agent, "title" | "persistent" | "status" | "acpSessionId" | "cwd">> =
-      {}
+    const patch: Partial<
+      Pick<Agent, "title" | "titleManual" | "persistent" | "status" | "acpSessionId" | "cwd">
+    > = {}
     // guard: title absent (undefined) → no-op, שלא לנקות כותרת קיימת בטעות.
     // title: null = clear מכוון (הסכמה מתירה); string = set.
     if (parsed.title !== undefined) patch.title = parsed.title
+    if (parsed.titleManual !== undefined) patch.titleManual = parsed.titleManual
     if (parsed.persistent !== undefined) patch.persistent = parsed.persistent
     if (parsed.status !== undefined) patch.status = parsed.status
     if (parsed.acpSessionId !== undefined) patch.acpSessionId = parsed.acpSessionId
