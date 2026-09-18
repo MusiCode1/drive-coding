@@ -878,6 +878,32 @@ describe("session_whoami (slice mcp-whoami)", () => {
     expect(body.parentAgentId).toBe(parent.id)
     expect(body.sessionId).toBe(`sess-${child.id}`)
   })
+
+  it("includes openedByEmail when present on caller record", async () => {
+    const { app, registry } = makeApp()
+    const agent = await registry.create({
+      cliKind: "cursor",
+      cwd: "/tmp/whoami-email",
+      openedByEmail: "user@example.com",
+    })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as { openedByEmail?: string }
+    expect(body.openedByEmail).toBe("user@example.com")
+  })
+
+  it("omits openedByEmail when not set on caller record", async () => {
+    const { app, registry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/whoami-no-email" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+    const result = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as { openedByEmail?: string }
+    expect(body).not.toHaveProperty("openedByEmail")
+  })
 })
 
 describe("session_whoami runtime envelope (slice mcp-whoami-runtime)", () => {
