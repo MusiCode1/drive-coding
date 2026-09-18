@@ -86,6 +86,7 @@ import {
   applyTitleFromSessionInput,
   setManualTitleOnAgent,
   syncTitleFromViewState,
+  type ManualTitleInput,
 } from "$lib/view-models/agent-session-manual-title"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
 import type { Settings } from "$lib/view-models/settings.svelte"
@@ -331,6 +332,8 @@ export class AgentSession {
   /** כותרת הסשן הפעיל. snapshot מרגע הטעינה/החלפה. "" = אין כותרת (סשן חדש). */
   sessionTitle = $state<string>("")
   titleManual = $state(false)
+  userNotes = $state("")
+  sessionFields = $state<Record<string, string>>({})
 
   // ─── slice plan-todo-list Commit 1: תוכנית-עבודה חיה (TodoWrite/update_plan) ─── (תוספתי)
   /** מצב הצ'קליסט הנעוץ, מ-session/update מסוגי plan/plan_update/plan_removed. reducer טהור ב-core. */
@@ -1620,13 +1623,9 @@ export class AgentSession {
   // ─── slice remote-warm-reconnect C3: attachRemoteToLiveAgent ───
 
   /** Remote warm reconnect to a live host (no WS / no createAgent). */
-  attachRemoteToLiveAgent = async (input: {
-    agentId: string
-    cwd: string
-    cliKind: string
-    title?: string
-    titleManual?: boolean
-  }): Promise<void> => {
+  attachRemoteToLiveAgent = async (
+    input: { agentId: string; cwd: string; cliKind: string } & ManualTitleInput,
+  ): Promise<void> => {
     // 0. ⚠️⚠️ קודם guard-הכפילות, ורק אחריו #cleanup() — אותו סדר קריטי כמו attachRemote
     // (חיבור-חוזר במצב connected היה הורג חיבור קיים לפני שהוא זורק).
     if (this.status === "connecting" || this.status === "connected") {
@@ -2128,14 +2127,14 @@ export class AgentSession {
   // ─── slice reconnect-warm-attach: חיבור מחדש ל-agent חי מהווידג'ט ─── (תוספתי)
 
   /** Warm-attach to a live BE agent after refresh (widget reconnect). */
-  attachToLiveAgent = async (input: {
-    agentId: string
-    sessionId: string
-    cwd: string
-    cliKind: string
-    title?: string
-    titleManual?: boolean
-  }): Promise<void> => {
+  attachToLiveAgent = async (
+    input: {
+      agentId: string
+      sessionId: string
+      cwd: string
+      cliKind: string
+    } & ManualTitleInput,
+  ): Promise<void> => {
     // ─── slice view-switch C3-ה: המסוכן מבין ארבעתן — פותח WS בלי שום שמירה על status/#view ───
     // ⇒ ב-remote אפשר היה להגיע ל-WS מקביל ל-SessionHost על אותו wire (ממצא 5).
     if (this.#remoteView()) return

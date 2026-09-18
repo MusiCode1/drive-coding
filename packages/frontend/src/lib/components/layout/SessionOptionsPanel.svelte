@@ -5,9 +5,7 @@
  * redesign-3: חיווט dropdowns (סוכן/מודל/חשיבה) מתוך לוגיקת AgentOptionsPanel.
  * AgentOptionsPanel נמחק; כל הלוגיקה כאן.
  *
- * ─── redesign-2 ───
- * ─── redesign-3 (חיווט dropdowns) ───
- * ─── slice sessions-inline: סשנים inline (מחליף SessionsDialog) ───
+ * ─── redesign-2/3 · slice sessions-inline (סשנים inline, מחליף SessionsDialog) ───
  */
 
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
@@ -24,6 +22,7 @@ import { goto } from "$app/navigation"
 import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import MachineStatsBar from "$lib/components/connect/MachineStatsBar.svelte"
+import SessionFieldsList from "$lib/components/layout/SessionFieldsList.svelte"
 import SessionTitleField from "$lib/components/layout/SessionTitleField.svelte"
 import SessionsFilterBar from "$lib/components/layout/SessionsFilterBar.svelte"
 import SessionCard from "$lib/components/modals/SessionCard.svelte"
@@ -285,7 +284,7 @@ $effect(() => {
 <!-- machine stats from presence poller (slice machine-stats-in-session) -->
 <MachineStatsBar stats={poller.machine} />
 <SessionTitleField />
-
+<SessionFieldsList />
 <!-- שורת פעולות עליונה: נתק · השאר-רץ · השתק · ⚙ — בראש בכל המצבים (redesign-fix) -->
 <!-- סדר DOM ב-RTL: disconnect=ימני-קיצוני, leave-running משמאלו, audio, settings -->
 <div class="flex items-center gap-2 shrink-0">

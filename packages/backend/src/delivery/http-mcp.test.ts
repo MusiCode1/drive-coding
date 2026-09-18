@@ -220,7 +220,10 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     expect(instructions).toContain("session_whoami")
     expect(tools.map((t) => t.name).sort()).toEqual([
       "session_close",
+      "session_field_delete",
+      "session_field_set",
       "session_list",
+      "session_note_set",
       "session_open",
       "session_send",
       "session_state",
@@ -1088,5 +1091,74 @@ describe("session_surface (slice mcp-surface-tool)", () => {
     // Text, not JSON — a stringified body would escape every newline.
     expect(text).not.toMatch(/^\s*[{[]/)
     expect(text).toContain("\n")
+  })
+})
+
+describe("session memory MCP tools (slice session-memory C1)", () => {
+  it("session_note_set without header returns isError", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const result = await client.callTool({
+      name: "session_note_set",
+      arguments: { text: "hello" },
+    })
+    await client.close()
+    expect(isToolError(result)).toBe(true)
+    expect(toolText(result)).toMatch(new RegExp(AGENT_ID_HEADER))
+  })
+
+  it("session_note_set with header → whoami returns userNotes", async () => {
+    const { app, registry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/memory-note" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+
+    const setResult = await client.callTool({
+      name: "session_note_set",
+      arguments: { text: "shared note" },
+    })
+    expect(isToolError(setResult)).toBe(false)
+
+    const whoami = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    expect(isToolError(whoami)).toBe(false)
+    const body = JSON.parse(toolText(whoami)) as { userNotes?: string }
+    expect(body.userNotes).toBe("shared note")
+  })
+
+  it("session_field_set merges keys without replacing the map", async () => {
+    const { app, registry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/memory-fields" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+
+    await client.callTool({
+      name: "session_field_set",
+      arguments: { key: "a", value: "1" },
+    })
+    await client.callTool({
+      name: "session_field_set",
+      arguments: { key: "b", value: "2" },
+    })
+
+    const whoami = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    const body = JSON.parse(toolText(whoami)) as { sessionFields?: Record<string, string> }
+    expect(body.sessionFields).toEqual({ a: "1", b: "2" })
+  })
+
+  it("session_field_delete removes one key", async () => {
+    const { app, registry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/memory-delete" })
+    await registry.update(agent.id, { sessionFields: { keep: "yes", drop: "no" } })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: agent.id })
+
+    await client.callTool({
+      name: "session_field_delete",
+      arguments: { key: "drop" },
+    })
+
+    const whoami = await client.callTool({ name: "session_whoami", arguments: {} })
+    await client.close()
+    const body = JSON.parse(toolText(whoami)) as { sessionFields?: Record<string, string> }
+    expect(body.sessionFields).toEqual({ keep: "yes" })
   })
 })

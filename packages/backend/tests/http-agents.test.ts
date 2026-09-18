@@ -715,6 +715,35 @@ describe("HTTP /api/agents", () => {
       expect(updated?.title).toBe("keep me")
     })
 
+    it("sets userNotes → GET reflects it (slice session-memory C0)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userNotes: "session note" }),
+      })
+      expect(res.status).toBe(200)
+
+      const listRes = await app.request("/api/agents")
+      const listBody = await listRes.json()
+      const found = listBody.agents.find((a: { id: string }) => a.id === agent.id)
+      expect(found.userNotes).toBe("session note")
+    })
+
+    it("rejects PATCH sessionFields → 400 (slice session-memory C0)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionFields: { a: "1" } }),
+      })
+      expect(res.status).toBe(400)
+    })
+
     // מחלקה 3 — "לעולם-לא-מ-HTTP": onUndeclaredKey("reject") נדחית גם אחרי
     // הצטרפות השדות האופציונליים החדשים. (M6 מסירה את השכבה הזו.)
     it.each([

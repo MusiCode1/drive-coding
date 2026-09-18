@@ -8,7 +8,7 @@ import { env } from "$env/dynamic/public"
 import { readSessionTransport } from "$lib/session/session-transport-read"
 import { sessionPath } from "$lib/session/session-url"
 import { connectAgent } from "$lib/actions/connect-agent"
-import { manualTitleAttach } from "$lib/actions/open-session-url"
+import { sessionAttachExtras } from "$lib/actions/open-session-url"
 import { fetchServerOptions } from "$lib/adapters/options"
 import type { RecentProject } from "$lib/adapters/recent-projects"
 import { postReloadConfig } from "$lib/adapters/cli-availability"
@@ -119,7 +119,7 @@ async function handleReconnect(agent: AgentPublic) {
       agentId: agent.id,
       cwd: agent.cwd,
       cliKind: agent.cliKind,
-      ...manualTitleAttach(agent),
+      ...sessionAttachExtras(agent),
     })
     if (session.status === "connected") {
       await goto(
@@ -137,7 +137,7 @@ async function handleReconnect(agent: AgentPublic) {
     sessionId: agent.acpSessionId,
     cwd: agent.cwd,
     cliKind: agent.cliKind,
-    ...manualTitleAttach(agent),
+    ...sessionAttachExtras(agent),
   })
   if (session.status === "connected") {
     await goto(

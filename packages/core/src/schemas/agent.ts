@@ -177,6 +177,10 @@ export const Agent = type({
   "openedByEmail?": "string",
   // slice session-title-manual: user-set title must survive ACP session_info_update + BE restart.
   "titleManual?": "boolean",
+  // slice session-memory: shared session note (user + agent read; user writes via PATCH).
+  "userNotes?": "string",
+  // slice session-memory: agent-written key→value map (MCP only; read-only in UI).
+  "sessionFields?": { "[string]": "string" },
   // slice charter-in-hook: the charter text is kept on the record so the surface
   // endpoint can serve it to provider hooks. Deliberately NOT on AgentPublic —
   // it is content, not display metadata, and can be long.
@@ -227,6 +231,10 @@ export const AgentPublic = type({
   "openedByEmail?": "string",
   // slice session-title-manual: user-set title must survive ACP session_info_update + BE restart.
   "titleManual?": "boolean",
+  // slice session-memory: shared session note (user + agent read; user writes via PATCH).
+  "userNotes?": "string",
+  // slice session-memory: agent-written key→value map (MCP only; read-only in UI).
+  "sessionFields?": { "[string]": "string" },
 })
 export type AgentPublic = typeof AgentPublic.infer
 
@@ -302,6 +310,12 @@ export function toAgentPublic(agent: Agent): AgentPublic {
   }
   if (agent.titleManual !== undefined) {
     pub.titleManual = agent.titleManual
+  }
+  if (agent.userNotes !== undefined) {
+    pub.userNotes = agent.userNotes
+  }
+  if (agent.sessionFields !== undefined) {
+    pub.sessionFields = agent.sessionFields
   }
   return pub
 }
