@@ -465,3 +465,35 @@ describe("toAgentPublic — title field (slice session-title-in-process-list)", 
     expect(pub).toEqual(agent)
   })
 })
+
+describe("toAgentPublic — userNotes/sessionFields (slice session-memory C0)", () => {
+  it("copies userNotes and sessionFields from agent to pub", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440020",
+      cliKind: "cursor" as const,
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T05:00:00.000Z",
+      userNotes: "remember the refactor",
+      sessionFields: { branch: "slice/session-memory" },
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub.userNotes).toBe("remember the refactor")
+    expect(pub.sessionFields).toEqual({ branch: "slice/session-memory" })
+  })
+
+  it("omits userNotes/sessionFields from pub when not set on agent", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440021",
+      cliKind: "cursor" as const,
+      cwd: "/project",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T10:00:00.000Z",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub).not.toHaveProperty("userNotes")
+    expect(pub).not.toHaveProperty("sessionFields")
+  })
+})

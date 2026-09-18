@@ -34,6 +34,8 @@ export interface AgentRegistry {
         | "persistent"
         | "title"
         | "titleManual"
+        | "userNotes"
+        | "sessionFields"
         | "cwd"
       >
     >,
