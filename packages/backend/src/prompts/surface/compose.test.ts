@@ -92,6 +92,7 @@ describe("buildSurfacePrompt", () => {
       "runtime",
       "capabilities",
       "display",
+      "memory",
       "charter",
     ])
   })
@@ -138,6 +139,35 @@ describe("buildSurfacePrompt", () => {
 // reaches the model as system-level context instead of being glued onto the
 // first user turn. An agent without a charter is the normal case: the section
 // must vanish, not render empty.
+describe("memory piece (slice session-memory C1)", () => {
+  it("renders notes and fields when present", () => {
+    const out = buildSurfacePrompt({
+      pieces: ["memory"],
+      userNotes: "check the sync",
+      sessionFields: { branch: "dev" },
+    })
+    expect(out).toContain("# Session memory")
+    expect(out).toContain("## Notes")
+    expect(out).toContain("check the sync")
+    expect(out).toContain("## Fields")
+    expect(out).toContain("**branch**: dev")
+  })
+
+  it("omits the section when notes and fields are absent", () => {
+    const out = buildSurfacePrompt({ pieces: ["memory"] })
+    expect(out).toBe("")
+  })
+
+  it("places memory before charter in catalog order", () => {
+    const out = buildSurfacePrompt({
+      pieces: ["charter", "memory"],
+      charter: "Verify the patch.",
+      userNotes: "note",
+    })
+    expect(out.indexOf("# Session memory")).toBeLessThan(out.indexOf("# Your assignment"))
+  })
+})
+
 describe("charter piece", () => {
   it("renders the charter under its own heading, last", () => {
     const out = buildSurfacePrompt({ pieces: ["about", "charter"], charter: "You are the verifier." })
