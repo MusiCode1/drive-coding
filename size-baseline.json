@@ -542,7 +542,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/chat/TypeArea.svelte": {
-      "metric": 246,
+      "metric": 244,
       "impurity": 10,
       "class": "mixed"
     },
