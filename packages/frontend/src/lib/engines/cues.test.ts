@@ -22,6 +22,7 @@ function makeMockCtxInstance(state: AudioContextState = "running") {
     gain: {
       setValueAtTime: vi.fn(),
       linearRampToValueAtTime: vi.fn(),
+      exponentialRampToValueAtTime: vi.fn(),
     },
     connect: vi.fn().mockReturnValue(destination),
   }

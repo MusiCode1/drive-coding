@@ -9,6 +9,8 @@
  * זרימת import חוקית: VM → engine.
  *
  * slice 6: owner-driven audio cues.
+ * slice nicer-submit-cue: "thinking" is the sound of submitting a prompt, so
+ * it is a plucked two-note figure rather than a sine glide.
  */
 
 export type CueId =
@@ -43,19 +45,20 @@ export class CuesEngine {
 
     switch (cue) {
       case "recordingStart":
-        this.#playTone(880, 120)   // A5
+        this.#playGlide(880, 880, 120) // A5
         break
       case "recordingStop":
-        this.#playTone(660, 120)   // E5
+        this.#playGlide(660, 660, 120) // E5
         break
       case "thinking":
-        this.#playGlide(523, 659, 300)  // C5 → E5 (rising)
+        this.#playPluck(523.25, 0) // C5 then G5: a rising fifth, ~290ms total
+        this.#playPluck(783.99, 0.07)
         break
       case "speaking":
-        this.#playGlide(659, 523, 300)  // E5 → C5 (falling)
+        this.#playGlide(659, 523, 300) // E5 → C5 (falling)
         break
       case "error":
-        this.#playGlide(329, 220, 400)  // E4 → A3 (alarming drop)
+        this.#playGlide(329, 220, 400) // E4 → A3 (alarming drop)
         break
     }
   }
@@ -70,22 +73,28 @@ export class CuesEngine {
 
   // ─── private helpers ─────────────────────────────────────────────────────
 
-  #playTone(freq: number, ms: number): void {
+  /**
+   * One plucked note. The decay is exponential because that is what a struck
+   * thing does; the linear ramp below is exactly what makes a cue sound
+   * synthetic. Never ramps to 0, which exponentialRampToValueAtTime rejects.
+   */
+  #playPluck(freq: number, delay: number): void {
     const ctx = this.#ctx
     if (ctx === null) return
-    const t = ctx.currentTime
+    const t = ctx.currentTime + delay
     const osc = ctx.createOscillator()
     const gain = ctx.createGain()
     osc.frequency.value = freq
     osc.type = "sine"
-    gain.gain.setValueAtTime(0, t)
-    gain.gain.linearRampToValueAtTime(0.2, t + 0.005)      // fast attack
-    gain.gain.linearRampToValueAtTime(0, t + ms / 1000)    // decay to silence
+    gain.gain.setValueAtTime(0.0001, t)
+    gain.gain.linearRampToValueAtTime(0.18, t + 0.006) // fast attack
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.22) // natural tail
     osc.connect(gain).connect(ctx.destination)
     osc.start(t)
-    osc.stop(t + ms / 1000 + 0.05)
+    osc.stop(t + 0.25)
   }
 
+  /** Sustained tone, optionally sliding. fromFreq === toFreq is a flat tone. */
   #playGlide(fromFreq: number, toFreq: number, ms: number): void {
     const ctx = this.#ctx
     if (ctx === null) return
