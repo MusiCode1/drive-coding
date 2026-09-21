@@ -29,6 +29,7 @@ import type { Mic } from "./mic.svelte"
 const fakeMic = {
   state: "idle",
   permissionHint: null as MessageKey | null,
+  permissionDenied: false,
   refreshPermissionHint: vi.fn().mockResolvedValue(undefined),
 } as unknown as Mic
 
@@ -62,6 +63,7 @@ function createDictate(recovery = createRecovery()): {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  fakeMic.permissionDenied = false
   mockStart.mockResolvedValue(undefined)
   mockStop.mockResolvedValue({ blob: new Blob(["audio"]), mimeType: "audio/webm" })
   mockTranscribe.mockResolvedValue({ text: "hello world", recordingId: "" })
@@ -171,14 +173,15 @@ describe("Dictate.toggle from listening", () => {
     expect(draft.text).toBe("")
   })
 
-  it("NotAllowedError sets dictate.error.permission without canRetry", async () => {
+  it("NotAllowedError flags mic.permissionDenied and shows no text error", async () => {
     mockStart.mockRejectedValueOnce(new DOMException("denied", "NotAllowedError"))
     const { dictate } = createDictate()
 
     await dictate.toggle()
 
     expect(dictate.state).toBe("idle")
-    expect(dictate.error).toBe("dictate.error.permission")
+    expect(fakeMic.permissionDenied).toBe(true)
+    expect(dictate.error).toBeNull()
     expect(dictate.canRetry).toBe(false)
   })
 
