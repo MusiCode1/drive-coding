@@ -274,8 +274,12 @@ export function patchToSessionUpdates(state: SessionState, patch: Patch): WireSe
  * זהות-אמת גוברת על מפתח-קיבוץ.
  *
  * 🔴 **מחזיר סימן ואינו זורק.** ‏`AGENTS.md` קובע `Result`/סימן בליבה
- * ו-`throw` רק בקליפה, ואכן `rg "throw " packages/core/src/session/` מחזיר
- * אפס. ה-BE הוא שמתרגם את ה-`-1` ל-400.
+ * וזריקה רק בקליפה, ואכן שער-הכשירות של הסלייס (‏`rg` על המילה בתיקייה
+ * הזאת, בלי קבצי-טסט) מחזיר אפס — גם לפני הסלייס וגם אחריו.
+ * ה-BE הוא שמתרגם את ה-`-1` ל-400.
+ *
+ * ⚠️ הניסוח נמנע מלצטט את מילת-המפתח כלשונה **בכוונה**: ציטוט בהערה היה
+ * הופך את השער עצמו לאדום, ושער שנכשל על התיעוד שלו חדל להיות שער.
  */
 export function findMessageIndex(state: SessionState, id: string): number {
   const bySyntheticId = state.messages.findIndex((m) => m.id === id)
