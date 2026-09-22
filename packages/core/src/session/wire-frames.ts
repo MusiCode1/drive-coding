@@ -25,7 +25,37 @@ function notification(sessionId: string | null, update: WireSessionUpdate): unkn
 }
 
 /**
- * frame-zero — המצב המלא, מכווץ, כרצף `session/update`.
+ * מטען ה-snapshot — המצב המלא, מכווץ, כרצף `session/update`.
+ *
+ * ─── slice history-get C0 ───
+ *
+ * 🔴 **מקור אחד, שני פֶּה.** המטען הזה יוצא בשני מסלולים: ‏frame-zero של ה-SSE
+ * (‏`snapshotFrame` למטה) ו-`GET /api/agents/:id/history` ב-BE. שני מימושים
+ * שנראים זהים היום נפרדים מחר בשקט — ולכן `snapshotFrame` **קורא לכאן** ואינו
+ * מחזיק עותק. ‏`history.ts` מחזיר את המטען הזה כמות שהוא.
+ *
+ * ה-`epoch` אופציונלי בכוונה: הוא מזהה *מי מחזיק בזרם*, ומשיכת-`GET` אינה
+ * מחזיקה בזרם ואינה נרשמת כ-connection. שם הוא **נעדר** — לא `undefined` —
+ * כדי שלא יזמין לקוח לחשוב שהוא בעלים.
+ */
+export type SnapshotPayload = {
+  sessionId: string | null
+  version: number
+  epoch?: number
+  updates: WireSessionUpdate[]
+}
+
+export function snapshotPayload(state: SessionState, epoch?: number): SnapshotPayload {
+  return {
+    sessionId: state.sessionId,
+    version: state.version,
+    ...(epoch !== undefined ? { epoch } : {}),
+    updates: stateToSessionUpdates(state),
+  }
+}
+
+/**
+ * frame-zero — המטען של `snapshotPayload`, עטוף במסגור SSE.
  *
  * ה-`id:` הוא ה-**version** ולא ה-epoch: ה-epoch מזהה *מי מחזיק בזרם*
  * וה-version מזהה *איפה אנחנו ברצף*. ה-epoch עבר לגוף ההודעה.
@@ -34,12 +64,7 @@ export function snapshotFrame(state: SessionState, epoch?: number): SseFrame {
   return {
     event: "snapshot",
     id: String(state.version),
-    data: JSON.stringify({
-      sessionId: state.sessionId,
-      version: state.version,
-      ...(epoch !== undefined ? { epoch } : {}),
-      updates: stateToSessionUpdates(state),
-    }),
+    data: JSON.stringify(snapshotPayload(state, epoch)),
   }
 }
 
