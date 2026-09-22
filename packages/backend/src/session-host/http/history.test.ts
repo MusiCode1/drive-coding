@@ -73,7 +73,13 @@ function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
   const result: HostResult = host
     ? {
         ok: true,
-        entry: { host, broadcaster: { subscribe: vi.fn(), unsubscribe: vi.fn(), close: vi.fn() } },
+        entry: { host, broadcaster: {
+          subscribe: vi.fn(),
+          unsubscribe: vi.fn(),
+          close: vi.fn(),
+          // slice history-cursor C2: חבר חדש בחוזה PatchesBroadcaster.
+          oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
+        } },
       }
     : { ok: false, reason: "not-found" }
   return {
