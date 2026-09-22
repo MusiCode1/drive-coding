@@ -19,8 +19,14 @@ import {
   stateToSessionUpdates,
   type WireSessionUpdate,
 } from "./to-session-update.js"
-import type { SessionState } from "./types.js"
-import { createInitialSessionState } from "./types.js"
+import type {
+  PendingElicitation,
+  PendingPermission,
+  QuotaSnapshot,
+  SessionCapabilities,
+  SessionState,
+} from "./types.js"
+import { applyPendingRequest, createInitialSessionState } from "./types.js"
 
 const mk = (): SessionState => createInitialSessionState({ sessionId: "s-1" })
 
@@ -410,6 +416,21 @@ describe("stateToSessionUpdates — fromMessage (slice history-cursor C0)", () =
   })
 
   it("‏`fromMessage` שאינו נמצא — מחזיר `[]`, לא פלט-מלא ולא זריקה (§4.1.1)", () => {
+    // ─── slice header-always-full C3: החריג, בשמו ───
+    //
+    // 🔴 **זהו החריג היחיד לכלל "כותרת תמיד"**, והוא הכרעה נעולה ולא פרצה.
+    // ‏`stateToSessionUpdates` מתחייב שכל מסלול "מ-X" פולט את מצב-הכותרת
+    // המלא — ובראשו שאלה ממתינה למשתמש, שאובדנה משאירה סשן תלוי. כאן,
+    // ורק כאן, הכותרת **יורדת יחד עם ההודעות**: ‏`toEqual([])` מקבע את שתי
+    // הפליטות גם יחד, ולכן אין טסט נפרד ל"הכותרת ירדה" — הוא היה כפילות.
+    //
+    // הסיבה שזה נכון: מזהה שאינו נמצא הוא **בקשה לעוגן שאינו קיים**, ולא
+    // בקשה להיסטוריה. פלט-מלא בשקט הוא בדיוק מחלקת-הכשל ש-`history-cursor`
+    // סגר. ‏ה-BE אינו נשען על הצורה הזאת כלל — `history.ts` קורא
+    // ל-`findMessageIndex` **לפני** ה-`snapshotPayload` ומתרגם ל-400 (יש לזה
+    // שער משלו: `400 על מזהה לא-מוכר` ב-`history.test.ts`).
+    //
+    // ⚠️ **אל "תתקן" את זה לטובת כלל-הכותרת.** הסתירה מודעת ומתועדת.
     expect(stateToSessionUpdates(convo(), { fromMessage: "m_999" })).toEqual([])
   })
 
@@ -460,5 +481,213 @@ describe("findMessageIndex (slice history-cursor C0)", () => {
 
   it("‏state בלי הודעות ⇒ `-1`", () => {
     expect(findMessageIndex(mk(), "m_0")).toBe(-1)
+  })
+})
+
+// ─── slice header-always-full C0: כותרת מלאה שורדת כל חיתוך ─────────────────
+
+describe("stateToSessionUpdates — כותרת מלאה תחת חיתוך (slice header-always-full)", () => {
+  /**
+   * 🔴 **ברירת-מחדל אינה עדות.** השער הקיים (`בכל חיתוך — בלוק המטא-מידע נשאר
+   * במלואו`) מאשר `toContain` על סוגי-פריים, ולכן הוא עובר גם על state שכל
+   * שדות-הכותרת שלו בברירת-המחדל — כלומר גם כש**אין** שאלה ממתינה, **אין**
+   * מכסה, וה-status הוא `"idle"`. הוא מקבע את **קיום הפריים**, לא את
+   * **הישרדות התוכן**.
+   *
+   * ⇒ כאן כל שדה-כותרת נושא ערך שאינו ברירת-המחדל, וכל אסרציה היא על
+   * **ערך**. זו ההבחנה שהסלייס כולו קיים בשבילה: אובדן `pending.permission`
+   * תחת חיתוך = סשן תלוי, והשער הקודם לא היה מאדים עליו.
+   */
+
+  const QUOTA: QuotaSnapshot = {
+    provider: "claude",
+    windows: [
+      {
+        id: "w1",
+        period: { kind: "calendar" as const, unit: "month" as const },
+        consumption: { kind: "percentage" as const, usedPct: 99 },
+        resetsAtMs: null,
+      },
+    ],
+  }
+
+  const CAPS: SessionCapabilities = {
+    mcp: true,
+    compact: true,
+    commands: true,
+    usage: true,
+    configOptions: true,
+    rename: true,
+    thinkingTokens: true,
+    image: true,
+  }
+
+  const PERMISSION: PendingPermission = {
+    requestId: 7,
+    params: { sessionId: "s-1", toolCall: { toolCallId: "tc-1", title: "מחיקת קובץ" } } as never,
+  }
+
+  const ELICITATION: PendingElicitation = {
+    requestId: 8,
+    params: { sessionId: "s-1", message: "באיזו תיקייה?" } as never,
+  }
+
+  /**
+   * מצב-כותרת **מאוכלס** — כל שדה בערך שאינו ברירת-המחדל.
+   *
+   * 🔴 **ה-pending נבנה דרך `applyPendingRequest` ולא בהשמה ישירה.** הפונקציה
+   * מחזיקה את מלכודת-ה-spread ("pending חייב לשאת את שני השדות תמיד"),
+   * ופיקסצ'ר שעוקף אותה יכול לקבע צורה שהמסלול האמיתי לעולם אינו מייצר.
+   *
+   * ⚠️ שלוש ההודעות הן `user`/`assistant` בלבד — בלי `thought` ובלי `tool`.
+   * ר' הערת `headerTail` למטה.
+   */
+  function fullHeaderState(): SessionState {
+    const base: SessionState = {
+      ...mk(),
+      title: "כותרת של סשן חי",
+      status: "disconnected",
+      turnState: "thinking",
+      commands: [{ name: "compact", description: "כיווץ ההקשר" }],
+      configOptions: [
+        { id: "verbosity", name: "Verbosity", type: "boolean" as const, currentValue: false },
+      ],
+      modes: { availableModes: [{ id: "plan", name: "תכנון" }], currentModeId: "plan" },
+      contextUsage: { used: 1200, size: 200000, cost: 0.42 },
+      capabilities: CAPS,
+      quota: QUOTA,
+      messages: [
+        { id: "m_0", role: "user", messageId: "u-0", segments: [{ id: "s_0", text: "אחת" }] },
+        {
+          id: "m_1",
+          role: "assistant",
+          messageId: "a-1",
+          segments: [{ id: "s_1", text: "שתיים" }],
+        },
+        { id: "m_2", role: "user", messageId: "u-2", segments: [{ id: "s_2", text: "שלוש" }] },
+      ],
+      nextMessageSeq: 3,
+      nextSegmentSeq: 3,
+    }
+    const withPermission = applyPendingRequest(base, {
+      kind: "permission",
+      value: PERMISSION,
+    }).state
+    return applyPendingRequest(withPermission, { kind: "elicitation", value: ELICITATION }).state
+  }
+
+  /**
+   * זנב-הכותרת — כל פריים שאינו הודעה ואינו `carried`.
+   *
+   * ⚠️ **שלושת המסננים אינם קוסמטיים.** ‏`messageToUpdate` פולט הודעת-כלי
+   * כ-`tool_call_update` ומחשבה כ-`agent_thought`; שניהם **אינם** מסתיימים
+   * ב-`_message` והיו נכנסים לזנב בטעות — ואז הטסט היה מאדים על ההבדל
+   * הצפוי (ההודעות נחתכו) במקום על זה שחשוב. הפיקסצ'ר שלמעלה אינו מונה
+   * הודעות כאלה, ולכן זו הגנה מפני שינוי עתידי ולא תקלה היום.
+   */
+  const headerTail = (u: WireSessionUpdate[]): WireSessionUpdate[] =>
+    u.filter(
+      (x) =>
+        !x.sessionUpdate.endsWith("_message") &&
+        x.sessionUpdate !== "agent_thought" &&
+        !x.sessionUpdate.startsWith("tool_call") &&
+        !x.sessionUpdate.startsWith("plan"),
+    )
+
+  const msgIds = (u: WireSessionUpdate[]): unknown[] =>
+    u.filter((x) => x.sessionUpdate.endsWith("_message")).map((x) => x.messageId)
+
+  const driveBlock = (u: WireSessionUpdate[]): Record<string, unknown> | undefined =>
+    u.find((x) => x.sessionUpdate === "_drive/session_update")?.changes as
+      | Record<string, unknown>
+      | undefined
+
+  it("‏זנב-הכותרת תחת חיתוך **זהה** לזה של frame-zero — שוויון עמוק, לא נוכחות", () => {
+    const s = fullHeaderState()
+
+    const full = headerTail(stateToSessionUpdates(s))
+    const cut = headerTail(stateToSessionUpdates(s, { fromMessage: "m_2" }))
+
+    expect(cut).toEqual(full)
+    // שער-ריק: זנב ריק משני הצדדים היה עובר את השורה שלמעלה בלי לומר דבר.
+    expect(cut.length).toBeGreaterThan(0)
+  })
+
+  it("‏תוכן, לא נוכחות — ה-permission הפתוחה נושאת את ה-requestId שלה תחת חיתוך", () => {
+    const cut = stateToSessionUpdates(fullHeaderState(), { fromMessage: "m_2" })
+
+    const changes = driveBlock(cut)
+    expect(changes?.pending).toEqual({ permission: PERMISSION, elicitation: ELICITATION })
+    expect((changes?.pending as { permission: PendingPermission }).permission.requestId).toBe(7)
+  })
+
+  it("‏תוכן, לא נוכחות — ‏`status` ו-`quota` יוצאים בערכם שאינו ברירת-המחדל", () => {
+    const cut = stateToSessionUpdates(fullHeaderState(), { fromMessage: "m_2" })
+
+    const changes = driveBlock(cut)
+    // 🔴 ‏`"idle"` ו-`null` הם ברירות-המחדל; אסרציה עליהם לא הייתה מבחינה
+    // בין "שרד" ל"נולד ככה".
+    expect(changes?.status).toBe("disconnected")
+    expect(changes?.quota).toEqual(QUOTA)
+    expect(changes?.capabilities).toEqual(CAPS)
+  })
+
+  it("‏ההודעות **כן** נחתכו — בלי זה שער-הכותרת היה עובר גם אם החיתוך לא קרה", () => {
+    const s = fullHeaderState()
+
+    expect(msgIds(stateToSessionUpdates(s))).toEqual(["u-0", "a-1", "u-2"])
+    expect(msgIds(stateToSessionUpdates(s, { fromMessage: "m_2" }))).toEqual(["u-2"])
+  })
+
+  // ─── C1: זהות מצב-הצרכן ───
+
+  /**
+   * שדות-הכותרת של ה-state שהצרכן בונה.
+   *
+   * 🔴 **`version` ו-`messages` מוחרגים במפורש, ונבדקים בנפרד.** הם **אמורים**
+   * להיות שונים בין האגפים — זהות עליהם הייתה מוכיחה שהחיתוך כלל לא קרה.
+   * השוואת שני ה-state במלואם היא הדרך המהירה לשער שמאדים על ההבדל הנכון
+   * ומסתיר את זה שחשוב.
+   */
+  const headerFields = (s: SessionState) => ({
+    pending: s.pending,
+    status: s.status,
+    quota: s.quota,
+    title: s.title,
+    modes: s.modes,
+    capabilities: s.capabilities,
+    contextUsage: s.contextUsage,
+    turnState: s.turnState,
+  })
+
+  it("‏מצב-הצרכן: שדות-הכותרת של שני האגפים שווים אחרי `reduce` ממצב התחלתי", () => {
+    const s = fullHeaderState()
+
+    // 🔴 **אגף-מול-אגף, לעולם לא צרכן-מול-פיקסצ'ר.** ‏`modes` lossy במסלול
+    // הזה — `changesToUpdates` פולט ממנו רק `currentModeId`, ו-`reduce`
+    // משחזר `availableModes` מה-state שלו (ריק בצרכן שמתחיל מאפס). שני
+    // האגפים מאבדים אותו **במידה שווה**, וזו בדיוק השאלה שהשער שואל.
+    const consumerFull = replay(stateToSessionUpdates(s))
+    const consumerCut = replay(stateToSessionUpdates(s, { fromMessage: "m_2" }))
+
+    expect(headerFields(consumerCut)).toEqual(headerFields(consumerFull))
+
+    // שער-ריק: שני צרכנים בברירת-מחדל היו עוברים את השורה שלמעלה בשקט.
+    expect(consumerCut.pending.permission?.requestId).toBe(7)
+    expect(consumerCut.pending.elicitation?.requestId).toBe(8)
+    expect(consumerCut.status).toBe("disconnected")
+    expect(consumerCut.quota).toEqual(QUOTA)
+    expect(consumerCut.turnState).toBe("thinking")
+  })
+
+  it("‏‏`messages` ו-`version` של הצרכן **כן** נבדלים — ההוכחה שהחיתוך קרה", () => {
+    const s = fullHeaderState()
+
+    const consumerFull = replay(stateToSessionUpdates(s))
+    const consumerCut = replay(stateToSessionUpdates(s, { fromMessage: "m_2" }))
+
+    expect(consumerFull.messages).toHaveLength(3)
+    expect(consumerCut.messages).toHaveLength(1)
+    expect(consumerCut.version).toBeLessThan(consumerFull.version)
   })
 })
