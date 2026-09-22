@@ -17,8 +17,10 @@
  */
 
 import { MCP_TOOL_META, SessionMessagesMcpInput } from "@drive-coding/core"
+import type { SessionState } from "@drive-coding/core/session"
 import { findMessageIndex, snapshotPayload } from "@drive-coding/core/session"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { stripScopePendingFromState } from "../scope-write.js"
 import type { McpHttpDeps } from "./http-mcp.js"
 
 type ArkRegister = (
@@ -72,7 +74,13 @@ export function registerSessionMessagesMcpTool(
         ...(input.withHeader !== undefined ? { withHeader: input.withHeader } : {}),
         ...(fromMessage !== undefined && fromMessage !== "" ? { fromMessage } : {}),
       }
-      return jsonResult(snapshotPayload(host.state, undefined, opts))
+
+      // 🔴 אבטחה: אסור להיות מתירני יותר מ-session_state. הוא מעביר את ה-state
+      // דרך stripScopePendingFromState (‏pickSessionState) כדי להסתיר שאלת
+      // הסלמת-scope (`toolCallId` שמתחיל ב-"scope-") מ-discovery של סוכן. פליטה
+      // גולמית של host.state דרך הכותרת (‏pending) הייתה חור בהסתרה המכוונת.
+      const sanitized = stripScopePendingFromState({ ...host.state }) as unknown as SessionState
+      return jsonResult(snapshotPayload(sanitized, undefined, opts))
     },
   )
 }

@@ -823,4 +823,20 @@ describe("stateToSessionUpdates — include + withHeader (slice session-read-fil
     expect(msgIds(out)).toEqual(["a-1", "u-4"])
     expect(hasTool(out)).toBe(false)
   })
+
+  it("‏ערך `include` מחוץ-לטיפוס — fail-open ל-\"all\", לא drop-all שקט", () => {
+    // 🔴 ה-callers חוסמים ערך כזה; זו הגנה-בעומק. הכשל שנמנע: הודעות **וכותרת**
+    // נעלמות בשקט. עקבי עם ה-fail-open של `patchToSessionUpdates`.
+    const s = mixed()
+    expect(stateToSessionUpdates(s, { include: "garbage" as never })).toEqual(
+      stateToSessionUpdates(s),
+    )
+  })
+
+  it("‏`include: \"messages\"` שומר גם מחשבות-סוכן (`agent_thought`), לא רק user/assistant", () => {
+    // m_2 ב-mixed() הוא role:"thought". צרכן שמבקש "messages" מקבל גם אותו —
+    // הכרעה מתועדת (thought ∈ messages), וכאן היא ממוסמרת-תוכן.
+    const out = stateToSessionUpdates(mixed(), { include: "messages" })
+    expect(out.some((x) => x.sessionUpdate === "agent_thought")).toBe(true)
+  })
 })

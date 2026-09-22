@@ -762,6 +762,57 @@ describe("session_send / session_state (slice session-bus-mcp C2)", () => {
     expect(isToolError(res)).toBe(true)
     expect(toolText(res)).toMatch(/agent not found/)
   })
+
+  it("session_messages hides scope-escalation pending — not more permissive than session_state", async () => {
+    // 🔴 session_state מסתיר שאלת-הסלמת-scope (toolCallId "scope-") מ-discovery
+    // של סוכן; session_messages חייב לעשות אותו דבר, אחרת ה-strip שם theater.
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    const opened = await openCursor(client, "/tmp/mcp-msgs-scope")
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    if (host) {
+      seedMixed(host)
+      ;(host.state as unknown as { pending: unknown }).pending = {
+        permission: {
+          requestId: 9,
+          params: { sessionId: "s", toolCall: { toolCallId: "scope-9", title: "כתיבה מחוץ לתת-העץ" } },
+        },
+        elicitation: null,
+      }
+    }
+    const out = await readMessages(client, opened.agent)
+    await client.close()
+    const drive = out.find((x) => x.sessionUpdate === "_drive/session_update")
+    const pending = (drive?.changes as { pending?: { permission?: unknown } } | undefined)?.pending
+    // הפריים קיים, אבל ה-permission של ה-scope אופס.
+    expect(drive).toBeDefined()
+    expect(pending?.permission).toBeNull()
+  })
+
+  it("session_messages passes through a NON-scope pending permission (regular questions stay visible)", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    const opened = await openCursor(client, "/tmp/mcp-msgs-regular-pending")
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    if (host) {
+      seedMixed(host)
+      ;(host.state as unknown as { pending: unknown }).pending = {
+        permission: {
+          requestId: 3,
+          params: { sessionId: "s", toolCall: { toolCallId: "tc-regular", title: "מחיקת קובץ" } },
+        },
+        elicitation: null,
+      }
+    }
+    const out = await readMessages(client, opened.agent)
+    await client.close()
+    const drive = out.find((x) => x.sessionUpdate === "_drive/session_update")
+    const perm = (
+      drive?.changes as { pending?: { permission?: { requestId?: number } } } | undefined
+    )?.pending?.permission
+    // שאלה רגילה (לא scope-) נשארת גלויה — זו בקשת המשתמש.
+    expect(perm?.requestId).toBe(3)
+  })
 })
 
 describe("agent-identity-mcp (C2/C3)", () => {

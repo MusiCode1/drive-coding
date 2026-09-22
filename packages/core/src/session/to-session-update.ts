@@ -351,7 +351,13 @@ export function stateToSessionUpdates(
   // ─── slice session-read-filter: סינון סלקטיבי לפי סוג ───
   //
   // `"all"` / חסר משאיר את שלושת הדגלים דלוקים ⇒ **אותו קוד בדיוק** כמו קודם.
-  const include = opts?.include ?? "all"
+  //
+  // 🔴 **fail-open על ערך מחוץ-לטיפוס.** ה-callers כבר חוסמים (‏HTTP whitelist→400,
+  // arktype enum), אבל אם ערך לא-מוכר בכל זאת יגיע — נורמליזציה ל-"all" ולא
+  // drop-all שקט (שהיה מעלים הודעות **וגם** כותרת). עקבי עם ה-fail-open של
+  // `patchToSessionUpdates` (`op` לא-מוכר ⇒ `[]`, לא זריקה).
+  const rawInclude = opts?.include
+  const include = rawInclude === "messages" || rawInclude === "tool_calls" ? rawInclude : "all"
   const includeMessages = include === "all" || include === "messages"
   const includeTools = include === "all" || include === "tool_calls"
   // ‏carried אינו הודעה ואינו קריאת-כלי ⇒ רק ב-"all".
