@@ -21,9 +21,24 @@
  *    ‏`version` כן חוזר: הוא "איפה אנחנו ברצף".
  * 3. **בלי `touchOwner`** — משיכה אינה אות-חיות. ואין `bindScopeEnforcement`:
  *    הוא אכיפת-**כתיבה**, וזו קריאה.
+ *
+ * ─── slice history-cursor C1 ───
+ *
+ * ‏`?fromMessage=<id>` חותך את ההיסטוריה מההודעה ההיא ואילך — ‏`m_<seq>` או
+ * ה-`messageId` של ACP.
+ *
+ * 🔴 **החיתוך מושחל דרך `snapshotPayload`, ואין כאן בניית מטען מקביל.** זה
+ * המשך ישיר של כלל מקור-אחד למעלה, ולא סגנון: גלאי-הסטייה של סלייס B
+ * משווה רק את המקרה **בלי** חיתוך, ולכן מימוש-חיתוך שני כאן היה נפרד
+ * מ-frame-zero והגלאי היה נשאר ירוק בשקט.
+ *
+ * 🔴 **מזהה לא-מוכר ⇒ 400, לא "הכול".** החזרת ההיסטוריה המלאה בשקט היא בדיוק
+ * הצורה שמוסתרת עד שמישהו סופר בועות. ‏`findMessageIndex` נקרא **לפני**
+ * ה-`snapshotPayload` — הליבה מחזירה `[]` על מזהה חסר (סימן, לא זריקה),
+ * והתרגום ל-HTTP הוא של הקליפה. ‏`fromMessage` ריק / חסר ⇒ מתעלמים.
  */
 
-import { snapshotPayload } from "@drive-coding/core/session"
+import { findMessageIndex, snapshotPayload } from "@drive-coding/core/session"
 import type { Hono } from "hono"
 import type { AgentSessionRegistry } from "../registry.js"
 
@@ -39,6 +54,15 @@ export function registerHistoryRoute(app: Hono, registry: AgentSessionRegistry):
       return c.json({ error: "Agent connection not found" }, 404)
     }
 
-    return c.json(snapshotPayload(host.state), 200)
+    // ‏404 קודם ל-400: בלי host אין מול מה לאמת מזהה.
+    const fromMessage = c.req.query("fromMessage")
+    if (fromMessage === undefined || fromMessage === "") {
+      return c.json(snapshotPayload(host.state), 200)
+    }
+    if (findMessageIndex(host.state, fromMessage) === -1) {
+      return c.json({ error: "unknown fromMessage", fromMessage }, 400)
+    }
+
+    return c.json(snapshotPayload(host.state, undefined, { fromMessage }), 200)
   })
 }
