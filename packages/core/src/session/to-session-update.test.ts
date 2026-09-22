@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, it } from "vitest"
+import { A1_TS, CONVERSATION } from "./__testing__/conversation.js"
 import { reduce } from "./reduce.js"
 import { patchToSessionUpdates, stateToSessionUpdates } from "./to-session-update.js"
 import type { SessionState } from "./types.js"
@@ -54,67 +55,6 @@ function meaningful(s: SessionState) {
     ),
   }
 }
-
-/** חותמת-הזמן שה-SDK מטביע על הודעת ה-assistant `A1`. */
-const A1_TS = "2026-09-22T08:30:00.000Z"
-
-const CONVERSATION = [
-  { sessionUpdate: "session_info_update", title: "A real session" },
-  {
-    sessionUpdate: "user_message_chunk",
-    messageId: "U1",
-    content: { type: "text", text: "hello" },
-  },
-  {
-    sessionUpdate: "agent_thought_chunk",
-    messageId: "T1",
-    content: { type: "text", text: "thinking…" },
-  },
-  {
-    sessionUpdate: "agent_message_chunk",
-    messageId: "A1",
-    content: { type: "text", text: "part one " },
-  },
-  {
-    sessionUpdate: "agent_message_chunk",
-    messageId: "A1",
-    content: { type: "text", text: "part two" },
-  },
-  // 🔴 ה-`mid` כאן **חייב** להיות messageId שקיים בשיחה (`"A1"`). מזהה יתום
-  // היה נרשם ב-`messageTimestamps` בלי הודעה נושאת — וזה בדיוק המקרה ש-§6
-  // מחריג מה-scope, כלומר השער לא היה יכול לעבור מסיבה שאינה באג.
-  {
-    sessionUpdate: "_drive/ext_notification",
-    method: "_claude/sdkMessage",
-    params: {
-      message: {
-        type: "assistant",
-        timestamp: A1_TS,
-        message: { id: "A1" },
-      },
-    },
-  },
-  {
-    sessionUpdate: "tool_call",
-    toolCallId: "tc-1",
-    kind: "read",
-    title: "Read",
-    rawInput: { path: "/x" },
-  },
-  {
-    sessionUpdate: "tool_call_update",
-    toolCallId: "tc-1",
-    status: "completed",
-    rawOutput: "contents",
-  },
-  {
-    sessionUpdate: "available_commands_update",
-    availableCommands: [{ name: "c", description: "d" }],
-  },
-  { sessionUpdate: "config_option_update", configOptions: [{ id: "mode", category: "mode" }] },
-  { sessionUpdate: "current_mode_update", currentModeId: "auto" },
-  { sessionUpdate: "usage_update", used: 10, size: 100, cost: 0.5 },
-]
 
 describe("snapshot round-trip — nothing may vanish", () => {
   it("state → updates → state reproduces every meaningful field", () => {

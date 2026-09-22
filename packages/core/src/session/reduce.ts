@@ -7,6 +7,7 @@
  *
  * ─── slice session-state-reducer C1 (TDD) ───
  */
+import { recordCarried } from "./carried"
 import type {
   Patch,
   SessionMessage,
@@ -649,11 +650,18 @@ function handleToolContentChunk(
   }
 }
 
-/** נושא update לא-מוכר כמות שהוא. מרוכז כאן כי ארבעה מסלולים צריכים אותו. */
+/**
+ * נושא update לא-מוכר כמות שהוא. מרוכז כאן כי ארבעה מסלולים צריכים אותו.
+ *
+ * ‏slice carried-snapshot C1: ה-update גם **נרשם ב-state** דרך
+ * `recordCarried`, כדי ש-`stateToSessionUpdates` יוכל לפלוט אותו חזרה.
+ * ‏`recordCarried` מסנן בעצמו לפי `RECOGNIZED` — כאן מגיעים גם סוגים
+ * **מוכרים** שלא ייצרו patches (העטיפה `carry-when-nothing-mapped`).
+ */
 function opaquePatch(state: SessionState, u: unknown): { state: SessionState; patches: Patch[] } {
   const newVersion = state.version + 1
   return {
-    state: { ...state, version: newVersion },
+    state: recordCarried({ ...state, version: newVersion }, u),
     patches: [{ version: newVersion, op: "opaque", update: u }],
   }
 }
@@ -739,7 +747,15 @@ function reduceRecognized(
     // reset הוא **ניקוי** ולא החלפה, ומה שאחריו בונה מחדש.
     const newVersion = state.version + 1
     return {
-      state: { ...state, version: newVersion, messages: [], nextMessageSeq: 0, nextSegmentSeq: 0 },
+      state: {
+        ...state,
+        version: newVersion,
+        messages: [],
+        nextMessageSeq: 0,
+        nextSegmentSeq: 0,
+        // ‏reset מאפס `messages`, ולכן כל `after` הופך לעוגן תלוי-באוויר.
+        carried: [],
+      },
       patches: [
         { version: newVersion, op: "reset", messages: [], nextMessageSeq: 0, nextSegmentSeq: 0 },
       ],
