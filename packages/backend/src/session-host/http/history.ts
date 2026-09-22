@@ -54,15 +54,43 @@ export function registerHistoryRoute(app: Hono, registry: AgentSessionRegistry):
       return c.json({ error: "Agent connection not found" }, 404)
     }
 
+    // ─── slice session-read-filter: `?kinds=` ו-`?withHeader=` ───
+    //
+    // 🔴 **ערך לא-מוכר ⇒ 400, לא התעלמות בשקט.** אותה מחמירות כמו `fromMessage`:
+    // צרכן חיצוני (משתמש או סוכן) שכתב `kinds=messagess` בטעות יקבל סימן, לא
+    // "הכול" מוסווה. ‏absent/ריק ⇒ ברירת-המחדל של הליבה (הכול / כותרת דלוקה).
+    const kinds = c.req.query("kinds")
+    if (kinds !== undefined && kinds !== "") {
+      if (kinds !== "messages" && kinds !== "tool_calls" && kinds !== "all") {
+        return c.json({ error: "unknown kinds", kinds, allowed: ["messages", "tool_calls", "all"] }, 400)
+      }
+    }
+    const include = kinds === undefined || kinds === "" ? undefined : (kinds as "messages" | "tool_calls" | "all")
+
+    const withHeaderRaw = c.req.query("withHeader")
+    if (withHeaderRaw !== undefined && withHeaderRaw !== "") {
+      if (withHeaderRaw !== "true" && withHeaderRaw !== "false") {
+        return c.json({ error: "withHeader must be 'true' or 'false'", withHeader: withHeaderRaw }, 400)
+      }
+    }
+    const withHeader =
+      withHeaderRaw === undefined || withHeaderRaw === "" ? undefined : withHeaderRaw === "true"
+
+    // ‏opts משותף לשני המסלולים; ריק ⇒ פלט זהה לקריאה ללא-opts (נבדק בליבה).
+    const filterOpts = {
+      ...(include !== undefined ? { include } : {}),
+      ...(withHeader !== undefined ? { withHeader } : {}),
+    }
+
     // ‏404 קודם ל-400: בלי host אין מול מה לאמת מזהה.
     const fromMessage = c.req.query("fromMessage")
     if (fromMessage === undefined || fromMessage === "") {
-      return c.json(snapshotPayload(host.state), 200)
+      return c.json(snapshotPayload(host.state, undefined, filterOpts), 200)
     }
     if (findMessageIndex(host.state, fromMessage) === -1) {
       return c.json({ error: "unknown fromMessage", fromMessage }, 400)
     }
 
-    return c.json(snapshotPayload(host.state, undefined, { fromMessage }), 200)
+    return c.json(snapshotPayload(host.state, undefined, { ...filterOpts, fromMessage }), 200)
   })
 }

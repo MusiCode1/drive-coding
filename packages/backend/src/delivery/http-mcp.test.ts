@@ -33,12 +33,20 @@ type HostStub = {
     lastTurnError: { message: string; at: number } | null
     pending: { permission: null; elicitation: null }
     commands: unknown[]
-    messages: Array<{
-      id: string
-      role: string
-      messageId: string | null
-      segments: Array<{ id: string; text: string }>
-    }>
+    messages: Array<
+      | {
+          id: string
+          role: string
+          messageId: string | null
+          segments: Array<{ id: string; text: string }>
+        }
+      | {
+          id: string
+          role: "tool"
+          messageId: null
+          toolCall: { toolCallId: string; name: string; args: unknown; status: string }
+        }
+    >
   }
   prompt: ReturnType<typeof vi.fn>
   setConfigOption: ReturnType<typeof vi.fn>
@@ -221,6 +229,7 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       "session_close",
       "session_list",
+      "session_messages",
       "session_open",
       "session_send",
       "session_state",
@@ -643,6 +652,115 @@ describe("session_send / session_state (slice session-bus-mcp C2)", () => {
     await client.close()
     expect(isToolError(result)).toBe(true)
     expect(toolText(result)).toMatch(/agent not found/)
+  })
+
+  // ─── slice session-read-filter: session_messages ───
+  type WireUpdate = { sessionUpdate: string; [k: string]: unknown }
+  function seedMixed(host: HostStub): void {
+    host.state.messages = [
+      { id: "m_0", role: "user", messageId: "u-0", segments: [{ id: "s_0", text: "שאלה" }] },
+      { id: "m_1", role: "assistant", messageId: "a-1", segments: [{ id: "s_1", text: "תשובה" }] },
+      {
+        id: "m_2",
+        role: "tool",
+        messageId: null,
+        toolCall: { toolCallId: "tc-1", name: "Write", args: { path: "x" }, status: "completed" },
+      },
+    ]
+  }
+  async function readMessages(
+    client: Client,
+    agent: string,
+    args: Record<string, unknown> = {},
+  ): Promise<WireUpdate[]> {
+    const res = await client.callTool({ name: "session_messages", arguments: { agent, ...args } })
+    expect(isToolError(res)).toBe(false)
+    return (JSON.parse(toolText(res)) as { updates: WireUpdate[] }).updates
+  }
+  const hasMsg = (u: WireUpdate[]) => u.some((x) => x.sessionUpdate.endsWith("_message"))
+  const hasTool = (u: WireUpdate[]) => u.some((x) => x.sessionUpdate.startsWith("tool_call"))
+  const hasHeader = (u: WireUpdate[]) =>
+    u.some(
+      (x) =>
+        x.sessionUpdate === "_drive/session_update" || x.sessionUpdate === "session_info_update",
+    )
+
+  it("session_messages default returns full payload — messages, tool calls, and header", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    const opened = await openCursor(client, "/tmp/mcp-msgs-default")
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    if (host) seedMixed(host)
+    const res = await client.callTool({
+      name: "session_messages",
+      arguments: { agent: opened.agent },
+    })
+    await client.close()
+    const body = JSON.parse(toolText(res)) as { sessionId: string; updates: WireUpdate[] }
+    expect(body.sessionId).toBe(`sess-${opened.agent}`)
+    expect(hasMsg(body.updates)).toBe(true)
+    expect(hasTool(body.updates)).toBe(true)
+    expect(hasHeader(body.updates)).toBe(true)
+  })
+
+  it("session_messages kinds='messages' drops tool calls; kinds='tool_calls' drops messages", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    const opened = await openCursor(client, "/tmp/mcp-msgs-kinds")
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    if (host) seedMixed(host)
+
+    const onlyMsg = await readMessages(client, opened.agent, { kinds: "messages" })
+    expect(hasMsg(onlyMsg)).toBe(true)
+    expect(hasTool(onlyMsg)).toBe(false)
+
+    const onlyTool = await readMessages(client, opened.agent, { kinds: "tool_calls" })
+    expect(hasTool(onlyTool)).toBe(true)
+    expect(hasMsg(onlyTool)).toBe(false)
+    await client.close()
+  })
+
+  it("session_messages withHeader=false drops the session header (economical read)", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    const opened = await openCursor(client, "/tmp/mcp-msgs-noheader")
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    if (host) seedMixed(host)
+    const out = await readMessages(client, opened.agent, {
+      kinds: "messages",
+      withHeader: false,
+    })
+    await client.close()
+    expect(hasMsg(out)).toBe(true)
+    expect(hasHeader(out)).toBe(false)
+    expect(hasTool(out)).toBe(false)
+  })
+
+  it("session_messages unknown fromMessage is an error, not a silent full dump", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    const opened = await openCursor(client, "/tmp/mcp-msgs-badcursor")
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    if (host) seedMixed(host)
+    const res = await client.callTool({
+      name: "session_messages",
+      arguments: { agent: opened.agent, fromMessage: "m_999" },
+    })
+    await client.close()
+    expect(isToolError(res)).toBe(true)
+    expect(toolText(res)).toMatch(/unknown fromMessage/)
+  })
+
+  it("session_messages missing agent is an error", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const res = await client.callTool({
+      name: "session_messages",
+      arguments: { agent: "ghost" },
+    })
+    await client.close()
+    expect(isToolError(res)).toBe(true)
+    expect(toolText(res)).toMatch(/agent not found/)
   })
 })
 

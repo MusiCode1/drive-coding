@@ -150,3 +150,21 @@ export const SessionStateMcpInput = AgentStateInput.and({
   ),
 })
 export type SessionStateMcpInput = typeof SessionStateMcpInput.infer
+
+/**
+ * MCP session_messages — filtered history pull of another session.
+ * slice session-read-filter. Economical read: an agent gets another session's
+ * conversation without the verbose tool-call frames.
+ */
+export const SessionMessagesMcpInput = AgentStateInput.and({
+  "kinds?": type('"messages" | "tool_calls" | "all"').describe(
+    'Which items to return: "messages" (conversation only), "tool_calls" (tool calls only), or "all" (default — everything, including plans).',
+  ),
+  "fromMessage?": type("string >= 1").describe(
+    "Return only messages from this id onward (m_<seq> or ACP messageId). Unknown id → error, not a silent full dump.",
+  ),
+  "withHeader?": type("boolean").describe(
+    "Include the session header (status, quota, pending user-questions, modes, title, …). Default true; set false for body-only economical reads.",
+  ),
+})
+export type SessionMessagesMcpInput = typeof SessionMessagesMcpInput.infer

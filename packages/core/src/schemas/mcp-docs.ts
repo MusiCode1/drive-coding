@@ -107,6 +107,7 @@ export type McpToolName =
   | "session_open"
   | "session_send"
   | "session_state"
+  | "session_messages"
   | "session_close"
   | "session_subscribe"
   | "session_whoami"
@@ -136,6 +137,11 @@ export const MCP_TOOL_META: Record<
     title: "Read agent state",
     description:
       "Read in-process host.state for one agent. Default includes modes and configOptions (the live catalog with descriptions). Default omits messages/commands (large). Pass fields: [\"*\"] for full snapshot, or a subset like [\"turnState\", \"title\"]. Requires agent id.",
+  },
+  session_messages: {
+    title: "Read agent messages",
+    description:
+      "Economical, read-only pull of another session's history. Returns { sessionId, version, updates } — the same wire frames as GET /history — filtered so you fetch only what you need. kinds: 'messages' (conversation only), 'tool_calls' (tool calls only), or 'all' (default). withHeader: false drops the session header (status/quota/pending/modes) for a body-only read; default true. fromMessage: return only from that id onward (unknown id → error). Requires agent id. Does not create a host, touch epoch, or count as liveness.",
   },
   session_close: {
     title: "Close agent session",

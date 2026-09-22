@@ -42,6 +42,7 @@ import {
   applyNotifyOnDoneToOpenBody,
   registerAgentEventMcpTools,
 } from "./agent-events-mcp-tools.js"
+import { registerSessionMessagesMcpTool } from "./session-messages-mcp-tool.js"
 import { registerSessionSurfaceMcpTool } from "./session-surface-mcp-tool.js"
 import { registerSessionWhoamiMcpTool } from "./session-whoami-mcp-tool.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
@@ -317,6 +318,7 @@ function createSessionBusMcpServer(
       })
     },
   )
+  registerSessionMessagesMcpTool(server, deps, registerArkTool)
   registerSessionWhoamiMcpTool(server, deps, ctx, callerRecord, registerArkTool)
   registerSessionSurfaceMcpTool(server, deps, ctx, callerRecord, registerArkTool)
   if (deps.eventBus) {
