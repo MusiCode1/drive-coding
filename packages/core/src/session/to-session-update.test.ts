@@ -623,4 +623,56 @@ describe("stateToSessionUpdates — כותרת מלאה תחת חיתוך (slice
     expect(msgIds(stateToSessionUpdates(s))).toEqual(["u-0", "a-1", "u-2"])
     expect(msgIds(stateToSessionUpdates(s, { fromMessage: "m_2" }))).toEqual(["u-2"])
   })
+
+  // ─── C1: זהות מצב-הצרכן ───
+
+  /**
+   * שדות-הכותרת של ה-state שהצרכן בונה.
+   *
+   * 🔴 **`version` ו-`messages` מוחרגים במפורש, ונבדקים בנפרד.** הם **אמורים**
+   * להיות שונים בין האגפים — זהות עליהם הייתה מוכיחה שהחיתוך כלל לא קרה.
+   * השוואת שני ה-state במלואם היא הדרך המהירה לשער שמאדים על ההבדל הנכון
+   * ומסתיר את זה שחשוב.
+   */
+  const headerFields = (s: SessionState) => ({
+    pending: s.pending,
+    status: s.status,
+    quota: s.quota,
+    title: s.title,
+    modes: s.modes,
+    capabilities: s.capabilities,
+    contextUsage: s.contextUsage,
+    turnState: s.turnState,
+  })
+
+  it("‏מצב-הצרכן: שדות-הכותרת של שני האגפים שווים אחרי `reduce` ממצב התחלתי", () => {
+    const s = fullHeaderState()
+
+    // 🔴 **אגף-מול-אגף, לעולם לא צרכן-מול-פיקסצ'ר.** ‏`modes` lossy במסלול
+    // הזה — `changesToUpdates` פולט ממנו רק `currentModeId`, ו-`reduce`
+    // משחזר `availableModes` מה-state שלו (ריק בצרכן שמתחיל מאפס). שני
+    // האגפים מאבדים אותו **במידה שווה**, וזו בדיוק השאלה שהשער שואל.
+    const consumerFull = replay(stateToSessionUpdates(s))
+    const consumerCut = replay(stateToSessionUpdates(s, { fromMessage: "m_2" }))
+
+    expect(headerFields(consumerCut)).toEqual(headerFields(consumerFull))
+
+    // שער-ריק: שני צרכנים בברירת-מחדל היו עוברים את השורה שלמעלה בשקט.
+    expect(consumerCut.pending.permission?.requestId).toBe(7)
+    expect(consumerCut.pending.elicitation?.requestId).toBe(8)
+    expect(consumerCut.status).toBe("disconnected")
+    expect(consumerCut.quota).toEqual(QUOTA)
+    expect(consumerCut.turnState).toBe("thinking")
+  })
+
+  it("‏‏`messages` ו-`version` של הצרכן **כן** נבדלים — ההוכחה שהחיתוך קרה", () => {
+    const s = fullHeaderState()
+
+    const consumerFull = replay(stateToSessionUpdates(s))
+    const consumerCut = replay(stateToSessionUpdates(s, { fromMessage: "m_2" }))
+
+    expect(consumerFull.messages).toHaveLength(3)
+    expect(consumerCut.messages).toHaveLength(1)
+    expect(consumerCut.version).toBeLessThan(consumerFull.version)
+  })
 })
