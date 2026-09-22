@@ -13,7 +13,12 @@
 import { describe, expect, it } from "vitest"
 import { A1_TS, CONVERSATION } from "./__testing__/conversation.js"
 import { reduce } from "./reduce.js"
-import { patchToSessionUpdates, stateToSessionUpdates } from "./to-session-update.js"
+import {
+  findMessageIndex,
+  patchToSessionUpdates,
+  stateToSessionUpdates,
+  type WireSessionUpdate,
+} from "./to-session-update.js"
 import type { SessionState } from "./types.js"
 import { createInitialSessionState } from "./types.js"
 
@@ -314,5 +319,146 @@ describe("patch → session/update", () => {
       }
     }
     expect(meaningful(fe)).toEqual(meaningful(be))
+  })
+})
+
+// ─── slice history-cursor C0: `fromMessage` — חיתוך ההיסטוריה בליבה ──────────
+
+describe("stateToSessionUpdates — fromMessage (slice history-cursor C0)", () => {
+  /**
+   * שיחה של שלוש הודעות + ארבעה `carried` שמכסים את כל ארבעת המסלולים:
+   * עוגן `null`, עוגן לפני החיתוך, עוגן אחרי החיתוך, ועוגן שאינו קיים כלל.
+   *
+   * ‏`carried` נבנה כאן **ישירות על השדה** ולא דרך `recordCarried`, כי מה
+   * שנבדק הוא ההתנהגות לפי ה-`after` — וקביעתו המפורשת היא בדיוק הנקודה.
+   */
+  function convo(): SessionState {
+    return {
+      ...mk(),
+      title: "כותרת",
+      messages: [
+        { id: "m_0", role: "user", messageId: "u-0", segments: [{ id: "s_0", text: "אחת" }] },
+        { id: "m_1", role: "assistant", messageId: "a-1", segments: [{ id: "s_1", text: "שתיים" }] },
+        { id: "m_2", role: "user", messageId: "u-2", segments: [{ id: "s_2", text: "שלוש" }] },
+      ],
+      nextMessageSeq: 3,
+      nextSegmentSeq: 3,
+      carried: [
+        { key: "plan", after: "m_0", update: { sessionUpdate: "plan", id: "at-m0" } },
+        { key: "diff", after: "m_2", update: { sessionUpdate: "plan", id: "at-m2" } },
+        { key: "early", after: null, update: { sessionUpdate: "plan", id: "at-null" } },
+        { key: "orphan", after: "m_99", update: { sessionUpdate: "plan", id: "orphan" } },
+      ],
+    }
+  }
+
+  const kinds = (u: WireSessionUpdate[]): string[] => u.map((x) => x.sessionUpdate)
+  const msgIds = (u: WireSessionUpdate[]): unknown[] =>
+    u.filter((x) => x.sessionUpdate.endsWith("_message")).map((x) => x.messageId)
+  const carriedIds = (u: WireSessionUpdate[]): unknown[] =>
+    u.filter((x) => x.sessionUpdate === "plan").map((x) => (x as { id?: unknown }).id)
+
+  it("‏בלי הארגומנט — הפלט זהה לחלוטין לקריאה ללא אופציות", () => {
+    const s = convo()
+    // 🔴 המלכודת של §7.1: כל קורא קיים חייב להתנהג בדיוק כמו קודם.
+    expect(stateToSessionUpdates(s, {})).toEqual(stateToSessionUpdates(s))
+    expect(stateToSessionUpdates(s, { fromMessage: undefined })).toEqual(stateToSessionUpdates(s))
+  })
+
+  it("‏`fromMessage: \"m_1\"` — רק ההודעות מ-m_1 ואילך", () => {
+    const out = stateToSessionUpdates(convo(), { fromMessage: "m_1" })
+    expect(msgIds(out)).toEqual(["a-1", "u-2"])
+  })
+
+  it("‏`fromMessage` לפי ה-messageId של ACP — אותה תוצאה כמו ה-`m_<seq>` שלה", () => {
+    const bySeq = stateToSessionUpdates(convo(), { fromMessage: "m_1" })
+    const byMid = stateToSessionUpdates(convo(), { fromMessage: "a-1" })
+    expect(byMid).toEqual(bySeq)
+  })
+
+  it("‏`carried` שעוגן ב-m_0, חיתוך ב-m_1 — **אינו** בפלט", () => {
+    // 🔴 שער-המוטציה §6: השוואה מול ההודעות ה**חתוכות** במקום המלאות מחזירה
+    // אותו דרך לולאת-השיירים ("העוגן לא קיים") — והשורה הזאת מאדימה.
+    const out = stateToSessionUpdates(convo(), { fromMessage: "m_1" })
+    expect(carriedIds(out)).not.toContain("at-m0")
+  })
+
+  it("‏`carried` שעוגן ב-m_2, חיתוך ב-m_1 — **כן** בפלט", () => {
+    const out = stateToSessionUpdates(convo(), { fromMessage: "m_1" })
+    expect(carriedIds(out)).toContain("at-m2")
+  })
+
+  it("🔴 ‏`carried` עם `after: null`, חיתוך ב-m_1 — **אינו** בפלט", () => {
+    // §4.1.2 ענף א: `null` לעולם אינו ברשימת-ההודעות, ולכן בדיקת-"קיים
+    // ברשימה המלאה" לבדה הייתה מחזירה אותו כשייר — בניגוד לכלל.
+    const out = stateToSessionUpdates(convo(), { fromMessage: "m_1" })
+    expect(carriedIds(out)).not.toContain("at-null")
+  })
+
+  it("‏עוגן שאינו קיים ברשימה המלאה — **כן** בפלט כשייר (§4.1.2 ענף ג)", () => {
+    const out = stateToSessionUpdates(convo(), { fromMessage: "m_1" })
+    expect(carriedIds(out)).toContain("orphan")
+  })
+
+  it("‏בכל חיתוך — בלוק המטא-מידע נשאר במלואו (§4.1.3)", () => {
+    const out = stateToSessionUpdates(convo(), { fromMessage: "m_2" })
+    expect(kinds(out)).toContain("session_info_update")
+    expect(kinds(out)).toContain("config_option_update")
+    expect(kinds(out)).toContain("_drive/session_update")
+    const info = out.find((u) => u.sessionUpdate === "session_info_update")
+    expect(info?.title).toBe("כותרת")
+  })
+
+  it("‏`fromMessage` שאינו נמצא — מחזיר `[]`, לא פלט-מלא ולא זריקה (§4.1.1)", () => {
+    expect(stateToSessionUpdates(convo(), { fromMessage: "m_999" })).toEqual([])
+  })
+
+  it("‏חיתוך על ההודעה הראשונה — פלט זהה לחיתוך-שאינו (כל ההודעות)", () => {
+    const s = convo()
+    expect(msgIds(stateToSessionUpdates(s, { fromMessage: "m_0" }))).toEqual(["u-0", "a-1", "u-2"])
+  })
+})
+
+describe("findMessageIndex (slice history-cursor C0)", () => {
+  function convo(): SessionState {
+    return {
+      ...mk(),
+      messages: [
+        { id: "m_0", role: "user", messageId: "u-0", segments: [{ id: "s_0", text: "אחת" }] },
+        { id: "m_1", role: "assistant", messageId: "a-1", segments: [{ id: "s_1", text: "שתיים" }] },
+      ],
+      nextMessageSeq: 2,
+      nextSegmentSeq: 2,
+    }
+  }
+
+  it("‏מוצא לפי ה-id הסינתטי", () => {
+    expect(findMessageIndex(convo(), "m_1")).toBe(1)
+  })
+
+  it("‏מוצא לפי messageId של ACP כשאין התאמת-id", () => {
+    expect(findMessageIndex(convo(), "a-1")).toBe(1)
+  })
+
+  it("‏מזהה לא-מוכר ⇒ `-1` — סימן, לא זריקה (‏`throw` אסור בליבה)", () => {
+    expect(findMessageIndex(convo(), "m_999")).toBe(-1)
+  })
+
+  it("‏התאמת-`id` גוברת על התאמת-`messageId` גם כשה-messageId מקדים ברשימה", () => {
+    // הודעה ששדה ה-messageId שלה שווה ל-id של הודעה מאוחרת יותר.
+    const s: SessionState = {
+      ...mk(),
+      messages: [
+        { id: "m_0", role: "user", messageId: "m_1", segments: [{ id: "s_0", text: "א" }] },
+        { id: "m_1", role: "assistant", messageId: "a-1", segments: [{ id: "s_1", text: "ב" }] },
+      ],
+      nextMessageSeq: 2,
+      nextSegmentSeq: 2,
+    }
+    expect(findMessageIndex(s, "m_1")).toBe(1)
+  })
+
+  it("‏state בלי הודעות ⇒ `-1`", () => {
+    expect(findMessageIndex(mk(), "m_0")).toBe(-1)
   })
 })

@@ -73,7 +73,13 @@ function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
   const result: HostResult = host
     ? {
         ok: true,
-        entry: { host, broadcaster: { subscribe: vi.fn(), unsubscribe: vi.fn(), close: vi.fn() } },
+        entry: { host, broadcaster: {
+          subscribe: vi.fn(),
+          unsubscribe: vi.fn(),
+          close: vi.fn(),
+          // slice history-cursor C2: חבר חדש בחוזה PatchesBroadcaster.
+          oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
+        } },
       }
     : { ok: false, reason: "not-found" }
   return {
@@ -285,5 +291,91 @@ describe("‏C2 — ‏GET history מול frame-zero: גלאי-סטייה", () =
       ...snapshotPayload(state),
       epoch: 7,
     })
+  })
+})
+
+// ─── slice history-cursor C1: ‏?fromMessage= ─────────────────────────────────
+
+describe("‏C1 — ‏GET history?fromMessage= : חיתוך מהודעה ואילך", () => {
+  /** שיחה של שלוש הודעות + `carried` שעוגן על הראשונה. */
+  function convo(): SessionState {
+    return makeMockState({
+      sessionId: "sess-1",
+      version: 12,
+      title: "כותרת",
+      messages: [
+        { id: "m_0", role: "user", messageId: "u-0", segments: [{ id: "s_0", text: "אחת" }] },
+        { id: "m_1", role: "assistant", messageId: "a-1", segments: [{ id: "s_1", text: "שתיים" }] },
+        { id: "m_2", role: "user", messageId: "u-2", segments: [{ id: "s_2", text: "שלוש" }] },
+      ],
+      nextMessageSeq: 3,
+      nextSegmentSeq: 3,
+      carried: [{ key: "plan", after: "m_0", update: { sessionUpdate: "plan", id: "at-m0" } }],
+    })
+  }
+
+  async function get(query: string): Promise<{ res: Response; body: HistoryBody }> {
+    const registry = makeMockRegistry(makeMockHost(convo()))
+    const res = await makeApp(registry).request(`/api/agents/agent-1/history${query}`)
+    return { res, body: (await res.json()) as HistoryBody }
+  }
+
+  const msgIds = (u: WireSessionUpdate[]): unknown[] =>
+    u.filter((x) => x.sessionUpdate.endsWith("_message")).map((x) => x.messageId)
+
+  it("‏200 — רק ההודעות מ-`fromMessage` ואילך", async () => {
+    const { res, body } = await get("?fromMessage=m_1")
+
+    expect(res.status).toBe(200)
+    expect(msgIds(body.updates)).toEqual(["a-1", "u-2"])
+  })
+
+  it("‏200 — לפי ה-messageId של ACP, אותה תוצאה", async () => {
+    const { body } = await get("?fromMessage=a-1")
+    expect(msgIds(body.updates)).toEqual(["a-1", "u-2"])
+  })
+
+  it("‏ה-`carried` שעוגנו נחתך אינו בפלט, ובלוק המטא-מידע כן", async () => {
+    const { body } = await get("?fromMessage=m_1")
+
+    const kinds = body.updates.map((u) => u.sessionUpdate)
+    expect(kinds).not.toContain("plan")
+    expect(kinds).toContain("session_info_update")
+  })
+
+  it("‏`version` ו-`sessionId` נשארים של ה-state, לא של החיתוך", async () => {
+    const { body } = await get("?fromMessage=m_2")
+
+    expect(body.version).toBe(12)
+    expect(body.sessionId).toBe("sess-1")
+    expect("epoch" in body).toBe(false)
+  })
+
+  it("🔴 ‏400 על מזהה לא-מוכר — גוף מדויק, לא היסטוריה מלאה בשקט (§4.2)", async () => {
+    const { res, body } = await get("?fromMessage=m_999")
+
+    expect(res.status).toBe(400)
+    expect(body).toEqual({ error: "unknown fromMessage", fromMessage: "m_999" })
+  })
+
+  it("‏בלי הפרמטר — בדיוק המטען של סלייס B", async () => {
+    const { res, body } = await get("")
+
+    expect(res.status).toBe(200)
+    expect(body).toEqual(snapshotPayload(convo()))
+  })
+
+  it("‏`fromMessage` ריק — מתעלמים, כמו בלי הפרמטר (§4.2)", async () => {
+    const { res, body } = await get("?fromMessage=")
+
+    expect(res.status).toBe(200)
+    expect(body).toEqual(snapshotPayload(convo()))
+  })
+
+  it("‏404 קודם ל-400 — אין host, גם עם fromMessage שגוי", async () => {
+    const registry = makeMockRegistry()
+    const res = await makeApp(registry).request("/api/agents/missing/history?fromMessage=m_999")
+
+    expect(res.status).toBe(404)
   })
 })

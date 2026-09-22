@@ -12,6 +12,7 @@
 
 import {
   patchToSessionUpdates,
+  type StateToSessionUpdatesOptions,
   stateToSessionUpdates,
   type WireSessionUpdate,
 } from "./to-session-update"
@@ -37,6 +38,16 @@ function notification(sessionId: string | null, update: WireSessionUpdate): unkn
  * ה-`epoch` אופציונלי בכוונה: הוא מזהה *מי מחזיק בזרם*, ומשיכת-`GET` אינה
  * מחזיקה בזרם ואינה נרשמת כ-connection. שם הוא **נעדר** — לא `undefined` —
  * כדי שלא יזמין לקוח לחשוב שהוא בעלים.
+ *
+ * ─── slice history-cursor C1 ───
+ *
+ * 🔴 **ה-`opts` מושחל דרך כאן, ולא נבנה מטען מקביל ב-`history.ts`.** המסלול
+ * בפועל של ה-GET הוא `history.ts` → `snapshotPayload` → `stateToSessionUpdates`;
+ * חיתוך שהיה נבנה ב-BE היה שובר את כלל מקור-אחד, וגלאי-הסטייה של סלייס B
+ * משווה רק את המקרה **בלי** חיתוך ולכן היה נשאר ירוק בשקט.
+ *
+ * ⚠️ ‏`snapshotFrame` **אינו** מקבל `opts` — ה-SSE frame-zero הוא תמיד מלא.
+ * זו הכרעת-scope ולא השמטה: ר' §2א בבריף.
  */
 export type SnapshotPayload = {
   sessionId: string | null
@@ -45,12 +56,16 @@ export type SnapshotPayload = {
   updates: WireSessionUpdate[]
 }
 
-export function snapshotPayload(state: SessionState, epoch?: number): SnapshotPayload {
+export function snapshotPayload(
+  state: SessionState,
+  epoch?: number,
+  opts?: StateToSessionUpdatesOptions,
+): SnapshotPayload {
   return {
     sessionId: state.sessionId,
     version: state.version,
     ...(epoch !== undefined ? { epoch } : {}),
-    updates: stateToSessionUpdates(state),
+    updates: stateToSessionUpdates(state, opts),
   }
 }
 
