@@ -137,6 +137,24 @@ export type SessionMessage =
 
 // ��── State ───
 
+/**
+ * רשומה ב-`SessionState.carried` — update שהליבה אינה מכירה, שמור לשחזור.
+ *
+ * ─── slice carried-snapshot C1 ───
+ */
+export type CarriedUpdate = {
+  /**
+   * מפתח-כיווץ. אחרון-מנצח, ו-🔴 **הרשומה עוברת לסוף המערך** ברענון
+   * (מחיקה + דחיפה), לא מוחלפת במקום: ‏`stateToSessionUpdates` שוזר לפי
+   * ה-`after`, ולכן סדר-המערך חייב להתלכד עם סדר ה-`after`.
+   */
+  key: string
+  /** ה-id הסינתטי (`m_<seq>`) של ההודעה האחרונה שהייתה ב-state בהגעה; null = לפני כולן. */
+  after: string | null
+  /** ה-update הגולמי כמות שהוא. core אינו מפרש את תוכנו. */
+  update: unknown
+}
+
 export type SessionState = {
   /** מונה-על; כל reduce / applyPatch מעלה ב-1 */
   version: number
@@ -190,6 +208,15 @@ export type SessionState = {
    * ─── slice session-host-pending-surface C1 ───
    */
   lastTurnError: { message: string; at: number } | null
+
+  /**
+   * updates שהליבה אינה מכירה (`plan` / `plan_update` / כל סוג עתידי),
+   * שמורים כדי שה-snapshot יוכל לפלוט אותם חזרה במיקומם. הליבה אינה מפרשת
+   * את תוכנם — רק בוחרת משבצת לפי `sessionUpdate` ומגבילה את המטען.
+   * אופציונלי (additive) — state ישן / literal בטסטים בלי השדה עדיין תקף.
+   * ─── slice carried-snapshot C1 ───
+   */
+  carried?: CarriedUpdate[]
 }
 
 // ─── Patches ───
@@ -305,6 +332,7 @@ export function createInitialSessionState({
     title: "",
     commands: [],
     lastTurnError: null,
+    carried: [],
   }
 }
 
