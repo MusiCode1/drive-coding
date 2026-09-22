@@ -10,9 +10,17 @@
  * שלו **פעמיים** — סמנטיקת-מודולים, לא סגנון. חילוץ ל-`__testing__/` הוא
  * הנכון לטווח-ארוך אבל דורש שכתוב של `state.test.ts` — מחוץ ל-scope.
  *
- * 🔴 **`getOrCreateHost: vi.fn()` חייב להופיע ברתמה.** האסרציה
- * `expect(registry.getOrCreateHost).not.toHaveBeenCalled()` למטה היא שער רק
- * אם השדה הוא מרגל; ברתמה מינימלית בלי השדה היא **עוברת בשקט**.
+ * 🔴 **`getOrCreateHost: vi.fn()` חייב להופיע ברתמה** — אבל לא מהסיבה שנכתבה
+ * בבריף. שם נטען שברתמה בלי השדה האסרציה
+ * `expect(registry.getOrCreateHost).not.toHaveBeenCalled()` **עוברת בשקט**.
+ * נמדד כאן (‏22/09/2026, שער-המוטציה §5 שורה 4) — **זה אינו נכון בסטאק הזה**:
+ * ‏vitest 4 זורק `TypeError: undefined is not a spy or a call to a spy!` גם תחת
+ * ‏`.not`, כלומר האסרציה שומרת על עצמה ושתי השורות מאדימות.
+ *
+ * השדה נשאר, ועדיין נכון שיישאר: הרתמה אמורה לשקף את הצורה האמיתית של
+ * ‏`AgentSessionRegistry` (‏`vi.fn()` אינו מטופס, ולכן צורה שגויה כאן עוברת
+ * בלי שהטיפוסים יתלוננו — אותו נימוק שכתוב ב-`state.test.ts`). מה שהשתנה הוא
+ * הנימוק, לא ההכרעה.
  */
 
 import type { SessionState, WireSessionUpdate } from "@drive-coding/core/session"
@@ -71,7 +79,8 @@ function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
   return {
     getHost: vi.fn().mockReturnValue(host),
     isHeld: vi.fn().mockReturnValue(Boolean(host)),
-    // 🔴 מרגל, לא מילוי: בלעדיו `not.toHaveBeenCalled()` עובר בשקט.
+    // 🔴 מרגל, לא מילוי — ר' הערת-הראש: בלעדיו האסרציה מאדימה כ-TypeError,
+    // ולא "עוברת בשקט" כפי שהבריף הניח.
     getOrCreateHost: vi.fn().mockResolvedValue(result),
     getCwd: vi.fn(),
     getCliKind: vi.fn(),
