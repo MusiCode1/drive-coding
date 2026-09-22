@@ -264,6 +264,26 @@ export function patchToSessionUpdates(state: SessionState, patch: Patch): WireSe
 }
 
 /**
+ * ‏`findMessageIndex` — האינדקס של ההודעה שמזהה זה מצביע עליה, או **`-1`**.
+ *
+ * ─── slice history-cursor C0 ───
+ *
+ * ההתאמה בשני סבבים: ראשית על ה-id הסינתטי (`m_<seq>`) לאורך כל הרשימה,
+ * ורק אם אף אחד לא התאים — על `messageId` של ACP. **הסדר אינו קוסמטי**:
+ * ‏`messageId` הוא מזהה-ספק ואינו מובטח ייחודי מול מרחב ה-`m_<seq>`, ולכן
+ * זהות-אמת גוברת על מפתח-קיבוץ.
+ *
+ * 🔴 **מחזיר סימן ואינו זורק.** ‏`AGENTS.md` קובע `Result`/סימן בליבה
+ * ו-`throw` רק בקליפה, ואכן `rg "throw " packages/core/src/session/` מחזיר
+ * אפס. ה-BE הוא שמתרגם את ה-`-1` ל-400.
+ */
+export function findMessageIndex(state: SessionState, id: string): number {
+  const bySyntheticId = state.messages.findIndex((m) => m.id === id)
+  if (bySyntheticId !== -1) return bySyntheticId
+  return state.messages.findIndex((m) => m.messageId === id)
+}
+
+/**
  * ‏`SessionState` → רצף ה-updates שמשחזר אותו מאפס.
  *
  * 🟢 **זה הכיווץ, והוא יוצא טבעית.** ה-CLI הזרים 71 chunks; ה-state מחזיק
@@ -272,8 +292,33 @@ export function patchToSessionUpdates(state: SessionState, patch: Patch): WireSe
  * נפרד (§2.2). המדידה שחייבה זאת: claude מכווץ ב-`session/load`, ‏OMP החזיר
  * **אפס פריימי-שחזור**. אותו פרוטוקול, שתי התנהגויות ⇒ מכווצים בעצמנו.
  */
-export function stateToSessionUpdates(state: SessionState): WireSessionUpdate[] {
+export type StateToSessionUpdatesOptions = {
+  /**
+   * חותכים את ההיסטוריה ומחזירים רק מההודעה הזאת ואילך.
+   * ‏`m_<seq>` או ה-`messageId` של ACP — ר' `findMessageIndex`.
+   *
+   * 🔴 **מזהה שאינו נמצא ⇒ `[]`**, לא פלט-מלא ולא זריקה. הקובע הוא שקורא
+   * עתידי שיבקש עוגן שנמחק לא יקבל "הכול" בשקט — בדיוק מחלקת-הכשל
+   * שהסלייס סוגר. ה-BE אינו נשען על זה (הוא קורא ל-`findMessageIndex`
+   * **לפני** ומתרגם ל-400), אבל הצורה מקובעת כאן כדי שלא תתפרש אחרת.
+   */
+  fromMessage?: string
+}
+
+export function stateToSessionUpdates(
+  state: SessionState,
+  opts?: StateToSessionUpdatesOptions,
+): WireSessionUpdate[] {
   const out: WireSessionUpdate[] = []
+
+  // ─── slice history-cursor C0: חיתוך לפי `fromMessage` ───
+  //
+  // בלי הארגומנט `cutIndex` הוא 0 וכל הדגלים למטה כבויים ⇒ **אותו קוד
+  // בדיוק** שרץ לפני הסלייס. זו המלכודת הראשונה ב-§7 של הבריף.
+  const cutting = opts?.fromMessage !== undefined && opts.fromMessage !== ""
+  const cutIndex = cutting ? findMessageIndex(state, opts.fromMessage as string) : 0
+  if (cutting && cutIndex === -1) return []
+  const visible = cutting ? state.messages.slice(cutIndex) : state.messages
 
   // ─── slice carried-snapshot C3: שזירת ה-carried במיקומם ───
   //
@@ -285,6 +330,27 @@ export function stateToSessionUpdates(state: SessionState): WireSessionUpdate[] 
   // הוא מחיקה + דחיפה לסוף (`recordCarried`). ⇒ מעבר יחיד לפי סדר המערך
   // בתוך כל עוגן מספיק, וה-`carried` המשוחזר יוצא זהה.
   const carried = state.carried ?? []
+
+  // ─── slice history-cursor C0: מי מה-`carried` **יורד** בחיתוך ───
+  //
+  // 🔴 שלושת הענפים של §4.1.2, ובסדר הזה:
+  //   (א) `after === null`  ⇒ יורד. ‏`null` לעולם אינו ברשימת-ההודעות, ולכן
+  //       מבחן-"קיים ברשימה המלאה" לבדו היה מחזיר אותו כשייר — הפוך מהכלל.
+  //   (ב) עוגן שקיים ברשימה המלאה אך נחתך ⇒ יורד, **ואינו שייר**.
+  //   (ג) עוגן שאינו קיים כלל ⇒ שייר (מסלול-מת, נשמר להתנהגות).
+  //
+  // 🔴 **ההשוואה חייבת להיות מול רשימת-ההודעות המלאה.** לולאת-השיירים למטה
+  // פולטת כל `carried` שעוגנו "אינו קיים"; היא מסלול-מת היום (`reset` מנקה),
+  // אבל תחת חיתוך כל עוגן שנחתך נראה לה לא-קיים — וכל ה-`carried` הישן היה
+  // חוזר דרך הדלת האחורית. לכן `allIds` נבנה מ-`state.messages` ולא מ-`visible`.
+  const allIds = cutting ? new Set(state.messages.map((m) => m.id)) : undefined
+  const keptIds = cutting ? new Set(visible.map((m) => m.id)) : undefined
+  const isCutAway = (after: string | null): boolean => {
+    if (!cutting) return false
+    if (after === null) return true
+    return allIds!.has(after) && !keptIds!.has(after)
+  }
+
   const emitted = new Set<number>()
   const emitCarriedAfter = (anchor: string | null): void => {
     for (let i = 0; i < carried.length; i++) {
@@ -297,8 +363,15 @@ export function stateToSessionUpdates(state: SessionState): WireSessionUpdate[] 
     }
   }
 
+  // עוגנים שנחתכו מסומנים כ"כבר נפלטו" — כך הם אינם נשזרים, וגם אינם
+  // נאספים בלולאת-השיירים. סימון אחד, שני מסלולים.
+  for (let i = 0; i < carried.length; i++) {
+    const e = carried[i]
+    if (e !== undefined && isCutAway(e.after)) emitted.add(i)
+  }
+
   emitCarriedAfter(null)
-  for (const m of state.messages) {
+  for (const m of visible) {
     out.push(messageToUpdate(m))
     emitCarriedAfter(m.id)
   }
