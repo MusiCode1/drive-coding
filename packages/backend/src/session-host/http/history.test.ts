@@ -23,8 +23,16 @@
  * הנימוק, לא ההכרעה.
  */
 
-import type { SessionState, WireSessionUpdate } from "@drive-coding/core/session"
+import type {
+  PendingElicitation,
+  PendingPermission,
+  QuotaSnapshot,
+  SessionCapabilities,
+  SessionState,
+  WireSessionUpdate,
+} from "@drive-coding/core/session"
 import {
+  applyPendingRequest,
   createInitialSessionState,
   recordCarried,
   snapshotFrame,
@@ -377,5 +385,157 @@ describe("‏C1 — ‏GET history?fromMessage= : חיתוך מהודעה ואי
     const res = await makeApp(registry).request("/api/agents/missing/history?fromMessage=m_999")
 
     expect(res.status).toBe(404)
+  })
+})
+
+// ─── slice header-always-full C2: הכותרת שורדת גם בגבול ה-HTTP ──────────────
+
+describe("‏C2 — ‏GET history?fromMessage= : הכותרת המלאה עוברת את גבול ה-HTTP", () => {
+  /**
+   * 🔴 **מה שנבדק כאן הוא ה**גבול**, ולא הליבה.** ‏C0/C1 בליבה מקבעים את
+   * ‏`stateToSessionUpdates`; כאן נשאלת השאלה האם אותו תוכן אכן שורד את
+   * המסלול `history.ts` → `snapshotPayload` → JSON → הגוף שהלקוח מקבל.
+   *
+   * ⚠️ **הפיקסצ'ר מועתק מ-`to-session-update.test.ts` בכוונה.** ייבוא בין
+   * קובצי-`.test` מריץ את בלוקי ה-`describe` שלהם **פעמיים** — סמנטיקת-מודולים,
+   * לא סגנון. העתק הוא המוסכמה הנוהגת בתיקייה (ר' הערת-הראש של הקובץ).
+   */
+
+  const QUOTA: QuotaSnapshot = {
+    provider: "claude",
+    windows: [
+      {
+        id: "w1",
+        period: { kind: "calendar" as const, unit: "month" as const },
+        consumption: { kind: "percentage" as const, usedPct: 99 },
+        resetsAtMs: null,
+      },
+    ],
+  }
+
+  const CAPS: SessionCapabilities = {
+    mcp: true,
+    compact: true,
+    commands: true,
+    usage: true,
+    configOptions: true,
+    rename: true,
+    thinkingTokens: true,
+    image: true,
+  }
+
+  const PERMISSION: PendingPermission = {
+    requestId: 7,
+    params: { sessionId: "sess-1", toolCall: { toolCallId: "tc-1", title: "מחיקת קובץ" } } as never,
+  }
+
+  const ELICITATION: PendingElicitation = {
+    requestId: 8,
+    params: { sessionId: "sess-1", message: "באיזו תיקייה?" } as never,
+  }
+
+  /**
+   * מצב-כותרת מאוכלס — כל שדה בערך שאינו ברירת-המחדל, אחרת הטסט אינו מבחין
+   * בין "שרד" ל"נולד ככה". ‏ה-pending נבנה דרך `applyPendingRequest` ולא
+   * בהשמה ישירה: הפונקציה מחזיקה את מלכודת-ה-spread.
+   */
+  function fullHeaderState(): SessionState {
+    const base = makeMockState({
+      sessionId: "sess-1",
+      version: 12,
+      title: "כותרת של סשן חי",
+      status: "disconnected",
+      turnState: "thinking",
+      commands: [{ name: "compact", description: "כיווץ ההקשר" }],
+      configOptions: [
+        { id: "verbosity", name: "Verbosity", type: "boolean" as const, currentValue: false },
+      ],
+      modes: { availableModes: [{ id: "plan", name: "תכנון" }], currentModeId: "plan" },
+      contextUsage: { used: 1200, size: 200000, cost: 0.42 },
+      capabilities: CAPS,
+      quota: QUOTA,
+      messages: [
+        { id: "m_0", role: "user", messageId: "u-0", segments: [{ id: "s_0", text: "אחת" }] },
+        {
+          id: "m_1",
+          role: "assistant",
+          messageId: "a-1",
+          segments: [{ id: "s_1", text: "שתיים" }],
+        },
+        { id: "m_2", role: "user", messageId: "u-2", segments: [{ id: "s_2", text: "שלוש" }] },
+      ],
+      nextMessageSeq: 3,
+      nextSegmentSeq: 3,
+    })
+    const withPermission = applyPendingRequest(base, {
+      kind: "permission",
+      value: PERMISSION,
+    }).state
+    return applyPendingRequest(withPermission, { kind: "elicitation", value: ELICITATION }).state
+  }
+
+  /**
+   * זנב-הכותרת — כל פריים שאינו הודעה ואינו `carried`.
+   *
+   * ⚠️ ‏`agent_thought` ו-`tool_call*` **אינם** מסתיימים ב-`_message`, ולכן
+   * מסוננים במפורש: בלעדיהם הודעה עתידית מסוג כזה בפיקסצ'ר הייתה נכנסת
+   * לזנב ומאדימה את הטסט על ההבדל הצפוי (ההודעות נחתכו).
+   */
+  const headerTail = (u: WireSessionUpdate[]): WireSessionUpdate[] =>
+    u.filter(
+      (x) =>
+        !x.sessionUpdate.endsWith("_message") &&
+        x.sessionUpdate !== "agent_thought" &&
+        !x.sessionUpdate.startsWith("tool_call") &&
+        !x.sessionUpdate.startsWith("plan"),
+    )
+
+  async function get(query: string): Promise<{ res: Response; body: HistoryBody }> {
+    const registry = makeMockRegistry(makeMockHost(fullHeaderState()))
+    const res = await makeApp(registry).request(`/api/agents/agent-1/history${query}`)
+    return { res, body: (await res.json()) as HistoryBody }
+  }
+
+  const driveBlock = (u: WireSessionUpdate[]): Record<string, unknown> | undefined =>
+    u.find((x) => x.sessionUpdate === "_drive/session_update")?.changes as
+      | Record<string, unknown>
+      | undefined
+
+  it("‏הגוף נושא את ה-permission וה-elicitation הפתוחות — עם ה-requestId, לא רק את הפריים", async () => {
+    const { res, body } = await get("?fromMessage=m_2")
+
+    expect(res.status).toBe(200)
+    const changes = driveBlock(body.updates)
+    expect(changes?.pending).toEqual({ permission: PERMISSION, elicitation: ELICITATION })
+  })
+
+  it("‏‏`status` ו-`quota` בגוף — בערכם שאינו ברירת-המחדל", async () => {
+    const { body } = await get("?fromMessage=m_2")
+
+    const changes = driveBlock(body.updates)
+    // ברירות-המחדל הן `"idle"` ו-`null`; אסרציה עליהן לא הייתה עדות לכלום.
+    expect(changes?.status).toBe("disconnected")
+    expect(changes?.quota).toEqual(QUOTA)
+    expect(changes?.capabilities).toEqual(CAPS)
+  })
+
+  it("‏זנב-הכותרת בגוף **זהה** לזה של `snapshotPayload` המלא — גלאי-סטייה בשכבת ה-HTTP", async () => {
+    const { body } = await get("?fromMessage=m_2")
+
+    const full = headerTail(snapshotPayload(fullHeaderState()).updates)
+    expect(headerTail(body.updates)).toEqual(full)
+    expect(full.length).toBeGreaterThan(0)
+  })
+
+  it("‏‏`updates` של החיתוך קצר משל המלא — ההודעות אכן נחתכו", async () => {
+    const { body: cut } = await get("?fromMessage=m_2")
+    const { body: full } = await get("")
+
+    const msgIds = (u: WireSessionUpdate[]): unknown[] =>
+      u.filter((x) => x.sessionUpdate.endsWith("_message")).map((x) => x.messageId)
+
+    expect(msgIds(full.updates)).toEqual(["u-0", "a-1", "u-2"])
+    expect(msgIds(cut.updates)).toEqual(["u-2"])
+    expect(cut.updates.length).toBeLessThan(full.updates.length)
   })
 })
