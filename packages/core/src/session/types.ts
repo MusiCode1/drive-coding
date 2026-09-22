@@ -117,6 +117,12 @@ export type SessionMessage =
       role: "user" | "thought" | "assistant"
       messageId: string | null
       segments: SessionSegment[]
+      /**
+       * חותמת-זמן ISO של ההודעה מהמקור (SDK ≥0.3.211 פולט על assistant; user תמיד).
+       * מקורלטת ב-reduce מזרם `_claude/sdkMessage` לפי messageId. אופציונלי ו-additive.
+       * ⚠️ שעון-המקור, **לתצוגה בלבד** — לא למיין לפיו (הוראת ה-SDK).
+       */
+      timestamp?: string
       meta?: Record<string, unknown>
       /** slice remote-images C2 — תמונות שנשלחו עם הפרומפט. אופציונלי ו-additive. */
       attachments?: { mimeType: string; dataBase64: string }[]
@@ -140,6 +146,13 @@ export type SessionState = {
   nextMessageSeq: number
   /** מונה דטרמיניסטי ל-ids של segments (s_<n>) */
   nextSegmentSeq: number
+  /**
+   * חותמות-זמן ממתינות לפי messageId (מ-`_claude/sdkMessage`). הגשר פולט את
+   * ה-timestamp של ההודעה **לפני** שבועת ה-assistant נוצרת מה-chunks; שומרים
+   * כאן ומחילים כשההודעה נוצרת/מתעדכנת. buffer — לא תלוי בסדר ההגעה.
+   * אופציונלי (additive) — state ישן / literal בטסטים בלי השדה עדיין תקף.
+   */
+  messageTimestamps?: Record<string, string>
 
   // ─── C1: session lifecycle + metadata fields ───
 
@@ -279,6 +292,7 @@ export function createInitialSessionState({
     messages: [],
     nextMessageSeq: 0,
     nextSegmentSeq: 0,
+    messageTimestamps: {},
     // C1 fields
     status: "idle",
     turnState: "idle",

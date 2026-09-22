@@ -70,6 +70,18 @@ function canGroupWith(
 
 // ─── handlers לסוגי updates ───
 
+/**
+ * מחיל חותמת-זמן ממתינה (מ-`state.messageTimestamps`) על הודעה חדשה/מעודכנת
+ * לפי ה-messageId שלה, אם קיימת וההודעה עוד בלי timestamp. כך assistant שנוצר
+ * **אחרי** אירוע ה-sdkMessage עדיין מקבל את הזמן. הודעות tool / messageId=null
+ * מדולגות.
+ */
+function withPendingTs(msg: SessionMessage, state: SessionState): SessionMessage {
+  if (msg.role === "tool" || msg.messageId === null || msg.timestamp !== undefined) return msg
+  const ts = state.messageTimestamps?.[msg.messageId]
+  return ts === undefined ? msg : { ...msg, timestamp: ts }
+}
+
 function handleTextChunk(
   state: SessionState,
   role: "user" | "thought" | "assistant",
@@ -129,10 +141,10 @@ function handleTextChunk(
       ...(meta !== undefined ? { meta } : {}),
     }
     // update state immutably
-    const updatedMsg: SessionMessage = {
-      ...last,
-      segments: [...last.segments, seg],
-    }
+    const updatedMsg: SessionMessage = withPendingTs(
+      { ...last, segments: [...last.segments, seg] },
+      state,
+    )
     const messages = [...state.messages]
     messages[targetIdx] = updatedMsg
     return {
@@ -158,13 +170,16 @@ function handleTextChunk(
     const msgId = nextMsgId(state.nextMessageSeq)
     const segId = nextSegId(state.nextSegmentSeq)
     const seg: SessionSegment = { id: segId, text }
-    const msg: SessionMessage = {
-      id: msgId,
-      role,
-      messageId,
-      segments: [seg],
-      ...(meta !== undefined ? { meta } : {}),
-    }
+    const msg: SessionMessage = withPendingTs(
+      {
+        id: msgId,
+        role,
+        messageId,
+        segments: [seg],
+        ...(meta !== undefined ? { meta } : {}),
+      },
+      state,
+    )
     const patch: Patch = { version: newVersion, op: "add-message", message: msg }
     return {
       state: {
@@ -413,14 +428,17 @@ function handleWholeMessage(
   const nextSegmentSeq = state.nextSegmentSeq + (text ? 1 : 0)
 
   if (idx === -1) {
-    const msg: SessionMessage = {
-      id: nextMsgId(state.nextMessageSeq),
-      role,
-      messageId: storedMessageId(u, messageId),
-      segments,
-      ...(attachments.length > 0 ? { attachments } : {}),
-      ...(meta !== undefined ? { meta } : {}),
-    }
+    const msg: SessionMessage = withPendingTs(
+      {
+        id: nextMsgId(state.nextMessageSeq),
+        role,
+        messageId: storedMessageId(u, messageId),
+        segments,
+        ...(attachments.length > 0 ? { attachments } : {}),
+        ...(meta !== undefined ? { meta } : {}),
+      },
+      state,
+    )
     return {
       state: {
         ...state,
@@ -435,12 +453,15 @@ function handleWholeMessage(
   }
 
   const old = state.messages[idx] as SessionMessage & { role: "user" | "thought" | "assistant" }
-  const msg: SessionMessage = {
-    ...old,
-    segments,
-    ...(attachments.length > 0 ? { attachments } : {}),
-    ...(meta !== undefined ? { meta: { ...(old.meta ?? {}), ...meta } } : {}),
-  }
+  const msg: SessionMessage = withPendingTs(
+    {
+      ...old,
+      segments,
+      ...(attachments.length > 0 ? { attachments } : {}),
+      ...(meta !== undefined ? { meta: { ...(old.meta ?? {}), ...meta } } : {}),
+    },
+    state,
+  )
   const messages = [...state.messages]
   messages[idx] = msg
   return {
@@ -777,6 +798,42 @@ function reduceRecognized(
       ...(meta !== undefined ? { meta } : {}),
     }
     return { state: newState, patches: [patch] }
+  }
+
+  // _drive/ext_notification: הודעות ה-SDK הגולמיות (_claude/sdkMessage). הן
+  // נישאות opaque ל-FE (פרסור subagent transcripts) — חובה לשמר. בנוסף, כש-SDK
+  // ‏≥0.3.211 מטביע `timestamp` נייטיב על assistant, מקורלטים אותו להודעה
+  // שכבר רודדה, לפי messageId (= id של הודעת ה-API), ורושמים על
+  // SessionMessage.timestamp (נחשף ב-session_state). שעון-מקור, לתצוגה בלבד.
+  if (sessionUpdate === "_drive/ext_notification") {
+    const carried = opaquePatch(state, u) // שימור ה-passthrough ל-FE (subagents)
+    if (u.method !== "_claude/sdkMessage") return carried
+    const params = u.params as Record<string, unknown> | undefined
+    const sdkMsg = params?.message as Record<string, unknown> | undefined
+    if (!sdkMsg || sdkMsg.type !== "assistant" || typeof sdkMsg.timestamp !== "string") return carried
+    const apiMsg = sdkMsg.message as Record<string, unknown> | undefined
+    const mid = apiMsg && typeof apiMsg.id === "string" ? apiMsg.id : null
+    if (mid === null) return carried
+    const ts = sdkMsg.timestamp
+    // רושמים ל-buffer לפי messageId — הודעות שייווצרו אחר-כך (assistant טקסט
+    // שמגיע אחרי אירוע ה-sdkMessage) יקבלו את הזמן ב-withPendingTs. בנוסף מחילים
+    // מיד על כל בועה קיימת שאינה tool עם ה-messageId (thought/assistant).
+    let st: SessionState = {
+      ...carried.state,
+      messageTimestamps: { ...(carried.state.messageTimestamps ?? {}), [mid]: ts },
+    }
+    const patches: Patch[] = [...carried.patches]
+    for (let i = 0; i < st.messages.length; i++) {
+      const m = st.messages[i]
+      if (m === undefined || m.role === "tool" || m.messageId !== mid || m.timestamp === ts) continue
+      const msg: SessionMessage = { ...m, timestamp: ts }
+      const newVersion = st.version + 1
+      const messages = [...st.messages]
+      messages[i] = msg
+      st = { ...st, version: newVersion, messages }
+      patches.push({ version: newVersion, op: "set-message", targetId: m.id, message: msg })
+    }
+    return { state: st, patches }
   }
 
   // 🔴 כאן היה `return { state, patches: [] }` — כלומר **כל מה שלא זוהה נזרק

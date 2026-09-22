@@ -364,3 +364,33 @@ describe("sessionMsgToBubble — attachments passthrough (remote-images C2)", ()
     expect(bubble.attachments).toEqual(attachments)
   })
 })
+
+describe("applyPatchMutable — createdAt מ-timestamp (slice sdk-timestamp)", () => {
+  it("assistant עם timestamp → createdAt = Date.parse(ts), לא 0/epoch", () => {
+    const ts = "2026-09-21T09:01:57.150Z"
+    const msg: SessionMessage = {
+      id: "m_0",
+      role: "assistant",
+      messageId: "msg_1",
+      segments: [{ id: "s_0", text: "hi" }],
+      timestamp: ts,
+    }
+    const bubbles: Bubble[] = []
+    applyPatchMutable(bubbles, [{ version: 1, op: "add-message", message: msg }], {
+      mapToolContent: stubMapToolContent,
+      mapLocations: stubMapLocations,
+    })
+    expect(bubbles[0]!.createdAt).toBe(Date.parse(ts))
+    expect(bubbles[0]!.createdAt).not.toBe(0)
+  })
+
+  it("assistant בלי timestamp → createdAt 0 (fallback)", () => {
+    const msg: SessionMessage = { id: "m_0", role: "assistant", messageId: "msg_1", segments: [] }
+    const bubbles: Bubble[] = []
+    applyPatchMutable(bubbles, [{ version: 1, op: "add-message", message: msg }], {
+      mapToolContent: stubMapToolContent,
+      mapLocations: stubMapLocations,
+    })
+    expect(bubbles[0]!.createdAt).toBe(0)
+  })
+})

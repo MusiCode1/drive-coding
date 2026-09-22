@@ -42,20 +42,21 @@
       "esbuild"
     ],
     "overrides": {
-      "@agentclientprotocol/sdk": "1.2.1",
-      "@anthropic-ai/claude-agent-sdk": "0.3.207",
+      "@agentclientprotocol/sdk": "1.4.0",
+      "@anthropic-ai/claude-agent-sdk": "0.3.274",
       "@openai/codex": "0.144.1"
     }
   },
   "overrides": {
-    "@agentclientprotocol/sdk": "1.2.1",
-    "@anthropic-ai/claude-agent-sdk": "0.3.207",
+    "@agentclientprotocol/sdk": "1.4.0",
+    "@anthropic-ai/claude-agent-sdk": "0.3.274",
     "@openai/codex": "0.144.1"
   },
   "workspaces": [
     "packages/*"
   ],
   "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "^0.79.0",
     "@modelcontextprotocol/sdk": "1.30.0"
   }
 }
