@@ -539,3 +539,110 @@ describe("‏C2 — ‏GET history?fromMessage= : הכותרת המלאה עוב
     expect(cut.updates.length).toBeLessThan(full.updates.length)
   })
 })
+
+// ─── slice session-read-filter: ‏?kinds= ו-?withHeader= בגבול ה-HTTP ─────────
+
+describe("‏GET history?kinds=&withHeader= : סינון סלקטיבי בגבול ה-HTTP", () => {
+  /** שיחה מעורבת: user · assistant · **tool** · user, עם `carried` וכותרת. */
+  function mixed(): SessionState {
+    return makeMockState({
+      sessionId: "sess-1",
+      version: 12,
+      title: "כותרת",
+      status: "disconnected",
+      messages: [
+        { id: "m_0", role: "user", messageId: "u-0", segments: [{ id: "s_0", text: "אחת" }] },
+        { id: "m_1", role: "assistant", messageId: "a-1", segments: [{ id: "s_1", text: "שתיים" }] },
+        {
+          id: "m_2",
+          role: "tool",
+          messageId: null,
+          toolCall: { toolCallId: "tc-1", name: "Write", args: { path: "x" }, status: "completed" },
+        },
+        { id: "m_3", role: "user", messageId: "u-3", segments: [{ id: "s_3", text: "שלוש" }] },
+      ],
+      nextMessageSeq: 4,
+      nextSegmentSeq: 4,
+      carried: [{ key: "plan", after: "m_0", update: { sessionUpdate: "plan", id: "at-m0" } }],
+    })
+  }
+
+  async function get(query: string): Promise<{ res: Response; body: HistoryBody }> {
+    const registry = makeMockRegistry(makeMockHost(mixed()))
+    const res = await makeApp(registry).request(`/api/agents/agent-1/history${query}`)
+    return { res, body: (await res.json()) as HistoryBody }
+  }
+
+  const kinds = (u: WireSessionUpdate[]): string[] => u.map((x) => x.sessionUpdate)
+  const hasMsg = (u: WireSessionUpdate[]): boolean =>
+    u.some((x) => x.sessionUpdate.endsWith("_message"))
+  const hasTool = (u: WireSessionUpdate[]): boolean =>
+    u.some((x) => x.sessionUpdate.startsWith("tool_call"))
+  const hasHeader = (u: WireSessionUpdate[]): boolean =>
+    u.some(
+      (x) =>
+        x.sessionUpdate === "_drive/session_update" || x.sessionUpdate === "session_info_update",
+    )
+
+  it("‏‏`?kinds=messages` — רק הודעות; בלי כלים ובלי plan; הכותרת נשארת", async () => {
+    const { res, body } = await get("?kinds=messages")
+    expect(res.status).toBe(200)
+    expect(hasMsg(body.updates)).toBe(true)
+    expect(hasTool(body.updates)).toBe(false)
+    expect(kinds(body.updates)).not.toContain("plan")
+    expect(hasHeader(body.updates)).toBe(true)
+  })
+
+  it("‏`?kinds=tool_calls` — רק קריאות-כלים; בלי הודעות", async () => {
+    const { body } = await get("?kinds=tool_calls")
+    expect(hasTool(body.updates)).toBe(true)
+    expect(hasMsg(body.updates)).toBe(false)
+  })
+
+  it("‏`?withHeader=false` — בלי בלוק-הכותרת, ההודעות נשארות", async () => {
+    const { body } = await get("?withHeader=false")
+    expect(hasHeader(body.updates)).toBe(false)
+    expect(hasMsg(body.updates)).toBe(true)
+  })
+
+  it("‏קריאה חסכונית: `?kinds=messages&withHeader=false` = רק גוף-שיחה", async () => {
+    const { body } = await get("?kinds=messages&withHeader=false")
+    expect(hasMsg(body.updates)).toBe(true)
+    expect(hasTool(body.updates)).toBe(false)
+    expect(hasHeader(body.updates)).toBe(false)
+    expect(body.updates.every((x) => x.sessionUpdate.endsWith("_message"))).toBe(true)
+  })
+
+  it("‏מלחין עם `fromMessage`: `?fromMessage=m_1&kinds=messages`", async () => {
+    const msgIds = (u: WireSessionUpdate[]): unknown[] =>
+      u.filter((x) => x.sessionUpdate.endsWith("_message")).map((x) => x.messageId)
+    const { body } = await get("?fromMessage=m_1&kinds=messages")
+    // מ-m_1: assistant(a-1) · tool(נופל) · user(u-3).
+    expect(msgIds(body.updates)).toEqual(["a-1", "u-3"])
+    expect(hasTool(body.updates)).toBe(false)
+  })
+
+  it("🔴 ‏`?kinds=` לא-מוכר ⇒ 400, לא התעלמות בשקט", async () => {
+    const { res, body } = await get("?kinds=messagess")
+    expect(res.status).toBe(400)
+    expect((body as unknown as { error: string }).error).toBe("unknown kinds")
+  })
+
+  it("🔴 ‏`?withHeader=` שאינו true/false ⇒ 400", async () => {
+    const { res, body } = await get("?withHeader=maybe")
+    expect(res.status).toBe(400)
+    expect((body as unknown as { error: string }).error).toContain("withHeader")
+  })
+
+  it("‏בלי הפרמטרים — בדיוק המטען המלא (אפס-רגרסיה)", async () => {
+    const { res, body } = await get("")
+    expect(res.status).toBe(200)
+    expect(body).toEqual(snapshotPayload(mixed()))
+  })
+
+  it("‏`?kinds=all&withHeader=true` — זהה לפלט ללא-פרמטרים", async () => {
+    const { body: filtered } = await get("?kinds=all&withHeader=true")
+    const { body: plain } = await get("")
+    expect(filtered).toEqual(plain)
+  })
+})

@@ -307,6 +307,30 @@ export type StateToSessionUpdatesOptions = {
    * **לפני** ומתרגם ל-400), אבל הצורה מקובעת כאן כדי שלא תתפרש אחרת.
    */
   fromMessage?: string
+
+  /**
+   * ─── slice session-read-filter ───
+   *
+   * סינון סלקטיבי לפי סוג הפריט:
+   * - `"messages"` — רק הודעות שיחה (`role` ∈ user/thought/assistant).
+   * - `"tool_calls"` — רק קריאות-כלים (`role: "tool"` ⇒ `tool_call_update`).
+   * - `"all"` / חסר — הכול (ברירת-המחדל: הקוד הקודם בדיוק).
+   *
+   * 🔴 **`carried` נלווה ל-`"all"` בלבד.** ‏`plan` וחבריו אינם הודעה ואינם
+   * קריאת-כלי; סינון לקטגוריה מפורשת מפיל אותם. זו הכרעה, לא השמטה — צרכן
+   * שביקש "רק הודעות" לא אמור לקבל בשקט עדכוני-plan.
+   */
+  include?: "messages" | "tool_calls" | "all"
+
+  /**
+   * ‏`false` ⇒ משמיטים את בלוק-הכותרת כולו (status · quota · pending ·
+   * modes · title · commands · config · usage · turnState · capabilities).
+   * ברירת-מחדל `true` — הכותרת נשארת, עקבי עם `header-always-full`.
+   *
+   * ⚠️ הצרכן שמכבה זאת מוותר מדעת על **שאלה-ממתינה** (`pending.permission`)
+   * — מתאים לקריאה חסכונית של גוף-שיחה, לא לשחזור-סשן שלם.
+   */
+  withHeader?: boolean
 }
 
 export function stateToSessionUpdates(
@@ -323,6 +347,21 @@ export function stateToSessionUpdates(
   const cutIndex = cutting ? findMessageIndex(state, opts.fromMessage as string) : 0
   if (cutting && cutIndex === -1) return []
   const visible = cutting ? state.messages.slice(cutIndex) : state.messages
+
+  // ─── slice session-read-filter: סינון סלקטיבי לפי סוג ───
+  //
+  // `"all"` / חסר משאיר את שלושת הדגלים דלוקים ⇒ **אותו קוד בדיוק** כמו קודם.
+  //
+  // 🔴 **fail-open על ערך מחוץ-לטיפוס.** ה-callers כבר חוסמים (‏HTTP whitelist→400,
+  // arktype enum), אבל אם ערך לא-מוכר בכל זאת יגיע — נורמליזציה ל-"all" ולא
+  // drop-all שקט (שהיה מעלים הודעות **וגם** כותרת). עקבי עם ה-fail-open של
+  // `patchToSessionUpdates` (`op` לא-מוכר ⇒ `[]`, לא זריקה).
+  const rawInclude = opts?.include
+  const include = rawInclude === "messages" || rawInclude === "tool_calls" ? rawInclude : "all"
+  const includeMessages = include === "all" || include === "messages"
+  const includeTools = include === "all" || include === "tool_calls"
+  // ‏carried אינו הודעה ואינו קריאת-כלי ⇒ רק ב-"all".
+  const includeCarried = include === "all"
 
   // ─── slice carried-snapshot C3: שזירת ה-carried במיקומם ───
   //
@@ -374,36 +413,45 @@ export function stateToSessionUpdates(
     if (e !== undefined && isCutAway(e.after)) emitted.add(i)
   }
 
-  emitCarriedAfter(null)
+  if (includeCarried) emitCarriedAfter(null)
   for (const m of visible) {
-    out.push(messageToUpdate(m))
-    emitCarriedAfter(m.id)
+    const keep = m.role === "tool" ? includeTools : includeMessages
+    if (keep) out.push(messageToUpdate(m))
+    if (includeCarried) emitCarriedAfter(m.id)
   }
 
   // עוגן שאינו קיים ברשימת-ההודעות. לא אמור לקרות — `reset` מנקה את
   // ה-buffer יחד עם ההודעות — אבל להשמיט בשקט זה בדיוק הכשל שהסלייס סוגר.
-  for (let i = 0; i < carried.length; i++) {
-    const e = carried[i]
-    if (e === undefined || emitted.has(i)) continue
-    if (typeof e.update === "object" && e.update !== null) {
-      out.push(e.update as WireSessionUpdate)
+  if (includeCarried) {
+    for (let i = 0; i < carried.length; i++) {
+      const e = carried[i]
+      if (e === undefined || emitted.has(i)) continue
+      if (typeof e.update === "object" && e.update !== null) {
+        out.push(e.update as WireSessionUpdate)
+      }
     }
   }
 
-  out.push(
-    ...changesToUpdates({
-      title: state.title,
-      commands: state.commands,
-      configOptions: state.configOptions,
-      modes: state.modes,
-      contextUsage: state.contextUsage,
-      turnState: state.turnState,
-      lastTurnError: state.lastTurnError,
-      status: state.status,
-      pending: state.pending,
-      capabilities: state.capabilities,
-      quota: state.quota,
-    }),
-  )
+  // ─── slice session-read-filter: הכותרת ניתנת-לכיבוי (ברירת-מחדל דלוקה) ───
+  //
+  // 🔴 ‏`withHeader !== false` ולא `=== true`: חסר ⇒ נשאר, עקבי עם
+  // header-always-full. רק `false` מפורש מפיל את הכותרת.
+  if (opts?.withHeader !== false) {
+    out.push(
+      ...changesToUpdates({
+        title: state.title,
+        commands: state.commands,
+        configOptions: state.configOptions,
+        modes: state.modes,
+        contextUsage: state.contextUsage,
+        turnState: state.turnState,
+        lastTurnError: state.lastTurnError,
+        status: state.status,
+        pending: state.pending,
+        capabilities: state.capabilities,
+        quota: state.quota,
+      }),
+    )
+  }
   return out
 }

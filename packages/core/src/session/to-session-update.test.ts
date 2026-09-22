@@ -691,3 +691,152 @@ describe("stateToSessionUpdates — כותרת מלאה תחת חיתוך (slice
     expect(consumerCut.version).toBeLessThan(consumerFull.version)
   })
 })
+
+// ─── slice session-read-filter: include + withHeader ───────────────────────
+
+describe("stateToSessionUpdates — include + withHeader (slice session-read-filter)", () => {
+  /**
+   * שיחה מעורבת: user · assistant · thought · **tool** · user, עם `carried`
+   * (`plan`) ומצב-כותרת מאוכלס (`title`/`status`). כל סוג-פריט מיוצג פעם אחת
+   * לפחות, כך שכל דגל-סינון נמדד על נוכחות **ועל** היעדרות.
+   */
+  function mixed(): SessionState {
+    return {
+      ...createInitialSessionState({ sessionId: "s-1" }),
+      title: "כותרת",
+      status: "disconnected",
+      messages: [
+        { id: "m_0", role: "user", messageId: "u-0", segments: [{ id: "s_0", text: "שאלה" }] },
+        {
+          id: "m_1",
+          role: "assistant",
+          messageId: "a-1",
+          segments: [{ id: "s_1", text: "תשובה" }],
+        },
+        { id: "m_2", role: "thought", messageId: "t-2", segments: [{ id: "s_2", text: "מחשבה" }] },
+        {
+          id: "m_3",
+          role: "tool",
+          messageId: null,
+          toolCall: { toolCallId: "tc-1", name: "Write", args: { path: "x" }, status: "completed" },
+        },
+        { id: "m_4", role: "user", messageId: "u-4", segments: [{ id: "s_4", text: "עוד" }] },
+      ],
+      nextMessageSeq: 5,
+      nextSegmentSeq: 5,
+      carried: [{ key: "plan", after: "m_1", update: { sessionUpdate: "plan", id: "at-m1" } }],
+    }
+  }
+
+  const kinds = (u: WireSessionUpdate[]): string[] => u.map((x) => x.sessionUpdate)
+  const hasMsg = (u: WireSessionUpdate[]): boolean =>
+    u.some((x) => x.sessionUpdate.endsWith("_message") || x.sessionUpdate === "agent_thought")
+  const hasTool = (u: WireSessionUpdate[]): boolean =>
+    u.some((x) => x.sessionUpdate.startsWith("tool_call"))
+  const hasCarried = (u: WireSessionUpdate[]): boolean =>
+    u.some((x) => x.sessionUpdate === "plan")
+  const hasHeader = (u: WireSessionUpdate[]): boolean =>
+    u.some(
+      (x) =>
+        x.sessionUpdate === "_drive/session_update" || x.sessionUpdate === "session_info_update",
+    )
+
+  it("‏‏`include: \"all\"` / `withHeader: true` — הפלט זהה לחלוטין לקריאה ללא אופציות", () => {
+    // 🔴 מלכודת אפס-הרגרסיה: כל קורא קיים חייב להתנהג בדיוק כמו קודם.
+    const s = mixed()
+    expect(stateToSessionUpdates(s, { include: "all" })).toEqual(stateToSessionUpdates(s))
+    expect(stateToSessionUpdates(s, { withHeader: true })).toEqual(stateToSessionUpdates(s))
+    expect(stateToSessionUpdates(s, { include: "all", withHeader: true })).toEqual(
+      stateToSessionUpdates(s),
+    )
+  })
+
+  it("‏`include: \"messages\"` — רק הודעות-שיחה; בלי קריאות-כלים ובלי `carried`", () => {
+    const out = stateToSessionUpdates(mixed(), { include: "messages" })
+    expect(hasMsg(out)).toBe(true)
+    expect(hasTool(out)).toBe(false)
+    expect(hasCarried(out)).toBe(false)
+    // הכותרת עדיין שם — ברירת-המחדל של withHeader.
+    expect(hasHeader(out)).toBe(true)
+  })
+
+  it("‏`include: \"tool_calls\"` — רק קריאות-כלים; בלי הודעות ובלי `carried`", () => {
+    const out = stateToSessionUpdates(mixed(), { include: "tool_calls" })
+    expect(hasTool(out)).toBe(true)
+    expect(hasMsg(out)).toBe(false)
+    expect(hasCarried(out)).toBe(false)
+    expect(hasHeader(out)).toBe(true)
+  })
+
+  it("‏`include` — תוכן, לא רק סוג: הכלי `tc-1` נשאר תחת tool_calls ונופל תחת messages", () => {
+    const toolId = (u: WireSessionUpdate[]): unknown[] =>
+      u.filter((x) => x.sessionUpdate.startsWith("tool_call")).map(
+        (x) => (x as { toolCallId?: unknown }).toolCallId,
+      )
+    expect(toolId(stateToSessionUpdates(mixed(), { include: "tool_calls" }))).toContain("tc-1")
+    expect(toolId(stateToSessionUpdates(mixed(), { include: "messages" }))).not.toContain("tc-1")
+  })
+
+  it("‏`withHeader: false` — בלי בלוק-הכותרת, ההודעות נשארות", () => {
+    const out = stateToSessionUpdates(mixed(), { withHeader: false })
+    expect(hasHeader(out)).toBe(false)
+    expect(hasMsg(out)).toBe(true)
+    // גם `session_info_update` (title) יורד — הוא חלק מהכותרת.
+    expect(kinds(out)).not.toContain("session_info_update")
+  })
+
+  it("‏`withHeader: false` מפיל את שאלת-ההרשאה הממתינה — הוויתור המודע", () => {
+    // מצב עם permission פתוחה: withHeader:false משמיט אותה במכוון.
+    const base = mixed()
+    const s = applyPendingRequest(base, {
+      kind: "permission",
+      value: { requestId: 7, params: { sessionId: "s-1" } as never },
+    }).state
+    const withH = stateToSessionUpdates(s, { withHeader: true })
+    const without = stateToSessionUpdates(s, { withHeader: false })
+    expect(hasHeader(withH)).toBe(true)
+    expect(hasHeader(without)).toBe(false)
+  })
+
+  it("‏קריאה חסכונית מקסימלית: `include: \"messages\"` + `withHeader: false` = רק גוף-השיחה", () => {
+    const out = stateToSessionUpdates(mixed(), { include: "messages", withHeader: false })
+    expect(hasMsg(out)).toBe(true)
+    expect(hasTool(out)).toBe(false)
+    expect(hasCarried(out)).toBe(false)
+    expect(hasHeader(out)).toBe(false)
+    // כל פריט בפלט הוא הודעת-שיחה — אין שום דבר אחר.
+    expect(
+      out.every(
+        (x) => x.sessionUpdate.endsWith("_message") || x.sessionUpdate === "agent_thought",
+      ),
+    ).toBe(true)
+  })
+
+  it("‏מלחין עם `fromMessage` — חיתוך **וגם** סינון-סוג יחד", () => {
+    const msgIds = (u: WireSessionUpdate[]): unknown[] =>
+      u
+        .filter((x) => x.sessionUpdate.endsWith("_message"))
+        .map((x) => (x as { messageId?: unknown }).messageId)
+    // מ-m_1 ואילך: assistant(a-1) · thought(m_2, לא _message) · tool(m_3) · user(u-4).
+    // ‏include:"messages" משאיר רק את הודעות-השיחה מתוך החלון.
+    const out = stateToSessionUpdates(mixed(), { fromMessage: "m_1", include: "messages" })
+    expect(msgIds(out)).toEqual(["a-1", "u-4"])
+    expect(hasTool(out)).toBe(false)
+  })
+
+  it("‏ערך `include` מחוץ-לטיפוס — fail-open ל-\"all\", לא drop-all שקט", () => {
+    // 🔴 ה-callers חוסמים ערך כזה; זו הגנה-בעומק. הכשל שנמנע: הודעות **וכותרת**
+    // נעלמות בשקט. עקבי עם ה-fail-open של `patchToSessionUpdates`.
+    const s = mixed()
+    expect(stateToSessionUpdates(s, { include: "garbage" as never })).toEqual(
+      stateToSessionUpdates(s),
+    )
+  })
+
+  it("‏`include: \"messages\"` שומר גם מחשבות-סוכן (`agent_thought`), לא רק user/assistant", () => {
+    // m_2 ב-mixed() הוא role:"thought". צרכן שמבקש "messages" מקבל גם אותו —
+    // הכרעה מתועדת (thought ∈ messages), וכאן היא ממוסמרת-תוכן.
+    const out = stateToSessionUpdates(mixed(), { include: "messages" })
+    expect(out.some((x) => x.sessionUpdate === "agent_thought")).toBe(true)
+  })
+})
