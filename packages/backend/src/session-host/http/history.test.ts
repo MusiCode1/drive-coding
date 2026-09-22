@@ -16,7 +16,12 @@
  */
 
 import type { SessionState, WireSessionUpdate } from "@drive-coding/core/session"
-import { createInitialSessionState, recordCarried } from "@drive-coding/core/session"
+import {
+  createInitialSessionState,
+  recordCarried,
+  snapshotFrame,
+  snapshotPayload,
+} from "@drive-coding/core/session"
 import { Hono } from "hono"
 import { describe, expect, it, vi } from "vitest"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
@@ -212,6 +217,64 @@ describe("GET /api/agents/:id/history", () => {
       await makeApp(registry).request("/api/agents/missing/history")
 
       expect(registry.getOrCreateHost).not.toHaveBeenCalled()
+    })
+  })
+})
+
+// ── C2: גלאי-סטייה מול frame-zero ────────────────────────────────────────────
+
+describe("‏C2 — ‏GET history מול frame-zero: גלאי-סטייה", () => {
+  /**
+   * 🔴 **גלאי-סטייה, לא גלאי-העתק.** שני האגפים קוראים ל-`stateToSessionUpdates`,
+   * ולכן ההשוואה יוצאת ירוקה בין אם יש מקור אחד ובין אם שניים — ההעתק **אינו**
+   * נתפס כאן ברגע שנוצר, וכלל מקור-אחד נאכף ב-review. מה שכן נתפס הוא הרגע
+   * שבו אחד המימושים משתנה והשני לא. לכן השורה השנייה משווה את ה**מטען השלם**
+   * ולא רק את `.updates`: שדה חדש שלא יגיע לצד השני מאדים מיד.
+   */
+  function richState(): SessionState {
+    return recordCarried(
+      stateWithMessage({
+        title: "סטייה",
+        messages: [
+          {
+            id: "m_0",
+            role: "user",
+            messageId: "msg-u",
+            segments: [{ id: "s_0", text: "שאלה" }],
+            timestamp: "2026-09-22T09:59:00.000Z",
+          },
+          {
+            id: "m_1",
+            role: "assistant",
+            messageId: "msg-a",
+            segments: [{ id: "s_1", text: "תשובה" }],
+            timestamp: "2026-09-22T10:00:00.000Z",
+          },
+        ],
+        nextMessageSeq: 2,
+        nextSegmentSeq: 2,
+      }),
+      {
+        sessionUpdate: "plan",
+        entries: [{ content: "צעד", priority: "high", status: "pending" }],
+      },
+    )
+  }
+
+  it("‏אותו state — רצף ה-updates של ה-GET זהה לזה של frame-zero", async () => {
+    const state = richState()
+    const { body } = await getHistory(state)
+
+    const frameUpdates = (JSON.parse(snapshotFrame(state, 0).data) as HistoryBody).updates
+    expect(body.updates).toEqual(frameUpdates)
+  })
+
+  it("‏המטען השלם: frame-zero ≡ snapshotPayload + epoch — כל שדה, לא רק updates", () => {
+    const state = richState()
+
+    expect(JSON.parse(snapshotFrame(state, 7).data)).toEqual({
+      ...snapshotPayload(state),
+      epoch: 7,
     })
   })
 })
