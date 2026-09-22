@@ -44,6 +44,23 @@ const midOf = (m: SessionMessage): string => m.messageId ?? m.id
 const midMeta = (m: SessionMessage): Record<string, unknown> | undefined =>
   m.messageId === null ? { "_drive/messageId": null } : undefined
 
+/**
+ * ‏`SessionMessage.timestamp` נוסע כשדה-מטא על פריים ההודעה השלמה.
+ *
+ * ⚠️ **למה `_meta` ולא `carried`.** ה-timestamp הוא כבר מצב-מחלקה-ראשונה
+ * ב-`SessionState`; לשחזרו בהשמעת ה-blob-ים הגולמיים של `_claude/sdkMessage`
+ * פירושו לאחסן מטען לא-חסום כדי לשלוף ממנו מחרוזת ISO אחת. ⇒ שדה-מטא.
+ *
+ * ‏ACP שומר `_meta` בדיוק להרחבות תלויות-מימוש, ולקוח שמתעלם ממנו מקבל
+ * תמונה נכונה, רק בלי שעון-המקור.
+ *
+ * מוחזר רק כשיש חותמת; הודעה בלעדיה אינה נושאת מטען מיותר.
+ *
+ * ─── slice carried-snapshot C0 ───
+ */
+const tsMeta = (m: SessionMessage): Record<string, unknown> | undefined =>
+  m.role !== "tool" && m.timestamp !== undefined ? { "_drive/timestamp": m.timestamp } : undefined
+
 /** ממזג `_meta` של ההודעה עם זה שאנחנו מוסיפים, בלי לדרוס אף אחד. */
 function mergeMeta(
   ...parts: (Record<string, unknown> | undefined)[]
@@ -87,7 +104,7 @@ function messageToUpdate(m: SessionMessage): WireSessionUpdate {
   for (const a of m.attachments ?? []) {
     content.push({ type: "image", mimeType: a.mimeType, data: a.dataBase64 })
   }
-  const _meta = mergeMeta(m.meta, midMeta(m))
+  const _meta = mergeMeta(m.meta, midMeta(m), tsMeta(m))
   return {
     sessionUpdate: WHOLE_KIND[m.role],
     messageId: midOf(m),
@@ -256,7 +273,46 @@ export function patchToSessionUpdates(state: SessionState, patch: Patch): WireSe
  * **אפס פריימי-שחזור**. אותו פרוטוקול, שתי התנהגויות ⇒ מכווצים בעצמנו.
  */
 export function stateToSessionUpdates(state: SessionState): WireSessionUpdate[] {
-  const out: WireSessionUpdate[] = state.messages.map(messageToUpdate)
+  const out: WireSessionUpdate[] = []
+
+  // ─── slice carried-snapshot C3: שזירת ה-carried במיקומם ───
+  //
+  // 🔴 **המיקום אינו קוסמטי.** ‏`plan` ששייך לאמצע השיחה ונפלט בסוף היה
+  // משנה את סדר-ההגעה שהצרכן רואה, וגם שובר את ה-round-trip: בשחזור הוא
+  // היה נרשם עם `after` של ההודעה האחרונה במקום זו שאחריה הגיע.
+  //
+  // האינווריאנט שמחזיק את זה: סדר-המערך מתלכד עם סדר ה-`after`, כי רענון
+  // הוא מחיקה + דחיפה לסוף (`recordCarried`). ⇒ מעבר יחיד לפי סדר המערך
+  // בתוך כל עוגן מספיק, וה-`carried` המשוחזר יוצא זהה.
+  const carried = state.carried ?? []
+  const emitted = new Set<number>()
+  const emitCarriedAfter = (anchor: string | null): void => {
+    for (let i = 0; i < carried.length; i++) {
+      const e = carried[i]
+      if (e === undefined || emitted.has(i) || e.after !== anchor) continue
+      emitted.add(i)
+      if (typeof e.update === "object" && e.update !== null) {
+        out.push(e.update as WireSessionUpdate)
+      }
+    }
+  }
+
+  emitCarriedAfter(null)
+  for (const m of state.messages) {
+    out.push(messageToUpdate(m))
+    emitCarriedAfter(m.id)
+  }
+
+  // עוגן שאינו קיים ברשימת-ההודעות. לא אמור לקרות — `reset` מנקה את
+  // ה-buffer יחד עם ההודעות — אבל להשמיט בשקט זה בדיוק הכשל שהסלייס סוגר.
+  for (let i = 0; i < carried.length; i++) {
+    const e = carried[i]
+    if (e === undefined || emitted.has(i)) continue
+    if (typeof e.update === "object" && e.update !== null) {
+      out.push(e.update as WireSessionUpdate)
+    }
+  }
+
   out.push(
     ...changesToUpdates({
       title: state.title,

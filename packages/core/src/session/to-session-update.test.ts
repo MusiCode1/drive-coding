@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, it } from "vitest"
+import { A1_TS, CONVERSATION } from "./__testing__/conversation.js"
 import { reduce } from "./reduce.js"
 import { patchToSessionUpdates, stateToSessionUpdates } from "./to-session-update.js"
 import type { SessionState } from "./types.js"
@@ -55,50 +56,6 @@ function meaningful(s: SessionState) {
   }
 }
 
-const CONVERSATION = [
-  { sessionUpdate: "session_info_update", title: "A real session" },
-  {
-    sessionUpdate: "user_message_chunk",
-    messageId: "U1",
-    content: { type: "text", text: "hello" },
-  },
-  {
-    sessionUpdate: "agent_thought_chunk",
-    messageId: "T1",
-    content: { type: "text", text: "thinking…" },
-  },
-  {
-    sessionUpdate: "agent_message_chunk",
-    messageId: "A1",
-    content: { type: "text", text: "part one " },
-  },
-  {
-    sessionUpdate: "agent_message_chunk",
-    messageId: "A1",
-    content: { type: "text", text: "part two" },
-  },
-  {
-    sessionUpdate: "tool_call",
-    toolCallId: "tc-1",
-    kind: "read",
-    title: "Read",
-    rawInput: { path: "/x" },
-  },
-  {
-    sessionUpdate: "tool_call_update",
-    toolCallId: "tc-1",
-    status: "completed",
-    rawOutput: "contents",
-  },
-  {
-    sessionUpdate: "available_commands_update",
-    availableCommands: [{ name: "c", description: "d" }],
-  },
-  { sessionUpdate: "config_option_update", configOptions: [{ id: "mode", category: "mode" }] },
-  { sessionUpdate: "current_mode_update", currentModeId: "auto" },
-  { sessionUpdate: "usage_update", used: 10, size: 100, cost: 0.5 },
-]
-
 describe("snapshot round-trip — nothing may vanish", () => {
   it("state → updates → state reproduces every meaningful field", () => {
     const original = play(CONVERSATION)
@@ -129,6 +86,118 @@ describe("snapshot round-trip — nothing may vanish", () => {
     }
     const restored = replay(stateToSessionUpdates(withPending))
     expect(restored.pending.permission?.requestId).toBe(7)
+  })
+
+  // ─── slice carried-snapshot C0: ה-timestamp כשדה-מטא על פריים ההודעה ───
+
+  it("a message timestamp survives the snapshot — the FE derives createdAt from it", () => {
+    // 🔴 זה הפער שנמדד על הבסיס (§2): ה-snapshot פלט `agent_message` **בלי**
+    // timestamp, וההודעה המשוחזרת חזרה בלי חותמת ⇒ ה-FE גזר `createdAt: 0`
+    // והתווית הוסתרה. כאן הוא חייב לשרוד.
+    const original = play(CONVERSATION)
+    const restored = replay(stateToSessionUpdates(original))
+    const tsOf = (s: SessionState) =>
+      s.messages.map((m) => (m.role === "tool" ? undefined : m.timestamp))
+    expect(tsOf(restored)).toEqual(tsOf(original))
+    // ...ולא "שווה כי שניהם ריקים": ההודעה של A1 **כן** נושאת את החותמת.
+    expect(restored.messages.find((m) => m.messageId === "A1")?.role).toBe("assistant")
+    const a1 = restored.messages.find((m) => m.messageId === "A1")
+    expect(a1 && a1.role !== "tool" ? a1.timestamp : undefined).toBe(A1_TS)
+  })
+
+  it("messageTimestamps is restored too — meaningful() compares it", () => {
+    // ‏`meaningful()` מפילה רק `version` ו-`next*Seq`; המפה **כן** בהשוואה,
+    // ולכן בלי שחזורה ה-round-trip מאדים. המפה נגזרת מההודעות עצמן —
+    // אין פריים חדש ואין שדה-חוט נוסף.
+    const original = play(CONVERSATION)
+    const restored = replay(stateToSessionUpdates(original))
+    expect(restored.messageTimestamps).toEqual({ A1: A1_TS })
+    expect(restored.messageTimestamps).toEqual(original.messageTimestamps)
+  })
+
+  it("a message WITHOUT a timestamp carries no _drive/timestamp payload", () => {
+    // הודעה בלי חותמת לא נושאת מטען מיותר — אותו כלל כמו `midMeta`.
+    const snapshot = stateToSessionUpdates(play(CONVERSATION))
+    const u1 = snapshot.find((u) => u.sessionUpdate === "user_message")
+    expect(u1).toBeDefined()
+    const meta = u1?._meta as Record<string, unknown> | undefined
+    expect(meta?.["_drive/timestamp"]).toBeUndefined()
+  })
+
+  it("the restored message does NOT keep _drive/timestamp inside msg.meta", () => {
+    // 🔴 ‏`metaOf(u)` מחזיר את כל `_meta`, וההודעה שומרת אותו ב-`msg.meta`.
+    // בלי מחיקה ההודעה המשוחזרת נושאת מפתח שלא היה במקור — ‏`meaningful()`
+    // מאדים בצדק. המפתח הוא **חוט**, לא מטא-של-הודעה.
+    const snapshot = stateToSessionUpdates(play(CONVERSATION))
+    const frame = snapshot.find((u) => u.sessionUpdate === "agent_message")
+    // בחוט הוא כן נוסע...
+    expect((frame?._meta as Record<string, unknown>)?.["_drive/timestamp"]).toBe(A1_TS)
+    // ...ובמצב המשוחזר הוא נמחק, ואם לא נותר כלום — אין `meta` בכלל.
+    const restored = replay(snapshot)
+    const a1 = restored.messages.find((m) => m.messageId === "A1")
+    expect(a1?.meta?.["_drive/timestamp"]).toBeUndefined()
+    expect(a1?.meta).toBeUndefined()
+  })
+
+  // ─── slice carried-snapshot C3: שחזור `carried` במיקומו ───
+
+  it("a plan frame comes back BETWEEN the message frames, not at the end", () => {
+    // 🔴 המיקום אינו קוסמטי: ‏`plan` ששייך לאמצע השיחה ונפלט בסוף היה
+    // משנה את סדר-ההגעה שהצרכן רואה. ‏§4.5 שוזר לפי ה-`after`.
+    const withPlan = play([
+      ...CONVERSATION,
+      { sessionUpdate: "plan", entries: [{ content: "step", status: "pending" }] },
+      {
+        sessionUpdate: "agent_message",
+        messageId: "A2",
+        content: [{ type: "text", text: "after the plan" }],
+      },
+    ])
+    const kinds = stateToSessionUpdates(withPlan).map((u) => u.sessionUpdate)
+    const planAt = kinds.indexOf("plan")
+    expect(planAt).toBeGreaterThan(-1)
+    // ...אחרי פריים-הודעה כלשהו, ולפני פריים-ההודעה האחרון.
+    expect(kinds.lastIndexOf("agent_message")).toBeGreaterThan(planAt)
+    expect(kinds.indexOf("agent_message")).toBeLessThan(planAt)
+  })
+
+  it("the full round-trip restores carried identically — same keys, order, after", () => {
+    // הבדיקה שהמיקום נכון אינה עין אנושית: ה-round-trip חייב להחזיר
+    // `carried` **זהה**. אם המיקום יוצא שונה, `meaningful()` מאדים.
+    const original = play([
+      ...CONVERSATION,
+      { sessionUpdate: "plan", entries: [{ content: "step", status: "pending" }] },
+      {
+        sessionUpdate: "agent_message",
+        messageId: "A2",
+        content: [{ type: "text", text: "after the plan" }],
+      },
+      { sessionUpdate: "some_future_thing", payload: { a: 1 } },
+    ])
+    const restored = replay(stateToSessionUpdates(original))
+    expect(restored.carried).toEqual(original.carried)
+    expect(original.carried?.map((e) => e.key)).toEqual(["plan:__default__", "some_future_thing"])
+    expect(meaningful(restored)).toEqual(meaningful(original))
+  })
+
+  it("carried ריק ⇒ ה-snapshot זהה בתוכן לזה שלפני הסלייס", () => {
+    // אין פריימים חדשים כשאין מה לשאת — הסלייס אינו מרחיב את החוט סתם.
+    const s = play(CONVERSATION)
+    expect(s.carried).toEqual([])
+    const kinds = stateToSessionUpdates(s).map((u) => u.sessionUpdate)
+    expect(kinds).toEqual([
+      "user_message",
+      "agent_thought",
+      "agent_message",
+      "tool_call_update",
+      "session_info_update",
+      "available_commands_update",
+      "config_option_update",
+      "current_mode_update",
+      "usage_update",
+      "state_update",
+      "_drive/session_update",
+    ])
   })
 
   it("counters are NOT restored from the snapshot — and that is correct", () => {

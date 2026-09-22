@@ -8,12 +8,25 @@
  *
  * ─── slice session-state-reducer C3 (TDD) ───
  */
-import { describe, it, expect } from "vitest"
-import { applyPatch, createInitialSessionState } from "@drive-coding/core/session"
+
 import type { Patch, SessionMessage, SessionState } from "@drive-coding/core/session"
+import {
+  applyPatch,
+  createInitialSessionState,
+  reduce,
+  stateToSessionUpdates,
+} from "@drive-coding/core/session"
+import { describe, expect, it } from "vitest"
+import type {
+  Bubble,
+  MessageBubble,
+  ThoughtBubble,
+  ToolBubble,
+  ToolContent,
+  ToolLocation,
+  UserBubble,
+} from "$lib/types/bubble"
 import { applyPatchMutable } from "./apply-patch-mutable"
-import type { ToolContent, ToolLocation } from "$lib/types/bubble"
-import type { Bubble, ToolBubble, MessageBubble, ThoughtBubble, UserBubble } from "$lib/types/bubble"
 
 // ─── stub mappers ───
 
@@ -39,13 +52,9 @@ function sessionMsgToBubble(msg: SessionMessage, createdAt = 0): Bubble {
         title: msg.toolCall.title,
         result: msg.toolCall.result,
         content:
-          msg.toolCall.content != null
-            ? stubMapToolContent(msg.toolCall.content)
-            : undefined,
+          msg.toolCall.content != null ? stubMapToolContent(msg.toolCall.content) : undefined,
         locations:
-          msg.toolCall.locations != null
-            ? stubMapLocations(msg.toolCall.locations)
-            : undefined,
+          msg.toolCall.locations != null ? stubMapLocations(msg.toolCall.locations) : undefined,
       },
       segments: [],
     } satisfies ToolBubble
@@ -209,17 +218,32 @@ describe("applyPatchMutable — property test: pure ≡ mutable", () => {
       {
         version: 1,
         op: "add-message",
-        message: { id: "m_0", role: "user", messageId: "u-1", segments: [{ id: "s_0", text: "Q" }] },
+        message: {
+          id: "m_0",
+          role: "user",
+          messageId: "u-1",
+          segments: [{ id: "s_0", text: "Q" }],
+        },
       },
       {
         version: 2,
         op: "add-message",
-        message: { id: "m_1", role: "thought", messageId: "t-1", segments: [{ id: "s_1", text: "..." }] },
+        message: {
+          id: "m_1",
+          role: "thought",
+          messageId: "t-1",
+          segments: [{ id: "s_1", text: "..." }],
+        },
       },
       {
         version: 3,
         op: "add-message",
-        message: { id: "m_2", role: "assistant", messageId: "a-1", segments: [{ id: "s_2", text: "A" }] },
+        message: {
+          id: "m_2",
+          role: "assistant",
+          messageId: "a-1",
+          segments: [{ id: "s_2", text: "A" }],
+        },
       },
       {
         version: 4,
@@ -392,5 +416,56 @@ describe("applyPatchMutable — createdAt מ-timestamp (slice sdk-timestamp)", (
       mapLocations: stubMapLocations,
     })
     expect(bubbles[0]!.createdAt).toBe(0)
+  })
+})
+
+// ─── slice carried-snapshot C4: הקישור בין הליבה למה שהמשתמש רואה ───
+
+describe("createdAt שורד reload — snapshot של הליבה → bubbles", () => {
+  it("assistant עם timestamp עובר את ה-snapshot ומגיע ל-createdAt אמיתי", () => {
+    // 🔴 זה המסלול שנשבר, ולא היחידה: ‏`apply-patch-mutable` תמיד גזר
+    // `createdAt` מ-`msg.timestamp` — אבל אחרי reload ההודעה הגיעה מה-snapshot
+    // **בלי** חותמת, כי `stateToSessionUpdates` לא פלט אותה. ⇒ `createdAt: 0`,
+    // והתווית הוסתרה. הטסט מריץ את השרשרת כולה ולא רק את החוליה האחרונה.
+    const ts = "2026-09-22T08:30:00.000Z"
+
+    // 1. ה-BE מקפל שיחה חיה — טקסט, ואז חותמת-הזמן מה-SDK.
+    let be = createInitialSessionState({ sessionId: "s-1" })
+    for (const u of [
+      {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "A1",
+        content: { type: "text", text: "hi" },
+      },
+      {
+        sessionUpdate: "_drive/ext_notification",
+        method: "_claude/sdkMessage",
+        params: { message: { type: "assistant", timestamp: ts, message: { id: "A1" } } },
+      },
+    ]) {
+      be = reduce(be, u).state
+    }
+    expect(be.messages[0]?.role !== "tool" ? be.messages[0]?.timestamp : undefined).toBe(ts)
+
+    // 2. ה-FE מקבל snapshot ומקפל אותו — בדיוק מה שקורה ב-reload.
+    let fe = createInitialSessionState({ sessionId: "s-1" })
+    const patches: Patch[] = []
+    for (const wire of stateToSessionUpdates(be)) {
+      const res = reduce(fe, wire)
+      fe = res.state
+      patches.push(...res.patches)
+    }
+
+    // 3. ה-patches הופכים ל-bubbles.
+    const bubbles: Bubble[] = []
+    applyPatchMutable(bubbles, patches, {
+      mapToolContent: stubMapToolContent,
+      mapLocations: stubMapLocations,
+    })
+
+    const assistant = bubbles.find((b) => b.kind === "message")
+    expect(assistant).toBeDefined()
+    expect(assistant?.createdAt).toBe(Date.parse(ts))
+    expect(assistant?.createdAt).not.toBe(0)
   })
 })
