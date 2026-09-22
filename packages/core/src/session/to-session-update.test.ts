@@ -139,6 +139,67 @@ describe("snapshot round-trip — nothing may vanish", () => {
     expect(a1?.meta).toBeUndefined()
   })
 
+  // ─── slice carried-snapshot C3: שחזור `carried` במיקומו ───
+
+  it("a plan frame comes back BETWEEN the message frames, not at the end", () => {
+    // 🔴 המיקום אינו קוסמטי: ‏`plan` ששייך לאמצע השיחה ונפלט בסוף היה
+    // משנה את סדר-ההגעה שהצרכן רואה. ‏§4.5 שוזר לפי ה-`after`.
+    const withPlan = play([
+      ...CONVERSATION,
+      { sessionUpdate: "plan", entries: [{ content: "step", status: "pending" }] },
+      {
+        sessionUpdate: "agent_message",
+        messageId: "A2",
+        content: [{ type: "text", text: "after the plan" }],
+      },
+    ])
+    const kinds = stateToSessionUpdates(withPlan).map((u) => u.sessionUpdate)
+    const planAt = kinds.indexOf("plan")
+    expect(planAt).toBeGreaterThan(-1)
+    // ...אחרי פריים-הודעה כלשהו, ולפני פריים-ההודעה האחרון.
+    expect(kinds.lastIndexOf("agent_message")).toBeGreaterThan(planAt)
+    expect(kinds.indexOf("agent_message")).toBeLessThan(planAt)
+  })
+
+  it("the full round-trip restores carried identically — same keys, order, after", () => {
+    // הבדיקה שהמיקום נכון אינה עין אנושית: ה-round-trip חייב להחזיר
+    // `carried` **זהה**. אם המיקום יוצא שונה, `meaningful()` מאדים.
+    const original = play([
+      ...CONVERSATION,
+      { sessionUpdate: "plan", entries: [{ content: "step", status: "pending" }] },
+      {
+        sessionUpdate: "agent_message",
+        messageId: "A2",
+        content: [{ type: "text", text: "after the plan" }],
+      },
+      { sessionUpdate: "some_future_thing", payload: { a: 1 } },
+    ])
+    const restored = replay(stateToSessionUpdates(original))
+    expect(restored.carried).toEqual(original.carried)
+    expect(original.carried?.map((e) => e.key)).toEqual(["plan:__default__", "some_future_thing"])
+    expect(meaningful(restored)).toEqual(meaningful(original))
+  })
+
+  it("carried ריק ⇒ ה-snapshot זהה בתוכן לזה שלפני הסלייס", () => {
+    // אין פריימים חדשים כשאין מה לשאת — הסלייס אינו מרחיב את החוט סתם.
+    const s = play(CONVERSATION)
+    expect(s.carried).toEqual([])
+    const kinds = stateToSessionUpdates(s).map((u) => u.sessionUpdate)
+    expect(kinds).toEqual([
+      "user_message",
+      "agent_thought",
+      "agent_message",
+      "tool_call_update",
+      "session_info_update",
+      "available_commands_update",
+      "config_option_update",
+      "current_mode_update",
+      "usage_update",
+      "state_update",
+      "_drive/session_update",
+    ])
+  })
+
   it("counters are NOT restored from the snapshot — and that is correct", () => {
     // הם מונים דטרמיניסטיים של הצד שמקפל, לא מידע-סשן. אחרי שחזור הם
     // משקפים את מה שהצד המשחזר בנה. ה-ids עצמם נבנים מחדש ולכן עקביים.

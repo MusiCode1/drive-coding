@@ -273,7 +273,46 @@ export function patchToSessionUpdates(state: SessionState, patch: Patch): WireSe
  * **אפס פריימי-שחזור**. אותו פרוטוקול, שתי התנהגויות ⇒ מכווצים בעצמנו.
  */
 export function stateToSessionUpdates(state: SessionState): WireSessionUpdate[] {
-  const out: WireSessionUpdate[] = state.messages.map(messageToUpdate)
+  const out: WireSessionUpdate[] = []
+
+  // ─── slice carried-snapshot C3: שזירת ה-carried במיקומם ───
+  //
+  // 🔴 **המיקום אינו קוסמטי.** ‏`plan` ששייך לאמצע השיחה ונפלט בסוף היה
+  // משנה את סדר-ההגעה שהצרכן רואה, וגם שובר את ה-round-trip: בשחזור הוא
+  // היה נרשם עם `after` של ההודעה האחרונה במקום זו שאחריה הגיע.
+  //
+  // האינווריאנט שמחזיק את זה: סדר-המערך מתלכד עם סדר ה-`after`, כי רענון
+  // הוא מחיקה + דחיפה לסוף (`recordCarried`). ⇒ מעבר יחיד לפי סדר המערך
+  // בתוך כל עוגן מספיק, וה-`carried` המשוחזר יוצא זהה.
+  const carried = state.carried ?? []
+  const emitted = new Set<number>()
+  const emitCarriedAfter = (anchor: string | null): void => {
+    for (let i = 0; i < carried.length; i++) {
+      const e = carried[i]
+      if (e === undefined || emitted.has(i) || e.after !== anchor) continue
+      emitted.add(i)
+      if (typeof e.update === "object" && e.update !== null) {
+        out.push(e.update as WireSessionUpdate)
+      }
+    }
+  }
+
+  emitCarriedAfter(null)
+  for (const m of state.messages) {
+    out.push(messageToUpdate(m))
+    emitCarriedAfter(m.id)
+  }
+
+  // עוגן שאינו קיים ברשימת-ההודעות. לא אמור לקרות — `reset` מנקה את
+  // ה-buffer יחד עם ההודעות — אבל להשמיט בשקט זה בדיוק הכשל שהסלייס סוגר.
+  for (let i = 0; i < carried.length; i++) {
+    const e = carried[i]
+    if (e === undefined || emitted.has(i)) continue
+    if (typeof e.update === "object" && e.update !== null) {
+      out.push(e.update as WireSessionUpdate)
+    }
+  }
+
   out.push(
     ...changesToUpdates({
       title: state.title,
