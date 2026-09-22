@@ -369,6 +369,34 @@ function storedMessageId(u: Record<string, unknown>, matched: string | null): st
   return matched
 }
 
+/**
+ * מפריד את `_drive/timestamp` מ-`_meta` של פריים הודעה שלמה.
+ *
+ * 🔴 **המפתח נמחק מה-`meta` המאוחסן, ובכוונה.** ‏`metaOf(u)` מחזיר את כל
+ * ה-`_meta`, וההודעה שומרת אותו ב-`msg.meta`. בלי המחיקה, ההודעה המשוחזרת
+ * מ-snapshot נושאת `meta: { "_drive/timestamp": … }` שלא היה במקור — כלומר
+ * ה-round-trip מאדים בצדק. המפתח הוא **חוט**, לא מטא-של-הודעה.
+ *
+ * ‏`_drive/messageId` דווקא **נשאר** ב-meta — זו התנהגות קיימת, ושינויה
+ * מחוץ ל-scope.
+ *
+ * ─── slice carried-snapshot C0 ───
+ */
+function splitTimestampMeta(u: Record<string, unknown>): {
+  timestamp: string | undefined
+  meta: Record<string, unknown> | undefined
+} {
+  const meta = metaOf(u)
+  if (meta === undefined || !("_drive/timestamp" in meta)) return { timestamp: undefined, meta }
+  const ts = meta["_drive/timestamp"]
+  const { "_drive/timestamp": _dropped, ...rest } = meta
+  return {
+    timestamp: typeof ts === "string" ? ts : undefined,
+    // אם לא נותר כלום — לא מאחסנים `meta` כלל (ולא אובייקט ריק).
+    meta: Object.keys(rest).length > 0 ? rest : undefined,
+  }
+}
+
 /** ContentBlock[] → {טקסט מצטבר, קבצים מצורפים}. אפס-זריקה: מה שאינו טקסט נשמר. */
 function splitContentBlocks(blocks: unknown): {
   text: string
@@ -423,17 +451,30 @@ function handleWholeMessage(
 
   // segment יחיד: ההודעה השלמה **היא** הכיווץ. פיצול-מחדש ל-chunks היה
   // ממציא גבולות שהספק מעולם לא שלח.
-  const meta = metaOf(u)
+  const { timestamp, meta } = splitTimestampMeta(u)
   const segments: SessionSegment[] = text ? [{ id: nextSegId(state.nextSegmentSeq), text }] : []
   const nextSegmentSeq = state.nextSegmentSeq + (text ? 1 : 0)
+  const storedMid = storedMessageId(u, messageId)
+
+  // 🔴 גם המפה משוחזרת, ולא רק השדה על ההודעה. ‏`meaningful()` (הטסט שמחזיק
+  // את ה-round-trip) מפילה רק `version` ו-`next*Seq`; ‏`messageTimestamps`
+  // **כן** בהשוואה, ולכן בלי השורה הזו השחזור אינו שווה למקור. אין פריים
+  // חדש ואין שדה-חוט נוסף — המפה נגזרת מההודעות עצמן.
+  //
+  // המפתח הוא ה-messageId ה**מאוחסן**, כי זה מה ש-`withPendingTs` מחפש בו.
+  const messageTimestamps =
+    timestamp !== undefined && storedMid !== null
+      ? { ...(state.messageTimestamps ?? {}), [storedMid]: timestamp }
+      : state.messageTimestamps
 
   if (idx === -1) {
     const msg: SessionMessage = withPendingTs(
       {
         id: nextMsgId(state.nextMessageSeq),
         role,
-        messageId: storedMessageId(u, messageId),
+        messageId: storedMid,
         segments,
+        ...(timestamp !== undefined ? { timestamp } : {}),
         ...(attachments.length > 0 ? { attachments } : {}),
         ...(meta !== undefined ? { meta } : {}),
       },
@@ -447,6 +488,7 @@ function handleWholeMessage(
         nextMessageSeq: state.nextMessageSeq + 1,
         nextSegmentSeq,
         turnState,
+        ...(messageTimestamps !== state.messageTimestamps ? { messageTimestamps } : {}),
       },
       patches: [{ version: newVersion, op: "add-message", message: msg }],
     }
@@ -457,6 +499,7 @@ function handleWholeMessage(
     {
       ...old,
       segments,
+      ...(timestamp !== undefined ? { timestamp } : {}),
       ...(attachments.length > 0 ? { attachments } : {}),
       ...(meta !== undefined ? { meta: { ...(old.meta ?? {}), ...meta } } : {}),
     },
@@ -465,7 +508,14 @@ function handleWholeMessage(
   const messages = [...state.messages]
   messages[idx] = msg
   return {
-    state: { ...state, version: newVersion, messages, nextSegmentSeq, turnState },
+    state: {
+      ...state,
+      version: newVersion,
+      messages,
+      nextSegmentSeq,
+      turnState,
+      ...(messageTimestamps !== state.messageTimestamps ? { messageTimestamps } : {}),
+    },
     patches: [{ version: newVersion, op: "set-message", targetId: old.id, message: msg }],
   }
 }
@@ -810,7 +860,8 @@ function reduceRecognized(
     if (u.method !== "_claude/sdkMessage") return carried
     const params = u.params as Record<string, unknown> | undefined
     const sdkMsg = params?.message as Record<string, unknown> | undefined
-    if (!sdkMsg || sdkMsg.type !== "assistant" || typeof sdkMsg.timestamp !== "string") return carried
+    if (!sdkMsg || sdkMsg.type !== "assistant" || typeof sdkMsg.timestamp !== "string")
+      return carried
     const apiMsg = sdkMsg.message as Record<string, unknown> | undefined
     const mid = apiMsg && typeof apiMsg.id === "string" ? apiMsg.id : null
     if (mid === null) return carried
@@ -825,7 +876,8 @@ function reduceRecognized(
     const patches: Patch[] = [...carried.patches]
     for (let i = 0; i < st.messages.length; i++) {
       const m = st.messages[i]
-      if (m === undefined || m.role === "tool" || m.messageId !== mid || m.timestamp === ts) continue
+      if (m === undefined || m.role === "tool" || m.messageId !== mid || m.timestamp === ts)
+        continue
       const msg: SessionMessage = { ...m, timestamp: ts }
       const newVersion = st.version + 1
       const messages = [...st.messages]

@@ -55,6 +55,9 @@ function meaningful(s: SessionState) {
   }
 }
 
+/** חותמת-הזמן שה-SDK מטביע על הודעת ה-assistant `A1`. */
+const A1_TS = "2026-09-22T08:30:00.000Z"
+
 const CONVERSATION = [
   { sessionUpdate: "session_info_update", title: "A real session" },
   {
@@ -76,6 +79,20 @@ const CONVERSATION = [
     sessionUpdate: "agent_message_chunk",
     messageId: "A1",
     content: { type: "text", text: "part two" },
+  },
+  // 🔴 ה-`mid` כאן **חייב** להיות messageId שקיים בשיחה (`"A1"`). מזהה יתום
+  // היה נרשם ב-`messageTimestamps` בלי הודעה נושאת — וזה בדיוק המקרה ש-§6
+  // מחריג מה-scope, כלומר השער לא היה יכול לעבור מסיבה שאינה באג.
+  {
+    sessionUpdate: "_drive/ext_notification",
+    method: "_claude/sdkMessage",
+    params: {
+      message: {
+        type: "assistant",
+        timestamp: A1_TS,
+        message: { id: "A1" },
+      },
+    },
   },
   {
     sessionUpdate: "tool_call",
@@ -129,6 +146,57 @@ describe("snapshot round-trip — nothing may vanish", () => {
     }
     const restored = replay(stateToSessionUpdates(withPending))
     expect(restored.pending.permission?.requestId).toBe(7)
+  })
+
+  // ─── slice carried-snapshot C0: ה-timestamp כשדה-מטא על פריים ההודעה ───
+
+  it("a message timestamp survives the snapshot — the FE derives createdAt from it", () => {
+    // 🔴 זה הפער שנמדד על הבסיס (§2): ה-snapshot פלט `agent_message` **בלי**
+    // timestamp, וההודעה המשוחזרת חזרה בלי חותמת ⇒ ה-FE גזר `createdAt: 0`
+    // והתווית הוסתרה. כאן הוא חייב לשרוד.
+    const original = play(CONVERSATION)
+    const restored = replay(stateToSessionUpdates(original))
+    const tsOf = (s: SessionState) =>
+      s.messages.map((m) => (m.role === "tool" ? undefined : m.timestamp))
+    expect(tsOf(restored)).toEqual(tsOf(original))
+    // ...ולא "שווה כי שניהם ריקים": ההודעה של A1 **כן** נושאת את החותמת.
+    expect(restored.messages.find((m) => m.messageId === "A1")?.role).toBe("assistant")
+    const a1 = restored.messages.find((m) => m.messageId === "A1")
+    expect(a1 && a1.role !== "tool" ? a1.timestamp : undefined).toBe(A1_TS)
+  })
+
+  it("messageTimestamps is restored too — meaningful() compares it", () => {
+    // ‏`meaningful()` מפילה רק `version` ו-`next*Seq`; המפה **כן** בהשוואה,
+    // ולכן בלי שחזורה ה-round-trip מאדים. המפה נגזרת מההודעות עצמן —
+    // אין פריים חדש ואין שדה-חוט נוסף.
+    const original = play(CONVERSATION)
+    const restored = replay(stateToSessionUpdates(original))
+    expect(restored.messageTimestamps).toEqual({ A1: A1_TS })
+    expect(restored.messageTimestamps).toEqual(original.messageTimestamps)
+  })
+
+  it("a message WITHOUT a timestamp carries no _drive/timestamp payload", () => {
+    // הודעה בלי חותמת לא נושאת מטען מיותר — אותו כלל כמו `midMeta`.
+    const snapshot = stateToSessionUpdates(play(CONVERSATION))
+    const u1 = snapshot.find((u) => u.sessionUpdate === "user_message")
+    expect(u1).toBeDefined()
+    const meta = u1?._meta as Record<string, unknown> | undefined
+    expect(meta?.["_drive/timestamp"]).toBeUndefined()
+  })
+
+  it("the restored message does NOT keep _drive/timestamp inside msg.meta", () => {
+    // 🔴 ‏`metaOf(u)` מחזיר את כל `_meta`, וההודעה שומרת אותו ב-`msg.meta`.
+    // בלי מחיקה ההודעה המשוחזרת נושאת מפתח שלא היה במקור — ‏`meaningful()`
+    // מאדים בצדק. המפתח הוא **חוט**, לא מטא-של-הודעה.
+    const snapshot = stateToSessionUpdates(play(CONVERSATION))
+    const frame = snapshot.find((u) => u.sessionUpdate === "agent_message")
+    // בחוט הוא כן נוסע...
+    expect((frame?._meta as Record<string, unknown>)?.["_drive/timestamp"]).toBe(A1_TS)
+    // ...ובמצב המשוחזר הוא נמחק, ואם לא נותר כלום — אין `meta` בכלל.
+    const restored = replay(snapshot)
+    const a1 = restored.messages.find((m) => m.messageId === "A1")
+    expect(a1?.meta?.["_drive/timestamp"]).toBeUndefined()
+    expect(a1?.meta).toBeUndefined()
   })
 
   it("counters are NOT restored from the snapshot — and that is correct", () => {

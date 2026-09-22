@@ -44,6 +44,23 @@ const midOf = (m: SessionMessage): string => m.messageId ?? m.id
 const midMeta = (m: SessionMessage): Record<string, unknown> | undefined =>
   m.messageId === null ? { "_drive/messageId": null } : undefined
 
+/**
+ * ‏`SessionMessage.timestamp` נוסע כשדה-מטא על פריים ההודעה השלמה.
+ *
+ * ⚠️ **למה `_meta` ולא `carried`.** ה-timestamp הוא כבר מצב-מחלקה-ראשונה
+ * ב-`SessionState`; לשחזרו בהשמעת ה-blob-ים הגולמיים של `_claude/sdkMessage`
+ * פירושו לאחסן מטען לא-חסום כדי לשלוף ממנו מחרוזת ISO אחת. ⇒ שדה-מטא.
+ *
+ * ‏ACP שומר `_meta` בדיוק להרחבות תלויות-מימוש, ולקוח שמתעלם ממנו מקבל
+ * תמונה נכונה, רק בלי שעון-המקור.
+ *
+ * מוחזר רק כשיש חותמת; הודעה בלעדיה אינה נושאת מטען מיותר.
+ *
+ * ─── slice carried-snapshot C0 ───
+ */
+const tsMeta = (m: SessionMessage): Record<string, unknown> | undefined =>
+  m.role !== "tool" && m.timestamp !== undefined ? { "_drive/timestamp": m.timestamp } : undefined
+
 /** ממזג `_meta` של ההודעה עם זה שאנחנו מוסיפים, בלי לדרוס אף אחד. */
 function mergeMeta(
   ...parts: (Record<string, unknown> | undefined)[]
@@ -87,7 +104,7 @@ function messageToUpdate(m: SessionMessage): WireSessionUpdate {
   for (const a of m.attachments ?? []) {
     content.push({ type: "image", mimeType: a.mimeType, data: a.dataBase64 })
   }
-  const _meta = mergeMeta(m.meta, midMeta(m))
+  const _meta = mergeMeta(m.meta, midMeta(m), tsMeta(m))
   return {
     sessionUpdate: WHOLE_KIND[m.role],
     messageId: midOf(m),
