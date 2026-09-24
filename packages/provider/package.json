@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "^0.58.1",
-    "@musicode1/codex-acp": "^1.0.2",
+    "@musicode1/codex-acp": "https://github.com/MusiCode1/codex-acp/releases/download/drive-coding-1.13.1/musicode1-codex-acp-1.13.1.tgz",
     "@agentclientprotocol/sdk": "^1.2.1",
     "@anthropic-ai/claude-agent-sdk": "^0.3.207",
     "@drive-coding/acp-wire": "workspace:*",
