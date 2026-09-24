@@ -10,6 +10,8 @@ declare module "@musicode1/codex-acp/lib" {
 
   export interface StartAcpServerOptions {
     codexPath?: string
+    /** Per-child overrides merged with process.env by the pinned codex-acp patch. */
+    env?: NodeJS.ProcessEnv
     config?: unknown
     modelProvider?: string
     defaultAuthRequest?: unknown

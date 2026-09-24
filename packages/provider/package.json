@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "^0.79.0",
-    "@musicode1/codex-acp": "^1.0.2",
+    "@musicode1/codex-acp": "1.0.2",
     "@agentclientprotocol/sdk": "^1.2.1",
     "@anthropic-ai/claude-agent-sdk": "0.3.274",
     "@drive-coding/acp-wire": "workspace:*",
