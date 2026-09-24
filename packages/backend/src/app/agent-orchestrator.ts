@@ -118,7 +118,7 @@ function drivecodingShapeEnv(cliKind: string, baseEnv: NodeJS.ProcessEnv): NodeJ
  *
  * **Spawn-only** — not used by in-process bridges (claude/codex). Those receive
  * `agentEnv` on ConnectOpts and inject via `_meta.claudeCode.options.env` (claude)
- * or have no env channel (codex — explicitly exempt from gate 3).
+ * or the app-server spawn (codex).
  */
 export function composeShapeEnv(
   extraEnv: Record<string, string> | undefined,
@@ -215,7 +215,7 @@ export function createAgentOrchestrator(deps: {
         // ── הפעלת connection (connectSpawn דרך connectionRegistry) ──────────────
         // modelOverride (🔴 avigail): מועבר מ-input — לא מקובע null.
         // shapeEnv: spawn-only (opencode config + DRIVE_CODING_AGENT_ID + BASE).
-        // agentEnv: same identity/BASE keys for in-process bridges (claude).
+        // agentEnv: same identity/BASE keys for in-process bridges (claude/codex).
         // systemPrompt (slice project-system-prompt): גנרי — הצורה הספציפית-לספק
         // (מיפוי-meta לקלוד / config.developer_instructions לcodex) נכתבת בתוך provider בלבד.
         await deps.connectionRegistry.connect(agent.id, input.cliKind, {

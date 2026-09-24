@@ -152,6 +152,8 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
   const codexPath = resolveCodexPath()
   startAcpServer(serverIn, serverOut, {
     codexPath,
+    // The adapter merges overrides at spawn without mutating process.env.
+    env: opts.agentEnv,
     config: opts.systemPrompt ? { developer_instructions: opts.systemPrompt } : undefined,
   })
 
