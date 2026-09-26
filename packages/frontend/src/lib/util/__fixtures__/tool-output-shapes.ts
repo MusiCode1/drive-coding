@@ -56,4 +56,9 @@ export const TOOL_OUTPUT_SHAPES = [
     },
     expected: "text" as const,
   },
+  {
+    name: "codex-formatted-output-unmapped",
+    raw: { formatted_output: "ok", exit_code: 0 },
+    expected: "stat" as const,
+  },
 ] as const

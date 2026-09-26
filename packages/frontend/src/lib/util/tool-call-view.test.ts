@@ -183,4 +183,32 @@ describe("normalizeToolCall", () => {
     expect(view.input.kind).toBe("empty")
     expect(view.hasDetails).toBe(false)
   })
+
+  it("forwards outputMapping to normalizeToolOutput", () => {
+    const tc = makeToolCall({
+      toolCallId: "m1",
+      name: "shell",
+      result: { formatted_output: "done", exit_code: 0 },
+    })
+    const mapping = {
+      text: [["formatted_output"]],
+      exitCode: [["exit_code"]],
+    } as const
+    const view = normalizeToolCall(tc, { outputMapping: mapping })
+    expect(view.output).toEqual({ kind: "text", text: "done", exitCode: 0 })
+  })
+
+  it("rich content preserved alongside mapped output on view model", () => {
+    const tc = makeToolCall({
+      toolCallId: "m2",
+      name: "shell",
+      result: { formatted_output: "body" },
+      content: [{ type: "text", text: "rich block" }],
+    })
+    const view = normalizeToolCall(tc, {
+      outputMapping: { text: [["formatted_output"]] },
+    })
+    expect(view.richContent).toHaveLength(1)
+    expect(view.output).toEqual({ kind: "text", text: "body" })
+  })
 })

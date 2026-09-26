@@ -10,7 +10,7 @@ describe("tool-output-shapes regression gate", () => {
     },
   )
 
-  it("covers all 14 shapes", () => {
-    expect(TOOL_OUTPUT_SHAPES).toHaveLength(14)
+  it("covers all 15 shapes", () => {
+    expect(TOOL_OUTPUT_SHAPES).toHaveLength(15)
   })
 })

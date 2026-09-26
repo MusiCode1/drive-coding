@@ -272,3 +272,132 @@ describe("normalizeToolOutput", () => {
     ).toEqual({ kind: "error", message: "boom" })
   })
 })
+
+const CODEX_MAPPING = {
+  text: [["formatted_output"], ["result", "content", 0, "text"]],
+  exitCode: [["exit_code"]],
+} as const
+
+describe("normalizeToolOutput — mapped paths", () => {
+  it("Codex formatted_output + exit_code → text + exitCode", () => {
+    expect(normalizeToolOutput({ formatted_output: "ok", exit_code: 0 }, CODEX_MAPPING)).toEqual({
+      kind: "text",
+      text: "ok",
+      exitCode: 0,
+    })
+  })
+
+  it("Codex nested result.content[0].text with error:null → text, not error null", () => {
+    expect(
+      normalizeToolOutput(
+        {
+          error: null,
+          result: { content: [{ type: "string", text: "nested" }] },
+        },
+        CODEX_MAPPING,
+      ),
+    ).toEqual({ kind: "text", text: "nested", exitCode: undefined })
+  })
+
+  it("first path type mismatch, second path wins", () => {
+    const mapping = { text: [["missing"], ["formatted_output"]] } as const
+    expect(normalizeToolOutput({ formatted_output: "win" }, mapping)).toEqual({
+      kind: "text",
+      text: "win",
+    })
+  })
+
+  it("missing object key tries next path", () => {
+    const mapping = { text: [["no_such"], ["formatted_output"]] } as const
+    expect(normalizeToolOutput({ formatted_output: "y" }, mapping)).toEqual({
+      kind: "text",
+      text: "y",
+    })
+  })
+
+  it("array index out of range falls through", () => {
+    const mapping = { text: [["items", 99, "x"], ["formatted_output"]] } as const
+    expect(normalizeToolOutput({ formatted_output: "z" }, mapping)).toEqual({
+      kind: "text",
+      text: "z",
+    })
+  })
+
+  it("inherited property is not accessible", () => {
+    const proto = { inherited: "nope" }
+    const raw = Object.create(proto) as Record<string, unknown>
+    raw["formatted_output"] = "own"
+    const mapping = { text: [["inherited"], ["formatted_output"]] } as const
+    expect(normalizeToolOutput(raw, mapping)).toEqual({ kind: "text", text: "own" })
+  })
+
+  it("string segment on array rejects path", () => {
+    const mapping = { text: [["0"]] } as const
+    expect(normalizeToolOutput(["a"], mapping)).toEqual({ kind: "json", json: prettyJson(["a"]) })
+  })
+
+  it("exitCode + text without stdout/stderr → text + exitCode, not terminal", () => {
+    expect(normalizeToolOutput({ formatted_output: "t", exit_code: 2 }, CODEX_MAPPING)).toEqual({
+      kind: "text",
+      text: "t",
+      exitCode: 2,
+    })
+  })
+
+  it("exitCode + stdout/stderr → terminal", () => {
+    const mapping = {
+      exitCode: [["exitCode"]],
+      stdout: [["stdout"]],
+      stderr: [["stderr"]],
+    } as const
+    expect(
+      normalizeToolOutput({ exitCode: 1, stdout: "out", stderr: "err" }, mapping),
+    ).toEqual({ kind: "terminal", stdout: "out", stderr: "err", exitCode: 1 })
+  })
+
+  it("mapped error string → error view", () => {
+    const mapping = { error: [["message"]] } as const
+    expect(normalizeToolOutput({ message: "fail" }, mapping)).toEqual({
+      kind: "error",
+      message: "fail",
+    })
+  })
+
+  it("isError:true + mapped text → error with text", () => {
+    const mapping = { isError: [["isError"]], text: [["content"]] } as const
+    expect(normalizeToolOutput({ isError: true, content: "bad" }, mapping)).toEqual({
+      kind: "error",
+      message: "bad",
+    })
+  })
+
+  it("isError:true without extracted text → error with prettyJson(raw)", () => {
+    const mapping = { isError: [["isError"]], text: [["missing"]] } as const
+    const raw = { isError: true, code: 1 }
+    expect(normalizeToolOutput(raw, mapping)).toEqual({
+      kind: "error",
+      message: prettyJson(raw),
+    })
+  })
+
+  it("partial mapping with only exitCode falls back to generic", () => {
+    const mapping = { exitCode: [["exit_code"]] } as const
+    expect(normalizeToolOutput({ formatted_output: "ok", exit_code: 0 }, mapping)).toEqual({
+      kind: "stat",
+      stats: [
+        { key: "formatted_output", value: "ok" },
+        { key: "exit_code", value: "0" },
+      ],
+    })
+  })
+
+  it("without mapping matches prior generic behavior for Codex stat shape", () => {
+    expect(normalizeToolOutput({ formatted_output: "ok", exit_code: 0 })).toEqual({
+      kind: "stat",
+      stats: [
+        { key: "formatted_output", value: "ok" },
+        { key: "exit_code", value: "0" },
+      ],
+    })
+  })
+})
