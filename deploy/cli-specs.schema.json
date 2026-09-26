@@ -63,9 +63,54 @@
         "sessionMetaAllowDefaultOverride": {
           "type": "boolean",
           "description": "When true, suppresses warnings when sessionMeta override changes built-in default values. Omitted/false = warn on conflicts at load."
+        },
+        "toolOutput": {
+          "$ref": "#/definitions/toolOutputOverride",
+          "description": "Per-CLI raw tool output field paths for FE normalization. Merged with built-in defaults from provider; only fields are projected to the frontend."
         }
       },
       "additionalProperties": false
+    },
+    "toolOutputPathSegment": {
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        { "type": "integer", "minimum": 0 }
+      ],
+      "description": "Object key (string) or array index (non-negative integer) in a fixed JSON path."
+    },
+    "toolOutputPath": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/toolOutputPathSegment" },
+      "description": "Non-empty ordered path into raw tool output JSON."
+    },
+    "toolOutputPathList": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/toolOutputPath" },
+      "description": "Alternative paths tried in order until one yields the expected type."
+    },
+    "toolOutputFields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": { "$ref": "#/definitions/toolOutputPathList" },
+        "exitCode": { "$ref": "#/definitions/toolOutputPathList" },
+        "stdout": { "$ref": "#/definitions/toolOutputPathList" },
+        "stderr": { "$ref": "#/definitions/toolOutputPathList" },
+        "error": { "$ref": "#/definitions/toolOutputPathList" },
+        "isError": { "$ref": "#/definitions/toolOutputPathList" }
+      },
+      "description": "Canonical tool output fields and their path lists."
+    },
+    "toolOutputOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fields"],
+      "properties": {
+        "fields": { "$ref": "#/definitions/toolOutputFields" }
+      },
+      "description": "Override for tool output field paths (fields only; no provenance)."
     }
   }
 }

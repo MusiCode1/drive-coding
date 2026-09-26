@@ -1,0 +1,12 @@
+{
+  "codex": {
+    "verifiedAgainst": {
+      "bridge": "@musicode1/codex-acp",
+      "version": "1.0.2"
+    },
+    "fields": {
+      "text": [["formatted_output"], ["result", "content", 0, "text"]],
+      "exitCode": [["exit_code"]]
+    }
+  }
+}

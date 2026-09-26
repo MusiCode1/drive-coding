@@ -27,3 +27,19 @@ export {
   resolveCliSpecsPath,
   stopWatching,
 } from "./cli-config-file.js"
+export type {
+  DefaultToolOutputMapping,
+  EffectiveToolOutputMapping,
+  JsonPath,
+  JsonPathSegment,
+  ToolOutputField,
+  ToolOutputFieldPaths,
+  ToolOutputMappingOverride,
+  ToolOutputMappingsProjection,
+  VerifiedAgainst,
+} from "./tool-output-mappings.js"
+export {
+  getEffectiveToolOutputMappings,
+  getToolOutputMappingsProjection,
+  TOOL_OUTPUT_FIELDS,
+} from "./tool-output-mappings.js"

@@ -15,9 +15,13 @@ import { homedir } from "node:os"
 import { basename, dirname, join } from "node:path"
 import { CLI_SPECS, type CliKind, type CliSpec } from "@drive-coding/core"
 import { collectSessionMetaConflicts } from "./session-meta-merge.js"
+import type { ToolOutputMappingOverride } from "./tool-output-field-types.js"
+import { parseToolOutputOverride } from "./tool-output-override-parse.js"
 
 /** ערך override — כל השדות אופציונליים (merge חלקי לתוך spec קיים). */
-export type CliSpecOverride = Partial<CliSpec>
+export type CliSpecOverride = Partial<CliSpec> & {
+  readonly toolOutput?: ToolOutputMappingOverride
+}
 
 /** מפת override: cliKind → override. כולל גם CLIs חדשים (מפתח שלא ב-CLI_SPECS). */
 export type CliSpecsOverride = Record<string, CliSpecOverride>
@@ -62,6 +66,7 @@ type MutableOverride = {
   sessionMeta?: Record<string, unknown>
   injectDriveCodingMcp?: boolean
   sessionMetaAllowDefaultOverride?: boolean
+  toolOutput?: ToolOutputMappingOverride
 }
 
 /**
@@ -187,6 +192,13 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
       console.warn(
         `[cli-config-file] override["${kind}"].sessionMetaAllowDefaultOverride must be boolean — skipping field`,
       )
+    }
+  }
+
+  if ("toolOutput" in obj) {
+    const toolOutput = parseToolOutputOverride(kind, obj["toolOutput"])
+    if (toolOutput !== undefined) {
+      result.toolOutput = toolOutput
     }
   }
 

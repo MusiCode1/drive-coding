@@ -257,6 +257,55 @@ describe("loadCliSpecsOverride", () => {
     warnSpy.mockRestore()
   })
 
+  it("13. invalid toolOutput skipped, valid bin/args preserved", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+    const content = JSON.stringify({
+      codex: {
+        bin: "/custom/codex",
+        args: ["--acp"],
+        toolOutput: {
+          fields: {
+            text: [[""]],
+          },
+        },
+      },
+    })
+    const filePath = writeTmpFile(content)
+    process.env.CLI_SPECS_FILE = filePath
+
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    expect(result["codex"]?.bin).toBe("/custom/codex")
+    expect(result["codex"]?.args).toEqual(["--acp"])
+    expect(result["codex"]?.toolOutput).toBeUndefined()
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
+  })
+
+  it("14. valid toolOutput JSONC override parsed", async () => {
+    const content = JSON.stringify({
+      codex: {
+        toolOutput: {
+          fields: {
+            text: [["formatted_output"]],
+          },
+        },
+      },
+    })
+    const filePath = writeTmpFile(content)
+    process.env.CLI_SPECS_FILE = filePath
+
+    const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
+    const result = loadCliSpecsOverride()
+
+    expect(result["codex"]?.toolOutput).toEqual({
+      fields: {
+        text: [["formatted_output"]],
+      },
+    })
+  })
+
   it("12. $schema key in CLI_SPECS_JSON → ignored, no warning", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
     process.env.CLI_SPECS_JSON = JSON.stringify({

@@ -686,6 +686,32 @@ describe("getCliSpec — sessionMeta + MCP toggle (session-meta-config C1)", () 
     expect(getCliSpec("claude")?.sessionMeta).toEqual(CLI_SPECS.claude.sessionMeta)
   })
 
+  it("toolOutput on override does not leak into getCliSpec", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(os.tmpdir(), `cli-tool-output-leak-${Date.now()}.jsonc`)
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({
+        codex: {
+          toolOutput: {
+            fields: { text: [["x"]] },
+          },
+        },
+      }),
+    )
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getCliSpec } = await import("./src/config/cli-config.js")
+      const spec = getCliSpec("codex")
+      expect(spec).toBeDefined()
+      expect(Object.keys(spec as object)).not.toContain("toolOutput")
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+
   it("sessionMeta override deep-merges and keeps thinking display", async () => {
     const fs = await import("node:fs")
     const os = await import("node:os")
@@ -704,6 +730,51 @@ describe("getCliSpec — sessionMeta + MCP toggle (session-meta-config C1)", () 
         | { options?: { thinking?: { display?: string } } }
         | undefined
       expect(claudeCode?.options?.thinking?.display).toBe("summarized")
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+})
+
+describe("tool output mappings merge (cli-config integration)", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    process.env.CLI_SPECS_FILE = "NO_OVERRIDE_FILE"
+  })
+
+  afterEach(() => {
+    delete process.env.CLI_SPECS_FILE
+  })
+
+  it("default Codex mapping without override", async () => {
+    const { getEffectiveToolOutputMappings } = await import("./src/config/tool-output-mappings.js")
+    const effective = getEffectiveToolOutputMappings()
+    expect(effective["codex"]?.fields.exitCode).toEqual([["exit_code"]])
+  })
+
+  it("partial override replaces text paths only", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(os.tmpdir(), `cli-tool-merge-${Date.now()}.jsonc`)
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({
+        codex: {
+          toolOutput: {
+            fields: {
+              text: [["override_text"]],
+            },
+          },
+        },
+      }),
+    )
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getEffectiveToolOutputMappings } = await import("./src/config/tool-output-mappings.js")
+      const effective = getEffectiveToolOutputMappings()
+      expect(effective["codex"]?.fields.text).toEqual([["override_text"]])
+      expect(effective["codex"]?.fields.exitCode).toEqual([["exit_code"]])
     } finally {
       fs.unlinkSync(filePath)
     }
