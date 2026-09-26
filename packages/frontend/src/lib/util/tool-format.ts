@@ -1,4 +1,4 @@
-import type { ToolContent, ToolLocation } from "$lib/types/bubble"
+import type { ToolLocation } from "$lib/types/bubble"
 import type { JsonPath, ToolOutputFieldPaths } from "$lib/types/tool-output"
 
 export type ToolInputView =
@@ -118,18 +118,33 @@ function followPath(raw: unknown, path: JsonPath): unknown | undefined {
   for (const segment of path) {
     if (typeof segment === "string") {
       if (!isRecord(current)) return undefined
-      if (!Object.prototype.hasOwnProperty.call(current, segment)) return undefined
+      if (!Object.hasOwn(current, segment)) return undefined
       current = current[segment]
       continue
     }
     if (!Array.isArray(current)) return undefined
     if (!Number.isInteger(segment) || segment < 0) return undefined
-    if (!Object.prototype.hasOwnProperty.call(current, segment)) return undefined
+    if (!Object.hasOwn(current, segment)) return undefined
     current = current[segment]
   }
   return current
 }
 
+function extractMappedField(
+  raw: unknown,
+  paths: readonly JsonPath[] | undefined,
+  kind: "string",
+): string | undefined
+function extractMappedField(
+  raw: unknown,
+  paths: readonly JsonPath[] | undefined,
+  kind: "number",
+): number | undefined
+function extractMappedField(
+  raw: unknown,
+  paths: readonly JsonPath[] | undefined,
+  kind: "boolean",
+): boolean | undefined
 function extractMappedField(
   raw: unknown,
   paths: readonly JsonPath[] | undefined,

@@ -12,18 +12,15 @@
  * ─── slice/subagent-transcript-render (Commit 2) — max-height+overflow, summary footer, dir ───
  * ─── slice/subagent-transcript-render (Commit 3 / fix) — scroll-intent guard על toggle ───
  */
+
+import { onMount } from "svelte"
+import BubbleRenderer from "$lib/components/chat/BubbleRenderer.svelte"
+import { getChatScroll, getI18n } from "$lib/context"
 import type { ToolBubble } from "$lib/types/bubble"
 import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
-import { getI18n, getChatScroll } from "$lib/context"
-import BubbleRenderer from "$lib/components/chat/BubbleRenderer.svelte"
 import MarkdownContent from "./MarkdownContent.svelte"
-import { onMount } from "svelte"
 
-let {
-  bubble,
-  depth = 0,
-  outputMapping,
-}: { bubble: ToolBubble; depth?: number; outputMapping?: ToolOutputFieldPaths } = $props()
+let { bubble, depth = 0, outputMapping }: { bubble: ToolBubble; depth?: number; outputMapping?: ToolOutputFieldPaths } = $props()
 
 const t = getI18n().t
 

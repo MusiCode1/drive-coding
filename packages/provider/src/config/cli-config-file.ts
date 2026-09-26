@@ -84,8 +84,8 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
 
   // bin: string
   if ("bin" in obj) {
-    if (typeof obj["bin"] === "string") {
-      result.bin = obj["bin"]
+    if (typeof obj.bin === "string") {
+      result.bin = obj.bin
     } else {
       console.warn(`[cli-config-file] override["${kind}"].bin must be a string — skipping field`)
     }
@@ -93,7 +93,7 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
 
   // args: string[]
   if ("args" in obj) {
-    const args = obj["args"]
+    const args = obj.args
     if (Array.isArray(args) && args.every((a) => typeof a === "string")) {
       result.args = args as string[]
     } else {
@@ -103,8 +103,8 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
 
   // supportsModelFlag: boolean
   if ("supportsModelFlag" in obj) {
-    if (typeof obj["supportsModelFlag"] === "boolean") {
-      result.supportsModelFlag = obj["supportsModelFlag"]
+    if (typeof obj.supportsModelFlag === "boolean") {
+      result.supportsModelFlag = obj.supportsModelFlag
     } else {
       console.warn(
         `[cli-config-file] override["${kind}"].supportsModelFlag must be boolean — skipping field`,
@@ -114,7 +114,7 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
 
   // unsetEnv: string[]
   if ("unsetEnv" in obj) {
-    const unsetEnv = obj["unsetEnv"]
+    const unsetEnv = obj.unsetEnv
     if (Array.isArray(unsetEnv) && unsetEnv.every((v) => typeof v === "string")) {
       result.unsetEnv = unsetEnv as string[]
     } else {
@@ -126,7 +126,7 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
 
   // setEnv: Record<string, string>
   if ("setEnv" in obj) {
-    const setEnv = obj["setEnv"]
+    const setEnv = obj.setEnv
     if (
       typeof setEnv === "object" &&
       setEnv !== null &&
@@ -143,8 +143,8 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
 
   // displayName: string
   if ("displayName" in obj) {
-    if (typeof obj["displayName"] === "string") {
-      result.displayName = obj["displayName"]
+    if (typeof obj.displayName === "string") {
+      result.displayName = obj.displayName
     } else {
       console.warn(
         `[cli-config-file] override["${kind}"].displayName must be a string — skipping field`,
@@ -154,8 +154,8 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
 
   // logo: string
   if ("logo" in obj) {
-    if (typeof obj["logo"] === "string") {
-      result.logo = obj["logo"]
+    if (typeof obj.logo === "string") {
+      result.logo = obj.logo
     } else {
       console.warn(`[cli-config-file] override["${kind}"].logo must be a string — skipping field`)
     }
@@ -163,7 +163,7 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
 
   // sessionMeta: non-array object
   if ("sessionMeta" in obj) {
-    const sessionMeta = obj["sessionMeta"]
+    const sessionMeta = obj.sessionMeta
     if (typeof sessionMeta === "object" && sessionMeta !== null && !Array.isArray(sessionMeta)) {
       result.sessionMeta = sessionMeta as Record<string, unknown>
     } else {
@@ -175,8 +175,8 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
 
   // injectDriveCodingMcp: boolean
   if ("injectDriveCodingMcp" in obj) {
-    if (typeof obj["injectDriveCodingMcp"] === "boolean") {
-      result.injectDriveCodingMcp = obj["injectDriveCodingMcp"]
+    if (typeof obj.injectDriveCodingMcp === "boolean") {
+      result.injectDriveCodingMcp = obj.injectDriveCodingMcp
     } else {
       console.warn(
         `[cli-config-file] override["${kind}"].injectDriveCodingMcp must be boolean — skipping field`,
@@ -186,8 +186,8 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
 
   // sessionMetaAllowDefaultOverride: boolean
   if ("sessionMetaAllowDefaultOverride" in obj) {
-    if (typeof obj["sessionMetaAllowDefaultOverride"] === "boolean") {
-      result.sessionMetaAllowDefaultOverride = obj["sessionMetaAllowDefaultOverride"]
+    if (typeof obj.sessionMetaAllowDefaultOverride === "boolean") {
+      result.sessionMetaAllowDefaultOverride = obj.sessionMetaAllowDefaultOverride
     } else {
       console.warn(
         `[cli-config-file] override["${kind}"].sessionMetaAllowDefaultOverride must be boolean — skipping field`,
@@ -196,7 +196,7 @@ function validateOverride(kind: string, raw: unknown): CliSpecOverride {
   }
 
   if ("toolOutput" in obj) {
-    const toolOutput = parseToolOutputOverride(kind, obj["toolOutput"])
+    const toolOutput = parseToolOutputOverride(kind, obj.toolOutput)
     if (toolOutput !== undefined) {
       result.toolOutput = toolOutput
     }

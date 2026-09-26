@@ -158,10 +158,7 @@ export function pickSummary(
   return { summary: "", summarySource: "empty" }
 }
 
-export function normalizeToolCall(
-  tc: ToolCall,
-  ctx?: NormalizeToolContext,
-): ToolCallView {
+export function normalizeToolCall(tc: ToolCall, ctx?: NormalizeToolContext): ToolCallView {
   const input = formatToolInput(tc.args)
   const output = normalizeToolOutput(tc.result, ctx?.outputMapping)
   const richContent = tc.content ?? []

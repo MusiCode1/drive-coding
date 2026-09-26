@@ -1,9 +1,11 @@
-import { describe, it, expect } from "vitest"
+import { describe, expect, it } from "vitest"
 import type { ToolCall } from "$lib/types/bubble"
 import { isHumanTitle, normalizeToolCall, pickSummary } from "./tool-call-view"
 import { formatToolInput } from "./tool-format"
 
-function makeToolCall(overrides: Partial<ToolCall> & Pick<ToolCall, "toolCallId" | "name">): ToolCall {
+function makeToolCall(
+  overrides: Partial<ToolCall> & Pick<ToolCall, "toolCallId" | "name">,
+): ToolCall {
   return {
     args: {},
     status: "completed",

@@ -1,6 +1,6 @@
 import { type BinaryCache, resolveCliBinaryCached } from "@drive-coding/core/cli-resolve"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { getCliCommand, getCliSpec } from "./src/config/cli-config"
+import { getCliCommand } from "./src/config/cli-config"
 
 /**
  * מחשב את ה-bin הצפוי בפועל על המכונה הריצה-נוכחית — במקום לקבע מחרוזת
@@ -717,10 +717,7 @@ describe("getCliSpec — sessionMeta + MCP toggle (session-meta-config C1)", () 
     const os = await import("node:os")
     const path = await import("node:path")
     const filePath = path.join(os.tmpdir(), `cli-meta-merge-${Date.now()}.jsonc`)
-    fs.writeFileSync(
-      filePath,
-      JSON.stringify({ claude: { sessionMeta: { customFlag: true } } }),
-    )
+    fs.writeFileSync(filePath, JSON.stringify({ claude: { sessionMeta: { customFlag: true } } }))
     process.env.CLI_SPECS_FILE = filePath
     try {
       const { getCliSpec } = await import("./src/config/cli-config.js")
@@ -749,7 +746,7 @@ describe("tool output mappings merge (cli-config integration)", () => {
   it("default Codex mapping without override", async () => {
     const { getEffectiveToolOutputMappings } = await import("./src/config/tool-output-mappings.js")
     const effective = getEffectiveToolOutputMappings()
-    expect(effective["codex"]?.fields.exitCode).toEqual([["exit_code"]])
+    expect(effective.codex?.fields.exitCode).toEqual([["exit_code"]])
   })
 
   it("partial override replaces text paths only", async () => {
@@ -771,10 +768,12 @@ describe("tool output mappings merge (cli-config integration)", () => {
     )
     process.env.CLI_SPECS_FILE = filePath
     try {
-      const { getEffectiveToolOutputMappings } = await import("./src/config/tool-output-mappings.js")
+      const { getEffectiveToolOutputMappings } = await import(
+        "./src/config/tool-output-mappings.js"
+      )
       const effective = getEffectiveToolOutputMappings()
-      expect(effective["codex"]?.fields.text).toEqual([["override_text"]])
-      expect(effective["codex"]?.fields.exitCode).toEqual([["exit_code"]])
+      expect(effective.codex?.fields.text).toEqual([["override_text"]])
+      expect(effective.codex?.fields.exitCode).toEqual([["exit_code"]])
     } finally {
       fs.unlinkSync(filePath)
     }

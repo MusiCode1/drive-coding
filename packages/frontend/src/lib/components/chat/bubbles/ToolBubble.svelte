@@ -11,17 +11,19 @@
  *
  * ─── redesign-5 (C2) ───
  */
-import type { ToolBubble, ToolCall } from "$lib/types/bubble"
-import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
-import { getContentViewer, getI18n, getSettings, getChatScroll } from "$lib/context"
-import { prettyJson, formatLocation } from "$lib/util/tool-format"
-import { normalizeToolCall } from "$lib/util/tool-call-view"
-import Maximize2Icon from "@lucide/svelte/icons/maximize-2"
-import ToolKindIcon from "./ToolKindIcon.svelte"
-import { settingBackedOpen } from "./setting-backed-open.svelte"
-import { onMount } from "svelte"
 
-let { bubble, outputMapping }: { bubble: ToolBubble; outputMapping?: ToolOutputFieldPaths } = $props()
+import Maximize2Icon from "@lucide/svelte/icons/maximize-2"
+import { onMount } from "svelte"
+import { getChatScroll, getContentViewer, getI18n, getSettings } from "$lib/context"
+import type { ToolBubble } from "$lib/types/bubble"
+import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
+import { normalizeToolCall } from "$lib/util/tool-call-view"
+import { formatLocation, prettyJson } from "$lib/util/tool-format"
+import { settingBackedOpen } from "./setting-backed-open.svelte"
+import ToolKindIcon from "./ToolKindIcon.svelte"
+
+let { bubble, outputMapping }: { bubble: ToolBubble; outputMapping?: ToolOutputFieldPaths } =
+  $props()
 const t = getI18n().t
 const settings = getSettings()
 // content-viewer: כפתור expand על text + click על image → lightbox
@@ -32,9 +34,7 @@ const view = $derived(normalizeToolCall(tc, { narration: tc.narration, outputMap
 const hasContent = $derived(view.richContent.length > 0)
 const outputView = $derived(view.output)
 const showNormalizedOutput = $derived(!hasContent && outputView.kind !== "empty")
-const showRawOutput = $derived(
-  tc.result !== undefined && outputView.kind !== "json",
-)
+const showRawOutput = $derived(tc.result !== undefined && outputView.kind !== "json")
 
 const open = settingBackedOpen(() => settings.showTools)
 

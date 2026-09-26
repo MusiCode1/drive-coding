@@ -23,6 +23,8 @@ function makeCodexToolBubble(overrides?: Partial<ToolBubbleType["toolCall"]>): T
   return {
     id: "tb-codex",
     kind: "tool",
+    messageId: null,
+    segments: [],
     createdAt: Date.now(),
     toolCall: {
       toolCallId: "tc1",
@@ -91,7 +93,11 @@ describe("ToolBubble — mapped Codex output", () => {
     })
     flushSync()
 
-    const richPres = [...target.querySelectorAll(".section-label + div pre, .section-label + .tool-text-wrapper pre")]
+    const richPres = [
+      ...target.querySelectorAll(
+        ".section-label + div pre, .section-label + .tool-text-wrapper pre",
+      ),
+    ]
     const richTexts = richPres.map((el) => el.textContent).filter(Boolean)
     expect(richTexts.filter((t) => t === "rich only")).toHaveLength(1)
     expect(richTexts.filter((t) => t === "hello codex")).toHaveLength(0)

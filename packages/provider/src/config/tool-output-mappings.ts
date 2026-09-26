@@ -1,21 +1,20 @@
-import defaultsJson from "./tool-output-mappings.json" with { type: "json" }
 import { loadCliSpecsOverride } from "./cli-config-file.js"
-import {
-  type DefaultToolOutputMapping,
-  type EffectiveToolOutputMapping,
-  type ToolOutputFieldPaths,
-  type ToolOutputMappingsProjection,
-  type VerifiedAgainst,
-  TOOL_OUTPUT_FIELDS,
+import type {
+  DefaultToolOutputMapping,
+  EffectiveToolOutputMapping,
+  ToolOutputFieldPaths,
+  ToolOutputMappingsProjection,
+  VerifiedAgainst,
 } from "./tool-output-field-types.js"
+import defaultsJson from "./tool-output-mappings.json" with { type: "json" }
 import { validateFieldPathsFromOverride } from "./tool-output-override-parse.js"
 
 export {
-  TOOL_OUTPUT_FIELDS,
   type DefaultToolOutputMapping,
   type EffectiveToolOutputMapping,
   type JsonPath,
   type JsonPathSegment,
+  TOOL_OUTPUT_FIELDS,
   type ToolOutputField,
   type ToolOutputFieldPaths,
   type ToolOutputMappingOverride,
@@ -28,25 +27,26 @@ function validateVerifiedAgainst(raw: unknown, context: string): VerifiedAgainst
     throw new Error(`[tool-output-mappings] ${context}.verifiedAgainst must be an object`)
   }
   const obj = raw as Record<string, unknown>
-  if (typeof obj["bridge"] !== "string" || obj["bridge"].length === 0) {
-    throw new Error(`[tool-output-mappings] ${context}.verifiedAgainst.bridge must be a non-empty string`)
+  if (typeof obj.bridge !== "string" || obj.bridge.length === 0) {
+    throw new Error(
+      `[tool-output-mappings] ${context}.verifiedAgainst.bridge must be a non-empty string`,
+    )
   }
-  if (typeof obj["version"] !== "string" || obj["version"].length === 0) {
-    throw new Error(`[tool-output-mappings] ${context}.verifiedAgainst.version must be a non-empty string`)
+  if (typeof obj.version !== "string" || obj.version.length === 0) {
+    throw new Error(
+      `[tool-output-mappings] ${context}.verifiedAgainst.version must be a non-empty string`,
+    )
   }
-  return { bridge: obj["bridge"], version: obj["version"] }
+  return { bridge: obj.bridge, version: obj.version }
 }
 
-function validateDefaultEntry(
-  kind: string,
-  raw: unknown,
-): DefaultToolOutputMapping {
+function validateDefaultEntry(kind: string, raw: unknown): DefaultToolOutputMapping {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     throw new Error(`[tool-output-mappings] defaults["${kind}"] must be an object`)
   }
   const obj = raw as Record<string, unknown>
-  const verifiedAgainst = validateVerifiedAgainst(obj["verifiedAgainst"], `defaults["${kind}"]`)
-  const fields = validateFieldPathsFromOverride(obj["fields"], kind, true)
+  const verifiedAgainst = validateVerifiedAgainst(obj.verifiedAgainst, `defaults["${kind}"]`)
+  const fields = validateFieldPathsFromOverride(obj.fields, kind, true)
   if (fields === null) {
     throw new Error(`[tool-output-mappings] defaults["${kind}"].fields is invalid`)
   }

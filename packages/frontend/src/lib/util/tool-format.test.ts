@@ -1,10 +1,5 @@
-import { describe, it, expect } from "vitest"
-import {
-  formatToolInput,
-  prettyJson,
-  formatLocation,
-  normalizeToolOutput,
-} from "./tool-format"
+import { describe, expect, it } from "vitest"
+import { formatLocation, formatToolInput, normalizeToolOutput, prettyJson } from "./tool-format"
 
 describe("formatToolInput", () => {
   it("{ command, description } → command variant with command + description", () => {
@@ -135,9 +130,12 @@ describe("normalizeToolOutput", () => {
   })
 
   it("{exitCode, stderr, stdout} → terminal", () => {
-    expect(
-      normalizeToolOutput({ exitCode: 0, stdout: "ok\n", stderr: "" }),
-    ).toEqual({ kind: "terminal", stdout: "ok\n", stderr: "", exitCode: 0 })
+    expect(normalizeToolOutput({ exitCode: 0, stdout: "ok\n", stderr: "" })).toEqual({
+      kind: "terminal",
+      stdout: "ok\n",
+      stderr: "",
+      exitCode: 0,
+    })
   })
 
   it("{content: string} → text", () => {
@@ -159,9 +157,10 @@ describe("normalizeToolOutput", () => {
   })
 
   it("ContentBlock[] (direct array) → text", () => {
-    expect(
-      normalizeToolOutput([{ type: "text", text: "direct" }]),
-    ).toEqual({ kind: "text", text: "direct" })
+    expect(normalizeToolOutput([{ type: "text", text: "direct" }])).toEqual({
+      kind: "text",
+      text: "direct",
+    })
   })
 
   it("{totalFiles, truncated} → stat", () => {
@@ -244,9 +243,12 @@ describe("normalizeToolOutput", () => {
   })
 
   it("{exitCode:1, stderr:boom, stdout:} → terminal with exitCode 1", () => {
-    expect(
-      normalizeToolOutput({ exitCode: 1, stderr: "boom", stdout: "" }),
-    ).toEqual({ kind: "terminal", stdout: "", stderr: "boom", exitCode: 1 })
+    expect(normalizeToolOutput({ exitCode: 1, stderr: "boom", stdout: "" })).toEqual({
+      kind: "terminal",
+      stdout: "",
+      stderr: "boom",
+      exitCode: 1,
+    })
   })
 
   it("empty array → json", () => {
@@ -326,7 +328,7 @@ describe("normalizeToolOutput — mapped paths", () => {
   it("inherited property is not accessible", () => {
     const proto = { inherited: "nope" }
     const raw = Object.create(proto) as Record<string, unknown>
-    raw["formatted_output"] = "own"
+    raw.formatted_output = "own"
     const mapping = { text: [["inherited"], ["formatted_output"]] } as const
     expect(normalizeToolOutput(raw, mapping)).toEqual({ kind: "text", text: "own" })
   })
@@ -350,9 +352,12 @@ describe("normalizeToolOutput — mapped paths", () => {
       stdout: [["stdout"]],
       stderr: [["stderr"]],
     } as const
-    expect(
-      normalizeToolOutput({ exitCode: 1, stdout: "out", stderr: "err" }, mapping),
-    ).toEqual({ kind: "terminal", stdout: "out", stderr: "err", exitCode: 1 })
+    expect(normalizeToolOutput({ exitCode: 1, stdout: "out", stderr: "err" }, mapping)).toEqual({
+      kind: "terminal",
+      stdout: "out",
+      stderr: "err",
+      exitCode: 1,
+    })
   })
 
   it("mapped error string → error view", () => {

@@ -7,7 +7,7 @@ describe("tool-output-mappings defaults", () => {
   it("loads Codex default with provenance and exact fields", async () => {
     const { getDefaultMappingsForTest } = await import("./tool-output-mappings.js")
     const defaults = getDefaultMappingsForTest()
-    expect(defaults["codex"]).toEqual({
+    expect(defaults.codex).toEqual({
       verifiedAgainst: {
         bridge: "@musicode1/codex-acp",
         version: "1.0.2",
@@ -17,7 +17,7 @@ describe("tool-output-mappings defaults", () => {
         exitCode: [["exit_code"]],
       },
     })
-    expect(defaults["claude"]).toBeUndefined()
+    expect(defaults.claude).toBeUndefined()
   })
 })
 
@@ -70,8 +70,8 @@ describe("getEffectiveToolOutputMappings", () => {
 
     const { getEffectiveToolOutputMappings } = await import("./tool-output-mappings.js")
     const effective = getEffectiveToolOutputMappings()
-    expect(effective["codex"]?.fields.text).toEqual([["only_text"]])
-    expect(effective["codex"]?.fields.exitCode).toEqual([["exit_code"]])
+    expect(effective.codex?.fields.text).toEqual([["only_text"]])
+    expect(effective.codex?.fields.exitCode).toEqual([["exit_code"]])
   })
 
   it("new CLI gets mapping without verifiedAgainst", async () => {
@@ -106,8 +106,8 @@ describe("getEffectiveToolOutputMappings", () => {
     const defaults = getDefaultMappingsForTest()
     const before = getToolOutputMappingsProjection()
     // Mutate in-memory copy for test — defaults object is frozen-ish but we simulate wrong provenance in JSON only
-    expect(defaults["codex"]?.verifiedAgainst.bridge).toBe("@musicode1/codex-acp")
-    expect(before["codex"]).toEqual({
+    expect(defaults.codex?.verifiedAgainst.bridge).toBe("@musicode1/codex-acp")
+    expect(before.codex).toEqual({
       text: [["formatted_output"], ["result", "content", 0, "text"]],
       exitCode: [["exit_code"]],
     })
@@ -132,8 +132,8 @@ describe("getEffectiveToolOutputMappings", () => {
     )
     const { invalidateCache } = await import("./cli-config-file.js")
 
-    expect(getEffectiveToolOutputMappings()["codex"]?.fields.text).toEqual([["first"]])
-    expect(getToolOutputMappingsProjection()["codex"]?.text).toEqual([["first"]])
+    expect(getEffectiveToolOutputMappings().codex?.fields.text).toEqual([["first"]])
+    expect(getToolOutputMappingsProjection().codex?.text).toEqual([["first"]])
 
     fs.writeFileSync(
       filePath,
@@ -150,8 +150,8 @@ describe("getEffectiveToolOutputMappings", () => {
     )
     invalidateCache()
 
-    expect(getEffectiveToolOutputMappings()["codex"]?.fields.text).toEqual([["second"]])
-    expect(getToolOutputMappingsProjection()["codex"]?.text).toEqual([["second"]])
+    expect(getEffectiveToolOutputMappings().codex?.fields.text).toEqual([["second"]])
+    expect(getToolOutputMappingsProjection().codex?.text).toEqual([["second"]])
   })
 })
 

@@ -111,7 +111,7 @@ describe("loadCliSpecsOverride", () => {
     const result = loadCliSpecsOverride()
 
     expect(result).toHaveProperty("gemini")
-    expect(result["gemini"]).toEqual({
+    expect(result.gemini).toEqual({
       unsetEnv: ["HTTP_PROXY", "HTTPS_PROXY", "NODE_EXTRA_CA_CERTS"],
     })
   })
@@ -144,11 +144,11 @@ describe("loadCliSpecsOverride", () => {
     const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
-    expect(result["gemini"]).toBeDefined()
+    expect(result.gemini).toBeDefined()
     // bin ו-unsetEnv נשמרו, args נדלג
-    expect(result["gemini"]?.bin).toBe("/custom/gemini")
-    expect(result["gemini"]?.unsetEnv).toEqual(["HTTP_PROXY"])
-    expect(result["gemini"]?.args).toBeUndefined()
+    expect(result.gemini?.bin).toBe("/custom/gemini")
+    expect(result.gemini?.unsetEnv).toEqual(["HTTP_PROXY"])
+    expect(result.gemini?.args).toBeUndefined()
     warnSpy.mockRestore()
   })
 
@@ -166,10 +166,10 @@ describe("loadCliSpecsOverride", () => {
     const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
-    expect(result["mycli"]).toBeDefined()
-    expect(result["mycli"]?.bin).toBe("/usr/local/bin/mycli")
-    expect(result["mycli"]?.args).toEqual(["--acp"])
-    expect(result["mycli"]?.supportsModelFlag).toBe(true)
+    expect(result.mycli).toBeDefined()
+    expect(result.mycli?.bin).toBe("/usr/local/bin/mycli")
+    expect(result.mycli?.args).toEqual(["--acp"])
+    expect(result.mycli?.supportsModelFlag).toBe(true)
   })
 
   it("6. CLI_SPECS_FILE env דורס את ברירת-המחדל", async () => {
@@ -180,7 +180,7 @@ describe("loadCliSpecsOverride", () => {
     const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
-    expect(result["opencode"]?.bin).toBe("/custom/opencode")
+    expect(result.opencode?.bin).toBe("/custom/opencode")
   })
 
   // --- CLI_SPECS_JSON (open-cli-registry C0) ---
@@ -192,7 +192,7 @@ describe("loadCliSpecsOverride", () => {
     const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
-    expect(result["claude"]?.bin).toBe("/inline/claude")
+    expect(result.claude?.bin).toBe("/inline/claude")
   })
 
   it("8. קובץ בלבד (רגרסיה — בלי CLI_SPECS_JSON)", async () => {
@@ -204,7 +204,7 @@ describe("loadCliSpecsOverride", () => {
     const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
-    expect(result["gemini"]?.bin).toBe("/file/gemini")
+    expect(result.gemini?.bin).toBe("/file/gemini")
   })
 
   it("9. שניהם → CLI_SPECS_JSON גובר per-key, שאר הקובץ נשאר", async () => {
@@ -219,8 +219,8 @@ describe("loadCliSpecsOverride", () => {
     const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
-    expect(result["opencode"]?.bin).toBe("/inline/opencode")
-    expect(result["gemini"]?.bin).toBe("/file/gemini")
+    expect(result.opencode?.bin).toBe("/inline/opencode")
+    expect(result.gemini?.bin).toBe("/file/gemini")
   })
 
   it("10. CLI_SPECS_JSON שבור → {} + warning, בלי לזרוק (הקובץ עדיין חל)", async () => {
@@ -233,7 +233,7 @@ describe("loadCliSpecsOverride", () => {
     const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
-    expect(result["opencode"]?.bin).toBe("/file/opencode")
+    expect(result.opencode?.bin).toBe("/file/opencode")
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
   })
@@ -251,8 +251,8 @@ describe("loadCliSpecsOverride", () => {
     const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
-    expect(result["$schema"]).toBeUndefined()
-    expect(result["opencode"]?.bin).toBe("/custom/opencode")
+    expect(result.$schema).toBeUndefined()
+    expect(result.opencode?.bin).toBe("/custom/opencode")
     expect(warnSpy).not.toHaveBeenCalled()
     warnSpy.mockRestore()
   })
@@ -276,9 +276,9 @@ describe("loadCliSpecsOverride", () => {
     const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
-    expect(result["codex"]?.bin).toBe("/custom/codex")
-    expect(result["codex"]?.args).toEqual(["--acp"])
-    expect(result["codex"]?.toolOutput).toBeUndefined()
+    expect(result.codex?.bin).toBe("/custom/codex")
+    expect(result.codex?.args).toEqual(["--acp"])
+    expect(result.codex?.toolOutput).toBeUndefined()
     expect(warnSpy).toHaveBeenCalled()
     warnSpy.mockRestore()
   })
@@ -299,7 +299,7 @@ describe("loadCliSpecsOverride", () => {
     const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
-    expect(result["codex"]?.toolOutput).toEqual({
+    expect(result.codex?.toolOutput).toEqual({
       fields: {
         text: [["formatted_output"]],
       },
@@ -317,8 +317,8 @@ describe("loadCliSpecsOverride", () => {
     const { loadCliSpecsOverride } = await import("./src/config/cli-config-file.js")
     const result = loadCliSpecsOverride()
 
-    expect(result["$schema"]).toBeUndefined()
-    expect(result["claude"]?.bin).toBe("/inline/claude")
+    expect(result.$schema).toBeUndefined()
+    expect(result.claude?.bin).toBe("/inline/claude")
     expect(warnSpy).not.toHaveBeenCalled()
     warnSpy.mockRestore()
   })

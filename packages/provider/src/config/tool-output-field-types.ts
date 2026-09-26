@@ -10,9 +10,7 @@ export const TOOL_OUTPUT_FIELDS = [
 export type ToolOutputField = (typeof TOOL_OUTPUT_FIELDS)[number]
 export type JsonPathSegment = string | number
 export type JsonPath = readonly JsonPathSegment[]
-export type ToolOutputFieldPaths = Partial<
-  Readonly<Record<ToolOutputField, readonly JsonPath[]>>
->
+export type ToolOutputFieldPaths = Partial<Readonly<Record<ToolOutputField, readonly JsonPath[]>>>
 
 export type VerifiedAgainst = {
   readonly bridge: string
@@ -33,6 +31,4 @@ export type EffectiveToolOutputMapping = {
   readonly fields: ToolOutputFieldPaths
 }
 
-export type ToolOutputMappingsProjection = Readonly<
-  Record<string, ToolOutputFieldPaths>
->
+export type ToolOutputMappingsProjection = Readonly<Record<string, ToolOutputFieldPaths>>

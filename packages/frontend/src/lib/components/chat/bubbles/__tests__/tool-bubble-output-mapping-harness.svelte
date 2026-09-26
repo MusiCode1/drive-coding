@@ -1,16 +1,11 @@
 <script lang="ts">
-import {
-  setChatScroll,
-  setContentViewer,
-  setI18n,
-  setSettings,
-} from "$lib/context"
+import { setChatScroll, setContentViewer, setI18n, setSettings } from "$lib/context"
 import type { ToolBubble as ToolBubbleType } from "$lib/types/bubble"
+import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
 import type { ContentViewerVM, ViewerPayload } from "$lib/view-models/content-viewer.svelte"
 import type { I18nVM } from "$lib/view-models/i18n.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
-import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import ToolBubble from "../ToolBubble.svelte"
 
 let {

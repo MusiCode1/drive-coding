@@ -216,22 +216,16 @@ describe("GET /api/cli-availability — toolOutputMappings projection", () => {
     const body = (await res.json()) as Record<string, unknown>
     const serialized = JSON.stringify(body)
 
-    expect(body["toolOutputMappings"]).toBeDefined()
-    const mappings = body["toolOutputMappings"] as Record<
-      string,
-      Record<string, unknown>
-    >
-    expect(mappings["codex"]?.["text"]).toEqual([
-      ["formatted_output"],
-      ["result", "content", 0, "text"],
-    ])
-    expect(mappings["codex"]?.["exitCode"]).toEqual([["exit_code"]])
+    expect(body.toolOutputMappings).toBeDefined()
+    const mappings = body.toolOutputMappings as Record<string, Record<string, unknown>>
+    expect(mappings.codex?.text).toEqual([["formatted_output"], ["result", "content", 0, "text"]])
+    expect(mappings.codex?.exitCode).toEqual([["exit_code"]])
     expect(serialized).not.toContain("verifiedAgainst")
     expect(serialized).not.toContain("setEnv")
     expect(serialized).not.toContain("unsetEnv")
     expect(serialized).not.toContain("sessionMeta")
-    expect(mappings["codex"]).not.toHaveProperty("bin")
-    expect(mappings["codex"]).not.toHaveProperty("args")
+    expect(mappings.codex).not.toHaveProperty("bin")
+    expect(mappings.codex).not.toHaveProperty("args")
   })
 
   it("custom CLI toolOutput appears under its kind key", async () => {
@@ -258,7 +252,7 @@ describe("GET /api/cli-availability — toolOutputMappings projection", () => {
       toolOutputMappings: Record<string, { text?: unknown }>
     }
 
-    expect(body.toolOutputMappings["mycli"]?.text).toEqual([["payload"]])
+    expect(body.toolOutputMappings.mycli?.text).toEqual([["payload"]])
   })
 
   it("available and details unchanged when projection added", async () => {

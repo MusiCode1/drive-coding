@@ -1,7 +1,7 @@
 import {
-  TOOL_OUTPUT_FIELDS,
   type JsonPath,
   type JsonPathSegment,
+  TOOL_OUTPUT_FIELDS,
   type ToolOutputField,
   type ToolOutputFieldPaths,
   type ToolOutputMappingOverride,
@@ -13,7 +13,11 @@ function isToolOutputField(key: string): key is ToolOutputField {
   return CANONICAL_FIELD_SET.has(key)
 }
 
-function validateJsonPathSegment(segment: unknown, kind: string, context: string): JsonPathSegment | null {
+function validateJsonPathSegment(
+  segment: unknown,
+  kind: string,
+  context: string,
+): JsonPathSegment | null {
   if (typeof segment === "string") {
     if (segment.length === 0) {
       console.warn(
@@ -94,15 +98,19 @@ export function parseToolOutputOverride(
 ): ToolOutputMappingOverride | undefined {
   if (raw === undefined) return undefined
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    console.warn(`[cli-config-file] override["${kind}"].toolOutput must be an object — skipping field`)
+    console.warn(
+      `[cli-config-file] override["${kind}"].toolOutput must be an object — skipping field`,
+    )
     return undefined
   }
   const obj = raw as Record<string, unknown>
   if (!("fields" in obj)) {
-    console.warn(`[cli-config-file] override["${kind}"].toolOutput must include fields — skipping field`)
+    console.warn(
+      `[cli-config-file] override["${kind}"].toolOutput must include fields — skipping field`,
+    )
     return undefined
   }
-  const fields = validateFieldPathsFromOverride(obj["fields"], kind, false)
+  const fields = validateFieldPathsFromOverride(obj.fields, kind, false)
   if (fields === null || Object.keys(fields).length === 0) {
     return undefined
   }

@@ -18,14 +18,14 @@
  */
 import type { Bubble } from "$lib/types/bubble"
 import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
+import BubbleRow from "./bubbles/BubbleRow.svelte"
 import { isSubagentTask } from "./bubbles/bubble-rendering"
 import { bubbleAvatarKind, bubbleSide } from "./bubbles/bubble-row"
-import BubbleRow from "./bubbles/BubbleRow.svelte"
-import UserBubble from "./bubbles/UserBubble.svelte"
 import MessageBubble from "./bubbles/MessageBubble.svelte"
+import SubagentBubble from "./bubbles/SubagentBubble.svelte"
 import ThoughtBubble from "./bubbles/ThoughtBubble.svelte"
 import ToolBubble from "./bubbles/ToolBubble.svelte"
-import SubagentBubble from "./bubbles/SubagentBubble.svelte"
+import UserBubble from "./bubbles/UserBubble.svelte"
 
 const MAX_NEST_DEPTH = 1
 

@@ -72,10 +72,7 @@
       "additionalProperties": false
     },
     "toolOutputPathSegment": {
-      "oneOf": [
-        { "type": "string", "minLength": 1 },
-        { "type": "integer", "minimum": 0 }
-      ],
+      "oneOf": [{ "type": "string", "minLength": 1 }, { "type": "integer", "minimum": 0 }],
       "description": "Object key (string) or array index (non-negative integer) in a fixed JSON path."
     },
     "toolOutputPath": {

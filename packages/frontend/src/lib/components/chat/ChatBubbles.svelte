@@ -32,9 +32,7 @@ const chatScroll = getChatScroll()
 const cliAvailability = getCliAvailability()
 
 const outputMapping = $derived(
-  session.cliKind === null
-    ? undefined
-    : cliAvailability.toolOutputMappings[session.cliKind],
+  session.cliKind === null ? undefined : cliAvailability.toolOutputMappings[session.cliKind],
 )
 
 const items = $derived(groupActivityRuns(session.renderBubbles, settings.compactActivity))
