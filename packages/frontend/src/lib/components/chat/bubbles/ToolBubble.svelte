@@ -12,6 +12,7 @@
  * ─── redesign-5 (C2) ───
  */
 import type { ToolBubble, ToolCall } from "$lib/types/bubble"
+import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
 import { getContentViewer, getI18n, getSettings, getChatScroll } from "$lib/context"
 import { prettyJson, formatLocation } from "$lib/util/tool-format"
 import { normalizeToolCall } from "$lib/util/tool-call-view"
@@ -20,14 +21,14 @@ import ToolKindIcon from "./ToolKindIcon.svelte"
 import { settingBackedOpen } from "./setting-backed-open.svelte"
 import { onMount } from "svelte"
 
-let { bubble }: { bubble: ToolBubble } = $props()
+let { bubble, outputMapping }: { bubble: ToolBubble; outputMapping?: ToolOutputFieldPaths } = $props()
 const t = getI18n().t
 const settings = getSettings()
 // content-viewer: כפתור expand על text + click על image → lightbox
 const viewer = getContentViewer()
 
 const tc = $derived(bubble.toolCall)
-const view = $derived(normalizeToolCall(tc, { narration: tc.narration }))
+const view = $derived(normalizeToolCall(tc, { narration: tc.narration, outputMapping }))
 const hasContent = $derived(view.richContent.length > 0)
 const outputView = $derived(view.output)
 const showNormalizedOutput = $derived(!hasContent && outputView.kind !== "empty")
@@ -37,10 +38,6 @@ const showRawOutput = $derived(
 
 const open = settingBackedOpen(() => settings.showTools)
 
-// ─── toggle-intent (slice chat-virtualization, Commit 3 / fix) ───
-// chatScroll נקרא ב-component init (חוקי) — לא בתוך ה-callback.
-// guard ל-init-fire: <details bind:open=$state> תחת CSR מתזמן toggle event ב-mount.
-// rAF אחרי mount מסנן את ה-fire הראשון (task-from-mount קודם ל-rAF).
 const chatScroll = getChatScroll()
 let ready = false
 onMount(() => requestAnimationFrame(() => { ready = true }))
@@ -213,6 +210,7 @@ function asFencedCode(text: string): string {
                   <Maximize2Icon size={11} strokeWidth={2} />
                 </button>
               </div>
+              {#if outputView.exitCode !== undefined}<span class="exit-chip" class:exit-ok={outputView.exitCode === 0} class:exit-fail={outputView.exitCode !== 0}>{t("chat.tool.output.exitCode")}: {outputView.exitCode}</span>{/if}
             </div>
           {:else if outputView.kind === "error"}
             <div class="error-block" role="alert">{outputView.message}</div>

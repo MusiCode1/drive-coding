@@ -16,7 +16,7 @@
  * {#if chatScroll.scrollEl} מונע mount לפני שה-scrollEl קיים.
  */
 import { Virtualizer, type VirtualizerHandle } from "virtua/svelte"
-import { getChatScroll, getI18n, getSession, getSettings } from "$lib/context"
+import { getChatScroll, getCliAvailability, getI18n, getSession, getSettings } from "$lib/context"
 import BubbleRenderer from "./BubbleRenderer.svelte"
 import ActivityGroupBubble from "./bubbles/ActivityGroupBubble.svelte"
 import { groupActivityRuns } from "./bubbles/activity-groups"
@@ -29,6 +29,13 @@ const session = getSession()
 const settings = getSettings()
 const t = getI18n().t
 const chatScroll = getChatScroll()
+const cliAvailability = getCliAvailability()
+
+const outputMapping = $derived(
+  session.cliKind === null
+    ? undefined
+    : cliAvailability.toolOutputMappings[session.cliKind],
+)
 
 const items = $derived(groupActivityRuns(session.renderBubbles, settings.compactActivity))
 
@@ -51,9 +58,13 @@ $effect(() => {
     {#snippet children(item)}
       <div class="pb-5">
         {#if item.kind === "single"}
-          <BubbleRenderer bubble={item.bubble} />
+          <BubbleRenderer bubble={item.bubble} {outputMapping} />
         {:else}
-          <ActivityGroupBubble bubbles={item.bubbles} allBubbles={session.renderBubbles} />
+          <ActivityGroupBubble
+            bubbles={item.bubbles}
+            allBubbles={session.renderBubbles}
+            {outputMapping}
+          />
         {/if}
       </div>
     {/snippet}

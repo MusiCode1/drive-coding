@@ -17,6 +17,7 @@
  * ─── slice/bubble-alignment-rail (Commit 2) — BubbleRow wraps entire switch ───
  */
 import type { Bubble } from "$lib/types/bubble"
+import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
 import { isSubagentTask } from "./bubbles/bubble-rendering"
 import { bubbleAvatarKind, bubbleSide } from "./bubbles/bubble-row"
 import BubbleRow from "./bubbles/BubbleRow.svelte"
@@ -28,7 +29,15 @@ import SubagentBubble from "./bubbles/SubagentBubble.svelte"
 
 const MAX_NEST_DEPTH = 1
 
-let { bubble, depth = 0 }: { bubble: Bubble; depth?: number } = $props()
+let {
+  bubble,
+  depth = 0,
+  outputMapping,
+}: {
+  bubble: Bubble
+  depth?: number
+  outputMapping?: ToolOutputFieldPaths
+} = $props()
 </script>
 
 <BubbleRow side={bubbleSide(bubble.kind)} avatar={bubbleAvatarKind(bubble.kind)}>
@@ -40,9 +49,9 @@ let { bubble, depth = 0 }: { bubble: Bubble; depth?: number } = $props()
     <ThoughtBubble {bubble} />
   {:else if bubble.kind === "tool"}
     {#if isSubagentTask(bubble) && depth < MAX_NEST_DEPTH}
-      <SubagentBubble {bubble} {depth} />
+      <SubagentBubble {bubble} {depth} {outputMapping} />
     {:else}
-      <ToolBubble {bubble} />
+      <ToolBubble {bubble} {outputMapping} />
     {/if}
   {/if}
 </BubbleRow>

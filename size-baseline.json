@@ -556,11 +556,6 @@
       "impurity": 2,
       "class": "mixed"
     },
-    "packages/frontend/src/lib/components/chat/bubbles/ToolBubble.svelte": {
-      "metric": 53,
-      "impurity": 0,
-      "class": "pure"
-    },
     "packages/frontend/src/lib/components/chat/bubbles/UserBubble.svelte": {
       "metric": 53,
       "impurity": 2,

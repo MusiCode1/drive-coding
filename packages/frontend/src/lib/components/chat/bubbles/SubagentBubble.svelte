@@ -13,12 +13,17 @@
  * ─── slice/subagent-transcript-render (Commit 3 / fix) — scroll-intent guard על toggle ───
  */
 import type { ToolBubble } from "$lib/types/bubble"
+import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
 import { getI18n, getChatScroll } from "$lib/context"
 import BubbleRenderer from "$lib/components/chat/BubbleRenderer.svelte"
 import MarkdownContent from "./MarkdownContent.svelte"
 import { onMount } from "svelte"
 
-let { bubble, depth = 0 }: { bubble: ToolBubble; depth?: number } = $props()
+let {
+  bubble,
+  depth = 0,
+  outputMapping,
+}: { bubble: ToolBubble; depth?: number; outputMapping?: ToolOutputFieldPaths } = $props()
 
 const t = getI18n().t
 
@@ -68,7 +73,7 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 
       <div class="transcript-region border-t px-3 py-2" style="border-color:var(--border)">
         {#each frames as sf (sf.id)}
-          <BubbleRenderer bubble={sf} depth={depth + 1} />
+          <BubbleRenderer bubble={sf} depth={depth + 1} {outputMapping} />
         {/each}
         <!-- finding #6 — כפיית reactivity על מערך subFrames (object-replacement של B1) -->
         <span class="hidden">{frames.length}</span>
