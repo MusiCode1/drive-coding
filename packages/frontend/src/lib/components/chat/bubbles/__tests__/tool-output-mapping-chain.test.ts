@@ -3,6 +3,7 @@ import { flushSync, mount, unmount } from "svelte"
 import { afterEach, describe, expect, it } from "vitest"
 import type { Bubble, ToolBubble as ToolBubbleType } from "$lib/types/bubble"
 import ActivityGroupHarness from "./activity-group-output-mapping-harness.svelte"
+import BubbleRendererSubagentHarness from "./bubble-renderer-subagent-output-mapping-harness.svelte"
 import SubagentHarness from "./subagent-output-mapping-harness.svelte"
 
 const CODEX_MAPPING = {
@@ -92,6 +93,47 @@ describe("outputMapping prop chain — nested bubbles", () => {
     document.body.appendChild(target)
 
     app = mount(SubagentHarness, {
+      target,
+      props: {
+        bubble: parent,
+        outputMapping: CODEX_MAPPING,
+      },
+    })
+    flushSync()
+
+    const resultPre = target.querySelector(
+      ".transcript-region .section-label + .tool-text-wrapper pre",
+    )
+    expect(resultPre?.textContent).toBe("nested mapped")
+
+    const chip = target.querySelector(".transcript-region .exit-chip")
+    expect(chip?.textContent).toContain("0")
+  })
+
+  it("BubbleRenderer passes mapping to SubagentBubble for Task subFrames", () => {
+    const nested = makeCodexToolBubble({ toolCallId: "nested-tc" })
+    nested.id = "sf-nested"
+
+    const parent: ToolBubbleType = {
+      id: "tb-task",
+      kind: "tool",
+      messageId: null,
+      segments: [],
+      createdAt: Date.now(),
+      toolCall: {
+        toolCallId: "task-tc",
+        name: "Task",
+        status: "completed",
+        args: {},
+        task: { status: "completed", subagentType: "test-agent" },
+      },
+      subFrames: [nested],
+    }
+
+    target = document.createElement("div")
+    document.body.appendChild(target)
+
+    app = mount(BubbleRendererSubagentHarness, {
       target,
       props: {
         bubble: parent,

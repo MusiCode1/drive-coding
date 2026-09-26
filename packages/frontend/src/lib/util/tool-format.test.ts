@@ -327,7 +327,7 @@ describe("normalizeToolOutput — mapped paths", () => {
 
   it("non-boolean at mapped isError path tries next path", () => {
     const mapping = { isError: [["flag"], ["ok"]], text: [["msg"]] } as const
-    expect(normalizeToolOutput({ flag: 1, ok: true, msg: "bad" }, mapping)).toEqual({
+    expect(normalizeToolOutput({ flag: 0, ok: true, msg: "bad" }, mapping)).toEqual({
       kind: "error",
       message: "bad",
     })
