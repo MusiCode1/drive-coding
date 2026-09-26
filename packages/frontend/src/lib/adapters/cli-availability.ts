@@ -6,6 +6,7 @@
  * מביא אילו CLIs מותקנים בסביבת הריצה של השרת, כדי שה-dropdown ב-`/` יסנן אליהם.
  */
 
+import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
 import { beUrl } from "$lib/util/be-url"
 
 export type CliAvailabilityDetails = {
@@ -21,6 +22,7 @@ export type CliAvailabilityDetails = {
 export type CliAvailabilityResult = {
   available: string[]
   details: Record<string, CliAvailabilityDetails>
+  toolOutputMappings: Record<string, ToolOutputFieldPaths>
 }
 
 /**

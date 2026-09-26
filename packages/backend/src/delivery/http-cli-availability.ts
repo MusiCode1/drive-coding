@@ -13,7 +13,12 @@
 import type { CliKind, CliSpec } from "@drive-coding/core"
 import { CLI_SPECS } from "@drive-coding/core"
 import { detectAvailableClis } from "@drive-coding/core/cli-availability"
-import { getBinaryCache, getCliSpec, getEffectiveCliKinds } from "@drive-coding/provider/config"
+import {
+  getBinaryCache,
+  getCliSpec,
+  getEffectiveCliKinds,
+  getToolOutputMappingsProjection,
+} from "@drive-coding/provider/config"
 import type { Hono } from "hono"
 
 export function registerCliAvailabilityHttp(app: Hono, env: NodeJS.ProcessEnv): void {
@@ -31,6 +36,9 @@ export function registerCliAvailabilityHttp(app: Hono, env: NodeJS.ProcessEnv): 
     }
 
     const result = detectAvailableClis(mergedSpecs, env, overrideKinds, getBinaryCache())
-    return c.json(result)
+    return c.json({
+      ...result,
+      toolOutputMappings: getToolOutputMappingsProjection(env),
+    })
   })
 }

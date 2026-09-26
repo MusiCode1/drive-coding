@@ -195,3 +195,86 @@ describe("GET /api/cli-availability — override gateway (bin: cli-specs.jsonc �
     expect(body.details.opencode).toEqual({ found: false, source: "not-found" })
   })
 })
+
+describe("GET /api/cli-availability — toolOutputMappings projection", () => {
+  let overrideFile: string
+
+  beforeEach(() => {
+    overrideFile = path.join(os.tmpdir(), `cli-availability-tool-output-${Date.now()}.jsonc`)
+  })
+
+  afterEach(() => {
+    if (fs.existsSync(overrideFile)) fs.unlinkSync(overrideFile)
+  })
+
+  it("includes codex fields only — no verifiedAgainst or CliSpec leak", async () => {
+    vi.stubEnv("PATH", "/fake/empty/bin-availability-test")
+    vi.stubEnv("PATHEXT", "")
+
+    const app = await makeApp()
+    const res = await app.request("/api/cli-availability")
+    const body = (await res.json()) as Record<string, unknown>
+    const serialized = JSON.stringify(body)
+
+    expect(body["toolOutputMappings"]).toBeDefined()
+    const mappings = body["toolOutputMappings"] as Record<
+      string,
+      Record<string, unknown>
+    >
+    expect(mappings["codex"]?.["text"]).toEqual([
+      ["formatted_output"],
+      ["result", "content", 0, "text"],
+    ])
+    expect(mappings["codex"]?.["exitCode"]).toEqual([["exit_code"]])
+    expect(serialized).not.toContain("verifiedAgainst")
+    expect(serialized).not.toContain("setEnv")
+    expect(serialized).not.toContain("unsetEnv")
+    expect(serialized).not.toContain("sessionMeta")
+    expect(mappings["codex"]).not.toHaveProperty("bin")
+    expect(mappings["codex"]).not.toHaveProperty("args")
+  })
+
+  it("custom CLI toolOutput appears under its kind key", async () => {
+    fs.writeFileSync(
+      overrideFile,
+      JSON.stringify({
+        mycli: {
+          bin: "mycli-bin",
+          toolOutput: {
+            fields: {
+              text: [["payload"]],
+            },
+          },
+        },
+      }),
+    )
+    process.env.CLI_SPECS_FILE = overrideFile
+    vi.stubEnv("PATH", "/fake/empty/bin-availability-test")
+    vi.stubEnv("PATHEXT", "")
+
+    const app = await makeApp()
+    const res = await app.request("/api/cli-availability")
+    const body = (await res.json()) as {
+      toolOutputMappings: Record<string, { text?: unknown }>
+    }
+
+    expect(body.toolOutputMappings["mycli"]?.text).toEqual([["payload"]])
+  })
+
+  it("available and details unchanged when projection added", async () => {
+    vi.stubEnv("PATH", "/fake/empty/bin-availability-test")
+    vi.stubEnv("PATHEXT", "")
+
+    const app = await makeApp()
+    const res = await app.request("/api/cli-availability")
+    const body = (await res.json()) as {
+      available: string[]
+      details: Record<string, unknown>
+      toolOutputMappings: unknown
+    }
+
+    expect(Array.isArray(body.available)).toBe(true)
+    expect(typeof body.details).toBe("object")
+    expect(body.toolOutputMappings).toBeDefined()
+  })
+})

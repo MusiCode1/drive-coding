@@ -15,6 +15,7 @@
  */
 import { CLI_KINDS } from "@drive-coding/core"
 import { type CliAvailabilityDetails, fetchCliAvailability } from "$lib/adapters/cli-availability"
+import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
 
 export class CliAvailability {
   loading = $state(true)
@@ -25,6 +26,8 @@ export class CliAvailability {
   registry = $state<string[]>([...CLI_KINDS])
   /** פרטי-זמינות פר-kind, ל-description/tooltip. */
   details = $state<Record<string, CliAvailabilityDetails>>({})
+  /** מיפוי שדות raw tool output לפי cliKind (מ-projection בלבד). */
+  toolOutputMappings = $state<Record<string, ToolOutputFieldPaths>>({})
   /** נפתר אחרי ה-load() הראשון (הצלחה או כשל). לצרכנים שצריכים registry מאוכלס. */
   readonly ready: Promise<void>
 
@@ -44,12 +47,14 @@ export class CliAvailability {
       this.available = [...result.available]
       this.details = result.details
       this.registry = Object.keys(result.details)
+      this.toolOutputMappings = result.toolOutputMappings ?? {}
     } catch (e) {
       // fallback: ה-BE לא מדווח זמינות → מציגים הכול (§2, §6)
       this.error = e instanceof Error ? e.message : String(e)
       this.available = [...CLI_KINDS]
       this.registry = [...CLI_KINDS]
       this.details = {}
+      this.toolOutputMappings = {}
     } finally {
       this.loading = false
       this.#resolveReady()
@@ -66,6 +71,7 @@ export class CliAvailability {
       this.available = [...result.available]
       this.details = result.details
       this.registry = Object.keys(result.details)
+      this.toolOutputMappings = result.toolOutputMappings ?? {}
       this.error = null
     } catch (e) {
       console.warn("[CliAvailability] reload failed:", e)
