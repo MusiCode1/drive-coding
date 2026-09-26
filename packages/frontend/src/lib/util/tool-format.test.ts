@@ -301,11 +301,35 @@ describe("normalizeToolOutput — mapped paths", () => {
     ).toEqual({ kind: "text", text: "nested", exitCode: undefined })
   })
 
-  it("first path type mismatch, second path wins", () => {
+  it("missing key on first path, second path wins", () => {
     const mapping = { text: [["missing"], ["formatted_output"]] } as const
     expect(normalizeToolOutput({ formatted_output: "win" }, mapping)).toEqual({
       kind: "text",
       text: "win",
+    })
+  })
+
+  it("wrong-type value on first path, second path wins for text", () => {
+    const mapping = { text: [["n"], ["t"]] } as const
+    expect(normalizeToolOutput({ n: 5, t: "ok" }, mapping)).toEqual({
+      kind: "text",
+      text: "ok",
+    })
+  })
+
+  it("string at mapped exitCode path is rejected", () => {
+    const mapping = { exitCode: [["s"]], text: [["s"]] } as const
+    expect(normalizeToolOutput({ s: "0" }, mapping)).toEqual({
+      kind: "text",
+      text: "0",
+    })
+  })
+
+  it("non-boolean at mapped isError path tries next path", () => {
+    const mapping = { isError: [["flag"], ["ok"]], text: [["msg"]] } as const
+    expect(normalizeToolOutput({ flag: 1, ok: true, msg: "bad" }, mapping)).toEqual({
+      kind: "error",
+      message: "bad",
     })
   })
 

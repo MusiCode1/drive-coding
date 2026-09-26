@@ -20,7 +20,11 @@ import type { ToolBubble } from "$lib/types/bubble"
 import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
 import MarkdownContent from "./MarkdownContent.svelte"
 
-let { bubble, depth = 0, outputMapping }: { bubble: ToolBubble; depth?: number; outputMapping?: ToolOutputFieldPaths } = $props()
+let {
+  bubble,
+  depth = 0,
+  outputMapping,
+}: { bubble: ToolBubble; depth?: number; outputMapping?: ToolOutputFieldPaths } = $props()
 
 const t = getI18n().t
 

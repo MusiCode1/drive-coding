@@ -99,18 +99,39 @@ describe("getEffectiveToolOutputMappings", () => {
     expect(effective["custom-cli"]?.verifiedAgainst).toBeUndefined()
   })
 
-  it("verifiedAgainst change in fixture does not affect projection fields", async () => {
-    const { getDefaultMappingsForTest, getToolOutputMappingsProjection } = await import(
-      "./tool-output-mappings.js"
-    )
-    const defaults = getDefaultMappingsForTest()
-    const before = getToolOutputMappingsProjection()
-    // Mutate in-memory copy for test — defaults object is frozen-ish but we simulate wrong provenance in JSON only
-    expect(defaults.codex?.verifiedAgainst.bridge).toBe("@musicode1/codex-acp")
-    expect(before.codex).toEqual({
-      text: [["formatted_output"], ["result", "content", 0, "text"]],
-      exitCode: [["exit_code"]],
-    })
+  it("verifiedAgainst change in defaults JSON does not affect projection fields", async () => {
+    vi.doMock("./tool-output-mappings.json", () => ({
+      default: {
+        codex: {
+          verifiedAgainst: {
+            bridge: "@totally/other-bridge",
+            version: "99.99.99",
+          },
+          fields: {
+            text: [["formatted_output"], ["result", "content", 0, "text"]],
+            exitCode: [["exit_code"]],
+          },
+        },
+      },
+    }))
+    vi.resetModules()
+    try {
+      const { getDefaultMappingsForTest, getToolOutputMappingsProjection } = await import(
+        "./tool-output-mappings.js"
+      )
+      const defaults = getDefaultMappingsForTest()
+      expect(defaults.codex?.verifiedAgainst).toEqual({
+        bridge: "@totally/other-bridge",
+        version: "99.99.99",
+      })
+      expect(getToolOutputMappingsProjection().codex).toEqual({
+        text: [["formatted_output"], ["result", "content", 0, "text"]],
+        exitCode: [["exit_code"]],
+      })
+    } finally {
+      vi.doUnmock("./tool-output-mappings.json")
+      vi.resetModules()
+    }
   })
 
   it("hot reload: invalidateCache picks up override change", async () => {
