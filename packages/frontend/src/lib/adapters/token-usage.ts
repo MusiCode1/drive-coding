@@ -2,6 +2,10 @@
  * token-usage.ts — GET /api/usage/tokens (slice token-usage-persistence C4).
  */
 
+import {
+  compactionsFromCycles as compactionsFromCyclesCore,
+  sumOfCyclePeaks as sumOfCyclePeaksCore,
+} from "@drive-coding/core/usage/cli-usage"
 import { type } from "arktype"
 import { beUrl } from "$lib/util/be-url"
 
@@ -34,13 +38,8 @@ const responseSchema = type({
 export type TokenUsageCycle = typeof usageCycleSchema.infer
 export type TokenUsageRecord = typeof tokenUsageRecordSchema.infer
 
-export function compactionsFromCycles(cycles: TokenUsageCycle[]): number {
-  return Math.max(0, cycles.length - 1)
-}
-
-export function sumOfCyclePeaks(cycles: TokenUsageCycle[]): number {
-  return cycles.reduce((s, c) => s + c.peakUsed, 0)
-}
+export const compactionsFromCycles = compactionsFromCyclesCore
+export const sumOfCyclePeaks = sumOfCyclePeaksCore
 
 export async function fetchTokenUsage(opts?: {
   cwd?: string
