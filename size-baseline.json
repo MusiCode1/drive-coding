@@ -392,7 +392,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/adapters/agents-api.ts": {
-      "metric": 220,
+      "metric": 213,
       "impurity": 24,
       "class": "scattered"
     },
@@ -612,7 +612,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/layout/SessionOptionsPanel.svelte": {
-      "metric": 285,
+      "metric": 280,
       "impurity": 8,
       "class": "mixed"
     },
@@ -847,7 +847,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 3677,
+      "metric": 3675,
       "impurity": 92,
       "class": "scattered"
     },
@@ -927,7 +927,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/routes/+page.svelte": {
-      "metric": 427,
+      "metric": 426,
       "impurity": 10,
       "class": "mixed"
     },

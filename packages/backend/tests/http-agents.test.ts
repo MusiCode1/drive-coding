@@ -1,14 +1,25 @@
-import { Hono } from "hono"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+
+const { mockLogInfo } = vi.hoisted(() => ({
+  mockLogInfo: vi.fn(),
+}))
+
+vi.mock("@drive-coding/core/log", () => ({
+  createLogger: () => ({ info: mockLogInfo, warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}))
+
+import { Hono } from "hono"
 import { createInMemoryAgentRegistry } from "../src/agents/registry"
 import type { AgentOrchestrator, CreateAndSpawnResult } from "../src/app/agent-orchestrator"
 import { closeAllAgents } from "../src/app/close-all-agents.js"
 import { registerAgentsHttp } from "../src/delivery/http-agents"
+import { CF_ACCESS_EMAIL_HEADER } from "../src/delivery/opened-by-email.js"
 // slice liveness C2: ה-http-cache הוא module-level — מנקים בין טסטים כדי שלא ידלוף.
 import { httpCacheInvalidateAll } from "../src/delivery/http-cache"
 
 beforeEach(() => {
   httpCacheInvalidateAll()
+  mockLogInfo.mockClear()
 })
 
 // עזר-בדיקה: זיוף projectsRegistry עם ריגול (vi.fn) — עדיף על דיסק אמיתי
@@ -320,6 +331,84 @@ describe("HTTP /api/agents", () => {
       const body = await res.json()
       expect(body.error).toContain("bridge spawn failed")
     })
+
+    // slice session-attribution-core C1 — fail-open header attribution (AGENTS.md silent-branch pin)
+    describe("openedByEmail from CF Access header", () => {
+      async function postAndList(
+        app: ReturnType<typeof makeApp>["app"],
+        opts: { headers?: Record<string, string>; body?: Record<string, unknown> } = {},
+      ) {
+        const res = await app.request("/api/agents", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...opts.headers,
+          },
+          body: JSON.stringify(opts.body ?? { cliKind: "opencode", cwd: "/tmp/attr" }),
+        })
+        expect(res.status).toBe(201)
+        const listRes = await app.request("/api/agents")
+        return listRes.json() as Promise<{ agents: Array<{ openedByEmail?: string }> }>
+      }
+
+      it("no header — GET omits openedByEmail and logs none", async () => {
+        const { app } = makeApp()
+        const body = await postAndList(app)
+        expect(body.agents[0]).not.toHaveProperty("openedByEmail")
+        expect(mockLogInfo).toHaveBeenCalledWith(
+          { accessEmailHeader: "none" },
+          "openedByEmail attribution",
+        )
+      })
+
+      it("empty or whitespace header — same as no header", async () => {
+        const { app } = makeApp()
+        for (const value of ["", "   "]) {
+          mockLogInfo.mockClear()
+          const body = await postAndList(app, {
+            headers: { [CF_ACCESS_EMAIL_HEADER]: value },
+          })
+          expect(body.agents.at(-1)).not.toHaveProperty("openedByEmail")
+          expect(mockLogInfo).toHaveBeenCalledWith(
+            { accessEmailHeader: "none" },
+            "openedByEmail attribution",
+          )
+        }
+      })
+
+      it("header present — stores email on agent", async () => {
+        const { app } = makeApp()
+        const body = await postAndList(app, {
+          headers: { [CF_ACCESS_EMAIL_HEADER]: "test@x.com" },
+        })
+        expect(body.agents[0]?.openedByEmail).toBe("test@x.com")
+        expect(mockLogInfo).toHaveBeenCalledWith(
+          { accessEmailHeader: CF_ACCESS_EMAIL_HEADER },
+          "openedByEmail attribution",
+        )
+      })
+
+      it("body openedByEmail without header — ignored (not from body)", async () => {
+        const { app } = makeApp()
+        const body = await postAndList(app, {
+          body: { cliKind: "opencode", cwd: "/tmp/evil", openedByEmail: "evil@x.com" },
+        })
+        expect(body.agents[0]).not.toHaveProperty("openedByEmail")
+        expect(mockLogInfo).toHaveBeenCalledWith(
+          { accessEmailHeader: "none" },
+          "openedByEmail attribution",
+        )
+      })
+
+      it("body openedByEmail with real header — value from header, not body", async () => {
+        const { app } = makeApp()
+        const body = await postAndList(app, {
+          headers: { [CF_ACCESS_EMAIL_HEADER]: "real@x.com" },
+          body: { cliKind: "opencode", cwd: "/tmp/both", openedByEmail: "evil@x.com" },
+        })
+        expect(body.agents[0]?.openedByEmail).toBe("real@x.com")
+      })
+    })
   })
 
   describe("GET /api/agents/:id", () => {
@@ -499,6 +588,24 @@ describe("HTTP /api/agents", () => {
 
   // slice session-title-in-process-list: PATCH /api/agents/:id (generic, whitelist: title)
   describe("PATCH /api/agents/:id", () => {
+    it("sets titleManual + title → GET reflects both (slice session-title-manual C0)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titleManual: true, title: "manual x" }),
+      })
+      expect(res.status).toBe(200)
+
+      const listRes = await app.request("/api/agents")
+      const listBody = await listRes.json()
+      const found = listBody.agents.find((a: { id: string }) => a.id === agent.id)
+      expect(found.titleManual).toBe(true)
+      expect(found.title).toBe("manual x")
+    })
+
     it("sets title → 200 {ok}, and GET /api/agents reflects it", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
@@ -606,6 +713,35 @@ describe("HTTP /api/agents", () => {
       expect(res.status).toBe(200)
       const updated = await registry.get(agent.id)
       expect(updated?.title).toBe("keep me")
+    })
+
+    it("sets userNotes → GET reflects it (slice session-memory C0)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userNotes: "session note" }),
+      })
+      expect(res.status).toBe(200)
+
+      const listRes = await app.request("/api/agents")
+      const listBody = await listRes.json()
+      const found = listBody.agents.find((a: { id: string }) => a.id === agent.id)
+      expect(found.userNotes).toBe("session note")
+    })
+
+    it("rejects PATCH sessionFields → 400 (slice session-memory C0)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionFields: { a: "1" } }),
+      })
+      expect(res.status).toBe(400)
     })
 
     // מחלקה 3 — "לעולם-לא-מ-HTTP": onUndeclaredKey("reject") נדחית גם אחרי

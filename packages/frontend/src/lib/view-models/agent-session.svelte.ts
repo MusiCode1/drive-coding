@@ -81,6 +81,13 @@ import { connInfo, connWarn } from "$lib/util/conn-log"
 import { isBypassMode } from "$lib/util/permission-mode"
 import { safeUUID } from "$lib/util/uuid"
 // ─── slice surface-real-error: עדיפות data.details→data.message→message→String(e) ───
+import {
+  applyManualTitleFromAttach,
+  applyTitleFromSessionInput,
+  setManualTitleOnAgent,
+  syncTitleFromViewState,
+  type ManualTitleInput,
+} from "$lib/view-models/agent-session-manual-title"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
@@ -324,6 +331,9 @@ export class AgentSession {
   // ─── slice session-title: כותרת הסשן הפעיל ─── (תוספתי)
   /** כותרת הסשן הפעיל. snapshot מרגע הטעינה/החלפה. "" = אין כותרת (סשן חדש). */
   sessionTitle = $state<string>("")
+  titleManual = $state(false)
+  userNotes = $state("")
+  sessionFields = $state<Record<string, string>>({})
 
   // ─── slice plan-todo-list Commit 1: תוכנית-עבודה חיה (TodoWrite/update_plan) ─── (תוספתי)
   /** מצב הצ'קליסט הנעוץ, מ-session/update מסוגי plan/plan_update/plan_removed. reducer טהור ב-core. */
@@ -730,8 +740,7 @@ export class AgentSession {
     // turnState (נגזר מסוג patch ב-reduce) — ✅ ללא תנאי, ה-BE הוא הסמכות (isSpuriousIdle בוטל)
     const vt = viewState.turnState as TurnState
     if (vt !== this.turnState) this.#setTurnState(vt)
-    // title
-    if (viewState.title !== this.sessionTitle) this.sessionTitle = viewState.title
+    syncTitleFromViewState(this, viewState.title)
     // contextUsage (אופציונלי — אפסר לאמץ ל-UsageUpdate סטרקטורלית)
     if (viewState.contextUsage !== this.contextUsage) {
       this.contextUsage = viewState.contextUsage as typeof this.contextUsage
@@ -1613,20 +1622,10 @@ export class AgentSession {
 
   // ─── slice remote-warm-reconnect C3: attachRemoteToLiveAgent ───
 
-  /**
-   * חיבור-מחדש במצב remote לסוכן **חי** (warm reconnect מהפאנל): שלבי attachRemote
-   * פחות createAgent — ה-host כבר קיים ב-BE (נוצר ב-attachRemote המקורי), ו-getOrCreateHost
-   * מחזיר אותו בלי ליצור סשן חדש. מקור-האמת ל-sessionId הוא ה-snapshot (frame-zero של
-   * GET /events), לא agent.acpSessionId מהפאנל (עלול להיות ישן). ❌ בלי WS, ❌ בלי
-   * createAgent, ❌ בלי notifySessionAttached (ה-BE הוא הבעלים — דווח ב-C1).
-   * הערה: this.#sessionId נשאר null — עקבי עם attachRemote (נתיבי WS חסומים ב-#view
-   * ו-reconnect() ממילא early-return); זו התנהגות צפויה, לא באג.
-   */
-  attachRemoteToLiveAgent = async (input: {
-    agentId: string
-    cwd: string
-    cliKind: string
-  }): Promise<void> => {
+  /** Remote warm reconnect to a live host (no WS / no createAgent). */
+  attachRemoteToLiveAgent = async (
+    input: { agentId: string; cwd: string; cliKind: string } & ManualTitleInput,
+  ): Promise<void> => {
     // 0. ⚠️⚠️ קודם guard-הכפילות, ורק אחריו #cleanup() — אותו סדר קריטי כמו attachRemote
     // (חיבור-חוזר במצב connected היה הורג חיבור קיים לפני שהוא זורק).
     if (this.status === "connecting" || this.status === "connected") {
@@ -1650,6 +1649,7 @@ export class AgentSession {
     this.agentId = input.agentId
     this.cwd = input.cwd
     this.#cliKind = input.cliKind
+    applyManualTitleFromAttach(this, input, false)
 
     try {
       // 3. ללא createAgent — ה-host קיים ב-BE. createRemoteView כבר קורא connect()
@@ -1994,6 +1994,7 @@ export class AgentSession {
       cwd: string
       cliKind: string
       title?: string // ← slice session-title: תוספתי (קוראים קיימים לא נשברים)
+      titleManual?: boolean
     },
     // slice reconnect-recovery: preserveContextOnError — רק #coldReconnect מעביר true.
     // בטעינה-ראשונית/switchSession/newSession (בלי opts) — התנהגות ללא שינוי (#cleanup מלא).
@@ -2082,8 +2083,7 @@ export class AgentSession {
         this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState (replay אינו תור)
       }
       this.#sessionId = input.sessionId
-      this.sessionTitle = input.title ?? this.sessionTitle // keep-on-undefined: reconnect לא מאפס
-      this.#pushTitleToServer(this.sessionTitle) // slice session-title-in-process-list
+      this.#applyTitleFromSessionInput(input)
 
       // 4. הודע ל-BE (זהה ל-attach, מאמץ מיטבי)
       await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
@@ -2126,19 +2126,15 @@ export class AgentSession {
 
   // ─── slice reconnect-warm-attach: חיבור מחדש ל-agent חי מהווידג'ט ─── (תוספתי)
 
-  /**
-   * חיבור-מחדש ל-agent חי קיים בצד-השרת (warm-attach), מ-state נקי (מהווידג'ט).
-   * שונה מ-reconnect(): מקבל את ה-agentId/sessionId/cwd/cliKind מבחוץ (ה-VM לא מחזיק
-   * אותם אחרי refresh). מזריק אותם וקורא ל-#warmReconnect הקיים (WS לאותו agentId +
-   * session/load על ה-process החי + MED-8). אם warm נכשל — שגיאה (לא cold-spawn, כי
-   * cold ייכשל על session שה-CLI לא persisted).
-   */
-  attachToLiveAgent = async (input: {
-    agentId: string
-    sessionId: string
-    cwd: string
-    cliKind: string
-  }): Promise<void> => {
+  /** Warm-attach to a live BE agent after refresh (widget reconnect). */
+  attachToLiveAgent = async (
+    input: {
+      agentId: string
+      sessionId: string
+      cwd: string
+      cliKind: string
+    } & ManualTitleInput,
+  ): Promise<void> => {
     // ─── slice view-switch C3-ה: המסוכן מבין ארבעתן — פותח WS בלי שום שמירה על status/#view ───
     // ⇒ ב-remote אפשר היה להגיע ל-WS מקביל ל-SessionHost על אותו wire (ממצא 5).
     if (this.#remoteView()) return
@@ -2158,7 +2154,7 @@ export class AgentSession {
     this.#sessionId = input.sessionId
     this.cwd = input.cwd
     this.#cliKind = input.cliKind
-    this.sessionTitle = "" // slice session-title: process חי בלי title → fallback ל-"drive-coding"
+    applyManualTitleFromAttach(this, input, true)
     // slice reconnect-bubble-merge, תיקון-במקום 2: מסלול-attach הזה קורא ל-#warmReconnect
     // ישירות, בלי לעבור דרך #doReconnect — לכן ההקפאה (שעברה לראש #doReconnect) לא
     // הייתה מכסה אותו. הקפא גם כאן (idempotent, כמו ב-#doReconnect).
@@ -2186,6 +2182,7 @@ export class AgentSession {
     cwd: string
     cliKind: string
     title?: string // ← slice session-title: תוספתי
+    titleManual?: boolean
   }): Promise<void> => {
     // ─── slice remote-session-mgmt C5: remote switch through the SessionHost ───
     // (replaces the blanket view-switch C3-ה block — the WS-opening paths stay
@@ -2208,8 +2205,7 @@ export class AgentSession {
         // the old title — without this assignment session A's title would stay)
         // + push to the server.
         this.cwd = input.cwd
-        this.sessionTitle = input.title ?? this.sessionTitle // keep-on-undefined
-        this.#pushTitleToServer(this.sessionTitle)
+        this.#applyTitleFromSessionInput(input)
       } catch (e) {
         this.error = `switchSession failed: ${formatAcpError(e)}`
       } finally {
@@ -2259,8 +2255,7 @@ export class AgentSession {
       }
       this.#sessionId = input.sessionId
       this.cwd = input.cwd
-      this.sessionTitle = input.title ?? this.sessionTitle // keep-on-undefined
-      this.#pushTitleToServer(this.sessionTitle) // slice session-title-in-process-list
+      this.#applyTitleFromSessionInput(input)
 
       // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים)
       // replace:true — warm switch מכוון, מאפשר דריסת sessionId קיים (עוקף guard MED-9)
@@ -2810,17 +2805,19 @@ export class AgentSession {
     return this.#cliKind === "claude" ? CLAUDE_SESSION_META : undefined
   }
 
-  // ─── slice session-title-in-process-list: דחיפת title ל-BE ───
-
-  /**
-   * דוחף את כותרת-הסשן הנוכחית ל-BE (PATCH /api/agents/:id) כדי שרשימת "תהליכים
-   * פעילים" תציג אותה. best-effort — כשל דחיפה לא שובר UI (הכותרת המקומית כבר עודכנה
-   * ב-this.sessionTitle לפני הקריאה). client הוא הבעלים — ה-BE שכבת-אחסון טיפשה.
-   */
+  /** Best-effort PATCH title to BE for the active-processes list. */
   #pushTitleToServer(title: string): void {
     const id = this.agentId
     if (!id || !title) return // אין agentId / כותרת ריקה → דלג
     void patchAgent(id, { title }).catch(() => {})
+  }
+
+  setManualTitle(title: string): void {
+    setManualTitleOnAgent(this, title)
+  }
+
+  #applyTitleFromSessionInput(input: { title?: string; titleManual?: boolean }): void {
+    applyTitleFromSessionInput(this, input, (t) => this.#pushTitleToServer(t))
   }
 
   // ─── slice 6: setter מרכז ─── (additive — מנתב את כל ה-status writes)
@@ -3293,6 +3290,7 @@ export class AgentSession {
     // לא נושא content.text — חובה לטפל בו לפני ה-gate `if (!text) return`.
     // semantics עקבי עם ה-keep-on-undefined הקיים ב-sessionTitle setter paths (:999, :1114).
     if (update.sessionUpdate === "session_info_update") {
+      if (this.titleManual) return
       // SessionInfoUpdate: title?: string | null; updatedAt?: string | null (types.gen.d.ts:3905)
       const title = (update as { title?: string | null }).title
       if (title === null) {

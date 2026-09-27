@@ -1,16 +1,20 @@
 // @vitest-environment jsdom
 /**
  * session-memo.test.svelte.ts — per-session persistence for SessionMemoVM.
- * (slice session-memo-pad)
- *
- * הדגש כאן הוא על מה שנכשל בשקט: מפתח-לכל-סשן. באג של מפתח יחיד נראה תקין
- * כל עוד פותחים סשן אחד, ומדליף את הממו של סשן א' לסשן ב' רק אחרי מעבר —
- * בדיוק המצב שהפיצ'ר נועד לשרת (עשרה סשנים במקביל).
+ * (slice session-memo-pad · session-memory C2)
  */
 import { mount, tick, unmount } from "svelte"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import Harness from "./session-memo.harness.svelte"
 import { memoStorageKey, parseMemo, type SessionMemoVM } from "./session-memo.svelte"
+
+vi.mock("$lib/adapters/agents-api", () => ({
+  patchAgent: vi.fn(async () => {}),
+}))
+
+import { patchAgent } from "$lib/adapters/agents-api"
+
+const patchAgentMock = vi.mocked(patchAgent)
 
 function installLocalStorage(): Map<string, string> {
   const store = new Map<string, string>()
@@ -34,9 +38,6 @@ async function waitForPersist(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 320))
 }
 
-// ה-exports של ה-harness מוצהרים במפורש ולא נגזרים דרך
-// `ReturnType<typeof mount<typeof Harness>>` — הצורה הזו (כפי שהיא ב-
-// composer-draft.test) לא עוברת svelte-check, ומוסיפה 4 שגיאות typecheck.
 type HarnessExports = { memo: SessionMemoVM }
 
 let target: HTMLDivElement | null = null
@@ -51,6 +52,7 @@ function mountHarness(): HarnessExports {
 
 beforeEach(() => {
   vi.unstubAllGlobals()
+  patchAgentMock.mockClear()
 })
 
 afterEach(() => {
@@ -74,8 +76,8 @@ describe("memoStorageKey", () => {
 })
 
 describe("parseMemo", () => {
-  test("missing or corrupt storage yields an empty, minimized memo", () => {
-    const empty = { text: "", minimized: true }
+  test("missing or corrupt storage yields a minimized memo", () => {
+    const empty = { minimized: true }
     expect(parseMemo(null)).toEqual(empty)
     expect(parseMemo('{"text":"half')).toEqual(empty)
     expect(parseMemo("not json")).toEqual(empty)
@@ -87,83 +89,86 @@ describe("parseMemo", () => {
     expect(parseMemo("{}").minimized).toBe(true)
   })
 
-  test("text survives a round trip", () => {
+  test("legacy blobs with text ignore the text field", () => {
     expect(parseMemo('{"text":"session topic","minimized":false}')).toEqual({
-      text: "session topic",
       minimized: false,
     })
   })
 })
 
 describe("SessionMemoVM", () => {
-  test("text persists under the active session's key after debounce", async () => {
+  test("minimized persists under the active session key after debounce", async () => {
     const store = installLocalStorage()
     const { memo } = mountHarness()
 
-    memo.setSessionId("s1")
-    memo.text = "check the sync"
+    memo.setSessionId("s1", "agent-1", "")
+    memo.setMinimized(false)
     await waitForPersist()
 
     expect(JSON.parse(store.get("dc:session-memo:s1") as string)).toEqual({
-      text: "check the sync",
-      minimized: true,
+      minimized: false,
     })
+    expect(store.get("dc:session-memo:s1")).not.toContain("text")
   })
 
-  test("each session keeps its own memo, and switching back restores it", async () => {
+  test("debounce PATCHes userNotes when agentId is set", async () => {
     installLocalStorage()
     const { memo } = mountHarness()
 
-    memo.setSessionId("s1")
-    memo.text = "memo for one"
+    memo.setSessionId("s1", "agent-1", "")
+    memo.text = "sync to BE"
     await waitForPersist()
 
-    memo.setSessionId("s2")
+    expect(patchAgentMock).toHaveBeenCalledWith("agent-1", { userNotes: "sync to BE" })
+  })
+
+  test("each session keeps its own note text via userNotes hydration", async () => {
+    installLocalStorage()
+    const { memo } = mountHarness()
+
+    memo.setSessionId("s1", "a1", "memo for one")
+    memo.setSessionId("s2", "a2", "")
     expect(memo.text).toBe("")
 
     memo.text = "memo for two"
-    await waitForPersist()
-
-    memo.setSessionId("s1")
+    memo.setSessionId("s1", "a1", "memo for one")
     expect(memo.text).toBe("memo for one")
 
-    memo.setSessionId("s2")
+    memo.setSessionId("s2", "a2", "memo for two")
     expect(memo.text).toBe("memo for two")
   })
 
-  test("switching sessions inside the debounce window does not lose the text", async () => {
-    const store = installLocalStorage()
+  test("switching sessions inside the debounce window flushes text to the previous agent", async () => {
+    installLocalStorage()
     const { memo } = mountHarness()
 
-    memo.setSessionId("s1")
+    memo.setSessionId("s1", "agent-a", "")
     memo.text = "typed then switched immediately"
-    // בלי המתנה ל-debounce — setSessionId חייב לשטוף בעצמו.
-    memo.setSessionId("s2")
+    memo.setSessionId("s2", "agent-b", "")
 
-    expect(JSON.parse(store.get("dc:session-memo:s1") as string).text).toBe(
-      "typed then switched immediately",
-    )
+    expect(patchAgentMock).toHaveBeenCalledWith("agent-a", {
+      userNotes: "typed then switched immediately",
+    })
   })
 
-  test("text typed for one session never lands under another session's key", async () => {
-    const store = installLocalStorage()
+  test("agent transition flush targets the previous agentId, not the new one", async () => {
+    installLocalStorage()
     const { memo } = mountHarness()
 
-    memo.setSessionId("s1")
-    memo.text = "belongs to s1"
-    memo.setSessionId("s2")
+    memo.setSessionId("s1", "agent-a", "")
+    memo.text = "belongs to A"
+    memo.setSessionId("s2", "agent-b", "")
     await waitForPersist()
 
-    expect(store.get("dc:session-memo:s2")).toBeUndefined()
-    expect(JSON.parse(store.get("dc:session-memo:s1") as string).text).toBe("belongs to s1")
+    expect(patchAgentMock).toHaveBeenCalledWith("agent-a", { userNotes: "belongs to A" })
+    expect(patchAgentMock).not.toHaveBeenCalledWith("agent-b", { userNotes: "belongs to A" })
   })
 
   test("minimize state persists immediately, without waiting for the debounce", () => {
     const store = installLocalStorage()
     const { memo } = mountHarness()
 
-    memo.setSessionId("s1")
-    memo.text = "some notes"
+    memo.setSessionId("s1", "agent-1", "")
     memo.setMinimized(false)
 
     expect(JSON.parse(store.get("dc:session-memo:s1") as string).minimized).toBe(false)
@@ -173,33 +178,27 @@ describe("SessionMemoVM", () => {
     installLocalStorage()
     const { memo } = mountHarness()
 
-    memo.setSessionId("s1")
+    memo.setSessionId("s1", "agent-1", "")
     memo.setMinimized(false)
-    memo.text = "still open"
     await waitForPersist()
 
-    memo.setSessionId("s2")
-    memo.setSessionId("s1")
+    memo.setSessionId("s2", "agent-2", "")
+    memo.setSessionId("s1", "agent-1", "still open")
 
     expect(memo.minimized).toBe(false)
     expect(memo.text).toBe("still open")
   })
 
-  test("an empty, minimized memo leaves no stored record", async () => {
+  test("a minimized memo with no expansion leaves no stored record", async () => {
     const store = installLocalStorage()
     const { memo } = mountHarness()
 
-    memo.setSessionId("s1")
-    memo.text = "typed then cleared"
-    await waitForPersist()
-    expect(store.get("dc:session-memo:s1")).toBeDefined()
-
-    memo.text = ""
+    memo.setSessionId("s1", "agent-1", "")
     await waitForPersist()
     expect(store.get("dc:session-memo:s1")).toBeUndefined()
   })
 
-  test("with no session nothing is written at all", async () => {
+  test("with no session nothing is written to localStorage", async () => {
     const store = installLocalStorage()
     const { memo } = mountHarness()
 
@@ -207,13 +206,14 @@ describe("SessionMemoVM", () => {
     await waitForPersist()
 
     expect(store.size).toBe(0)
+    expect(patchAgentMock).not.toHaveBeenCalled()
   })
 
   test("hasContent ignores whitespace-only text", () => {
     installLocalStorage()
     const { memo } = mountHarness()
 
-    memo.setSessionId("s1")
+    memo.setSessionId("s1", "agent-1", "")
     expect(memo.hasContent).toBe(false)
     memo.text = "   \n  "
     expect(memo.hasContent).toBe(false)
@@ -225,7 +225,7 @@ describe("SessionMemoVM", () => {
     installLocalStorage()
     const { memo } = mountHarness()
 
-    memo.setSessionId("s1")
+    memo.setSessionId("s1", "agent-1", "")
     expect(memo.minimized).toBe(true)
     memo.toggle()
     expect(memo.minimized).toBe(false)

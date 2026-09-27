@@ -67,6 +67,8 @@ export function registerSessionSurfaceMcpTool(
             agentId: callerRecord.id,
             parentAgentId: callerRecord.parentAgentId,
             charter: callerRecord.systemPrompt ?? undefined,
+            userNotes: callerRecord.userNotes,
+            sessionFields: callerRecord.sessionFields,
           },
           deps.urlConfig,
         ),

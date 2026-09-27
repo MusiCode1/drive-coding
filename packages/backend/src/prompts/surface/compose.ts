@@ -13,6 +13,8 @@ export const SURFACE_PROMPT_PIECES = [
   "runtime",
   "capabilities",
   "display",
+  // Shared session memory (notes + agent fields). Omitted when both are empty.
+  "memory",
   // Per-agent charter, last on purpose: the sections above are the environment,
   // this one is "and your job here is X". Requires opts.charter.
   "charter",
@@ -30,6 +32,31 @@ export type BuildSurfacePromptOptions = {
    * agent without a charter is the normal case, not an error.
    */
   charter?: string
+  /** Shared session note from the agent record. */
+  userNotes?: string
+  /** Agent-written session fields from the agent record. */
+  sessionFields?: Readonly<Record<string, string>>
+}
+
+function buildMemorySection(opts: {
+  userNotes?: string
+  sessionFields?: Readonly<Record<string, string>>
+}): string | null {
+  const noteText = opts.userNotes?.trim()
+  const fieldEntries =
+    opts.sessionFields !== undefined ? Object.entries(opts.sessionFields) : []
+  if ((!noteText || noteText.length === 0) && fieldEntries.length === 0) {
+    return null
+  }
+  const parts: string[] = ["# Session memory"]
+  if (noteText && noteText.length > 0) {
+    parts.push(`## Notes\n\n${opts.userNotes}`)
+  }
+  if (fieldEntries.length > 0) {
+    const lines = fieldEntries.map(([key, value]) => `- **${key}**: ${value}`)
+    parts.push(`## Fields\n\n${lines.join("\n")}`)
+  }
+  return parts.join("\n\n")
 }
 
 /**
@@ -52,6 +79,16 @@ export function buildSurfacePrompt(opts: BuildSurfacePromptOptions): string {
     }
     if (id === "display") {
       parts.push(SURFACE_DISPLAY)
+      continue
+    }
+    if (id === "memory") {
+      const memory = buildMemorySection({
+        userNotes: opts.userNotes,
+        sessionFields: opts.sessionFields,
+      })
+      if (memory !== null) {
+        parts.push(memory)
+      }
       continue
     }
     if (id === "charter") {

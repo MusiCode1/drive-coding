@@ -39,6 +39,8 @@ export function buildAgentPromptText(
     parentAgentId?: string
     /** slice charter-in-hook: the agent's own systemPrompt rides the same payload. */
     charter?: string
+    userNotes?: string
+    sessionFields?: Readonly<Record<string, string>>
   },
   urlConfig: UrlConfig,
 ): string {
@@ -61,6 +63,8 @@ export function buildAgentPromptText(
     pieces: [...SURFACE_PROMPT_PIECES],
     runtime,
     charter: opts.charter,
+    userNotes: opts.userNotes,
+    sessionFields: opts.sessionFields,
   })
 }
 
@@ -92,6 +96,8 @@ export function registerAgentPromptHttp(
         agentId: agent.id,
         parentAgentId: agent.parentAgentId,
         charter: agent.systemPrompt ?? undefined,
+        userNotes: agent.userNotes,
+        sessionFields: agent.sessionFields,
       },
       deps.urlConfig,
     )

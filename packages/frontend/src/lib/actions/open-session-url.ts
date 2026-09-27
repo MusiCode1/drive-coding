@@ -3,21 +3,32 @@
  *
  * Returns an outcome; does not navigate or render — testable without router.
  *
- * ─── slice session-url C2: נקודת-הזרקה שלישית של sessionTransport ───
- * readSessionTransport כאן (כמו handleReconnect ב-+page.svelte) — מכוון,
- * לא הפרה של connect-agent.ts. ר' connect-agent.ts להערה מעודכנת.
+ * sessionTransport injection (see connect-agent.ts).
  */
 
+import type { AgentPublic } from "@drive-coding/core"
 import { env } from "$env/dynamic/public"
 import { listAgents } from "$lib/adapters/agents-api"
 import { readSessionTransport } from "$lib/session/session-transport-read"
 import { pickSessionHost } from "$lib/session/session-url"
+import type { ManualTitleInput } from "$lib/view-models/agent-session-manual-title"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 export type OpenSessionOutcome = "connected" | "not-found" | "needs-takeover" | "error"
 
 const OWNED_AGENT_KEY = "dc.ownedAgentId"
+
+export function sessionAttachExtras(agent: AgentPublic): ManualTitleInput {
+  const out: ManualTitleInput = {}
+  if (agent.titleManual === true) {
+    out.titleManual = true
+    if (agent.title != null) out.title = agent.title
+  }
+  if (agent.userNotes !== undefined) out.userNotes = agent.userNotes
+  if (agent.sessionFields !== undefined) out.sessionFields = agent.sessionFields
+  return out
+}
 
 function connectionFailed(session: AgentSession): boolean {
   return session.status !== "connected" || session.error !== null
@@ -92,6 +103,7 @@ export async function openSessionUrl(params: {
       agentId: agent.id,
       cwd: agent.cwd,
       cliKind: agent.cliKind,
+      ...sessionAttachExtras(agent),
     })
   } else {
     await session.attachToLiveAgent({
@@ -99,6 +111,7 @@ export async function openSessionUrl(params: {
       sessionId: attachSessionId,
       cwd: agent.cwd,
       cliKind: agent.cliKind,
+      ...sessionAttachExtras(agent),
     })
   }
 

@@ -238,6 +238,7 @@ export const he: Catalog = {
   "connect.agents.subAgentsOf": "סוכני משנה",
   "connect.agents.childCount": "סוכני משנה",
   "connect.agents.watcherCount": "צופים",
+  "connect.agents.openedBy": "נפתח על ידי",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "מסך",
   "settings.toggle.keepScreenOn": "השאר מסך דלוק",
@@ -281,6 +282,9 @@ export const he: Catalog = {
   "connect.recent.collapse": "כווץ",
   "connect.recent.expand": "הרחב",
   // ─── leave-running (slice leave-running-background) ───
+  "session.titleLabel": "כותרת",
+  "session.fieldsLabel": "שדות",
+  "session.fieldsEmpty": "אין שדות",
   "session.leaveRunning": "צא — השאר רץ",
   "session.closeSession": "כבה לגמרי את התהליך",
   "session.leaveWarning.title": "הסוכן ימשיך לרוץ",

@@ -139,6 +139,25 @@ export type McpSessionWhoamiInput = typeof McpSessionWhoamiInput.infer
 export const McpSessionSurfaceInput = type({})
 export type McpSessionSurfaceInput = typeof McpSessionSurfaceInput.infer
 
+/** MCP session_note_set — replace caller's userNotes (identity header only). */
+export const McpSessionNoteSetInput = type({
+  text: type("string").describe("Full session note text — replaces the existing note."),
+})
+export type McpSessionNoteSetInput = typeof McpSessionNoteSetInput.infer
+
+/** MCP session_field_set — merge one key into caller's sessionFields (identity header only). */
+export const McpSessionFieldSetInput = type({
+  key: reqStr("Field key (trimmed; must be non-empty after trim)."),
+  value: type("string").describe("Field value stored under key."),
+})
+export type McpSessionFieldSetInput = typeof McpSessionFieldSetInput.infer
+
+/** MCP session_field_delete — remove one key from caller's sessionFields (identity header only). */
+export const McpSessionFieldDeleteInput = type({
+  key: reqStr("Field key to delete (trimmed; must be non-empty after trim)."),
+})
+export type McpSessionFieldDeleteInput = typeof McpSessionFieldDeleteInput.infer
+
 /** @deprecated Use McpSessionListInput — base/port/json are not used by MCP. */
 export const AgentListInput = McpSessionListInput
 export type AgentListInput = McpSessionListInput

@@ -243,6 +243,7 @@ export const en: Catalog = {
   "connect.agents.subAgentsOf": "Sub-agents",
   "connect.agents.childCount": "sub-agents",
   "connect.agents.watcherCount": "viewers",
+  "connect.agents.openedBy": "opened by",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   "settings.screen.label": "Screen",
   "settings.toggle.keepScreenOn": "Keep screen on",
@@ -286,6 +287,9 @@ export const en: Catalog = {
   "connect.recent.collapse": "Collapse",
   "connect.recent.expand": "Expand",
   // ─── leave-running (slice leave-running-background) ───
+  "session.titleLabel": "Title",
+  "session.fieldsLabel": "Fields",
+  "session.fieldsEmpty": "No fields",
   "session.leaveRunning": "Leave — keep running",
   "session.closeSession": "Shut the process down completely",
   "session.leaveWarning.title": "Agent will keep running",

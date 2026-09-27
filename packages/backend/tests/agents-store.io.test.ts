@@ -88,6 +88,16 @@ describe("readAgentStore / writeAgentStore", () => {
     expect(stripRuntimeFields(row({ title: "x" })).title).toBeUndefined()
   })
 
+  it("keeps title when titleManual is true (slice session-title-manual C1)", () => {
+    const f = tmpFile()
+    const manual = row({ title: "kept", titleManual: true })
+    writeAgentStore(f, [manual])
+    const stored = readAgentStore(f)[0]
+    expect(stored?.title).toBe("kept")
+    expect(stored?.titleManual).toBe(true)
+    expect(stripRuntimeFields(manual).title).toBe("kept")
+  })
+
   it("leaves no temp file behind", () => {
     const f = tmpFile()
     writeAgentStore(f, [row()])

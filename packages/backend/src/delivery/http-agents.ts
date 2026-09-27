@@ -5,12 +5,19 @@ import {
   toAgentPublic,
   validateCwd,
 } from "@drive-coding/core"
+import { createLogger } from "@drive-coding/core/log"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
 import type { ProjectsRegistry } from "../app/projects-registry"
 import { parseCreateAgentBody } from "./create-agent-input.js"
 import { httpCacheGet, httpCacheSet } from "./http-cache.js"
+import {
+  CF_ACCESS_EMAIL_HEADER,
+  readOpenedByEmail,
+} from "./opened-by-email.js"
+
+const log = createLogger("backend.agents.http")
 
 /**
  * הרחבת צד-שרת בלבד של CreateAgentInput — כולל existingSessionId
@@ -84,6 +91,15 @@ export function registerAgentsHttp(
       return c.json(parsed.error.body, parsed.error.status)
     }
 
+    const email = readOpenedByEmail(c.req.header(CF_ACCESS_EMAIL_HEADER))
+    log.info(
+      { accessEmailHeader: email ? CF_ACCESS_EMAIL_HEADER : "none" },
+      "openedByEmail attribution",
+    )
+    if (email) {
+      parsed.value.openedByEmail = email
+    }
+
     try {
       const result = await deps.orchestrator.createAndSpawn(parsed.value)
       // מחזיר את מבנה CreateAndSpawnResult (סלייס 10)
@@ -152,6 +168,8 @@ export function registerAgentsHttp(
    */
   const PatchAgentInput = type({
     "title?": "string | null",
+    "titleManual?": "boolean",
+    "userNotes?": "string",
     "persistent?": "boolean",
     "acpSessionId?": "string >= 1",
     "status?": "'ready'", // D1 — ליטרל, לא string
@@ -213,11 +231,17 @@ export function registerAgentsHttp(
     }
 
     // D4 — שכבה (ג): extract מפורש שדה-שדה. מפתח שערכו undefined אינו נכנס לפatch.
-    const patch: Partial<Pick<Agent, "title" | "persistent" | "status" | "acpSessionId" | "cwd">> =
-      {}
+    const patch: Partial<
+      Pick<
+        Agent,
+        "title" | "titleManual" | "userNotes" | "persistent" | "status" | "acpSessionId" | "cwd"
+      >
+    > = {}
     // guard: title absent (undefined) → no-op, שלא לנקות כותרת קיימת בטעות.
     // title: null = clear מכוון (הסכמה מתירה); string = set.
     if (parsed.title !== undefined) patch.title = parsed.title
+    if (parsed.titleManual !== undefined) patch.titleManual = parsed.titleManual
+    if (parsed.userNotes !== undefined) patch.userNotes = parsed.userNotes
     if (parsed.persistent !== undefined) patch.persistent = parsed.persistent
     if (parsed.status !== undefined) patch.status = parsed.status
     if (parsed.acpSessionId !== undefined) patch.acpSessionId = parsed.acpSessionId
