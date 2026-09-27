@@ -13,8 +13,11 @@
  *
  * ─── redesign-2 ───
  */
-import MenuIcon from "@lucide/svelte/icons/menu"
+
+import ChartColumnIcon from "@lucide/svelte/icons/chart-column"
 import FolderIcon from "@lucide/svelte/icons/folder"
+import MenuIcon from "@lucide/svelte/icons/menu"
+import { goto } from "$app/navigation"
 import { getI18n, getResponsive, getSession, getUiShell } from "$lib/context"
 import { basename } from "$lib/util/path"
 // ─── slice session-budget-meter Commit 5 ───
@@ -65,6 +68,16 @@ const headerLabel = $derived(session.sessionTitle?.trim() ? session.sessionTitle
   <!-- קבוצת-סטטוס (inline-end): מד תקציב-סשן + cwd chip + נקודת-חיבור. בעברית inline-end = שמאל. -->
   <!-- קלאסים לוגיים בלבד: gap/px/py סימטריים (תקין). אסור ml/mr/pl/pr/left/right חדשים. -->
   <div class="flex items-center gap-2 shrink-0">
+    <!-- slice usage-per-cli: link to /usage -->
+    <button
+      type="button"
+      class="pointer-events-auto size-9 grid place-items-center rounded-lg text-[var(--fg-dim)] hover:bg-white/5 hover:text-[var(--fg)] shrink-0"
+      aria-label={t("header.usageLink")}
+      title={t("header.usageLink")}
+      onclick={() => goto("/usage")}
+    >
+      <ChartColumnIcon size={18} strokeWidth={1.75} />
+    </button>
     <!-- slice session-budget-meter Commit 5: מד ניצול-קונטקסט + popover quota רב-ספקי -->
     <SessionBudgetMeter />
     {#if cwdLabel}

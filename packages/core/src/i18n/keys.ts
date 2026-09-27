@@ -526,6 +526,28 @@ export type MessageKey =
   | "sessionMemo.minimize"
   | "sessionMemo.placeholder"
   | "settings.toggle.sessionMemo"
+  // ─── usage ─── (slice usage-per-cli)
+  | "usage.page.title"
+  | "usage.page.loading"
+  | "usage.page.refresh"
+  | "usage.page.error"
+  | "usage.page.empty"
+  | "usage.page.link"
+  | "usage.clis.cardTitle"
+  | "usage.clis.noUsageReport"
+  | "usage.clis.lastSeenPrefix"
+  | "usage.clis.lastSeenSuffix"
+  | "usage.clis.costMixed"
+  | "usage.clis.col.cli"
+  | "usage.clis.col.projects"
+  | "usage.clis.col.sessions"
+  | "usage.clis.col.turns"
+  | "usage.clis.col.peakHeld"
+  | "usage.clis.col.sumHeld"
+  | "usage.clis.col.compactions"
+  | "usage.clis.col.cost"
+  | "usage.clis.col.activity"
+  | "header.usageLink"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

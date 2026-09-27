@@ -283,6 +283,13 @@ $effect(() => {
   </SettingsCard>
 
   <SettingsCard title={t("settings.tokenUsage.title")}>
+    <a
+      href="/usage"
+      class="text-[13px] font-medium mb-2 inline-block"
+      style="color:var(--accent)"
+    >
+      {t("usage.page.link")}
+    </a>
     <TokenContextUsageCard />
   </SettingsCard>
 
