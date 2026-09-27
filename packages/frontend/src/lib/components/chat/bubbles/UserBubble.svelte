@@ -126,7 +126,9 @@ async function handleCopy() {
       <span class="hidden">{bubble.segments.length}</span>
     </div>
     <div class="bubble-meta">
-      <span class="timestamp">{formatTime(bubble.createdAt)}</span>
+      {#if bubble.createdAt}
+        <span class="timestamp">{formatTime(bubble.createdAt)}</span>
+      {/if}
       <div class="bubble-actions">
         <button
           class="action-btn"

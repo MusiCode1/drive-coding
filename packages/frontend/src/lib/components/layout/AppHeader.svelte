@@ -13,8 +13,9 @@
  *
  * ─── redesign-2 ───
  */
-import MenuIcon from "@lucide/svelte/icons/menu"
+
 import FolderIcon from "@lucide/svelte/icons/folder"
+import MenuIcon from "@lucide/svelte/icons/menu"
 import { getI18n, getResponsive, getSession, getUiShell } from "$lib/context"
 import { basename } from "$lib/util/path"
 // ─── slice session-budget-meter Commit 5 ───

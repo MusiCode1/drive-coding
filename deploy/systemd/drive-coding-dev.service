@@ -37,6 +37,9 @@ Environment=PUBLIC_BASE_URL=https://drive-coding-dev-vps.musicode.ovh
 # kept so bringing OneCLI back does not require touching the unit.
 Environment=OPENCODE_BIN=%h/Projects/drive-coding/dev/scripts/opencode-clean.sh
 
+# Agents as sibling systemd units — survive BE restart.
+Environment=AGENT_SIDECAR=cursor,claude
+
 # ⚠️ CLI_SPECS_FILE intentionally unset. Default is
 # ~/.config/drive-coding/cli-specs.jsonc — the live provider catalog.
 # Pointing at deploy/cli-specs.jsonc would hide them and leave only the

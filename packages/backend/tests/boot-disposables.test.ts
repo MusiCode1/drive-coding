@@ -16,6 +16,7 @@ describe("createDeps disposables", () => {
     expect(names).toContain("connectionRegistry")
     expect(names).toContain("stopWatching")
     expect(names).toContain("usageStore")
+    expect(names).toContain("tokenUsageStore")
   })
 
   it("memoryGuard disposable calls stop()", () => {

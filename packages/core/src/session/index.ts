@@ -5,6 +5,7 @@
  */
 
 export * from "./apply-patch"
+export * from "./carried"
 export * from "./patch-schema"
 export * from "./reduce"
 export * from "./rpc-methods"

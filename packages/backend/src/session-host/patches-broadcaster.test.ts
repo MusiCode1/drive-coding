@@ -308,3 +308,50 @@ describe("PatchesBroadcaster", () => {
     })
   })
 })
+
+// ─── slice history-cursor C2: oldestBufferedVersion ──────────────────────────
+
+describe("oldestBufferedVersion (slice history-cursor C2)", () => {
+  /** נותן ל-drain() להספיק לקרוא את מה שנדחף לפני שבודקים את החוצץ. */
+  const settle = (): Promise<void> => new Promise<void>((r) => setTimeout(r, 20))
+
+  it("‏חוצץ ריק ⇒ undefined", () => {
+    const { stream } = makeControlledStream()
+    const broadcaster = createPatchesBroadcaster(stream)
+
+    expect(broadcaster.oldestBufferedVersion()).toBeUndefined()
+  })
+
+  it("‏3 patches ⇒ ה-version של הראשון", async () => {
+    const { stream, push } = makeControlledStream()
+    const broadcaster = createPatchesBroadcaster(stream)
+
+    push(makePatch(5))
+    push(makePatch(6))
+    push(makePatch(7))
+    await settle()
+
+    expect(broadcaster.oldestBufferedVersion()).toBe(5)
+  })
+
+  it("🔴 ‏מעל BUFFER_SIZE ⇒ עולה יחד עם ה-shift — זה הפער שאיש אינו רואה היום", async () => {
+    const { stream, push } = makeControlledStream()
+    const broadcaster = createPatchesBroadcaster(stream)
+
+    // 64 = BUFFER_SIZE. דוחפים 70 ⇒ ששת הראשונים מפונים.
+    for (let v = 1; v <= 70; v++) push(makePatch(v))
+    await settle()
+
+    expect(broadcaster.oldestBufferedVersion()).toBe(7)
+  })
+
+  it("‏החוצץ המלא בדיוק (BUFFER_SIZE) עדיין מתחיל בראשון", async () => {
+    const { stream, push } = makeControlledStream()
+    const broadcaster = createPatchesBroadcaster(stream)
+
+    for (let v = 1; v <= 64; v++) push(makePatch(v))
+    await settle()
+
+    expect(broadcaster.oldestBufferedVersion()).toBe(1)
+  })
+})
