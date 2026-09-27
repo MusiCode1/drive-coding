@@ -1,17 +1,9 @@
 <script lang="ts">
-/**
- * FileContentViewer — נטען דרך GET /api/fs/file, מציג לפי Content-Type
- * (markdown מרונדר / תמונה / PDF inline-אם-נתמך / קישור-הורדה fallback).
- *
- * 🔴 קובץ-רכיב רגיל, לא snippet ולא ה-directive המיוחדת (deprecated ב-Svelte 5)
- * לרינדור-דינמי-לפי-משתנה (ר' §4 Commit 1 בבריף — r2 ניסה לשלב אותה עם snippet,
- * שילוב בלתי-אפשרי).
- *
- * ─── slice fs-file-proxy (Commit 1) ───
- */
+/** FileContentViewer — GET /api/fs/file; markdown / image / PDF / audio / download. */
 
 import MarkdownContent from "$lib/components/chat/bubbles/MarkdownContent.svelte"
 import { getI18n } from "$lib/context"
+import { isAudioFileUri } from "$lib/util/audio-file-uri"
 import { beUrl } from "$lib/util/be-url"
 import { baseContentType, isRenderableText } from "$lib/util/content-type"
 import { canRenderPdfInline } from "$lib/util/pdf-render-support"
@@ -29,17 +21,12 @@ function imageCwdFromFileUri(uri: string): string {
 let { uri, title }: { uri: string; title?: string } = $props()
 
 let contentType = $state("")
-// 🔴 ההשוואות למטה הן על **טיפוס-הבסיס** ולא על הכותרת המלאה. ה-BE מצהיר
-// `text/markdown; charset=utf-8`, והשוואה מדויקת הייתה מפילה כל מסמך לענף
-// ההורדה (ממצא-משתמש חי 25/08).
 const baseType = $derived(baseContentType(contentType))
 let blobUrl = $state("")
 let markdownText = $state("")
 let error = $state("")
 
 $effect(() => {
-  // Q3 decision (§9 בבריף): הדיאלוג טוען מחדש בכל פתיחה — ה-$effect רץ מחדש
-  // כש-uri משתנה. reset מפורש כדי לא להציג תוכן-ישן בזמן שה-fetch החדש בטיסה.
   contentType = ""
   blobUrl = ""
   markdownText = ""
@@ -47,6 +34,8 @@ $effect(() => {
 
   let cancelled = false
   let localBlobUrl = ""
+
+  if (isAudioFileUri(uri)) return () => { cancelled = true }
 
   fetch(beUrl(`/api/fs/file?uri=${encodeURIComponent(uri)}`))
     .then(async (r) => {
@@ -63,8 +52,6 @@ $effect(() => {
       if (result.kind === "text") {
         markdownText = result.text
       } else {
-        // הבלוב נוצר בזמן-ריצה מ-fetch — לא ניתן ל-SSR ולכן ה-URL.createObjectURL
-        // חי רק כאן (component client-only, SPA-only per AGENTS.md).
         localBlobUrl = URL.createObjectURL(result.blob)
         blobUrl = localBlobUrl
       }
@@ -73,8 +60,6 @@ $effect(() => {
       if (!cancelled) error = String(e)
     })
 
-  // cleanup: מריץ **לפני** run הבא (או ב-unmount). local לפתרון race בין
-  // fetch מהיר לבין effect שרץ שוב לפני שהראשון סיים (DoD בדיקה 12).
   return () => {
     cancelled = true
     if (localBlobUrl) URL.revokeObjectURL(localBlobUrl)
@@ -86,6 +71,13 @@ $effect(() => {
   <a href={uri} target="_blank" rel="noreferrer" class="text-link">
     {t("contentViewer.download")} — {error}
   </a>
+{:else if isAudioFileUri(uri)}
+  <audio
+    controls
+    preload="metadata"
+    src={beUrl(`/api/fs/file?uri=${encodeURIComponent(uri)}`)}
+    class="viewer-audio"
+  ></audio>
 {:else if baseType.startsWith("image/")}
   <img src={blobUrl} class="viewer-image" alt={title ?? t("contentViewer.title")} />
 {:else if baseType === "application/pdf" && canRenderPdfInline()}
@@ -123,5 +115,9 @@ $effect(() => {
   .text-link {
     color: var(--accent, #4f8cff);
     text-decoration: underline;
+  }
+
+  .viewer-audio {
+    width: 100%;
   }
 </style>

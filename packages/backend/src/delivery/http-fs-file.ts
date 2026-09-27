@@ -16,9 +16,15 @@
 import { readFile, realpath, stat } from "node:fs/promises"
 import { extname, relative, resolve } from "node:path"
 import type { Hono } from "hono"
+import { serveAudioFile } from "./http-fs-file-audio.js"
 import { isAbsolutePath, normalizeRealpath } from "./http-history.js"
 
+export type { ParsedBytesRange } from "./http-fs-file-range.js"
+export { parseBytesRange } from "./http-fs-file-range.js"
+
 const MAX_FILE_BYTES = 8 * 1024 * 1024 // 8MB
+export const MAX_AUDIO_FULL_BYTES = 32 * 1024 * 1024 // 32MB — GET without Range
+export const MAX_AUDIO_FILE_BYTES = 512 * 1024 * 1024 // 512MB — file cap when Range is used
 
 /**
  * 🔴 allowlist סגור. אין כאן — ולעולם לא יהיה — text/html או כל סוג שמריץ קוד
@@ -35,6 +41,13 @@ const EXT_TO_CONTENT_TYPE: Record<string, string> = {
   ".webp": "image/webp",
   ".gif": "image/gif",
   ".pdf": "application/pdf",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".m4a": "audio/mp4",
+  ".aac": "audio/aac",
+  ".flac": "audio/flac",
+  ".webm": "audio/webm",
 }
 
 /**
@@ -42,6 +55,10 @@ const EXT_TO_CONTENT_TYPE: Record<string, string> = {
  * פרסר XML מניח UTF-8 בעצמו, ואין סיבה לגעת בו.
  */
 const TEXT_EXTS = new Set([".md", ".markdown", ".txt"])
+
+function isAudioContentType(contentType: string): boolean {
+  return contentType.startsWith("audio/")
+}
 
 /**
  * 🔴 אנחנו **לא מזהים קידוד**. זיהוי (chardet/ICU) הוא היוריסטיקה שהתקנים
@@ -153,6 +170,17 @@ export function registerFsFileHttp(
     } catch {
       return c.json({ error: "file not found" }, 404)
     }
+
+    if (isAudioContentType(contentType)) {
+      const rangeHeader = c.req.header("Range")
+      const hasRange = rangeHeader !== undefined && rangeHeader.trim() !== ""
+      const maxBytes = hasRange ? MAX_AUDIO_FILE_BYTES : MAX_AUDIO_FULL_BYTES
+      if (size > maxBytes) {
+        return c.json({ error: "file too large" }, 413)
+      }
+      return serveAudioFile(real, size, contentType, rangeHeader)
+    }
+
     if (size > MAX_FILE_BYTES) {
       return c.json({ error: "file too large" }, 413)
     }

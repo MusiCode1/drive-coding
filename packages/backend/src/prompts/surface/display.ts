@@ -19,8 +19,11 @@ Give a markdown link via the file proxy (see runtime section for the origin):
 \`\`\`
 
 **Allowed types:** \`.md\` / \`.markdown\` / \`.txt\` · images (\`.png\` \`.jpg\` \`.jpeg\`
-\`.svg\` \`.webp\` \`.gif\`) · \`.pdf\`. Unknown / HTML → 415 (HTML is never served).
-Size cap ~8MB. Use absolute paths (or \`file://\` absolute URIs).
+\`.svg\` \`.webp\` \`.gif\`) · \`.pdf\` · audio (\`.mp3\` \`.wav\` \`.ogg\` \`.m4a\` \`.aac\`
+\`.flac\` \`.webm\`). Unknown / HTML → 415 (HTML is never served).
+Non-audio size cap ~8MB; audio up to 512MB with HTTP Range (browser player).
+Audio links open in the content viewer with a native player. Use absolute paths
+(or \`file://\` absolute URIs).
 
 Plan files and \`resource_link\` chips also open the same viewer when the protocol
 emits them — still prefer an explicit clickable link when you want the user to read
