@@ -26,6 +26,21 @@ function nextMsgId(seq: number): string {
   return `m_${seq}`
 }
 
+/** Normalizes wire `cost` (object or legacy number) into SessionUsage shape; keeps prev on miss. */
+function normalizeCost(raw: unknown, prev: SessionUsage["cost"]): SessionUsage["cost"] {
+  if (typeof raw === "number") return { amount: raw }
+  if (raw && typeof raw === "object") {
+    const c = raw as { amount?: unknown; currency?: unknown }
+    if (typeof c.amount === "number") {
+      return {
+        amount: c.amount,
+        ...(typeof c.currency === "string" ? { currency: c.currency } : {}),
+      }
+    }
+  }
+  return prev
+}
+
 /** מקצה id לsegment דטרמיניסטי: s_<seq> */
 function nextSegId(seq: number): string {
   return `s_${seq}`
@@ -853,7 +868,7 @@ function reduceRecognized(
     const newUsage: SessionUsage = {
       used: uu.used,
       size: uu.size,
-      cost: typeof uu.cost === "number" ? uu.cost : state.contextUsage?.cost,
+      cost: normalizeCost(uu.cost, state.contextUsage?.cost),
     }
     const newVersion = state.version + 1
     const newState: SessionState = { ...state, version: newVersion, contextUsage: newUsage }

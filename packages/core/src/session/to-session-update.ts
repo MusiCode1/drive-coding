@@ -139,7 +139,26 @@ function changesToUpdates(changes: Record<string, unknown>): WireSessionUpdate[]
   if ("contextUsage" in changes) {
     const u = changes.contextUsage as { used?: unknown; size?: unknown; cost?: unknown } | null
     if (u && typeof u.used === "number" && typeof u.size === "number") {
-      out.push({ sessionUpdate: "usage_update", used: u.used, size: u.size, cost: u.cost })
+      const wireCost =
+        u.cost === undefined
+          ? undefined
+          : typeof u.cost === "number"
+            ? { amount: u.cost }
+            : u.cost && typeof u.cost === "object" && typeof (u.cost as { amount?: unknown }).amount === "number"
+              ? {
+                  amount: (u.cost as { amount: number }).amount,
+                  ...((u.cost as { currency?: unknown }).currency !== undefined &&
+                  typeof (u.cost as { currency?: unknown }).currency === "string"
+                    ? { currency: (u.cost as { currency: string }).currency }
+                    : {}),
+                }
+              : u.cost
+      out.push({
+        sessionUpdate: "usage_update",
+        used: u.used,
+        size: u.size,
+        ...(wireCost !== undefined ? { cost: wireCost } : {}),
+      })
     }
   }
 

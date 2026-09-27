@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from "vitest"
 import { reduce } from "./reduce"
+import { stateToSessionUpdates } from "./to-session-update"
 import type { Patch, SessionState } from "./types"
 import { createInitialSessionState } from "./types"
 
@@ -551,15 +552,47 @@ describe("reduce — usage_update (C1)", () => {
   })
 
   it("preserves previous cost when new update omits it (anti-flicker)", () => {
-    const s: SessionState = { ...mkState(), contextUsage: { used: 50, size: 1000, cost: 0.05 } }
+    const s: SessionState = {
+      ...mkState(),
+      contextUsage: { used: 50, size: 1000, cost: { amount: 0.05 } },
+    }
     const { state } = reduce(s, { sessionUpdate: "usage_update", used: 100, size: 1000 })
-    expect(state.contextUsage?.cost).toBe(0.05)
+    expect(state.contextUsage?.cost).toEqual({ amount: 0.05 })
   })
 
-  it("accepts cost when provided", () => {
+  it("accepts cost object from wire (claude)", () => {
+    const s = mkState()
+    const { state } = reduce(s, {
+      sessionUpdate: "usage_update",
+      used: 100,
+      size: 1000,
+      cost: { amount: 0.4857, currency: "USD" },
+    })
+    expect(state.contextUsage?.cost).toEqual({ amount: 0.4857, currency: "USD" })
+  })
+
+  it("accepts numeric cost (unmeasured CLI) and normalizes to object", () => {
     const s = mkState()
     const { state } = reduce(s, { sessionUpdate: "usage_update", used: 100, size: 1000, cost: 0.1 })
-    expect(state.contextUsage?.cost).toBe(0.1)
+    expect(state.contextUsage?.cost).toEqual({ amount: 0.1 })
+  })
+
+  it("object cost survives reduce → stateToSessionUpdates round-trip", () => {
+    const wire = {
+      sessionUpdate: "usage_update" as const,
+      used: 58_059,
+      size: 1_000_000,
+      cost: { amount: 0.4857, currency: "USD" },
+    }
+    const { state } = reduce(mkState(), wire)
+    const updates = stateToSessionUpdates(state)
+    const usage = updates.find((u) => u.sessionUpdate === "usage_update")
+    expect(usage).toEqual({
+      sessionUpdate: "usage_update",
+      used: 58_059,
+      size: 1_000_000,
+      cost: { amount: 0.4857, currency: "USD" },
+    })
   })
 })
 

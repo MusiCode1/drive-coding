@@ -401,6 +401,16 @@ export type MessageKey =
   | "sessionBudget.quota.used"
   | "sessionBudget.quota.of"
   | "sessionBudget.quota.resetsIn"
+  // ─── token usage persistence ─── (slice token-usage-persistence)
+  | "sessionBudget.context.compactions"
+  | "sessionBudget.context.sumHeld"
+  | "settings.tokenUsage.title"
+  | "settings.tokenUsage.loading"
+  | "settings.tokenUsage.refresh"
+  | "settings.tokenUsage.error"
+  | "settings.tokenUsage.empty"
+  | "settings.tokenUsage.compactions"
+  | "settings.tokenUsage.sumHeld"
   // ─── plan ─── (slice plan-todo-list)
   | "plan.title"
   | "plan.status.pending"
