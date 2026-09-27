@@ -307,12 +307,12 @@
       "class": "mixed"
     },
     "packages/backend/src/session-host/registry.ts": {
-      "metric": 517,
+      "metric": 521,
       "impurity": 10,
       "class": "mixed"
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 1029,
+      "metric": 1039,
       "impurity": 22,
       "class": "scattered"
     },

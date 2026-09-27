@@ -99,6 +99,8 @@ export function createAndRegisterSessionHostHttp(
     onStallSuspected?: (agentId: string, silentMs: number) => void
     _stallSweepMs?: number
     _stallSuspectMs?: number
+    /** slice token-usage-persistence C3 */
+    afterHostCreated?: Parameters<typeof createAgentSessionRegistry>[0]["afterHostCreated"]
   },
 ): ReturnType<typeof createAgentSessionRegistry> {
   const agentSessionRegistry = createAgentSessionRegistry({
@@ -115,6 +117,7 @@ export function createAndRegisterSessionHostHttp(
     onStallSuspected: opts.onStallSuspected,
     _stallSweepMs: opts._stallSweepMs,
     _stallSuspectMs: opts._stallSuspectMs,
+    afterHostCreated: opts.afterHostCreated,
   })
   bindScopeEnforcement(app, {
     registry: opts.agentRegistry,

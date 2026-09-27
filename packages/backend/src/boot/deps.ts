@@ -26,6 +26,7 @@ import { createSessionHostRegistryOpts } from "../server-session-host-opts.js"
 import { type AgentEventBus, createAgentEventBus } from "../session-host/agent-events.js"
 import { createAndRegisterSessionHostHttp } from "../session-host/http/index.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
+import { wireTokenUsagePatches } from "../usage/token-usage-patch-wire.js"
 import { createTokenUsageStore, type TokenUsageStore } from "../usage/token-usage-store.js"
 import { createUsageStore, type UsageStore } from "../usage/usage-store.js"
 import { wireRecorderDir } from "./config.js"
@@ -70,19 +71,36 @@ export function createDeps(
   const acpSessionIdCache = new Map<string, string>()
 
   const orchestratorRef: { current: AgentOrchestrator | null } = { current: null }
+  const tokenUsageStoreRef: { current: TokenUsageStore | null } = { current: null }
   const agentEventBus = createAgentEventBus()
 
+  const sessionHostRegistryOpts = createSessionHostRegistryOpts({
+    registry,
+    projectsRegistry,
+    acpSessionIdCache,
+    agentEventBus,
+    getOrchestrator: () => orchestratorRef.current,
+    evictionController,
+  })
+  const eventOnTurnEnded = sessionHostRegistryOpts.onTurnEnded
+
   const agentSessionRegistry = createAndRegisterSessionHostHttp(app, connectionRegistry, {
-    ...createSessionHostRegistryOpts({
-      registry,
-      projectsRegistry,
-      acpSessionIdCache,
-      agentEventBus,
-      getOrchestrator: () => orchestratorRef.current,
-      evictionController,
-    }),
+    ...sessionHostRegistryOpts,
     _httpOwnerTtlMs: config.httpOwnerTtlMs,
     env,
+    onTurnEnded: (agentId, info) => {
+      eventOnTurnEnded?.(agentId, info)
+      tokenUsageStoreRef.current?.onTurnEnded(agentId, info.acpSessionId ?? null, Date.now())
+    },
+    afterHostCreated: (agentId, entry) => {
+      wireTokenUsagePatches(
+        agentId,
+        entry.host,
+        entry.broadcaster,
+        () => tokenUsageStoreRef.current,
+        connectionRegistry,
+      )
+    },
   })
 
   const orchestrator = createAgentOrchestrator({
@@ -96,6 +114,7 @@ export function createDeps(
 
   const usageStore = createUsageStore(ensureStateSubdir("usage"))
   const tokenUsageStore = createTokenUsageStore(ensureStateSubdir("token-usage"))
+  tokenUsageStoreRef.current = tokenUsageStore
   const memoryGuard = createMemoryGuard({
     thresholdBytes: (config.rssBudgetMb ?? configDefault("rssBudgetMb")) * 1024 * 1024,
   })
