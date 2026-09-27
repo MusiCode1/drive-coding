@@ -30,6 +30,7 @@ import { registerHttpOptions } from "../delivery/http-options.js"
 import { registerProxyHttp } from "../delivery/http-proxy.js"
 import { registerReloadConfigHttp } from "../delivery/http-reload-config.js"
 import { registerTtsCapabilitiesHttp } from "../delivery/http-tts-capabilities.js"
+import { registerTokenUsageHttp } from "../delivery/http-token-usage.js"
 import { registerUsageHttp } from "../delivery/http-usage.js"
 import { ensureStateSubdir } from "../paths.js"
 import type { BootDeps } from "./deps.js"
@@ -51,6 +52,7 @@ export async function buildApp(
     agentEventBus,
     orchestrator,
     usageStore,
+    tokenUsageStore,
     memoryGuard,
   } = deps
 
@@ -103,6 +105,7 @@ export async function buildApp(
   })
 
   registerUsageHttp(app, { usageStore })
+  registerTokenUsageHttp(app, { tokenUsageStore })
   registerCliAvailabilityHttp(app, env)
 
   // Extended: the same event also re-resolves config.jsonc + secrets.json and

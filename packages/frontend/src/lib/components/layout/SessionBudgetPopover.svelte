@@ -13,6 +13,12 @@
  */
 import type { QuotaWindow } from "@drive-coding/provider/extensions"
 import { getI18n, getSession } from "$lib/context"
+import {
+  compactionsFromCycles,
+  fetchTokenUsage,
+  sumOfCyclePeaks,
+  type TokenUsageRecord,
+} from "$lib/adapters/token-usage"
 import { formatContextUsageCost } from "$lib/util/context-usage-cost"
 import { formatQuotaPeriod, formatTimeUntil } from "$lib/util/formatting"
 
@@ -52,6 +58,25 @@ const costLabel = $derived.by(() => {
   return stripBidiMarks(formatContextUsageCost(cost, i18n.locale))
 })
 
+let persistedUsage = $state<TokenUsageRecord | null>(null)
+
+$effect(() => {
+  const sid = session.sessionId
+  if (sid === null) {
+    persistedUsage = null
+    return
+  }
+  void fetchTokenUsage({ limit: 50 })
+    .then((list) => {
+      persistedUsage = list.find((r) => r.acpSessionId === sid) ?? null
+    })
+    .catch(() => {
+      persistedUsage = null
+    })
+})
+
+const compactFmt = $derived(new Intl.NumberFormat(i18n.locale, { notation: "compact" }))
+
 // ─── quota section ────────────────────────────────────────────────────────
 
 /** progress% מחושב בבטחה — absolute: used/limit (limit>0 מובטח ע"י הסכמה); percentage: usedPct. */
@@ -89,6 +114,15 @@ function progressPercent(window: QuotaWindow): number {
       {#if costLabel !== null}
         <span class="text-[12px]" style="color:var(--fg-dim)">
           {t("sessionBudget.context.cost")}: <span dir="ltr">{costLabel}</span>
+        </span>
+      {/if}
+      {#if persistedUsage !== null}
+        <span class="text-[12px]" style="color:var(--fg-dim)">
+          {t("sessionBudget.context.compactions")}: {compactionsFromCycles(persistedUsage.cycles)}
+        </span>
+        <span class="text-[12px]" style="color:var(--fg-dim)">
+          {t("sessionBudget.context.sumHeld")}:
+          <span dir="ltr">{stripBidiMarks(compactFmt.format(sumOfCyclePeaks(persistedUsage.cycles)))}</span>
         </span>
       {/if}
     {/if}

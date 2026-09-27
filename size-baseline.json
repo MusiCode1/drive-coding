@@ -607,8 +607,8 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/layout/SessionBudgetPopover.svelte": {
-      "metric": 64,
-      "impurity": 3,
+      "metric": 89,
+      "impurity": 4,
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/layout/SessionOptionsPanel.svelte": {
@@ -637,7 +637,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/settings/SettingsScreen.svelte": {
-      "metric": 199,
+      "metric": 200,
       "impurity": 6,
       "class": "mixed"
     },
