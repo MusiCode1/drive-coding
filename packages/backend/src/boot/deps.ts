@@ -26,6 +26,7 @@ import { createSessionHostRegistryOpts } from "../server-session-host-opts.js"
 import { type AgentEventBus, createAgentEventBus } from "../session-host/agent-events.js"
 import { createAndRegisterSessionHostHttp } from "../session-host/http/index.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
+import { createTokenUsageStore, type TokenUsageStore } from "../usage/token-usage-store.js"
 import { createUsageStore, type UsageStore } from "../usage/usage-store.js"
 import { wireRecorderDir } from "./config.js"
 
@@ -49,6 +50,7 @@ export type BootDeps = {
   agentEventBus: AgentEventBus
   orchestrator: AgentOrchestrator
   usageStore: UsageStore
+  tokenUsageStore: TokenUsageStore
   memoryGuard: MemoryGuard
 }
 
@@ -93,6 +95,7 @@ export function createDeps(
   orchestratorRef.current = orchestrator
 
   const usageStore = createUsageStore(ensureStateSubdir("usage"))
+  const tokenUsageStore = createTokenUsageStore(ensureStateSubdir("token-usage"))
   const memoryGuard = createMemoryGuard({
     thresholdBytes: (config.rssBudgetMb ?? configDefault("rssBudgetMb")) * 1024 * 1024,
   })
@@ -108,6 +111,7 @@ export function createDeps(
     },
     { name: "stopWatching", dispose: () => stopWatching() },
     { name: "usageStore", dispose: () => usageStore.flushUsageOnShutdown() },
+    { name: "tokenUsageStore", dispose: () => tokenUsageStore.flushOnShutdown() },
     { name: "agentsStore", dispose: () => registry.flush() },
   ]
 
@@ -125,6 +129,7 @@ export function createDeps(
     agentEventBus,
     orchestrator,
     usageStore,
+    tokenUsageStore,
     memoryGuard,
   }
 
