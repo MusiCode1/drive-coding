@@ -13,6 +13,7 @@
  */
 import type { QuotaWindow } from "@drive-coding/provider/extensions"
 import { getI18n, getSession } from "$lib/context"
+import { formatContextUsageCost } from "$lib/util/context-usage-cost"
 import { formatQuotaPeriod, formatTimeUntil } from "$lib/util/formatting"
 
 const session = getSession()
@@ -48,11 +49,7 @@ const compactTokens = $derived.by(() => {
 const costLabel = $derived.by(() => {
   const cost = session.contextUsage?.cost
   if (cost == null) return null
-  const formatted = new Intl.NumberFormat(i18n.locale, {
-    style: "currency",
-    currency: cost.currency,
-  }).format(cost.amount)
-  return stripBidiMarks(formatted)
+  return stripBidiMarks(formatContextUsageCost(cost, i18n.locale))
 })
 
 // ─── quota section ────────────────────────────────────────────────────────

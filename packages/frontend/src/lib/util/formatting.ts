@@ -135,3 +135,20 @@ export function formatTimeUntil(epochMs: number, locale: string, now?: number): 
     return rtf.format(days, "day")
   }
 }
+
+/** Default when ACP omits currency (numeric-only cost from reduce normalization). */
+const DEFAULT_CONTEXT_USAGE_CURRENCY = "USD"
+
+/**
+ * Formats session context `usage_update` cost for display (SessionBudgetPopover).
+ * slice token-usage-persistence · C1 — must not throw when `currency` is absent.
+ */
+export function formatContextUsageCost(
+  cost: { amount: number; currency?: string },
+  locale: string,
+): string {
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: cost.currency ?? DEFAULT_CONTEXT_USAGE_CURRENCY,
+  }).format(cost.amount)
+}

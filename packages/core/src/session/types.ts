@@ -70,7 +70,8 @@ export type SessionModes = {
 export type SessionUsage = {
   used: number
   size: number
-  cost?: number
+  /** ACP wire uses `{ amount, currency? }`; number accepted at reduce boundary only. */
+  cost?: { amount: number; currency?: string }
 }
 
 // ─── Roles ───

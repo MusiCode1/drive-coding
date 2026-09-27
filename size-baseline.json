@@ -607,7 +607,7 @@
       "class": "mixed"
     },
     "packages/frontend/src/lib/components/layout/SessionBudgetPopover.svelte": {
-      "metric": 67,
+      "metric": 64,
       "impurity": 3,
       "class": "mixed"
     },
