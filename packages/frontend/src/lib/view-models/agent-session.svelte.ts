@@ -3275,7 +3275,7 @@ export class AgentSession {
 
     // ─── slice session-budget-meter Commit 1: usage_update (ACP תקני) ───────
     // לא נושא content.text — חובה לטפל בו לפני ה-gate `if (!text) return`.
-    // cost אופציונלי: אם ה-update החדש משמיט אותו, שומר את הקודם (anti-flicker, brief §4).
+    // cost אופציונלי + anti-flicker WS (נרמול object/number ב-core reduce.ts)
     if (update.sessionUpdate === "usage_update") {
       const u = update as unknown as UsageUpdate
       this.contextUsage = {

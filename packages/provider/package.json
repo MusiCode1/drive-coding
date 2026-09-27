@@ -19,10 +19,10 @@
     "test:live": "RUN_LIVE=1 vitest run --dir src/providers/claude/live"
   },
   "dependencies": {
-    "@agentclientprotocol/claude-agent-acp": "^0.58.1",
+    "@agentclientprotocol/claude-agent-acp": "^0.79.0",
     "@musicode1/codex-acp": "^1.0.2",
     "@agentclientprotocol/sdk": "^1.2.1",
-    "@anthropic-ai/claude-agent-sdk": "^0.3.207",
+    "@anthropic-ai/claude-agent-sdk": "0.3.274",
     "@drive-coding/acp-wire": "workspace:*",
     "@drive-coding/core": "workspace:*",
     "arktype": "^2.0.0"

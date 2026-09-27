@@ -25,6 +25,23 @@ export type PatchesBroadcaster = {
   subscribe(sinceVersion?: number): ReadableStream<Patch>
 
   /**
+   * oldestBufferedVersion — ה-version הנמוך ביותר ששמור בחוצץ;
+   * ‏`undefined` כשהחוצץ ריק.
+   *
+   * ─── slice history-cursor C2 ───
+   *
+   * 🔴 **זהו שומר, לא אופטימיזציה.** ‏`subscribe(sinceVersion)` מסנן את החוצץ
+   * ומחזיר את מה שיש — קורא שמבקש `sinceVersion` **ישן מכל מה שבחוצץ** מקבל
+   * פריימים שמתחילים אחרי הפער, **בלי שום סימן שמשהו חסר**: אין ערך-החזרה
+   * ואין שגיאה. היום זה סמוי (הקורא היחיד מעביר `snapshot.version`, שתמיד
+   * מכוסה), ולכן זו פצצה מתוזמנת לקורא הבא ולא באג חי.
+   *
+   * החשיפה כאן היא מה שמאפשר ל-`events.ts` לאמת את ההנחה המתועדת
+   * "‏no await between snapshot and subscribe" במקום להניח אותה.
+   */
+  oldestBufferedVersion(): number | undefined
+
+  /**
    * unsubscribe — removes the client stream from the fan-out.
    * The stream's controller is closed so the reader sees done=true.
    * No-op if the stream is not currently subscribed.
@@ -146,6 +163,10 @@ export function createPatchesBroadcaster(source: ReadableStream<Patch>): Patches
       }
 
       return stream
+    },
+
+    oldestBufferedVersion(): number | undefined {
+      return buffer[0]?.version
     },
 
     unsubscribe(stream: ReadableStream<Patch>): void {

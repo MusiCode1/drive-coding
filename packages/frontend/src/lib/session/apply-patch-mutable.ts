@@ -47,11 +47,15 @@ function sessionMsgToBubble(msg: SessionMessage, mappers: PatchMappers): Bubble 
   }
   // user / thought / assistant
   const kind = msg.role === "assistant" ? "message" : msg.role === "thought" ? "thought" : "user"
+  // createdAt מוזן מ-timestamp הנייטיב (SDK ≥0.3.211, מקורלט ב-reduce). בלעדיו
+  // נשאר 0 — מה שגרם לתווית להציג epoch (02:00 בשעון ישראל) בנתיב ה-patches.
+  const parsedTs = msg.timestamp != null ? Date.parse(msg.timestamp) : Number.NaN
+  const createdAt = Number.isNaN(parsedTs) ? 0 : parsedTs
   return {
     id: msg.id,
     kind,
     messageId: msg.messageId,
-    createdAt: 0,
+    createdAt,
     segments: msg.segments,
     ...(kind === "user" &&
       "attachments" in msg &&
