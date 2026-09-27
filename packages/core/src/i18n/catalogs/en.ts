@@ -544,5 +544,4 @@ export const en: Catalog = {
   "usage.clis.col.compactions": "Compactions",
   "usage.clis.col.cost": "Cost",
   "usage.clis.col.activity": "Activity",
-  "header.usageLink": "Usage",
 }

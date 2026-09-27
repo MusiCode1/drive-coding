@@ -547,7 +547,6 @@ export type MessageKey =
   | "usage.clis.col.compactions"
   | "usage.clis.col.cost"
   | "usage.clis.col.activity"
-  | "header.usageLink"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

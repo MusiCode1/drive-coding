@@ -536,5 +536,4 @@ export const he: Catalog = {
   "usage.clis.col.compactions": "דחיסות",
   "usage.clis.col.cost": "עלות",
   "usage.clis.col.activity": "פעילות",
-  "header.usageLink": "צריכה",
 }
