@@ -6,7 +6,7 @@ describe("HTTP agent docs", () => {
   const app = new Hono()
   registerDocsHttp(app)
 
-  it("GET /api/docs returns catalog with 17 entries", async () => {
+  it("GET /api/docs returns catalog with 18 entries", async () => {
     const res = await app.request("/api/docs")
     expect(res.status).toBe(200)
     const body = (await res.json()) as {
@@ -15,7 +15,7 @@ describe("HTTP agent docs", () => {
       docs: unknown[]
     }
     expect(body.docsVersion).toBe("1.3.0")
-    expect(body.docs).toHaveLength(17)
+    expect(body.docs).toHaveLength(18)
     expect(body.routeCount).toBeGreaterThanOrEqual(39)
   })
 

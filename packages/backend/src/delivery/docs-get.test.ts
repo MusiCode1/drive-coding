@@ -41,9 +41,9 @@ describe("docs_get input modes", () => {
     expect("isError" in result && result.isError).toBe(true)
   })
 
-  it("empty input → full index (17 docs)", () => {
+  it("empty input → full index (18 docs)", () => {
     const result = docsGetFromInput({})
     const body = JSON.parse(result.content[0]!.text) as { docs: unknown[] }
-    expect(body.docs).toHaveLength(17)
+    expect(body.docs).toHaveLength(18)
   })
 })

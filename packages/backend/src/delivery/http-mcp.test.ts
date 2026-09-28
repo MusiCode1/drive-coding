@@ -245,13 +245,13 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     expect(resources.map((r) => r.uri)).toContain("drive-coding://guide")
   })
 
-  it("lists 20 MCP resources including agent docs catalog", async () => {
+  it("lists 21 MCP resources including agent docs catalog", async () => {
     const { app } = makeApp()
     const client = await connectClient(app)
     const { resources } = await client.listResources()
     await client.close()
     const uris = resources.map((r) => r.uri)
-    expect(resources).toHaveLength(20)
+    expect(resources).toHaveLength(21)
     expect(uris).toContain("drive-coding://docs/index")
     expect(uris).toContain("drive-coding://docs/render-contract")
   })

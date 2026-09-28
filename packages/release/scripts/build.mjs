@@ -149,12 +149,15 @@ if (!existsSync(docsIndexPath)) {
   throw new Error("[build] docs-agents/index.json missing after copy")
 }
 const docsIndex = JSON.parse(readFileSync(docsIndexPath, "utf8"))
-if (!Array.isArray(docsIndex.docs) || docsIndex.docs.length !== 17) {
+const expectedDocCount = readdirSync(releaseDocsAgents).filter(
+  (name) => name.endsWith(".md") && name !== "index.md",
+).length
+if (!Array.isArray(docsIndex.docs) || docsIndex.docs.length !== expectedDocCount) {
   throw new Error(
-    `[build] docs-agents/index.json expected 17 docs, got ${docsIndex.docs?.length ?? "?"}`,
+    `[build] docs-agents/index.json expected ${expectedDocCount} docs, got ${docsIndex.docs?.length ?? "?"}`,
   )
 }
-console.log("[build] Step 3b: docs-agents OK — 17 documents")
+console.log(`[build] Step 3b: docs-agents OK — ${expectedDocCount} documents`)
 
 // Step 4: Bundle backend bin with `bun build --target=node` (core + provider-contract inline).
 // --target=node → a Node-runnable bundle so `npx drive-coding` works, not only `bunx`.
