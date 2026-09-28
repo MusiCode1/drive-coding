@@ -64,8 +64,7 @@ describe("openapi and RPC doc coupling", () => {
     const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8"))
     const reply =
       spec.paths["/api/agents/:id/reply"]?.post?.requestBody?.content?.["application/json"]
-    const rpc =
-      spec.paths["/api/agents/:id/rpc"]?.post?.requestBody?.content?.["application/json"]
+    const rpc = spec.paths["/api/agents/:id/rpc"]?.post?.requestBody?.content?.["application/json"]
     expect(reply?.["x-drive-coding-contract"]).toBe("none")
     expect(rpc?.["x-drive-coding-contract"]).toBe("none")
     expect(spec.paths["/api/agents/:id/reply"]?.post?.description).toContain(
