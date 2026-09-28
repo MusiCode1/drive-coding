@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // lint-agent-docs.mjs — gate over docs/agents/.
 //
-// Six checks, each able to fail on its own:
+// Nine checks, each able to fail on its own:
 //   1. every *.md has parsable front matter with the required keys
 //   2. read_when is a list of at least two natural-language triggers
 //   3. every tag is declared in docs/agents/tags.json
@@ -9,6 +9,9 @@
 //   5. English only — no non-Latin script anywhere in the file
 //   6. DOCS_VERSION is the single source of truth — index.json and every
 //      doc's docs_version must equal it. Without this the claim is a promise.
+//   7. routes: shape + must exist in the live HTTP surface
+//   8. mcp_tools: subset of McpToolName union
+//   9. front-matter `id` is unique across docs/agents/*.md
 //
 // Exit 0 = clean, 1 = violations. Zero dependencies (pure node).
 
@@ -194,6 +197,7 @@ for (const name of files) {
       fail(doc.rel, `mcp_tools item ${JSON.stringify(tool)} is not a known MCP tool name`)
   }
 
+  // 9 — duplicate id (checked after loop via map).
   entries.push({
     id: fm.id,
     title: fm.title,
@@ -208,6 +212,14 @@ for (const name of files) {
     path: doc.rel,
     headings: headings(doc.front.bodyText),
   })
+}
+
+// 9 — unique front-matter id.
+const idToPaths = new Map()
+for (const e of entries) {
+  const prev = idToPaths.get(e.id)
+  if (prev) fail(e.path, `duplicate front-matter id \`${e.id}\` (also in ${prev})`)
+  else idToPaths.set(e.id, e.path)
 }
 
 // DOCS_VERSION owns the version. Read it here so check 6 can hold the copies together.
