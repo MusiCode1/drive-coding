@@ -84,7 +84,6 @@ import {
   type ApplyConfigOptionDeps,
   type ApplyConfigToClientDeps,
   applyConfigOption as applyConfigOptionExtracted,
-  applyConfigToClient,
 } from "$lib/view-models/agent-session-apply-config"
 import {
   appendAgentPlaceholder,
@@ -2535,14 +2534,6 @@ export class AgentSession {
    */
   applyConfigOption = async (configId: string, value: string | boolean): Promise<void> => {
     await applyConfigOptionExtracted(this.#applyConfigOptionDeps(), configId, value)
-  }
-
-  /**
-   * הגוף הפנימי של apply. מחזיר true בכל מסלול-הצלחה, false אם configId לא נמצא.
-   * מניח ש-guard (status, #client, #sessionId) כבר עבר בקורא.
-   */
-  #applyConfigToClient = async (configId: string, value: string | boolean): Promise<boolean> => {
-    return applyConfigToClient(this.#applyConfigToClientDeps(), configId, value)
   }
 
   // ─── slice FEAT-thinking-live: setThinkingTokens ─── (תוספתי)

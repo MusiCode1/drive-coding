@@ -17,11 +17,10 @@ export function registerSessionEndListener(
   d: SessionEndScopeDeps,
   cb: (reason: SessionEndReason) => void,
 ): () => void {
-  const listeners = d.sessionEndListeners()
-  listeners.push(cb)
+  d.sessionEndListeners().push(cb)
   return () => {
-    const i = listeners.indexOf(cb)
-    if (i >= 0) listeners.splice(i, 1)
+    const i = d.sessionEndListeners().indexOf(cb)
+    if (i >= 0) d.sessionEndListeners().splice(i, 1)
   }
 }
 

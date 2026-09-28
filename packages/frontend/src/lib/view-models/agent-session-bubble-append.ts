@@ -6,6 +6,8 @@ type BubbleAppendVm = {
 }
 
 /**
+ * §11: מצרף image-attachment לבועת-user — קיבוץ לפי messageId כמו #appendChunk.
+ *
  * הערה על reactivity: #appendChunk משתמש ב-segments.push() — עובד כי segments[]
  * הוא deep $state proxy ב-Svelte 5. attachments מתחיל undefined (optional ב-UserBubble),
  * לכן .push() על undefined יקרוס. לכן כאן **השמה** (`[..., a]`) — פותרת גם את
