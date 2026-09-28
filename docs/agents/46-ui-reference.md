@@ -31,13 +31,23 @@ checking whether agents are already running on the machine.
 **What you see**
 
 - Title **Drive Coding** and subtitle **Connect to a CLI agent**.
-- **Active processes** — heading with a **Refresh** control (↺). A **Machine load**
-  status line summarizes host memory and CPU (wording varies; treat as live telemetry,
-  not a promise of exact values). Either a list of running agent rows or **No active
-  processes**.
+- **Active processes** — heading with a **Refresh** control (↺), carrying a count when
+  processes exist. A **Machine load** status line summarizes host memory and CPU (wording
+  varies; treat as live telemetry, not a promise of exact values). Either **No active
+  processes**, or one row per running agent. **Each row carries:**
+  - a state tag (observed **Disconnected**), the CLI name, the folder, and **Last activity**;
+  - **Reconnect** — **this is how a user returns to an agent that is already running**;
+  - **Kill** — stops that process;
+  - a shortened session id and a `pid:` label.
+
+  Both buttons appear at desktop **and** mobile width. They exist only while a process is
+  listed, so a machine with nothing running shows neither.
 - **Recent folders** — collapsible list ( **Refresh**, **Collapse** / expand ). Each row
   shows the CLI display name, a short folder label, a relative time, and actions such as
-  **Remove from list**. Tapping a row reconnects that folder/session context.
+  **Remove from list**. 🛑 **Tapping a row starts a new session** for that CLI and folder —
+  it does **not** rejoin the session that ran there before (measured: a second agent is
+  spawned, with a different session id). To rejoin a live agent, use **Reconnect** under
+  **Active processes** above.
 - **Interface language** — opens a picker (observed value: **English**).
 - **CLI** — picker with **Refresh**; shows the selected provider (observed: **OpenCode**).
 - **Working directory** — text field (shows a path placeholder until filled), plus
@@ -54,7 +64,9 @@ the current session alongside message history.
 
 **Header (banner)**
 
-- **Menu** on wide layouts (opens navigation affordances tied to the shell).
+- **Menu** on wide layouts. Despite the name it is **not** a navigation menu: it **toggles
+  the session side panel**, and the first press **hides** it. Press it again to bring the
+  panel back.
 - App title **drive-coding**.
 - While a session runs: a short working-directory label beside **Connected**, and
   **Session budget** (shows a percentage while context is tracked).
@@ -81,7 +93,9 @@ the current session alongside message history.
 - **Title** text field.
 - **Fields** (observed empty: **No fields**).
 - Session lifecycle: **Shut the process down completely**, **Leave — keep running**,
-  **Unmute audio**, **Settings**.
+  **Settings**.
+- **Audio**: **Unmute audio** — the mute/unmute control for spoken output lives here, in
+  the side panel, not in Settings.
 - **Display** toggles: **Clean reading**, **Show thoughts by default**, **Show tools by
   default**.
 - **Running on** — CLI name (observed: **OpenCode**).
@@ -110,11 +124,11 @@ or inspecting token/TTS status for the backend.
 - **Theme** (observed **🔥 Ember**).
 - **Voice & Speech**
   - **TTS provider** (observed **ElevenLabs**).
-  - **TTS Voice** / **Voice** (may show **Loading voices…** until voices load; a specific
-    voice id may appear once loaded).
+  - **TTS Voice** / **Voice** (may show **Loading voices…** until voices load; once loaded
+    it shows a human-readable voice name, e.g. a name plus a short style description).
   - Switches: **Speak model thoughts**, **Narrate tool actions**, **Translate thoughts to
     Hebrew** (observed on). **Car mode (Play on Bluetooth = record)** may appear **disabled**.
-- **TTS Status** — action button (observed **Loading…** while fetching), **ElevenLabs quota**,
+- **TTS Status** — a **Refresh** button (it reads **Loading…** while fetching), **ElevenLabs quota**,
   **Usage (total since startup)** with **ElevenLabs** / **Gemini** rows (may show **—** while
   loading).
 - **Context token usage** — **Refresh**, per-session rows (truncated ids with compaction
@@ -133,16 +147,36 @@ or inspecting token/TTS status for the backend.
 **Side panel on `/settings` and `/usage`:** the same session sidebar chrome as Chat may
 appear at desktop width ( **Collapse panel**, session list stub when no chat session is
 focused — observed **No sessions** and disabled **＋ New session** ). Mobile uses **Drag to
-open** for that panel.
+open** for that panel. ⚠️ While that panel is closed the session list is **not rendered at
+all**, so a mobile screenshot can read **No sessions** even when sessions exist — open the
+panel before concluding the list is empty.
+
+The **banner** described under Chat (**Menu**, app title, connection state) is present on
+`/settings` and `/usage` too.
 
 ## Usage (`/usage`)
 
 **When the user is here:** comparing token/context usage and TTS totals **by CLI**, linked
 from Settings.
 
-- Heading **Usage by CLI** with a **Loading…** refresh/status control until data arrives.
+- Heading **Usage by CLI** with a **Refresh** control (it reads **Loading…** while data is
+  being fetched).
 - **TTS Status** block (same shape as Settings: quota + **Usage (total since startup)**).
-- **Context usage by CLI** — may read **Loading…** until breakdown rows populate.
+- **Context usage by CLI** — a table with one row per CLI (observed **claude**, **codex**,
+  **cursor**, **opencode**) and these columns:
+
+  | Column | What it answers |
+  |---|---|
+  | **CLI** | which provider the row is about |
+  | **Projects** · **Sessions** · **Turns** | how much has been run with it |
+  | **Peak held** | the largest context held at one time |
+  | **Sum held before compaction** | context accumulated before compactions |
+  | **Compactions** | how many times context was compacted |
+  | **Cost** | spend attributed to that CLI |
+  | **Activity** | when it was last used |
+
+  A cell may read **Provider does not report usage** — that is the provider withholding
+  numbers, not a failure of this screen. The table renders identically at mobile width.
 
 Same session side panel / **Drag to open** behavior as Settings.
 
@@ -157,7 +191,10 @@ Same session side panel / **Drag to open** behavior as Settings.
 | Why is speech off or which voice? | Settings | **Voice & Speech** → **TTS provider**, **TTS Voice**, related switches |
 | Where is token / context usage? | Settings | **Context token usage**; detail by CLI → **View usage by CLI** (**Usage** screen) |
 | How do I type instead of voice? | Chat | Footer → **Type**, then **Type a prompt…** |
-| How do I start from a recent project? | Connect | **Recent folders** row for that CLI + folder |
+| How do I mute / unmute speech? | Chat | Side panel → **Unmute audio** (per session; the TTS switches in Settings are separate) |
+| How do I get back to an agent that is still running? | Connect | **Active processes** → **Reconnect** on that row (**not** **Recent folders**, which starts a new session) |
+| How do I stop a stuck process? | Connect | **Active processes** → **Kill** on that row |
+| How do I start from a recent project? | Connect | **Recent folders** row — note this **starts a new session** for that CLI + folder |
 | How do I pick CLI or folder for new session? | Connect | **CLI**, **Working directory**, **Connect** |
 
 ## What this page does not cover
