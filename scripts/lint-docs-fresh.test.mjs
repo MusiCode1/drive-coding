@@ -153,4 +153,69 @@ describe("lint-docs-fresh on slice worktree", () => {
     expect(r.code).toBe(0)
     expect(r.stdout).toContain("docs-freshness")
   })
+
+  it("wide range skips four known-undocumented surfaces with notice", () => {
+    if (!existsSync(path.join(REPO, "docs-for-llm"))) return
+    const { fails, undocumentedSkipped } = runFreshnessChecks(REPO, "092439d8..HEAD")
+    expect(fails).toHaveLength(0)
+    expect(undocumentedSkipped).toBe(4)
+    const r = runCli(REPO, ["--range", "092439d8..HEAD"])
+    expect(r.code).toBe(0)
+    expect(r.stdout).toContain("4 known-undocumented surface(s) skipped")
+  })
+})
+
+describe("KNOWN_UNDOCUMENTED is not a silence switch", () => {
+  beforeEach(() => {
+    seedDocsTree(lab)
+    mkdirSync(path.join(lab, "packages/backend/src/delivery"), { recursive: true })
+    writeFileSync(
+      path.join(lab, "packages/backend/src/delivery/routes-lab.ts"),
+      `import { Hono } from "hono"
+const app = new Hono()
+app.get("/api/zzz", (c) => c.text("z"))
+export { app }
+`,
+      "utf8",
+    )
+    mkdirSync(path.join(lab, "packages/core/src/schemas"), { recursive: true })
+    writeFileSync(
+      path.join(lab, "packages/core/src/schemas/mcp-docs.ts"),
+      `export type McpToolName = "session_list"
+`,
+      "utf8",
+    )
+    mkdirSync(path.join(lab, "packages/core/src/config"), { recursive: true })
+    writeFileSync(
+      path.join(lab, "packages/core/src/config/specs.ts"),
+      "export const CONFIG_SPECS = []\n",
+      "utf8",
+    )
+    execFileSync("git", ["init"], { cwd: lab })
+    execFileSync("git", ["config", "user.email", "t@example.com"], { cwd: lab })
+    execFileSync("git", ["config", "user.name", "t"], { cwd: lab })
+    execFileSync("git", ["add", "."], { cwd: lab })
+    execFileSync("git", ["commit", "-m", "base"], { cwd: lab })
+  })
+
+  it("14 — new route outside KNOWN_UNDOCUMENTED still fails", () => {
+    writeFileSync(
+      path.join(lab, "packages/backend/src/delivery/routes-lab.ts"),
+      `import { Hono } from "hono"
+const app = new Hono()
+app.get("/api/zzz", (c) => c.text("z"))
+app.get("/api/new-route", (c) => c.text("n"))
+export { app }
+`,
+      "utf8",
+    )
+    execFileSync("git", ["add", "."], { cwd: lab })
+    execFileSync("git", ["commit", "-m", "route"], { cwd: lab })
+    const base = execFileSync("git", ["rev-parse", "HEAD~1"], { cwd: lab, encoding: "utf8" }).trim()
+    const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: lab, encoding: "utf8" }).trim()
+    const { fails } = runFreshnessChecks(lab, `${base}..${head}`)
+    expect(
+      fails.some((f) => f.includes("GET /api/new-route") || f.includes("get /api/new-route")),
+    ).toBe(true)
+  })
 })

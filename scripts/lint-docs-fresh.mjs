@@ -21,6 +21,24 @@ function matchRouteLines(line) {
   return [...line.matchAll(new RegExp(ROUTE_LINE_RE.source, "g"))]
 }
 const ROUTE_FM = /^(GET|POST|PUT|PATCH|DELETE) (\S+)$/
+
+/** Surfaces that exist in code but are not yet described in any docs/agents/*.md.
+ *  Measured 2026-09-29 (stage 5 shipped them; documenting them is tracked
+ *  separately and is out of scope for agent-docs-freshness).
+ *  🛑 Removing an entry here is the point — do not add one to silence a finding. */
+export const KNOWN_UNDOCUMENTED = {
+  routes: ["GET /api/docs", "GET /api/docs/:id", "GET /api/openapi.json"],
+  mcpTools: ["docs_get"],
+}
+
+const KNOWN_UNDOCUMENTED_ROUTE_KEYS = new Set(
+  KNOWN_UNDOCUMENTED.routes.map((r) => {
+    const m = r.match(ROUTE_FM)
+    if (!m) throw new Error(`invalid KNOWN_UNDOCUMENTED route: ${r}`)
+    return `${m[1].toLowerCase()} ${m[2]}`
+  }),
+)
+const KNOWN_UNDOCUMENTED_MCP = new Set(KNOWN_UNDOCUMENTED.mcpTools)
 const RENDER_PATHS = [
   "packages/core/src/ui/markdown.ts",
   "packages/frontend/src/lib/util/markdown-image-src.ts",
@@ -29,23 +47,6 @@ const CONFIG_SPECS_PATH = "packages/core/src/config/specs.ts"
 const MCP_DOCS_PATH = "packages/core/src/schemas/mcp-docs.ts"
 const CORE_DOCS_PATH = "packages/core/src/docs/index.ts"
 const KNOWN_ISSUES_PATH = "docs/agents/99-known-issues.md"
-/** integration/run-agent-docs-serve tip — map checks clamp here (slice base). */
-const AGENT_DOCS_INTEGRATION_BASE = "40aca861580f0b95d151579b2805d46a160b3502"
-
-function mapCheckRange(root, base, head) {
-  try {
-    execFileSync(
-      "git",
-      ["-C", root, "merge-base", "--is-ancestor", base, AGENT_DOCS_INTEGRATION_BASE],
-      {
-        stdio: "ignore",
-      },
-    )
-    return `${AGENT_DOCS_INTEGRATION_BASE}..${head}`
-  } catch {
-    return `${base}..${head}`
-  }
-}
 
 function git(root, args) {
   return execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trimEnd()
@@ -297,11 +298,11 @@ function idsInKnownIssues(root) {
 
 export function runFreshnessChecks(root, rangeSpec) {
   const fails = []
+  let undocumentedSkipped = 0
   const range = resolveRange(root, rangeSpec)
-  if (!range) return { fails: [], skipped: true }
+  if (!range) return { fails: [], skipped: true, undocumentedSkipped: 0 }
 
   const rangeStr = `${range.base}..${range.head}`
-  const mapRangeStr = mapCheckRange(root, range.base, range.head)
   const headVersion = docsVersionFromText(fs.readFileSync(path.join(root, CORE_DOCS_PATH), "utf8"))
   const baseVersion = docsVersionFromText(gitShow(root, range.base, CORE_DOCS_PATH))
 
@@ -319,7 +320,7 @@ export function runFreshnessChecks(root, rangeSpec) {
   }
 
   if (!fs.existsSync(path.join(root, "docs/agents/openapi.json"))) {
-    return { fails, skipped: false, range: rangeStr }
+    return { fails, skipped: false, range: rangeStr, undocumentedSkipped }
   }
   const { version: openapiVersion, keys: openapiSet } = openapiKeys(root)
   const codeRoutes = documentableRouteKeys(root)
@@ -335,11 +336,15 @@ export function runFreshnessChecks(root, rangeSpec) {
     )
   }
 
-  const routeDelta = symmetricRouteDelta(root, mapRangeStr)
+  const routeDelta = symmetricRouteDelta(root, rangeStr)
   const routeMap = routeOwners(root)
   for (const key of routeDelta) {
     if (!openapiSet.has(key)) {
       fails.push(`docs/agents/openapi.json: route registration changed but openapi missing ${key}`)
+    }
+    if (KNOWN_UNDOCUMENTED_ROUTE_KEYS.has(key)) {
+      undocumentedSkipped++
+      continue
     }
     if (!routeMap.has(key)) {
       const [method, routePath] = key.split(" ")
@@ -351,12 +356,15 @@ export function runFreshnessChecks(root, rangeSpec) {
 
   if (fs.existsSync(path.join(root, MCP_DOCS_PATH))) {
     const headMcp = mcpToolsFromText(fs.readFileSync(path.join(root, MCP_DOCS_PATH), "utf8"))
-    const mapBase = mapRangeStr.split("..")[0]
-    const baseMcpText = gitShow(root, mapBase, MCP_DOCS_PATH)
+    const baseMcpText = gitShow(root, range.base, MCP_DOCS_PATH)
     const baseMcp = baseMcpText ? mcpToolsFromText(baseMcpText) : []
     const newMcp = headMcp.filter((t) => !baseMcp.includes(t))
     const mcpMap = mcpToolOwners(root)
     for (const tool of newMcp) {
+      if (KNOWN_UNDOCUMENTED_MCP.has(tool)) {
+        undocumentedSkipped++
+        continue
+      }
       if (!mcpMap.has(tool)) {
         fails.push(
           `no document declares MCP tool ${JSON.stringify(tool)} in its front matter \`mcp_tools:\``,
@@ -365,14 +373,14 @@ export function runFreshnessChecks(root, rangeSpec) {
     }
   }
 
-  if (diffTouches(root, mapRangeStr, RENDER_PATHS)) {
+  if (diffTouches(root, rangeStr, RENDER_PATHS)) {
     const owner = path.join("docs/agents/45-render-contract.md")
     if (!fs.existsSync(path.join(root, owner))) {
       fails.push(`${owner}: render contract files changed in range but document missing`)
     }
   }
 
-  for (const pagePath of fePageAddsDeletes(root, mapRangeStr)) {
+  for (const pagePath of fePageAddsDeletes(root, rangeStr)) {
     const uiDoc = "docs/agents/46-ui-reference.md"
     if (!fs.existsSync(path.join(root, uiDoc))) {
       fails.push(`${uiDoc}: new or removed FE page ${pagePath} but ui-reference missing`)
@@ -381,8 +389,7 @@ export function runFreshnessChecks(root, rangeSpec) {
 
   if (fs.existsSync(path.join(root, CONFIG_SPECS_PATH))) {
     const headCfg = configKeysFromText(fs.readFileSync(path.join(root, CONFIG_SPECS_PATH), "utf8"))
-    const mapBase = mapRangeStr.split("..")[0]
-    const baseCfgText = gitShow(root, mapBase, CONFIG_SPECS_PATH)
+    const baseCfgText = gitShow(root, range.base, CONFIG_SPECS_PATH)
     const baseCfg = baseCfgText ? configKeysFromText(baseCfgText) : []
     const newCfg = headCfg.filter((k) => !baseCfg.includes(k))
     if (newCfg.length > 0) {
@@ -418,7 +425,7 @@ export function runFreshnessChecks(root, rangeSpec) {
     }
   }
 
-  return { fails, skipped: false, range: rangeStr }
+  return { fails, skipped: false, range: rangeStr, undocumentedSkipped }
 }
 
 export function main() {
@@ -437,12 +444,15 @@ export function main() {
       process.exit(0)
     }
 
-    const { fails, skipped } = runFreshnessChecks(root, range)
+    const { fails, skipped, undocumentedSkipped } = runFreshnessChecks(root, range)
     if (skipped) {
       process.exit(0)
     }
     if (fails.length === 0) {
       console.log("✅ docs-freshness: 9 checks, nothing stale")
+      if (undocumentedSkipped > 0) {
+        console.log(`${undocumentedSkipped} known-undocumented surface(s) skipped`)
+      }
       process.exit(0)
     }
     console.error("🔴 docs-freshness:")
