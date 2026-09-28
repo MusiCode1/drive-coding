@@ -95,6 +95,57 @@ and all three had been silently useless for days.
 five of its nine cases assert `exit 0 + empty stdout` — no agent id, backend down,
 non-2xx, wrong content-type, empty body. The happy path was never the risk.
 
+## 🔴 `agent-session.svelte.ts` — ‏מהקובץ הזה **רק מסירים**
+
+```json
+// size-baseline.json
+"packages/frontend/src/lib/view-models/agent-session.svelte.ts":
+  { "metric": 3675, "impurity": 92, "class": "scattered" }
+// size-budgets.json — view-models budget: 400
+```
+
+**3,675 שורות מול תקציב 400 — פי 9.2**, עם `class: "scattered"` (‏הסיווג החמור
+בסכימה). ‏הקובץ הבא אחריו ב-FE הוא 1,351 שורות.
+
+‏🟢 **אכיף היום**: `.githooks/pre-commit` מריץ `node scripts/lint-file-size.mjs`,
+‏שהוא ratchet מונוטוני — ‏גדילה של קובץ-בסיס **מפילה את הקומיט**, ו-
+‏`--update-baseline` *"refuses to raise any number"*.
+‏⚠️ ‏**אין CI** — ‏`git commit --no-verify` עוקף. ‏האכיפה תלויה גם במשמעת.
+
+### מס-החילוץ — ‏הכלל
+
+**סלייס שנוגע בקובץ מחלץ ממנו חתיכה לוגית מאותו תחום שהוא עובד עליו.**
+‏מי שנוגע בלוגיקת-איפוס מחלץ לוגיקת-איפוס; ‏מי שנוגע בפריימים מחלץ טיפול-פריימים.
+‏החילוץ נעשה במקום שבו ממילא יש הקשר מלא — ‏וזה מה שהופך אותו לזול ולבטוח.
+
+**מדד-הבחירה הוא צימוד, לא גודל:**
+
+```bash
+# כמה שדות פרטיים הבלוק נוגע בהם
+sed -n '<start>,<end>p' <file> | grep -oE 'this\.#[a-zA-Z][a-zA-Z0-9_]*' | sort -u | wc -l
+```
+
+‏≤5 ⇒ ‏מועמד טוב. ‏20+ ⇒ ‏סלייס נפרד, לא מס-אגב.
+
+‏נמדד 28/09: ‏`#resetTurnTracking` — ‏106 שורות, ‏**2** ‏שדות פרטיים (‏מועמד).
+‏`#cleanup` — ‏82 שורות, ‏**21** ‏שדות (‏לא לגעת אגב).
+
+### מועמדים ידועים
+
+| חתיכה | שורות | צימוד |
+|---|---|---|
+| `#onSessionUpdate` (L3160) | 277 | לא נמדד |
+| `constructor` (L229) | 263 | לא נמדד |
+| `#warmReconnect` (L1292) | 147 | לא נמדד |
+| `#resetTurnTracking` (L501) | 106 | **2** |
+| `#cleanup` (L2939) | 82 | **21** |
+
+‏חמשתן = ‏**875 שורות**, ‏כרבע מהקובץ. ‏בקצב של אחת לסלייס זה נפרע בלי אף
+‏סלייס-ריפקטור ייעודי.
+
+**הכרעת-משתמש 28/09:** *"בכל פעם שניגע שם, נוציא חתיכה לוגית בהתאם למה
+שאנחנו מתעסקים איתו. ככה בסוף זה ייגמר."*
+
 ## Versioning — מספור גרסאות (טקס מיזוג)
 
 > ה-bump קורה **בכל מיזוג ל-dev** (לא בכל commit) — חלק מטקס-המיזוג של מרדכי, אחרי calev GO + אישור משתמשת.
