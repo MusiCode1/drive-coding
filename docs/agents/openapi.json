@@ -46,10 +46,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "systemInstruction",
-                  "actions"
-                ]
+                "required": ["systemInstruction", "actions"]
               },
               "x-drive-coding-contract": "none"
             }
@@ -670,10 +667,7 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "audioBase64",
-                  "mimeType"
-                ]
+                "required": ["audioBase64", "mimeType"]
               },
               "x-drive-coding-contract": "none"
             }
@@ -857,9 +851,7 @@
                       "type": "integer"
                     }
                   },
-                  "required": [
-                    "version"
-                  ]
+                  "required": ["version"]
                 }
               }
             }
@@ -947,9 +939,7 @@
                     "maximum": 60000
                   }
                 },
-                "required": [
-                  "method"
-                ],
+                "required": ["method"],
                 "additionalProperties": true
               },
               "x-drive-coding-contract": "none"
@@ -1116,12 +1106,7 @@
             "type": "string"
           },
           "permissionPolicy": {
-            "enum": [
-              "allow_always",
-              "allow_once",
-              "ask",
-              "reject_once"
-            ]
+            "enum": ["allow_always", "allow_once", "ask", "reject_once"]
           },
           "roleLabel": {
             "type": "string"
@@ -1137,10 +1122,7 @@
             ]
           }
         },
-        "required": [
-          "cliKind",
-          "cwd"
-        ]
+        "required": ["cliKind", "cwd"]
       },
       "PatchAgentInput": {
         "type": "object",
@@ -1211,9 +1193,7 @@
             "description": "When true, turn-ended prompts include a truncated preview of the target agent's last assistant message."
           }
         },
-        "required": [
-          "subscriberAgentId"
-        ]
+        "required": ["subscriberAgentId"]
       },
       "RpcPromptParams": {
         "type": "object",
@@ -1240,11 +1220,7 @@
                           "const": "audio"
                         }
                       },
-                      "required": [
-                        "data",
-                        "mimeType",
-                        "type"
-                      ]
+                      "required": ["data", "mimeType", "type"]
                     },
                     {
                       "type": "object",
@@ -1259,11 +1235,7 @@
                           "const": "image"
                         }
                       },
-                      "required": [
-                        "data",
-                        "mimeType",
-                        "type"
-                      ]
+                      "required": ["data", "mimeType", "type"]
                     },
                     {
                       "type": "object",
@@ -1278,11 +1250,7 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "name",
-                        "type",
-                        "uri"
-                      ]
+                      "required": ["name", "type", "uri"]
                     },
                     {
                       "type": "object",
@@ -1294,10 +1262,7 @@
                           "const": "resource"
                         }
                       },
-                      "required": [
-                        "resource",
-                        "type"
-                      ]
+                      "required": ["resource", "type"]
                     },
                     {
                       "type": "object",
@@ -1309,10 +1274,7 @@
                           "const": "text"
                         }
                       },
-                      "required": [
-                        "text",
-                        "type"
-                      ]
+                      "required": ["text", "type"]
                     }
                   ]
                 }
@@ -1327,10 +1289,7 @@
             "additionalProperties": {}
           }
         },
-        "required": [
-          "content",
-          "sessionId"
-        ]
+        "required": ["content", "sessionId"]
       },
       "RpcCancelParams": {
         "type": "object",
@@ -1339,9 +1298,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "sessionId"
-        ]
+        "required": ["sessionId"]
       },
       "RpcLoadSessionParams": {
         "type": "object",
@@ -1353,9 +1310,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "sessionId"
-        ]
+        "required": ["sessionId"]
       },
       "RpcNewSessionParams": {
         "type": "object",
@@ -1372,9 +1327,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "sessionId"
-        ]
+        "required": ["sessionId"]
       }
     }
   }

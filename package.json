@@ -23,7 +23,7 @@
     "lint:docs": "node scripts/lint-agent-docs.mjs",
     "docs:index": "node scripts/build-docs-index.mjs",
     "docs:list": "node scripts/docs-list.mjs",
-    "docs:openapi": "bun scripts/gen-openapi.mjs",
+    "docs:openapi": "bun scripts/gen-openapi.mjs && bunx biome format --write docs/agents/openapi.json",
     "format": "biome format --write .",
     "hooks:install": "git config core.hooksPath .githooks",
     "worktrees:prune": "node scripts/prune-worktrees.mjs",
