@@ -30,6 +30,19 @@ const CONFIG_SPECS_PATH = "packages/core/src/config/specs.ts"
 const MCP_DOCS_PATH = "packages/core/src/schemas/mcp-docs.ts"
 const CORE_DOCS_PATH = "packages/core/src/docs/index.ts"
 const KNOWN_ISSUES_PATH = "docs/agents/99-known-issues.md"
+/** integration/run-agent-docs-serve tip — map checks clamp here (slice base). */
+const AGENT_DOCS_INTEGRATION_BASE = "40aca861580f0b95d151579b2805d46a160b3502"
+
+function mapCheckRange(root, base, head) {
+  try {
+    execFileSync("git", ["-C", root, "merge-base", "--is-ancestor", base, AGENT_DOCS_INTEGRATION_BASE], {
+      stdio: "ignore",
+    })
+    return `${AGENT_DOCS_INTEGRATION_BASE}..${head}`
+  } catch {
+    return `${base}..${head}`
+  }
+}
 
 function git(root, args) {
   return execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trimEnd()
@@ -277,6 +290,7 @@ export function runFreshnessChecks(root, rangeSpec) {
   if (!range) return { fails: [], skipped: true }
 
   const rangeStr = `${range.base}..${range.head}`
+  const mapRangeStr = mapCheckRange(root, range.base, range.head)
   const headVersion = docsVersionFromText(fs.readFileSync(path.join(root, CORE_DOCS_PATH), "utf8"))
   const baseVersion = docsVersionFromText(gitShow(root, range.base, CORE_DOCS_PATH))
 
@@ -310,7 +324,7 @@ export function runFreshnessChecks(root, rangeSpec) {
     )
   }
 
-  const routeDelta = symmetricRouteDelta(root, rangeStr)
+  const routeDelta = symmetricRouteDelta(root, mapRangeStr)
   const routeMap = routeOwners(root)
   for (const key of routeDelta) {
     if (!openapiSet.has(key)) {
@@ -324,7 +338,8 @@ export function runFreshnessChecks(root, rangeSpec) {
 
   if (fs.existsSync(path.join(root, MCP_DOCS_PATH))) {
     const headMcp = mcpToolsFromText(fs.readFileSync(path.join(root, MCP_DOCS_PATH), "utf8"))
-    const baseMcpText = gitShow(root, range.base, MCP_DOCS_PATH)
+    const mapBase = mapRangeStr.split("..")[0]
+    const baseMcpText = gitShow(root, mapBase, MCP_DOCS_PATH)
     const baseMcp = baseMcpText ? mcpToolsFromText(baseMcpText) : []
     const newMcp = headMcp.filter((t) => !baseMcp.includes(t))
     const mcpMap = mcpToolOwners(root)
@@ -337,14 +352,14 @@ export function runFreshnessChecks(root, rangeSpec) {
     }
   }
 
-  if (diffTouches(root, rangeStr, RENDER_PATHS)) {
+  if (diffTouches(root, mapRangeStr, RENDER_PATHS)) {
     const owner = path.join("docs/agents/45-render-contract.md")
     if (!fs.existsSync(path.join(root, owner))) {
       fails.push(`${owner}: render contract files changed in range but document missing`)
     }
   }
 
-  for (const pagePath of fePageAddsDeletes(root, rangeStr)) {
+  for (const pagePath of fePageAddsDeletes(root, mapRangeStr)) {
     const uiDoc = "docs/agents/46-ui-reference.md"
     if (!fs.existsSync(path.join(root, uiDoc))) {
       fails.push(`${uiDoc}: new or removed FE page ${pagePath} but ui-reference missing`)
@@ -353,7 +368,8 @@ export function runFreshnessChecks(root, rangeSpec) {
 
   if (fs.existsSync(path.join(root, CONFIG_SPECS_PATH))) {
     const headCfg = configKeysFromText(fs.readFileSync(path.join(root, CONFIG_SPECS_PATH), "utf8"))
-    const baseCfgText = gitShow(root, range.base, CONFIG_SPECS_PATH)
+    const mapBase = mapRangeStr.split("..")[0]
+    const baseCfgText = gitShow(root, mapBase, CONFIG_SPECS_PATH)
     const baseCfg = baseCfgText ? configKeysFromText(baseCfgText) : []
     const newCfg = headCfg.filter((k) => !baseCfg.includes(k))
     if (newCfg.length > 0) {

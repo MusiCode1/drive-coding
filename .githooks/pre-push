@@ -23,4 +23,12 @@ if [ "$rc" -eq 2 ]; then
   echo "   עקיפה מודעת: git push --no-verify"
   exit 1
 fi
+# 3. Docs freshness — additive. Never touches the ratchet above, never changes
+#    its exit code. Fail-open by construction: any uncertainty exits 0.
+if [ "$rc" -eq 0 ]; then
+  set +e
+  node scripts/lint-docs-fresh.mjs
+  rc=$?
+  set -e
+fi
 exit "$rc"
