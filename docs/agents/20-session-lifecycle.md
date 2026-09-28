@@ -87,9 +87,11 @@ When **`turnState !== idle`**:
 `drive-coding agent close`.
 
 - Missing agent → MCP may return `{ ok: true, alreadyClosed: true }`; HTTP DELETE → 404.
-- **Parent close cascades** to descendants linked by `parentAgentId` (recursive, depth cap 20,
-  cycle-safe). Child mid-turn is still closed. Parent **crash** does **not** cascade — only
-  explicit DELETE.
+
+Closing an agent — `DELETE /api/agents/:id`, **session_close**, or `drive-coding agent close`
+— all reach the same **`deleteAndKill`** and close **that agent only**. Children linked by
+**`parentAgentId` are not** closed with it: they keep running and you must close each one
+yourself (`agent-orchestrator.ts:260-284` · `http-agents.ts:135-142`).
 
 Scope note: MCP tool copy states **no ownership check on session_close** (any id may be
 closed), while server instructions also describe scoped writes for subtree — see report

@@ -25,7 +25,7 @@ Use status code **and body shape** — many endpoints share **404** with differe
 | **200** + `timedOut: true` | **`waitMs`** elapsed, turn still running | Do **not** assume failure; poll history/SSE or retry with higher wait. |
 | **200** + `ok: false`, `timedOut: false` | Turn failed synchronously in wait path | Read **`error.message` / `code`**, **`messagesSince`** if present. |
 | **200** + `ok: true` on **cancel** with wait | Cancel **sent**, not guaranteed executed | Confirm via state; cancel promise may swallow errors. |
-| **400** | Bad JSON, invalid params, invalid **`waitMs`** (non-integer, `<1`, **`>60000`** — **no clamp**) | Fix request; do not retry identical payload. |
+| **400** | Bad JSON, invalid params, invalid **`waitMs`**: a non-integer, or an integer **outside 1..60000** (**no clamp**) — note **`0` / absent** is the **202** fire-and-forget path, not an error | Fix request; do not retry identical payload. |
 | **404** | No session host / connection for this agent | Agent record may still exist in registry — list agents vs host routes. |
 | **503** | Host result **`evict-timeout`** (transient ownership eviction) | Retry SSE/RPC; different from permanent missing agent. |
 | **502** | Upstream ACP/session RPC failed on blocking management calls | Inspect `error` / `code` body. |
@@ -72,7 +72,7 @@ Stream ends with **`taken-over`** when another client owns the epoch.
 404 on /history       → no session host; agent may still exist
 503 on /events or RPC → retry (evict-timeout), not necessarily dead
 200 timedOut:true     → turn still running; keep polling
-400 waitMs            → fix bounds 1..60000
+400 waitMs            → integer 1..60000 only (0/omit → 202, not 400)
 ```
 
 For connect/discovery failures (wrong base), see **`10-connect`**.

@@ -144,7 +144,7 @@
       "headings": [
         "Child config",
         "Where the catalog comes from",
-        "Permission at spawn (`permission` / `permissionPolicy`)",
+        "Permission at spawn — MCP vs HTTP field names",
         "Applying changes with `sets`",
         "HTTP PATCH (metadata only)",
         "Workflow checklist",

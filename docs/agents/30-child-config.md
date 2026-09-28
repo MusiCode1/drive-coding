@@ -36,10 +36,25 @@ settings — model, permission, agent persona, thinking, etc. Change them with
 HTTP **`POST /api/agents`** accepts the same spawn fields; ongoing changes go through
 **`session_send.sets`** or RPC config methods where exposed.
 
-## Permission at spawn (`permission` / `permissionPolicy`)
+## Permission at spawn — MCP vs HTTP field names
 
-When opening a child, you may set **`permission`** (HTTP/MCP **`AgentOpenInput.permission`**
-→ stored **`permissionPolicy`**).
+The stored value is always **`permissionPolicy`** on the agent record, but the **request
+field name differs by surface**:
+
+| Surface | Field in the open body | Schema anchor |
+|---|---|---|
+| **MCP** `session_open` | **`permission`** | `AgentOpenInput.permission` → mapped in `session-open-body.ts` |
+| **HTTP** `POST /api/agents` | **`permissionPolicy` only** | `create-agent-input.ts` — there is **no** `permission` key |
+
+On HTTP, `{"permission": "ask"}` is **silently ignored** (undeclared keys are not applied).
+Use **`permissionPolicy`**:
+
+```json
+POST /api/agents
+{ "cliKind": "cursor", "cwd": "/abs/path", "permissionPolicy": "ask" }
+```
+
+MCP **`session_open`** accepts **`permission`** with the same enum values.
 
 Validated **policy enum** (what the backend enforces):
 
