@@ -43,6 +43,40 @@ if (!fs.existsSync(tagsPath)) {
 }
 const vocabulary = new Set(JSON.parse(fs.readFileSync(tagsPath, "utf8")).tags)
 
+const MD_EXT = /\.(md|markdown|mdown|mkd)$/i
+const agentsDir = path.join(root, "docs", "agents")
+
+/** Every markdown-like file under docs/agents/ must be a top-level lowercase `.md` (indexed). */
+function findUnindexedMarkdownFiles(dir, relPrefix = "docs/agents") {
+  const found = []
+  if (!fs.existsSync(dir)) return found
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    const rel = path.posix.join(relPrefix, ent.name)
+    const abs = path.join(dir, ent.name)
+    if (ent.isDirectory()) {
+      found.push(...findUnindexedMarkdownFiles(abs, rel))
+      continue
+    }
+    if (!MD_EXT.test(ent.name)) continue
+    const topLevel = relPrefix === "docs/agents"
+    const lowercaseMd = topLevel && ent.name.endsWith(".md") && !ent.name.endsWith(".MD")
+    if (!(topLevel && lowercaseMd)) {
+      const why =
+        !topLevel
+          ? "markdown in a subdirectory is not indexed"
+          : ent.name.endsWith(".md") && ent.name !== ent.name.toLowerCase()
+            ? "only lowercase .md at the top level of docs/agents/ is indexed"
+            : "only lowercase .md at the top level of docs/agents/ is indexed"
+      found.push({ rel, why })
+    }
+  }
+  return found
+}
+
+for (const { rel, why } of findUnindexedMarkdownFiles(agentsDir)) {
+  fail(rel, why)
+}
+
 const files = listDocFiles(root)
 if (files.length === 0) {
   console.error("🔴 agent-docs: no documents found under docs/agents/")
