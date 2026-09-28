@@ -91,9 +91,15 @@ vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("test-uuid") })
 
 // ─── Import after mocks ───────────────────────────────────────────────────────
 
+import { patchAgent } from "$lib/adapters/agents-api"
+import { MockSessionView } from "./__fixtures__/mock-session-view.svelte"
 import { AgentSession } from "./agent-session.svelte"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function delay(ms = 10): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 /** יצירת AgentSession מחובר */
 async function buildConnectedSession(): Promise<AgentSession> {
@@ -115,6 +121,7 @@ function inject(update: Record<string, unknown>): void {
 
 beforeEach(() => {
   capturedListener = null
+  vi.mocked(patchAgent).mockClear()
   mockClient.newSession.mockResolvedValue({
     sessionId: "s-session-info-test",
     configOptions: [],
@@ -172,5 +179,21 @@ describe("AgentSession — session_info_update handler", () => {
 
     inject({ sessionUpdate: "session_info_update", title: null })
     expect(session.sessionTitle).toBe("User title")
+  })
+})
+
+// ─── slice http-live-side-effects C0: remote session_info_update → patchAgent ───
+
+describe("AgentSession — session_info_update handler (remote / #isRemote)", () => {
+  it("קורא ל-patchAgent כש-title מתעדכן דרך fireUpdate", async () => {
+    const view = new MockSessionView()
+    const session = new AgentSession({ view })
+    session.agentId = "agent-remote-title-test"
+
+    view.fireUpdate({ sessionUpdate: "session_info_update", title: "Fix auth bug" })
+    await delay()
+
+    expect(session.sessionTitle).toBe("Fix auth bug")
+    expect(patchAgent).toHaveBeenCalledWith("agent-remote-title-test", { title: "Fix auth bug" })
   })
 })

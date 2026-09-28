@@ -1028,10 +1028,18 @@ export class AgentSession {
     endSessionScope(this.#sessionEndScopeDeps(), reason)
   }
 
-  #remoteViewOpts(): { headers: Record<string, string>; onSseReconnected?: () => void } {
+  #remoteViewOpts(): { headers: Record<string, string>; onSseReconnected: () => void } {
     const headers = { "Acp-Connection-Id": this.#connectionId }
-    const listener = this.#sseReconnectedListener
-    return listener ? { headers, onSseReconnected: () => listener() } : { headers }
+    return { headers, onSseReconnected: () => this._onSseReconnectedForTest() }
+  }
+
+  /**
+   * @internal slice http-live-side-effects — המסלול האמיתי של onSseReconnected.
+   * שגיאה חולפת (switchSession/newSession) נמחקת ב-reconnect; טרמינלית (#errorSurfaced) שורדת.
+   */
+  _onSseReconnectedForTest(): void {
+    if (!this.#errorSurfaced) this.error = null
+    this.#sseReconnectedListener?.()
   }
 
   #agentWsUrl(agentId: string): string {
@@ -3249,9 +3257,9 @@ export class AgentSession {
         this.sessionTitle = "" // null = clear (לפי הסכמה)
       } else if (typeof title === "string") {
         this.sessionTitle = title
-        if (!this.#isRemote) {
-          this.#pushTitleToServer(this.sessionTitle) // slice session-title-in-process-list
-        }
+        // slice http-live-side-effects (bug #56): ללא תנאי — במסלול HTTP ה-FE הוא
+        // הכותב היחיד למרשם, ולכן `!#isRemote` השאיר title=null בדיוק שם.
+        this.#pushTitleToServer(this.sessionTitle)
       }
       // undefined → keep-on-undefined (עקבי עם loadSession :999 / :1114)
       return
