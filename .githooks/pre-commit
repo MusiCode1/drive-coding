@@ -32,4 +32,14 @@ if [ "$rc" -eq 2 ]; then
   echo "   החסימה תגיע ב-pre-push וב-scripts/dod-check.sh check."
   rc=0
 fi
+
+# 3. Agent docs: front matter, tag vocabulary, index.json, English only.
+#    Absolute — no ratchet and no exit 2.
+if [ "$rc" -eq 0 ]; then
+  set +e
+  node scripts/lint-agent-docs.mjs
+  rc=$?
+  set -e
+fi
+
 exit "$rc"
