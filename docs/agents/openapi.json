@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
@@ -235,6 +235,102 @@
           },
           "416": {
             "description": "Range not satisfiable"
+          }
+        }
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "get_api_docs",
+        "summary": "GET /api/docs",
+        "responses": {
+          "200": {
+            "description": "Agent docs catalog with version block",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/docs/:id": {
+      "get": {
+        "operationId": "get_api_docs_id",
+        "summary": "GET /api/docs/:id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Full markdown document including front matter",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "headers": {
+              "X-Drive-Coding-App-Version": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Drive-Coding-Docs-Version": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Drive-Coding-Route-Count": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Drive-Coding-Generated-At": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/openapi.json": {
+      "get": {
+        "operationId": "get_api_openapi_json",
+        "summary": "GET /api/openapi.json",
+        "responses": {
+          "200": {
+            "description": "OpenAPI spec with x-drive-coding extension",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
           }
         }
       }

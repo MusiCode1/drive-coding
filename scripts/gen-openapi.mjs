@@ -226,6 +226,27 @@ const SPECIAL = {
       404: jsonErrorResponse("Agent connection not found"),
     },
   },
+  "get /api/docs": {
+    responses: jsonResponse("Agent docs catalog with version block"),
+  },
+  "get /api/docs/:id": {
+    responses: {
+      200: {
+        description: "Full markdown document including front matter",
+        content: { "text/markdown": { schema: { type: "string" } } },
+        headers: {
+          "X-Drive-Coding-App-Version": { schema: { type: "string" } },
+          "X-Drive-Coding-Docs-Version": { schema: { type: "string" } },
+          "X-Drive-Coding-Route-Count": { schema: { type: "string" } },
+          "X-Drive-Coding-Generated-At": { schema: { type: "string" } },
+        },
+      },
+      404: jsonErrorResponse("Unknown document id"),
+    },
+  },
+  "get /api/openapi.json": {
+    responses: jsonResponse("OpenAPI spec with x-drive-coding extension"),
+  },
   "get /api/agent-prompt": {
     responses: {
       200: {
@@ -394,8 +415,8 @@ if (!docsVersion) {
 }
 
 const { paths, count } = buildPaths()
-if (count !== 36) {
-  console.error(`🔴 expected 36 documentable operations, got ${count}`)
+if (count !== 39) {
+  console.error(`🔴 expected 39 documentable operations, got ${count}`)
   process.exit(1)
 }
 

@@ -31,19 +31,19 @@ describe("openapi and RPC doc coupling", () => {
     expect(mentioned).toHaveLength(10)
   })
 
-  it("openapi.json carries 36 HTTP operations", () => {
+  it("openapi.json carries 39 HTTP operations", () => {
     const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8")) as {
       paths?: Record<string, Record<string, unknown>>
     }
     const ops = Object.values(spec.paths ?? {}).flatMap((item) =>
       Object.keys(item).filter((k) => !k.startsWith("x-") && k !== "parameters"),
     )
-    expect(ops).toHaveLength(36)
+    expect(ops).toHaveLength(39)
   })
 
-  it("McpToolName union has twelve members (includes notify_parent)", () => {
+  it("McpToolName union has thirteen members (includes notify_parent)", () => {
     const names = mcpToolNamesFromSource()
-    expect(names).toHaveLength(12)
+    expect(names).toHaveLength(13)
     expect(names).toContain("notify_parent")
   })
 
@@ -58,6 +58,18 @@ describe("openapi and RPC doc coupling", () => {
     expect(keys("post", "/api/agents/:id/subscribe")).toEqual(["204", "400", "404"])
     expect(keys("post", "/api/agents")).toEqual(["201", "400", "500"])
     expect(keys("delete", "/api/agents/:id")).toEqual(["204", "404"])
+  })
+
+  it("openapi.json status codes match agent docs HTTP handlers", () => {
+    const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8")) as {
+      paths: Record<string, Record<string, { responses?: Record<string, unknown> }>>
+    }
+    const keys = (method: string, path: string) =>
+      Object.keys(spec.paths[path]?.[method]?.responses ?? {}).sort()
+
+    expect(keys("get", "/api/docs")).toEqual(["200"])
+    expect(keys("get", "/api/docs/:id")).toEqual(["200", "404"])
+    expect(keys("get", "/api/openapi.json")).toEqual(["200"])
   })
 
   it("POST reply and POST rpc request bodies are marked x-drive-coding-contract none", () => {
