@@ -65,6 +65,6 @@ HTTP alternative for event delivery: **`POST /api/agents/:id/subscribe`** (docum
 |-------|--------|--------|
 | `DELETE /api/agents` | `200` JSON summary | `http-agents.ts:145` |
 | `DELETE /api/agents/:id` | `204` empty body | `http-agents.ts:154` |
-| `DELETE /api/agents/:id` | `404` when id missing | `http-agents.ts:151` |
+| `DELETE /api/agents/:id` | `404` when no agent with that id exists in the registry | `http-agents.ts:150-151` |
 
 Do not describe recursive or cascade deletion; it is not implemented in `deleteAndKill`.

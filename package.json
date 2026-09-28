@@ -21,7 +21,7 @@
     "lint:rtl": "node scripts/lint-no-physical-classes.mjs",
     "lint:size": "node scripts/lint-file-size.mjs",
     "lint:docs": "node scripts/lint-agent-docs.mjs",
-    "docs:index": "node scripts/build-docs-index.mjs",
+    "docs:index": "node scripts/build-docs-index.mjs && bunx biome format --write docs/agents/index.json",
     "docs:list": "node scripts/docs-list.mjs",
     "docs:openapi": "bun scripts/gen-openapi.mjs && bunx biome format --write docs/agents/openapi.json",
     "format": "biome format --write .",
