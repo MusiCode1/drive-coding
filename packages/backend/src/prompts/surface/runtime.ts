@@ -129,7 +129,8 @@ export function buildSurfaceRuntime(info: SurfaceRuntimeInfo): string {
     "",
     "Encode the whole `file://` URI. Never leave trailing `]` or other markdown",
     "punctuation inside the URL. Allowed extensions and size caps are documented in",
-    "`docs/agents/45-render-contract.md` (when you have that file in your workspace).",
+    "`docs/agents/45-render-contract.md` and `docs/agents/90-files-and-media.md`",
+    "(when you have those files in your workspace).",
   )
 
   return lines.join("\n")
