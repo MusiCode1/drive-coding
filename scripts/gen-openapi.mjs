@@ -219,6 +219,60 @@ const SPECIAL = {
     }),
     "x-drive-coding-contract": "none",
     description: CONTRACT_NONE_DESC,
+    responses: {
+      ...jsonResponse("OK"),
+      400: jsonErrorResponse("Unknown kind"),
+      403: jsonErrorResponse("Scope self-approve denied"),
+      404: jsonErrorResponse("Agent connection not found"),
+    },
+  },
+  "get /api/agent-prompt": {
+    responses: {
+      200: { description: "Plain-text surface prompt", content: { "text/plain": { schema: { type: "string" } } } },
+      400: { description: "Missing agent id", content: { "text/plain": { schema: { type: "string" } } } },
+      404: { description: "Unknown agent", content: { "text/plain": { schema: { type: "string" } } } },
+    },
+  },
+  "delete /api/projects": {
+    responses: {
+      ...noContentResponse("Project history cleared"),
+      400: jsonErrorResponse("cwd required"),
+    },
+  },
+  "get /api/fs/file": {
+    responses: {
+      200: { description: "Full file body", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
+      206: { description: "Partial content (Range)", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
+      400: jsonErrorResponse("Bad or missing uri"),
+      403: jsonErrorResponse("Access denied"),
+      404: jsonErrorResponse("File not found"),
+      413: jsonErrorResponse("File too large"),
+      415: jsonErrorResponse("Unsupported file type"),
+      416: { description: "Range not satisfiable" },
+    },
+  },
+  "get /api/fs/browse": {
+    responses: {
+      ...jsonResponse("Directory listing"),
+      400: jsonErrorResponse("path query param is required"),
+      403: jsonErrorResponse("Access denied"),
+      404: jsonErrorResponse("Path not found"),
+      500: jsonErrorResponse("Cannot read directory"),
+    },
+  },
+  "get /api/recordings/:id": {
+    responses: {
+      200: { description: "Recording bytes", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
+      404: jsonErrorResponse("Recording not found"),
+    },
+  },
+  "get /api/cli-logo/:cliId": {
+    responses: {
+      200: { description: "Logo bytes", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
+      404: jsonErrorResponse("Unknown CLI or missing logo"),
+      413: jsonErrorResponse("Logo file too large"),
+      415: jsonErrorResponse("Unsupported logo file type"),
+    },
   },
   "get /api/agents/:id/events": {
     responses: {
@@ -241,7 +295,10 @@ const SPECIAL = {
       },
       required: ["audioBase64", "mimeType"],
     }),
-    responses: jsonResponse("Created", "201"),
+    responses: {
+      ...jsonResponse("Created", "201"),
+      400: jsonErrorResponse("Invalid body or base64"),
+    },
   },
   "post /api/client-log": {
     requestBody: contractNoneRequestBody({
@@ -250,6 +307,17 @@ const SPECIAL = {
         entries: { type: "array", items: { type: "object" } },
       },
     }),
+    responses: {
+      ...noContentResponse("Log entries accepted"),
+      400: jsonErrorResponse("Bad JSON or payload"),
+      429: { description: "Rate limit exceeded" },
+    },
+  },
+  "delete /api/agents/:id/connection": {
+    responses: {
+      ...noContentResponse("Connection row removed"),
+      404: { description: "No connection registry for agent" },
+    },
   },
   "post /api/voice/live/token": {
     requestBody: contractNoneRequestBody({
@@ -262,6 +330,12 @@ const SPECIAL = {
       },
       required: ["systemInstruction", "actions"],
     }),
+    responses: {
+      ...jsonResponse("Live token"),
+      400: jsonErrorResponse("Invalid JSON or body"),
+      502: jsonErrorResponse("Token mint failed"),
+      503: jsonErrorResponse("No Gemini API key on backend"),
+    },
   },
 }
 

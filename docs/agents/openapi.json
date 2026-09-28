@@ -12,7 +12,37 @@
         "summary": "POST /api/voice/live/token",
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Live token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Token mint failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No Gemini API key on backend",
             "content": {
               "application/json": {
                 "schema": {
@@ -132,7 +162,29 @@
         "summary": "GET /api/fs/file",
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Full file body",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Partial content (Range)",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad or missing uri",
             "content": {
               "application/json": {
                 "schema": {
@@ -140,6 +192,49 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Access denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "File not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported file type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "Range not satisfiable"
           }
         }
       }
@@ -149,8 +244,11 @@
         "operationId": "post_api_client_log",
         "summary": "POST /api/client-log",
         "responses": {
-          "200": {
-            "description": "OK",
+          "204": {
+            "description": "Log entries accepted"
+          },
+          "400": {
+            "description": "Bad JSON or payload",
             "content": {
               "application/json": {
                 "schema": {
@@ -158,6 +256,9 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
           }
         },
         "requestBody": {
@@ -216,7 +317,38 @@
         ],
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Logo bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown CLI or missing logo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Logo file too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported logo file type",
             "content": {
               "application/json": {
                 "schema": {
@@ -234,11 +366,31 @@
         "summary": "GET /api/agent-prompt",
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Plain-text surface prompt",
             "content": {
-              "application/json": {
+              "text/plain": {
                 "schema": {
-                  "type": "object"
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing agent id",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown agent",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -595,8 +747,11 @@
         "operationId": "delete_api_projects",
         "summary": "DELETE /api/projects",
         "responses": {
-          "200": {
-            "description": "OK",
+          "204": {
+            "description": "Project history cleared"
+          },
+          "400": {
+            "description": "cwd required",
             "content": {
               "application/json": {
                 "schema": {
@@ -624,7 +779,18 @@
         ],
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Recording bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recording not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -643,6 +809,16 @@
         "responses": {
           "201": {
             "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body or base64",
             "content": {
               "application/json": {
                 "schema": {
@@ -681,7 +857,47 @@
         "summary": "GET /api/fs/browse",
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Directory listing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "path query param is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Path not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Cannot read directory",
             "content": {
               "application/json": {
                 "schema": {
@@ -728,6 +944,36 @@
         "responses": {
           "200": {
             "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown kind",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Scope self-approve denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent connection not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -1021,15 +1267,11 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
+          "204": {
+            "description": "Connection row removed"
+          },
+          "404": {
+            "description": "No connection registry for agent"
           }
         }
       }
