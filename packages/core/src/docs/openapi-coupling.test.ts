@@ -32,7 +32,9 @@ describe("openapi and RPC doc coupling", () => {
   })
 
   it("openapi.json carries 36 HTTP operations", () => {
-    const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8"))
+    const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8")) as {
+      paths?: Record<string, Record<string, unknown>>
+    }
     const ops = Object.values(spec.paths ?? {}).flatMap((item) =>
       Object.keys(item).filter((k) => !k.startsWith("x-") && k !== "parameters"),
     )

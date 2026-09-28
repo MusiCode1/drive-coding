@@ -4,8 +4,6 @@
 
 import fs from "node:fs"
 import path from "node:path"
-import { AgentSubscribeBody } from "../packages/core/src/schemas/agent-events.ts"
-import { RPC_METHODS } from "../packages/core/src/session/rpc-methods.ts"
 import { CreateAgentInputFull } from "../packages/backend/src/delivery/create-agent-input.ts"
 import { PatchAgentInput } from "../packages/backend/src/delivery/http-agents.ts"
 import {
@@ -15,6 +13,8 @@ import {
   NewSessionParams,
   PromptParams,
 } from "../packages/backend/src/session-host/http/rpc.ts"
+import { AgentSubscribeBody } from "../packages/core/src/schemas/agent-events.ts"
+import { RPC_METHODS } from "../packages/core/src/session/rpc-methods.ts"
 import { extractOperations } from "./lint-api-documented.mjs"
 
 const OUT_OF_SCOPE = [
@@ -164,7 +164,7 @@ const SPECIAL = {
   },
   "get /api/agents/:id/events": {
     responses: {
-      "200": {
+      200: {
         description: "Server-Sent Events stream",
         content: {
           "text/event-stream": {
@@ -258,10 +258,13 @@ const spec = {
   components,
 }
 
-const out = `${JSON.stringify(spec, null, 2)}\n`
 const target = path.join(root, "docs/agents/openapi.json")
-const current = fs.existsSync(target) ? fs.readFileSync(target, "utf8") : ""
+const serialized = `${JSON.stringify(spec, null, 2)}\n`
 
-if (check) process.exit(out === current ? 0 : 1)
-fs.writeFileSync(target, out)
+if (check) {
+  if (!fs.existsSync(target)) process.exit(1)
+  const onDisk = JSON.parse(fs.readFileSync(target, "utf8"))
+  process.exit(JSON.stringify(onDisk) === JSON.stringify(spec) ? 0 : 1)
+}
+fs.writeFileSync(target, serialized)
 console.log(`✅ docs/agents/openapi.json — ${count} operations`)

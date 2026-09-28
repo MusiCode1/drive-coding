@@ -9,14 +9,8 @@
         "You have just been handed a drive-coding backend and do not know what it offers",
         "You must choose between the HTTP API, the MCP server and the CLI"
       ],
-      "tags": [
-        "orientation"
-      ],
-      "surface": [
-        "http",
-        "mcp",
-        "cli"
-      ],
+      "tags": ["orientation"],
+      "surface": ["http", "mcp", "cli"],
       "stability": "stable",
       "docs_version": "1.0.0",
       "routes": [],
@@ -41,19 +35,11 @@
         "A request to the backend failed and you are not sure the base URL is right",
         "You need a URL the user can open in a browser, not a loopback address"
       ],
-      "tags": [
-        "connect"
-      ],
-      "surface": [
-        "http",
-        "mcp",
-        "cli"
-      ],
+      "tags": ["connect"],
+      "surface": ["http", "mcp", "cli"],
       "stability": "stable",
       "docs_version": "1.0.0",
-      "routes": [
-        "GET /api/health"
-      ],
+      "routes": ["GET /api/health"],
       "mcp_tools": [],
       "path": "docs/agents/10-connect.md",
       "headings": [
@@ -75,15 +61,8 @@
         "A turn is running and you must decide between waiting and forcing",
         "You are about to leave an agent open and want to know who owns it"
       ],
-      "tags": [
-        "session",
-        "ownership",
-        "turnstate"
-      ],
-      "surface": [
-        "http",
-        "mcp"
-      ],
+      "tags": ["session", "ownership", "turnstate"],
+      "surface": ["http", "mcp"],
       "stability": "stable",
       "docs_version": "1.0.0",
       "routes": [
@@ -124,22 +103,12 @@
         "You are about to guess a config option id instead of reading the catalog",
         "A sets call was accepted and nothing changed"
       ],
-      "tags": [
-        "config",
-        "session"
-      ],
-      "surface": [
-        "http",
-        "mcp"
-      ],
+      "tags": ["config", "session"],
+      "surface": ["http", "mcp"],
       "stability": "stable",
       "docs_version": "1.0.0",
       "routes": [],
-      "mcp_tools": [
-        "session_open",
-        "session_send",
-        "session_state"
-      ],
+      "mcp_tools": ["session_open", "session_send", "session_state"],
       "path": "docs/agents/30-child-config.md",
       "headings": [
         "Child config",
@@ -160,14 +129,8 @@
         "You must follow a long turn without holding a stream open",
         "You have a message id and want only what came after it"
       ],
-      "tags": [
-        "output",
-        "session"
-      ],
-      "surface": [
-        "http",
-        "mcp"
-      ],
+      "tags": ["output", "session"],
+      "surface": ["http", "mcp"],
       "stability": "stable",
       "docs_version": "1.0.0",
       "routes": [
@@ -176,10 +139,7 @@
         "GET /api/agents/:id/state",
         "POST /api/agents/:id/rpc"
       ],
-      "mcp_tools": [
-        "session_send",
-        "session_state"
-      ],
+      "mcp_tools": ["session_send", "session_state"],
       "path": "docs/agents/40-reading-output.md",
       "headings": [
         "Reading output",
@@ -200,15 +160,8 @@
         "You are about to emit a file link, an image or a diagram",
         "Your output rendered as plain text and you expected something richer"
       ],
-      "tags": [
-        "render",
-        "output",
-        "ui"
-      ],
-      "surface": [
-        "http",
-        "mcp"
-      ],
+      "tags": ["render", "output", "ui"],
+      "surface": ["http", "mcp"],
       "stability": "stable",
       "docs_version": "1.0.0",
       "routes": [],
@@ -235,26 +188,14 @@
         "You are integrating with the FE-style RPC surface instead of MCP session_send",
         "You need the canonical list of RPC method names and what each one expects"
       ],
-      "tags": [
-        "rpc",
-        "session"
-      ],
-      "surface": [
-        "http"
-      ],
+      "tags": ["rpc", "session"],
+      "surface": ["http"],
       "stability": "transitional",
       "docs_version": "1.0.0",
-      "routes": [
-        "POST /api/agents/:id/rpc"
-      ],
+      "routes": ["POST /api/agents/:id/rpc"],
       "mcp_tools": [],
       "path": "docs/agents/50-rpc.md",
-      "headings": [
-        "Agent session RPC",
-        "Methods",
-        "`waitMs`",
-        "OpenAPI"
-      ]
+      "headings": ["Agent session RPC", "Methods", "`waitMs`", "OpenAPI"]
     },
     {
       "id": "errors",
@@ -265,14 +206,8 @@
         "You got a 404 and cannot tell whether the agent is gone or just not connected",
         "A request returned 200 with timedOut true and you must decide what to do next"
       ],
-      "tags": [
-        "errors",
-        "rpc"
-      ],
-      "surface": [
-        "http",
-        "mcp"
-      ],
+      "tags": ["errors", "rpc"],
+      "surface": ["http", "mcp"],
       "stability": "stable",
       "docs_version": "1.0.0",
       "routes": [],

@@ -8,6 +8,7 @@ const REPO_ROOT = path.resolve(HERE, "../../../..")
 describe("agent-api gate helpers", () => {
   it("parses twelve McpToolName union members from mcp-docs.ts", async () => {
     const { mcpToolVocabulary } = await import(
+      // @ts-expect-error — gate scripts are Node ESM outside the TS program
       "../../../../scripts/lint-agent-docs.mjs"
     )
     const names = mcpToolVocabulary(REPO_ROOT)
@@ -18,6 +19,7 @@ describe("agent-api gate helpers", () => {
 
   it("documentableRouteKeys includes GET /api/health and excludes GET /*", async () => {
     const { documentableRouteKeys } = await import(
+      // @ts-expect-error — gate scripts are Node ESM outside the TS program
       "../../../../scripts/lint-agent-docs.mjs"
     )
     const keys = documentableRouteKeys(REPO_ROOT)
