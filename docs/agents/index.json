@@ -227,6 +227,36 @@
       ]
     },
     {
+      "id": "rpc",
+      "title": "Agent session RPC — POST /api/agents/:id/rpc",
+      "summary": "JSON-RPC-style methods on a live agent session (prompt, cancel, session management, and drive-coding extensions).",
+      "read_when": [
+        "You need to send a prompt or cancel a turn on an agent that is already connected",
+        "You are integrating with the FE-style RPC surface instead of MCP session_send",
+        "You need the canonical list of RPC method names and what each one expects"
+      ],
+      "tags": [
+        "rpc",
+        "session"
+      ],
+      "surface": [
+        "http"
+      ],
+      "stability": "transitional",
+      "docs_version": "1.0.0",
+      "routes": [
+        "POST /api/agents/:id/rpc"
+      ],
+      "mcp_tools": [],
+      "path": "docs/agents/50-rpc.md",
+      "headings": [
+        "Agent session RPC",
+        "Methods",
+        "`waitMs`",
+        "OpenAPI"
+      ]
+    },
+    {
       "id": "errors",
       "title": "Errors — HTTP status codes and what they mean",
       "summary": "How to interpret drive-coding HTTP and MCP failures without guessing whether work started or an agent still exists.",
