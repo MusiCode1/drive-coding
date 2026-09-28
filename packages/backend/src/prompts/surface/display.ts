@@ -28,7 +28,7 @@ files through the file proxy (see runtime section for the origin and link shape)
 
 Fenced \`\`\`mermaid blocks render inline when a diagram helps.
 
-If you are working inside the drive-coding repository, the full contract —
-allowed extensions, size caps, \`resource_link\` chips, path-in-prose behaviour —
-is in \`docs/agents/45-render-contract.md\`.
+The full contract — allowed extensions, size caps, \`resource_link\` chips,
+path-in-prose behaviour — is in \`docs_get({id:"render-contract"})\`
+(or \`GET /api/docs/render-contract\`).
 `.trim()

@@ -16,6 +16,9 @@ If your CLI declared \`mcpCapabilities.http: true\` at initialize, drive-coding 
 already have injected this MCP server into your session (loopback URL +
 \`X-Drive-Coding-Agent\` header). Re-use \`session_list\` before spawning duplicates.
 
-If you are working inside the drive-coding repository, read \`docs/agents/20-session-lifecycle.md\`
-and \`docs/agents/97-transports.md\` for tool lists, Streamable HTTP endpoints, and limits.
+Every document is reachable without the repository: MCP tool \`docs_get\`, MCP
+resources \`drive-coding://docs/<id>\`, or \`GET /api/docs\`.
+
+For tool lists, Streamable HTTP endpoints, and limits, call
+\`docs_get({id:"session-lifecycle"})\` and \`docs_get({id:"transports"})\`.
 `.trim()

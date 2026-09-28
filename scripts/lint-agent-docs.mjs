@@ -12,6 +12,7 @@
 //   7. routes: shape + must exist in the live HTTP surface
 //   8. mcp_tools: subset of McpToolName union
 //   9. front-matter `id` is unique across docs/agents/*.md
+//  10. llms.txt matches regenerate (same as check 4 for index.json)
 //
 // Exit 0 = clean, 1 = violations. Zero dependencies (pure node).
 
@@ -265,6 +266,26 @@ if (!fs.existsSync(indexPath)) {
       .join("; ")
     fail("docs/agents/index.json", `stale — ${detail}. Run \`bun run docs:index\``)
   }
+}
+
+// 10 — llms.txt matches disk (regenerate + compare).
+const llmsPath = path.join(root, "llms.txt")
+const llmsLines = [
+  "# drive-coding agent docs",
+  "",
+  "Agent-facing documentation for drive-coding HTTP, MCP, and session lifecycle.",
+  "",
+  ...entries.map((d) => {
+    const file = path.basename(d.path)
+    return `- [${d.title}](docs/agents/${file}): ${d.summary}`
+  }),
+  "",
+]
+const llmsExpected = llmsLines.join("\n")
+if (!fs.existsSync(llmsPath)) {
+  fail("llms.txt", "missing — run `bun run docs:index`")
+} else if (fs.readFileSync(llmsPath, "utf8") !== llmsExpected) {
+  fail("llms.txt", "stale — run `bun run docs:index`")
 }
 
 if (fails.length > 0) {

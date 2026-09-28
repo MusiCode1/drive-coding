@@ -1,0 +1,21 @@
+# drive-coding agent docs
+
+Agent-facing documentation for drive-coding HTTP, MCP, and session lifecycle.
+
+- [Orientation — what drive-coding is and which channel to use](docs/agents/00-orientation.md): Start here; explains what an agent can do here and whether to reach the backend over HTTP, MCP or the CLI.
+- [Connect — find the backend base URL and origins](docs/agents/10-connect.md): How to discover which drive-coding instance is running, which URL to call, and when to use loopback versus a public origin.
+- [Session lifecycle — open, send, close](docs/agents/20-session-lifecycle.md): How to spawn an agent, drive a turn and release it, including who owns the session.
+- [Child config — models, permissions, and sets](docs/agents/30-child-config.md): How to change a spawned agent's model, permission mode, and other CLI options using the live catalog, not guessed ids.
+- [Reading output — history, SSE, state, and RPC waits](docs/agents/40-reading-output.md): How to read agent messages and turn progress after noWait sends, without holding a stream open forever.
+- [Render contract — what your output can display](docs/agents/45-render-contract.md): What the drive-coding UI renders from agent output, and what it will not render.
+- [UI reference — screens and controls](docs/agents/46-ui-reference.md): Where settings and session controls live in the drive-coding web app, with on-screen labels an agent can quote back to the user.
+- [Agent session RPC — POST /api/agents/:id/rpc](docs/agents/50-rpc.md): JSON-RPC-style methods on a live agent session (prompt, cancel, session management, and drive-coding extensions).
+- [Agent identity and scoped writes](docs/agents/60-identity-and-scopes.md): Who you are on this backend, what DC_TOKEN does, and why it is not a security boundary.
+- [Subagents — spawn, parent identity, notify_parent](docs/agents/70-subagents.md): Open child agents, detect when you are a child, report to the parent, and what closing does not do.
+- [CLI providers — registry and availability](docs/agents/80-providers.md): Which CLI kinds exist, how overrides merge, and how to detect installed binaries on this host.
+- [Files, projects, and recordings](docs/agents/90-files-and-media.md): Browse local paths, serve file bytes to the browser, and store short audio recordings.
+- [Voice — TTS capabilities, live token, upstream proxies](docs/agents/91-voice.md): Discover TTS engines on this backend, mint Gemini live tokens, and use BE-proxied provider keys.
+- [Diagnostics, usage, options, and config reload](docs/agents/92-diagnostics.md): Health vs diag, usage counters, client log ingest, hot config reload, and static options.
+- [Errors — HTTP status codes and what they mean](docs/agents/95-errors.md): How to interpret drive-coding HTTP and MCP failures without guessing whether work started or an agent still exists.
+- [drive-coding CLI — local HTTP client](docs/agents/96-cli.md): The drive-coding agent subcommand talks to a running backend; commands map to documented HTTP routes.
+- [Transports — HTTP, SSE, MCP, WebSocket](docs/agents/97-transports.md): When to use REST, agent events SSE, Streamable HTTP MCP, or browser WebSockets.

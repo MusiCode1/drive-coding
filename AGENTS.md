@@ -632,13 +632,12 @@ directory and runs in `pre-commit`.
 These are **public** docs written for coding agents, not for maintainers — the private
 planning notes stay in `docs-for-llm/`.
 
-> **This line is one routing channel out of three, and the only one that exists today.**
-> An agent working *inside this repo* finds the docs here. An agent that drive-coding
-> **spawned** gets them two other ways — a parent injecting the pointer into its context
-> (the `prompts/surface/*` pieces, delivered via CLI hook / `GET /api/agent-prompt` /
-> the `session_surface` MCP tool), and MCP resources + a `docs_get` tool. Those two are
-> **not built yet**; they are the `agent-docs-serve` slice. Until then, a spawned child
-> has no route to `docs/agents/` at all — do not assume it can see them.
+> **Three routing channels — all live.** An agent working *inside this repo* reads
+> `docs/agents/` on disk (`bun run docs:list`). A **spawned child** without the repo
+> should use **`docs_get`** (MCP tool), **`drive-coding://docs/<id>`** resources, or
+> **`GET /api/docs`** / **`GET /api/docs/:id`** on the backend. Parent injection still
+> delivers the same pointers via `prompts/surface/*` (CLI hook / `GET /api/agent-prompt` /
+> `session_surface` MCP).
 
 ## עבודה עם מרדכי (planner)
 

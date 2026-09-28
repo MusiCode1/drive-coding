@@ -45,6 +45,27 @@ const out = `${JSON.stringify({ docsVersion, docs }, null, 2)}\n`
 const target = path.join(root, "docs/agents/index.json")
 const current = fs.existsSync(target) ? fs.readFileSync(target, "utf8") : ""
 
-if (check) process.exit(out === current ? 0 : 1)
+const llmsLines = [
+  "# drive-coding agent docs",
+  "",
+  "Agent-facing documentation for drive-coding HTTP, MCP, and session lifecycle.",
+  "",
+  ...docs.map((d) => {
+    const file = path.basename(d.path)
+    return `- [${d.title}](docs/agents/${file}): ${d.summary}`
+  }),
+  "",
+]
+const llmsOut = llmsLines.join("\n")
+const llmsTarget = path.join(root, "llms.txt")
+const llmsCurrent = fs.existsSync(llmsTarget) ? fs.readFileSync(llmsTarget, "utf8") : ""
+
+if (check) {
+  if (out !== current) process.exit(1)
+  if (llmsOut !== llmsCurrent) process.exit(1)
+  process.exit(0)
+}
 fs.writeFileSync(target, out)
+fs.writeFileSync(llmsTarget, llmsOut)
 console.log(`✅ docs/agents/index.json — ${docs.length} documents`)
+console.log(`✅ llms.txt — ${docs.length} document lines`)
