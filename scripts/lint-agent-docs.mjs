@@ -59,14 +59,10 @@ function findUnindexedMarkdownFiles(dir, relPrefix = "docs/agents") {
     }
     if (!MD_EXT.test(ent.name)) continue
     const topLevel = relPrefix === "docs/agents"
-    const lowercaseMd = topLevel && ent.name.endsWith(".md") && !ent.name.endsWith(".MD")
-    if (!(topLevel && lowercaseMd)) {
-      const why =
-        !topLevel
-          ? "markdown in a subdirectory is not indexed"
-          : ent.name.endsWith(".md") && ent.name !== ent.name.toLowerCase()
-            ? "only lowercase .md at the top level of docs/agents/ is indexed"
-            : "only lowercase .md at the top level of docs/agents/ is indexed"
+    if (!(topLevel && ent.name.endsWith(".md"))) {
+      const why = topLevel
+        ? "only lowercase .md at the top level of docs/agents/ is indexed"
+        : "markdown in a subdirectory is not indexed"
       found.push({ rel, why })
     }
   }

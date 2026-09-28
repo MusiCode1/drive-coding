@@ -18,8 +18,8 @@ describe("agent-docs coupling", () => {
     for (const n of names) {
       expect(doc).toContain(n)
     }
-    const ttlSpec = CONFIG_SPECS.find((s) => s.key === "httpOwnerTtlMs")
-    expect(ttlSpec?.env).toBeDefined()
-    expect(doc).toContain(ttlSpec!.env)
+    const ttlEnv = CONFIG_SPECS.find((s) => s.key === "httpOwnerTtlMs")?.env
+    if (ttlEnv === undefined) throw new Error("httpOwnerTtlMs spec lost its env key")
+    expect(doc).toContain(ttlEnv)
   })
 })
