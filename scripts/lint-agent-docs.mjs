@@ -7,8 +7,8 @@
 //   3. every tag is declared in docs/agents/tags.json
 //   4. index.json matches what is on disk (regenerate + compare)
 //   5. English only — no non-Latin script anywhere in the file
-//   6. DOCS_VERSION is the single source of truth — index.json and every
-//      doc's docs_version must equal it. Without this the claim is a promise.
+//   6. DOCS_VERSION is the single source of truth — index.json.docsVersion must
+//      equal it; each doc's docs_version must be valid semver and <= DOCS_VERSION.
 //   7. routes: shape + must exist in the live HTTP surface
 //   8. mcp_tools: subset of McpToolName union
 //   9. front-matter `id` is unique across docs/agents/*.md
@@ -19,6 +19,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { headings, listDocFiles, readDoc, renderLlmsTxt } from "./agent-docs-lib.mjs"
+import { docVersionWithinCap } from "./docs-version-semver.mjs"
 import { extractOperations } from "./lint-api-documented.mjs"
 
 /** Same out-of-scope pairs as lint-api-documented.mjs — documentable HTTP surface. */
@@ -245,12 +246,17 @@ if (!fs.existsSync(indexPath)) {
       "docs/agents/index.json",
       `docsVersion ${JSON.stringify(onDisk.docsVersion)} != DOCS_VERSION ${JSON.stringify(docsVersion)}`,
     )
-  for (const e of entries)
-    if (docsVersion && e.docs_version !== docsVersion)
-      fail(
-        e.path,
-        `docs_version ${JSON.stringify(e.docs_version)} != DOCS_VERSION ${JSON.stringify(docsVersion)}`,
-      )
+  for (const e of entries) {
+    if (!docsVersion) continue
+    const check = docVersionWithinCap(String(e.docs_version ?? ""), docsVersion)
+    if (!check.ok) {
+      const detail =
+        check.reason === "above DOCS_VERSION"
+          ? `docs_version ${JSON.stringify(e.docs_version)} > DOCS_VERSION ${JSON.stringify(docsVersion)}`
+          : `docs_version ${JSON.stringify(e.docs_version)} is not valid semver`
+      fail(e.path, detail)
+    }
+  }
 
   if (JSON.stringify(onDisk.docs ?? []) !== actual) {
     const idsIndexed = new Set((onDisk.docs ?? []).map((d) => d.path))
