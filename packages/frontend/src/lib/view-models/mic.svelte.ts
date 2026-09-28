@@ -50,6 +50,8 @@ export class Mic {
   pendingRestored = $state(false)
   /** Soft hint when permission is still `prompt` (not granted yet). */
   permissionHint: MessageKey | null = $state(null)
+  /** True when the browser reports the mic as denied - surfaced as a crossed-out icon, not text. */
+  permissionDenied: boolean = $state(false)
   /** True only while requesting and Permissions API reports `prompt`. */
   awaitingPermissionDialog: boolean = $state(false)
 
@@ -73,6 +75,8 @@ export class Mic {
   refreshPermissionHint = async (): Promise<void> => {
     const state = await probeMicPermission()
     this.permissionHint = state === "prompt" ? "mic.hint.needsAllow" : null
+    // "unknown" (no Permissions API) must not erase a denial the catch below already saw.
+    if (state !== "unknown") this.permissionDenied = state === "denied"
   }
 
   toggle = async (): Promise<void> => {
@@ -93,7 +97,8 @@ export class Mic {
         this.state = "idle"
         this.awaitingPermissionDialog = false
         if (e instanceof DOMException && e.name === "NotAllowedError") {
-          this.error = "mic.error.permission"
+          // Denial is shown by the mic icon (MicOff), so no text error here.
+          this.permissionDenied = true
           this.permissionHint = null
         } else if (e instanceof DOMException && e.name === "NotFoundError") {
           this.error = "mic.error.notFound"
@@ -106,6 +111,7 @@ export class Mic {
       this.state = "recording"
       this.awaitingPermissionDialog = false
       this.permissionHint = null
+      this.permissionDenied = false
       this.#cues?.play("recordingStart")
       return
     }
