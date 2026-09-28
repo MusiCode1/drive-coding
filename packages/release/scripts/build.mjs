@@ -43,6 +43,8 @@ const backendBinEntry = path.join(repoRoot, "packages", "backend", "src", "bin",
 
 const releaseFrontendDist = path.join(releaseDir, "frontend-dist")
 const releasePlugins = path.join(releaseDir, "plugins")
+const releaseDocsAgents = path.join(releaseDir, "docs-agents")
+const repoDocsAgents = path.join(repoRoot, "docs", "agents")
 const releaseDist = path.join(releaseDir, "dist")
 const releaseBinOut = path.join(releaseDist, "drive-coding.js")
 
@@ -137,6 +139,22 @@ console.log("[build] Step 2c: prod assertions OK — clean title, no debug surfa
 console.log("[build] Step 3: copying plugins…")
 rmSync(releasePlugins, { recursive: true, force: true })
 cpSync(backendPlugins, releasePlugins, { recursive: true })
+
+// Step 3b: Copy docs/agents → release/docs-agents (npm bundle path for agent docs).
+console.log("[build] Step 3b: copying docs-agents…")
+rmSync(releaseDocsAgents, { recursive: true, force: true })
+cpSync(repoDocsAgents, releaseDocsAgents, { recursive: true })
+const docsIndexPath = path.join(releaseDocsAgents, "index.json")
+if (!existsSync(docsIndexPath)) {
+  throw new Error("[build] docs-agents/index.json missing after copy")
+}
+const docsIndex = JSON.parse(readFileSync(docsIndexPath, "utf8"))
+if (!Array.isArray(docsIndex.docs) || docsIndex.docs.length !== 17) {
+  throw new Error(
+    `[build] docs-agents/index.json expected 17 docs, got ${docsIndex.docs?.length ?? "?"}`,
+  )
+}
+console.log("[build] Step 3b: docs-agents OK — 17 documents")
 
 // Step 4: Bundle backend bin with `bun build --target=node` (core + provider-contract inline).
 // --target=node → a Node-runnable bundle so `npx drive-coding` works, not only `bunx`.

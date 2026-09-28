@@ -10,7 +10,8 @@
   "files": [
     "dist/drive-coding.js",
     "plugins",
-    "frontend-dist"
+    "frontend-dist",
+    "docs-agents"
   ],
   "keywords": [
     "acp",
