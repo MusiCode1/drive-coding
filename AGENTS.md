@@ -98,14 +98,23 @@ non-2xx, wrong content-type, empty body. The happy path was never the risk.
 ## 🔴 `agent-session.svelte.ts` — ‏מהקובץ הזה **רק מסירים**
 
 ```json
-// size-baseline.json
+// size-baseline.json — ‏עודכן אחרי סלייס agent-session-mechanical-split (28/09/2026)
 "packages/frontend/src/lib/view-models/agent-session.svelte.ts":
-  { "metric": 3675, "impurity": 92, "class": "scattered" }
+  { "metric": 3445, "impurity": 78, "class": "scattered", "codeLines": 2124 }
 // size-budgets.json — view-models budget: 400
 ```
 
-**3,675 שורות מול תקציב 400 — פי 9.2**, עם `class: "scattered"` (‏הסיווג החמור
+**3,445 שורות מול תקציב 400 — פי 8.6**, עם `class: "scattered"` (‏הסיווג החמור
 בסכימה). ‏הקובץ הבא אחריו ב-FE הוא 1,351 שורות.
+
+‏הנתיב עד כאן: ‏**3,675 → 3,599 → 3,445**. ‏הירידה האחרונה (‏−154) ‏היא סלייס
+`agent-session-mechanical-split`, ‏שהוציא 13 ‏גושים לתשעה מודולים
+(`agent-session-{apply-config,bubble-append,capture-config,config-choice,delete,`
+`drain-view-patches,quota-refresh,request-permission,session-end}.ts`).
+‏🔑 **‏מה שהסלייס לימד:** ‏חילוץ מכני **‏אינו** ‏מוריד את מה שגודל-הגוש מבטיח.
+‏319 ‏שורות-ברוטו עברו, ‏אבל ‏~165 ‏חזרו כשארית — ‏בלוקי `#…Deps()` (‏~110)
+‏ועוטפים שנשארו במחלקה כדי לא לגעת בקריאות ובטסטים. ‏מי שמתכנן יעד-שורות
+‏מסכימת גדלים ‏**‏יחטיא בפי-שניים**.
 
 ‏🟢 **אכיף היום**: `.githooks/pre-commit` מריץ `node scripts/lint-file-size.mjs`,
 ‏שהוא ratchet מונוטוני — ‏גדילה של קובץ-בסיס **מפילה את הקומיט**, ו-
@@ -193,16 +202,36 @@ sed -n '<start>,<end>p' <file> | grep -oE 'this\.#[a-zA-Z][a-zA-Z0-9_]*' | sort 
 
 | חתיכה | שורות | ‏שורות-קוד | צימוד (‏שדות פרטיים) |
 |---|---|---|---|
-| `#onSessionUpdate` | 269 | 213 | 15 |
+| `#onSessionUpdate` | 272 | 213 | 15 |
 | `#warmReconnect` | 140 | 99 | **24** |
 | `switchSession` | 101 | 74 | 12 |
 | `attach` | 87 | 70 | **21** |
 | `#loadMockSession` | 78 | 62 | 7 |
 | `#cleanup` | 76 | 46 | **21** |
-| `#handleSubagentToolCallUpdate` | 50 | 48 | **4** ← ‏הצימוד הנמוך ביותר |
 
-‏שבעתן = ‏**801 שורות**, ‏כ-22% ‏מהקובץ. ‏בקצב של אחת לסלייס זה נפרע בלי אף
+‏ששתן = ‏**754 שורות**, ‏כ-22% ‏מהקובץ. ‏בקצב של אחת לסלייס זה נפרע בלי אף
 ‏סלייס-ריפקטור ייעודי.
+
+‏🛑 **‏`#handleSubagentToolCallUpdate` ‏הוסר מהטבלה 28/09/2026 — ‏הוא כבר חולץ**
+‏ל-`subagent-tool-nesting.ts`, ‏ומה שנשאר בקובץ הוא קריאה
+(`agent-session.svelte.ts:3163`). ‏השורה הזאת הבטיחה חילוץ בן 50 ‏שורות שאינו קיים.
+
+‏⚠️ **‏מה שסלייס `mechanical-split` ‏כבר לקח** (‏28/09) — ‏אין לתכנן עליהם שוב:
+`#isValidChoice` · ‏`#appendUser{Image,Placeholder}` · ‏`#appendAgentPlaceholder` ·
+`#drainViewPatches` · ‏`#doRefreshQuota` · ‏`#onRequestPermission` ·
+`#applyConfigToClient` + ‏`applyConfigOption` · ‏`deleteSession` ·
+`#captureSessionConfig` · ‏`onSessionEnd` + ‏`#endSessionScope`.
+
+‏🔴 **‏ומה שנמדד כחסום:** ‏`#coldReconnect` (‏8 ‏שדות-גרעין), ‏`cancelTurn` (‏6)
+‏ו-`#loadMockSession` (‏5+) ‏אינם ניתנים לחילוץ מכני — ‏אובייקט-`deps` ‏בגודל כזה
+‏אינו חילוץ אלא העברת-המחלקה. ‏**‏כל שש החתיכות שנשארו בטבלה נוגעות ב-5+ ‏שדות-גרעין**
+(‏נמדד: ‏`switchSession` ‏6, ‏`#cleanup` ‏~11, ‏והשאר יותר) — ‏כלומר הצעד הבא ששווה
+‏משהו הוא **‏הכרעה ארכיטקטונית** (‏המרת `#` ‏ל-`private`, ‏שתפתח חילוץ אמיתי),
+‏לא עוד סבב מכני.
+
+‏"‏גרעין" = ‏22 ‏שדות פרטיים שש-‏6+ ‏חברים נוגעים בהם. ‏לשחזור:
+`node /tmp/ms-block-ranges2.mjs` ‏אינו בריפו — ‏המדידה נעשתה בפרסר-AST חד-פעמי
+‏(‏ר' ‏דוח `mechanical-split-avigail.md` ‏ב-`$BDS_REPORTS/drive-coding/`).
 
 ‏🔴 **‏גטר אינו שורה אחת.** ‏Biome ‏מרחיב כל גוף-פונקציה, ‏ולכן זוג get/set
 ‏עולה **‏6 שורות**. ‏מי שמחליף שדה בגטר-האצלה **‏מגדיל** ‏את הקובץ, ‏וה-ratchet
