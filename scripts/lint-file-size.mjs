@@ -18,6 +18,13 @@
  *   node scripts/lint-file-size.mjs --write-down
  *   node scripts/lint-file-size.mjs --init-baseline
  *
+ * Exit codes:
+ *   0 — clean
+ *   1 — blocking (growth / budget / impurity / stale baseline)
+ *   2 — must-shrink warning only. pre-commit maps it to 0; pre-push and
+ *       dod-check treat it as blocking. An agent running this script directly
+ *       still sees a non-zero code, which is the point.
+ *
  * Skip via `git commit --no-verify`. There is no CI; this is a local + dod-check hook, not an unbypassable gate.
  */
 import { execFileSync } from "node:child_process"
@@ -753,6 +760,9 @@ function runLint(argv = process.argv.slice(2)) {
   const fails = []
   /** @type {string[]} */
   const stale = []
+  /** ‏must-shrink — ‏ערוץ נפרד: ‏מחזיר 2 (‏אזהרה) ‏ולא 1 (‏חסימה). ‏ר' §exit codes. */
+  /** @type {string[]} */
+  const shrinkWarnings = []
   const next = { ...baseline }
 
   const byPath = new Map(measured.map((f) => [f.path, f]))
@@ -802,7 +812,7 @@ function runLint(argv = process.argv.slice(2)) {
         const codeDrop = prev.codeLines != null ? prev.codeLines - f.codeLines : Number.NaN
         const codeOk = Number.isNaN(codeDrop) || codeDrop >= MUST_SHRINK_MIN_CODE
         if (drop < MUST_SHRINK_MIN_LINES || !codeOk) {
-          fails.push(mustShrinkMessage(f, prev, metric, eff, drop, codeDrop))
+          shrinkWarnings.push(mustShrinkMessage(f, prev, metric, eff, drop, codeDrop))
         }
       }
       // backfill: an entry written before codeLines existed has no baseline to
@@ -864,7 +874,16 @@ function runLint(argv = process.argv.slice(2)) {
     fs.writeFileSync(baselinePath, JSON.stringify({ ...baselineDoc, files: next }, null, 2) + "\n")
     console.log(`wrote-down ${baselinePath}`)
   }
-  if (fails.length === 0 && (stale.length === 0 || args.writeDown)) {
+  if (shrinkWarnings.length) {
+    console.error("⚠️  must-shrink — קובץ מעל תקציב נגע בלי להתכווץ מספיק:")
+    for (const l of shrinkWarnings) console.error("  " + l)
+  }
+  // must-shrink ‏אינו חוסם בפני עצמו (‏exit 2), ‏גם כשהכיווץ הביא איתו
+  // ‏`stale baseline` — ‏שהוא תוצאה ישירה של אותו כיווץ ולא פגם נפרד.
+  // ‏חסימה אמיתית (`fails`) ‏תמיד גוברת.
+  if (fails.length) return 1
+  if (shrinkWarnings.length) return 2
+  if (stale.length === 0 || args.writeDown) {
     console.log("✅ size/impurity ratchet: no growth")
     return 0
   }

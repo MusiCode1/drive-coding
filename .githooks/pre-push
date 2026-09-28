@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# pre-push — blocks the must-shrink condition.
+#
+# The unit here is the whole branch, which is the unit the rule is about:
+# a slice may grow the file in one commit as long as it shrinks overall.
+# pre-commit only warns (exit 2 → 0); this is where it bites.
+#
+# Skip: git push --no-verify
+
+set -e
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+set +e
+node scripts/lint-file-size.mjs
+rc=$?
+set -e
+
+if [ "$rc" -eq 2 ]; then
+  echo ""
+  echo "🔴 push נחסם: קובץ מעל תקציב נגע בלי להתכווץ מספיק."
+  echo "   ר' AGENTS.md §\"agent-session.svelte.ts — מהקובץ הזה רק מסירים\""
+  echo "   עקיפה מודעת: git push --no-verify"
+  exit 1
+fi
+exit "$rc"

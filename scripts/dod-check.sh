@@ -78,7 +78,16 @@ elif [ "${ats:-0}" -gt "${bts:-0}" ]; then
 fi
 
 bun run lint:i18n > "$A/i18n.txt" 2>&1 || say "lint:i18n נכשל (מוחלט — חייב לעבור)"
-bun run lint:size > "$A/size.txt" 2>&1 || say "lint:size נכשל (מוחלט — חייב לעבור)"
+# lint:size — 1 = חסימה · 2 = must-shrink. שניהם חוסמים כאן: היחידה היא הסלייס,
+# וזה השער היחיד שאינו git-hook ולכן --no-verify אינו עוקף אותו.
+bun run lint:size > "$A/size.txt" 2>&1; size_rc=$?
+if [ "$size_rc" -eq 2 ]; then
+  say "lint:size — קובץ מעל תקציב נגע בלי להתכווץ מספיק (must-shrink)"
+  grep -E 'שונה אך|קוד ירד' "$A/size.txt" | sed 's/^/     /'
+  echo "     ר' AGENTS.md §\"agent-session.svelte.ts — מהקובץ הזה רק מסירים\""
+elif [ "$size_rc" -ne 0 ]; then
+  say "lint:size נכשל (מוחלט — חייב לעבור)"
+fi
 
 [ $fail -eq 0 ] && echo "✅ אין רגרסיה" || echo "— נמצאו רגרסיות —"
 exit $fail
