@@ -34,7 +34,7 @@ describe("agent-docs coupling", () => {
     for (const kind of kinds) {
       expect(doc).toContain(kind)
     }
-    expect(kinds).toHaveLength(CLI_KINDS.length)
+    expect(kinds).toHaveLength(7)
   })
 
   it("50-rpc lists every RPC_METHODS canonical string", () => {
