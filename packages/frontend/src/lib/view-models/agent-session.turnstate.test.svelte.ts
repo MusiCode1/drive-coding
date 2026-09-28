@@ -63,21 +63,23 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
   const actual = await importActual<typeof import("@drive-coding/provider/client")>()
   return {
     ...actual,
-    createAcpClient: vi.fn().mockImplementation(
-      (
-        _transport: unknown,
-        callbackOrCallbacks:
-          | ((n: SessionNotification) => void)
-          | { onUpdate: (n: SessionNotification) => void; onExtNotification?: unknown },
-      ) => {
-        // ─── slice FE-normalization: תמיכה בשתי חתימות ───
-        capturedListener =
-          typeof callbackOrCallbacks === "function"
-            ? callbackOrCallbacks
-            : callbackOrCallbacks.onUpdate
-        return Promise.resolve(mockClient)
-      },
-    ),
+    createAcpClient: vi
+      .fn()
+      .mockImplementation(
+        (
+          _transport: unknown,
+          callbackOrCallbacks:
+            | ((n: SessionNotification) => void)
+            | { onUpdate: (n: SessionNotification) => void; onExtNotification?: unknown },
+        ) => {
+          // ─── slice FE-normalization: תמיכה בשתי חתימות ───
+          capturedListener =
+            typeof callbackOrCallbacks === "function"
+              ? callbackOrCallbacks
+              : callbackOrCallbacks.onUpdate
+          return Promise.resolve(mockClient)
+        },
+      ),
   }
 })
 
@@ -176,9 +178,7 @@ describe("AgentSession — turnState flow (NBug1 tail-debounce + cancel + replay
 
       // content ה-tail כן נכנס (לא נאבד) — לפחות בועה אחת עם הטקסט
       const hasContent = session.bubbles.some(
-        (b) =>
-          b.kind === "message" &&
-          b.segments.some((s) => s.text === "tail content"),
+        (b) => b.kind === "message" && b.segments.some((s) => s.text === "tail content"),
       )
       expect(hasContent).toBe(true)
 

@@ -64,7 +64,9 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
           ? callbackOrCallbacks
           : callbackOrCallbacks.onUpdate
       capturedExtCallback =
-        typeof callbackOrCallbacks === "function" ? undefined : callbackOrCallbacks.onExtNotification
+        typeof callbackOrCallbacks === "function"
+          ? undefined
+          : callbackOrCallbacks.onExtNotification
       return Promise.resolve(mockClient as unknown as AcpClient)
     }),
   }
@@ -159,7 +161,11 @@ async function buildConnectedSession(): Promise<AgentSession> {
   return session
 }
 
-function makeDeferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void } {
+function makeDeferred<T>(): {
+  promise: Promise<T>
+  resolve: (v: T) => void
+  reject: (e: unknown) => void
+} {
   let resolve!: (v: T) => void
   let reject!: (e: unknown) => void
   const promise = new Promise<T>((res, rej) => {
@@ -332,7 +338,11 @@ describe("AgentSession — refreshQuota() DEV mock harness", () => {
 
   it("before open: quota=null even though a mock session is loaded", async () => {
     const session = new AgentSession()
-    await session.loadSession({ sessionId: "mock:session-budget-monthly", cwd: "/mock", cliKind: "opencode" })
+    await session.loadSession({
+      sessionId: "mock:session-budget-monthly",
+      cwd: "/mock",
+      cliKind: "opencode",
+    })
     session._setMockQuotaForTest({
       provider: "synthetic",
       windows: [
@@ -350,7 +360,11 @@ describe("AgentSession — refreshQuota() DEV mock harness", () => {
 
   it("refreshQuota() copies the injected mock snapshot to quota, without calling ext", async () => {
     const session = new AgentSession()
-    await session.loadSession({ sessionId: "mock:session-budget-monthly", cwd: "/mock", cliKind: "opencode" })
+    await session.loadSession({
+      sessionId: "mock:session-budget-monthly",
+      cwd: "/mock",
+      cliKind: "opencode",
+    })
     const monthlySnapshot: QuotaSnapshot = {
       provider: "synthetic",
       windows: [
@@ -383,7 +397,11 @@ describe("AgentSession — refreshQuota() DEV mock harness", () => {
 
   it("#mockQuota resets on #cleanup — does not leak into the next session", async () => {
     const session = new AgentSession()
-    await session.loadSession({ sessionId: "mock:session-budget-monthly", cwd: "/mock", cliKind: "opencode" })
+    await session.loadSession({
+      sessionId: "mock:session-budget-monthly",
+      cwd: "/mock",
+      cliKind: "opencode",
+    })
     session._setMockQuotaForTest({ provider: "synthetic", windows: [] })
 
     session.detach()

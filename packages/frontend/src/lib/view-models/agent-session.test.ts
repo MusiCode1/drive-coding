@@ -244,10 +244,7 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     const list = session.renderBubbles
     // slice msg-coalesce: after-tool chunk merges back into the first message bubble
     expect(list).toHaveLength(2)
-    expect(list.map((b) => stableBubbleKey(b, list))).toEqual([
-      "message:m:m1",
-      "tool:t:call-1",
-    ])
+    expect(list.map((b) => stableBubbleKey(b, list))).toEqual(["message:m:m1", "tool:t:call-1"])
   })
 
   it("second tool_call with the same toolCallId updates the existing bubble (no duplicate key)", () => {
