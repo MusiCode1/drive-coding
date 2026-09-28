@@ -1,0 +1,1297 @@
+{
+  "openapi": "3.1.1",
+  "info": {
+    "title": "drive-coding HTTP API",
+    "version": "1.0.0",
+    "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
+  },
+  "paths": {
+    "/api/voice/live/token": {
+      "post": {
+        "operationId": "post_api_voice_live_token",
+        "summary": "POST /api/voice/live/token",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "systemInstruction": {
+                    "type": "string"
+                  },
+                  "actions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "voiceName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "systemInstruction",
+                  "actions"
+                ]
+              },
+              "x-drive-coding-contract": "none"
+            }
+          }
+        }
+      }
+    },
+    "/api/diag": {
+      "get": {
+        "operationId": "get_api_diag",
+        "summary": "GET /api/diag",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "get_api_health",
+        "summary": "GET /api/health",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/usage/tokens": {
+      "get": {
+        "operationId": "get_api_usage_tokens",
+        "summary": "GET /api/usage/tokens",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/usage/clis": {
+      "get": {
+        "operationId": "get_api_usage_clis",
+        "summary": "GET /api/usage/clis",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fs/file": {
+      "get": {
+        "operationId": "get_api_fs_file",
+        "summary": "GET /api/fs/file",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/client-log": {
+      "post": {
+        "operationId": "post_api_client_log",
+        "summary": "POST /api/client-log",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "entries": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              "x-drive-coding-contract": "none"
+            }
+          }
+        }
+      }
+    },
+    "/api/usage/summary": {
+      "get": {
+        "operationId": "get_api_usage_summary",
+        "summary": "GET /api/usage/summary",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cli-logo/:cliId": {
+      "get": {
+        "operationId": "get_api_cli_logo_cliId",
+        "summary": "GET /api/cli-logo/:cliId",
+        "parameters": [
+          {
+            "name": "cliId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent-prompt": {
+      "get": {
+        "operationId": "get_api_agent_prompt",
+        "summary": "GET /api/agent-prompt",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp": {
+      "post": {
+        "operationId": "post_api_mcp",
+        "summary": "POST /api/mcp",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_mcp",
+        "summary": "GET /api/mcp",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_mcp",
+        "summary": "DELETE /api/mcp",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/options": {
+      "get": {
+        "operationId": "get_api_options",
+        "summary": "GET /api/options",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/:id/subscribe": {
+      "post": {
+        "operationId": "post_api_agents_id_subscribe",
+        "summary": "POST /api/agents/:id/subscribe",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSubscribeBody"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tts/capabilities": {
+      "get": {
+        "operationId": "get_api_tts_capabilities",
+        "summary": "GET /api/tts/capabilities",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents": {
+      "get": {
+        "operationId": "get_api_agents",
+        "summary": "GET /api/agents",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "post_api_agents",
+        "summary": "POST /api/agents",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentInputFull"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_agents",
+        "summary": "DELETE /api/agents",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/:id": {
+      "get": {
+        "operationId": "get_api_agents_id",
+        "summary": "GET /api/agents/:id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_agents_id",
+        "summary": "DELETE /api/agents/:id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_agents_id",
+        "summary": "PATCH /api/agents/:id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAgentInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reload-config": {
+      "post": {
+        "operationId": "post_api_reload_config",
+        "summary": "POST /api/reload-config",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects": {
+      "get": {
+        "operationId": "get_api_projects",
+        "summary": "GET /api/projects",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_projects",
+        "summary": "DELETE /api/projects",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/recordings/:id": {
+      "get": {
+        "operationId": "get_api_recordings_id",
+        "summary": "GET /api/recordings/:id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/recordings": {
+      "post": {
+        "operationId": "post_api_recordings",
+        "summary": "POST /api/recordings",
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "audioBase64": {
+                    "type": "string"
+                  },
+                  "mimeType": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "audioBase64",
+                  "mimeType"
+                ]
+              },
+              "x-drive-coding-contract": "none"
+            }
+          }
+        }
+      }
+    },
+    "/api/fs/browse": {
+      "get": {
+        "operationId": "get_api_fs_browse",
+        "summary": "GET /api/fs/browse",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cli-availability": {
+      "get": {
+        "operationId": "get_api_cli_availability",
+        "summary": "GET /api/cli-availability",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/:id/reply": {
+      "post": {
+        "operationId": "post_api_agents_id_reply",
+        "summary": "POST /api/agents/:id/reply",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "x-drive-coding-contract": "none"
+            }
+          }
+        },
+        "x-drive-coding-contract": "none",
+        "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced."
+      }
+    },
+    "/api/agents/:id/state": {
+      "get": {
+        "operationId": "get_api_agents_id_state",
+        "summary": "GET /api/agents/:id/state",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/:id/history": {
+      "get": {
+        "operationId": "get_api_agents_id_history",
+        "summary": "GET /api/agents/:id/history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/:id/rpc": {
+      "post": {
+        "operationId": "post_api_agents_id_rpc",
+        "summary": "POST /api/agents/:id/rpc",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced. The `params` object is validated per `method` for five management methods (see component schemas Rpc*Params); other methods use ad-hoc params at runtime.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "session/prompt",
+                      "session/cancel",
+                      "session/set_mode",
+                      "session/set_config_option",
+                      "session/load",
+                      "session/new",
+                      "session/list",
+                      "session/delete",
+                      "_drive/ext",
+                      "_drive/set_session_model"
+                    ]
+                  },
+                  "params": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/components/schemas/RpcPromptParams"
+                      },
+                      {
+                        "$ref": "#/components/schemas/RpcCancelParams"
+                      },
+                      {
+                        "$ref": "#/components/schemas/RpcLoadSessionParams"
+                      },
+                      {
+                        "$ref": "#/components/schemas/RpcNewSessionParams"
+                      },
+                      {
+                        "$ref": "#/components/schemas/RpcDeleteSessionParams"
+                      },
+                      {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    ]
+                  },
+                  "waitMs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 60000
+                  }
+                },
+                "required": [
+                  "method"
+                ],
+                "additionalProperties": true
+              },
+              "x-drive-coding-contract": "none"
+            }
+          }
+        },
+        "x-drive-coding-contract": "none",
+        "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced."
+      }
+    },
+    "/api/agents/:id/presence": {
+      "post": {
+        "operationId": "post_api_agents_id_presence",
+        "summary": "POST /api/agents/:id/presence",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/:id/events": {
+      "get": {
+        "operationId": "get_api_agents_id_events",
+        "summary": "GET /api/agents/:id/events",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/:id/connection": {
+      "delete": {
+        "operationId": "delete_api_agents_id_connection",
+        "summary": "DELETE /api/agents/:id/connection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateAgentInputFull": {
+        "type": "object",
+        "properties": {
+          "cliKind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cwd": {
+            "type": "string",
+            "minLength": 1
+          },
+          "closeOnTurnEnd": {
+            "type": "boolean"
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "existingSessionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "includeLastAssistantText": {
+            "type": "boolean"
+          },
+          "modelOverride": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notifyOnDone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "a UUID",
+                "format": "uuid",
+                "pattern": "^[\\da-f]{8}-[\\da-f]{4}-[1-8][\\da-f]{3}-[89ab][\\da-f]{3}-[\\da-f]{12}$"
+              },
+              {
+                "const": "00000000-0000-0000-0000-000000000000",
+                "description": "a UUID",
+                "format": "uuid"
+              },
+              {
+                "const": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+                "description": "a UUID",
+                "format": "uuid"
+              }
+            ],
+            "description": "a UUID",
+            "format": "uuid"
+          },
+          "parentAgentId": {
+            "type": "string"
+          },
+          "permissionPolicy": {
+            "enum": [
+              "allow_always",
+              "allow_once",
+              "ask",
+              "reject_once"
+            ]
+          },
+          "roleLabel": {
+            "type": "string"
+          },
+          "systemPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cliKind",
+          "cwd"
+        ]
+      },
+      "PatchAgentInput": {
+        "type": "object",
+        "properties": {
+          "acpSessionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "cwd": {
+            "type": "string",
+            "minLength": 1
+          },
+          "persistent": {
+            "type": "boolean"
+          },
+          "replace": {
+            "type": "boolean"
+          },
+          "status": {
+            "const": "ready"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "titleManual": {
+            "type": "boolean"
+          },
+          "userNotes": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AgentSubscribeBody": {
+        "type": "object",
+        "properties": {
+          "subscriberAgentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "a UUID",
+                "format": "uuid",
+                "pattern": "^[\\da-f]{8}-[\\da-f]{4}-[1-8][\\da-f]{3}-[89ab][\\da-f]{3}-[\\da-f]{12}$"
+              },
+              {
+                "const": "00000000-0000-0000-0000-000000000000",
+                "description": "a UUID",
+                "format": "uuid"
+              },
+              {
+                "const": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+                "description": "a UUID",
+                "format": "uuid"
+              }
+            ],
+            "description": "a UUID",
+            "format": "uuid"
+          },
+          "includeLastAssistantText": {
+            "type": "boolean",
+            "description": "When true, turn-ended prompts include a truncated preview of the target agent's last assistant message."
+          }
+        },
+        "required": [
+          "subscriberAgentId"
+        ]
+      },
+      "RpcPromptParams": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "string"
+                        },
+                        "mimeType": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "const": "audio"
+                        }
+                      },
+                      "required": [
+                        "data",
+                        "mimeType",
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "string"
+                        },
+                        "mimeType": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "const": "image"
+                        }
+                      },
+                      "required": [
+                        "data",
+                        "mimeType",
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "const": "resource_link"
+                        },
+                        "uri": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "type",
+                        "uri"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "resource": {
+                          "type": "object"
+                        },
+                        "type": {
+                          "const": "resource"
+                        }
+                      },
+                      "required": [
+                        "resource",
+                        "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "const": "text"
+                        }
+                      },
+                      "required": [
+                        "text",
+                        "type"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "meta": {
+            "type": "object",
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "content",
+          "sessionId"
+        ]
+      },
+      "RpcCancelParams": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "RpcLoadSessionParams": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      },
+      "RpcNewSessionParams": {
+        "type": "object",
+        "properties": {
+          "cwd": {
+            "type": "string"
+          }
+        }
+      },
+      "RpcDeleteSessionParams": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionId"
+        ]
+      }
+    }
+  }
+}

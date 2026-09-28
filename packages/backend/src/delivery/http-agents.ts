@@ -19,6 +19,19 @@ import {
 
 const log = createLogger("backend.agents.http")
 
+const PatchAgentInput = type({
+  "title?": "string | null",
+  "titleManual?": "boolean",
+  "userNotes?": "string",
+  "persistent?": "boolean",
+  "acpSessionId?": "string >= 1",
+  "status?": "'ready'", // D1 — ליטרל, לא string
+  "cwd?": "string >= 1",
+  "replace?": "boolean", // D3 — דגל-בקרה, לעולם לא מגיע ל-registry.update
+}).onUndeclaredKey("reject")
+
+export { PatchAgentInput }
+
 /**
  * הרחבת צד-שרת בלבד של CreateAgentInput — כולל existingSessionId
  * עבור טעינת סשן ב-Slice 8a. מוגדר ב-create-agent-input.ts (slice session-bus-mcp C1)
@@ -166,17 +179,6 @@ export function registerAgentsHttp(
    *   עובדת-חיבור (acpSessionId + status + cwd) — רק כמקשה אחת, שומר-409, תופעת-לוואי.
    *   לעולם-לא-מ-HTTP — נדחים ב-400 (שכבה א).
    */
-  const PatchAgentInput = type({
-    "title?": "string | null",
-    "titleManual?": "boolean",
-    "userNotes?": "string",
-    "persistent?": "boolean",
-    "acpSessionId?": "string >= 1",
-    "status?": "'ready'", // D1 — ליטרל, לא string
-    "cwd?": "string >= 1",
-    "replace?": "boolean", // D3 — דגל-בקרה, לעולם לא מגיע ל-registry.update
-  }).onUndeclaredKey("reject")
-
   app.patch("/api/agents/:id", async (c) => {
     const id = c.req.param("id")
     let body: unknown
