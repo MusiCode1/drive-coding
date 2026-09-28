@@ -1,0 +1,90 @@
+{
+  "docsVersion": "1.0.0",
+  "docs": [
+    {
+      "id": "orientation",
+      "title": "Orientation — what drive-coding is and which channel to use",
+      "summary": "Start here; explains what an agent can do here and whether to reach the backend over HTTP, MCP or the CLI.",
+      "read_when": [
+        "You have just been handed a drive-coding backend and do not know what it offers",
+        "You must choose between the HTTP API, the MCP server and the CLI"
+      ],
+      "tags": [
+        "orientation"
+      ],
+      "surface": [
+        "http",
+        "mcp",
+        "cli"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [],
+      "mcp_tools": [],
+      "path": "docs/agents/00-orientation.md",
+      "headings": [
+        "Orientation"
+      ]
+    },
+    {
+      "id": "session-lifecycle",
+      "title": "Session lifecycle — open, send, close",
+      "summary": "How to spawn an agent, drive a turn and release it, including who owns the session.",
+      "read_when": [
+        "You need to spawn an agent and get its id",
+        "A turn is running and you must decide between waiting and forcing",
+        "You are about to leave an agent open and want to know who owns it"
+      ],
+      "tags": [
+        "session",
+        "ownership",
+        "turnstate"
+      ],
+      "surface": [
+        "http",
+        "mcp"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [
+        "POST /api/agents",
+        "DELETE /api/agents/:id"
+      ],
+      "mcp_tools": [
+        "session_open",
+        "session_send",
+        "session_close"
+      ],
+      "path": "docs/agents/20-session-lifecycle.md",
+      "headings": [
+        "Session lifecycle"
+      ]
+    },
+    {
+      "id": "render-contract",
+      "title": "Render contract — what your output can display",
+      "summary": "What the drive-coding UI renders from agent output, and what it will not render.",
+      "read_when": [
+        "You are about to emit a file link, an image or a diagram",
+        "Your output rendered as plain text and you expected something richer"
+      ],
+      "tags": [
+        "render",
+        "output",
+        "ui"
+      ],
+      "surface": [
+        "http",
+        "mcp"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [],
+      "mcp_tools": [],
+      "path": "docs/agents/45-render-contract.md",
+      "headings": [
+        "Render contract"
+      ]
+    }
+  ]
+}

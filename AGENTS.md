@@ -615,10 +615,30 @@ public clone. Paths under `packages/` are real files here.
 | **Per-slice rationale** (why the code looks the way it does) | `docs-for-llm/decisions/voice-acp.md` | living log (written by מרדכי) |
 | **How to write a slice plan** (handoff to executor) | `docs-for-llm/plans/README.md` | canonical |
 | **Planning history** — *how* we reached D1-D50, mental model, competitor/library research | `docs-for-llm/vnext-planning.md`, `docs-for-llm/vnext-research.md` | **historical** (not maintained) |
+| **What drive-coding offers an agent at runtime** — connect, session lifecycle, what the chat UI renders from your output | `docs/agents/` — **run `bun run docs:list` first** | public, agent-facing |
 
 > **Reading order for a new code task:** `design-principles.md` (rules) →
 > `frontend/AGENTS.md` (FE golden rules) → the relevant spec (`frontend-spec.md` §X)
 > → `parallel-safe-code.md` if you touch a shared file.
+
+### Agent-facing docs (`docs/agents/`) — how to find them
+
+**Work that touches the runtime surface an agent talks to: run `bun run docs:list`,
+then read only the documents whose `read_when` matches your task.** The command prints
+every document's path, `summary` and `read_when`; it reports `[missing front matter]`
+rather than skipping a malformed file. `bun run lint:docs` is the gate over that
+directory and runs in `pre-commit`.
+
+These are **public** docs written for coding agents, not for maintainers — the private
+planning notes stay in `docs-for-llm/`.
+
+> **This line is one routing channel out of three, and the only one that exists today.**
+> An agent working *inside this repo* finds the docs here. An agent that drive-coding
+> **spawned** gets them two other ways — a parent injecting the pointer into its context
+> (the `prompts/surface/*` pieces, delivered via CLI hook / `GET /api/agent-prompt` /
+> the `session_surface` MCP tool), and MCP resources + a `docs_get` tool. Those two are
+> **not built yet**; they are the `agent-docs-serve` slice. Until then, a spawned child
+> has no route to `docs/agents/` at all — do not assume it can see them.
 
 ## עבודה עם מרדכי (planner)
 
