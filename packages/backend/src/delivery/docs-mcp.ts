@@ -72,10 +72,7 @@ export function docsGetFromInput(input: {
   return jsonResult(body)
 }
 
-export function registerAgentDocsMcp(
-  server: McpServer,
-  registerArkTool: RegisterArkTool,
-): void {
+export function registerAgentDocsMcp(server: McpServer, registerArkTool: RegisterArkTool): void {
   const listBody = () => JSON.stringify(buildAgentDocsListBody())
   const openApiBody = () => JSON.stringify(buildOpenApiServeBody())
 
@@ -142,14 +139,8 @@ export function registerAgentDocsMcp(
     )
   }
 
-  registerArkTool(
-    server,
-    "docs_get",
-    MCP_TOOL_META.docs_get,
-    McpDocsGetInput,
-    async (raw) => {
-      const input = raw as typeof McpDocsGetInput.infer
-      return docsGetFromInput(input)
-    },
-  )
+  registerArkTool(server, "docs_get", MCP_TOOL_META.docs_get, McpDocsGetInput, async (raw) => {
+    const input = raw as typeof McpDocsGetInput.infer
+    return docsGetFromInput(input)
+  })
 }

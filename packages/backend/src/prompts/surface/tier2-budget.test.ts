@@ -21,7 +21,10 @@ function toolCatalogChars(): number {
     ...Object.entries(MCP_TOOL_META),
     ["notify_parent", MCP_NOTIFY_PARENT_META],
   ]
-  return entries.reduce((s, [name, v]) => s + name.length + v.title.length + v.description.length, 0)
+  return entries.reduce(
+    (s, [name, v]) => s + name.length + v.title.length + v.description.length,
+    0,
+  )
 }
 
 describe("tier2 surface + MCP catalog budget", () => {

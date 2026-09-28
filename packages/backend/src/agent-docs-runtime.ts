@@ -144,7 +144,9 @@ export function buildOpenApiServeBody(): Record<string, unknown> {
 }
 
 export function knownAgentDocIds(): string[] {
-  return agentDocsIndexEntries().map((d) => d.id).sort()
+  return agentDocsIndexEntries()
+    .map((d) => d.id)
+    .sort()
 }
 
 /** Test hook — reset module cache between cases. */

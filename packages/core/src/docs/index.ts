@@ -16,10 +16,7 @@ export function loadAgentDocs(source: DocsSource): readonly AgentDocFile[] {
 }
 
 /** Raw asset lookup on the unfiltered source array (index.json, openapi.json, …). */
-export function readDocsAsset(
-  files: readonly AgentDocFile[],
-  name: string,
-): string | undefined {
+export function readDocsAsset(files: readonly AgentDocFile[], name: string): string | undefined {
   return files.find((f) => f.name === name)?.text
 }
 
