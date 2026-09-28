@@ -3,11 +3,14 @@
  * @vitest-environment jsdom
  */
 
+import type { AvailableCommand } from "@agentclientprotocol/sdk"
+import { EMPTY_PLAN_STORE } from "@drive-coding/core/acp/plan"
 import { createInitialSessionState } from "@drive-coding/core/session"
 import { toWireText } from "@drive-coding/core/session/testing"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { flushSync } from "svelte"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { MockSessionView } from "./__fixtures__/mock-session-view.svelte"
 import { AgentSession } from "./agent-session.svelte"
 
 let loadSessionMock = vi.fn().mockResolvedValue({})
@@ -52,6 +55,52 @@ vi.mock("$lib/adapters/agents-api", () => ({
   patchAgent: vi.fn().mockResolvedValue(undefined),
 }))
 
+const mockFixture = {
+  updates: [
+    {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "mock replay" },
+      messageId: "m1",
+    },
+  ],
+}
+
+function seedSessionA(session: AgentSession): void {
+  session.sessionTitle = "first"
+  session.titleManual = true
+  session.userNotes = "note-a"
+  session.sessionFields = { k: "v" }
+  session.availableCommands = [
+    { name: "do", description: "x", input: { hint: "" } },
+  ] as AvailableCommand[]
+  session.planStore = {
+    order: ["__default__"],
+    byId: { __default__: { kind: "entries", entries: [{ content: "step", status: "pending" }] } },
+  }
+  session.contextUsage = {
+    usedTokens: 1,
+    maxTokens: 100,
+  } as AgentSession["contextUsage"]
+  session.quota = { provider: "test", windows: [] }
+  session.quotaLoading = true
+}
+
+/** Assert all nine session-scoped fields (§8.3) — use expect.soft so base runs report every leak. */
+function expectSessionScopedDefaultsSoft(
+  session: AgentSession,
+  opts?: { sessionTitle?: string },
+): void {
+  expect.soft(session.sessionTitle).toBe(opts?.sessionTitle ?? "")
+  expect.soft(session.titleManual).toBe(false)
+  expect.soft(session.userNotes).toBe("")
+  expect.soft(session.sessionFields).toEqual({})
+  expect.soft(session.availableCommands).toEqual([])
+  expect.soft(session.planStore).toEqual(EMPTY_PLAN_STORE)
+  expect.soft(session.contextUsage).toBeNull()
+  expect.soft(session.quota).toBeNull()
+  expect.soft(session.quotaLoading).toBe(false)
+}
+
 function delay(ms = 10): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -78,6 +127,13 @@ describe("AgentSession session-scope boundary", () => {
     vi.unstubAllGlobals()
     vi.stubGlobal("location", { protocol: "http:", host: "localhost:4000" })
     loadSessionMock = vi.fn().mockResolvedValue({})
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue(mockFixture),
+      }),
+    )
   })
 
   it("different sessionId without title resets session-scoped fields (bug #71)", async () => {
@@ -88,26 +144,13 @@ describe("AgentSession session-scope boundary", () => {
       cliKind: "opencode",
       title: "first",
     })
-    session.titleManual = true
-    session.userNotes = "note-a"
-    session.sessionFields = { k: "v" }
+    seedSessionA(session)
     expect(session.sessionTitle).toBe("first")
-    expect(session.titleManual).toBe(true)
-    expect(session.userNotes).toBe("note-a")
-    expect(session.sessionFields).toEqual({ k: "v" })
 
     session.status = "disconnected" as typeof session.status
     await session.loadSession({ sessionId: "sess-2", cwd: "/proj", cliKind: "opencode" })
 
-    expect(session.sessionTitle).toBe("")
-    expect(session.titleManual).toBe(false)
-    expect(session.userNotes).toBe("")
-    expect(session.sessionFields).toEqual({})
-    expect(session.availableCommands).toEqual([])
-    expect(session.planStore.order).toEqual([])
-    expect(session.contextUsage).toBeNull()
-    expect(session.quota).toBeNull()
-    expect(session.quotaLoading).toBe(false)
+    expectSessionScopedDefaultsSoft(session)
   })
 
   it("same sessionId preserves sessionTitle on cold reload", async () => {
@@ -186,5 +229,59 @@ describe("AgentSession session-scope boundary", () => {
 
     expect(agent._sessionIdForTest()).toBe("remote-enter-1")
     expect(agent.status).toBe("connected")
+  })
+
+  it("switchSession (remote) resets scoped fields on session identity change (§4.2א #6)", async () => {
+    const view = new MockSessionView()
+    view.connect("sess-a")
+    view.loadSessionMock.mockImplementation(async (sessionId: string, cwd?: string) => {
+      view.state = { ...view.state, sessionId, cwd: cwd ?? view.state.cwd }
+    })
+
+    const agent = new AgentSession({ view })
+    agent._setStatusForTest("connected")
+    agent._setSessionContextForTest({ sessionId: "sess-a", cwd: "/proj", cliKind: "claude" })
+    seedSessionA(agent)
+
+    await agent.switchSession({ sessionId: "sess-b", cwd: "/proj", cliKind: "claude" })
+
+    expectSessionScopedDefaultsSoft(agent)
+  })
+
+  it("switchSession (local) resets scoped fields on session identity change (§4.2א #7)", async () => {
+    const session = new AgentSession()
+    await session.attach({ cwd: "/proj", cliKind: "opencode" })
+    expect(session.status).toBe("connected")
+
+    session._setSessionContextForTest({ sessionId: "sess-a", cwd: "/proj", cliKind: "opencode" })
+    seedSessionA(session)
+
+    await session.switchSession({ sessionId: "sess-b", cwd: "/proj", cliKind: "opencode" })
+
+    expectSessionScopedDefaultsSoft(session)
+  })
+
+  it("#loadMockSession path resets scoped fields on mock identity change (§4.2א #10)", async () => {
+    const session = new AgentSession()
+    await session.loadSession({
+      sessionId: "sess-a",
+      cwd: "/proj",
+      cliKind: "opencode",
+      title: "first",
+    })
+    seedSessionA(session)
+
+    session.status = "disconnected" as typeof session.status
+    await session.loadSession({ sessionId: "mock:greeting", cwd: "/tmp", cliKind: "opencode" })
+
+    expect.soft(session.titleManual).toBe(false)
+    expect.soft(session.userNotes).toBe("")
+    expect.soft(session.sessionFields).toEqual({})
+    expect.soft(session.availableCommands).toEqual([])
+    expect.soft(session.planStore).toEqual(EMPTY_PLAN_STORE)
+    expect.soft(session.contextUsage).toBeNull()
+    expect.soft(session.quota).toBeNull()
+    expect.soft(session.quotaLoading).toBe(false)
+    expect.soft(session.sessionTitle).toBe("🧪 greeting")
   })
 })
