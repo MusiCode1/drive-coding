@@ -10,7 +10,7 @@ tags: [rpc, session]
 surface: [http]
 stability: transitional
 routes: [POST /api/agents/:id/rpc]
-docs_version: 1.0.0
+docs_version: 1.1.0
 updated: 2026-09-28
 ---
 
@@ -37,12 +37,45 @@ Legacy aliases (for example `prompt` instead of `session/prompt`) may still be a
 | `_drive/ext` | Extension dispatch (`params.method`, optional `params.params`). |
 | `_drive/set_session_model` | Legacy model override (`params.model`) — prefer config options when available. |
 
-## `waitMs`
+## `waitMs` and blocking
 
-Six methods (`session/prompt`, `session/cancel`, `session/set_mode`, `session/set_config_option`, `_drive/ext`, `_drive/set_session_model`) accept optional top-level `waitMs` (1–60000).
-When set, the HTTP handler waits for the operation to finish and returns a result object instead of `202`.
+Six methods honor optional top-level `waitMs` (1–60000) on the HTTP handler (`session-host/http/rpc.ts:67-74`):
 
-Management methods (`session/list`, `session/load`, `session/new`, `session/delete`) ignore `waitMs` and always return their result synchronously.
+- `session/prompt` · `session/cancel` · `session/set_mode` · `session/set_config_option` · `_drive/ext` · `_drive/set_session_model`
+
+Without `waitMs` (or `0`), those six return **`202`** with `{ version }` only (`rpc.ts:425`).
+With valid `waitMs`, the handler waits and returns **`200`** result bodies (or **`200`** `{ ok: false, timedOut: true }` on timeout — `rpc.ts:211-212`, `rpc.ts:137-139`).
+Invalid `waitMs` on those six → **`400`** `{ error: "invalid waitMs" }` (`rpc.ts:189-190`).
+
+Management methods (`session/list`, `session/load`, `session/new`, `session/delete`) **ignore** `waitMs` and always return their own **`200`** / **`400`** / **`502`** bodies (`rpc.ts:17-24`, `rpc.ts:303-415`).
+
+## HTTP status codes
+
+| Status | When | Anchor |
+|--------|------|--------|
+| `404` | Host missing (final reasons) | `rpc.ts:168-169` |
+| `503` | Host missing, reason `evict-timeout` | `rpc.ts:168-169` |
+| `400` | Invalid JSON | `rpc.ts:177-178` |
+| `400` | Unknown method | `rpc.ts:421` |
+| `400` | ArkType param errors (`p.summary`) | `rpc.ts:198`, `rpc.ts:236`, etc. |
+| `400` | `load`/`new` without cwd | `rpc.ts:338`, `rpc.ts:375` |
+| `202` | Fire-and-forget success for the six wait-capable methods | `rpc.ts:425` |
+| `200` | Blocking wait results, management results, or `-32601` degradations | `rpc.ts:211-231`, `rpc.ts:303-415` |
+| `502` | Upstream/session errors on management calls | `rpc.ts:328-331`, `rpc.ts:365-367`, etc. |
+
+Scoped writes may deny before dispatch — see `60-identity-and-scopes`.
+
+## Parameter validation (selected)
+
+| Method | Invalid params | Response |
+|--------|----------------|----------|
+| `session/prompt` | ArkType `PromptParams` | `400` + `error` summary (`rpc.ts:197-198`) |
+| `session/cancel` | ArkType `CancelParams` | `400` (`rpc.ts:235-236`) |
+| `session/load` | ArkType / missing cwd | `400` (`rpc.ts:335-338`) |
+| `session/new` | ArkType / missing cwd | `400` (`rpc.ts:372-375`) |
+| `session/delete` | ArkType | `400` (`rpc.ts:402-403`) |
+| `session/list` | (none) | errors → `502` or empty list on `-32601` (`rpc.ts:318-331`) |
+| `session/delete` | unsupported CLI | `200` `{ ok: false, unsupported: true }` on `-32601` (`rpc.ts:408-409`) |
 
 ## OpenAPI
 
