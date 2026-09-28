@@ -14,8 +14,9 @@ updated: 2026-09-28
 
 # Render contract
 
-The chat UI renders markdown-rich content with a **strict allowlist**. Tier-2 surface
-prompt (`SURFACE_DISPLAY`) summarizes three rules; this document is the full reference.
+The chat UI renders markdown-rich content with a **strict allowlist**. This page is
+**expanded from `packages/backend/src/prompts/surface/display.ts`**; that file is the
+Tier-2 summary (three rules an agent must not miss) and this is its Tier-3 reference.
 
 ## Images — recipe
 
