@@ -9,8 +9,14 @@
         "You have just been handed a drive-coding backend and do not know what it offers",
         "You must choose between the HTTP API, the MCP server and the CLI"
       ],
-      "tags": ["orientation"],
-      "surface": ["http", "mcp", "cli"],
+      "tags": [
+        "orientation"
+      ],
+      "surface": [
+        "http",
+        "mcp",
+        "cli"
+      ],
       "stability": "stable",
       "docs_version": "1.0.0",
       "routes": [],
@@ -35,11 +41,19 @@
         "A request to the backend failed and you are not sure the base URL is right",
         "You need a URL the user can open in a browser, not a loopback address"
       ],
-      "tags": ["connect"],
-      "surface": ["http", "mcp", "cli"],
+      "tags": [
+        "connect"
+      ],
+      "surface": [
+        "http",
+        "mcp",
+        "cli"
+      ],
       "stability": "stable",
       "docs_version": "1.0.0",
-      "routes": ["GET /api/health"],
+      "routes": [
+        "GET /api/health"
+      ],
       "mcp_tools": [],
       "path": "docs/agents/10-connect.md",
       "headings": [
@@ -61,8 +75,15 @@
         "A turn is running and you must decide between waiting and forcing",
         "You are about to leave an agent open and want to know who owns it"
       ],
-      "tags": ["session", "ownership", "turnstate"],
-      "surface": ["http", "mcp"],
+      "tags": [
+        "session",
+        "ownership",
+        "turnstate"
+      ],
+      "surface": [
+        "http",
+        "mcp"
+      ],
       "stability": "stable",
       "docs_version": "1.0.0",
       "routes": [
@@ -103,12 +124,22 @@
         "You are about to guess a config option id instead of reading the catalog",
         "A sets call was accepted and nothing changed"
       ],
-      "tags": ["config", "session"],
-      "surface": ["http", "mcp"],
+      "tags": [
+        "config",
+        "session"
+      ],
+      "surface": [
+        "http",
+        "mcp"
+      ],
       "stability": "stable",
       "docs_version": "1.0.0",
       "routes": [],
-      "mcp_tools": ["session_open", "session_send", "session_state"],
+      "mcp_tools": [
+        "session_open",
+        "session_send",
+        "session_state"
+      ],
       "path": "docs/agents/30-child-config.md",
       "headings": [
         "Child config",
@@ -129,8 +160,14 @@
         "You must follow a long turn without holding a stream open",
         "You have a message id and want only what came after it"
       ],
-      "tags": ["output", "session"],
-      "surface": ["http", "mcp"],
+      "tags": [
+        "output",
+        "session"
+      ],
+      "surface": [
+        "http",
+        "mcp"
+      ],
       "stability": "stable",
       "docs_version": "1.0.0",
       "routes": [
@@ -139,7 +176,10 @@
         "GET /api/agents/:id/state",
         "POST /api/agents/:id/rpc"
       ],
-      "mcp_tools": ["session_send", "session_state"],
+      "mcp_tools": [
+        "session_send",
+        "session_state"
+      ],
       "path": "docs/agents/40-reading-output.md",
       "headings": [
         "Reading output",
@@ -160,8 +200,15 @@
         "You are about to emit a file link, an image or a diagram",
         "Your output rendered as plain text and you expected something richer"
       ],
-      "tags": ["render", "output", "ui"],
-      "surface": ["http", "mcp"],
+      "tags": [
+        "render",
+        "output",
+        "ui"
+      ],
+      "surface": [
+        "http",
+        "mcp"
+      ],
       "stability": "stable",
       "docs_version": "1.0.0",
       "routes": [],
@@ -188,14 +235,95 @@
         "You are integrating with the FE-style RPC surface instead of MCP session_send",
         "You need the canonical list of RPC method names and what each one expects"
       ],
-      "tags": ["rpc", "session"],
-      "surface": ["http"],
+      "tags": [
+        "rpc",
+        "session"
+      ],
+      "surface": [
+        "http"
+      ],
       "stability": "transitional",
       "docs_version": "1.0.0",
-      "routes": ["POST /api/agents/:id/rpc"],
+      "routes": [
+        "POST /api/agents/:id/rpc"
+      ],
       "mcp_tools": [],
       "path": "docs/agents/50-rpc.md",
-      "headings": ["Agent session RPC", "Methods", "`waitMs`", "OpenAPI"]
+      "headings": [
+        "Agent session RPC",
+        "Methods",
+        "`waitMs`",
+        "OpenAPI"
+      ]
+    },
+    {
+      "id": "identity",
+      "title": "Agent identity and scoped writes",
+      "summary": "Who you are on this backend, what DC_TOKEN does, and why it is not a security boundary.",
+      "read_when": [
+        "You need to know your agent id or scope token at runtime",
+        "A write to another agent was denied or you must answer a scope permission prompt",
+        "You are reviewing whether scoped writes protect against malicious agents"
+      ],
+      "tags": [
+        "identity"
+      ],
+      "surface": [
+        "http",
+        "mcp"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [
+        "POST /api/agents/:id/reply"
+      ],
+      "mcp_tools": [],
+      "path": "docs/agents/60-identity-and-scopes.md",
+      "headings": [
+        "Agent identity and scoped writes",
+        "Who you are",
+        "Scope token",
+        "What scoped writes protect",
+        "HTTP status — `POST /api/agents/:id/reply`",
+        "Not a security boundary"
+      ]
+    },
+    {
+      "id": "subagents",
+      "title": "Subagents — spawn, parent identity, notify_parent",
+      "summary": "Open child agents, detect when you are a child, report to the parent, and what closing does not do.",
+      "read_when": [
+        "You were spawned with a parent and need to signal completion or status upstream",
+        "You want the injected surface prompt text for your session",
+        "You are about to delete agents and need to know whether children are closed automatically"
+      ],
+      "tags": [
+        "subagents",
+        "session"
+      ],
+      "surface": [
+        "http",
+        "mcp"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [
+        "GET /api/agent-prompt",
+        "DELETE /api/agents"
+      ],
+      "mcp_tools": [
+        "session_open",
+        "notify_parent"
+      ],
+      "path": "docs/agents/70-subagents.md",
+      "headings": [
+        "Subagents",
+        "Opening a child",
+        "Knowing you are a child",
+        "Surface prompt injection",
+        "notify_parent",
+        "Closing agents — no cascade"
+      ]
     },
     {
       "id": "errors",
@@ -206,8 +334,14 @@
         "You got a 404 and cannot tell whether the agent is gone or just not connected",
         "A request returned 200 with timedOut true and you must decide what to do next"
       ],
-      "tags": ["errors", "rpc"],
-      "surface": ["http", "mcp"],
+      "tags": [
+        "errors",
+        "rpc"
+      ],
+      "surface": [
+        "http",
+        "mcp"
+      ],
       "stability": "stable",
       "docs_version": "1.0.0",
       "routes": [],
@@ -221,6 +355,34 @@
         "Agent CRUD",
         "MCP scope and limits",
         "Decision cheatsheet"
+      ]
+    },
+    {
+      "id": "cli",
+      "title": "drive-coding CLI — local HTTP client",
+      "summary": "The drive-coding agent subcommand talks to a running backend; commands map to documented HTTP routes.",
+      "read_when": [
+        "You run on the same machine as the backend and prefer a shell client over raw curl",
+        "You need the discovery order for --base, --port, and DRIVE_CODING_BASE",
+        "You want to know which CLI command equals DELETE or POST on the HTTP API"
+      ],
+      "tags": [
+        "cli"
+      ],
+      "surface": [
+        "cli"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [],
+      "mcp_tools": [],
+      "path": "docs/agents/96-cli.md",
+      "headings": [
+        "drive-coding CLI",
+        "Server discovery",
+        "Commands vs HTTP",
+        "Close semantics",
+        "Equivalence gaps"
       ]
     }
   ]
