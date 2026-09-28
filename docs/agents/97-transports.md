@@ -15,7 +15,7 @@ routes:
   - DELETE /api/mcp
   - POST /api/agents/:id/subscribe
   - DELETE /api/agents/:id/connection
-docs_version: 1.0.0
+docs_version: 1.1.0
 updated: 2026-09-28
 ---
 

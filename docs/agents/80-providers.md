@@ -12,7 +12,7 @@ stability: stable
 routes:
   - GET /api/cli-availability
   - GET /api/cli-logo/:cliId
-docs_version: 1.0.0
+docs_version: 1.1.0
 updated: 2026-09-28
 ---
 
@@ -26,7 +26,9 @@ The **effective** registry at runtime is **`CLI_SPECS ⊕ cli-specs.jsonc`** —
 
 **Do not treat `CLI_SPECS` alone as the full provider list.** For the live set on this backend, call **`GET /api/cli-availability`**.
 
-Kind literals for compile-time checks: **`CLI_KINDS`** (`agent.ts:122`).
+Compile-time kind union **`CLI_KINDS`** (`agent.ts:122`) — current members:
+`opencode`, `claude`, `gemini`, `codex`, `qoder`, `cursor`, `grok`.
+The live server may expose additional ids via `cli-specs.jsonc`; always prefer **`GET /api/cli-availability`** over this list alone.
 
 ## GET /api/cli-availability
 

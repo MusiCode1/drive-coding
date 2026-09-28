@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.0.0",
+  "docsVersion": "1.1.0",
   "docs": [
     {
       "id": "orientation",
@@ -18,7 +18,7 @@
         "cli"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/00-orientation.md",
@@ -50,7 +50,7 @@
         "cli"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [
         "GET /api/health"
       ],
@@ -85,7 +85,7 @@
         "mcp"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [
         "GET /api/agents",
         "POST /api/agents",
@@ -133,7 +133,7 @@
         "mcp"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [],
       "mcp_tools": [
         "session_open",
@@ -169,7 +169,7 @@
         "mcp"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [
         "GET /api/agents/:id/history",
         "GET /api/agents/:id/events",
@@ -210,7 +210,7 @@
         "mcp"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/45-render-contract.md",
@@ -243,7 +243,7 @@
         "http"
       ],
       "stability": "transitional",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [
         "POST /api/agents/:id/rpc"
       ],
@@ -252,7 +252,9 @@
       "headings": [
         "Agent session RPC",
         "Methods",
-        "`waitMs`",
+        "`waitMs` and blocking",
+        "HTTP status codes",
+        "Parameter validation (selected)",
         "OpenAPI"
       ]
     },
@@ -273,7 +275,7 @@
         "mcp"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [
         "POST /api/agents/:id/reply"
       ],
@@ -306,7 +308,7 @@
         "mcp"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [
         "GET /api/agent-prompt",
         "DELETE /api/agents"
@@ -342,7 +344,7 @@
         "http"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [
         "GET /api/cli-availability",
         "GET /api/cli-logo/:cliId"
@@ -373,7 +375,7 @@
         "http"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [
         "GET /api/fs/browse",
         "GET /api/fs/file",
@@ -409,7 +411,7 @@
         "http"
       ],
       "stability": "transitional",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [
         "GET /api/tts/capabilities",
         "POST /api/voice/live/token"
@@ -439,7 +441,7 @@
         "http"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [
         "GET /api/diag",
         "GET /api/usage/summary",
@@ -478,7 +480,7 @@
         "mcp"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/95-errors.md",
@@ -508,7 +510,7 @@
         "cli"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/96-cli.md",
@@ -537,7 +539,7 @@
         "mcp"
       ],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.1.0",
       "routes": [
         "GET /api/mcp",
         "POST /api/mcp",

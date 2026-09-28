@@ -10,7 +10,7 @@ tags: [cli]
 surface: [cli]
 stability: stable
 routes: []
-docs_version: 1.0.0
+docs_version: 1.1.0
 updated: 2026-09-28
 ---
 
