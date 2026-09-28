@@ -15,8 +15,7 @@ const OUT_OF_SCOPE = [
   ["all", "/proxy/:provider/*"],
 ]
 
-const ROUTE_LINE_RE =
-  /\.(get|post|put|patch|delete|all|on)\(\s*["'`](\/[^"'`\n]*)["'`]/g
+const ROUTE_LINE_RE = /\.(get|post|put|patch|delete|all|on)\(\s*["'`](\/[^"'`\n]*)["'`]/g
 
 function matchRouteLines(line) {
   return [...line.matchAll(new RegExp(ROUTE_LINE_RE.source, "g"))]
@@ -35,9 +34,13 @@ const AGENT_DOCS_INTEGRATION_BASE = "40aca861580f0b95d151579b2805d46a160b3502"
 
 function mapCheckRange(root, base, head) {
   try {
-    execFileSync("git", ["-C", root, "merge-base", "--is-ancestor", base, AGENT_DOCS_INTEGRATION_BASE], {
-      stdio: "ignore",
-    })
+    execFileSync(
+      "git",
+      ["-C", root, "merge-base", "--is-ancestor", base, AGENT_DOCS_INTEGRATION_BASE],
+      {
+        stdio: "ignore",
+      },
+    )
     return `${AGENT_DOCS_INTEGRATION_BASE}..${head}`
   } catch {
     return `${base}..${head}`
@@ -89,7 +92,8 @@ function readStdinPushRef() {
 function resolveRange(root, explicit) {
   if (explicit) {
     const [base, head] = explicit.split("..")
-    if (base && head) return { base, head: head === "HEAD" ? git(root, ["rev-parse", "HEAD"]) : head }
+    if (base && head)
+      return { base, head: head === "HEAD" ? git(root, ["rev-parse", "HEAD"]) : head }
   }
 
   const push = readStdinPushRef()
@@ -114,7 +118,9 @@ function resolveRange(root, explicit) {
   }
 
   try {
-    const lines = git(root, ["rev-list", "HEAD", "--not", "--remotes=origin"]).split("\n").filter(Boolean)
+    const lines = git(root, ["rev-list", "HEAD", "--not", "--remotes=origin"])
+      .split("\n")
+      .filter(Boolean)
     if (lines.length > 0) {
       const oldest = lines.at(-1)
       const base = git(root, ["rev-parse", `${oldest}^`])
@@ -162,7 +168,8 @@ function openapiKeys(root) {
   const set = new Set()
   for (const [route, item] of Object.entries(spec.paths ?? {})) {
     for (const method of Object.keys(item)) {
-      if (method !== "parameters" && !method.startsWith("x-")) set.add(`${method.toLowerCase()} ${route}`)
+      if (method !== "parameters" && !method.startsWith("x-"))
+        set.add(`${method.toLowerCase()} ${route}`)
     }
   }
   return { version: spec.info?.version, keys: set }
@@ -260,7 +267,11 @@ function markedBugIds(root) {
     for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
       const p = path.join(dir, ent.name)
       if (ent.isDirectory()) walk(p)
-      else if (ent.name.endsWith(".md") && ent.name !== "README.md" && ent.name !== "_TEMPLATE.md") {
+      else if (
+        ent.name.endsWith(".md") &&
+        ent.name !== "README.md" &&
+        ent.name !== "_TEMPLATE.md"
+      ) {
         const text = fs.readFileSync(p, "utf8")
         const parsed = parseFrontMatter(text)
         if (!parsed.ok) continue
@@ -332,7 +343,9 @@ export function runFreshnessChecks(root, rangeSpec) {
     }
     if (!routeMap.has(key)) {
       const [method, routePath] = key.split(" ")
-      fails.push(`no document declares ${method.toUpperCase()} ${routePath} in its front matter \`routes:\``)
+      fails.push(
+        `no document declares ${method.toUpperCase()} ${routePath} in its front matter \`routes:\``,
+      )
     }
   }
 
@@ -385,12 +398,16 @@ export function runFreshnessChecks(root, rangeSpec) {
   if (!PUBLISH_REAL_ISSUES) {
     for (const id of published) {
       if (id !== "#EXAMPLE") {
-        fails.push(`${KNOWN_ISSUES_PATH}: real issue id ${id} must not appear while publication is disabled`)
+        fails.push(
+          `${KNOWN_ISSUES_PATH}: real issue id ${id} must not appear while publication is disabled`,
+        )
       }
     }
     for (const id of marked) {
       if (published.has(id)) {
-        fails.push(`${KNOWN_ISSUES_PATH}: marked issue ${id} must not appear while publication is disabled`)
+        fails.push(
+          `${KNOWN_ISSUES_PATH}: marked issue ${id} must not appear while publication is disabled`,
+        )
       }
     }
   } else {

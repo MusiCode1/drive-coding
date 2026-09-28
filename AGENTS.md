@@ -323,6 +323,26 @@ After clone, run `bun run hooks:install` once. It sets `core.hooksPath=.githooks
 so `.githooks/pre-commit` runs the i18n lint before every commit. To skip a
 specific commit (rare): `git commit --no-verify`.
 
+### Agent docs freshness (`pre-push`)
+
+When the size ratchet passes (`lint-file-size.mjs` exit 0), `pre-push` also runs
+`node scripts/lint-docs-fresh.mjs`. It compares the **push range** (stdin from
+git, or `merge-base` with upstream, or unpushed commits on the branch) against
+agent-docs surfaces: HTTP route registration, MCP tools, render contract, new FE
+pages, config keys, `DOCS_VERSION` vs edited `docs/agents/*.md`, and
+`99-known-issues.md` vs the private bug register.
+
+The gate is **fail-open**: missing `docs-for-llm/`, a non-git tree, or an
+unresolvable range exits 0 with no output. Any internal error also exits 0.
+
+**Convention (not enforced):** when you edit an agent doc, bump `docs_version` on
+that doc and raise `DOCS_VERSION` in `packages/core/src/docs/index.ts` in the
+same push range. The linter only requires that *some* doc change in the range
+pairs with a semver increase of `DOCS_VERSION`; it does not require the edited
+file’s `docs_version` to match HEAD, only `<= DOCS_VERSION`.
+
+There is **no CI**; hooks can be skipped with `git push --no-verify`.
+
 ## Worktrees
 
 All worktrees live under `.worktrees/<name>/`. Branch names use the `slice/` prefix;
