@@ -342,11 +342,7 @@ describe("AgentSession — NBug2 root fix: #doReconnect closes live WS before wa
 
     // מגדיר sessionId + cwd + cliKind כדי ש-reconnect() לא יחזור מוקדם
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setSessionContextForTest({
-      sessionId: "test-id",
-      cwd: "/tmp",
-      cliKind: "opencode",
-    })
+    ;(session as any)._setSessionContextForTest({ sessionId: "test-id", cwd: "/tmp", cliKind: "opencode" })
 
     // mock findReusableAgent → null (כדי ש-doReconnect ילך ל-cold)
     // ו-coldReconnect יזרוק (להפסיק בנקודה מוקדמת — לא צריך WS אמיתי)
@@ -366,11 +362,7 @@ describe("AgentSession — NBug2 root fix: #doReconnect closes live WS before wa
 
     // אין transport stub — #transport = null (ברירת מחדל)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setSessionContextForTest({
-      sessionId: "test-id",
-      cwd: "/tmp",
-      cliKind: "opencode",
-    })
+    ;(session as any)._setSessionContextForTest({ sessionId: "test-id", cwd: "/tmp", cliKind: "opencode" })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._mockFindReusableAgentForTest(null)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -401,11 +393,7 @@ describe("AgentSession — #doReconnect guard against null sessionId (fix-phone-
   test("#doReconnect proceeds past guard when session context is set (no over-block)", async () => {
     const session = new AgentSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setSessionContextForTest({
-      sessionId: "sess-1",
-      cwd: "/tmp",
-      cliKind: "opencode",
-    })
+    ;(session as any)._setSessionContextForTest({ sessionId: "sess-1", cwd: "/tmp", cliKind: "opencode" })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._mockFindReusableAgentForTest("agent-1")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

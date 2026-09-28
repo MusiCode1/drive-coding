@@ -27,12 +27,7 @@ import {
 import { toWireText } from "@drive-coding/core/session/testing"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import {
-  createAgent,
-  deleteAgent,
-  listAgents,
-  notifySessionAttached,
-} from "$lib/adapters/agents-api"
+import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── Module-level mocks (חייבים להיות לפני import AgentSession — נדרש לרגרסיית ה-local) ───
