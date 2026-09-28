@@ -11,9 +11,11 @@ export function createDevDocsSource(repoRoot: string): DocsSource {
       .readdirSync(dir)
       .filter((n) => n.endsWith(".md"))
       .sort()
-      .map((name): AgentDocFile => ({
-        name,
-        text: fs.readFileSync(path.join(dir, name), "utf8"),
-      }))
+      .map(
+        (name): AgentDocFile => ({
+          name,
+          text: fs.readFileSync(path.join(dir, name), "utf8"),
+        }),
+      )
   }
 }

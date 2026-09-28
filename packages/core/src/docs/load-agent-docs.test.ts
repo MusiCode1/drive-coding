@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { loadAgentDocs, type AgentDocFile, type DocsSource } from "./index.js"
+import { type AgentDocFile, type DocsSource, loadAgentDocs } from "./index.js"
 
 function source(files: readonly AgentDocFile[]): DocsSource {
   return () => files
