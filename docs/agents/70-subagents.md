@@ -15,7 +15,7 @@ routes:
 mcp_tools:
   - session_open
   - notify_parent
-docs_version: 1.1.0
+docs_version: 1.2.0
 updated: 2026-09-28
 ---
 

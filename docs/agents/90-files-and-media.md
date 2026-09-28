@@ -16,7 +16,7 @@ routes:
   - DELETE /api/projects
   - GET /api/recordings/:id
   - POST /api/recordings
-docs_version: 1.1.0
+docs_version: 1.2.0
 updated: 2026-09-28
 ---
 

@@ -8,7 +8,7 @@ read_when:
 tags: [render, output, ui]
 surface: [http, mcp]
 stability: stable
-docs_version: 1.1.0
+docs_version: 1.2.0
 updated: 2026-09-28
 ---
 

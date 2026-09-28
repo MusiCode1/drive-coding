@@ -10,7 +10,7 @@ tags: [connect]
 surface: [http, mcp, cli]
 stability: stable
 routes: [GET /api/health]
-docs_version: 1.1.0
+docs_version: 1.2.0
 updated: 2026-09-28
 ---
 

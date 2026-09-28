@@ -10,7 +10,7 @@ tags: [config, session]
 surface: [http, mcp]
 stability: stable
 mcp_tools: [session_open, session_send, session_state]
-docs_version: 1.1.0
+docs_version: 1.2.0
 updated: 2026-09-28
 ---
 

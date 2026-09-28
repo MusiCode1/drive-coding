@@ -10,7 +10,7 @@ tags: [rpc, session]
 surface: [http]
 stability: transitional
 routes: [POST /api/agents/:id/rpc]
-docs_version: 1.1.0
+docs_version: 1.2.0
 updated: 2026-09-28
 ---
 

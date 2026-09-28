@@ -22,7 +22,7 @@ mcp_tools:
   - session_send
   - session_state
   - session_close
-docs_version: 1.1.0
+docs_version: 1.2.0
 updated: 2026-09-28
 ---
 
