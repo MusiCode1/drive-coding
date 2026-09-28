@@ -790,12 +790,25 @@ function runLint(argv = process.argv.slice(2)) {
 
     if (prev) {
       const prevEff = effectiveBudget({ ...f, class: prev.class }, budgets)
-      // Size-debt files (already over effective) must not grow at all.
-      // Impurity-only entries may grow in lines up to the effective budget
-      // (cli-resolve.ts: green on lines, red only if impurity rises — §7).
-      if (metric > prev.metric) {
+      // Size-debt files (already over effective) must not grow — **in code**.
+      // Comments, JSDoc and blank lines are free.
+      //
+      // Why: gating on `metric` (= wc -l) meant a one-line comment fix cost a
+      // 25-line extraction, so an agent skipped improving a comment rather than
+      // pay it. Measured 2026-09-29 — the rule taught the opposite of its intent.
+      // `codeLines` comes from stripCommentsAndStrings, the same source the
+      // must-shrink check below already (correctly) used.
+      //
+      // Fallback: a baseline entry written before codeLines existed has no code
+      // number to compare, so it keeps the old metric behaviour until backfilled.
+      const codeGrew =
+        prev.codeLines != null ? f.codeLines > prev.codeLines : metric > prev.metric
+      if (codeGrew) {
         if (prev.metric > prevEff || metric > eff) {
-          fails.push(`${f.path}: metric grew ${prev.metric} → ${metric}`)
+          fails.push(
+            `${f.path}: code grew ${prev.codeLines ?? prev.metric} → ${f.codeLines ?? metric}` +
+              ` (lines ${prev.metric} → ${metric})`,
+          )
         }
       } else if (metric > eff && prev.metric <= prevEff) {
         fails.push(
@@ -807,11 +820,25 @@ function runLint(argv = process.argv.slice(2)) {
       }
       // must-shrink: an over-budget file that is part of this commit has to lose
       // real code, not just comments. Inert when nothing is staged.
-      if (staged.has(f.path) && prev.metric > prevEff) {
+      //
+      // 🔑 The bar is **code**, and raw lines are only the fallback. An extraction
+      // that also adds JSDoc can cut 30 code lines while wc -l barely moves —
+      // that is a real extraction, and the old `drop < MIN_LINES` test flagged it.
+      // Same correction as the growth rule above (2026-09-29).
+      // 🔴 The tax is owed for touching **code**. A comment/JSDoc-only edit owes
+      // nothing: demanding a 25-line extraction for a one-line comment fix is
+      // what made an agent skip the comment instead (2026-09-29).
+      // ⚠️ Known limit of the measure: a refactor that keeps codeLines identical
+      // reads as "not a code change" and escapes the tax. Accepted — the
+      // alternative (diff-based detection) is a bigger mechanism than the rule.
+      const codeUnchanged = prev.codeLines != null && f.codeLines === prev.codeLines
+      if (staged.has(f.path) && prev.metric > prevEff && !codeUnchanged) {
         const drop = prev.metric - metric
         const codeDrop = prev.codeLines != null ? prev.codeLines - f.codeLines : Number.NaN
-        const codeOk = Number.isNaN(codeDrop) || codeDrop >= MUST_SHRINK_MIN_CODE
-        if (drop < MUST_SHRINK_MIN_LINES || !codeOk) {
+        const shrankEnough = Number.isNaN(codeDrop)
+          ? drop >= MUST_SHRINK_MIN_LINES
+          : codeDrop >= MUST_SHRINK_MIN_CODE
+        if (!shrankEnough) {
           shrinkWarnings.push(mustShrinkMessage(f, prev, metric, eff, drop, codeDrop))
         }
       }
