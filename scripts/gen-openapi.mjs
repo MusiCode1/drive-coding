@@ -228,9 +228,18 @@ const SPECIAL = {
   },
   "get /api/agent-prompt": {
     responses: {
-      200: { description: "Plain-text surface prompt", content: { "text/plain": { schema: { type: "string" } } } },
-      400: { description: "Missing agent id", content: { "text/plain": { schema: { type: "string" } } } },
-      404: { description: "Unknown agent", content: { "text/plain": { schema: { type: "string" } } } },
+      200: {
+        description: "Plain-text surface prompt",
+        content: { "text/plain": { schema: { type: "string" } } },
+      },
+      400: {
+        description: "Missing agent id",
+        content: { "text/plain": { schema: { type: "string" } } },
+      },
+      404: {
+        description: "Unknown agent",
+        content: { "text/plain": { schema: { type: "string" } } },
+      },
     },
   },
   "delete /api/projects": {
@@ -241,8 +250,14 @@ const SPECIAL = {
   },
   "get /api/fs/file": {
     responses: {
-      200: { description: "Full file body", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
-      206: { description: "Partial content (Range)", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
+      200: {
+        description: "Full file body",
+        content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } },
+      },
+      206: {
+        description: "Partial content (Range)",
+        content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } },
+      },
       400: jsonErrorResponse("Bad or missing uri"),
       403: jsonErrorResponse("Access denied"),
       404: jsonErrorResponse("File not found"),
@@ -262,13 +277,19 @@ const SPECIAL = {
   },
   "get /api/recordings/:id": {
     responses: {
-      200: { description: "Recording bytes", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
+      200: {
+        description: "Recording bytes",
+        content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } },
+      },
       404: jsonErrorResponse("Recording not found"),
     },
   },
   "get /api/cli-logo/:cliId": {
     responses: {
-      200: { description: "Logo bytes", content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } } },
+      200: {
+        description: "Logo bytes",
+        content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } },
+      },
       404: jsonErrorResponse("Unknown CLI or missing logo"),
       413: jsonErrorResponse("Logo file too large"),
       415: jsonErrorResponse("Unsupported logo file type"),
