@@ -25,7 +25,9 @@ export function isValidChoice(vm: ConfigChoiceVm, key: string, value: string | b
     return typeof value === "string" && vm.modes.availableModes.some((m) => m.id === value)
   }
   if (key === "model" && vm.models) {
-    return typeof value === "string" && vm.models.availableModels.some((m) => m.modelId === value)
+    return (
+      typeof value === "string" && vm.models.availableModels.some((m) => m.modelId === value)
+    )
   }
   const opt = vm.configOptions.find((o) => o.id === key || o.category === key)
   if (!opt) return false
