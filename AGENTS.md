@@ -165,7 +165,7 @@ non-2xx, wrong content-type, empty body. The happy path was never the risk.
 | ‏`bun run lint:size` | ‏`exit 2` | — | — |
 | ‏`pre-commit` | ‏מתרגם 2→0 ‏ומדפיס | ❌ | ❌ |
 | ‏**`post-commit`** | ‏מזכיר אחרי הקומיט | ❌ | ✅ |
-| ‏`pre-push` | ‏חוסם | ✅ | ❌ |
+| ‏`pre-push` | ‏חוסם — **‏must-shrink + ‏`tsc --build`** | ✅ | ❌ |
 | ‏**`dod-check.sh check`** | ‏חוסם | ✅ | ✅ — **‏אינו hook** |
 
 **‏למה `exit 2` ולא הודעה בלבד:** ‏סוכן בודק קוד-יציאה, ‏לא טקסט. ‏`exit 0`
@@ -293,9 +293,26 @@ bun run hooks:install # one-time: set core.hooksPath=.githooks (runs pre-commit 
 ```
 
 > ⚠️ **The frontend is inside `typecheck` since 2026-08-31.** `tsconfig.json` at the root
-> references only `core` and `backend`, so `tsc --build` never saw `packages/frontend` —
+> referenced only `core` and `backend`, so `tsc --build` never saw `packages/frontend` —
 > it is checked by `svelte-check`, which nothing ran automatically. 63 type errors
 > accumulated there unnoticed. `typecheck` now chains both; keep it that way.
+
+### ‏🟢 ‏נוסף 29/09 — ‏`tsc --build` ‏הוא שער ב-`pre-push`
+
+‏השורש references ‏היום **‏ארבעה**: ‏`core` ‏· ‏`backend` ‏· ‏`acp-wire` ‏· ‏**‏`provider`**.
+‏האחרון נוסף בסלייס `typecheck-gate`, ‏וזה **‏לא** ‏שינוי-נוחות: ‏בלעדיו קבצי-הטסט
+‏של `provider` ‏**‏אינם עוברים בדיקת-טיפוסים כלל**. ‏נמדד בבקרה — ‏שגיאה שהוזרקה
+‏ל-`client.create-elicitation.test.ts` ‏נתפסה **‏עם** ‏ה-reference, ‏והחזירה `0` ‏שגיאות
+‏**‏בלעדיו**, ‏על אותו קובץ שבור בדיוק.
+
+‏🔴 **‏למה `tsc --build` ‏ולבדו.** ‏השער נולד מ-`bugs/archive/73` (‏elicitation ‏מת
+‏שבוע בעוד `tsc` ‏מדפיס שתי שגיאות שאיש לא הריץ). ‏החצי השני של `bun run typecheck`
+‏הוא `svelte-check` — ‏**‏36ש' ‏מול 12ש'**, ‏והוא בודק **‏רק את ה-FE**. ‏הבאג ישב
+‏ב-`packages/provider`, ‏כלומר `svelte-check` ‏לא היה נוגע בו גם אילו רץ:
+‏שלושה רבעים מהעלות עבור אפס כיסוי על הכשל שקרה בפועל. ‏`svelte-check` ‏נשאר ידני.
+
+‏⚠️ ‏`pre-commit` ‏**‏לא** ‏השתנה — ‏קומיטים תכופים מ-push, ‏והנזק (‏קוד שבור שיוצא
+‏החוצה) ‏מתגלה ב-push. ‏עקיפה: ‏`git push --no-verify`, ‏ואין CI.
 
 > **Per-package commands** stay PM-agnostic via `node scripts/pm.mjs run-filter <pkg> <script>`
 > (it detects bun from the user-agent), or directly as `bun run --filter <pkg> <script>`.
