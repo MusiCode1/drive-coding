@@ -47,6 +47,19 @@ describe("openapi and RPC doc coupling", () => {
     expect(names).toContain("notify_parent")
   })
 
+  it("openapi.json status codes match agent HTTP handlers for four core operations", () => {
+    const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8")) as {
+      paths: Record<string, Record<string, { responses?: Record<string, unknown> }>>
+    }
+    const keys = (method: string, path: string) =>
+      Object.keys(spec.paths[path]?.[method]?.responses ?? {}).sort()
+
+    expect(keys("post", "/api/agents/:id/rpc")).toEqual(["200", "202", "400", "404", "503"])
+    expect(keys("post", "/api/agents/:id/subscribe")).toEqual(["204", "400", "404"])
+    expect(keys("post", "/api/agents")).toEqual(["201", "400", "500"])
+    expect(keys("delete", "/api/agents/:id")).toEqual(["204", "404"])
+  })
+
   it("POST reply and POST rpc request bodies are marked x-drive-coding-contract none", () => {
     const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8"))
     const reply =

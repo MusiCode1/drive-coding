@@ -67,6 +67,23 @@ function jsonResponse(description = "OK", status = "200") {
   }
 }
 
+function jsonErrorResponse(description) {
+  return {
+    description,
+    content: {
+      "application/json": {
+        schema: { type: "object" },
+      },
+    },
+  }
+}
+
+function noContentResponse(description = "No Content") {
+  return {
+    204: { description },
+  }
+}
+
 function requestBodyFromSchema(schemaRef, required = true) {
   return {
     required,
@@ -108,7 +125,7 @@ const rpcMethodEnum = Object.values(RPC_METHODS)
 
 const rpcRequestBody = {
   required: true,
-  description: `${CONTRACT_NONE_DESC} The \`params\` object is validated per \`method\` for five management methods (see component schemas Rpc*Params); other methods use ad-hoc params at runtime.`,
+  description: `${CONTRACT_NONE_DESC} The \`params\` object follows five param shapes (prompt, cancel, load, new, delete); \`session/list\` has no params schema; \`set_mode\` / \`set_config_option\` / \`_drive/*\` are ad-hoc casts at runtime.`,
   content: {
     "application/json": {
       schema: {
@@ -139,17 +156,58 @@ const rpcRequestBody = {
 const SPECIAL = {
   "post /api/agents": {
     requestBody: requestBodyFromSchema("#/components/schemas/CreateAgentInputFull"),
+    responses: {
+      ...jsonResponse("Created", "201"),
+      400: jsonErrorResponse("Invalid create input"),
+      500: jsonErrorResponse("Agent spawn failed"),
+    },
+  },
+  "delete /api/agents/:id": {
+    responses: {
+      ...noContentResponse("Agent removed"),
+      404: jsonErrorResponse("Agent not found"),
+    },
   },
   "patch /api/agents/:id": {
     requestBody: requestBodyFromSchema("#/components/schemas/PatchAgentInput"),
   },
   "post /api/agents/:id/subscribe": {
     requestBody: requestBodyFromSchema("#/components/schemas/AgentSubscribeBody"),
+    responses: {
+      ...noContentResponse("Subscription registered"),
+      400: jsonErrorResponse("Invalid JSON or subscribe body"),
+      404: jsonErrorResponse("Agent not found"),
+    },
   },
   "post /api/agents/:id/rpc": {
     requestBody: rpcRequestBody,
     "x-drive-coding-contract": "none",
     description: CONTRACT_NONE_DESC,
+    responses: {
+      202: {
+        description: "Accepted (fire-and-forget); returns host version for client sync",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: { version: { type: "integer" } },
+              required: ["version"],
+            },
+          },
+        },
+      },
+      200: {
+        description: "Blocking waitMs completion or method-specific JSON result",
+        content: {
+          "application/json": {
+            schema: { type: "object" },
+          },
+        },
+      },
+      400: jsonErrorResponse("Invalid JSON, params, method, or waitMs"),
+      404: jsonErrorResponse("Agent connection not found"),
+      503: jsonErrorResponse("Host evict timeout (transient)"),
+    },
   },
   "post /api/agents/:id/reply": {
     requestBody: contractNoneRequestBody({
