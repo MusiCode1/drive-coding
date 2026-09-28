@@ -16,9 +16,21 @@ describe("docs_get input modes", () => {
     expect(missBody.docs).toHaveLength(0)
   })
 
-  it("query render matches; nonsense query → empty", () => {
-    const hit = docsGetFromInput({ query: "render" })
-    expect(idsFromResult(hit)).toEqual(["render-contract"])
+  it("query mcp matches eight docs across fields (not id-only)", () => {
+    const hit = docsGetFromInput({ query: "mcp" })
+    expect([...idsFromResult(hit)].sort()).toEqual([
+      "child-config",
+      "connect",
+      "errors",
+      "orientation",
+      "reading-output",
+      "rpc",
+      "session-lifecycle",
+      "transports",
+    ])
+  })
+
+  it("nonsense query → empty", () => {
     const miss = docsGetFromInput({ query: "zzz-no-such-xyz" })
     const missBody = JSON.parse(miss.content[0]!.text) as { docs: unknown[] }
     expect(missBody.docs).toHaveLength(0)

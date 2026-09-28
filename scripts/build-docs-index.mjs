@@ -4,7 +4,7 @@
 
 import fs from "node:fs"
 import path from "node:path"
-import { headings, listDocFiles, readDoc } from "./agent-docs-lib.mjs"
+import { headings, listDocFiles, readDoc, renderLlmsTxt } from "./agent-docs-lib.mjs"
 
 const root = process.cwd()
 const check = process.argv.includes("--check")
@@ -45,18 +45,7 @@ const out = `${JSON.stringify({ docsVersion, docs }, null, 2)}\n`
 const target = path.join(root, "docs/agents/index.json")
 const current = fs.existsSync(target) ? fs.readFileSync(target, "utf8") : ""
 
-const llmsLines = [
-  "# drive-coding agent docs",
-  "",
-  "Agent-facing documentation for drive-coding HTTP, MCP, and session lifecycle.",
-  "",
-  ...docs.map((d) => {
-    const file = path.basename(d.path)
-    return `- [${d.title}](docs/agents/${file}): ${d.summary}`
-  }),
-  "",
-]
-const llmsOut = llmsLines.join("\n")
+const llmsOut = renderLlmsTxt(docs)
 const llmsTarget = path.join(root, "llms.txt")
 const llmsCurrent = fs.existsSync(llmsTarget) ? fs.readFileSync(llmsTarget, "utf8") : ""
 

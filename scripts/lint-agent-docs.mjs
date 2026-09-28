@@ -18,7 +18,7 @@
 
 import fs from "node:fs"
 import path from "node:path"
-import { headings, listDocFiles, readDoc } from "./agent-docs-lib.mjs"
+import { headings, listDocFiles, readDoc, renderLlmsTxt } from "./agent-docs-lib.mjs"
 import { extractOperations } from "./lint-api-documented.mjs"
 
 /** Same out-of-scope pairs as lint-api-documented.mjs — documentable HTTP surface. */
@@ -270,18 +270,7 @@ if (!fs.existsSync(indexPath)) {
 
 // 10 — llms.txt matches disk (regenerate + compare).
 const llmsPath = path.join(root, "llms.txt")
-const llmsLines = [
-  "# drive-coding agent docs",
-  "",
-  "Agent-facing documentation for drive-coding HTTP, MCP, and session lifecycle.",
-  "",
-  ...entries.map((d) => {
-    const file = path.basename(d.path)
-    return `- [${d.title}](docs/agents/${file}): ${d.summary}`
-  }),
-  "",
-]
-const llmsExpected = llmsLines.join("\n")
+const llmsExpected = renderLlmsTxt(entries)
 if (!fs.existsSync(llmsPath)) {
   fail("llms.txt", "missing — run `bun run docs:index`")
 } else if (fs.readFileSync(llmsPath, "utf8") !== llmsExpected) {
