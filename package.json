@@ -24,6 +24,7 @@
     "docs:index": "node scripts/build-docs-index.mjs && bunx biome format --write docs/agents/index.json",
     "docs:list": "node scripts/docs-list.mjs",
     "docs:openapi": "bun scripts/gen-openapi.mjs && bunx biome format --write docs/agents/openapi.json",
+    "docs:known-issues": "node scripts/gen-known-issues.mjs",
     "format": "biome format --write .",
     "hooks:install": "git config core.hooksPath .githooks",
     "worktrees:prune": "node scripts/prune-worktrees.mjs",
