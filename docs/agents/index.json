@@ -23,7 +23,47 @@
       "mcp_tools": [],
       "path": "docs/agents/00-orientation.md",
       "headings": [
-        "Orientation"
+        "Orientation",
+        "What drive-coding is",
+        "Three ways to reach the same backend",
+        "How to choose in practice",
+        "MCP limits (stateless)",
+        "Security posture (orientation only)",
+        "Where to read next"
+      ]
+    },
+    {
+      "id": "connect",
+      "title": "Connect — find the backend base URL and origins",
+      "summary": "How to discover which drive-coding instance is running, which URL to call, and when to use loopback versus a public origin.",
+      "read_when": [
+        "You know a drive-coding backend is running but not which port or origin to call",
+        "A request to the backend failed and you are not sure the base URL is right",
+        "You need a URL the user can open in a browser, not a loopback address"
+      ],
+      "tags": [
+        "connect"
+      ],
+      "surface": [
+        "http",
+        "mcp",
+        "cli"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [
+        "GET /api/health"
+      ],
+      "mcp_tools": [],
+      "path": "docs/agents/10-connect.md",
+      "headings": [
+        "Connect",
+        "Confirm the backend is alive",
+        "Discovery order (CLI and scripts)",
+        "Environment variables injected into agents",
+        "Loopback base versus public origin",
+        "HTTP versus MCP versus CLI (connect angle)",
+        "When connect fails"
       ]
     },
     {
@@ -47,17 +87,109 @@
       "stability": "stable",
       "docs_version": "1.0.0",
       "routes": [
+        "GET /api/agents",
         "POST /api/agents",
-        "DELETE /api/agents/:id"
+        "GET /api/agents/:id",
+        "DELETE /api/agents/:id",
+        "PATCH /api/agents/:id",
+        "POST /api/agents/:id/presence"
       ],
       "mcp_tools": [
+        "session_list",
         "session_open",
         "session_send",
+        "session_state",
         "session_close"
       ],
       "path": "docs/agents/20-session-lifecycle.md",
       "headings": [
-        "Session lifecycle"
+        "Session lifecycle",
+        "Typical MCP workflow",
+        "Open (spawn)",
+        "Send (drive a turn)",
+        "Close",
+        "Ownership and liveness (HTTP session host)",
+        "Identity header",
+        "Configure during lifecycle",
+        "CLI equivalents",
+        "Limits (MCP)"
+      ]
+    },
+    {
+      "id": "child-config",
+      "title": "Child config — models, permissions, and sets",
+      "summary": "How to change a spawned agent's model, permission mode, and other CLI options using the live catalog, not guessed ids.",
+      "read_when": [
+        "You want a child agent to run on a different model or permission mode",
+        "You are about to guess a config option id instead of reading the catalog",
+        "A sets call was accepted and nothing changed"
+      ],
+      "tags": [
+        "config",
+        "session"
+      ],
+      "surface": [
+        "http",
+        "mcp"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [],
+      "mcp_tools": [
+        "session_open",
+        "session_send",
+        "session_state"
+      ],
+      "path": "docs/agents/30-child-config.md",
+      "headings": [
+        "Child config",
+        "Where the catalog comes from",
+        "Permission at spawn (`permission` / `permissionPolicy`)",
+        "Applying changes with `sets`",
+        "HTTP PATCH (metadata only)",
+        "Workflow checklist",
+        "When config seems ignored"
+      ]
+    },
+    {
+      "id": "reading-output",
+      "title": "Reading output — history, SSE, state, and RPC waits",
+      "summary": "How to read agent messages and turn progress after noWait sends, without holding a stream open forever.",
+      "read_when": [
+        "You sent a prompt with noWait and now need the agent's reply",
+        "You must follow a long turn without holding a stream open",
+        "You have a message id and want only what came after it"
+      ],
+      "tags": [
+        "output",
+        "session"
+      ],
+      "surface": [
+        "http",
+        "mcp"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [
+        "GET /api/agents/:id/history",
+        "GET /api/agents/:id/events",
+        "GET /api/agents/:id/state",
+        "POST /api/agents/:id/rpc"
+      ],
+      "mcp_tools": [
+        "session_send",
+        "session_state"
+      ],
+      "path": "docs/agents/40-reading-output.md",
+      "headings": [
+        "Reading output",
+        "session_state / session_send results (MCP)",
+        "One-shot HTTP snapshot",
+        "History pull (no SSE)",
+        "SSE live stream",
+        "RPC with wait (`POST /api/agents/:id/rpc`)",
+        "Choosing a path",
+        "Message cursor tips"
       ]
     },
     {
@@ -83,7 +215,47 @@
       "mcp_tools": [],
       "path": "docs/agents/45-render-contract.md",
       "headings": [
-        "Render contract"
+        "Render contract",
+        "Images — recipe",
+        "Local files and the file proxy",
+        "Diagrams",
+        "Code and math",
+        "BIDI",
+        "resource_link / plan files",
+        "What does not work",
+        "Quick checklist"
+      ]
+    },
+    {
+      "id": "errors",
+      "title": "Errors — HTTP status codes and what they mean",
+      "summary": "How to interpret drive-coding HTTP and MCP failures without guessing whether work started or an agent still exists.",
+      "read_when": [
+        "The backend answered 202 and you cannot tell whether the work started",
+        "You got a 404 and cannot tell whether the agent is gone or just not connected",
+        "A request returned 200 with timedOut true and you must decide what to do next"
+      ],
+      "tags": [
+        "errors",
+        "rpc"
+      ],
+      "surface": [
+        "http",
+        "mcp"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [],
+      "mcp_tools": [],
+      "path": "docs/agents/95-errors.md",
+      "headings": [
+        "Errors",
+        "RPC `POST /api/agents/:id/rpc`",
+        "SSE `GET /api/agents/:id/events`",
+        "History / state",
+        "Agent CRUD",
+        "MCP scope and limits",
+        "Decision cheatsheet"
       ]
     }
   ]
