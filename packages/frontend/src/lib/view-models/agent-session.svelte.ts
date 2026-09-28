@@ -89,6 +89,12 @@ import {
   type ManualTitleInput,
 } from "$lib/view-models/agent-session-manual-title"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
+import { SessionScope } from "$lib/view-models/session-scoped-state.svelte"
+import {
+  handleSubagentToolCall,
+  handleSubagentToolCallUpdate,
+  type SubagentToolNestingDeps,
+} from "$lib/view-models/subagent-tool-nesting"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── image-attach kill-switch ─── (slice-image-paste Commit 2)
@@ -324,39 +330,63 @@ export class AgentSession {
   /** מצב ה-modes הזמינים — null אם ה-agent לא חשף מידע mode. */
   modes = $state<SessionModeState | null>(null)
 
-  // ─── slice-slash-commands Commit 0: פקודות ה-slash שהספק חשף ─── (תוספתי)
-  /** פקודות ה-slash שהספק חשף (available_commands_update). [] = אין/טרם. */
-  availableCommands = $state<AvailableCommand[]>([])
+  // ─── slice session-scope-migration: per-session holder ($state required — §3.5) ───
+  #session = $state(new SessionScope(null))
 
-  // ─── slice session-title: כותרת הסשן הפעיל ─── (תוספתי)
-  /** כותרת הסשן הפעיל. snapshot מרגע הטעינה/החלפה. "" = אין כותרת (סשן חדש). */
-  sessionTitle = $state<string>("")
-  titleManual = $state(false)
-  userNotes = $state("")
-  sessionFields = $state<Record<string, string>>({})
-
-  // ─── slice plan-todo-list Commit 1: תוכנית-עבודה חיה (TodoWrite/update_plan) ─── (תוספתי)
-  /** מצב הצ'קליסט הנעוץ, מ-session/update מסוגי plan/plan_update/plan_removed. reducer טהור ב-core. */
-  planStore = $state<PlanStore>(EMPTY_PLAN_STORE)
-
-  // ─── slice session-budget-meter: context state מ-ACP usage_update התקני ─── (תוספתי)
-  /**
-   * מצב ניצול חלון-הקונטקסט + עלות, מתוך `session/update` מסוג `usage_update` (ACP תקני —
-   * לא ext, לא `_meta._claude/rateLimit`). null = טרם התקבל update בסשן הנוכחי.
-   * cost אופציונלי ב-ACP — אם update חדש משמיט אותו, הערך הקודם נשמר (למניעת flicker).
-   */
-  contextUsage = $state<UsageUpdate | null>(null)
-
-  // ─── slice session-budget-meter Commit 4: quota (רב-ספקי, generic) ─── (תוספתי)
-  /**
-   * Snapshot מכסה גנרי (windows[]) מ-`_drive/getQuota`. null = אין מגבלות זמינות
-   * (תגובה תקינה) **או** שהספק לא תומך (`supports.usage===false`) **או** שגיאה — ה-UI
-   * מבחין ביניהם דרך `supports.usage` + `quotaLoading`, לא דרך ה-VM. מתעדכן רק דרך
-   * `refreshQuota()` הציבורית (on-open, לא polling — brief §9 Q4).
-   */
-  quota = $state<QuotaSnapshot | null>(null)
-  /** True בזמן בקשת `refreshQuota()` פעילה. */
-  quotaLoading = $state(false)
+  get sessionTitle(): string {
+    return this.#session.title
+  }
+  set sessionTitle(v: string) {
+    this.#session.title = v
+  }
+  get titleManual(): boolean {
+    return this.#session.titleManual
+  }
+  set titleManual(v: boolean) {
+    this.#session.titleManual = v
+  }
+  get userNotes(): string {
+    return this.#session.userNotes
+  }
+  set userNotes(v: string) {
+    this.#session.userNotes = v
+  }
+  get sessionFields(): Record<string, string> {
+    return this.#session.sessionFields
+  }
+  set sessionFields(v: Record<string, string>) {
+    this.#session.sessionFields = v
+  }
+  get availableCommands(): AvailableCommand[] {
+    return this.#session.availableCommands
+  }
+  set availableCommands(v: AvailableCommand[]) {
+    this.#session.availableCommands = v
+  }
+  get planStore(): PlanStore {
+    return this.#session.planStore
+  }
+  set planStore(v: PlanStore) {
+    this.#session.planStore = v
+  }
+  get contextUsage(): UsageUpdate | null {
+    return this.#session.contextUsage
+  }
+  set contextUsage(v: UsageUpdate | null) {
+    this.#session.contextUsage = v
+  }
+  get quota(): QuotaSnapshot | null {
+    return this.#session.quota
+  }
+  set quota(v: QuotaSnapshot | null) {
+    this.#session.quota = v
+  }
+  get quotaLoading(): boolean {
+    return this.#session.quotaLoading
+  }
+  set quotaLoading(v: boolean) {
+    this.#session.quotaLoading = v
+  }
 
   // ─── slice reconnect-bubble-merge: render-consumers (additive) ───
   /** רשימת התצוגה. בזמן warm-reconnect replay מוקפאת ל-snapshot; אחרת = live bubbles. */
@@ -533,14 +563,6 @@ export class AgentSession {
   #subagentIndex = createSubagentIndex()
   /** אירועים שהגיעו לפני שה-Task ToolBubble נוצר ב-bubbles (bounded — §7 Risks). */
   #pendingByParent: { parentId: string; event: ClaudeSubagentEvent }[] = []
-  // ─── slice subagent-tool-nesting: קינון-כלים של תת-סוכן (additive) ───
-  /**
-   * מפת toolCallId (של כלי-בן) → parentToolUseId (toolCallId של בועת ה-Task האב).
-   * נבנית ב-`#handleSubagentToolCall` (create), נקראת ב-`#handleSubagentToolCallUpdate` —
-   * מקור-קישור אמין ל-tool_call_update, בלי תלות בשאלה אם ה-update עצמו נושא parentToolUseId
-   * (חלק כן, חלק לא — brief §3 אביגיל #3). מתאפס ב-#captureSessionConfig/#cleanup.
-   */
-  #subagentToolCallParents: Map<string, string> = new Map()
   static readonly #SUBAGENT_PENDING_CAP = 50
   // ─── slice ws-reconnect-fix-nbug2: ref ל-transport החי (NBug2 root fix) ───
   /** ref ל-transport הפעיל — נשמר בכל יצירת transport, מנוקה עם #client. */
@@ -549,6 +571,26 @@ export class AgentSession {
   readonly #connectionId = safeUUID()
   #pageHideReleaseBound = false
   #sessionId: string | null = null
+
+  /**
+   * Session-identity boundary. A new scope is born only when the incoming identity differs
+   * from the one the current scope was born for (compare `#session.sessionId`, not `#sessionId`).
+   */
+  #enterSession(id: string | null): void {
+    if (this.#session.sessionId !== id) this.#session = new SessionScope(id)
+    this.#sessionId = id
+  }
+
+  #subagentToolNestingDeps(): SubagentToolNestingDeps {
+    return {
+      bubbles: () => this.bubbles,
+      parents: () => this.#session.subagentToolCallParents,
+      turnEnded: () => this.#turnEnded,
+      applyToolCall: (update) => this.#applyToolCall(update),
+      setTurnState: (next) => this.#setTurnState(next),
+      scheduleIdle: () => this.#scheduleIdle(),
+    }
+  }
   /**
    * הערך הוא True בין detach() ל-attach() הבא. משתיק
    * שגיאות `WS closed (1005)` מזויפות מאירועי onClose שמופעלים לאחר שהמשתמש
@@ -962,7 +1004,7 @@ export class AgentSession {
    * @internal מגדיר #sessionId + cwd + #cliKind ישירות — כדי ש-reconnect() לא יחזור מוקדם.
    */
   _setSessionContextForTest(ctx: { sessionId: string; cwd: string; cliKind: string }): void {
-    this.#sessionId = ctx.sessionId
+    this.#enterSession(ctx.sessionId)
     this.cwd = ctx.cwd
     this.#cliKind = ctx.cliKind
   }
@@ -1501,7 +1543,7 @@ export class AgentSession {
         mcpServers: [],
         ...(m && { _meta: m }),
       })
-      this.#sessionId = (sessionResult as { sessionId?: string }).sessionId ?? null
+      this.#enterSession((sessionResult as { sessionId?: string }).sessionId ?? null)
       if (!this.#sessionId) {
         throw new Error("newSession returned no sessionId")
       }
@@ -1589,7 +1631,7 @@ export class AgentSession {
       // slice http-cold-parity: אימוץ ה-sessionId מהסנאפשוט — תקדים חי זהה ב-
       // attachRemoteToLiveAgent (slice http-state-gaps C4). מיד אחרי בלוק הכשל-המהיר
       // (שכבר הבטיח view.state.sessionId != null) ולפני this.#view = view.
-      this.#sessionId = view.state.sessionId
+      this.#enterSession(view.state.sessionId)
 
       // 6.
       this.#view = view
@@ -1649,7 +1691,6 @@ export class AgentSession {
     this.agentId = input.agentId
     this.cwd = input.cwd
     this.#cliKind = input.cliKind
-    applyManualTitleFromAttach(this, input, false)
 
     try {
       // 3. ללא createAgent — ה-host קיים ב-BE. createRemoteView כבר קורא connect()
@@ -1675,7 +1716,8 @@ export class AgentSession {
       // refreshQuota יוצא בשורה הראשונה ולעולם לא מרענן. נמדד, לא הונח.
       // שאר מסלולי ה-remote (attachToLiveAgent :1767, switchSession :1813,
       // newSession :1921) כן משימים; זה היה החריג.
-      this.#sessionId = view.state.sessionId
+      this.#enterSession(view.state.sessionId)
+      applyManualTitleFromAttach(this, input, false)
 
       // 5. #consumeViewPatches מכמת בזהות (this.#view !== view → break) — כמו attachRemote.
       this.#view = view
@@ -2082,11 +2124,11 @@ export class AgentSession {
         this.isLoadingHistory = false
         this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState (replay אינו תור)
       }
-      this.#sessionId = input.sessionId
+      this.#enterSession(input.sessionId)
       this.#applyTitleFromSessionInput(input)
 
       // 4. הודע ל-BE (זהה ל-attach, מאמץ מיטבי)
-      await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
+      await notifySessionAttached(agentId, input.sessionId).catch(() => {})
 
       this.#setStatus("connected")
     } catch (e) {
@@ -2151,7 +2193,7 @@ export class AgentSession {
       this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
       this.#resolvePendingElicitation({ action: "cancel" })
     }
-    this.#sessionId = input.sessionId
+    this.#enterSession(input.sessionId)
     this.cwd = input.cwd
     this.#cliKind = input.cliKind
     applyManualTitleFromAttach(this, input, true)
@@ -2200,7 +2242,7 @@ export class AgentSession {
       try {
         await remoteView.loadSession(input.sessionId, input.cwd)
         // Direct assignment — #syncFromViewState does NOT sync sessionId; cannot rely on it.
-        this.#sessionId = input.sessionId
+        this.#enterSession(input.sessionId)
         // Parity with the local success path: cwd + title (the BE reset preserves
         // the old title — without this assignment session A's title would stay)
         // + push to the server.
@@ -2253,7 +2295,7 @@ export class AgentSession {
         this.isLoadingHistory = false
         this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState
       }
-      this.#sessionId = input.sessionId
+      this.#enterSession(input.sessionId)
       this.cwd = input.cwd
       this.#applyTitleFromSessionInput(input)
 
@@ -2308,7 +2350,7 @@ export class AgentSession {
         await remoteView.newSession(cwd)
         const newId = remoteView.state.sessionId
         if (!newId) throw new Error("newSession returned no sessionId")
-        this.#sessionId = newId
+        this.#enterSession(newId)
         this.cwd = cwd
         // Empty title: skip #pushTitleToServer (it no-ops on !title) — host already
         // cleared title via update-session; agent list stays blank until a real title.
@@ -2349,7 +2391,7 @@ export class AgentSession {
       })
       const newId = (result as { sessionId?: string }).sessionId ?? null
       if (!newId) throw new Error("newSession returned no sessionId")
-      this.#sessionId = newId
+      this.#enterSession(newId)
       this.cwd = cwd
       // slice local-view-wiring C3 — נקודת-אימוץ 5: **אותו לקוח**, בלי rebuild; אחרי
       // newSession (sessionId מהתשובה; סשן חדש = אין היסטוריה לאבד — §4.4).
@@ -2931,7 +2973,7 @@ export class AgentSession {
     this.quotaLoading = false
     this.#mockQuota = undefined
     // slice subagent-tool-nesting: נקה מיפוי-קינון (החלפת/פתיחת סשן = מיפוי חדש)
-    this.#subagentToolCallParents = new Map()
+    this.#session.subagentToolCallParents = new Map()
     // slice plan-todo-list: איפוס הצ'קליסט בהחלפת/פתיחת סשן (סשן חדש = אין תוכנית ישנה)
     this.planStore = EMPTY_PLAN_STORE
   }
@@ -2995,7 +3037,7 @@ export class AgentSession {
     this.#subagentIndex = createSubagentIndex()
     this.#pendingByParent = []
     // slice subagent-tool-nesting: נקה מיפוי-קינון (חיבור חדש = מיפוי חדש)
-    this.#subagentToolCallParents = new Map()
+    this.#session.subagentToolCallParents = new Map()
     this.#transport = null // slice ws-reconnect-fix-nbug2: נקה ref
     // slice reconnect-recovery: keepContext משמר #sessionId/agentId כדי ש-reconnect()
     // הציבורי לא יעשה early-return אחרי כשל cold-reconnect (§4 Commit 0).
@@ -3036,7 +3078,7 @@ export class AgentSession {
         }
       }
       this.cwd = cwd
-      this.#sessionId = `mock:${name}`
+      this.#enterSession(`mock:${name}`)
       this.sessionTitle = `🧪 ${name}` // slice session-title: כותרת-דמו לharness הוויזואלי
       // DEV: לכוד configOptions/modes/models מ-loadResult של ה-fixture (אם קיים) —
       // מאפשר mockup של בוררי ה-config (mode/model/agent/effort) + descriptions ללא ACP חי.
@@ -3198,7 +3240,7 @@ export class AgentSession {
       // מקונן ב-subFrames של בועת ה-Task האב — לא top-level.
       const parentToolUseId = extractParentToolUseId(notification.update)
       if (parentToolUseId !== undefined) {
-        this.#handleSubagentToolCall(update, parentToolUseId)
+        handleSubagentToolCall(this.#subagentToolNestingDeps(), update, parentToolUseId)
       } else {
         this.#applyToolCall(update)
       }
@@ -3207,8 +3249,11 @@ export class AgentSession {
     if (update.sessionUpdate === "tool_call_update") {
       // slice subagent-tool-nesting §3 (אביגיל #3/#6): ה-Map (מבוסס tool_call create) הוא
       // מקור-הקישור האמין — לא ה-_meta של ה-update עצמו (חלק מה-updates לא נושאים parent).
-      if (update.toolCallId !== undefined && this.#subagentToolCallParents.has(update.toolCallId)) {
-        this.#handleSubagentToolCallUpdate(update)
+      if (
+        update.toolCallId !== undefined &&
+        this.#session.subagentToolCallParents.has(update.toolCallId)
+      ) {
+        handleSubagentToolCallUpdate(this.#subagentToolNestingDeps(), update)
       } else {
         // slice meta-passthrough §3(ד): HTTP wire never emits tool_call — nest from _meta on
         // tool_call_update when the map misses but the parent Task bubble already exists.
@@ -3220,7 +3265,7 @@ export class AgentSession {
           update.toolCallId !== undefined &&
           this.bubbles.some((b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId)
         if (parentToolUseId !== undefined && parentBubbleExists && !childAlreadyTopLevel) {
-          this.#handleSubagentToolCall(update, parentToolUseId)
+          handleSubagentToolCall(this.#subagentToolNestingDeps(), update, parentToolUseId)
         } else {
           // סדר חובה: turnState פר-pending/in_progress לפני ה-no-op guard (idx===-1) של reduce (אביגיל #4)
           if (update.status === "pending" || update.status === "in_progress") {
@@ -3448,127 +3493,6 @@ export class AgentSession {
     // turnState תמיד calling-tool ללא תנאי (create, לא update)
     this.#setTurnState("calling-tool")
     if (this.#turnEnded) this.#scheduleIdle()
-  }
-
-  // ─── slice subagent-tool-nesting: כלים מקוננים של תת-סוכן ─────────────────────────
-
-  /**
-
-  // ─── slice subagent-tool-nesting: כלים מקוננים של תת-סוכן ─────────────────────────
-
-  /**
-   * tool_call של כלי-בן של תת-סוכן (`_meta.claudeCode.parentToolUseId`) — בונה `ToolBubble` עשיר
-   * (אותה צורה שיוצר `#handleToolCall`) ומקנן אותו ב-`subFrames` של בועת ה-Task האב, במקום
-   * top-level (brief §3). **fallback**: אם בועת-Task האב לא נמצאה — top-level רגיל (אל תשמיט).
-   */
-  #handleSubagentToolCall(
-    update: {
-      toolCallId?: string
-      title?: string
-      kind?: string
-      rawInput?: unknown
-      rawOutput?: unknown
-      status?: ToolCall["status"]
-      content?: unknown[] | null
-      locations?: unknown[] | null
-    },
-    parentToolUseId: string,
-  ): void {
-    if (update.toolCallId === undefined) return
-    const parentIdx = this.bubbles.findIndex(
-      (b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId,
-    )
-    const parent = parentIdx === -1 ? undefined : this.bubbles[parentIdx]
-    if (parent === undefined || parent.kind !== "tool") {
-      // fallback (אביגיל r4 #1) — בועת-Task אב לא נמצאה: עדיף כלי top-level על כלי נעלם.
-      this.#applyToolCall(update as Record<string, unknown>)
-      return
-    }
-
-    const childBubble: ToolBubble = {
-      id: safeUUID(),
-      kind: "tool",
-      messageId: null,
-      createdAt: Date.now(),
-      toolCall: {
-        toolCallId: update.toolCallId,
-        name: update.kind ?? update.title ?? "tool",
-        kind: update.kind,
-        args: update.rawInput ?? {},
-        status: update.status ?? "pending",
-        title: update.title,
-        narration: undefined,
-        result: update.rawOutput,
-        content: update.content != null ? mapToolContent(update.content) : undefined,
-        locations: update.locations != null ? mapLocations(update.locations) : undefined,
-      },
-      segments: [],
-    }
-
-    // immutable append + object-replacement (שומר reactivity, כמו B1).
-    this.bubbles[parentIdx] = {
-      ...parent,
-      subFrames: [...(parent.subFrames ?? []), childBubble],
-    }
-    this.#subagentToolCallParents.set(update.toolCallId, parentToolUseId)
-    this.#setTurnState("calling-tool")
-    if (this.#turnEnded) this.#scheduleIdle()
-  }
-
-  /**
-   * tool_call_update לכלי-בן מקונן (toolCallId ב-`#subagentToolCallParents`) — מאתר את ה-ToolBubble
-   * ב-subFrames של בועת ה-Task האב **לפי `toolCall.toolCallId`** (לא `sf.id`/UUID — אביגיל #6)
-   * ומעדכן אותו בתוך ה-subFrames (לא top-level).
-   */
-  #handleSubagentToolCallUpdate(update: {
-    toolCallId?: string
-    status?: ToolCall["status"]
-    rawInput?: unknown
-    rawOutput?: unknown
-    kind?: string
-    title?: string
-    content?: unknown[] | null
-    locations?: unknown[] | null
-  }): void {
-    if (update.toolCallId === undefined) return
-    if (update.status === "pending" || update.status === "in_progress") {
-      this.#setTurnState("calling-tool")
-      if (this.#turnEnded) this.#scheduleIdle()
-    }
-    const parentToolUseId = this.#subagentToolCallParents.get(update.toolCallId)
-    if (parentToolUseId === undefined) return
-    const parentIdx = this.bubbles.findIndex(
-      (b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId,
-    )
-    const parent = parentIdx === -1 ? undefined : this.bubbles[parentIdx]
-    if (parent === undefined || parent.kind !== "tool") return
-
-    const subFrames = parent.subFrames ?? []
-    const childIdx = subFrames.findIndex(
-      (sf) => sf.kind === "tool" && sf.toolCall.toolCallId === update.toolCallId,
-    )
-    if (childIdx === -1) return
-    const oldChild = subFrames[childIdx]
-    if (oldChild === undefined || oldChild.kind !== "tool") return
-
-    const newToolCall: ToolCall = {
-      ...oldChild.toolCall,
-      ...(update.status !== undefined && { status: update.status }),
-      ...(update.rawInput !== undefined && { args: update.rawInput }),
-      ...(update.rawOutput !== undefined && { result: update.rawOutput }),
-      ...(update.kind !== undefined && { kind: update.kind }),
-      ...(update.title !== undefined && { title: update.title }),
-      ...(update.content !== undefined && {
-        content: update.content === null ? undefined : mapToolContent(update.content),
-      }),
-      ...(update.locations !== undefined && {
-        locations: update.locations === null ? undefined : mapLocations(update.locations),
-      }),
-    }
-    const newChild: ToolBubble = { ...oldChild, toolCall: newToolCall }
-    const newSubFrames = [...subFrames]
-    newSubFrames[childIdx] = newChild
-    this.bubbles[parentIdx] = { ...parent, subFrames: newSubFrames }
   }
 
   /**
