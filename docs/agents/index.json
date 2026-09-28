@@ -326,6 +326,141 @@
       ]
     },
     {
+      "id": "providers",
+      "title": "CLI providers — registry and availability",
+      "summary": "Which CLI kinds exist, how overrides merge, and how to detect installed binaries on this host.",
+      "read_when": [
+        "You need to pick a cli kind for session_open or POST /api/agents",
+        "You want to know whether cursor vs claude is installed before spawning",
+        "You are debugging a spawn failure tied to an unknown or missing CLI binary"
+      ],
+      "tags": [
+        "providers",
+        "config"
+      ],
+      "surface": [
+        "http"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [
+        "GET /api/cli-availability",
+        "GET /api/cli-logo/:cliId"
+      ],
+      "mcp_tools": [],
+      "path": "docs/agents/80-providers.md",
+      "headings": [
+        "CLI providers",
+        "Effective registry",
+        "GET /api/cli-availability",
+        "GET /api/cli-logo/:cliId"
+      ]
+    },
+    {
+      "id": "files",
+      "title": "Files, projects, and recordings",
+      "summary": "Browse local paths, serve file bytes to the browser, and store short audio recordings.",
+      "read_when": [
+        "You need a clickable file:// link the user can open in the chat UI",
+        "You want to list project roots or browse a directory through the backend",
+        "You are uploading or fetching a voice recording id for playback"
+      ],
+      "tags": [
+        "files",
+        "output"
+      ],
+      "surface": [
+        "http"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [
+        "GET /api/fs/browse",
+        "GET /api/fs/file",
+        "GET /api/projects",
+        "DELETE /api/projects",
+        "GET /api/recordings/:id",
+        "POST /api/recordings"
+      ],
+      "mcp_tools": [],
+      "path": "docs/agents/90-files-and-media.md",
+      "headings": [
+        "Files, projects, and recordings",
+        "File proxy links",
+        "GET /api/fs/file",
+        "GET /api/fs/browse",
+        "Projects",
+        "Recordings"
+      ]
+    },
+    {
+      "id": "voice",
+      "title": "Voice — TTS capabilities, live token, upstream proxies",
+      "summary": "Discover TTS engines on this backend, mint Gemini live tokens, and use BE-proxied provider keys.",
+      "read_when": [
+        "The user uses voice mode and you need TTS or live session setup",
+        "You see 503 no-api-key from the live token route",
+        "You must call ElevenLabs or Google APIs without holding keys in the agent process"
+      ],
+      "tags": [
+        "voice"
+      ],
+      "surface": [
+        "http"
+      ],
+      "stability": "transitional",
+      "docs_version": "1.0.0",
+      "routes": [
+        "GET /api/tts/capabilities",
+        "POST /api/voice/live/token"
+      ],
+      "mcp_tools": [],
+      "path": "docs/agents/91-voice.md",
+      "headings": [
+        "Voice",
+        "GET /api/tts/capabilities",
+        "POST /api/voice/live/token",
+        "Upstream proxies (prose only)"
+      ]
+    },
+    {
+      "id": "diagnostics",
+      "title": "Diagnostics, usage, options, and config reload",
+      "summary": "Health vs diag, usage counters, client log ingest, hot config reload, and static options.",
+      "read_when": [
+        "You need to know if the backend loop is stalling or memory is climbing",
+        "You want token or CLI usage summaries without parsing agent logs",
+        "You changed config.jsonc and need HOT_KEYS applied without restart"
+      ],
+      "tags": [
+        "diagnostics"
+      ],
+      "surface": [
+        "http"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [
+        "GET /api/diag",
+        "GET /api/usage/summary",
+        "GET /api/usage/clis",
+        "GET /api/usage/tokens",
+        "POST /api/client-log",
+        "POST /api/reload-config",
+        "GET /api/options"
+      ],
+      "mcp_tools": [],
+      "path": "docs/agents/92-diagnostics.md",
+      "headings": [
+        "Diagnostics and operations",
+        "Liveness vs deep diag",
+        "Usage",
+        "POST /api/client-log",
+        "POST /api/reload-config",
+        "GET /api/options"
+      ]
+    },
+    {
       "id": "errors",
       "title": "Errors — HTTP status codes and what they mean",
       "summary": "How to interpret drive-coding HTTP and MCP failures without guessing whether work started or an agent still exists.",
@@ -383,6 +518,43 @@
         "Commands vs HTTP",
         "Close semantics",
         "Equivalence gaps"
+      ]
+    },
+    {
+      "id": "transports",
+      "title": "Transports — HTTP, SSE, MCP, WebSocket",
+      "summary": "When to use REST, agent events SSE, Streamable HTTP MCP, or browser WebSockets.",
+      "read_when": [
+        "You need server push for turn events but HTTP alone is stateless",
+        "You integrate via MCP Streamable HTTP at /api/mcp",
+        "You wonder why /ws/agent is not in the OpenAPI spec"
+      ],
+      "tags": [
+        "transports"
+      ],
+      "surface": [
+        "http",
+        "mcp"
+      ],
+      "stability": "stable",
+      "docs_version": "1.0.0",
+      "routes": [
+        "GET /api/mcp",
+        "POST /api/mcp",
+        "DELETE /api/mcp",
+        "POST /api/agents/:id/subscribe",
+        "DELETE /api/agents/:id/connection"
+      ],
+      "mcp_tools": [],
+      "path": "docs/agents/97-transports.md",
+      "headings": [
+        "Transports",
+        "Stateless HTTP",
+        "SSE — turn and session events",
+        "HTTP subscribe (agent events bus)",
+        "MCP Streamable HTTP — `/api/mcp`",
+        "WebSocket (browser FE)",
+        "DELETE /api/agents/:id/connection"
       ]
     }
   ]
