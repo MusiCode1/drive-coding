@@ -15,6 +15,38 @@
 import fs from "node:fs"
 import path from "node:path"
 import { headings, listDocFiles, readDoc } from "./agent-docs-lib.mjs"
+import { extractOperations } from "./lint-api-documented.mjs"
+
+/** Same out-of-scope pairs as lint-api-documented.mjs — documentable HTTP surface. */
+const OUT_OF_SCOPE = [
+  ["get", "/*"],
+  ["all", "/proxy/:provider/*"],
+]
+
+const ROUTE_ITEM = /^(GET|POST|PUT|PATCH|DELETE) (\S+)$/
+
+/** Union members of `export type McpToolName` — not MCP_TOOL_META (11). */
+export function mcpToolVocabulary(root) {
+  const p = path.join(root, "packages/core/src/schemas/mcp-docs.ts")
+  const text = fs.readFileSync(p, "utf8")
+  const start = text.indexOf("export type McpToolName")
+  if (start === -1) throw new Error("export type McpToolName not found in mcp-docs.ts")
+  const tail = text.slice(start)
+  const end = tail.search(/\nexport (const|type|function)/)
+  const block = end === -1 ? tail : tail.slice(0, end)
+  const names = [...block.matchAll(/\|\s*"([^"]+)"/g)].map((m) => m[1])
+  if (names.length === 0) throw new Error("no McpToolName union members parsed")
+  return names
+}
+
+export function documentableRouteKeys(root) {
+  const { operations } = extractOperations(root)
+  return new Set(
+    operations
+      .filter((o) => !OUT_OF_SCOPE.some(([m, p]) => m === o.method && p === o.path))
+      .map((o) => `${o.method} ${o.path}`),
+  )
+}
 
 const REQUIRED = [
   "id",
@@ -79,6 +111,15 @@ if (files.length === 0) {
   process.exit(1)
 }
 
+const codeRoutes = documentableRouteKeys(root)
+let mcpVocab
+try {
+  mcpVocab = new Set(mcpToolVocabulary(root))
+} catch (e) {
+  fail("packages/core/src/schemas/mcp-docs.ts", e.message)
+  mcpVocab = new Set()
+}
+
 const entries = []
 for (const name of files) {
   const doc = readDoc(root, name)
@@ -130,6 +171,28 @@ for (const name of files) {
 
   if (fm.stability !== undefined && !STABILITY.includes(fm.stability))
     fail(doc.rel, `stability \`${fm.stability}\` is not one of ${STABILITY.join(" | ")}`)
+
+  // 7 — routes: shape + must exist in the live HTTP surface.
+  for (const item of Array.isArray(fm.routes) ? fm.routes : []) {
+    if (typeof item !== "string") {
+      fail(doc.rel, "`routes` items must be strings")
+      continue
+    }
+    const m = item.match(ROUTE_ITEM)
+    if (!m) fail(doc.rel, `routes item ${JSON.stringify(item)} must match METHOD /path`)
+    else if (!codeRoutes.has(`${m[1].toLowerCase()} ${m[2]}`))
+      fail(doc.rel, `routes item ${JSON.stringify(item)} is not a documentable HTTP operation`)
+  }
+
+  // 8 — mcp_tools: subset of McpToolName union (derived, not MCP_TOOL_META).
+  for (const tool of Array.isArray(fm.mcp_tools) ? fm.mcp_tools : []) {
+    if (typeof tool !== "string") {
+      fail(doc.rel, "`mcp_tools` items must be strings")
+      continue
+    }
+    if (!mcpVocab.has(tool))
+      fail(doc.rel, `mcp_tools item ${JSON.stringify(tool)} is not a known MCP tool name`)
+  }
 
   entries.push({
     id: fm.id,
