@@ -12,6 +12,8 @@ const REPO_ROOT = path.resolve(HERE, "../../../..")
 const LIFECYCLE_DOC = path.join(REPO_ROOT, "docs/agents/20-session-lifecycle.md")
 const PROVIDERS_DOC = path.join(REPO_ROOT, "docs/agents/80-providers.md")
 const RPC_DOC = path.join(REPO_ROOT, "docs/agents/50-rpc.md")
+const UI_REFERENCE_DOC = path.join(REPO_ROOT, "docs/agents/46-ui-reference.md")
+const ROUTES_ROOT = path.join(REPO_ROOT, "packages/frontend/src/routes")
 
 describe("agent-docs coupling", () => {
   it("20-session-lifecycle stays aligned with MCP lifecycle tools and owner TTL env", () => {
@@ -43,6 +45,24 @@ describe("agent-docs coupling", () => {
     expect(methods).toHaveLength(10)
     for (const name of methods) {
       expect(doc).toContain(name)
+    }
+  })
+
+  it("46-ui-reference route paths exist as frontend route files", () => {
+    const doc = fs.readFileSync(UI_REFERENCE_DOC, "utf8")
+    const coupled = [
+      { pathToken: "`/`", file: "+page.svelte" },
+      {
+        pathToken: "`/chat/<cliKind>/<sessionId>`",
+        file: path.join("chat", "[cliKind]", "[sessionId]", "+page.svelte"),
+      },
+      { pathToken: "`/settings`", file: path.join("settings", "+page.svelte") },
+      { pathToken: "`/usage`", file: path.join("usage", "+page.svelte") },
+    ]
+    expect(coupled).toHaveLength(4)
+    for (const { pathToken, file } of coupled) {
+      expect(doc).toContain(pathToken)
+      expect(fs.existsSync(path.join(ROUTES_ROOT, file)), `missing ${file}`).toBe(true)
     }
   })
 })
