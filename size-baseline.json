@@ -650,10 +650,10 @@
       "codeLines": 70
     },
     "packages/frontend/src/lib/components/chat/TypeArea.svelte": {
-      "metric": 244,
+      "metric": 243,
       "impurity": 10,
       "class": "mixed",
-      "codeLines": 279
+      "codeLines": 277
     },
     "packages/frontend/src/lib/components/chat/VoicePicker.svelte": {
       "metric": 58,
