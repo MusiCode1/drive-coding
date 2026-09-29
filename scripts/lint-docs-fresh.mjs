@@ -157,7 +157,7 @@ function mcpToolsFromText(text) {
 }
 
 function configKeysFromText(text) {
-  return [...text.matchAll(/^\s*key:\s*"([^"]+)"/gm)].map((m) => m[1])
+  return [...text.matchAll(/(?:^|[{,]\s*)key:\s*"([^"]+)"/g)].map((m) => m[1])
 }
 
 function documentableRouteKeys(root) {

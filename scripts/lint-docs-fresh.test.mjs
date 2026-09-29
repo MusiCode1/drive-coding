@@ -430,7 +430,7 @@ describe("§5.1 map rows 3–5 — owner doc must update in range", () => {
     )
   })
 
-  it("5 — new config key without diagnostics update fails", () => {
+  it("5 — new config key (multiline entry) without diagnostics update fails", () => {
     writeFileSync(
       path.join(lab, "packages/core/src/config/specs.ts"),
       `export const CONFIG_SPECS = [
@@ -447,7 +447,28 @@ describe("§5.1 map rows 3–5 — owner doc must update in range", () => {
       "utf8",
     )
     execFileSync("git", ["add", "."], { cwd: lab })
-    execFileSync("git", ["commit", "-m", "config"], { cwd: lab })
+    execFileSync("git", ["commit", "-m", "config-multiline"], { cwd: lab })
+    const { fails } = runFreshnessChecks(lab, lastRange(lab))
+    expect(fails.some((f) => f.includes("92-diagnostics.md") && f.includes("not updated"))).toBe(
+      true,
+    )
+  })
+
+  it("5b — new config key (single-line entry) without diagnostics update fails", () => {
+    writeFileSync(
+      path.join(lab, "packages/core/src/config/specs.ts"),
+      `export const CONFIG_SPECS = [
+  {
+    key: "port",
+    env: "PORT",
+  },
+  { key: "inlineKey", env: "INLINE_KEY" },
+]
+`,
+      "utf8",
+    )
+    execFileSync("git", ["add", "."], { cwd: lab })
+    execFileSync("git", ["commit", "-m", "config-inline"], { cwd: lab })
     const { fails } = runFreshnessChecks(lab, lastRange(lab))
     expect(fails.some((f) => f.includes("92-diagnostics.md") && f.includes("not updated"))).toBe(
       true,
