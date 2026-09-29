@@ -41,8 +41,6 @@ export function buildKnownIssuesDocument(root, opts = {}) {
   const entries = []
   let markedSkipped = 0
   let noFrontMatter = 0
-  let invalidMeta = 0
-
   const openDir = path.join(root, "docs-for-llm", "bugs")
   const archiveDir = path.join(openDir, "archive")
 
@@ -68,7 +66,6 @@ export function buildKnownIssuesDocument(root, opts = {}) {
       const area = fm.area
       const severity = fm.severity
       if (!VALID_AREAS.has(String(area ?? "")) || !VALID_SEVERITIES.has(String(severity ?? ""))) {
-        invalidMeta++
         reports.push(`skipped invalid area/severity: ${rel}`)
         continue
       }
@@ -111,11 +108,17 @@ export function buildKnownIssuesDocument(root, opts = {}) {
   }
 
   entries.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+  const realEntries = [...entries]
   entries.push(SYNTHETIC_ROW)
 
   const corePath = path.join(root, "packages/core/src/docs/index.ts")
   const docsVersion = fs.readFileSync(corePath, "utf8").match(/DOCS_VERSION\s*=\s*"([^"]+)"/)?.[1]
   if (!docsVersion) throw new Error("DOCS_VERSION not found")
+
+  const introLine =
+    realEntries.length > 0
+      ? "This page lists issues explicitly marked `public_summary_en` in the private register."
+      : "No tracked issue is currently marked for publication. This page lists only issues explicitly marked `public_summary_en`."
 
   const front = `---
 id: known-issues
@@ -131,7 +134,7 @@ docs_version: ${docsVersion}
 updated: ${UPDATED_LITERAL}
 ---
 
-No tracked issue is currently marked for publication. This page lists only issues explicitly marked \`public_summary_en\`.
+${introLine}
 
 There is no CI in this repository. The gates described here run in git hooks and can be skipped with \`--no-verify\`.
 

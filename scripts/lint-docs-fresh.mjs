@@ -48,13 +48,21 @@ const MCP_DOCS_PATH = "packages/core/src/schemas/mcp-docs.ts"
 const CORE_DOCS_PATH = "packages/core/src/docs/index.ts"
 const KNOWN_ISSUES_PATH = "docs/agents/99-known-issues.md"
 
+const GIT_STDIO = ["ignore", "pipe", "ignore"]
+
 function git(root, args) {
-  return execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trimEnd()
+  return execFileSync("git", ["-C", root, ...args], {
+    encoding: "utf8",
+    stdio: GIT_STDIO,
+  }).trimEnd()
 }
 
 function gitShow(root, ref, filePath) {
   try {
-    return execFileSync("git", ["-C", root, "show", `${ref}:${filePath}`], { encoding: "utf8" })
+    return execFileSync("git", ["-C", root, "show", `${ref}:${filePath}`], {
+      encoding: "utf8",
+      stdio: GIT_STDIO,
+    })
   } catch {
     return null
   }
@@ -296,7 +304,8 @@ function idsInKnownIssues(root) {
   return ids
 }
 
-export function runFreshnessChecks(root, rangeSpec) {
+export function runFreshnessChecks(root, rangeSpec, opts = {}) {
+  const publishRealIssues = opts.publish ?? PUBLISH_REAL_ISSUES
   const fails = []
   let undocumentedSkipped = 0
   const range = resolveRange(root, rangeSpec)
@@ -374,16 +383,18 @@ export function runFreshnessChecks(root, rangeSpec) {
   }
 
   if (diffTouches(root, rangeStr, RENDER_PATHS)) {
-    const owner = path.join("docs/agents/45-render-contract.md")
-    if (!fs.existsSync(path.join(root, owner))) {
-      fails.push(`${owner}: render contract files changed in range but document missing`)
+    const owner = "docs/agents/45-render-contract.md"
+    if (!diffTouches(root, rangeStr, [owner])) {
+      fails.push(`${owner}: render contract changed in range but the document was not updated`)
     }
   }
 
   for (const pagePath of fePageAddsDeletes(root, rangeStr)) {
     const uiDoc = "docs/agents/46-ui-reference.md"
-    if (!fs.existsSync(path.join(root, uiDoc))) {
-      fails.push(`${uiDoc}: new or removed FE page ${pagePath} but ui-reference missing`)
+    if (!diffTouches(root, rangeStr, [uiDoc])) {
+      fails.push(
+        `${uiDoc}: FE page ${pagePath} added or removed in range but the document was not updated`,
+      )
     }
   }
 
@@ -394,15 +405,15 @@ export function runFreshnessChecks(root, rangeSpec) {
     const newCfg = headCfg.filter((k) => !baseCfg.includes(k))
     if (newCfg.length > 0) {
       const diag = "docs/agents/92-diagnostics.md"
-      if (!fs.existsSync(path.join(root, diag))) {
-        fails.push(`${diag}: new config keys in range but diagnostics doc missing`)
+      if (!diffTouches(root, rangeStr, [diag])) {
+        fails.push(`${diag}: config keys changed in range but the document was not updated`)
       }
     }
   }
 
   const marked = markedBugIds(root)
   const published = idsInKnownIssues(root)
-  if (!PUBLISH_REAL_ISSUES) {
+  if (!publishRealIssues) {
     for (const id of published) {
       if (id !== "#EXAMPLE") {
         fails.push(
@@ -457,6 +468,9 @@ export function main() {
     }
     console.error("🔴 docs-freshness:")
     for (const f of fails) console.error(`  ${f}`)
+    if (undocumentedSkipped > 0) {
+      console.error(`${undocumentedSkipped} known-undocumented surface(s) skipped`)
+    }
     process.exit(1)
   } catch {
     process.exit(0)

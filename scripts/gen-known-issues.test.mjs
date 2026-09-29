@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process"
 import {
   existsSync,
-  mkdtempSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -183,7 +183,7 @@ severity: minor
 
   it("10 — missing affects_version renders empty cell", () => {
     const { markdown } = buildKnownIssuesDocument(lab)
-    expect(markdown).toMatch(/\| \`#EXAMPLE\` \| example \| minor \| open \| .+ \|  \|/)
+    expect(markdown).toMatch(/\| `#EXAMPLE` \| example \| minor \| open \| .+ \| {2}\|/)
   })
 
   it("11 — README and _TEMPLATE excluded even with public_summary_en", () => {

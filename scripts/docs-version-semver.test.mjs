@@ -1,5 +1,5 @@
-import { compareSemver, docVersionWithinCap, parseSemver } from "./docs-version-semver.mjs"
 import { describe, expect, it } from "vitest"
+import { compareSemver, docVersionWithinCap, parseSemver } from "./docs-version-semver.mjs"
 
 describe("parseSemver", () => {
   it("accepts plain semver triples", () => {
