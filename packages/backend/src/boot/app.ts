@@ -24,6 +24,8 @@ import {
 } from "../delivery/http-history.js"
 import { registerLiveTokenHttp } from "../delivery/http-live-token.js"
 import { registerAgentPromptHttp } from "../delivery/http-agent-prompt.js"
+import { registerDocsHttp } from "../delivery/http-docs.js"
+import { agentDocFiles } from "../agent-docs-runtime.js"
 import { bootAgentEvents } from "../delivery/agent-events-boot.js"
 import { registerMcpHttp } from "../delivery/http-mcp.js"
 import { registerHttpOptions } from "../delivery/http-options.js"
@@ -89,6 +91,8 @@ export async function buildApp(
     memoryGuard,
   })
   registerAgentPromptHttp(app, { registry, urlConfig })
+  registerDocsHttp(app)
+  agentDocFiles()
   registerHealthHttp(app, { registry, connectionRegistry })
   registerProjectsHttp(app, { projectsRegistry })
   registerRecordingsHttp(app, { recordingsStore })

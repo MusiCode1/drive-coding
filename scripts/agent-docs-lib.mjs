@@ -67,3 +67,19 @@ export function headings(bodyText) {
     .filter((l) => /^#{1,6} /.test(l))
     .map((l) => l.replace(/^#+\s+/, "").trim())
 }
+
+/** llms.txt body — shared by docs:index and lint:docs check 10. */
+export function renderLlmsTxt(entries) {
+  const lines = [
+    "# drive-coding agent docs",
+    "",
+    "Agent-facing documentation for drive-coding HTTP, MCP, and session lifecycle.",
+    "",
+    ...entries.map((d) => {
+      const file = path.basename(d.path)
+      return `- [${d.title}](docs/agents/${file}): ${d.summary}`
+    }),
+    "",
+  ]
+  return lines.join("\n")
+}

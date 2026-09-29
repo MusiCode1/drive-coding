@@ -4,7 +4,7 @@
 
 import fs from "node:fs"
 import path from "node:path"
-import { headings, listDocFiles, readDoc } from "./agent-docs-lib.mjs"
+import { headings, listDocFiles, readDoc, renderLlmsTxt } from "./agent-docs-lib.mjs"
 
 const root = process.cwd()
 const check = process.argv.includes("--check")
@@ -45,6 +45,16 @@ const out = `${JSON.stringify({ docsVersion, docs }, null, 2)}\n`
 const target = path.join(root, "docs/agents/index.json")
 const current = fs.existsSync(target) ? fs.readFileSync(target, "utf8") : ""
 
-if (check) process.exit(out === current ? 0 : 1)
+const llmsOut = renderLlmsTxt(docs)
+const llmsTarget = path.join(root, "llms.txt")
+const llmsCurrent = fs.existsSync(llmsTarget) ? fs.readFileSync(llmsTarget, "utf8") : ""
+
+if (check) {
+  if (out !== current) process.exit(1)
+  if (llmsOut !== llmsCurrent) process.exit(1)
+  process.exit(0)
+}
 fs.writeFileSync(target, out)
+fs.writeFileSync(llmsTarget, llmsOut)
 console.log(`✅ docs/agents/index.json — ${docs.length} documents`)
+console.log(`✅ llms.txt — ${docs.length} document lines`)

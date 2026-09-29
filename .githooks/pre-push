@@ -25,6 +25,16 @@ if [ "$rc" -eq 2 ]; then
 fi
 [ "$rc" -ne 0 ] && exit "$rc"
 
+# 3. Docs freshness — additive. Never touches the ratchet above, never changes
+#    its exit code. Fail-open by construction: any uncertainty exits 0.
+if [ "$rc" -eq 0 ]; then
+  set +e
+  node scripts/lint-docs-fresh.mjs
+  rc=$?
+  set -e
+fi
+[ "$rc" -ne 0 ] && exit "$rc"
+
 # ─── typecheck ────────────────────────────────────────────────────────────────
 # ‏למה כאן ולא ב-pre-commit: ‏קומיטים תכופים מ-push, ‏והנזק — ‏קוד שבור שיוצא
 # ‏החוצה — ‏מתגלה ב-push. ‏נמדד 29/09: ‏12ש' ‏חם, ‏15ש' ‏קר.

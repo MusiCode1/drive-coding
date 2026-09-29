@@ -20,8 +20,13 @@ for (const name of files) {
     continue
   }
   const fm = doc.front.data
-  console.log(`${doc.rel} - ${fm.summary ?? "[missing front matter]"}`)
+  const summaryOk = typeof fm.summary === "string" && fm.summary.trim() !== ""
+  console.log(`${doc.rel} - ${summaryOk ? fm.summary : "[missing front matter]"}`)
   const rw = Array.isArray(fm.read_when) ? fm.read_when : fm.read_when ? [fm.read_when] : []
-  if (rw.length === 0) console.log("  Read when: [missing front matter]")
+  const rwOk =
+    Array.isArray(rw) &&
+    rw.length > 0 &&
+    rw.every((t) => typeof t === "string" && t.trim().length > 0)
+  if (!rwOk) console.log("  Read when: [missing front matter]")
   else console.log(`  Read when: ${rw.join("; ")}`)
 }

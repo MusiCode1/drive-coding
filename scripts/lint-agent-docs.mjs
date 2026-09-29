@@ -1,20 +1,57 @@
 #!/usr/bin/env node
 // lint-agent-docs.mjs — gate over docs/agents/.
 //
-// Six checks, each able to fail on its own:
+// Nine checks, each able to fail on its own:
 //   1. every *.md has parsable front matter with the required keys
 //   2. read_when is a list of at least two natural-language triggers
 //   3. every tag is declared in docs/agents/tags.json
 //   4. index.json matches what is on disk (regenerate + compare)
 //   5. English only — no non-Latin script anywhere in the file
-//   6. DOCS_VERSION is the single source of truth — index.json and every
-//      doc's docs_version must equal it. Without this the claim is a promise.
+//   6. DOCS_VERSION is the single source of truth — index.json.docsVersion must
+//      equal it; each doc's docs_version must be valid semver and <= DOCS_VERSION.
+//   7. routes: shape + must exist in the live HTTP surface
+//   8. mcp_tools: subset of McpToolName union
+//   9. front-matter `id` is unique across docs/agents/*.md
+//  10. llms.txt matches regenerate (same as check 4 for index.json)
 //
 // Exit 0 = clean, 1 = violations. Zero dependencies (pure node).
 
 import fs from "node:fs"
 import path from "node:path"
-import { headings, listDocFiles, readDoc } from "./agent-docs-lib.mjs"
+import { headings, listDocFiles, readDoc, renderLlmsTxt } from "./agent-docs-lib.mjs"
+import { docVersionWithinCap } from "./docs-version-semver.mjs"
+import { extractOperations } from "./lint-api-documented.mjs"
+
+/** Same out-of-scope pairs as lint-api-documented.mjs — documentable HTTP surface. */
+const OUT_OF_SCOPE = [
+  ["get", "/*"],
+  ["all", "/proxy/:provider/*"],
+]
+
+const ROUTE_ITEM = /^(GET|POST|PUT|PATCH|DELETE) (\S+)$/
+
+/** Union members of `export type McpToolName` — not MCP_TOOL_META (11). */
+export function mcpToolVocabulary(root) {
+  const p = path.join(root, "packages/core/src/schemas/mcp-docs.ts")
+  const text = fs.readFileSync(p, "utf8")
+  const start = text.indexOf("export type McpToolName")
+  if (start === -1) throw new Error("export type McpToolName not found in mcp-docs.ts")
+  const tail = text.slice(start)
+  const end = tail.search(/\nexport (const|type|function)/)
+  const block = end === -1 ? tail : tail.slice(0, end)
+  const names = [...block.matchAll(/\|\s*"([^"]+)"/g)].map((m) => m[1])
+  if (names.length === 0) throw new Error("no McpToolName union members parsed")
+  return names
+}
+
+export function documentableRouteKeys(root) {
+  const { operations } = extractOperations(root)
+  return new Set(
+    operations
+      .filter((o) => !OUT_OF_SCOPE.some(([m, p]) => m === o.method && p === o.path))
+      .map((o) => `${o.method} ${o.path}`),
+  )
+}
 
 const REQUIRED = [
   "id",
@@ -43,10 +80,49 @@ if (!fs.existsSync(tagsPath)) {
 }
 const vocabulary = new Set(JSON.parse(fs.readFileSync(tagsPath, "utf8")).tags)
 
+const MD_EXT = /\.(md|markdown|mdown|mkd)$/i
+const agentsDir = path.join(root, "docs", "agents")
+
+/** Every markdown-like file under docs/agents/ must be a top-level lowercase `.md` (indexed). */
+function findUnindexedMarkdownFiles(dir, relPrefix = "docs/agents") {
+  const found = []
+  if (!fs.existsSync(dir)) return found
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    const rel = path.posix.join(relPrefix, ent.name)
+    const abs = path.join(dir, ent.name)
+    if (ent.isDirectory()) {
+      found.push(...findUnindexedMarkdownFiles(abs, rel))
+      continue
+    }
+    if (!MD_EXT.test(ent.name)) continue
+    const topLevel = relPrefix === "docs/agents"
+    if (!(topLevel && ent.name.endsWith(".md"))) {
+      const why = topLevel
+        ? "only lowercase .md at the top level of docs/agents/ is indexed"
+        : "markdown in a subdirectory is not indexed"
+      found.push({ rel, why })
+    }
+  }
+  return found
+}
+
+for (const { rel, why } of findUnindexedMarkdownFiles(agentsDir)) {
+  fail(rel, why)
+}
+
 const files = listDocFiles(root)
 if (files.length === 0) {
   console.error("🔴 agent-docs: no documents found under docs/agents/")
   process.exit(1)
+}
+
+const codeRoutes = documentableRouteKeys(root)
+let mcpVocab
+try {
+  mcpVocab = new Set(mcpToolVocabulary(root))
+} catch (e) {
+  fail("packages/core/src/schemas/mcp-docs.ts", e.message)
+  mcpVocab = new Set()
 }
 
 const entries = []
@@ -101,6 +177,29 @@ for (const name of files) {
   if (fm.stability !== undefined && !STABILITY.includes(fm.stability))
     fail(doc.rel, `stability \`${fm.stability}\` is not one of ${STABILITY.join(" | ")}`)
 
+  // 7 — routes: shape + must exist in the live HTTP surface.
+  for (const item of Array.isArray(fm.routes) ? fm.routes : []) {
+    if (typeof item !== "string") {
+      fail(doc.rel, "`routes` items must be strings")
+      continue
+    }
+    const m = item.match(ROUTE_ITEM)
+    if (!m) fail(doc.rel, `routes item ${JSON.stringify(item)} must match METHOD /path`)
+    else if (!codeRoutes.has(`${m[1].toLowerCase()} ${m[2]}`))
+      fail(doc.rel, `routes item ${JSON.stringify(item)} is not a documentable HTTP operation`)
+  }
+
+  // 8 — mcp_tools: subset of McpToolName union (derived, not MCP_TOOL_META).
+  for (const tool of Array.isArray(fm.mcp_tools) ? fm.mcp_tools : []) {
+    if (typeof tool !== "string") {
+      fail(doc.rel, "`mcp_tools` items must be strings")
+      continue
+    }
+    if (!mcpVocab.has(tool))
+      fail(doc.rel, `mcp_tools item ${JSON.stringify(tool)} is not a known MCP tool name`)
+  }
+
+  // 9 — duplicate id (checked after loop via map).
   entries.push({
     id: fm.id,
     title: fm.title,
@@ -115,6 +214,14 @@ for (const name of files) {
     path: doc.rel,
     headings: headings(doc.front.bodyText),
   })
+}
+
+// 9 — unique front-matter id.
+const idToPaths = new Map()
+for (const e of entries) {
+  const prev = idToPaths.get(e.id)
+  if (prev) fail(e.path, `duplicate front-matter id \`${e.id}\` (also in ${prev})`)
+  else idToPaths.set(e.id, e.path)
 }
 
 // DOCS_VERSION owns the version. Read it here so check 6 can hold the copies together.
@@ -139,12 +246,17 @@ if (!fs.existsSync(indexPath)) {
       "docs/agents/index.json",
       `docsVersion ${JSON.stringify(onDisk.docsVersion)} != DOCS_VERSION ${JSON.stringify(docsVersion)}`,
     )
-  for (const e of entries)
-    if (docsVersion && e.docs_version !== docsVersion)
-      fail(
-        e.path,
-        `docs_version ${JSON.stringify(e.docs_version)} != DOCS_VERSION ${JSON.stringify(docsVersion)}`,
-      )
+  for (const e of entries) {
+    if (!docsVersion) continue
+    const check = docVersionWithinCap(String(e.docs_version ?? ""), docsVersion)
+    if (!check.ok) {
+      const detail =
+        check.reason === "above DOCS_VERSION"
+          ? `docs_version ${JSON.stringify(e.docs_version)} > DOCS_VERSION ${JSON.stringify(docsVersion)}`
+          : `docs_version ${JSON.stringify(e.docs_version)} is not valid semver`
+      fail(e.path, detail)
+    }
+  }
 
   if (JSON.stringify(onDisk.docs ?? []) !== actual) {
     const idsIndexed = new Set((onDisk.docs ?? []).map((d) => d.path))
@@ -160,6 +272,15 @@ if (!fs.existsSync(indexPath)) {
       .join("; ")
     fail("docs/agents/index.json", `stale — ${detail}. Run \`bun run docs:index\``)
   }
+}
+
+// 10 — llms.txt matches disk (regenerate + compare).
+const llmsPath = path.join(root, "llms.txt")
+const llmsExpected = renderLlmsTxt(entries)
+if (!fs.existsSync(llmsPath)) {
+  fail("llms.txt", "missing — run `bun run docs:index`")
+} else if (fs.readFileSync(llmsPath, "utf8") !== llmsExpected) {
+  fail("llms.txt", "stale — run `bun run docs:index`")
 }
 
 if (fails.length > 0) {

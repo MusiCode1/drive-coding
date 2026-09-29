@@ -219,6 +219,7 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     expect(instructions).toContain("configOptions")
     expect(instructions).toContain("session_whoami")
     expect(tools.map((t) => t.name).sort()).toEqual([
+      "docs_get",
       "session_close",
       "session_field_delete",
       "session_field_set",
@@ -242,6 +243,17 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     const { resources } = await client.listResources()
     await client.close()
     expect(resources.map((r) => r.uri)).toContain("drive-coding://guide")
+  })
+
+  it("lists 21 MCP resources including agent docs catalog", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    const { resources } = await client.listResources()
+    await client.close()
+    const uris = resources.map((r) => r.uri)
+    expect(resources).toHaveLength(21)
+    expect(uris).toContain("drive-coding://docs/index")
+    expect(uris).toContain("drive-coding://docs/render-contract")
   })
 
   it("second Client session succeeds (per-request transport, not singleton)", async () => {
