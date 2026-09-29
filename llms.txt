@@ -19,3 +19,4 @@ Agent-facing documentation for drive-coding HTTP, MCP, and session lifecycle.
 - [Errors — HTTP status codes and what they mean](docs/agents/95-errors.md): How to interpret drive-coding HTTP and MCP failures without guessing whether work started or an agent still exists.
 - [drive-coding CLI — local HTTP client](docs/agents/96-cli.md): The drive-coding agent subcommand talks to a running backend; commands map to documented HTTP routes.
 - [Transports — HTTP, SSE, MCP, WebSocket](docs/agents/97-transports.md): When to use REST, agent events SSE, Streamable HTTP MCP, or browser WebSockets.
+- [Known issues](docs/agents/99-known-issues.md): Issues that are known and tracked, published from the project issue register.
