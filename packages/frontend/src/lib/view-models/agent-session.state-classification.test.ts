@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest"
 const vmDir = fileURLToPath(new URL(".", import.meta.url))
 
 const SESSION_SCOPED = new Set([
-  // session-scoped-state.svelte.ts
   "title",
   "titleManual",
   "userNotes",
@@ -15,11 +14,11 @@ const SESSION_SCOPED = new Set([
   "contextUsage",
   "quota",
   "quotaLoading",
-  // AgentSession holder
-  "#session",
 ])
 
 const AGENT_SCOPED = new Set(["turnStalled"])
+
+const CONNECTION_SCOPED = new Set(["sessions", "loading", "error"])
 
 function extractStateFields(path: string): string[] {
   const text = readFileSync(path, "utf8")
@@ -32,13 +31,21 @@ function extractStateFields(path: string): string[] {
   return names
 }
 
+function pendingIn(file: string, classified: Set<string>): string[] {
+  return extractStateFields(`${vmDir}/${file}`).filter((n) => !classified.has(n))
+}
+
 describe("agent-session $state classification gate", () => {
-  const agentFields = extractStateFields(`${vmDir}/agent-session.svelte.ts`)
-  const scopeFields = extractStateFields(`${vmDir}/session-scoped-state.svelte.ts`)
-  const allFields = [...agentFields, ...scopeFields]
+  const pending = [
+    ...pendingIn(
+      "agent-session.svelte.ts",
+      new Set([...AGENT_SCOPED, "#session", "sessionsCache"]),
+    ),
+    ...pendingIn("session-scoped-state.svelte.ts", SESSION_SCOPED),
+    ...pendingIn("sessions-cache-scope.svelte.ts", CONNECTION_SCOPED),
+  ]
 
   it("every $state field is classified", () => {
-    const pending = allFields.filter((name) => !SESSION_SCOPED.has(name) && !AGENT_SCOPED.has(name))
     expect(pending.sort()).toEqual(
       [
         "#cliKind",
@@ -58,9 +65,6 @@ describe("agent-session $state classification gate", () => {
         "pendingPermission",
         "reconnectAttempt",
         "sessionState",
-        "sessions",
-        "sessionsError",
-        "sessionsLoading",
         "status",
         "turnState",
       ].sort(),
@@ -73,5 +77,5 @@ describe("agent-session $state classification gate", () => {
   })
 })
 
-/** Measured after C1 on this slice — 22 fields remain unscoped in AgentSession. */
-const PENDING_CAP = 22
+/** Measured after sessions-cache-scope C2 — 19 fields remain unscoped in AgentSession holders. */
+const PENDING_CAP = 19

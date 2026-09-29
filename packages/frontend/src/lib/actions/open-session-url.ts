@@ -52,9 +52,9 @@ export async function openSessionUrl(params: {
 
   if (session.status === "connected" && session.cliKind === cliKind) {
     await session.listSessions(true)
-    if (session.sessionsError !== null) return "error"
+    if (session.sessionsCache.error !== null) return "error"
 
-    const info = session.sessions.find((s) => s.sessionId === sessionId)
+    const info = session.sessionsCache.sessions.find((s) => s.sessionId === sessionId)
     if (!info) return "not-found"
 
     try {
@@ -119,9 +119,9 @@ export async function openSessionUrl(params: {
 
   if (pick.kind === "warm") {
     await session.listSessions(true)
-    if (session.sessionsError !== null) return "error"
+    if (session.sessionsCache.error !== null) return "error"
 
-    const info = session.sessions.find((s) => s.sessionId === sessionId)
+    const info = session.sessionsCache.sessions.find((s) => s.sessionId === sessionId)
     if (!info) return "not-found"
 
     try {

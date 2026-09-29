@@ -59,16 +59,16 @@ const onSettings = $derived(page.url.pathname === "/settings")
 
 let sessionsSearchQuery = $state("")
 const filteredSessions = $derived(
-  filterSessions(session.sessions, {
+  filterSessions(session.sessionsCache.sessions, {
     query: sessionsSearchQuery,
     currentCwd: session.cwd,
     currentCwdOnly: settings.sessionsCurrentCwdOnly,
   }),
 )
 const sessionsFilteredEmpty = $derived(
-  !session.sessionsLoading &&
-    !session.sessionsError &&
-    session.sessions.length > 0 &&
+  !session.sessionsCache.loading &&
+    !session.sessionsCache.error &&
+    session.sessionsCache.sessions.length > 0 &&
     filteredSessions.length === 0,
 )
 
@@ -574,11 +574,11 @@ $effect(() => {
 
   <!-- רשימת סשנים inline — בלי scroll/flex-1 פנימי: גוללת יחד עם אזור הגלילה המאוחד -->
   <div class="flex flex-col gap-2">
-    {#if session.sessionsLoading}
+    {#if session.sessionsCache.loading}
       <div class="text-[12px] opacity-50 px-1">{t("modal.sessions.loading")}</div>
-    {:else if session.sessionsError}
-      <div class="text-[12px] px-1" style="color:var(--recording)">{t("modal.sessions.error")}: {session.sessionsError}</div>
-    {:else if session.sessions.length === 0}
+    {:else if session.sessionsCache.error}
+      <div class="text-[12px] px-1" style="color:var(--recording)">{t("modal.sessions.error")}: {session.sessionsCache.error}</div>
+    {:else if session.sessionsCache.sessions.length === 0}
       <div class="text-[12px] opacity-50 px-1">{t("modal.sessions.empty")}</div>
     {:else if sessionsFilteredEmpty}
       <div class="text-[12px] opacity-50 px-1">{t("sidebar.sessionsNoMatches")}</div>
