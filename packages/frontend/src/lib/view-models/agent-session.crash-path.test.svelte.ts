@@ -29,7 +29,14 @@ vi.mock("../adapters/sessions", () => ({
   normalizeSessionInfo: vi.fn((x: unknown) => x),
 }))
 
+import { WsConnection } from "$lib/session/ws-connection"
 import { AgentSession } from "./agent-session.svelte"
+
+async function closeOwnedConnection(session: AgentSession, code: number, reason: string) {
+  const connection = session._getConnectionForTest()
+  if (!(connection instanceof WsConnection)) throw new Error("expected WS connection")
+  await connection.onUnexpectedClose(code, reason)
+}
 
 beforeEach(() => {
   vi.unstubAllGlobals()
@@ -40,6 +47,7 @@ beforeEach(() => {
 describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3)", () => {
   test("agentId מוגדר + getAgent מחזיר status=crashed+crashReason → מוצג crashReason", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any).agentId = "agent-1"
     getAgentMock.mockResolvedValue({
@@ -47,7 +55,7 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
     })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal closure")
+    await closeOwnedConnection(session, 1006, "abnormal closure")
 
     expect(session.error).toBe("ENOENT: claude binary not found")
     expect(getAgentMock).toHaveBeenCalledWith("agent-1")
@@ -55,12 +63,13 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
 
   test("agentId מוגדר + getAgent מחזיר status רגיל (לא crashed) → נופל ל-WS closed", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any).agentId = "agent-2"
     getAgentMock.mockResolvedValue({ agent: { cwd: "/tmp", status: "ready" } })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal closure")
+    await closeOwnedConnection(session, 1006, "abnormal closure")
 
     // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
     // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
@@ -70,12 +79,13 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
 
   test("agentId מוגדר + getAgent זורק (404/רשת) → best-effort נכשל, נופל ל-WS closed", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any).agentId = "agent-3"
     getAgentMock.mockRejectedValue(new Error("getAgent failed: 404"))
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (session as any)._handleUnexpectedCloseForTest(1005, "")
+    await closeOwnedConnection(session, 1005, "")
 
     // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
     // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
@@ -85,6 +95,7 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
 
   test("אין agentId (null) → getAgent לא נקרא כלל, נופל מיד ל-WS closed", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
     expect(session.agentId).toBeNull()
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,6 +110,7 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
 
   test("anti-clobber (Commit 1, flag ב-Commit 4/calev-heavy §10.2) שורד גם עם המסלול ה-async: getAgent לא נקרא אם כבר יש שגיאה טרמינלית", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any).agentId = "agent-4"
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,22 +118,26 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setErrorSurfacedForTest(true) // מדמה attach/loadSession catch טרמינלי
     session.error = "specific error from attach catch"
+    const connection = session._getConnectionForTest()
+    if (!(connection instanceof WsConnection)) throw new Error("expected WS connection")
+    const ownedClose = vi.spyOn(connection, "onUnexpectedClose")
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal closure")
 
     expect(session.error).toBe("specific error from attach catch")
     expect(getAgentMock).not.toHaveBeenCalled()
+    expect(ownedClose).not.toHaveBeenCalled()
   })
 
   test("crashed אבל בלי crashReason (שדה אופציונלי חסר) → נופל ל-WS closed", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any).agentId = "agent-5"
     getAgentMock.mockResolvedValue({ agent: { cwd: "/tmp", status: "crashed" } })
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal closure")
+    await closeOwnedConnection(session, 1006, "abnormal closure")
 
     // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
     // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
