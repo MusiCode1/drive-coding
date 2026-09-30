@@ -15,7 +15,6 @@ import type {
   AvailableCommand,
   SessionConfigOption,
   SessionModeState,
-  SessionNotification,
   UsageUpdate,
 } from "@agentclientprotocol/sdk"
 import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
@@ -56,6 +55,7 @@ import {
   type TurnActivityState,
 } from "$lib/engines/turn-watchdog"
 import type { AgentInput, Connection } from "$lib/session/connection"
+import { type FrameInput, toPatches } from "$lib/session/frame-router"
 import { HttpConnection } from "$lib/session/http-connection"
 // ─── slice local-view-wiring: LocalSessionView + tee ───
 import { LocalSessionView } from "$lib/session/local-session-view"
@@ -196,8 +196,8 @@ const CLAUDE_SESSION_META = DEFAULT_CLAUDE_SESSION_META
 // ─── slice subagent-tool-nesting: helper טהור לחילוץ parentToolUseId ───
 /**
  * מחלץ `parentToolUseId` מ-`_meta.claudeCode` של frame גולמי של `session/update`.
- * `rawUpdate` הוא `notification.update` **לפני** ה-cast הטיפוסי ב-`#onSessionUpdate`
- * (ה-cast המקומי משמיט את `_meta` מהטיפוס אבל לא מהאובייקט בזמן-ריצה) — narrowing בטוח,
+ * `rawUpdate` הוא `notification.update` הגולמי, לפני יישום הפקודות ב-`#onSessionUpdate`.
+ * `_meta` אינו חלק מטיפוסי ה-SDK הסגורים, ולכן קוראים אותו אחרי narrowing מבני בטוח,
  * בלי `as SDKMessage`. brief §3/§4 (אביגיל #2).
  */
 function extractParentToolUseId(rawUpdate: unknown): string | undefined {
@@ -833,7 +833,7 @@ export class AgentSession {
 
         // 3. all raw wire updates → #onSessionUpdate (WS tee parity)
         for (const update of emission.updates) {
-          this.#onSessionUpdate({ update } as unknown as SessionNotification)
+          this.#onSessionUpdate({ update })
         }
 
         this.#syncFromViewState(view.state)
@@ -2872,275 +2872,200 @@ export class AgentSession {
     this.bubbles[idx] = task
   }
 
-  #onSessionUpdate = (notification: SessionNotification): void => {
-    this.#onUpdateObserved?.(notification.update)
-    this.#noteAgentActivity() // watchdog §2 — מסלול WS (כל session/update)
-
-    // slice meta-passthrough Commit 4: ext notifications re-enter via HTTP wire wrapper.
-    if (
-      (notification.update as { sessionUpdate?: string }).sessionUpdate ===
-      "_drive/ext_notification"
-    ) {
-      const ext = notification.update as { method?: unknown; params?: unknown }
-      if (typeof ext.method === "string" && typeof ext.params === "object" && ext.params !== null) {
-        this.#onExtNotification(ext.method, ext.params as Record<string, unknown>)
+  #onSessionUpdate = (notification: FrameInput): void => {
+    for (const patch of toPatches({ update: notification.update })) {
+      if (patch.kind === "observed") {
+        this.#onUpdateObserved?.(patch.update)
+        this.#noteAgentActivity()
+        continue
       }
-      return
-    }
-
-    // מעטפת ACP: צורה של { sessionId, update: { sessionUpdate, content, messageId, ... } }
-    // ה-messageId נמצא על אובייקט ה-update החיצוני (הרחבה לא יציבה של ACP).
-    const update = notification.update as {
-      sessionUpdate?: string
-      content?: any
-      messageId?: string | null
-      // ─── slice 4: שדות של קריאה לכלי ───
-      toolCallId?: string
-      title?: string
-      kind?: string
-      rawInput?: unknown
-      rawOutput?: unknown
-      status?: ToolCall["status"]
-      // ─── slice 16 ───
-      locations?: unknown[] | null
-    }
-
-    // ─── slice 4: טיפול בהתראות של כלים לפני שומר הטקסט (text guard) ───
-    // ההתראות tool_call / tool_call_update לא נושאות תוכן טקסט — חובה לטפל בהן
-    // לפני השורה `if (!text) return`.
-    if (update.sessionUpdate === "tool_call") {
-      // slice subagent-tool-nesting §3: כלי-בן של תת-סוכן (parentToolUseId ב-_meta.claudeCode)
-      // מקונן ב-subFrames של בועת ה-Task האב — לא top-level.
-      const parentToolUseId = extractParentToolUseId(notification.update)
-      if (parentToolUseId !== undefined) {
-        handleSubagentToolCall(this.#subagentToolNestingDeps(), update, parentToolUseId)
-      } else {
-        this.#applyToolCall(update)
+      if (patch.kind === "ext-notification") {
+        this.#onExtNotification(patch.method, patch.params)
+        continue
       }
-      return
-    }
-    if (update.sessionUpdate === "tool_call_update") {
-      // slice subagent-tool-nesting §3 (אביגיל #3/#6): ה-Map (מבוסס tool_call create) הוא
-      // מקור-הקישור האמין — לא ה-_meta של ה-update עצמו (חלק מה-updates לא נושאים parent).
-      if (
-        update.toolCallId !== undefined &&
-        this.#session.subagentToolCallParents.has(update.toolCallId)
-      ) {
-        handleSubagentToolCallUpdate(this.#subagentToolNestingDeps(), update)
-      } else {
-        // slice meta-passthrough §3(ד): HTTP wire never emits tool_call — nest from _meta on
-        // tool_call_update when the map misses but the parent Task bubble already exists.
-        const parentToolUseId = extractParentToolUseId(notification.update)
-        const parentBubbleExists =
-          parentToolUseId !== undefined &&
-          this.bubbles.some((b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId)
-        const childAlreadyTopLevel =
-          update.toolCallId !== undefined &&
-          this.bubbles.some((b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId)
-        if (parentToolUseId !== undefined && parentBubbleExists && !childAlreadyTopLevel) {
-          handleSubagentToolCall(this.#subagentToolNestingDeps(), update, parentToolUseId)
+      const update = patch.update as {
+        sessionUpdate?: string
+        content?: {
+          type?: string
+          text?: string
+          data?: string
+          mimeType?: string
+          name?: string
+          uri?: string
+        }
+        messageId?: string | null
+        toolCallId?: string
+        title?: string | null
+        kind?: string
+        rawInput?: unknown
+        rawOutput?: unknown
+        status?: ToolCall["status"]
+        locations?: unknown[] | null
+      }
+      const raw = patch.update
+      if (patch.kind === "tool-call") {
+        const parentToolUseId = extractParentToolUseId(patch.update)
+        if (parentToolUseId !== undefined) {
+          handleSubagentToolCall(
+            this.#subagentToolNestingDeps(),
+            update as Parameters<typeof handleSubagentToolCall>[1],
+            parentToolUseId,
+          )
         } else {
-          // סדר חובה: turnState פר-pending/in_progress לפני ה-no-op guard (idx===-1) של reduce (אביגיל #4)
-          if (update.status === "pending" || update.status === "in_progress") {
-            this.#setTurnState("calling-tool")
-            if (this.#turnEnded) this.#scheduleIdle()
-          }
-          const { state: nextState, patches } = reduce(this.sessionState, notification.update)
-          this.sessionState = nextState
-          applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+          this.#applyToolCall(update)
         }
+        continue
       }
-      return
-    }
-
-    // ─── slice acp-mode-config-sync: handlers ל-mode/config events ──────────
-    // חובה לפני `if (!text) return` — events אלה לא נושאים content.text.
-    if (update.sessionUpdate === "current_mode_update") {
-      const modeId = (update as { currentModeId?: unknown }).currentModeId
-      if (typeof modeId === "string") {
-        this.modes = {
-          availableModes: this.modes?.availableModes ?? [],
-          currentModeId: modeId,
-        }
-      }
-      return
-    }
-    if (update.sessionUpdate === "config_option_update") {
-      const opts = (update as { configOptions?: unknown }).configOptions
-      if (Array.isArray(opts)) {
-        this.configOptions = opts as SessionConfigOption[]
-      }
-      return
-    }
-    // ─── slice-slash-commands Commit 0: available_commands_update ───────────
-    if (update.sessionUpdate === "available_commands_update") {
-      const cmds = (update as { availableCommands?: unknown }).availableCommands
-      this.availableCommands = Array.isArray(cmds) ? (cmds as AvailableCommand[]) : []
-      return
-    }
-
-    // ─── slice plan-todo-list Commit 1: plan / plan_update / plan_removed ───
-    // לא נושאים content.text — חובה לטפל בהם לפני ה-gate `if (!text) return`.
-    // reducePlan טהור (core): הקשחה מובנית, אף פעם לא זורק.
-    if (
-      update.sessionUpdate === "plan" ||
-      update.sessionUpdate === "plan_update" ||
-      update.sessionUpdate === "plan_removed"
-    ) {
-      this.planStore = reducePlan(this.planStore, update)
-      return
-    }
-
-    // ─── slice session-budget-meter Commit 1: usage_update (ACP תקני) ───────
-    // לא נושא content.text — חובה לטפל בו לפני ה-gate `if (!text) return`.
-    // cost אופציונלי + anti-flicker WS (נרמול object/number ב-core reduce.ts)
-    if (update.sessionUpdate === "usage_update") {
-      const u = update as unknown as UsageUpdate
-      this.contextUsage = {
-        used: u.used,
-        size: u.size,
-        cost: u.cost ?? this.contextUsage?.cost,
-      }
-      return
-    }
-
-    // ─── slice session-titles Commit 0: session_info_update (ACP תקני) ─────
-    // לא נושא content.text — חובה לטפל בו לפני ה-gate `if (!text) return`.
-    // semantics עקבי עם ה-keep-on-undefined הקיים ב-sessionTitle setter paths (:999, :1114).
-    if (update.sessionUpdate === "session_info_update") {
-      if (this.titleManual) return
-      // SessionInfoUpdate: title?: string | null; updatedAt?: string | null (types.gen.d.ts:3905)
-      const title = (update as { title?: string | null }).title
-      if (title === null) {
-        this.sessionTitle = "" // null = clear (לפי הסכמה)
-      } else if (typeof title === "string") {
-        this.sessionTitle = title
-        // slice http-live-side-effects (bug #56): ללא תנאי — במסלול HTTP ה-FE הוא
-        // הכותב היחיד למרשם, ולכן `!#isRemote` השאיר title=null בדיוק שם.
-        this.#pushTitleToServer(this.sessionTitle)
-      }
-      // undefined → keep-on-undefined (עקבי עם loadSession :999 / :1114)
-      return
-    }
-
-    // §11: dispatch לפי contentType לפני ה-gate — כך user_message_chunk עם image/audio/resource_link
-    // לא נזרק בשקט. ה-gate למטה חל רק על agent_message_chunk ו-agent_thought_chunk (text-only).
-    const messageId = update.messageId ?? null
-
-    if (update.sessionUpdate === "user_message_chunk") {
-      // נשלח על ידי הסוכן במהלך ניגון מחדש של ההיסטוריה מ-loadSession (לפי מפרט ACP
-      // סעיף §session-setup#loading-sessions). לעולם לא מגיע בתורים חיים —
-      // אלה מקורם מ-sendPrompt ואנחנו מוסיפים להם את הבועה האופטימית שם.
-      if (messageId !== null) {
-        for (let i = this.bubbles.length - 1; i >= 0; i--) {
-          const b = this.bubbles[i]
-          if (
-            b !== undefined &&
-            b.kind === "user" &&
-            (b.messageId === messageId || b.messageId === null)
-          ) {
-            if (b.messageId === null) b.messageId = messageId
-            break
+      if (patch.kind === "tool-call-update") {
+        if (
+          update.toolCallId !== undefined &&
+          this.#session.subagentToolCallParents.has(update.toolCallId)
+        ) {
+          handleSubagentToolCallUpdate(
+            this.#subagentToolNestingDeps(),
+            update as Parameters<typeof handleSubagentToolCallUpdate>[1],
+          )
+        } else {
+          const parentToolUseId = extractParentToolUseId(patch.update)
+          const parentBubbleExists =
+            parentToolUseId !== undefined &&
+            this.bubbles.some((b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId)
+          const childAlreadyTopLevel =
+            update.toolCallId !== undefined &&
+            this.bubbles.some(
+              (b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId,
+            )
+          if (parentToolUseId !== undefined && parentBubbleExists && !childAlreadyTopLevel) {
+            handleSubagentToolCall(
+              this.#subagentToolNestingDeps(),
+              update as Parameters<typeof handleSubagentToolCall>[1],
+              parentToolUseId,
+            )
+          } else {
+            if (update.status === "pending" || update.status === "in_progress") {
+              this.#setTurnState("calling-tool")
+              if (this.#turnEnded) this.#scheduleIdle()
+            }
+            this.#applyFrameUpdate(raw)
           }
         }
+        continue
       }
-      const content = update.content as
-        | {
-            type?: string
-            text?: string
-            data?: string
-            mimeType?: string
-            name?: string
-            uri?: string
-          }
-        | undefined
-      if (content?.type === "text") {
-        // סימון user_message_chunk טקסטואלי דרך reduce (replay מהיסטוריה)
-        const { state: nextState, patches } = reduce(this.sessionState, notification.update)
-        this.sessionState = nextState
-        applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
-      } else if (
-        content?.type === "image" &&
-        content.data !== undefined &&
-        content.mimeType !== undefined
+      if (patch.kind === "mode") {
+        const modeId = (update as { currentModeId?: unknown }).currentModeId
+        if (typeof modeId === "string") {
+          this.modes = { availableModes: this.modes?.availableModes ?? [], currentModeId: modeId }
+        }
+        continue
+      }
+      if (patch.kind === "config") {
+        const opts = (update as { configOptions?: unknown }).configOptions
+        if (Array.isArray(opts)) this.configOptions = opts as SessionConfigOption[]
+        continue
+      }
+      if (patch.kind === "commands") {
+        const cmds = (update as { availableCommands?: unknown }).availableCommands
+        this.availableCommands = Array.isArray(cmds) ? (cmds as AvailableCommand[]) : []
+        continue
+      }
+      if (patch.kind === "plan") {
+        this.planStore = reducePlan(this.planStore, update)
+        continue
+      }
+      if (patch.kind === "usage") {
+        const u = update as unknown as UsageUpdate
+        this.contextUsage = { used: u.used, size: u.size, cost: u.cost ?? this.contextUsage?.cost }
+        continue
+      }
+      if (patch.kind === "title") {
+        if (this.titleManual) continue
+        const title = update.title
+        if (title === null) {
+          this.sessionTitle = ""
+        } else if (typeof title === "string") {
+          this.sessionTitle = title
+          this.#pushTitleToServer(this.sessionTitle)
+        }
+        continue
+      }
+      if (
+        patch.kind === "user-text" ||
+        patch.kind === "user-image" ||
+        patch.kind === "user-resource-link" ||
+        patch.kind === "user-audio" ||
+        patch.kind === "user-placeholder"
       ) {
-        this.#appendUserImage(messageId, { mimeType: content.mimeType, data: content.data })
-      } else if (content?.type === "resource_link") {
-        // resource_link: מצרף placeholder כדי למנוע איבוד-שקט.
-        // slice fs-file-proxy: תצוגה מלאה (markdown/תמונה/קישור) דרך ContentViewer.
-        // §11.3א: i18n שייך לשכבת-הרכיב — ה-VM מצרף סמן מבני בלבד.
-        const label = content.name ?? content.uri
-        this.#appendUserPlaceholder(messageId, { kind: "resource_link", label, uri: content.uri })
-      } else {
-        // audio / resource (EmbeddedResource) / unknown — placeholder (אין יותר איבוד-שקט)
-        // §11.3א: הרכיב מתרגם דרך t("chat.content.unsupported") — ה-VM לא כותב מפתח.
-        const kind = content?.type === "audio" ? "audio" : "resource"
-        this.#appendUserPlaceholder(messageId, { kind })
-      }
-      return
-    }
-
-    if (update.sessionUpdate === "agent_message_chunk") {
-      const content = update.content as
-        | {
-            type?: string
-            text?: string
-            name?: string
-            uri?: string
+        const messageId = patch.messageId
+        if (messageId !== null) {
+          for (let i = this.bubbles.length - 1; i >= 0; i--) {
+            const b = this.bubbles[i]
+            if (
+              b !== undefined &&
+              b.kind === "user" &&
+              (b.messageId === messageId || b.messageId === null)
+            ) {
+              if (b.messageId === null) b.messageId = messageId
+              break
+            }
           }
-        | undefined
-      if (content?.type === "text") {
-        const text = content.text ?? ""
-        if (!text) return
-        this.#setTurnState("responding")
-        if (this.#turnEnded) this.#scheduleIdle()
-        const { state: nextState1, patches: patches1 } = reduce(
-          this.sessionState,
-          notification.update,
-        )
-        this.sessionState = nextState1
-        applyPatchMutable(this.bubbles, patches1, { mapToolContent, mapLocations })
-      } else if (content !== undefined) {
-        this.#setTurnState("responding")
-        if (this.#turnEnded) this.#scheduleIdle()
-        if (content.type === "resource_link") {
-          const label = content.name ?? content.uri ?? ""
-          this.#appendAgentPlaceholder(messageId, {
+        }
+        const content = update.content
+        if (patch.kind === "user-text") {
+          this.#applyFrameUpdate(raw)
+        } else if (patch.kind === "user-image") {
+          this.#appendUserImage(messageId, { mimeType: patch.mimeType, data: patch.data })
+        } else if (patch.kind === "user-resource-link") {
+          const label = content?.name ?? content?.uri
+          this.#appendUserPlaceholder(messageId, {
             kind: "resource_link",
             label,
-            uri: content.uri,
+            uri: content?.uri,
           })
-        } else if (content.type === "image") {
-          this.#appendAgentPlaceholder(messageId, { kind: "image" })
         } else {
-          const kind = content.type === "audio" ? "audio" : "resource"
-          this.#appendAgentPlaceholder(messageId, { kind })
+          const kind = patch.kind === "user-audio" ? "audio" : "resource"
+          this.#appendUserPlaceholder(messageId, { kind })
         }
+        continue
       }
-      return
+      if (
+        patch.kind === "agent-text" ||
+        patch.kind === "agent-resource-link" ||
+        patch.kind === "agent-image" ||
+        patch.kind === "agent-audio" ||
+        patch.kind === "agent-placeholder"
+      ) {
+        const content = update.content
+        this.#setTurnState("responding")
+        if (this.#turnEnded) this.#scheduleIdle()
+        if (patch.kind === "agent-text") {
+          this.#applyFrameUpdate(raw)
+        } else if (patch.kind === "agent-resource-link") {
+          const label = content?.name ?? content?.uri ?? ""
+          this.#appendAgentPlaceholder(patch.messageId, {
+            kind: "resource_link",
+            label,
+            uri: content?.uri,
+          })
+        } else if (patch.kind === "agent-image") {
+          this.#appendAgentPlaceholder(patch.messageId, { kind: "image" })
+        } else {
+          const kind = patch.kind === "agent-audio" ? "audio" : "resource"
+          this.#appendAgentPlaceholder(patch.messageId, { kind })
+        }
+        continue
+      }
+      if (patch.kind === "thought-text") {
+        this.#setTurnState("thinking")
+        if (this.#turnEnded) this.#scheduleIdle()
+        this.#applyFrameUpdate(raw)
+        continue
+      }
+      this.#applyFrameUpdate(raw)
     }
+  }
 
-    if (update.sessionUpdate === "agent_thought_chunk") {
-      const text =
-        update.content?.type === "text" ? ((update.content as { text?: string }).text ?? "") : ""
-      if (!text) return
-
-      this.#setTurnState("thinking")
-      if (this.#turnEnded) this.#scheduleIdle()
-      const { state: nextState2, patches: patches2 } = reduce(
-        this.sessionState,
-        notification.update,
-      )
-      this.sessionState = nextState2
-      applyPatchMutable(this.bubbles, patches2, { mapToolContent, mapLocations })
-      return
-    }
-
-    // ── default arm: everything not handled above ──
-    // _drive/reset: patch path owns bubble reset (hydration/SSE have updates:[]).
-    if (update.sessionUpdate === "_drive/reset") return
-
-    const { state: nextState, patches } = reduce(this.sessionState, notification.update)
+  #applyFrameUpdate(update: unknown): void {
+    const { state: nextState, patches } = reduce(this.sessionState, update)
     this.sessionState = nextState
     applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
   }
