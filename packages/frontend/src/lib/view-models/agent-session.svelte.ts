@@ -124,6 +124,7 @@ import {
   type SessionEndScopeDeps,
 } from "$lib/view-models/agent-session-session-end"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
+import { sendDetachFrame } from "$lib/view-models/agent-session-detach-frame"
 import { loadMockSession, type LoadMockSessionDeps } from "$lib/view-models/agent-session-load-mock"
 import { SessionScope } from "$lib/view-models/session-scoped-state.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
@@ -2840,8 +2841,7 @@ export class AgentSession {
     // slice-elicitation-ui: אותו דפוס — פתור גם elicitation ה-pending לפני close.
     this.#resolvePendingElicitation({ action: "cancel" })
     if (opts?.keepAgent && this.#transport) {
-      this.#transport.sendRaw(`${JSON.stringify({ jsonrpc: "2.0", method: "$/detach" })}
-`)
+      sendDetachFrame(this.#transport)
     } else if (opts?.keepAgent && this.#isRemote) {
       this.releaseConnection()
     }
