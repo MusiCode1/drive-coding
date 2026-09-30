@@ -16,7 +16,11 @@ export const MCP_SERVER_DESCRIPTION =
 
 /** Returned on session_open so the catalog explains itself. */
 export const MCP_CONFIGURE_HINT =
-  "configOptions and modes are this CLI's live settings — not just model: also permission, agent persona, thinking, and whatever else it advertises. Each entry has id, a description, currentValue, and allowed values. To change any of them, pass sets: { \"<id>\": \"<value>\" } on session_send. Use only ids from this catalog. You opened this agent — you must session_close it when finished. If a turn is already running, wait until idle or pass force: true. Do not leave it live."
+  'configOptions and modes are this CLI\'s live settings — not just model: also permission, agent persona, thinking, and whatever else it advertises. Each entry has id, a description, currentValue, and allowed values. To change any of them, pass sets: { "<id>": "<value>" } on session_send. Use only ids from this catalog. You opened this agent — you must session_close it when finished. If a turn is already running, wait until idle or pass force: true. Do not leave it live.'
+
+/** Returned on session_open when the caller is not subscribed to the new agent's events. */
+export const MCP_EVENTS_HINT =
+  'You will not be told when this agent finishes or stalls. To be told, call session_subscribe { agent: "<new id>", subscriber: "<your id>" } — it delivers turn-ended and stall-suspected as a prompt into your session. Registering now is equivalent to passing notifyOnDone at open time; you can still subscribe for future events. A turn-ended event proves the turn stopped — never that the work was done. Full reference: docs_get { id: "events" }.'
 
 export const MCP_SERVER_INSTRUCTIONS = `# drive-coding MCP
 
@@ -139,7 +143,7 @@ export const MCP_TOOL_META: Record<
   session_state: {
     title: "Read agent state",
     description:
-      "Read in-process host.state for one agent. Default includes modes and configOptions (the live catalog with descriptions). Default omits messages/commands (large). Pass fields: [\"*\"] for full snapshot, or a subset like [\"turnState\", \"title\"]. Requires agent id.",
+      'Read in-process host.state for one agent. Default includes modes and configOptions (the live catalog with descriptions). Default omits messages/commands (large). Pass fields: ["*"] for full snapshot, or a subset like ["turnState", "title"]. Requires agent id.',
   },
   session_close: {
     title: "Close agent session",

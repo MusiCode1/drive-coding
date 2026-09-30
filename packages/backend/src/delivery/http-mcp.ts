@@ -16,6 +16,7 @@ import {
   AgentOpenInput,
   type AgentRegistry,
   MCP_CONFIGURE_HINT,
+  MCP_EVENTS_HINT,
   MCP_SERVER_DESCRIPTION,
   MCP_SERVER_INSTRUCTIONS,
   MCP_SERVER_TITLE,
@@ -25,30 +26,30 @@ import {
   toAgentPublic,
 } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
+import { getCliSpec } from "@drive-coding/provider/config"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
-import { getCliSpec } from "@drive-coding/provider/config"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import { z } from "zod"
-import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
-import { readScopeToken, stripScopePendingFromState } from "../scope-write.js"
-import { registerMcpWriteTools } from "./mcp-write-tools.js"
+import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { resolveAppVersion } from "../app-version.js"
-import type { AgentSessionRegistry } from "../session-host/registry.js"
+import { readScopeToken, stripScopePendingFromState } from "../scope-write.js"
 import type { AgentEventBus } from "../session-host/agent-events.js"
+import type { AgentSessionRegistry } from "../session-host/registry.js"
 import {
   applyNotifyOnDoneToOpenBody,
   registerAgentEventMcpTools,
 } from "./agent-events-mcp-tools.js"
-import { registerSessionSurfaceMcpTool } from "./session-surface-mcp-tool.js"
-import { registerSessionMemoryMcpTools } from "./session-memory-mcp-tools.js"
-import { registerSessionWhoamiMcpTool } from "./session-whoami-mcp-tool.js"
-import { registerAgentDocsMcp } from "./docs-mcp.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
+import { registerAgentDocsMcp } from "./docs-mcp.js"
+import { registerMcpWriteTools } from "./mcp-write-tools.js"
 import { defaultPublicUrl, loopbackBaseUrl, type UrlConfig } from "./public-url.js"
+import { registerSessionMemoryMcpTools } from "./session-memory-mcp-tools.js"
 import { applySessionOpenCreateFields } from "./session-open-body.js"
+import { registerSessionSurfaceMcpTool } from "./session-surface-mcp-tool.js"
+import { registerSessionWhoamiMcpTool } from "./session-whoami-mcp-tool.js"
 
 const log = createLogger("backend.mcp")
 
@@ -282,7 +283,7 @@ function createSessionBusMcpServer(
         return jsonError("session did not come up within 30s")
       }
       const host = deps.agentSessionRegistry.getHost(created.agentId)
-      return jsonResult({
+      const openResult: Record<string, unknown> = {
         agent: created.agentId,
         sessionId,
         url: `${chatBase}/chat/${input.cli}/${sessionId}?sessionTransport=http`,
@@ -290,19 +291,19 @@ function createSessionBusMcpServer(
         modes: host?.state.modes,
         configOptions: host?.state.configOptions,
         hint: MCP_CONFIGURE_HINT,
-      })
+      }
+      if (
+        callerAgentId &&
+        deps.eventBus &&
+        deps.eventBus.optionsOf(created.agentId, callerAgentId) === undefined
+      ) {
+        openResult.eventsHint = MCP_EVENTS_HINT
+      }
+      return jsonResult(openResult)
     },
   )
 
-  registerMcpWriteTools(
-    server,
-    registerArkTool,
-    deps,
-    scopeToken,
-    scopeDeps,
-    jsonResult,
-    jsonError,
-  )
+  registerMcpWriteTools(server, registerArkTool, deps, scopeToken, scopeDeps, jsonResult, jsonError)
 
   registerArkTool(
     server,
@@ -327,7 +328,11 @@ function createSessionBusMcpServer(
   if (deps.eventBus) {
     registerAgentEventMcpTools(
       server,
-      { registry: deps.registry, agentSessionRegistry: deps.agentSessionRegistry, eventBus: deps.eventBus },
+      {
+        registry: deps.registry,
+        agentSessionRegistry: deps.agentSessionRegistry,
+        eventBus: deps.eventBus,
+      },
       ctx,
       callerRecord,
       registerArkTool,
@@ -363,11 +368,7 @@ export function registerMcpHttp(app: Hono, deps: McpHttpDeps): void {
       enableJsonResponse: true,
     })
     const scopeToken = readScopeToken((name) => c.req.header(name))
-    const server = createSessionBusMcpServer(
-      deps,
-      { callerAgentId, scopeToken },
-      callerRecord,
-    )
+    const server = createSessionBusMcpServer(deps, { callerAgentId, scopeToken }, callerRecord)
     await server.connect(transport)
     try {
       return await transport.handleRequest(c.req.raw)

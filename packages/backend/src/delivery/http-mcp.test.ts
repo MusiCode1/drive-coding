@@ -11,11 +11,11 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { AgentRegistry } from "@drive-coding/core"
+import { type AgentRegistry, MCP_EVENTS_HINT } from "@drive-coding/core"
+import { invalidateCache } from "@drive-coding/provider/config"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { Hono } from "hono"
-import { invalidateCache } from "@drive-coding/provider/config"
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import * as readProcessRssMod from "../adapters/read-process-rss.js"
 import { AGENT_ID_HEADER, DRIVE_CODING_AGENT_ID_ENV } from "../agent-identity.js"
@@ -24,6 +24,7 @@ import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
 import { createAgentEventBus } from "../session-host/agent-events.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
+import { wrapOrchestratorWithAgentEvents } from "./agent-events-orchestrator.js"
 import { registerMcpHttp } from "./http-mcp.js"
 
 type HostStub = {
@@ -161,24 +162,40 @@ function mcpTestEnv(extra?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return { CLI_SPECS_FILE: isolatedCliSpecsFile, ...extra }
 }
 
-function makeApp(opts?: { mcpHttp?: string; env?: NodeJS.ProcessEnv }) {
+function makeApp(opts?: {
+  mcpHttp?: string
+  env?: NodeJS.ProcessEnv
+  omitEventBus?: boolean
+  wrapOrchestratorEvents?: boolean
+}) {
   invalidateCache()
   const env = mcpTestEnv(opts?.env)
   if (opts?.mcpHttp !== undefined) env.MCP_HTTP = opts.mcpHttp
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
-  const orchestrator = makeOrchestrator(registry)
+  const baseOrchestrator = makeOrchestrator(registry)
+  let orchestrator: AgentOrchestrator = baseOrchestrator
   const agentSessionRegistry = makeStubSessionRegistry()
   const eventBus = createAgentEventBus()
+  const eventBusForMcp = opts?.omitEventBus ? undefined : eventBus
+  if (opts?.wrapOrchestratorEvents) {
+    orchestrator = wrapOrchestratorWithAgentEvents(baseOrchestrator, eventBus)
+  }
   registerMcpHttp(app, {
     registry,
     orchestrator,
     agentSessionRegistry,
     env,
     urlConfig: { port: 4000, host: "127.0.0.1" },
-    eventBus,
+    eventBus: eventBusForMcp,
   })
-  return { app, registry, orchestrator, agentSessionRegistry, eventBus }
+  return {
+    app,
+    registry,
+    orchestrator: baseOrchestrator,
+    agentSessionRegistry,
+    eventBus,
+  }
 }
 
 function honoFetch(app: Hono): typeof fetch {
@@ -268,13 +285,14 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     expect(resources.map((r) => r.uri)).toContain("drive-coding://guide")
   })
 
-  it("lists 21 MCP resources including agent docs catalog", async () => {
+  it("lists 22 MCP resources including agent docs catalog", async () => {
     const { app } = makeApp()
     const client = await connectClient(app)
     const { resources } = await client.listResources()
     await client.close()
     const uris = resources.map((r) => r.uri)
-    expect(resources).toHaveLength(21)
+    expect(resources).toHaveLength(22)
+    expect(uris).toContain("drive-coding://docs/events")
     expect(uris).toContain("drive-coding://docs/index")
     expect(uris).toContain("drive-coding://docs/render-contract")
   })
@@ -681,6 +699,107 @@ describe("session_send / session_state (slice session-bus-mcp C2)", () => {
     await client.close()
     expect(isToolError(result)).toBe(true)
     expect(toolText(result)).toMatch(/agent not found/)
+  })
+})
+
+describe("session_open eventsHint (open-reminds-subscribe)", () => {
+  async function openViaMcp(
+    app: Hono,
+    callerId: string | undefined,
+    extra: Record<string, unknown> = {},
+  ): Promise<Record<string, unknown>> {
+    const headers = callerId ? { [AGENT_ID_HEADER]: callerId } : undefined
+    const client = await connectClient(app, headers)
+    const result = await client.callTool({
+      name: "session_open",
+      arguments: {
+        cli: "cursor",
+        cwd: "/tmp/events-hint",
+        publicUrl: "http://127.0.0.1:4055",
+        ...extra,
+      },
+    })
+    await client.close()
+    expect(isToolError(result)).toBe(false)
+    const body = JSON.parse(toolText(result)) as Record<string, unknown>
+    expect(body.hint).toBeTruthy()
+    return body
+  }
+
+  it("identified caller without subscription gets eventsHint and stays unsubscribed", async () => {
+    const { app, registry, eventBus } = makeApp({ wrapOrchestratorEvents: true })
+    const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/caller-hint" })
+    const body = await openViaMcp(app, caller.id)
+    expect(body.eventsHint).toBe(MCP_EVENTS_HINT)
+    expect(eventBus.optionsOf(String(body.agent), caller.id)).toBeUndefined()
+  })
+
+  it("notifyOnDone to caller with event wrapper omits eventsHint", async () => {
+    const { app, registry, eventBus } = makeApp({ wrapOrchestratorEvents: true })
+    const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/caller-nod" })
+    const body = await openViaMcp(app, caller.id, { notifyOnDone: caller.id })
+    expect(body.eventsHint).toBeUndefined()
+    expect(eventBus.optionsOf(String(body.agent), caller.id)).toEqual({
+      includeLastAssistantText: false,
+    })
+  })
+
+  it("pre-subscribe on create omits eventsHint", async () => {
+    const { app, registry, orchestrator, eventBus } = makeApp({ wrapOrchestratorEvents: true })
+    const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/caller-pre" })
+    vi.mocked(orchestrator.createAndSpawn).mockImplementationOnce(async (input) => {
+      const agent = await registry.create(input)
+      eventBus.subscribe(agent.id, caller.id, { includeLastAssistantText: false })
+      return {
+        agentId: agent.id,
+        cwd: agent.cwd,
+        cliKind: agent.cliKind,
+        wsUrl: "",
+        bridgePort: 0,
+        status: "spawning" as const,
+      }
+    })
+    const body = await openViaMcp(app, caller.id)
+    expect(body.eventsHint).toBeUndefined()
+    expect(eventBus.optionsOf(String(body.agent), caller.id)).toBeDefined()
+  })
+
+  it("no X-Drive-Coding-Agent omits eventsHint even with explicit parent", async () => {
+    const { app, registry } = makeApp({ wrapOrchestratorEvents: true })
+    const parent = await registry.create({ cliKind: "cursor", cwd: "/tmp/parent-hint" })
+    const body = await openViaMcp(app, undefined, { parent: parent.id })
+    expect(body.eventsHint).toBeUndefined()
+  })
+
+  it("caller without event bus omits eventsHint without error", async () => {
+    const { app, registry } = makeApp({ omitEventBus: true })
+    const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/caller-no-bus" })
+    const body = await openViaMcp(app, caller.id)
+    expect(body.eventsHint).toBeUndefined()
+  })
+
+  it("notifyOnDone to another agent still shows eventsHint to caller", async () => {
+    const { app, registry, eventBus } = makeApp({ wrapOrchestratorEvents: true })
+    const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/caller-other" })
+    const other = await registry.create({ cliKind: "cursor", cwd: "/tmp/other-sub" })
+    const body = await openViaMcp(app, caller.id, { notifyOnDone: other.id })
+    expect(body.eventsHint).toBe(MCP_EVENTS_HINT)
+    expect(eventBus.optionsOf(String(body.agent), other.id)).toBeDefined()
+    expect(eventBus.optionsOf(String(body.agent), caller.id)).toBeUndefined()
+  })
+
+  it("MCP_EVENTS_HINT names subscribe, events, notifyOnDone, and completion limits", async () => {
+    const { app, registry } = makeApp({ wrapOrchestratorEvents: true })
+    const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/caller-copy" })
+    const body = await openViaMcp(app, caller.id)
+    const hint = String(body.eventsHint)
+    expect(hint).toContain("session_subscribe")
+    expect(hint).toContain("turn-ended")
+    expect(hint).toContain("stall-suspected")
+    expect(hint).toContain("notifyOnDone")
+    expect(hint).toContain("equivalent")
+    expect(hint).toContain("work was done")
+    expect(hint).toContain('docs_get { id: "events" }')
   })
 })
 
