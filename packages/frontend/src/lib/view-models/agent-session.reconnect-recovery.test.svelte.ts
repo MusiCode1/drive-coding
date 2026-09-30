@@ -288,6 +288,47 @@ describe("AgentSession — regressions (§4 Commit 0, DoD#5/#6)", () => {
 })
 
 describe("AgentSession — cold reconnect through the Connection owner", () => {
+  test("failed cold and successful replay preserve the history mark and finish with an idle turn", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-existing",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+    session.agentId = "agent-old"
+    session.historyEpoch = 7
+    const mark = session.historyMark
+    mark.segmentCounts.set("bubble-before-reconnect", 2)
+    mark.toolCallIds.push("tool-before-reconnect")
+    session.turnState = "responding"
+    vi.mocked(createAgent)
+      .mockResolvedValueOnce({ agentId: "agent-failed", status: "running" })
+      .mockResolvedValueOnce({ agentId: "agent-good", status: "running" })
+    mockColdClient.loadSession
+      .mockRejectedValueOnce(new Error("replay failed"))
+      .mockImplementationOnce(async () => {
+        session.turnState = "responding"
+        return { sessionId: "sess-existing" }
+      })
+
+    await session.reconnect()
+    expect(session.status).toBe("disconnected")
+    expect(session.agentId).toBe("agent-old")
+    expect(session.historyEpoch).toBe(7)
+    expect(session.historyMark).toBe(mark)
+    expect([...session.historyMark.segmentCounts]).toEqual([["bubble-before-reconnect", 2]])
+    expect(session.historyMark.toolCallIds).toEqual(["tool-before-reconnect"])
+
+    await session.reconnect()
+    expect(session.status).toBe("connected")
+    expect(session.agentId).toBe("agent-good")
+    expect(session.historyEpoch).toBe(7)
+    expect(session.historyMark).toBe(mark)
+    expect([...session.historyMark.segmentCounts]).toEqual([["bubble-before-reconnect", 2]])
+    expect(session.historyMark.toolCallIds).toEqual(["tool-before-reconnect"])
+    expect(session.turnState).toBe("idle")
+  })
+
   test("failed replay preserves the old agent and owner; manual retry deletes old only after success", async () => {
     const session = new AgentSession()
     session._setSessionContextForTest({
