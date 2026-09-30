@@ -100,7 +100,8 @@ export class Dictate {
         this.state = "idle"
         this.awaitingPermissionDialog = false
         if (e instanceof DOMException && e.name === "NotAllowedError") {
-          this.error = "dictate.error.permission"
+          // Denial is shown by the mic icon (MicOff), so no text error here.
+          this.#mic.permissionDenied = true
         } else if (e instanceof DOMException && e.name === "NotFoundError") {
           this.error = "dictate.error.notFound"
         } else {
@@ -112,6 +113,7 @@ export class Dictate {
       this.state = "listening"
       this.awaitingPermissionDialog = false
       this.#mic.permissionHint = null
+      this.#mic.permissionDenied = false
       return
     }
 

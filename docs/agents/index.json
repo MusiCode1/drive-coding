@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.0.0",
+  "docsVersion": "1.3.0",
   "docs": [
     {
       "id": "orientation",
@@ -9,21 +9,47 @@
         "You have just been handed a drive-coding backend and do not know what it offers",
         "You must choose between the HTTP API, the MCP server and the CLI"
       ],
-      "tags": [
-        "orientation"
-      ],
-      "surface": [
-        "http",
-        "mcp",
-        "cli"
-      ],
+      "tags": ["orientation"],
+      "surface": ["http", "mcp", "cli"],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.2.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/00-orientation.md",
       "headings": [
-        "Orientation"
+        "Orientation",
+        "What drive-coding is",
+        "Three ways to reach the same backend",
+        "How to choose in practice",
+        "MCP limits (stateless)",
+        "Security posture (orientation only)",
+        "Where to read next"
+      ]
+    },
+    {
+      "id": "connect",
+      "title": "Connect — find the backend base URL and origins",
+      "summary": "How to discover which drive-coding instance is running, which URL to call, and when to use loopback versus a public origin.",
+      "read_when": [
+        "You know a drive-coding backend is running but not which port or origin to call",
+        "A request to the backend failed and you are not sure the base URL is right",
+        "You need a URL the user can open in a browser, not a loopback address"
+      ],
+      "tags": ["connect"],
+      "surface": ["http", "mcp", "cli"],
+      "stability": "stable",
+      "docs_version": "1.2.0",
+      "routes": ["GET /api/health"],
+      "mcp_tools": [],
+      "path": "docs/agents/10-connect.md",
+      "headings": [
+        "Connect",
+        "Confirm the backend is alive",
+        "Discovery order (CLI and scripts)",
+        "Environment variables injected into agents",
+        "Loopback base versus public origin",
+        "HTTP versus MCP versus CLI (connect angle)",
+        "When connect fails"
       ]
     },
     {
@@ -35,29 +61,95 @@
         "A turn is running and you must decide between waiting and forcing",
         "You are about to leave an agent open and want to know who owns it"
       ],
-      "tags": [
-        "session",
-        "ownership",
-        "turnstate"
-      ],
-      "surface": [
-        "http",
-        "mcp"
-      ],
+      "tags": ["session", "ownership", "turnstate"],
+      "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.2.0",
       "routes": [
+        "GET /api/agents",
         "POST /api/agents",
-        "DELETE /api/agents/:id"
+        "GET /api/agents/:id",
+        "DELETE /api/agents/:id",
+        "PATCH /api/agents/:id",
+        "POST /api/agents/:id/presence"
       ],
       "mcp_tools": [
+        "session_list",
         "session_open",
         "session_send",
+        "session_state",
         "session_close"
       ],
       "path": "docs/agents/20-session-lifecycle.md",
       "headings": [
-        "Session lifecycle"
+        "Session lifecycle",
+        "Typical MCP workflow",
+        "Open (spawn)",
+        "Send (drive a turn)",
+        "Close",
+        "Ownership and liveness (HTTP session host)",
+        "Identity header",
+        "Configure during lifecycle",
+        "CLI equivalents",
+        "Limits (MCP)"
+      ]
+    },
+    {
+      "id": "child-config",
+      "title": "Child config — models, permissions, and sets",
+      "summary": "How to change a spawned agent's model, permission mode, and other CLI options using the live catalog, not guessed ids.",
+      "read_when": [
+        "You want a child agent to run on a different model or permission mode",
+        "You are about to guess a config option id instead of reading the catalog",
+        "A sets call was accepted and nothing changed"
+      ],
+      "tags": ["config", "session"],
+      "surface": ["http", "mcp"],
+      "stability": "stable",
+      "docs_version": "1.2.0",
+      "routes": [],
+      "mcp_tools": ["session_open", "session_send", "session_state"],
+      "path": "docs/agents/30-child-config.md",
+      "headings": [
+        "Child config",
+        "Where the catalog comes from",
+        "Permission at spawn — MCP vs HTTP field names",
+        "Applying changes with `sets`",
+        "HTTP PATCH (metadata only)",
+        "Workflow checklist",
+        "When config seems ignored"
+      ]
+    },
+    {
+      "id": "reading-output",
+      "title": "Reading output — history, SSE, state, and RPC waits",
+      "summary": "How to read agent messages and turn progress after noWait sends, without holding a stream open forever.",
+      "read_when": [
+        "You sent a prompt with noWait and now need the agent's reply",
+        "You must follow a long turn without holding a stream open",
+        "You have a message id and want only what came after it"
+      ],
+      "tags": ["output", "session"],
+      "surface": ["http", "mcp"],
+      "stability": "stable",
+      "docs_version": "1.2.0",
+      "routes": [
+        "GET /api/agents/:id/history",
+        "GET /api/agents/:id/events",
+        "GET /api/agents/:id/state",
+        "POST /api/agents/:id/rpc"
+      ],
+      "mcp_tools": ["session_send", "session_state"],
+      "path": "docs/agents/40-reading-output.md",
+      "headings": [
+        "Reading output",
+        "session_state / session_send results (MCP)",
+        "One-shot HTTP snapshot",
+        "History pull (no SSE)",
+        "SSE live stream",
+        "RPC with wait (`POST /api/agents/:id/rpc`)",
+        "Choosing a path",
+        "Message cursor tips"
       ]
     },
     {
@@ -68,23 +160,335 @@
         "You are about to emit a file link, an image or a diagram",
         "Your output rendered as plain text and you expected something richer"
       ],
-      "tags": [
-        "render",
-        "output",
-        "ui"
-      ],
-      "surface": [
-        "http",
-        "mcp"
-      ],
+      "tags": ["render", "output", "ui"],
+      "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.0.0",
+      "docs_version": "1.2.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/45-render-contract.md",
       "headings": [
-        "Render contract"
+        "Render contract",
+        "Images — recipe",
+        "Local files and the file proxy",
+        "Diagrams",
+        "Code and math",
+        "BIDI",
+        "resource_link / plan files",
+        "What does not work",
+        "Quick checklist"
       ]
+    },
+    {
+      "id": "ui-reference",
+      "title": "UI reference — screens and controls",
+      "summary": "Where settings and session controls live in the drive-coding web app, with on-screen labels an agent can quote back to the user.",
+      "read_when": [
+        "The user is asking where a setting lives or what a button on the screen does",
+        "You need to explain navigation between connect, chat, settings, and usage without opening frontend code",
+        "The user describes what they see and you must map it to the correct screen or control"
+      ],
+      "tags": ["ui"],
+      "surface": ["ui"],
+      "stability": "transitional",
+      "docs_version": "1.2.0",
+      "routes": [],
+      "mcp_tools": [],
+      "path": "docs/agents/46-ui-reference.md",
+      "headings": [
+        "UI reference",
+        "Connect (`/`)",
+        "Chat (`/chat/<cliKind>/<sessionId>`)",
+        "Settings (`/settings`)",
+        "Usage (`/usage`)",
+        "Answering common questions",
+        "What this page does not cover"
+      ]
+    },
+    {
+      "id": "rpc",
+      "title": "Agent session RPC — POST /api/agents/:id/rpc",
+      "summary": "JSON-RPC-style methods on a live agent session (prompt, cancel, session management, and drive-coding extensions).",
+      "read_when": [
+        "You need to send a prompt or cancel a turn on an agent that is already connected",
+        "You are integrating with the FE-style RPC surface instead of MCP session_send",
+        "You need the canonical list of RPC method names and what each one expects"
+      ],
+      "tags": ["rpc", "session"],
+      "surface": ["http"],
+      "stability": "transitional",
+      "docs_version": "1.2.0",
+      "routes": ["POST /api/agents/:id/rpc"],
+      "mcp_tools": [],
+      "path": "docs/agents/50-rpc.md",
+      "headings": [
+        "Agent session RPC",
+        "Methods",
+        "`waitMs` and blocking",
+        "HTTP status codes",
+        "Parameter validation (selected)",
+        "OpenAPI"
+      ]
+    },
+    {
+      "id": "identity",
+      "title": "Agent identity and scoped writes",
+      "summary": "Who you are on this backend, what DC_TOKEN does, and why it is not a security boundary.",
+      "read_when": [
+        "You need to know your agent id or scope token at runtime",
+        "A write to another agent was denied or you must answer a scope permission prompt",
+        "You are reviewing whether scoped writes protect against malicious agents"
+      ],
+      "tags": ["identity"],
+      "surface": ["http", "mcp"],
+      "stability": "stable",
+      "docs_version": "1.2.0",
+      "routes": ["POST /api/agents/:id/reply"],
+      "mcp_tools": [],
+      "path": "docs/agents/60-identity-and-scopes.md",
+      "headings": [
+        "Agent identity and scoped writes",
+        "Who you are",
+        "Scope token",
+        "What scoped writes protect",
+        "HTTP status — `POST /api/agents/:id/reply`",
+        "Not a security boundary"
+      ]
+    },
+    {
+      "id": "subagents",
+      "title": "Subagents — spawn, parent identity, notify_parent",
+      "summary": "Open child agents, detect when you are a child, report to the parent, and what closing does not do.",
+      "read_when": [
+        "You were spawned with a parent and need to signal completion or status upstream",
+        "You want the injected surface prompt text for your session",
+        "You are about to delete agents and need to know whether children are closed automatically"
+      ],
+      "tags": ["subagents", "session"],
+      "surface": ["http", "mcp"],
+      "stability": "stable",
+      "docs_version": "1.2.0",
+      "routes": ["GET /api/agent-prompt", "DELETE /api/agents"],
+      "mcp_tools": ["session_open", "notify_parent"],
+      "path": "docs/agents/70-subagents.md",
+      "headings": [
+        "Subagents",
+        "Opening a child",
+        "Knowing you are a child",
+        "Surface prompt injection",
+        "notify_parent",
+        "Closing agents — no cascade"
+      ]
+    },
+    {
+      "id": "providers",
+      "title": "CLI providers — registry and availability",
+      "summary": "Which CLI kinds exist, how overrides merge, and how to detect installed binaries on this host.",
+      "read_when": [
+        "You need to pick a cli kind for session_open or POST /api/agents",
+        "You want to know whether cursor vs claude is installed before spawning",
+        "You are debugging a spawn failure tied to an unknown or missing CLI binary"
+      ],
+      "tags": ["providers", "config"],
+      "surface": ["http"],
+      "stability": "stable",
+      "docs_version": "1.2.0",
+      "routes": ["GET /api/cli-availability", "GET /api/cli-logo/:cliId"],
+      "mcp_tools": [],
+      "path": "docs/agents/80-providers.md",
+      "headings": [
+        "CLI providers",
+        "Effective registry",
+        "GET /api/cli-availability",
+        "GET /api/cli-logo/:cliId"
+      ]
+    },
+    {
+      "id": "files",
+      "title": "Files, projects, and recordings",
+      "summary": "Browse local paths, serve file bytes to the browser, and store short audio recordings.",
+      "read_when": [
+        "You need a clickable file:// link the user can open in the chat UI",
+        "You want to list project roots or browse a directory through the backend",
+        "You are uploading or fetching a voice recording id for playback"
+      ],
+      "tags": ["files", "output"],
+      "surface": ["http"],
+      "stability": "stable",
+      "docs_version": "1.2.0",
+      "routes": [
+        "GET /api/fs/browse",
+        "GET /api/fs/file",
+        "GET /api/projects",
+        "DELETE /api/projects",
+        "GET /api/recordings/:id",
+        "POST /api/recordings"
+      ],
+      "mcp_tools": [],
+      "path": "docs/agents/90-files-and-media.md",
+      "headings": [
+        "Files, projects, and recordings",
+        "File proxy links",
+        "GET /api/fs/file",
+        "GET /api/fs/browse",
+        "Projects",
+        "Recordings"
+      ]
+    },
+    {
+      "id": "voice",
+      "title": "Voice — TTS capabilities, live token, upstream proxies",
+      "summary": "Discover TTS engines on this backend, mint Gemini live tokens, and use BE-proxied provider keys.",
+      "read_when": [
+        "The user uses voice mode and you need TTS or live session setup",
+        "You see 503 no-api-key from the live token route",
+        "You must call ElevenLabs or Google APIs without holding keys in the agent process"
+      ],
+      "tags": ["voice"],
+      "surface": ["http"],
+      "stability": "transitional",
+      "docs_version": "1.2.0",
+      "routes": ["GET /api/tts/capabilities", "POST /api/voice/live/token"],
+      "mcp_tools": [],
+      "path": "docs/agents/91-voice.md",
+      "headings": [
+        "Voice",
+        "GET /api/tts/capabilities",
+        "POST /api/voice/live/token",
+        "Upstream proxies (prose only)"
+      ]
+    },
+    {
+      "id": "diagnostics",
+      "title": "Diagnostics, usage, options, and config reload",
+      "summary": "Health vs diag, usage counters, client log ingest, hot config reload, and static options.",
+      "read_when": [
+        "You need to know if the backend loop is stalling or memory is climbing",
+        "You want token or CLI usage summaries without parsing agent logs",
+        "You changed config.jsonc and need HOT_KEYS applied without restart"
+      ],
+      "tags": ["diagnostics"],
+      "surface": ["http"],
+      "stability": "stable",
+      "docs_version": "1.2.0",
+      "routes": [
+        "GET /api/diag",
+        "GET /api/usage/summary",
+        "GET /api/usage/clis",
+        "GET /api/usage/tokens",
+        "POST /api/client-log",
+        "POST /api/reload-config",
+        "GET /api/options"
+      ],
+      "mcp_tools": [],
+      "path": "docs/agents/92-diagnostics.md",
+      "headings": [
+        "Diagnostics and operations",
+        "Liveness vs deep diag",
+        "Usage",
+        "POST /api/client-log",
+        "POST /api/reload-config",
+        "GET /api/options"
+      ]
+    },
+    {
+      "id": "errors",
+      "title": "Errors — HTTP status codes and what they mean",
+      "summary": "How to interpret drive-coding HTTP and MCP failures without guessing whether work started or an agent still exists.",
+      "read_when": [
+        "The backend answered 202 and you cannot tell whether the work started",
+        "You got a 404 and cannot tell whether the agent is gone or just not connected",
+        "A request returned 200 with timedOut true and you must decide what to do next"
+      ],
+      "tags": ["errors", "rpc"],
+      "surface": ["http", "mcp"],
+      "stability": "stable",
+      "docs_version": "1.2.0",
+      "routes": [],
+      "mcp_tools": [],
+      "path": "docs/agents/95-errors.md",
+      "headings": [
+        "Errors",
+        "RPC `POST /api/agents/:id/rpc`",
+        "SSE `GET /api/agents/:id/events`",
+        "History / state",
+        "Agent CRUD",
+        "MCP scope and limits",
+        "Decision cheatsheet"
+      ]
+    },
+    {
+      "id": "cli",
+      "title": "drive-coding CLI — local HTTP client",
+      "summary": "The drive-coding agent subcommand talks to a running backend; commands map to documented HTTP routes.",
+      "read_when": [
+        "You run on the same machine as the backend and prefer a shell client over raw curl",
+        "You need the discovery order for --base, --port, and DRIVE_CODING_BASE",
+        "You want to know which CLI command equals DELETE or POST on the HTTP API"
+      ],
+      "tags": ["cli"],
+      "surface": ["cli"],
+      "stability": "stable",
+      "docs_version": "1.2.0",
+      "routes": [],
+      "mcp_tools": [],
+      "path": "docs/agents/96-cli.md",
+      "headings": [
+        "drive-coding CLI",
+        "Server discovery",
+        "Commands vs HTTP",
+        "Close semantics",
+        "Equivalence gaps"
+      ]
+    },
+    {
+      "id": "transports",
+      "title": "Transports — HTTP, SSE, MCP, WebSocket",
+      "summary": "When to use REST, agent events SSE, Streamable HTTP MCP, or browser WebSockets.",
+      "read_when": [
+        "You need server push for turn events but HTTP alone is stateless",
+        "You integrate via MCP Streamable HTTP at /api/mcp",
+        "You wonder why /ws/agent is not in the OpenAPI spec"
+      ],
+      "tags": ["transports"],
+      "surface": ["http", "mcp"],
+      "stability": "stable",
+      "docs_version": "1.2.0",
+      "routes": [
+        "GET /api/mcp",
+        "POST /api/mcp",
+        "DELETE /api/mcp",
+        "POST /api/agents/:id/subscribe",
+        "DELETE /api/agents/:id/connection"
+      ],
+      "mcp_tools": [],
+      "path": "docs/agents/97-transports.md",
+      "headings": [
+        "Transports",
+        "Stateless HTTP",
+        "SSE — turn and session events",
+        "HTTP subscribe (agent events bus)",
+        "MCP Streamable HTTP — `/api/mcp`",
+        "WebSocket (browser FE)",
+        "DELETE /api/agents/:id/connection"
+      ]
+    },
+    {
+      "id": "known-issues",
+      "title": "Known issues",
+      "summary": "Issues that are known and tracked, published from the project issue register.",
+      "read_when": [
+        "The backend behaved strangely and you want to know whether it is a known issue",
+        "You are about to file a bug report and want to check it is not already tracked"
+      ],
+      "tags": ["known-issues"],
+      "surface": ["http", "mcp", "cli"],
+      "stability": "transitional",
+      "docs_version": "1.3.0",
+      "routes": [],
+      "mcp_tools": [],
+      "path": "docs/agents/99-known-issues.md",
+      "headings": []
     }
   ]
 }

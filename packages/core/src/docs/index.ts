@@ -1,4 +1,4 @@
-export const DOCS_VERSION = "1.0.0"
+export const DOCS_VERSION = "1.3.0"
 
 export type AgentDocFile = { readonly name: string; readonly text: string }
 /** Document source. **Synchronous on purpose** — async IO belongs in dev-source.ts. */
@@ -13,6 +13,11 @@ export type DocsSource = () => readonly AgentDocFile[]
  */
 export function loadAgentDocs(source: DocsSource): readonly AgentDocFile[] {
   return source().filter((f) => f.name.endsWith(".md") && f.name !== "index.md")
+}
+
+/** Raw asset lookup on the unfiltered source array (index.json, openapi.json, …). */
+export function readDocsAsset(files: readonly AgentDocFile[], name: string): string | undefined {
+  return files.find((f) => f.name === name)?.text
 }
 
 export { createDevDocsSource } from "./dev-source.js"

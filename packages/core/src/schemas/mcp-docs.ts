@@ -115,6 +115,7 @@ export type McpToolName =
   | "session_field_set"
   | "session_field_delete"
   | "notify_parent"
+  | "docs_get"
 
 export const MCP_TOOL_META: Record<
   Exclude<McpToolName, "notify_parent">,
@@ -174,6 +175,11 @@ export const MCP_TOOL_META: Record<
     title: "Delete session field",
     description:
       "Remove one key from the caller's sessionFields map. No agent parameter — identity from X-Drive-Coding-Agent only. Empty key after trim is rejected.",
+  },
+  docs_get: {
+    title: "Get agent documentation",
+    description:
+      "Fetch drive-coding agent-facing docs without the repository. Pass id for full markdown, tags or query for index entries, or omit all for the full catalog (same as GET /api/docs).",
   },
 }
 

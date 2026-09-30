@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pre-push — blocks the must-shrink condition.
+# pre-push — blocks the must-shrink condition, and type errors.
 #
 # The unit here is the whole branch, which is the unit the rule is about:
 # a slice may grow the file in one commit as long as it shrinks overall.
@@ -23,4 +23,41 @@ if [ "$rc" -eq 2 ]; then
   echo "   עקיפה מודעת: git push --no-verify"
   exit 1
 fi
-exit "$rc"
+[ "$rc" -ne 0 ] && exit "$rc"
+
+# 3. Docs freshness — additive. Never touches the ratchet above, never changes
+#    its exit code. Fail-open by construction: any uncertainty exits 0.
+if [ "$rc" -eq 0 ]; then
+  set +e
+  node scripts/lint-docs-fresh.mjs
+  rc=$?
+  set -e
+fi
+[ "$rc" -ne 0 ] && exit "$rc"
+
+# ─── typecheck ────────────────────────────────────────────────────────────────
+# ‏למה כאן ולא ב-pre-commit: ‏קומיטים תכופים מ-push, ‏והנזק — ‏קוד שבור שיוצא
+# ‏החוצה — ‏מתגלה ב-push. ‏נמדד 29/09: ‏12ש' ‏חם, ‏15ש' ‏קר.
+#
+# 🔴 ‏למה `tsc --build` ‏ולא `bun run typecheck` ‏המלא: ‏החצי השני הוא
+# ‏`svelte-check` (‏36ש'), ‏והוא בודק **‏רק את ה-FE**. ‏הבאג שבגללו השער הזה
+# ‏נולד (`bugs/archive/73` — ‏elicitation מת שבוע) ‏היה ב-`packages/provider`,
+# ‏כלומר `svelte-check` ‏לא היה נוגע בו גם אילו רץ. ‏שלושה רבעים מהעלות
+# ‏עבור אפס כיסוי על הכשל שקרה בפועל.
+#
+# Skip: git push --no-verify
+echo "▶ typecheck (tsc --build)…"
+set +e
+npx tsc --build
+tc=$?
+set -e
+
+if [ "$tc" -ne 0 ]; then
+  echo ""
+  echo "🔴 push נחסם: שגיאות טיפוסים."
+  echo "   ר' BACKLOG #104 · bugs/archive/73 — הבאג ששרד שבוע כי איש לא הריץ tsc"
+  echo "   עקיפה מודעת: git push --no-verify"
+  exit 1
+fi
+echo "✅ typecheck: אין שגיאות"
+exit 0

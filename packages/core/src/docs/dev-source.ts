@@ -7,9 +7,11 @@ export function createDevDocsSource(repoRoot: string): DocsSource {
   return () => {
     const dir = path.join(repoRoot, "docs", "agents")
     if (!fs.existsSync(dir)) return []
+    const allowed = (n: string) =>
+      n.endsWith(".md") || n === "index.json" || n === "openapi.json" || n === "tags.json"
     return fs
       .readdirSync(dir)
-      .filter((n) => n.endsWith(".md"))
+      .filter(allowed)
       .sort()
       .map(
         (name): AgentDocFile => ({

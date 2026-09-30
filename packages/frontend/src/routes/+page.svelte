@@ -8,7 +8,7 @@ import { env } from "$env/dynamic/public"
 import { readSessionTransport } from "$lib/session/session-transport-read"
 import { sessionPath } from "$lib/session/session-url"
 import { connectAgent } from "$lib/actions/connect-agent"
-import { sessionAttachExtras } from "$lib/actions/open-session-url"
+import { reconnectAgent } from "$lib/actions/reconnect-agent"
 import { fetchServerOptions } from "$lib/adapters/options"
 import type { RecentProject } from "$lib/adapters/recent-projects"
 import { postReloadConfig } from "$lib/adapters/cli-availability"
@@ -109,43 +109,22 @@ $effect(() => {
 const isRtl = $derived(settings.locale === "he")
 
 async function handleReconnect(agent: AgentPublic) {
-  const transport = readSessionTransport({
-    env: env.PUBLIC_SESSION_TRANSPORT,
-    stored: settings.sessionTransport,
-  })
-
-  if (transport === "http") {
-    await session.attachRemoteToLiveAgent({
-      agentId: agent.id,
-      cwd: agent.cwd,
-      cliKind: agent.cliKind,
-      ...sessionAttachExtras(agent),
-    })
-    if (session.status === "connected") {
-      await goto(
-        agent.acpSessionId
-          ? `${sessionPath(agent.cliKind, agent.acpSessionId)}?sessionTransport=http`
-          : "/chat?sessionTransport=http",
-      )
-    }
-    // if status==="error" — stay on /, VM set this.error
-    return
-  }
-  if (!agent.acpSessionId) return
-  await session.attachToLiveAgent({
-    agentId: agent.id,
-    sessionId: agent.acpSessionId,
-    cwd: agent.cwd,
-    cliKind: agent.cliKind,
-    ...sessionAttachExtras(agent),
-  })
-  if (session.status === "connected") {
-    await goto(
-      agent.acpSessionId
-        ? sessionPath(agent.cliKind, agent.acpSessionId)
+  const outcome = await reconnectAgent({ agent, session, settings })
+  if (outcome !== "navigated") return
+  const http =
+    readSessionTransport({
+      env: env.PUBLIC_SESSION_TRANSPORT,
+      stored: settings.sessionTransport,
+    }) === "http"
+  await goto(
+    agent.acpSessionId
+      ? http
+        ? `${sessionPath(agent.cliKind, agent.acpSessionId)}?sessionTransport=http`
+        : sessionPath(agent.cliKind, agent.acpSessionId)
+      : http
+        ? "/chat?sessionTransport=http"
         : "/chat",
-    )
-  }
+  )
 }
 
 async function onSubmit(e: SubmitEvent) {

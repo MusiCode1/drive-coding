@@ -45,6 +45,7 @@ import {
 import { registerSessionSurfaceMcpTool } from "./session-surface-mcp-tool.js"
 import { registerSessionMemoryMcpTools } from "./session-memory-mcp-tools.js"
 import { registerSessionWhoamiMcpTool } from "./session-whoami-mcp-tool.js"
+import { registerAgentDocsMcp } from "./docs-mcp.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
 import { defaultPublicUrl, loopbackBaseUrl, type UrlConfig } from "./public-url.js"
 import { applySessionOpenCreateFields } from "./session-open-body.js"
@@ -176,6 +177,8 @@ function createSessionBusMcpServer(
     },
     { instructions: MCP_SERVER_INSTRUCTIONS },
   )
+
+  registerAgentDocsMcp(server, registerArkTool)
 
   server.registerResource(
     "guide",

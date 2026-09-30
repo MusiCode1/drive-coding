@@ -43,8 +43,9 @@ import {
   patchAgent,
   releaseConnection,
 } from "$lib/adapters/agents-api"
-// ─── slice sessions-inline: ייבוא טיפוס + normalize ───
+// ─── slice sessions-inline: normalize ───
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
+import { SessionsCacheScope } from "$lib/view-models/sessions-cache-scope.svelte"
 import type { CuesEngine } from "$lib/engines/cues"
 // ─── slice leave-running-background ───
 import {
@@ -123,6 +124,8 @@ import {
   type SessionEndScopeDeps,
 } from "$lib/view-models/agent-session-session-end"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
+import { sendDetachFrame, type TransportTestStub } from "$lib/view-models/agent-session-detach-frame"
+import { loadMockSession, type LoadMockSessionDeps } from "$lib/view-models/agent-session-load-mock"
 import { SessionScope } from "$lib/view-models/session-scoped-state.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
 import {
@@ -337,7 +340,7 @@ export class AgentSession {
   /**
    * שאלה מובנת ממתינה מהסוכן — pending יחיד (בקשה שנייה סוגרת את הקודמת כ-cancelled).
    * null = אין בקשה פעילה. ה-UI (ElicitationDialog) מרנדר inline כשזה לא-null.
-   * `resolve` הוא ה-resolver של ה-Promise שהוחזר ל-`createClientImpl.unstable_createElicitation`
+   * `resolve` הוא ה-resolver של ה-Promise שהוחזר ל-`createClientImpl.createElicitation`
    * — חובה לפתור אותו בכל נקודה ש-#client מתאפס, אחרת ה-turn נתקע (מחקה pendingPermission —
    * הסיכון #1 יורש מ-A1). ר' docs/plans/slice-elicitation-ui.md §4 Commit 2.
    * ─── slice view-switch C3-ו: requestId אופציונלי ─── (additive, מקביל ל-pendingPermission)
@@ -522,11 +525,8 @@ export class AgentSession {
     return this.#ext
   }
 
-  // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
-  sessions = $state<SessionInfo[]>([])
-  sessionsLoading = $state<boolean>(false)
-  sessionsError = $state<string | null>(null)
-  #sessionsLoaded = false // True אחרי טעינה מוצלחת אחת — cache; force=true מרענן
+  // ─── slice sessions-cache-scope: connection-scoped session list ───
+  sessionsCache = $state(new SessionsCacheScope())
 
   // ─── slice drop-a5-watchdog (25/08): `slice-A5-watchdog` הוסר ───
   // היה טיימר של 45ש' שכפה `idle` והדליק `turnInterrupted`. נמחק, לא כוונן:
@@ -718,13 +718,7 @@ export class AgentSession {
       remoteView: () => this.#remoteView(),
       client: () => this.#client,
       sessionId: () => this.#sessionId,
-      sessions: () => this.sessions,
-      setSessions: (v) => {
-        this.sessions = v
-      },
-      setSessionsError: (v) => {
-        this.sessionsError = v
-      },
+      cache: () => this.sessionsCache,
       detachWith: (reason) => this.#detachWith(reason),
     }
   }
@@ -1028,6 +1022,15 @@ export class AgentSession {
     endSessionScope(this.#sessionEndScopeDeps(), reason)
   }
 
+  /** Fires session-end with reason "navigate". No-op when status is "idle" (never opened, or already torn down). */
+  notifySessionNavigatedAway(): void {
+    if (this.status === "idle") return
+    void this.#leaveSession("navigate", true).catch((e) => {
+      this.error = formatAcpError(e)
+    })
+  }
+
+  // slice http-live-side-effects: onSseReconnected אינו אופציונלי יותר — הגוף מספק אותו תמיד.
   #remoteViewOpts(): { headers: Record<string, string>; onSseReconnected: () => void } {
     const headers = { "Acp-Connection-Id": this.#connectionId }
     return { headers, onSseReconnected: () => this._onSseReconnectedForTest() }
@@ -1109,7 +1112,7 @@ export class AgentSession {
    * @internal מזריק transport stub ל-#transport (לטסט DoD#4: closeAndWait נקרא ב-#doReconnect).
    * stub: אובייקט עם closeAndWait spy בלבד — לא WsAcpTransport אמיתי.
    */
-  _setTransportForTest(t: { closeAndWait: () => Promise<void> } | null): void {
+  _setTransportForTest(t: TransportTestStub | null): void {
     this.#transport = t as WsAcpTransport | null
   }
   /**
@@ -1854,71 +1857,33 @@ export class AgentSession {
   }
 
   #detachWith(reason: SessionEndReason): void {
-    this.#endSessionScope(reason)
-    this.#detached = true // ‏לפני ה-cleanup — ‏ה-WS close fires async
-    // ─── slice ws-reconnect-infra: ביטול לולאת reconnect ───
-    this.#clearReconnectTimer()
-    this.#reconnecting = false
-    this.reconnectAttempt = 0
-    this.#cleanup()
-    this.#setStatus("idle")
-    this.error = null
-    this.bubbles = []
-    // ─── slice sessions-inline: ניקוי cache סשנים ───
-    this.sessions = []
-    this.#sessionsLoaded = false
-    this.sessionsError = null
+    this.#leaveSession(reason, false).catch((e) => {
+      this.error = formatAcpError(e)
+      this.#errorSurfaced = true
+    })
   }
 
-  /** יציאה מהסשן בלי להרוג את הסוכן ב-BE — ה-child שורד (ws-agent.ts:126),
-   *  ה-WS נסגר, ה-VM מתאפס ל-idle. מאפשר reconnect/חזרה דרך רשימת-התהליכים.
-   *  ⚠️ סנכרן גוף זה מול detach() אם detach() משתנה. הבדלים מ-detach: cleanup({keepAgent:true})
-   *  + flush של permission ה-pending לפני הסגירה (למטה). */
-  leaveRunning = async (): Promise<void> => {
-    this.#endSessionScope("leave-running")
+  async #leaveSession(reason: SessionEndReason, keepAgent: boolean): Promise<void> {
+    this.#endSessionScope(reason)
     this.#detached = true
     this.#clearReconnectTimer()
     this.#reconnecting = false
     this.reconnectAttempt = 0
-    // slice-permission-ui-basic fix (calev NO-GO — "יציאה בלי כיבוי" תקעה את הסוכן):
-    // ב-keepAgent ה-agent שורד וממתין לתשובת permission. חייבים למסור לו cancelled *לפני*
-    // סגירת ה-WS. #resolvePendingPermission פותר את ה-Promise, אבל השליחה בפועל היא microtask;
-    // setTimeout(0) (macrotask) נותן ל-ws.send לרוץ בזמן שה-WS עוד פתוח, ואז #cleanup סוגר.
-    // (detach לא נפגע — הוא הורג את ה-agent, אין מי שממתין.)
-    // slice-elicitation-ui: אותו טיפול גם ל-elicitation ה-pending — ה-agent ששרד ממתין
-    // לתשובת unstable_createElicitation; חייבים למסור לו cancel לפני סגירת ה-WS.
-    if (this.pendingPermission || this.pendingElicitation) {
+    if (keepAgent && (this.pendingPermission || this.pendingElicitation)) {
       this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
       this.#resolvePendingElicitation({ action: "cancel" })
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
-    // ─── slice view-switch C3-ה2: ב-remote, leaveRunning = detach מלא ───
-    // keepAgent:true היה מותיר agent+SessionHost+child חיים בלי בעלים ובלי דרך לחזור
-    // אליהם מהנתיב המרוחק (אין attachToLiveAgent ל-remote — חסום, ר' C3-ה). known-gap:
-    // "השארת סוכן רץ" אינה נתמכת ב-remote ב-S6 (מתועד ב-runbook C4).
-    // ─── slice http-usable C2: unify — keepAgent on both transports ───────────
-    // Reported bug: leaving without shutdown actually closed the session. The old
-    // remote branch called #cleanup(), i.e. killed the agent. The original reason
-    // (view-switch C3) was valid then: there was no way back to a remote agent, so
-    // keepAgent would orphan it. attachRemoteToLiveAgent now returns to it, and
-    // phase B2 added eviction. The host stays registered on purpose (lifecycle
-    // decision A) — it does not leak a second ACP client, and returning is simple.
-    // unregisterHost alone would have been unsafe.
-    //
-    // הנימוק המקורי (view-switch C3-ה2) היה נכון בזמנו: לא הייתה דרך לחזור
-    // לסוכן מרוחק, אז keepAgent היה מייתם אותו. **זה כבר לא נכון** —
-    // attachRemoteToLiveAgent מחזיר אליו, ושלב ב2 נתן את הפינוי.
-    //
-    // ה-host נשאר רשום בכוונה (הכרעת lifecycle, גישה א) — הוא אינו מדליף
-    // לקוח ACP שני, והחזרה אליו פשוטה. unregisterHost לבדו היה מסוכן.
-    this.#cleanup({ keepAgent: true })
+    this.#cleanup(keepAgent ? { keepAgent: true } : undefined)
     this.#setStatus("idle")
     this.error = null
     this.bubbles = []
-    // ─── slice sessions-inline: ניקוי cache סשנים ───
-    this.sessions = []
-    this.#sessionsLoaded = false
-    this.sessionsError = null
+    this.sessionsCache.reset()
+  }
+
+  /** Leave session without killing the BE agent — child survives for reconnect / process list. */
+  leaveRunning = async (): Promise<void> => {
+    await this.#leaveSession("leave-running", true)
   }
 
   /** האם הסשן הנוכחי במצב עקיפת-הרשאות (claude בלבד כרגע — ראה permission-mode.ts).
@@ -2155,7 +2120,7 @@ export class AgentSession {
     // זורם updates גולמיים מ-fixture דרך אותו #onSessionUpdate כמו ACP חי —
     // ללא createAgent/WS/ACP. כלי דיבוג עיצוב; tree-shaken מ-prod build.
     if (import.meta.env.MODE !== "production" && input.sessionId.startsWith("mock:")) {
-      await this.#loadMockSession(input.sessionId.slice("mock:".length), input.cwd)
+      await loadMockSession(this.#loadMockSessionDeps(), input.sessionId.slice("mock:".length), input.cwd)
       return
     }
 
@@ -2662,53 +2627,21 @@ export class AgentSession {
    *  בחירת סשן נעשית מתוך הסשן הפעיל דרך SessionOptionsPanel.)
    */
   listSessions = async (force = false): Promise<void> => {
-    // ─── slice remote-session-mgmt C5: remote path — view.listSessions ───
     const remoteView = this.#remoteView()
+    let source: (() => Promise<SessionInfo[]>) | null
     if (remoteView) {
-      if (this.sessionsLoading) return
-      if (this.#sessionsLoaded && !force) return
-      this.sessionsLoading = true
-      this.sessionsError = null
-      try {
-        // already normalized in the view (RemoteSessionView.listSessions)
-        this.sessions = await remoteView.listSessions()
-        this.#sessionsLoaded = true
-      } catch (e) {
-        // -32601 = the CLI doesn't support listing → empty list, not an error
-        // (exactly like the local path; sessionsError stays null so the empty
-        // list renders — the DoD's "gentle" handling, no crash).
-        if ((e as { code?: number }).code === -32601) {
-          this.sessions = []
-          this.#sessionsLoaded = true
-        } else {
-          this.sessionsError = e instanceof Error ? e.message : String(e)
-        }
-      } finally {
-        this.sessionsLoading = false
+      // already normalized in the view (RemoteSessionView.listSessions)
+      source = () => remoteView.listSessions()
+    } else if (this.#client !== null) {
+      source = async () => {
+        const res = await this.#client!.listSessions()
+        const raw = (res as { sessions?: unknown[] }).sessions ?? []
+        return raw.map(normalizeSessionInfo)
       }
-      return
+    } else {
+      source = null
     }
-    if (this.#client === null) return // אין חיבור — לא טוענים פה
-    if (this.sessionsLoading) return
-    if (this.#sessionsLoaded && !force) return
-    this.sessionsLoading = true
-    this.sessionsError = null
-    try {
-      const res = await this.#client.listSessions()
-      const raw = (res as { sessions?: unknown[] }).sessions ?? []
-      this.sessions = raw.map(normalizeSessionInfo)
-      this.#sessionsLoaded = true
-    } catch (e) {
-      // -32601 = ה-CLI לא תומך (Gemini) → רשימה ריקה, לא שגיאה
-      if ((e as { code?: number }).code === -32601) {
-        this.sessions = []
-        this.#sessionsLoaded = true
-      } else {
-        this.sessionsError = e instanceof Error ? e.message : String(e)
-      }
-    } finally {
-      this.sessionsLoading = false
-    }
+    await this.sessionsCache.list(source, force)
   }
 
   // ─── slice session-delete: מחיקת סשן (session/delete) ─── (תוספתי)
@@ -2917,8 +2850,7 @@ export class AgentSession {
     // slice-elicitation-ui: אותו דפוס — פתור גם elicitation ה-pending לפני close.
     this.#resolvePendingElicitation({ action: "cancel" })
     if (opts?.keepAgent && this.#transport) {
-      this.#transport.sendRaw(`${JSON.stringify({ jsonrpc: "2.0", method: "$/detach" })}
-`)
+      sendDetachFrame(this.#transport)
     } else if (opts?.keepAgent && this.#isRemote) {
       this.releaseConnection()
     }
@@ -2970,87 +2902,32 @@ export class AgentSession {
     if (!opts?.keepAgent && !opts?.keepContext && agentId) void deleteAgent(agentId).catch(() => {})
   }
 
-  /**
-   * DEV-only: טוען fixture של updates גולמיים ומזרים אותם דרך #onSessionUpdate —
-   * בדיוק כמו loadSession אמיתי (אותו ממיר, אותו status flow). מקור: static/fixtures/<name>.json.
-   * delayMs > 0 → השהיה בין updates (לדמות streaming חי לדיבוג scroll/animations).
-   */
-  #loadMockSession = async (name: string, cwd: string): Promise<void> => {
-    try {
-      const res = await fetch(`/fixtures/${name}.json`)
-      if (!res.ok) throw new Error(`fixture "${name}" not found (${res.status})`)
-      const data = (await res.json()) as {
-        updates: unknown[]
-        loadResult?: {
-          configOptions?: SessionConfigOption[] | null
-          models?: SessionModelState | null
-          modes?: SessionModeState | null
-        }
-        // ─── slice session-budget-meter Commit 5: mockState גנרי ─── (additive)
-        mockState?: {
-          capabilities?: Partial<NormalizedCapabilities>
-          quota?: QuotaSnapshot | null
-        }
-      }
-      this.cwd = cwd
-      this.#enterSession(`mock:${name}`)
-      this.sessionTitle = `🧪 ${name}` // slice session-title: כותרת-דמו לharness הוויזואלי
-      // DEV: לכוד configOptions/modes/models מ-loadResult של ה-fixture (אם קיים) —
-      // מאפשר mockup של בוררי ה-config (mode/model/agent/effort) + descriptions ללא ACP חי.
-      if (data.loadResult) this.#captureSessionConfig(data.loadResult)
-
-      // ─── slice session-budget-meter Commit 5: mockState.capabilities/quota ───
-      // #mockQuota מתאפס תמיד תחילה — מונע דליפה מ-mock session קודם (brief §0/§4 Commit 4).
-      // fixture ללא mockState.quota → #mockQuota נשאר undefined → refreshQuota() נופל
-      // ל-נתיב "אין #ext" (unavailable), לא מציג snapshot ישן.
-      this.#mockQuota = undefined
-      if (data.mockState) {
-        if (data.mockState.capabilities) {
-          // ממזג עם defaults בטוחים (כל השאר false) — לא מניח שהמפתח קיים ב-fixture.
-          this.#capabilities = {
-            mcp: false,
-            compact: false,
-            commands: false,
-            usage: false,
-            configOptions: false,
-            rename: false,
-            thinkingTokens: false,
-            image: false,
-            systemPrompt: "unsupported",
-            ...data.mockState.capabilities,
-          }
-        }
-        if ("quota" in data.mockState) {
-          this.#mockQuota = data.mockState.quota
-        }
-      }
-
-      // delay אופציונלי דרך ?stream=<ms> (ללא תשתית — sleep צד-לקוח בלבד)
-      const params = new URLSearchParams(typeof location !== "undefined" ? location.search : "")
-      const delayMs = Number(params.get("stream") ?? "0") || 0
-
-      this.#resetTurnTracking() // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
-      this.isLoadingHistory = true
-      try {
-        for (const update of data.updates) {
-          // עוטף בצורת SessionNotification ({ update }) כמו ב-ACP אמיתי
-          this.#onSessionUpdate({ update } as unknown as SessionNotification)
-          if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs))
-        }
-        // tick(): מאלץ flush של ה-$effect של ה-Speaker בעוד isLoadingHistory=true,
-        // כך שכל הבועות מסומנות כמעובדות (replay-quiet) לפני ההצבה ל-false.
-        // בלי זה הלולאה הסינכרונית מסתיימת לפני שה-effect רץ → ה-Speaker מקריא הכל.
-        await tick()
-      } finally {
-        this.isLoadingHistory = false
-        this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState
-      }
-      this.status = "connected"
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      this.error = `mock loadSession failed: ${msg}`
-      this.#setTurnState("idle") // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
-      this.status = "error"
+  #loadMockSessionDeps(): LoadMockSessionDeps {
+    return {
+      setCwd: (cwd) => {
+        this.cwd = cwd
+      },
+      setSessionTitle: (title) => {
+        this.sessionTitle = title
+      },
+      setError: (error) => {
+        this.error = error
+      },
+      setIsLoadingHistory: (v) => {
+        this.isLoadingHistory = v
+      },
+      enterSession: (sessionKey) => this.#enterSession(sessionKey),
+      captureSessionConfig: (result) => this.#captureSessionConfig(result),
+      setMockQuota: (v) => {
+        this.#mockQuota = v
+      },
+      setCapabilities: (v) => {
+        this.#capabilities = v
+      },
+      resetTurnTracking: () => this.#resetTurnTracking(),
+      setTurnState: (state) => this.#setTurnState(state),
+      onSessionUpdate: (n) => this.#onSessionUpdate(n),
+      setStatus: (status) => this.#setStatus(status),
     }
   }
 

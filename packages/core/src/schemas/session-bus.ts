@@ -158,6 +158,16 @@ export const McpSessionFieldDeleteInput = type({
 })
 export type McpSessionFieldDeleteInput = typeof McpSessionFieldDeleteInput.infer
 
+/** MCP docs_get — optional id, tags, or query (public docs; no identity header). */
+export const McpDocsGetInput = type({
+  "id?": type("string").describe("Document id from the catalog — returns full markdown."),
+  "tags?": type("string[]").describe("Return index entries whose tags intersect this list."),
+  "query?": type("string").describe(
+    "Case-insensitive substring match against id, title, summary, read_when, headings.",
+  ),
+})
+export type McpDocsGetInput = typeof McpDocsGetInput.infer
+
 /** @deprecated Use McpSessionListInput — base/port/json are not used by MCP. */
 export const AgentListInput = McpSessionListInput
 export type AgentListInput = McpSessionListInput

@@ -128,8 +128,24 @@ non-2xx, wrong content-type, empty body. The happy path was never the risk.
 
 | סף | ערך |
 |---|---|
-| ‏ירידה בשורות | ‏**≥25** |
-| ‏מתוכן **שורות קוד** | ‏**≥15** |
+| ‏ירידה ב**שורות-קוד** | ‏**≥15** |
+| ‏(‏ירידה ב-`wc -l` ‏≥25) | ‏**‏fallback בלבד** — ‏לרשומת-baseline ישנה בלי `codeLines` |
+
+### ‏🟢 ‏תוקן 29/09 — ‏**‏שינוי שאינו קוד אינו חוסם ואינו חייב מס**
+
+‏עד 29/09 ‏הכלל נגזר מ-`wc -l`, ‏ולכן **‏תיקון הערה בקובץ חורג עלה 25 ‏שורות
+‏חילוץ** — ‏וסוכן דילג על שיפור הערה במקום לשלם. ‏הכלל לימד את ההפך ממטרתו.
+
+| ‏מה שונה | ‏כעת |
+|---|---|
+| ‏כלל הגדילה | ‏נשען על **`codeLines`**. ‏הערה / ‏JSDoc / ‏שורה ריקה — ‏חופשיים |
+| ‏מס-החילוץ | ‏חל רק כש-`codeLines` ‏**‏השתנה**. ‏עריכת-הערה טהורה פטורה |
+| ‏`metric` (`wc -l`) | ‏**‏מידע בלבד**, ‏לא בסיס-חסימה |
+
+‏⚠️ **‏מגבלה מוצהרת של המדידה:** ‏ריפקטור ששומר `codeLines` ‏זהה נקרא
+‏"‏לא-שינוי-קוד" ‏וחומק מהמס. ‏מקובל — ‏זיהוי מבוסס-diff ‏הוא מנגנון גדול
+‏מהכלל עצמו. ‏`scripts/lint-file-size.test.mjs` ‏מקבע את שלושת המקרים, ‏והטסט
+‏של הפטור נושא **‏שער-שפיות** ‏שמאמת שהכלל פעיל לפני שהוא בודק את הפטור.
 
 ‏🔑 **‏למה שני מדדים:** ‏`countLines` ‏הוא `wc -l` — ‏סופר הערות ושורות ריקות.
 ‏בלי מדידת-קוד נפרדת, ‏מחיקת 25 ‏שורות הערה הייתה מספקת את הכלל **‏בלי לחלץ
@@ -149,7 +165,7 @@ non-2xx, wrong content-type, empty body. The happy path was never the risk.
 | ‏`bun run lint:size` | ‏`exit 2` | — | — |
 | ‏`pre-commit` | ‏מתרגם 2→0 ‏ומדפיס | ❌ | ❌ |
 | ‏**`post-commit`** | ‏מזכיר אחרי הקומיט | ❌ | ✅ |
-| ‏`pre-push` | ‏חוסם | ✅ | ❌ |
+| ‏`pre-push` | ‏חוסם — **‏must-shrink + ‏`tsc --build`** | ✅ | ❌ |
 | ‏**`dod-check.sh check`** | ‏חוסם | ✅ | ✅ — **‏אינו hook** |
 
 **‏למה `exit 2` ולא הודעה בלבד:** ‏סוכן בודק קוד-יציאה, ‏לא טקסט. ‏`exit 0`
@@ -277,9 +293,26 @@ bun run hooks:install # one-time: set core.hooksPath=.githooks (runs pre-commit 
 ```
 
 > ⚠️ **The frontend is inside `typecheck` since 2026-08-31.** `tsconfig.json` at the root
-> references only `core` and `backend`, so `tsc --build` never saw `packages/frontend` —
+> referenced only `core` and `backend`, so `tsc --build` never saw `packages/frontend` —
 > it is checked by `svelte-check`, which nothing ran automatically. 63 type errors
 > accumulated there unnoticed. `typecheck` now chains both; keep it that way.
+
+### ‏🟢 ‏נוסף 29/09 — ‏`tsc --build` ‏הוא שער ב-`pre-push`
+
+‏השורש references ‏היום **‏ארבעה**: ‏`core` ‏· ‏`backend` ‏· ‏`acp-wire` ‏· ‏**‏`provider`**.
+‏האחרון נוסף בסלייס `typecheck-gate`, ‏וזה **‏לא** ‏שינוי-נוחות: ‏בלעדיו קבצי-הטסט
+‏של `provider` ‏**‏אינם עוברים בדיקת-טיפוסים כלל**. ‏נמדד בבקרה — ‏שגיאה שהוזרקה
+‏ל-`client.create-elicitation.test.ts` ‏נתפסה **‏עם** ‏ה-reference, ‏והחזירה `0` ‏שגיאות
+‏**‏בלעדיו**, ‏על אותו קובץ שבור בדיוק.
+
+‏🔴 **‏למה `tsc --build` ‏ולבדו.** ‏השער נולד מ-`bugs/archive/73` (‏elicitation ‏מת
+‏שבוע בעוד `tsc` ‏מדפיס שתי שגיאות שאיש לא הריץ). ‏החצי השני של `bun run typecheck`
+‏הוא `svelte-check` — ‏**‏36ש' ‏מול 12ש'**, ‏והוא בודק **‏רק את ה-FE**. ‏הבאג ישב
+‏ב-`packages/provider`, ‏כלומר `svelte-check` ‏לא היה נוגע בו גם אילו רץ:
+‏שלושה רבעים מהעלות עבור אפס כיסוי על הכשל שקרה בפועל. ‏`svelte-check` ‏נשאר ידני.
+
+‏⚠️ ‏`pre-commit` ‏**‏לא** ‏השתנה — ‏קומיטים תכופים מ-push, ‏והנזק (‏קוד שבור שיוצא
+‏החוצה) ‏מתגלה ב-push. ‏עקיפה: ‏`git push --no-verify`, ‏ואין CI.
 
 > **Per-package commands** stay PM-agnostic via `node scripts/pm.mjs run-filter <pkg> <script>`
 > (it detects bun from the user-agent), or directly as `bun run --filter <pkg> <script>`.
@@ -351,6 +384,26 @@ the FE for the **user** to inspect, follow these rules:
 After clone, run `bun run hooks:install` once. It sets `core.hooksPath=.githooks/`
 so `.githooks/pre-commit` runs the i18n lint before every commit. To skip a
 specific commit (rare): `git commit --no-verify`.
+
+### Agent docs freshness (`pre-push`)
+
+When the size ratchet passes (`lint-file-size.mjs` exit 0), `pre-push` also runs
+`node scripts/lint-docs-fresh.mjs`. It compares the **push range** (stdin from
+git, or `merge-base` with upstream, or unpushed commits on the branch) against
+agent-docs surfaces: HTTP route registration, MCP tools, render contract, new FE
+pages, config keys, `DOCS_VERSION` vs edited `docs/agents/*.md`, and
+`99-known-issues.md` vs the private bug register.
+
+The gate is **fail-open**: missing `docs-for-llm/`, a non-git tree, or an
+unresolvable range exits 0 with no output. Any internal error also exits 0.
+
+**Convention (not enforced):** when you edit an agent doc, bump `docs_version` on
+that doc and raise `DOCS_VERSION` in `packages/core/src/docs/index.ts` in the
+same push range. The linter only requires that *some* doc change in the range
+pairs with a semver increase of `DOCS_VERSION`; it does not require the edited
+file’s `docs_version` to match HEAD, only `<= DOCS_VERSION`.
+
+There is **no CI**; hooks can be skipped with `git push --no-verify`.
 
 ## Worktrees
 
@@ -661,13 +714,12 @@ directory and runs in `pre-commit`.
 These are **public** docs written for coding agents, not for maintainers — the private
 planning notes stay in `docs-for-llm/`.
 
-> **This line is one routing channel out of three, and the only one that exists today.**
-> An agent working *inside this repo* finds the docs here. An agent that drive-coding
-> **spawned** gets them two other ways — a parent injecting the pointer into its context
-> (the `prompts/surface/*` pieces, delivered via CLI hook / `GET /api/agent-prompt` /
-> the `session_surface` MCP tool), and MCP resources + a `docs_get` tool. Those two are
-> **not built yet**; they are the `agent-docs-serve` slice. Until then, a spawned child
-> has no route to `docs/agents/` at all — do not assume it can see them.
+> **Three routing channels — all live.** An agent working *inside this repo* reads
+> `docs/agents/` on disk (`bun run docs:list`). A **spawned child** without the repo
+> should use **`docs_get`** (MCP tool), **`drive-coding://docs/<id>`** resources, or
+> **`GET /api/docs`** / **`GET /api/docs/:id`** on the backend. Parent injection still
+> delivers the same pointers via `prompts/surface/*` (CLI hook / `GET /api/agent-prompt` /
+> `session_surface` MCP).
 
 ## עבודה עם מרדכי (planner)
 

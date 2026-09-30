@@ -15,6 +15,7 @@ import type { AvailableCommand } from "@agentclientprotocol/sdk"
 import ImagePlusIcon from "@lucide/svelte/icons/image-plus"
 import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import MicIcon from "@lucide/svelte/icons/mic"
+import MicOffIcon from "@lucide/svelte/icons/mic-off"
 import OctagonXIcon from "@lucide/svelte/icons/octagon-x"
 import SendIcon from "@lucide/svelte/icons/send"
 import XIcon from "@lucide/svelte/icons/x"
@@ -47,7 +48,8 @@ const draft = getComposerDraft()
 const dictate = getDictate()
 const mic = getMic()
 const uiShell = getUiShell()
-const t = getI18n().t
+const i18n = getI18n()
+const t = i18n.t
 
 let taEl = $state<HTMLTextAreaElement>()
 const MAX_ROWS = 6
@@ -208,6 +210,13 @@ function handleDragOver(e: DragEvent): void {
   e.preventDefault()
 }
 
+/** מעבד את קבצי-התמונה שב-FileList; שאר הטיפוסים מדולגים בשקט. */
+function processImageFiles(files: FileList): void {
+  for (const file of files) {
+    if (file.type.startsWith("image/")) void processImageFile(file)
+  }
+}
+
 function handleDrop(e: DragEvent): void {
   if (!session.supportsImageInput) return
   e.preventDefault()
@@ -215,11 +224,7 @@ function handleDrop(e: DragEvent): void {
   const files = e.dataTransfer?.files
   if (!files) return
 
-  for (const file of files) {
-    if (file.type.startsWith("image/")) {
-      void processImageFile(file)
-    }
-  }
+  processImageFiles(files)
 }
 
 function handleFileChange(e: Event): void {
@@ -228,11 +233,7 @@ function handleFileChange(e: Event): void {
   const files = input.files
   if (!files) return
 
-  for (const file of files) {
-    if (file.type.startsWith("image/")) {
-      void processImageFile(file)
-    }
-  }
+  processImageFiles(files)
   // reset input כדי שאפשר לבחור אותו קובץ שוב
   input.value = ""
 }
@@ -240,10 +241,6 @@ function handleFileChange(e: Event): void {
 function removeAttachment(att: ImageAttachment): void {
   revokeAttachment(att)
   attachments = attachments.filter((a) => a.id !== att.id)
-}
-
-function openFilePicker(): void {
-  fileInputEl?.click()
 }
 </script>
 
@@ -310,7 +307,7 @@ function openFilePicker(): void {
     {#if session.supportsImageInput}
       <button
         type="button"
-        onclick={openFilePicker}
+        onclick={() => fileInputEl?.click()}
         disabled={isDisabled}
         aria-label={t("attach.addImage")}
         title={t("attach.addImage")}
@@ -328,14 +325,16 @@ function openFilePicker(): void {
       disabled={!dictateBtnEnabled}
       aria-pressed={dictateListening ? true : undefined}
       aria-busy={dictateBusy || dictateRequesting ? true : undefined}
-      aria-label={t(dictateBtnLabel)}
-      title={t(dictateBtnLabel)}
+      aria-label={mic.permissionDenied ? t("dictate.error.permission") : t(dictateBtnLabel)}
+      title={mic.permissionDenied ? t("dictate.error.permission") : t(dictateBtnLabel)}
       class="type-area-control type-area-icon-control shrink-0 rounded-xl p-2 flex items-center"
       class:dictate-arming={dictateRequesting && !dictateBusy}
       style="color:{dictateListening ? 'var(--recording)' : 'var(--fg-dim)'}; min-height:var(--control-h)"
     >
       {#if dictateBusy}
         <Loader2Icon size={18} strokeWidth={1.75} class="animate-spin" />
+      {:else if mic.permissionDenied}
+        <MicOffIcon size={18} strokeWidth={1.75} />
       {:else}
         <MicIcon size={18} strokeWidth={1.75} />
       {/if}
@@ -370,7 +369,7 @@ function openFilePicker(): void {
       placeholder={t("record.placeholder")}
       rows={1}
       disabled={isDisabled}
-      dir={draft.text.length ? "auto" : "rtl"}
+      dir={draft.text.length ? "auto" : i18n.dir}
       role="combobox"
       aria-expanded={menuOpen}
       aria-controls={menuOpen ? "slash-listbox" : undefined}

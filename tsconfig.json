@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/core" },
     { "path": "./packages/backend" },
-    { "path": "./packages/acp-wire" }
+    { "path": "./packages/acp-wire" },
+    { "path": "./packages/provider" }
   ]
 }
