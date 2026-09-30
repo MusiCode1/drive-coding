@@ -136,8 +136,8 @@ describe("AgentSession — deleteSession", () => {
     // הסשן הפעיל אחרי attach הוא "session-delete-test" (mockClient.newSession).
     // הזרק עוד סשן ברשימה כדי לבדוק הסרה סלקטיבית (לא-פעיל).
     session.sessionsCache.sessions = [
-      { sessionId: "session-delete-test", cwd: "/some/cwd", title: "" },
-      { sessionId: "other-session", cwd: "/some/cwd", title: "" },
+      { sessionId: "session-delete-test", cwd: "/some/cwd", title: "", updatedAt: "" },
+      { sessionId: "other-session", cwd: "/some/cwd", title: "", updatedAt: "" },
     ]
   })
 
