@@ -7,12 +7,16 @@
  */
 
 import { readFileSync } from "node:fs"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { AgentRegistry } from "@drive-coding/core"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { Hono } from "hono"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { invalidateCache } from "@drive-coding/provider/config"
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 import * as readProcessRssMod from "../adapters/read-process-rss.js"
 import { AGENT_ID_HEADER, DRIVE_CODING_AGENT_ID_ENV } from "../agent-identity.js"
 import { createInMemoryAgentRegistry } from "../agents/registry.js"
@@ -139,8 +143,27 @@ function makeOrchestrator(registry: AgentRegistry): AgentOrchestrator {
   }
 }
 
-function makeApp(opts?: { mcpHttp?: string }) {
-  const env: NodeJS.ProcessEnv = {}
+let isolatedCliSpecsFile: string
+let isolatedCliSpecsDir: string
+
+beforeAll(async () => {
+  isolatedCliSpecsDir = await mkdtemp(join(tmpdir(), "http-mcp-cli-specs-"))
+  isolatedCliSpecsFile = join(isolatedCliSpecsDir, "cli-specs.json")
+  await writeFile(isolatedCliSpecsFile, "{}")
+})
+
+afterAll(async () => {
+  invalidateCache()
+  await rm(isolatedCliSpecsDir, { recursive: true, force: true })
+})
+
+function mcpTestEnv(extra?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return { CLI_SPECS_FILE: isolatedCliSpecsFile, ...extra }
+}
+
+function makeApp(opts?: { mcpHttp?: string; env?: NodeJS.ProcessEnv }) {
+  invalidateCache()
+  const env = mcpTestEnv(opts?.env)
   if (opts?.mcpHttp !== undefined) env.MCP_HTTP = opts.mcpHttp
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
