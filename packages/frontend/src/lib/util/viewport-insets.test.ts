@@ -55,8 +55,20 @@ describe("occludedPx", () => {
     expect(occludedPx(844, 508, 40)).toBeLessThan(occludedPx(844, 508, 0))
   })
 
-  it("ignores browser chrome collapsing - dvh already handles that", () => {
-    expect(occludedPx(844, 784, 0)).toBe(0) // ~60px toolbar, below the noise floor
+  // OnePlus 8T / bug #76 proof harness — raw measured on device; layoutH & vv.height
+  // reconstructed per keyboard layout (vvTop + raw constant within each series).
+  it("reports Hebrew-keyboard pan rows that used to fall below the old 80px floor", () => {
+    expect(occludedPx(692.7, 414.7, 267.7)).toBe(10) // raw 10.3, series sum 278.0
+    expect(occludedPx(692.7, 414.7, 234.3)).toBe(44) // raw 43.7, series sum 278.0
+  })
+
+  it("reports the English-keyboard threshold row (raw 78 was zeroed at floor 80)", () => {
+    expect(occludedPx(692, 409.7, 204.3)).toBe(78) // measured vv.height & layoutH; sum 282.3
+  })
+
+  it("keeps keyboard-closed noise at or below zero (phase 0.1 on device)", () => {
+    expect(occludedPx(692, 692.7, 0)).toBe(0) // Chrome raw -0.7
+    expect(occludedPx(639, 639.7, 0)).toBe(0) // Edge raw -0.7
   })
 
   it("clamps over-scroll rubber-banding to 0", () => {

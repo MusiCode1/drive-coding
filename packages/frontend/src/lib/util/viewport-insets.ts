@@ -11,8 +11,12 @@
 /** Height of the BottomSheet grab handle - the `peek` detent before any inset. */
 export const PEEK_BASE_PX = 28
 
-/** Below this, a visual-viewport change is browser chrome or rubber-banding, not a keyboard. */
-export const KB_NOISE_PX = 80
+/**
+ * Ignore sub-pixel noise and over-scroll (negative `raw`). Real keyboard occlusion is
+ * always well above 1px on device; see bug #76. Not a pinch-zoom guard — zoom above ~1.13×
+ * still passes through unchanged.
+ */
+export const KB_NOISE_PX = 1
 
 /**
  * Visible height of the BottomSheet's `peek` detent.
@@ -50,8 +54,8 @@ export function detentHeight(
  *
  * `offsetTop` matters: iOS scrolls the layout viewport up behind the keyboard instead of
  * shrinking it, so `height` alone under-reports the occlusion.
- * Returns 0 for anything below the noise floor, for over-scroll (visual viewport taller
- * than layout), and for non-finite input.
+ * Returns 0 when `raw` is below {@link KB_NOISE_PX} (over-scroll and sub-pixel noise),
+ * and for non-finite input.
  */
 export function occludedPx(
   layoutHeight: number,
