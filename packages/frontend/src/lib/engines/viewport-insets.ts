@@ -25,8 +25,10 @@ export type ViewportInsets = {
  * over TypeArea leaves the layout viewport at full height: the composer and its send
  * button end up behind the keyboard and cannot be scrolled back, because the body is
  * `overflow: hidden`. Typing - one of the four input modes - is blind.
- * `interactive-widget=resizes-content` would fix Chrome/Android, but iOS Safari ignores
- * it, and iOS is also the platform shipping the notch this slice pays back.
+ * `interactive-widget=resizes-content` (see `app.html` viewport meta) shrinks the layout
+ * viewport on Chrome/Android when the keyboard opens (bug #76); iOS Safari ignores it
+ * (WebKit #259770, BCD `safari_ios: false`), and iOS is also the platform shipping the
+ * notch this slice pays back.
  * visualViewport is the one signal both honour.
  *
  * `--kb` is written here rather than passed down so any surface can spend it in plain CSS
