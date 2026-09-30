@@ -99,6 +99,7 @@ export async function runWarmReconnect(
         owner.discardTransport(transport)
         return "terminal"
       }
+      reconnect.setWarmAgent(agentId)
       reconnect.setStatus("connected")
       owner.finishWarmTransport(transport)
       return "connected"

@@ -84,9 +84,6 @@ function wsDeps(): WsConnectionDeps {
       events.push("setAgent")
     }),
     url: vi.fn(() => "ws://localhost/agent-1"),
-    setTransport: vi.fn(() => {
-      events.push("setTransport")
-    }),
     onClose: vi.fn(),
     bindLocalView: vi.fn(() => {
       events.push("bindLocalView")
@@ -104,7 +101,8 @@ function wsDeps(): WsConnectionDeps {
       events.push("connected")
     }),
     failed: vi.fn(),
-    openExisting: vi.fn(),
+    prepareExisting: vi.fn(),
+    failedExisting: vi.fn(),
   }
 }
 
@@ -160,6 +158,7 @@ function reconnectDeps(): WsConnectionDeps & { reconnect: WsReconnectDeps } {
       clearTransientError: vi.fn(),
       clearClient: vi.fn(),
       prepareWarm: vi.fn(),
+      setWarmAgent: vi.fn(),
       setAttachedClient: vi.fn(),
       startReplay: vi.fn(),
       finishReplay: vi.fn(),
@@ -187,7 +186,6 @@ describe("Connection transport ownership", () => {
       "createAgent",
       "setAgent",
       "WsAcpTransport",
-      "setTransport",
       "waitForOpen",
       "bindLocalView",
       "createAcpClient",
@@ -211,7 +209,7 @@ describe("Connection transport ownership", () => {
         cliKind: "claude",
       }),
     ).rejects.toThrow("requires sessionId")
-    expect(deps.openExisting).not.toHaveBeenCalled()
+    expect(deps.prepareExisting).not.toHaveBeenCalled()
     expect(deps.prepareNew).not.toHaveBeenCalled()
     expect(events).not.toContain("WsAcpTransport")
   })

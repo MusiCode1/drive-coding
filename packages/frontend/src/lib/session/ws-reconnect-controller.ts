@@ -29,6 +29,7 @@ export type WsReconnectDeps = {
   clearTransientError: () => void
   clearClient: () => void
   prepareWarm: (agentId: string) => void
+  setWarmAgent: (agentId: string) => void
   setAttachedClient: (client: AcpClient) => void
   startReplay: () => void
   finishReplay: () => void
@@ -56,6 +57,33 @@ export class WsReconnectController {
   async reconnectNow(): Promise<void> {
     this.cancel()
     await this.#tryReconnect(this.attempt.generation)
+  }
+
+  async attachExisting(agentId: string): Promise<void> {
+    this.cancel()
+    const generation = this.attempt.generation
+    if (!this.#current(generation)) return
+    const context = this.reconnect.context()
+    if (!context) return
+    this.reconnect.snapshot()
+    if (this.owner.transport) await this.owner.closeOwnedTransport()
+    if (!this.#current(generation)) return
+    const result = await runWarmReconnect(
+      this.owner,
+      this.deps,
+      this.reconnect,
+      this.attempt,
+      agentId,
+      context,
+      generation,
+      () => this.#current(generation),
+    )
+    if (result === "connected") {
+      this.reconnect.setAttempt(0)
+      this.reconnect.connected()
+    } else if (result === "cold-eligible" && this.#current(generation)) {
+      this.deps.failedExisting()
+    }
   }
 
   async onUnexpectedClose(code: number, reason: string): Promise<void> {

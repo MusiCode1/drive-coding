@@ -34,8 +34,10 @@ import { AgentSession } from "./agent-session.svelte"
 // שבסביבת-בדיקה (jsdom, ללא Settings.locale) תלוי ב-navigator.language של סביבת ה-CI/dev
 // (לרוב en-US). לכן מחשבים את ההודעה הצפויה דינמית — לא תלוי-locale קשיח.
 const expectedTakeoverMessage = createI18n({ locale: detectLocale() }).t("session.openedElsewhere")
+const expectedHostMessage = createI18n({ locale: detectLocale() }).t("session.heldByOtherTransport")
 
 beforeEach(() => {
+  vi.clearAllMocks()
   vi.unstubAllGlobals()
   // בפוקוס — כדי שנוכל להבדיל בין "לא הוצת reconnect בגלל takeover" לבין "לא הוצת כי ברקע".
   vi.stubGlobal("document", { hidden: false, addEventListener: vi.fn() })
@@ -48,8 +50,32 @@ afterEach(() => {
 })
 
 describe("AgentSession — takeover close code (slice reconnect-ws-takeover, Commit 1)", () => {
+  test("onClose(1008 session-host-active) is terminal for the consumer", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
+    await session._handleUnexpectedCloseForTest(1008, "session-host-active")
+    expect(session.status).toBe("disconnected")
+    expect(session.error).toBe(expectedHostMessage)
+    expect(session.reconnectAttempt).toBe(0)
+    expect(getAgent).not.toHaveBeenCalled()
+  })
+
+  test("a surfaced crashReason is terminal for the consumer", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
+    session.agentId = "agent-1"
+    vi.mocked(getAgent).mockResolvedValueOnce({
+      agent: { cwd: "/repo", status: "crashed", crashReason: "agent crashed" },
+    })
+    await session._handleUnexpectedCloseForTest(1006, "")
+    expect(session.status).toBe("disconnected")
+    expect(session.error).toBe("agent crashed")
+    expect(session.reconnectAttempt).toBe(0)
+  })
+
   test("onClose(4409) → status='disconnected' + הודעת 'נפתח במקום אחר', ואין reconnect loop", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (session as any)._handleUnexpectedCloseForTest(4409, "taken over by new connection")
@@ -72,6 +98,7 @@ describe("AgentSession — takeover close code (slice reconnect-ws-takeover, Com
 
   test("regression: onClose(1006, drop רגיל) → עדיין מצית reconnect כרגיל", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal closure")

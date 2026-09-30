@@ -207,7 +207,7 @@ describe("AgentSession — frozen display snapshot ב-warm-reconnect (Commit 1)"
     vi.mocked(createAgent).mockRejectedValueOnce(new Error("Failed to fetch"))
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (session as any)._doReconnectForTest()
+    await session.reconnect()
 
     // loadSession (הקוד הקיים, לא-נוגעים) עדיין מאפס bubbles=[] בתחילתו — כצפוי.
     // slice reconnect-recovery: #coldReconnect מעביר preserveContextOnError:true —

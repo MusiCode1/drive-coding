@@ -210,12 +210,7 @@ describe("AgentSession — elicitation round-trip (slice-elicitation-ui Commit 2
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setTransportForTest({ closeAndWait: closeAndWaitSpy })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockFindReusableAgentForTest(null)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockColdReconnectForTest(new Error("cold-blocked-for-test"))
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (session as any)._doReconnectForTest().catch(() => {})
+    await session.reconnect()
 
     expect(closeAndWaitSpy).toHaveBeenCalledOnce()
     expect(session.pendingElicitation).toBeNull()

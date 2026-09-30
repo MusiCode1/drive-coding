@@ -221,13 +221,7 @@ describe("AgentSession — permission request round-trip (slice-permission-ui-ba
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setTransportForTest({ closeAndWait: closeAndWaitSpy })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockFindReusableAgentForTest(null)
-    // עוצר מוקדם אחרי ה-#client=null+resolve שאנחנו בודקים — אין צורך ב-WS אמיתי
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockColdReconnectForTest(new Error("cold-blocked-for-test"))
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (session as any)._doReconnectForTest().catch(() => {}) // coldReconnect mock זורק בכוונה — לא רלוונטי לטסט
+    await session.reconnect()
 
     expect(closeAndWaitSpy).toHaveBeenCalledOnce()
     expect(session.pendingPermission).toBeNull()

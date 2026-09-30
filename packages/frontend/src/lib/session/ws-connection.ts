@@ -21,7 +21,6 @@ export type WsConnectionDeps = {
   prepareNew: () => void
   setAgent: (agentId: string, cwd: string, cliKind: string) => void
   url: (agentId: string) => string
-  setTransport: (transport: WsAcpTransport) => void
   onClose: (code: number, reason: string) => void
   bindLocalView: () => LocalSessionView
   callbacks: (view: LocalSessionView) => Parameters<typeof createAcpClient>[1]
@@ -32,8 +31,8 @@ export type WsConnectionDeps = {
   captureSessionConfig: (result: SessionConfigResult) => void
   connected: () => Promise<void>
   failed: (error: unknown) => void
-  /** Replaced by owner-owned warm I/O when the VM consumer is wired in phase 2. */
-  openExisting: (agent: Extract<AgentInput, { kind: "existing-ws" }>) => Promise<void>
+  prepareExisting: (agent: Extract<AgentInput, { kind: "existing-ws" }>) => void
+  failedExisting: () => void
   reconnect?: WsReconnectDeps
 }
 
@@ -53,7 +52,6 @@ export class WsConnection implements Connection {
 
   adoptTransport(transport: WsAcpTransport): void {
     this.#transport = transport
-    this.deps.setTransport(transport)
   }
 
   beginWarmTransport(url: string): WsAcpTransport {
@@ -111,7 +109,9 @@ export class WsConnection implements Connection {
   async open(agent: AgentInput): Promise<void> {
     if (agent.kind === "existing-ws") {
       if (!agent.sessionId) throw new Error("existing WS agent requires sessionId")
-      await this.deps.openExisting(agent)
+      this.deps.prepareExisting(agent)
+      if (!this.#controller) throw new Error("existing WS agent requires reconnect policy")
+      await this.#controller.attachExisting(agent.agentId)
       return
     }
     if (agent.kind !== "new") throw new Error("WsConnection requires a WS agent")
@@ -126,7 +126,9 @@ export class WsConnection implements Connection {
       this.deps.setAgent(agentId, agent.cwd, agent.cliKind)
       const transport = new WsAcpTransport(this.deps.url(agentId))
       this.adoptTransport(transport)
-      transport.onClose(this.deps.onClose)
+      transport.onClose((code, reason) => {
+        if (this.#transport === transport) this.deps.onClose(code, reason)
+      })
       await transport.waitForOpen()
       const localView = this.deps.bindLocalView()
       const client = await createAcpClient(transport, this.deps.callbacks(localView))
