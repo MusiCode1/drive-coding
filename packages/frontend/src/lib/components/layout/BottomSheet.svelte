@@ -9,16 +9,17 @@
  *   peek = 28px (רק הידית) · half = 45vh · full = 80vh.
  * הרקע/הצל/התוכן דוהים בהדרגה לפי הגובה הגלוי (לא קפיצה).
  *
- * ─── redesign-2 · detents: redesign-fix ───
+ * ─── redesign-2 · detents: redesign-fix · peek clears the safe-area: mobile-parity ───
  */
-import { getI18n, getUiShell } from "$lib/context"
+import { getI18n, getResponsive, getUiShell } from "$lib/context"
 import type { SheetDetent } from "$lib/view-models/ui-shell.svelte"
+import { detentHeight } from "$lib/util/viewport-insets"
 import SessionOptionsPanel from "./SessionOptionsPanel.svelte"
 
 const uiShell = getUiShell()
+const responsive = getResponsive()
 const t = getI18n().t
 
-const PEEK_PX = 28
 const SHEET_VH = 0.8 // גובה ה-sheet עצמו = 80vh
 
 // גובה החלון (reactive — מתעדכן ב-resize)
@@ -31,12 +32,11 @@ $effect(() => {
 
 const sheetPx = $derived(winH * SHEET_VH) // גובה ה-sheet בפיקסלים
 
-/** גובה גלוי (px מלמטה) לכל detent. */
+/** גובה גלוי (px מלמטה) לכל detent. peek כולל את ה-safe-area (mobile-parity). */
 function detentVisible(d: SheetDetent): number {
-  if (d === "peek") return PEEK_PX
-  if (d === "half") return Math.min(winH * 0.45, sheetPx)
-  return sheetPx // full
+  return detentHeight(d, winH, sheetPx, responsive.safeBottomPx)
 }
+const PEEK_PX = $derived(detentVisible("peek"))
 
 // הגובה הגלוי הנוכחי: בזמן גרירה — sheetDragPx; אחרת — לפי ה-detent.
 const visiblePx = $derived(
@@ -140,8 +140,9 @@ function onPointerUp() {
   <!-- תוכן — דוהה לפי openness, ללא אינטראקציה כשכמעט-סגור.
        overflow-hidden: הגלילה מנוהלת בתוך SessionOptionsPanel (אזור גלילה מאוחד), לא כאן — מונע scroll כפול. -->
   <div
-    class="flex flex-col gap-4 px-4 pt-2 pb-6 flex-1 min-h-0 overflow-hidden"
-    style="opacity:{fill}; pointer-events:{fill > 0.1 ? 'auto' : 'none'}"
+    class="flex flex-col gap-4 px-4 pt-2 flex-1 min-h-0 overflow-hidden"
+    style="opacity:{fill}; pointer-events:{fill > 0.1 ? 'auto' : 'none'};
+           padding-bottom:calc(1.5rem + var(--safe-b))"
   >
     <SessionOptionsPanel />
   </div>
