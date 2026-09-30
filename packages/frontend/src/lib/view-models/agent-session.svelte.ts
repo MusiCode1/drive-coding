@@ -15,7 +15,6 @@ import type {
   AvailableCommand,
   SessionConfigOption,
   SessionModeState,
-  SessionNotification,
   UsageUpdate,
 } from "@agentclientprotocol/sdk"
 import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
@@ -56,7 +55,7 @@ import {
   type TurnActivityState,
 } from "$lib/engines/turn-watchdog"
 import type { AgentInput, Connection } from "$lib/session/connection"
-import { toPatches } from "$lib/session/frame-router"
+import { type FrameInput, toPatches } from "$lib/session/frame-router"
 import { HttpConnection } from "$lib/session/http-connection"
 // ─── slice local-view-wiring: LocalSessionView + tee ───
 import { LocalSessionView } from "$lib/session/local-session-view"
@@ -834,7 +833,7 @@ export class AgentSession {
 
         // 3. all raw wire updates → #onSessionUpdate (WS tee parity)
         for (const update of emission.updates) {
-          this.#onSessionUpdate({ update } as unknown as SessionNotification)
+          this.#onSessionUpdate({ update })
         }
 
         this.#syncFromViewState(view.state)
@@ -2873,7 +2872,7 @@ export class AgentSession {
     this.bubbles[idx] = task
   }
 
-  #onSessionUpdate = (notification: SessionNotification): void => {
+  #onSessionUpdate = (notification: FrameInput): void => {
     for (const patch of toPatches({ update: notification.update })) {
       if (patch.kind === "observed") {
         this.#onUpdateObserved?.(patch.update)
