@@ -135,10 +135,10 @@ describe("AgentSession — deleteSession", () => {
     await session.attach({ cwd: "/some/cwd", cliKind: "claude" })
     // הסשן הפעיל אחרי attach הוא "session-delete-test" (mockClient.newSession).
     // הזרק עוד סשן ברשימה כדי לבדוק הסרה סלקטיבית (לא-פעיל).
-    session.sessions = [
-      { sessionId: "session-delete-test", cwd: "/some/cwd", title: "" },
-      { sessionId: "other-session", cwd: "/some/cwd", title: "" },
-    ] as unknown as typeof session.sessions
+    session.sessionsCache.sessions = [
+      { sessionId: "session-delete-test", cwd: "/some/cwd", title: "", updatedAt: "" },
+      { sessionId: "other-session", cwd: "/some/cwd", title: "", updatedAt: "" },
+    ]
   })
 
   it("no-op if #client===null (before attach)", async () => {
@@ -151,7 +151,7 @@ describe("AgentSession — deleteSession", () => {
     const wasActive = await session.deleteSession("other-session")
 
     expect(mockClient.deleteSession).toHaveBeenCalledWith("other-session")
-    expect(session.sessions.map((s) => s.sessionId)).toEqual(["session-delete-test"])
+    expect(session.sessionsCache.sessions.map((s) => s.sessionId)).toEqual(["session-delete-test"])
     // לא הפעיל → אין detach, נשאר connected, wasActive=false (הקומפוננטה לא מנווטת)
     expect(session.status).toBe("connected")
     expect(wasActive).toBe(false)
@@ -162,7 +162,7 @@ describe("AgentSession — deleteSession", () => {
 
     expect(mockClient.deleteSession).toHaveBeenCalledWith("session-delete-test")
     expect(session.status).toBe("idle")
-    expect(session.sessions).toEqual([])
+    expect(session.sessionsCache.sessions).toEqual([])
     // wasActive=true → הקומפוננטה עושה goto("/") (calev NO-GO fix, DoD #7)
     expect(wasActive).toBe(true)
   })
@@ -172,9 +172,9 @@ describe("AgentSession — deleteSession", () => {
 
     await expect(session.deleteSession("other-session")).resolves.toBe(false)
 
-    expect(session.sessionsError).toBeNull()
+    expect(session.sessionsCache.error).toBeNull()
     // לא הוסר — הקריאה נכשלה
-    expect(session.sessions.map((s) => s.sessionId)).toEqual([
+    expect(session.sessionsCache.sessions.map((s) => s.sessionId)).toEqual([
       "session-delete-test",
       "other-session",
     ])
@@ -185,6 +185,6 @@ describe("AgentSession — deleteSession", () => {
 
     await expect(session.deleteSession("other-session")).resolves.toBe(false)
 
-    expect(session.sessionsError).toBe("boom")
+    expect(session.sessionsCache.error).toBe("boom")
   })
 })

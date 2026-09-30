@@ -43,8 +43,9 @@ import {
   patchAgent,
   releaseConnection,
 } from "$lib/adapters/agents-api"
-// ─── slice sessions-inline: ייבוא טיפוס + normalize ───
+// ─── slice sessions-inline: normalize ───
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
+import { SessionsCacheScope } from "$lib/view-models/sessions-cache-scope.svelte"
 import type { CuesEngine } from "$lib/engines/cues"
 // ─── slice leave-running-background ───
 import {
@@ -522,11 +523,8 @@ export class AgentSession {
     return this.#ext
   }
 
-  // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
-  sessions = $state<SessionInfo[]>([])
-  sessionsLoading = $state<boolean>(false)
-  sessionsError = $state<string | null>(null)
-  #sessionsLoaded = false // True אחרי טעינה מוצלחת אחת — cache; force=true מרענן
+  // ─── slice sessions-cache-scope: connection-scoped session list ───
+  sessionsCache = $state(new SessionsCacheScope())
 
   // ─── slice drop-a5-watchdog (25/08): `slice-A5-watchdog` הוסר ───
   // היה טיימר של 45ש' שכפה `idle` והדליק `turnInterrupted`. נמחק, לא כוונן:
@@ -718,13 +716,7 @@ export class AgentSession {
       remoteView: () => this.#remoteView(),
       client: () => this.#client,
       sessionId: () => this.#sessionId,
-      sessions: () => this.sessions,
-      setSessions: (v) => {
-        this.sessions = v
-      },
-      setSessionsError: (v) => {
-        this.sessionsError = v
-      },
+      cache: () => this.sessionsCache,
       detachWith: (reason) => this.#detachWith(reason),
     }
   }
@@ -1857,9 +1849,7 @@ export class AgentSession {
     this.error = null
     this.bubbles = []
     // ─── slice sessions-inline: ניקוי cache סשנים ───
-    this.sessions = []
-    this.#sessionsLoaded = false
-    this.sessionsError = null
+    this.sessionsCache.reset()
   }
 
   /** יציאה מהסשן בלי להרוג את הסוכן ב-BE — ה-child שורד (ws-agent.ts:126),
@@ -1908,9 +1898,7 @@ export class AgentSession {
     this.error = null
     this.bubbles = []
     // ─── slice sessions-inline: ניקוי cache סשנים ───
-    this.sessions = []
-    this.#sessionsLoaded = false
-    this.sessionsError = null
+    this.sessionsCache.reset()
   }
 
   /** האם הסשן הנוכחי במצב עקיפת-הרשאות (claude בלבד כרגע — ראה permission-mode.ts).
@@ -2654,53 +2642,21 @@ export class AgentSession {
    *  בחירת סשן נעשית מתוך הסשן הפעיל דרך SessionOptionsPanel.)
    */
   listSessions = async (force = false): Promise<void> => {
-    // ─── slice remote-session-mgmt C5: remote path — view.listSessions ───
     const remoteView = this.#remoteView()
+    let source: (() => Promise<SessionInfo[]>) | null
     if (remoteView) {
-      if (this.sessionsLoading) return
-      if (this.#sessionsLoaded && !force) return
-      this.sessionsLoading = true
-      this.sessionsError = null
-      try {
-        // already normalized in the view (RemoteSessionView.listSessions)
-        this.sessions = await remoteView.listSessions()
-        this.#sessionsLoaded = true
-      } catch (e) {
-        // -32601 = the CLI doesn't support listing → empty list, not an error
-        // (exactly like the local path; sessionsError stays null so the empty
-        // list renders — the DoD's "gentle" handling, no crash).
-        if ((e as { code?: number }).code === -32601) {
-          this.sessions = []
-          this.#sessionsLoaded = true
-        } else {
-          this.sessionsError = e instanceof Error ? e.message : String(e)
-        }
-      } finally {
-        this.sessionsLoading = false
+      // already normalized in the view (RemoteSessionView.listSessions)
+      source = () => remoteView.listSessions()
+    } else if (this.#client !== null) {
+      source = async () => {
+        const res = await this.#client!.listSessions()
+        const raw = (res as { sessions?: unknown[] }).sessions ?? []
+        return raw.map(normalizeSessionInfo)
       }
-      return
+    } else {
+      source = null
     }
-    if (this.#client === null) return // אין חיבור — לא טוענים פה
-    if (this.sessionsLoading) return
-    if (this.#sessionsLoaded && !force) return
-    this.sessionsLoading = true
-    this.sessionsError = null
-    try {
-      const res = await this.#client.listSessions()
-      const raw = (res as { sessions?: unknown[] }).sessions ?? []
-      this.sessions = raw.map(normalizeSessionInfo)
-      this.#sessionsLoaded = true
-    } catch (e) {
-      // -32601 = ה-CLI לא תומך (Gemini) → רשימה ריקה, לא שגיאה
-      if ((e as { code?: number }).code === -32601) {
-        this.sessions = []
-        this.#sessionsLoaded = true
-      } else {
-        this.sessionsError = e instanceof Error ? e.message : String(e)
-      }
-    } finally {
-      this.sessionsLoading = false
-    }
+    await this.sessionsCache.list(source, force)
   }
 
   // ─── slice session-delete: מחיקת סשן (session/delete) ─── (תוספתי)
