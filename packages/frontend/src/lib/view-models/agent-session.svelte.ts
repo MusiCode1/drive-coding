@@ -124,7 +124,7 @@ import {
   type SessionEndScopeDeps,
 } from "$lib/view-models/agent-session-session-end"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
-import { sendDetachFrame } from "$lib/view-models/agent-session-detach-frame"
+import { sendDetachFrame, type TransportTestStub } from "$lib/view-models/agent-session-detach-frame"
 import { loadMockSession, type LoadMockSessionDeps } from "$lib/view-models/agent-session-load-mock"
 import { SessionScope } from "$lib/view-models/session-scoped-state.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
@@ -1103,7 +1103,7 @@ export class AgentSession {
    * @internal מזריק transport stub ל-#transport (לטסט DoD#4: closeAndWait נקרא ב-#doReconnect).
    * stub: אובייקט עם closeAndWait spy בלבד — לא WsAcpTransport אמיתי.
    */
-  _setTransportForTest(t: { closeAndWait: () => Promise<void> } | null): void {
+  _setTransportForTest(t: TransportTestStub | null): void {
     this.#transport = t as WsAcpTransport | null
   }
   /**

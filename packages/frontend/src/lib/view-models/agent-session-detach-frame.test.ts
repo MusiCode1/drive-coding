@@ -6,7 +6,7 @@ describe("sendDetachFrame", () => {
     const sendRaw = vi.fn(() => {
       throw new Error("transport closed")
     })
-    expect(() => sendRaw("x")).toThrow("transport closed")
+    expect(() => sendRaw()).toThrow("transport closed")
   })
 
   it("swallows sendRaw throw (gate 7b helper)", () => {
