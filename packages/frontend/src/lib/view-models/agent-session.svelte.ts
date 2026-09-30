@@ -313,9 +313,16 @@ export class AgentSession {
   // ─── slice 4: replay guard + narration context ─── (תוספתי)
   /** True בזמן ש-loadSession() מנגן היסטוריה מחדש. ה-Speaker קורא את זה (תחת מעקב) כדי להשתיק TTS. */
   isLoadingHistory = $state(false)
-  /** מונה חתכי-היסטוריה. עולה **פעם אחת** ב-hydration של view חדש. */
+  /**
+   * historyEpoch — נשאר בגרעין בכוונה: מונה מונוטוני של חתכי היסטוריה.
+   * עולה פעם אחת ב-hydration של view חדש. אין לאפס אותו בפירוק או בחיבור מחדש:
+   * Speaker מדלג על epoch שכבר ראה.
+   */
   historyEpoch = $state(0)
-  /** החתך שנלקח באותו רגע. לא-ריאקטיבי בכוונה — נקרא רק כש-historyEpoch משתנה. */
+  /**
+   * #historyMark נשאר בגרעין לצד historyEpoch. החתך אינו ריאקטיבי בכוונה;
+   * Speaker קורא אותו רק כשהמונה משתנה.
+   */
   #historyMark: HistoryMark = { segmentCounts: new Map(), toolCallIds: [] }
   get historyMark(): HistoryMark {
     return this.#historyMark
