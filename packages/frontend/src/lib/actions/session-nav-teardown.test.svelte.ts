@@ -145,7 +145,11 @@ describe("session-nav teardown gates", () => {
     const { session } = harness()
     session._setStatusForTest("connected")
     session.pendingPermission = {
-      params: { toolCallId: "tc-1", title: "test", kind: "other" },
+      params: {
+        sessionId: "sess-gate-7",
+        options: [{ optionId: "allow-1", name: "Allow", kind: "allow_once" }],
+        toolCall: { toolCallId: "tc-1", title: "test" },
+      },
       resolve: () => {},
     }
 

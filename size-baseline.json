@@ -1016,10 +1016,10 @@
       "codeLines": 68
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 3401,
-      "impurity": 78,
+      "metric": 3321,
+      "impurity": 73,
       "class": "scattered",
-      "codeLines": 2085
+      "codeLines": 2055
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
       "metric": 328,
@@ -1106,10 +1106,10 @@
       "codeLines": 166
     },
     "packages/frontend/src/routes/+layout.svelte": {
-      "metric": 405,
+      "metric": 403,
       "impurity": 24,
       "class": "mixed",
-      "codeLines": 273
+      "codeLines": 271
     },
     "packages/frontend/src/routes/+page.svelte": {
       "metric": 426,

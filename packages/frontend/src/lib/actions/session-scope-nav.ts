@@ -1,4 +1,4 @@
-import { isInSessionRoute } from "$lib/session/session-routes"
+import { isInSessionRoute, isOutsideSessionRoute } from "$lib/session/session-routes"
 
 export function onSessionRouteChange(
   fromPath: string,
@@ -6,6 +6,7 @@ export function onSessionRouteChange(
   session: { notifySessionNavigatedAway(): void },
 ): void {
   if (!isInSessionRoute(fromPath)) return
-  if (toPath !== undefined && isInSessionRoute(toPath)) return
+  if (toPath === undefined) return
+  if (!isOutsideSessionRoute(toPath)) return
   session.notifySessionNavigatedAway()
 }
