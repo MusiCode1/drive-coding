@@ -129,6 +129,48 @@ describe("Connection transport ownership", () => {
     expect(close).toHaveBeenCalledOnce()
   })
 
+  it("WS closes the client during the interval between view creation and view adoption", async () => {
+    const connection = new WsConnection(wsDeps())
+    const close = vi.fn()
+    const viewClose = vi.fn(async () => {})
+    connection.adoptTransport({ sendRaw: vi.fn(), close } as never)
+    connection.adoptClient({ close } as never)
+    connection.adoptView({ close: viewClose } as never)
+    await connection.close({ kind: "terminate-agent", reason: "detach" })
+    expect(viewClose).toHaveBeenCalledOnce()
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it("WS closes the client if an adopted view throws during close", async () => {
+    const connection = new WsConnection(wsDeps())
+    const close = vi.fn()
+    connection.adoptTransport({ sendRaw: vi.fn(), close } as never)
+    connection.adoptClient({ close } as never)
+    connection.adoptView({
+      close: async () => {
+        throw new Error("view failed")
+      },
+    } as never)
+    connection.markViewReady()
+    await connection.close({ kind: "terminate-agent", reason: "detach" })
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it("WS does not close the client twice after an adopted view closes it", async () => {
+    const connection = new WsConnection(wsDeps())
+    const close = vi.fn()
+    connection.adoptTransport({ sendRaw: vi.fn(), close } as never)
+    connection.adoptClient({ close } as never)
+    connection.adoptView({
+      close: async () => {
+        close()
+      },
+    } as never)
+    connection.markViewReady()
+    await connection.close({ kind: "terminate-agent", reason: "detach" })
+    expect(close).toHaveBeenCalledOnce()
+  })
+
   it("HTTP waits for its view before releasing, and does not release when terminating", async () => {
     const deps = httpDeps()
     const release = vi.fn(async () => {

@@ -29,6 +29,7 @@ export class WsConnection implements Connection {
   #transport: WsAcpTransport | null = null
   #client: AcpClient | null = null
   #view: LocalSessionView | null = null
+  #viewReady = false
   #closePromise: Promise<void> | null = null
 
   constructor(private readonly deps: WsConnectionDeps) {}
@@ -42,6 +43,7 @@ export class WsConnection implements Connection {
     this.#transport = null
     this.#client = null
     this.#view = null
+    this.#viewReady = false
   }
 
   adoptClient(client: AcpClient): void {
@@ -50,6 +52,11 @@ export class WsConnection implements Connection {
 
   adoptView(view: LocalSessionView): void {
     this.#view = view
+    this.#viewReady = false
+  }
+
+  markViewReady(): void {
+    this.#viewReady = true
   }
 
   close(intent: LeaveIntent): Promise<void> {
@@ -57,6 +64,7 @@ export class WsConnection implements Connection {
     const transport = this.#transport
     const client = this.#client
     const view = this.#view
+    const viewReady = this.#viewReady
     this.forgetTransport()
     this.#closePromise = (async () => {
       if (intent.kind === "preserve-agent" && transport) {
@@ -66,12 +74,26 @@ export class WsConnection implements Connection {
           // A closed pipe cannot block an intentional exit.
         }
       }
+      let closedByView = false
       try {
-        if (view) await view.close()
-        else if (client) client.close()
-        else transport?.close()
+        if (view) {
+          await view.close()
+          closedByView = viewReady
+        }
       } catch {
-        // The transport may already have closed while leaving.
+        // A partially initialized view may fail; the owner still closes the wire.
+      }
+      if (!closedByView) {
+        try {
+          if (client) client.close()
+          else transport?.close()
+        } catch {
+          try {
+            transport?.close()
+          } catch {
+            // The wire already closed.
+          }
+        }
       }
     })()
     return this.#closePromise
@@ -117,6 +139,7 @@ export class WsConnection implements Connection {
       this.deps.enterSession(sessionId)
       if (!sessionId) throw new Error("newSession returned no sessionId")
       this.deps.adoptLocalView(client, sessionId)
+      this.markViewReady()
       this.deps.captureSessionConfig(result)
       await notifySessionAttached(agentId, sessionId).catch(() => {})
       await this.deps.connected()
