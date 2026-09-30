@@ -33,7 +33,12 @@ describe("toPatches", () => {
 
   it.each(["image", "audio", "resource_link", "resource"])("routes non-text user %s", (type) => {
     expect(route({ sessionUpdate: "user_message_chunk", content: { type } })[1]).toMatchObject({
-      kind: "user-placeholder",
+      kind:
+        type === "audio"
+          ? "user-audio"
+          : type === "resource_link"
+            ? "user-resource-link"
+            : "user-placeholder",
       messageId: null,
     })
   })
@@ -61,7 +66,7 @@ describe("toPatches", () => {
     ).toHaveLength(1)
     expect(
       route({ sessionUpdate: "agent_message_chunk", content: { type: "image" } })[1]?.kind,
-    ).toBe("agent-placeholder")
+    ).toBe("agent-image")
   })
 
   it("ignores empty thought and emits text thought", () => {

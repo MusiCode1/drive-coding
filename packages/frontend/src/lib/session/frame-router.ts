@@ -20,12 +20,17 @@ export type FramePatch =
   | ({
       kind:
         | "user-text"
-        | "user-image"
+        | "user-resource-link"
+        | "user-audio"
         | "user-placeholder"
         | "agent-text"
+        | "agent-resource-link"
+        | "agent-image"
+        | "agent-audio"
         | "agent-placeholder"
         | "thought-text"
     } & MessagePatch)
+  | ({ kind: "user-image"; data: string; mimeType: string } & MessagePatch)
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -59,14 +64,24 @@ export function toPatches({ update }: FrameInput): FramePatch[] {
   const messageId = typeof update.messageId === "string" ? update.messageId : null
   const content = record(update.content) ? update.content : undefined
   if (name === "user_message_chunk") {
+    if (
+      content?.type === "image" &&
+      typeof content.data === "string" &&
+      typeof content.mimeType === "string"
+    ) {
+      return [
+        observed,
+        { kind: "user-image", update, messageId, data: content.data, mimeType: content.mimeType },
+      ]
+    }
     const kind =
       content?.type === "text"
         ? "user-text"
-        : content?.type === "image" &&
-            typeof content.data === "string" &&
-            typeof content.mimeType === "string"
-          ? "user-image"
-          : "user-placeholder"
+        : content?.type === "resource_link"
+          ? "user-resource-link"
+          : content?.type === "audio"
+            ? "user-audio"
+            : "user-placeholder"
     return [observed, { kind, update, messageId }]
   }
   if (name === "agent_message_chunk") {
@@ -75,7 +90,16 @@ export function toPatches({ update }: FrameInput): FramePatch[] {
         ? [observed, { kind: "agent-text", update, messageId }]
         : [observed]
     }
-    return content ? [observed, { kind: "agent-placeholder", update, messageId }] : [observed]
+    if (!content) return [observed]
+    const kind =
+      content.type === "resource_link"
+        ? "agent-resource-link"
+        : content.type === "image"
+          ? "agent-image"
+          : content.type === "audio"
+            ? "agent-audio"
+            : "agent-placeholder"
+    return [observed, { kind, update, messageId }]
   }
   if (name === "agent_thought_chunk") {
     return content?.type === "text" && typeof content.text === "string" && content.text.length > 0

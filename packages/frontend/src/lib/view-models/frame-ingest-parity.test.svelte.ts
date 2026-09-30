@@ -23,6 +23,7 @@ import {
 } from "@drive-coding/core/session"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { toPatches } from "$lib/session/frame-router"
 import type { SessionView, ViewEmission } from "$lib/session/session-view"
 import type { WireUpdateBatch } from "$lib/session/sse-reader"
 import type { Bubble } from "$lib/types/bubble"
@@ -270,6 +271,11 @@ vi.mock("@drive-coding/acp-wire/browser", () => ({
   }),
 }))
 
+vi.mock("$lib/session/frame-router", async (importActual) => {
+  const actual = await importActual<typeof import("$lib/session/frame-router")>()
+  return { ...actual, toPatches: vi.fn(actual.toPatches) }
+})
+
 vi.mock("$lib/adapters/agents-api", () => ({
   createAgent: vi.fn().mockResolvedValue({ agentId: "parity-agent" }),
   deleteAgent: vi.fn().mockResolvedValue(undefined),
@@ -338,8 +344,25 @@ describe("frame-ingest parity gate", () => {
     uuidCounter = 0
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    const actual = await vi.importActual<typeof import("$lib/session/frame-router")>(
+      "$lib/session/frame-router",
+    )
+    vi.mocked(toPatches).mockImplementation(actual.toPatches)
     vi.clearAllMocks()
+  })
+
+  it("consumes router output on both WS and HTTP; empty output removes observation", async () => {
+    const ws = await runWsPath()
+    const http = await runHttpPath(snapshotBatches)
+    expect(ws.observed.length).toBeGreaterThan(0)
+    expect(http.observed.length).toBeGreaterThan(0)
+    vi.mocked(toPatches).mockReturnValue([])
+    const mutedWs = await runWsPath()
+    const mutedHttp = await runHttpPath(snapshotBatches)
+    expect(mutedWs.observed).toEqual([])
+    expect(mutedHttp.observed).toEqual([])
+    expect(mutedWs.bubbles.length).toBeLessThan(ws.bubbles.length)
   })
 
   it("G1 — every session/update on the HTTP wire is observed in #onSessionUpdate", async () => {
