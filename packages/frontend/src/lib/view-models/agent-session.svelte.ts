@@ -56,8 +56,6 @@ import {
   type TurnActivityState,
 } from "$lib/engines/turn-watchdog"
 import type { AgentInput, Connection } from "$lib/session/connection"
-// ─── slice view-switch C3: createRemoteView (attachRemote) ─── (additive)
-import { createRemoteView } from "$lib/session/create-session-view"
 import { HttpConnection } from "$lib/session/http-connection"
 // ─── slice local-view-wiring: LocalSessionView + tee ───
 import { LocalSessionView } from "$lib/session/local-session-view"
@@ -1700,9 +1698,7 @@ export class AgentSession {
         void this.#consumeViewPatches(view)
       },
       applyTitle: (agent) => applyManualTitleFromAttach(this, agent, false),
-      connected: async () => {
-        this.#setStatus("connected")
-      },
+      connected: async () => this.#setStatus("connected"),
       rememberedConfig: () => this.#applyRememberedConfig(),
       failed: (error, keepAgent) => {
         this.#cleanup(keepAgent ? { keepAgent: true } : undefined)
@@ -2711,6 +2707,7 @@ export class AgentSession {
   }
 
   #cleanup(opts?: { keepAgent?: boolean; keepContext?: boolean }): void {
+    this.#connection = null
     // לכוד את ה-agentId לפני האיפוס — צריך אותו ל-deleteAgent.
     const agentId = this.agentId
     // נקה timer של tail-debounce (msr-v2 — NBug1 opencode)
