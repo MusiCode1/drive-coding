@@ -1,15 +1,13 @@
 import type { AcpClient } from "@drive-coding/provider/client"
-import type { SessionInfo } from "$lib/adapters/sessions"
 import type { SessionView } from "$lib/session/session-view"
 import type { SessionEndReason } from "$lib/view-models/agent-session-session-end"
+import type { SessionsCacheScope } from "$lib/view-models/sessions-cache-scope.svelte"
 
 export type DeleteSessionDeps = {
   remoteView: () => SessionView | null
   client: () => AcpClient | null
   sessionId: () => string | null
-  sessions: () => SessionInfo[]
-  setSessions: (v: SessionInfo[]) => void
-  setSessionsError: (v: string | null) => void
+  cache: () => SessionsCacheScope
   detachWith: (reason: SessionEndReason) => void
 }
 
@@ -26,11 +24,11 @@ export async function deleteSession(d: DeleteSessionDeps, sessionId: string): Pr
       await remoteView.deleteSession(sessionId)
     } catch (e) {
       if ((e as { code?: number }).code === -32601) return false // button hidden; defensive no-op
-      d.setSessionsError(e instanceof Error ? e.message : String(e))
+      d.cache().setError(e)
       return false
     }
     // optimistic removal — same as local (the rpc already confirmed the delete)
-    d.setSessions(d.sessions().filter((s) => s.sessionId !== sessionId))
+    d.cache().remove(sessionId)
     const wasActive = sessionId === d.sessionId()
     if (wasActive) {
       d.detachWith("delete") // navigates out — same wasActive logic as local
@@ -42,14 +40,14 @@ export async function deleteSession(d: DeleteSessionDeps, sessionId: string): Pr
     await d.client()!.deleteSession(sessionId)
   } catch (e) {
     if ((e as { code?: number }).code === -32601) return false // הכפתור מוסתר; defensive no-op
-    d.setSessionsError(e instanceof Error ? e.message : String(e))
+    d.cache().setError(e)
     return false
   }
   // הסרה אופטימית — ה-ACP call כבר אישר את המחיקה, אין צורך בעוד round-trip (listSessions(true)).
-  d.setSessions(d.sessions().filter((s) => s.sessionId !== sessionId))
+  d.cache().remove(sessionId)
   const wasActive = sessionId === d.sessionId()
   if (wasActive) {
-    d.detachWith("delete") // מנקה גם sessions/sessionsLoaded/sessionsError — עקבי עם onDisconnect
+    d.detachWith("delete") // מנקה גם sessions cache — עקבי עם onDisconnect
   }
   return wasActive // הקומפוננטה מנווטת החוצה כשזה true
 }

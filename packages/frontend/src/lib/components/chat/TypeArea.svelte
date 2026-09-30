@@ -210,6 +210,13 @@ function handleDragOver(e: DragEvent): void {
   e.preventDefault()
 }
 
+/** מעבד את קבצי-התמונה שב-FileList; שאר הטיפוסים מדולגים בשקט. */
+function processImageFiles(files: FileList): void {
+  for (const file of files) {
+    if (file.type.startsWith("image/")) void processImageFile(file)
+  }
+}
+
 function handleDrop(e: DragEvent): void {
   if (!session.supportsImageInput) return
   e.preventDefault()
@@ -217,11 +224,7 @@ function handleDrop(e: DragEvent): void {
   const files = e.dataTransfer?.files
   if (!files) return
 
-  for (const file of files) {
-    if (file.type.startsWith("image/")) {
-      void processImageFile(file)
-    }
-  }
+  processImageFiles(files)
 }
 
 function handleFileChange(e: Event): void {
@@ -230,11 +233,7 @@ function handleFileChange(e: Event): void {
   const files = input.files
   if (!files) return
 
-  for (const file of files) {
-    if (file.type.startsWith("image/")) {
-      void processImageFile(file)
-    }
-  }
+  processImageFiles(files)
   // reset input כדי שאפשר לבחור אותו קובץ שוב
   input.value = ""
 }
