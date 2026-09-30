@@ -15,8 +15,8 @@ routes:
   - DELETE /api/mcp
   - POST /api/agents/:id/subscribe
   - DELETE /api/agents/:id/connection
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.4.0
+updated: 2026-09-30
 ---
 
 # Transports
@@ -50,6 +50,8 @@ One registration handles **`POST`**, **`GET`**, and **`DELETE`** on the same pat
 - **`MCP_HTTP=0`** — route not mounted → **`404`** (`http-mcp.test.ts:203-206`, `http-mcp.ts:341-344`).
 
 Prefer MCP for **`session_*`** tools when your CLI already speaks MCP; prefer HTTP RPC when mirroring the FE (`50-rpc`).
+
+MCP **`session_subscribe`** mirrors the HTTP subscribe route on the same event bus — see **`docs_get { id: "events" }`**. After **`session_open`**, an optional **`eventsHint`** field may remind callers who are not yet subscribed.
 
 ## WebSocket (browser FE)
 

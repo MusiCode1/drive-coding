@@ -15,8 +15,8 @@ routes:
 mcp_tools:
   - session_open
   - notify_parent
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.4.0
+updated: 2026-09-30
 ---
 
 # Subagents
@@ -52,7 +52,9 @@ Registration lives in **`delivery/agent-events-mcp-tools.ts:99`** (not `mcp-writ
 
 The tool prompts the parent's live session with your text (`agent-events-mcp-tools.ts:102-117`).
 
-HTTP alternative for event delivery: **`POST /api/agents/:id/subscribe`** (documented in `97-transports`).
+HTTP alternative for event delivery: **`POST /api/agents/:id/subscribe`** (documented in `97-transports`). Full event kinds, subscribe fields, and delivery semantics: **`docs_get { id: "events" }`** (`75-events.md`).
+
+When you open a child over MCP without subscribing, **`session_open`** may return **`eventsHint`** — a separate optional field pointing at **`session_subscribe`** (same bus as **`notifyOnDone`** at open time).
 
 ## Closing agents — no cascade
 

@@ -12,6 +12,7 @@ Agent-facing documentation for drive-coding HTTP, MCP, and session lifecycle.
 - [Agent session RPC — POST /api/agents/:id/rpc](docs/agents/50-rpc.md): JSON-RPC-style methods on a live agent session (prompt, cancel, session management, and drive-coding extensions).
 - [Agent identity and scoped writes](docs/agents/60-identity-and-scopes.md): Who you are on this backend, what DC_TOKEN does, and why it is not a security boundary.
 - [Subagents — spawn, parent identity, notify_parent](docs/agents/70-subagents.md): Open child agents, detect when you are a child, report to the parent, and what closing does not do.
+- [Agent events — subscribe and delivery](docs/agents/75-events.md): Register for turn-ended and stall-suspected prompts on another agent's lifecycle.
 - [CLI providers — registry and availability](docs/agents/80-providers.md): Which CLI kinds exist, how overrides merge, and how to detect installed binaries on this host.
 - [Files, projects, and recordings](docs/agents/90-files-and-media.md): Browse local paths, serve file bytes to the browser, and store short audio recordings.
 - [Voice — TTS capabilities, live token, upstream proxies](docs/agents/91-voice.md): Discover TTS engines on this backend, mint Gemini live tokens, and use BE-proxied provider keys.
