@@ -19,6 +19,7 @@ import { goto } from "$app/navigation"
 import { env } from "$env/dynamic/public"
 import { readSessionTransport } from "$lib/session/session-transport-read"
 import { sessionPath } from "$lib/session/session-url"
+import { formatAcpError } from "$lib/view-models/format-acp-error"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
@@ -39,22 +40,23 @@ export async function connectAgent(params: {
     stored: params.settings.sessionTransport,
   })
 
-  if (transport === "http") {
-    // slice http-cold-parity: attachRemote מקבל systemPrompt כעת — שני הענפים
-    // (http/ws) מעבירים אותו הלאה עם אותו ביטוי בדיוק.
-    await params.session.attachRemote({
-      cwd: params.cwd,
-      cliKind: params.cliKind,
-      systemPrompt: params.settings.getProjectPrompt(params.cwd),
-    })
-  } else {
-    // slice project-system-prompt: שולף את הפרומפט השמור לפרויקט (cwd) מ-Settings — ה-VM
-    // עצמו לא מחזיק Settings, ה-action (שכבת חוצה-VM) היא המקום הנכון לשלוף (§9 Q1).
-    await params.session.attach({
-      cwd: params.cwd,
-      cliKind: params.cliKind,
-      systemPrompt: params.settings.getProjectPrompt(params.cwd),
-    })
+  try {
+    if (transport === "http") {
+      await params.session.attachRemote({
+        cwd: params.cwd,
+        cliKind: params.cliKind,
+        systemPrompt: params.settings.getProjectPrompt(params.cwd),
+      })
+    } else {
+      await params.session.attach({
+        cwd: params.cwd,
+        cliKind: params.cliKind,
+        systemPrompt: params.settings.getProjectPrompt(params.cwd),
+      })
+    }
+  } catch (e) {
+    params.session.error = formatAcpError(e)
+    return
   }
 
   if (params.session.status === "connected") {
@@ -69,6 +71,6 @@ export async function connectAgent(params: {
       await goto(sid !== null ? sessionPath(params.cliKind, sid) : "/chat")
     }
   }
-  // במקרה של שגיאה, ה-session VM כבר הגדיר status="error" + הודעת שגיאה.
-  // דף החיבור ירנדר את זה — ללא ניווט.
+  // Guard throws (e.g. cannot attach) land in catch above — stay on / with session.error set.
+  // Failures inside attach/attachRemote set status="error" on the VM without throwing.
 }
