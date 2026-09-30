@@ -196,8 +196,8 @@ const CLAUDE_SESSION_META = DEFAULT_CLAUDE_SESSION_META
 // ─── slice subagent-tool-nesting: helper טהור לחילוץ parentToolUseId ───
 /**
  * מחלץ `parentToolUseId` מ-`_meta.claudeCode` של frame גולמי של `session/update`.
- * `rawUpdate` הוא `notification.update` **לפני** ה-cast הטיפוסי ב-`#onSessionUpdate`
- * (ה-cast המקומי משמיט את `_meta` מהטיפוס אבל לא מהאובייקט בזמן-ריצה) — narrowing בטוח,
+ * `rawUpdate` הוא `notification.update` הגולמי, לפני יישום הפקודות ב-`#onSessionUpdate`.
+ * `_meta` אינו חלק מטיפוסי ה-SDK הסגורים, ולכן קוראים אותו אחרי narrowing מבני בטוח,
  * בלי `as SDKMessage`. brief §3/§4 (אביגיל #2).
  */
 function extractParentToolUseId(rawUpdate: unknown): string | undefined {
