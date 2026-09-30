@@ -19,6 +19,17 @@ export type AgentInput =
       titleManual?: boolean
     }
 
+export type LeaveIntent =
+  | {
+      kind: "preserve-agent"
+      reason: "navigate" | "leave-running" | "attach-failed-existing" | "reconnect-preserve"
+    }
+  | {
+      kind: "terminate-agent"
+      reason: "detach" | "delete" | "replace" | "attach-failed-new" | "load-failed"
+    }
+
 export interface Connection {
   open(agent: AgentInput): Promise<void>
+  close(intent: LeaveIntent): Promise<void>
 }

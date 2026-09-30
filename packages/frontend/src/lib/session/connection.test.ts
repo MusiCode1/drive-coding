@@ -93,6 +93,7 @@ function httpDeps(): HttpConnectionDeps {
     rememberedConfig: vi.fn(async () => {}),
     failed: vi.fn(),
     missingSessionId: vi.fn(),
+    release: vi.fn(async () => {}),
   }
 }
 
@@ -102,6 +103,57 @@ beforeEach(() => {
 })
 
 describe("Connection transport ownership", () => {
+  it("WS preserves an agent by sending detach before closing its owned client", async () => {
+    const deps = wsDeps()
+    const connection = new WsConnection(deps)
+    const sendRaw = vi.fn(() => events.push("detach"))
+    const close = vi.fn(() => events.push("close"))
+    connection.adoptTransport({ sendRaw, close } as never)
+    connection.adoptClient({ close } as never)
+    await connection.close({ kind: "preserve-agent", reason: "navigate" })
+    expect(events).toEqual(["detach", "close"])
+    expect(sendRaw).toHaveBeenCalledWith(expect.stringContaining('"method":"$/detach"'))
+  })
+
+  it("WS still closes after detach send fails and only closes once", async () => {
+    const connection = new WsConnection(wsDeps())
+    const close = vi.fn()
+    connection.adoptTransport({
+      sendRaw: () => {
+        throw new Error("closed")
+      },
+      close,
+    } as never)
+    await connection.close({ kind: "preserve-agent", reason: "leave-running" })
+    await connection.close({ kind: "preserve-agent", reason: "leave-running" })
+    expect(close).toHaveBeenCalledOnce()
+  })
+
+  it("HTTP waits for its view before releasing, and does not release when terminating", async () => {
+    const deps = httpDeps()
+    const release = vi.fn(async () => {
+      events.push("release")
+    })
+    deps.release = release
+    const connection = new HttpConnection(deps)
+    connection.adoptView(
+      {
+        close: async () => {
+          events.push("reply")
+          events.push("sse-close")
+        },
+      } as never,
+      "agent-1",
+    )
+    await connection.close({ kind: "preserve-agent", reason: "navigate" })
+    expect(events).toEqual(["reply", "sse-close", "release"])
+    await connection.close({ kind: "preserve-agent", reason: "navigate" })
+    expect(release).toHaveBeenCalledOnce()
+    const terminated = new HttpConnection(deps)
+    terminated.adoptView({ close: async () => events.push("terminated-close") } as never, "agent-2")
+    await terminated.close({ kind: "terminate-agent", reason: "detach" })
+    expect(release).toHaveBeenCalledOnce()
+  })
   it("WS opens and waits, binds the observer before client creation, then adopts the session", async () => {
     const deps = wsDeps()
     await new WsConnection(deps).open({ kind: "new", cwd: "/repo", cliKind: "claude" })

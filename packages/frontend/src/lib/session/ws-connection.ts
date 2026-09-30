@@ -1,7 +1,7 @@
 import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 import { type AcpClient, createAcpClient } from "@drive-coding/provider/client"
 import { createAgent, notifySessionAttached } from "$lib/adapters/agents-api"
-import type { AgentInput, Connection } from "./connection"
+import type { AgentInput, Connection, LeaveIntent } from "./connection"
 import type { LocalSessionView } from "./local-session-view"
 
 type SessionResult = Awaited<ReturnType<AcpClient["newSession"]>>
@@ -26,7 +26,56 @@ export type WsConnectionDeps = {
 }
 
 export class WsConnection implements Connection {
+  #transport: WsAcpTransport | null = null
+  #client: AcpClient | null = null
+  #view: LocalSessionView | null = null
+  #closePromise: Promise<void> | null = null
+
   constructor(private readonly deps: WsConnectionDeps) {}
+
+  adoptTransport(transport: WsAcpTransport): void {
+    this.#transport = transport
+    this.#closePromise = null
+  }
+
+  forgetTransport(): void {
+    this.#transport = null
+    this.#client = null
+    this.#view = null
+  }
+
+  adoptClient(client: AcpClient): void {
+    this.#client = client
+  }
+
+  adoptView(view: LocalSessionView): void {
+    this.#view = view
+  }
+
+  close(intent: LeaveIntent): Promise<void> {
+    if (this.#closePromise) return this.#closePromise
+    const transport = this.#transport
+    const client = this.#client
+    const view = this.#view
+    this.forgetTransport()
+    this.#closePromise = (async () => {
+      if (intent.kind === "preserve-agent" && transport) {
+        try {
+          transport.sendRaw(`${JSON.stringify({ jsonrpc: "2.0", method: "$/detach" })}\n`)
+        } catch {
+          // A closed pipe cannot block an intentional exit.
+        }
+      }
+      try {
+        if (view) await view.close()
+        else if (client) client.close()
+        else transport?.close()
+      } catch {
+        // The transport may already have closed while leaving.
+      }
+    })()
+    return this.#closePromise
+  }
 
   async open(agent: AgentInput): Promise<void> {
     if (agent.kind === "existing-ws") {
@@ -47,13 +96,16 @@ export class WsConnection implements Connection {
       this.deps.setAgent(agentId, agent.cwd, agent.cliKind)
 
       const transport = new WsAcpTransport(this.deps.url(agentId))
+      this.adoptTransport(transport)
       this.deps.setTransport(transport)
       transport.onClose(this.deps.onClose)
       await transport.waitForOpen()
 
       // The observer must exist before client creation: callbacks are frozen there.
       const localView = this.deps.bindLocalView()
+      this.adoptView(localView)
       const client = await createAcpClient(transport, this.deps.callbacks(localView))
+      this.adoptClient(client)
       this.deps.setClient(client)
       const meta = this.deps.sessionMeta()
       const result = await client.newSession({
