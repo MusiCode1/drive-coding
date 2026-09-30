@@ -64,6 +64,55 @@ afterEach(() => {
   rmSync(lab, { recursive: true, force: true })
 })
 
+describe("svelte markup comments (2026-09-30)", () => {
+  const SV = "packages/lab/src/lib/components/Widget.svelte"
+  // components budget = 50 scriptLines; the baseline only records files over budget.
+  const BIG_SCRIPT = `<script>\n${Array.from({ length: 60 }, (_, i) => `const n${i} = ${i}`).join("\n")}\n</script>\n`
+
+  /** codeLines recorded for a .svelte file whose markup is `markup`. */
+  function codeLinesOf(markup) {
+    mkdirSync(path.dirname(path.join(lab, SV)), { recursive: true })
+    writeFileSync(path.join(lab, SV), `${BIG_SCRIPT}\n${markup}`)
+    rmSync(path.join(lab, "size-baseline.json"), { force: true })
+    const r = run(["--init-baseline"])
+    expect(r.exitCode, r.output).toBe(0)
+    const e = readBaseline().files[SV]
+    expect(e, `no baseline entry for ${SV}`).toBeTruthy()
+    return e.codeLines
+  }
+
+  it("does not count an HTML comment as code", () => {
+    const withComment = codeLinesOf("<!-- one -->\n<!-- two -->\n<div>x</div>\n")
+    const without = codeLinesOf("<div>x</div>\n")
+    expect(withComment).toBe(without)
+  })
+
+  it("🔴 an apostrophe in a markup comment must not swallow the markup after it", () => {
+    // Real shape: a Hebrew comment containing ר' — one unbalanced quote. Before
+    // 2026-09-30 it opened a "string" that desynchronised quote state for the rest
+    // of the file, blanking real markup; codeLines under-reported by hundreds.
+    const withQuote = codeLinesOf(
+      "<!-- ר' see Other.svelte -->\n<div>one</div>\n<div>two</div>\n<div>three</div>\n",
+    )
+    const plain = codeLinesOf("<div>one</div>\n<div>two</div>\n<div>three</div>\n")
+    expect(withQuote).toBe(plain)
+  })
+
+  it("leaves .ts files alone — `<!--` is not a comment there", () => {
+    const TS = "packages/lab/src/util/angle.ts"
+    mkdirSync(path.dirname(path.join(lab, TS)), { recursive: true })
+    writeFileSync(
+      path.join(lab, TS),
+      // impure first line so it lands in the same (mixed) budget class as FAT
+      `export const t = Date.now()\n${Array.from({ length: 199 }, (_, i) => `const q${i} = ${i} < !--${i}`).join("\n")}\n`,
+    )
+    rmSync(path.join(lab, "size-baseline.json"), { force: true })
+    const r = run(["--init-baseline"])
+    expect(r.exitCode, r.output).toBe(0)
+    expect(readBaseline().files[TS].codeLines).toBe(200)
+  })
+})
+
 describe("lint-file-size on the repo", () => {
   it("is green and does not flag core/session/reduce.ts", () => {
     try {

@@ -611,7 +611,7 @@
       "metric": 115,
       "impurity": 9,
       "class": "mixed",
-      "codeLines": 106
+      "codeLines": 109
     },
     "packages/frontend/src/lib/components/chat/ElicitationDialog.svelte": {
       "metric": 127,
@@ -641,7 +641,7 @@
       "metric": 63,
       "impurity": 0,
       "class": "pure",
-      "codeLines": 97
+      "codeLines": 166
     },
     "packages/frontend/src/lib/components/chat/SlashCommandMenu.svelte": {
       "metric": 64,
@@ -653,7 +653,7 @@
       "metric": 243,
       "impurity": 10,
       "class": "mixed",
-      "codeLines": 277
+      "codeLines": 439
     },
     "packages/frontend/src/lib/components/chat/VoicePicker.svelte": {
       "metric": 58,
@@ -701,7 +701,7 @@
       "metric": 176,
       "impurity": 5,
       "class": "mixed",
-      "codeLines": 229
+      "codeLines": 663
     },
     "packages/frontend/src/lib/components/connect/CwdPathCombo.svelte": {
       "metric": 99,
@@ -755,7 +755,7 @@
       "metric": 159,
       "impurity": 4,
       "class": "mixed",
-      "codeLines": 175
+      "codeLines": 198
     },
     "packages/frontend/src/lib/components/modals/SessionCard.svelte": {
       "metric": 79,
@@ -767,7 +767,7 @@
       "metric": 200,
       "impurity": 6,
       "class": "mixed",
-      "codeLines": 264
+      "codeLines": 355
     },
     "packages/frontend/src/lib/components/settings/TtsStatusCard.svelte": {
       "metric": 62,
@@ -1115,7 +1115,7 @@
       "metric": 405,
       "impurity": 8,
       "class": "mixed",
-      "codeLines": 145
+      "codeLines": 307
     },
     "packages/frontend/src/routes/bt-test/+page.svelte": {
       "metric": 329,

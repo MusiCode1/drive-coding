@@ -158,8 +158,8 @@ function countLines(src) {
  * this, the "must shrink" rule below is satisfiable by deleting 25 comment lines,
  * which is not an extraction. Measured need, 2026-09-28.
  */
-function countCodeLines(src) {
-  const stripped = stripCommentsAndStrings(src)
+function countCodeLines(src, html = false) {
+  const stripped = stripCommentsAndStrings(src, html)
   let n = 0
   for (const line of stripped.split("\n")) if (line.trim().length > 0) n++
   return n
@@ -193,7 +193,14 @@ function analysisSource(absPath, raw) {
 
 // ─── comment / string strip (keeps newlines + indexes) ──────────────────────
 
-function stripComments(src, blankStrings) {
+/**
+ * `html`: also strip `<!-- ... -->`. Markup comments only exist in `.svelte`
+ * templates, and until 2026-09-30 they were counted as CODE — so documenting a
+ * template change cost extraction tax, the exact anti-pattern the 2026-09-29
+ * comment exemption was written to remove — that one reached JS comments only.
+ * Opt-in by extension so a stray `a < !--b` in TS is never touched.
+ */
+function stripComments(src, blankStrings, html = false) {
   const out = []
   const n = src.length
   let i = 0
@@ -205,6 +212,19 @@ function stripComments(src, blankStrings) {
       while (i < n && src[i] !== "\n") {
         out.push(" ")
         i++
+      }
+      continue
+    }
+    if (html && c === "<" && src.startsWith("<!--", i)) {
+      out.push(" ", " ", " ", " ")
+      i += 4
+      while (i < n && !src.startsWith("-->", i)) {
+        out.push(src[i] === "\n" ? "\n" : " ")
+        i++
+      }
+      if (i < n) {
+        out.push(" ", " ", " ")
+        i += 3
       }
       continue
     }
@@ -272,7 +292,7 @@ function stripComments(src, blankStrings) {
             else if (src[i] === "}") depth--
             if (depth > 0) i++
           }
-          out.push(stripComments(src.slice(innerStart, i), blankStrings))
+          out.push(stripComments(src.slice(innerStart, i), blankStrings, html))
           if (i < n && src[i] === "}") {
             out.push(keep("}"))
             i++
@@ -290,8 +310,8 @@ function stripComments(src, blankStrings) {
   return out.join("")
 }
 
-function stripCommentsAndStrings(src) {
-  return stripComments(src, true)
+function stripCommentsAndStrings(src, html = false) {
+  return stripComments(src, true, html)
 }
 
 function stripCommentsKeepStrings(src) {
@@ -635,7 +655,7 @@ function measureTree(root, budgets) {
     const kind = isTestFile(rel) ? "test" : "prod"
     const layer = classifyLayer(rel)
     const lines = countLines(raw)
-    const codeLines = countCodeLines(raw)
+    const codeLines = countCodeLines(raw, abs.endsWith(".svelte") && !abs.endsWith(".svelte.ts"))
     const scriptLines =
       abs.endsWith(".svelte") && !abs.endsWith(".svelte.ts") ? countScriptLines(raw) : null
     const src = analysisSource(abs, raw)
