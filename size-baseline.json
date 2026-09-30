@@ -1112,10 +1112,10 @@
       "codeLines": 271
     },
     "packages/frontend/src/routes/+page.svelte": {
-      "metric": 426,
-      "impurity": 10,
+      "metric": 405,
+      "impurity": 8,
       "class": "mixed",
-      "codeLines": 164
+      "codeLines": 145
     },
     "packages/frontend/src/routes/bt-test/+page.svelte": {
       "metric": 329,

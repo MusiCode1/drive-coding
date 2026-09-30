@@ -13,6 +13,7 @@ import { readSessionTransport } from "$lib/session/session-transport-read"
 import { pickSessionHost } from "$lib/session/session-url"
 import type { ManualTitleInput } from "$lib/view-models/agent-session-manual-title"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
+import { formatAcpError } from "$lib/view-models/format-acp-error"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 export type OpenSessionOutcome = "connected" | "not-found" | "needs-takeover" | "error"
@@ -98,21 +99,26 @@ export async function openSessionUrl(params: {
   const attachSessionId = pick.kind === "exact" ? sessionId : agent.acpSessionId
   if (!attachSessionId) return "not-found"
 
-  if (transport === "http") {
-    await session.attachRemoteToLiveAgent({
-      agentId: agent.id,
-      cwd: agent.cwd,
-      cliKind: agent.cliKind,
-      ...sessionAttachExtras(agent),
-    })
-  } else {
-    await session.attachToLiveAgent({
-      agentId: agent.id,
-      sessionId: attachSessionId,
-      cwd: agent.cwd,
-      cliKind: agent.cliKind,
-      ...sessionAttachExtras(agent),
-    })
+  try {
+    if (transport === "http") {
+      await session.attachRemoteToLiveAgent({
+        agentId: agent.id,
+        cwd: agent.cwd,
+        cliKind: agent.cliKind,
+        ...sessionAttachExtras(agent),
+      })
+    } else {
+      await session.attachToLiveAgent({
+        agentId: agent.id,
+        sessionId: attachSessionId,
+        cwd: agent.cwd,
+        cliKind: agent.cliKind,
+        ...sessionAttachExtras(agent),
+      })
+    }
+  } catch (e) {
+    session.error = formatAcpError(e)
+    return "error"
   }
 
   if (connectionFailed(session)) return "error"
