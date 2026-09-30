@@ -75,6 +75,14 @@ export class WsConnection implements Connection {
     }
   }
 
+  async closeAndDiscardTransport(transport: WsAcpTransport): Promise<void> {
+    await transport.closeAndWait()
+    if (this.#transport === transport) {
+      this.#transport = null
+      this.#connecting = false
+    }
+  }
+
   cancelConnectingTransport(): void {
     if (this.#connecting && this.#transport) this.discardTransport(this.#transport)
   }

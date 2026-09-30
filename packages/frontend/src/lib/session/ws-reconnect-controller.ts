@@ -76,7 +76,7 @@ export class WsReconnectController {
     }
     const generation = this.attempt.generation
     const info = context.agentId ? await getAgent(context.agentId).catch(() => null) : null
-    if (generation !== this.attempt.generation) return
+    if (!this.#current(generation)) return
     if (info?.agent.status === "crashed" && info.agent.crashReason) {
       this.cancel()
       this.reconnect.setTerminal("crash", info.agent.crashReason)

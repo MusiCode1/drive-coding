@@ -43,7 +43,8 @@ export async function runWarmReconnect(
     }
     const opened = outcome.value
     if (opened) {
-      owner.discardTransport(transport)
+      await owner.closeAndDiscardTransport(transport)
+      if (!isCurrent()) return "terminal"
       if (
         opened.code === 4409 ||
         (opened.code === 1008 && opened.reason === "session-host-active")

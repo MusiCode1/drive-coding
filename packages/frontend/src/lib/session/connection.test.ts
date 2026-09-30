@@ -9,6 +9,7 @@ import { WsConnection, type WsConnectionDeps, type WsReconnectDeps } from "./ws-
 
 const events: string[] = []
 const waitBehaviors: Array<(close: (code: number, reason: string) => void) => Promise<void>> = []
+const closeWaitBehaviors: Array<() => Promise<void>> = []
 const client = {
   authMethods: [],
   loadSession: vi.fn(async () => ({ sessionId: "session-1" })),
@@ -40,6 +41,8 @@ vi.mock("@drive-coding/acp-wire/browser", () => ({
     }
     async closeAndWait() {
       events.push("closeAndWait")
+      await closeWaitBehaviors.shift()?.()
+      events.push("closeAndWaitDone")
     }
   },
 }))
@@ -127,6 +130,7 @@ function httpDeps(): HttpConnectionDeps {
 beforeEach(() => {
   events.length = 0
   waitBehaviors.length = 0
+  closeWaitBehaviors.length = 0
   vi.clearAllMocks()
 })
 
@@ -278,6 +282,37 @@ describe("Connection reconnect policy", () => {
     expect(deps.reconnect.cold).not.toHaveBeenCalled()
     expect(deps.reconnect.setStatus).toHaveBeenLastCalledWith("connected")
     expect(deps.reconnect.connected).toHaveBeenCalledOnce()
+  })
+
+  it("waits for a transient 1008 WS to close before constructing its replacement", async () => {
+    const deps = reconnectDeps()
+    vi.mocked(listAgents).mockResolvedValueOnce([
+      {
+        id: "old-agent",
+        acpSessionId: "session-1",
+        cwd: "/repo",
+        status: "ready",
+      },
+    ] as unknown as Awaited<ReturnType<typeof listAgents>>)
+    waitBehaviors.push(async (close) => {
+      close(1008, "temporary ownership")
+      await new Promise<void>(() => {})
+    })
+    let releaseClose!: () => void
+    closeWaitBehaviors.push(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseClose = resolve
+        }),
+    )
+    const pending = new WsConnection(deps).reconnect()
+    await vi.waitFor(() => expect(events).toContain("closeAndWait"))
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    expect(events.filter((event) => event === "WsAcpTransport")).toHaveLength(1)
+    expect(events).toContain("closeAndWait")
+    releaseClose()
+    await pending
+    expect(events.indexOf("closeAndWaitDone")).toBeLessThan(events.lastIndexOf("WsAcpTransport"))
   })
 
   it("deletes the old agent only after an explicit successful cold result", async () => {
@@ -456,6 +491,80 @@ describe("Connection reconnect policy", () => {
     expect(deps.reconnect.setTerminal).toHaveBeenCalledWith("crash", "agent crashed")
     expect(listAgents).not.toHaveBeenCalled()
   })
+
+  it.each(["detached", "tearingDown"] as const)(
+    "ignores a pending crash result after context becomes %s",
+    async (state) => {
+      const deps = reconnectDeps()
+      const context = {
+        sessionId: "session-1",
+        cwd: "/repo",
+        cliKind: "claude",
+        agentId: "old-agent",
+        hidden: false,
+        detached: false,
+        tearingDown: false,
+        remote: false,
+        terminalError: false,
+      }
+      vi.mocked(deps.reconnect.context).mockReturnValue(context)
+      let releaseAgent!: (value: Awaited<ReturnType<typeof getAgent>>) => void
+      vi.mocked(getAgent).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseAgent = resolve
+          }),
+      )
+      const pending = new WsConnection(deps).onUnexpectedClose(1006, "")
+      await vi.waitFor(() => expect(getAgent).toHaveBeenCalledOnce())
+      context[state] = true
+      releaseAgent({
+        agent: { status: "crashed", crashReason: "agent crashed" },
+      } as Awaited<ReturnType<typeof getAgent>>)
+      await pending
+      expect(deps.reconnect.setTerminal).not.toHaveBeenCalled()
+      expect(deps.reconnect.clearTransientError).not.toHaveBeenCalled()
+      expect(deps.reconnect.setStatus).not.toHaveBeenCalled()
+      expect(deps.reconnect.setAttempt).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(["detached", "tearingDown"] as const)(
+    "does not set disconnected after context becomes %s during getAgent",
+    async (state) => {
+      const deps = reconnectDeps()
+      const context = {
+        sessionId: "session-1",
+        cwd: "/repo",
+        cliKind: "claude",
+        agentId: "old-agent",
+        hidden: false,
+        detached: false,
+        tearingDown: false,
+        remote: false,
+        terminalError: false,
+      }
+      vi.mocked(deps.reconnect.context).mockReturnValue(context)
+      let releaseAgent!: (value: Awaited<ReturnType<typeof getAgent>>) => void
+      vi.mocked(getAgent).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseAgent = resolve
+          }),
+      )
+      const pending = new WsConnection(deps).onUnexpectedClose(1006, "")
+      await vi.waitFor(() => expect(getAgent).toHaveBeenCalledOnce())
+      context[state] = true
+      releaseAgent({
+        agent: { status: "ready", cwd: "/repo" },
+      } as Awaited<ReturnType<typeof getAgent>>)
+      await pending
+      expect(deps.reconnect.setTerminal).not.toHaveBeenCalled()
+      expect(deps.reconnect.clearTransientError).not.toHaveBeenCalled()
+      expect(deps.reconnect.setStatus).not.toHaveBeenCalled()
+      expect(deps.reconnect.setAttempt).not.toHaveBeenCalled()
+    },
+  )
 
   it("keeps HTTP reconnect a no-op", async () => {
     const connection = new HttpConnection(httpDeps())
