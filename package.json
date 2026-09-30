@@ -20,6 +20,7 @@
     "lint:css-vars": "./scripts/lint-css-vars.sh packages/frontend/src",
     "lint:rtl": "node scripts/lint-no-physical-classes.mjs",
     "lint:size": "node scripts/lint-file-size.mjs",
+    "lint:api-documented": "node scripts/lint-api-documented.mjs",
     "lint:docs": "node scripts/lint-agent-docs.mjs",
     "docs:index": "node scripts/build-docs-index.mjs && bunx biome format --write docs/agents/index.json",
     "docs:list": "node scripts/docs-list.mjs",
