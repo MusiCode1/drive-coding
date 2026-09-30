@@ -407,12 +407,23 @@ There is **no CI**; hooks can be skipped with `git push --no-verify`.
 
 ## Worktrees
 
-All worktrees live under `.worktrees/<name>/`. Branch names use the `slice/` prefix;
-the worktree **directory omits it** (a slash would nest a subdir). Create one with:
+All worktrees live under **`<repo-root>/.worktrees/<name>/`** — a *sibling* of the
+long-lived trees (`main/`, `dev/`, `edge/`), never a child of one. Branch names use the
+`slice/` prefix; the worktree **directory omits it** (a slash would nest a subdir).
+Create one with:
 
 ```bash
-git worktree add .worktrees/<name> -b slice/<name> dev   # branch: slice/<name> | dir: .worktrees/<name>
+ROOT="$(git rev-parse --git-common-dir)/.."   # repo root, from any worktree
+git worktree add "$ROOT/.worktrees/<name>" -b slice/<name> dev   # branch: slice/<name> | dir: .worktrees/<name>
 ```
+
+🛑 **Anchor the path — never write a bare `.worktrees/`.** It resolves against your
+cwd, so the same line run from inside `edge/` silently creates `edge/.worktrees/`
+instead, and nothing warns you. Measured 2026-09-30: **34** worktrees in the right
+place against **22** scattered — 16 under `edge/.worktrees/`, 6 under
+`dev/.worktrees/`. Verified the same day: `git worktree add` **normalizes** the `..`
+in `$ROOT`, so the registered path has no `.bare/..` in it. `git rev-parse` must run
+from inside the repo — pass `-C <any-worktree>` from a script that may not be.
 
 Cleanup after merge (worktrees pile up otherwise — we hit 34 at once):
 
@@ -431,14 +442,14 @@ a running BE takes its `FE_STATIC_DIR` with it. `--keep <name>` spares one by na
 On Windows there is no `/proc`, so the process check cannot run: `--apply` refuses
 unless you also pass `--no-process-check`.
 
-By hand, if you must: `git worktree remove .worktrees/<name>`,
+By hand, if you must: `git worktree remove "$ROOT/.worktrees/<name>"`,
 `git branch -d slice/<name>`, `git worktree prune`.
 
-Don't pollute the project root with worktree directories. The two long-lived
-worktrees `dev/` and `main/` (at the project root) are the exception, not the rule.
-Any new branch for a slice / bugfix / experiment goes under `.worktrees/`.
+Don't pollute the repo root with worktree directories. The long-lived trees there
+(`main/`, `dev/`, `edge/`, plus the bare `.bare/`) are the exception, not the rule.
+Any new branch for a slice / bugfix / experiment goes under `$ROOT/.worktrees/`.
 
-After `cd .worktrees/<name>`, run `bun install && bun run hooks:install`.
+After `cd "$ROOT/.worktrees/<name>"`, run `bun install && bun run hooks:install`.
 
 ## Ports
 
