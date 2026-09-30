@@ -17,7 +17,7 @@ updated: 2026-09-30
 
 # Agent events
 
-The backend can push **turn-ended** and **stall-suspected** notifications to a **subscriber** agent as a plain-text prompt in that subscriber's live session. This is separate from the chat UI — nothing appears on the human screen unless the subscriber agent acts on the prompt.
+The backend can push **turn-ended** and **stall-suspected** notifications to a **subscriber** agent as a plain-text prompt injected into that subscriber's live session host (`formatAgentEventPrompt` in `agent-events-deliver.ts`).
 
 ## Event kinds
 

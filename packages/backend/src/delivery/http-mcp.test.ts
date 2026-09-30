@@ -11,7 +11,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { type AgentRegistry, MCP_EVENTS_HINT } from "@drive-coding/core"
+import { type AgentRegistry, MCP_CONFIGURE_HINT, MCP_EVENTS_HINT } from "@drive-coding/core"
 import { invalidateCache } from "@drive-coding/provider/config"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
@@ -722,7 +722,7 @@ describe("session_open eventsHint (open-reminds-subscribe)", () => {
     await client.close()
     expect(isToolError(result)).toBe(false)
     const body = JSON.parse(toolText(result)) as Record<string, unknown>
-    expect(body.hint).toBeTruthy()
+    expect(body.hint).toBe(MCP_CONFIGURE_HINT)
     return body
   }
 
