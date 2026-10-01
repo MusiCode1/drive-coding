@@ -8,6 +8,33 @@ export type ColdResult =
   | { kind: "connected"; agentId: string }
   | { kind: "failed"; preservedSessionId: string; failedAgentId?: string }
 
+export async function runColdReconnect(
+  context: { sessionId: string | null; cwd: string | null; cliKind: string | null },
+  isCurrent: () => boolean,
+  deps: {
+    prepare: () => void
+    load: (
+      input: { sessionId: string; cwd: string; cliKind: string },
+      onCreatedAgent: (agentId: string) => void,
+    ) => Promise<void>
+    connected: () => boolean
+  },
+): Promise<ColdResult> {
+  const { sessionId, cwd, cliKind } = context
+  if (!sessionId || !cwd || !cliKind || !isCurrent()) {
+    return { kind: "failed", preservedSessionId: sessionId ?? "" }
+  }
+  let createdAgentId: string | undefined
+  deps.prepare()
+  await deps.load({ sessionId, cwd, cliKind }, (agentId) => {
+    createdAgentId = agentId
+  })
+  if (!isCurrent() || !deps.connected() || !createdAgentId) {
+    return { kind: "failed", preservedSessionId: sessionId, failedAgentId: createdAgentId }
+  }
+  return { kind: "connected", agentId: createdAgentId }
+}
+
 export type ReconnectContext = {
   sessionId: string
   cwd: string

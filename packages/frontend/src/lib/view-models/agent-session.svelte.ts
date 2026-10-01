@@ -59,7 +59,7 @@ import { LocalSessionView } from "$lib/session/local-session-view"
 import type { SessionView } from "$lib/session/session-view"
 import { teeAcpCallbacks } from "$lib/session/tee-acp-callbacks"
 import { WsConnection } from "$lib/session/ws-connection"
-import type { ColdResult } from "$lib/session/ws-reconnect-controller"
+import { runColdReconnect } from "$lib/session/ws-reconnect-controller"
 import type { Bubble, ToolCall, UserBubble } from "$lib/types/bubble"
 // ─── slice-elicitation-ui: טיפוסי שאלה מובנת (view-model layer, נגזרים מ-SDK) ───
 import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitation"
@@ -852,6 +852,23 @@ export class AgentSession {
     return view
   }
 
+  #callbacksForLocalView(view: LocalSessionView): Parameters<typeof createAcpClient>[1] {
+    return teeAcpCallbacks(
+      {
+        onUpdate: this.#onSessionUpdate,
+        onExtNotification: this.#onExtNotification,
+        onRequestPermission: this.#onRequestPermission,
+        onCreateElicitation: this.#onCreateElicitation,
+      },
+      view.observerCallbacks,
+    )
+  }
+
+  #cancelPendingDialogs(): void {
+    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
+    this.#resolvePendingElicitation({ action: "cancel" })
+  }
+
   /**
    * שלב ב' — **אחרי** יצירת הלקוח, **לפני** כל קריאה שמזרימה היסטוריה (§4.4):
    * מאמץ את הלקוח אל ה-view (מאפס את state ה-view לסשן החדש). נקודות 4/5
@@ -1164,16 +1181,7 @@ export class AgentSession {
         void this.#handleUnexpectedClose(code, reason)
       },
       bindLocalView: () => this.#bindLocalView(),
-      callbacks: (view) =>
-        teeAcpCallbacks(
-          {
-            onUpdate: this.#onSessionUpdate,
-            onExtNotification: this.#onExtNotification,
-            onRequestPermission: this.#onRequestPermission,
-            onCreateElicitation: this.#onCreateElicitation,
-          },
-          view.observerCallbacks,
-        ),
+      callbacks: (view) => this.#callbacksForLocalView(view),
       setClient: (client) => {
         this.#client = client
         this.authMethods = client.authMethods
@@ -1245,15 +1253,13 @@ export class AgentSession {
         clearClient: () => {
           this.#client = null
           this.#ext = null
-          this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
-          this.#resolvePendingElicitation({ action: "cancel" })
+          this.#cancelPendingDialogs()
         },
         prepareWarm: () => {
           this.#detached = false
           this.#errorSurfaced = false
           this.#client = null
-          this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
-          this.#resolvePendingElicitation({ action: "cancel" })
+          this.#cancelPendingDialogs()
         },
         setWarmAgent: (agentId) => {
           this.agentId = agentId
@@ -1264,6 +1270,7 @@ export class AgentSession {
         },
         startReplay: () => {
           this.bubbles = []
+          this.sessionState = createInitialSessionState({ sessionId: this.#sessionId })
           this.isLoadingHistory = true
         },
         finishReplay: () => {
@@ -1273,13 +1280,37 @@ export class AgentSession {
         disposeFailedWarm: () => {
           this.#client = null
           this.#ext = null
-          this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
-          this.#resolvePendingElicitation({ action: "cancel" })
+          this.#cancelPendingDialogs()
           this.#localView?.dispose()
           this.#localView = null
           this.#view = null
         },
-        cold: (isCurrent) => this.#loadColdReconnect(isCurrent),
+        cold: (isCurrent) =>
+          runColdReconnect(
+            { sessionId: this.#sessionId, cwd: this.cwd, cliKind: this.#cliKind },
+            isCurrent,
+            {
+              prepare: () => {
+                try {
+                  this.#client?.close()
+                } catch {
+                  // Already closed.
+                }
+                this.#client = null
+                this.#ext = null
+                this.#cancelPendingDialogs()
+                if (this.status === "connecting" || this.status === "connected")
+                  this.#setStatus("disconnected")
+              },
+              load: (input, onCreatedAgent) =>
+                this.loadSession(input, {
+                  preserveContextOnError: true,
+                  isCurrent,
+                  onCreatedAgent,
+                }),
+              connected: () => this.status === "connected",
+            },
+          ),
         connected: () => {
           this.error = null
           this.#errorSurfaced = false
@@ -1288,40 +1319,6 @@ export class AgentSession {
       },
     })
     return connection
-  }
-
-  async #loadColdReconnect(isCurrent: () => boolean): Promise<ColdResult> {
-    const sessionId = this.#sessionId
-    const cwd = this.cwd
-    const cliKind = this.#cliKind
-    if (!sessionId || !cwd || !cliKind || !isCurrent()) {
-      return { kind: "failed", preservedSessionId: sessionId ?? "" }
-    }
-    let createdAgentId: string | undefined
-    try {
-      this.#client?.close()
-    } catch {
-      // Already closed.
-    }
-    this.#client = null
-    this.#ext = null
-    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
-    this.#resolvePendingElicitation({ action: "cancel" })
-    if (this.status === "connecting" || this.status === "connected") this.#setStatus("disconnected")
-    await this.loadSession(
-      { sessionId, cwd, cliKind },
-      {
-        preserveContextOnError: true,
-        isCurrent,
-        onCreatedAgent: (agentId) => {
-          createdAgentId = agentId
-        },
-      },
-    )
-    if (!isCurrent() || this.status !== "connected" || !createdAgentId) {
-      return { kind: "failed", preservedSessionId: sessionId, failedAgentId: createdAgentId }
-    }
-    return { kind: "connected", agentId: createdAgentId }
   }
 
   #newHttpConnection(): HttpConnection {
@@ -1419,8 +1416,7 @@ export class AgentSession {
     this.#connection?.cancelReconnect()
     this.reconnectAttempt = 0
     if (keepAgent && (this.pendingPermission || this.pendingElicitation)) {
-      this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
-      this.#resolvePendingElicitation({ action: "cancel" })
+      this.#cancelPendingDialogs()
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
     this.#cleanup(keepAgent ? { keepAgent: true } : undefined)
@@ -1667,6 +1663,7 @@ export class AgentSession {
     this.authMethods = [] // slice auth-guidance: נקה לפני חיבור חדש — נלכד מחדש אחרי createAcpClient
     this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
     this.bubbles = []
+    this.sessionState = createInitialSessionState({ sessionId: input.sessionId })
     this.#detached = false
 
     // ─── DEV-only: mock session (sessionId "mock:<name>") ───
@@ -1733,18 +1730,7 @@ export class AgentSession {
       // slice local-view-wiring C3: bind+tee לפני יצירת הלקוח; adopt **לפני** loadSession —
       // ההיסטוריה המשוחזרת מגיעה תוך כדי ה-await, ואימוץ אחריו מוחק אותה (§2.6/§4.4).
       const localView = this.#bindLocalView()
-      const client = await createAcpClient(
-        transport,
-        teeAcpCallbacks(
-          {
-            onUpdate: this.#onSessionUpdate,
-            onExtNotification: this.#onExtNotification,
-            onRequestPermission: this.#onRequestPermission,
-            onCreateElicitation: this.#onCreateElicitation,
-          },
-          localView.observerCallbacks,
-        ),
-      )
+      const client = await createAcpClient(transport, this.#callbacksForLocalView(localView))
       createdClient = client
       if (!current()) {
         cancelled()
@@ -2258,9 +2244,7 @@ export class AgentSession {
     if (this.turnState === "idle") return
     // slice-permission-ui-basic: ביטול תור באמצע בקשת-הרשאה ממתינה → פתור כ-cancelled.
     // נתיב עצמאי — לא עובר דרך #cleanup (הסיכון #1, §4 Commit 2).
-    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
-    // slice-elicitation-ui: אותו דפוס — ביטול תור באמצע שאלה מובנת ממתינה → פתור כ-cancel.
-    this.#resolvePendingElicitation({ action: "cancel" })
+    this.#cancelPendingDialogs()
     // ─── slice view-switch C3-ג: עריכה נקודתית — רק הבלוק האמצעי מנותב לפי #view ───
     // ❌ ענף-מוקדם היה מדלג על שני ה-resolve למעלה ועל #setTurnState("idle") ⇒ דיאלוג-הרשאה תקוע.
     const remoteView = this.#remoteView()
@@ -2431,9 +2415,7 @@ export class AgentSession {
     // התשובה נשלחת על חיבור סגור ואובדת. קריטי ל-keepAgent (leaveRunning) שבו ה-agent שורד
     // וממתין לתשובה; leaveRunning גם ממתין ל-flush (setTimeout 0) לפני שמגיע לכאן. מכסה
     // detach() (agent נהרג ממילא) + attach/loadSession כשל.
-    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
-    // slice-elicitation-ui: אותו דפוס — פתור גם elicitation ה-pending לפני close.
-    this.#resolvePendingElicitation({ action: "cancel" })
+    this.#cancelPendingDialogs()
     if (opts?.keepAgent && transport) {
       sendDetachFrame(transport)
     } else if (opts?.keepAgent && this.#isRemote) {

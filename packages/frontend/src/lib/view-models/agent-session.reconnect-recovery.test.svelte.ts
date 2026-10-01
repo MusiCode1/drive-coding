@@ -87,6 +87,8 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
 vi.stubGlobal("location", { protocol: "http:", host: "localhost:5173", search: "" })
 vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("test-uuid") })
 
+import { createInitialSessionState, reduce } from "@drive-coding/core/session"
+import { createAcpClient, createAttachedAcpClient } from "@drive-coding/provider/client"
 import { createAgent, deleteAgent, getAgent, listAgents } from "$lib/adapters/agents-api"
 import { AgentSession } from "./agent-session.svelte"
 
@@ -288,6 +290,93 @@ describe("AgentSession — regressions (§4 Commit 0, DoD#5/#6)", () => {
 })
 
 describe("AgentSession — cold reconnect through the Connection owner", () => {
+  test("warm replay of an unlabelled chunk restores the visible bubble", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-existing",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+    session.agentId = "agent-old"
+    const chunk = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "FIXTURE-REPLY" },
+    } as const
+    session.sessionState = reduce(
+      createInitialSessionState({ sessionId: "sess-existing" }),
+      chunk,
+    ).state
+    session.bubbles = [
+      {
+        id: "m_0",
+        kind: "message",
+        messageId: null,
+        createdAt: 0,
+        segments: [{ id: "s_0", text: "FIXTURE-REPLY" }],
+      },
+    ]
+    vi.mocked(listAgents).mockResolvedValueOnce([
+      { id: "agent-old", acpSessionId: "sess-existing", cwd: "/tmp", status: "ready" },
+    ] as Awaited<ReturnType<typeof listAgents>>)
+    vi.mocked(createAttachedAcpClient).mockImplementationOnce((_transport, callbacks) => {
+      mockAttachedClient.loadSession.mockImplementationOnce(async () => {
+        const notification = { sessionId: "sess-existing", update: chunk }
+        if (typeof callbacks === "function") callbacks(notification)
+        else callbacks.onUpdate?.(notification)
+        return { sessionId: "sess-existing" }
+      })
+      return mockAttachedClient as unknown as ReturnType<typeof createAttachedAcpClient>
+    })
+
+    await session.reconnect()
+    expect(session.status).toBe("connected")
+    expect(
+      session.renderBubbles.map((bubble) => bubble.segments.map((segment) => segment.text)),
+    ).toEqual([["FIXTURE-REPLY"]])
+  })
+
+  test("cold replay of an unlabelled chunk restores the visible bubble", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-existing",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+    session.agentId = "agent-old"
+    const chunk = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "FIXTURE-REPLY" },
+    } as const
+    session.sessionState = reduce(
+      createInitialSessionState({ sessionId: "sess-existing" }),
+      chunk,
+    ).state
+    session.bubbles = [
+      {
+        id: "m_0",
+        kind: "message",
+        messageId: null,
+        createdAt: 0,
+        segments: [{ id: "s_0", text: "FIXTURE-REPLY" }],
+      },
+    ]
+    vi.mocked(createAcpClient).mockImplementationOnce(async (_transport, callbacks) => {
+      mockColdClient.loadSession.mockImplementationOnce(async () => {
+        const notification = { sessionId: "sess-existing", update: chunk }
+        if (typeof callbacks === "function") callbacks(notification)
+        else callbacks.onUpdate?.(notification)
+        return { sessionId: "sess-existing" }
+      })
+      return mockColdClient as unknown as Awaited<ReturnType<typeof createAcpClient>>
+    })
+
+    await session.reconnect()
+    expect(session.status).toBe("connected")
+    expect(
+      session.renderBubbles.map((bubble) => bubble.segments.map((segment) => segment.text)),
+    ).toEqual([["FIXTURE-REPLY"]])
+  })
+
   test("failed cold and successful replay preserve the history mark and finish with an idle turn", async () => {
     const session = new AgentSession()
     session._setSessionContextForTest({
