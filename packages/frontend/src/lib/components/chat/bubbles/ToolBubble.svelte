@@ -69,7 +69,7 @@ function asFencedCode(text: string): string {
         <!-- summary row from normalized view -->
         <div class="flex-1 min-w-0" style="color:var(--fg-dim)">
           {#if view.summary}
-            <div class="truncate" dir="auto">{view.summary}</div>
+            <div class="line-clamp-2" dir="auto">{view.summary}</div>
           {:else}
             <div class="opacity-40 italic">{t("chat.tool.loading_narration")}</div>
           {/if}
