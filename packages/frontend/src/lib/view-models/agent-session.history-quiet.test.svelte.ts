@@ -251,7 +251,12 @@ function createQuietHarness(
 
   const agent = new AgentSession({ view, settings })
   const speaker = new Speaker({
-    session: agent,
+    transcript: {
+      get current() {
+        return agent.transcript
+      },
+    },
+    lifecycle: agent,
     settings,
     playlist,
     audioStream: sink,

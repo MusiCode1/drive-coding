@@ -1016,10 +1016,10 @@
       "codeLines": 68
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 2708,
+      "metric": 2687,
       "impurity": 46,
       "class": "scattered",
-      "codeLines": 1811
+      "codeLines": 1792
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
       "metric": 328,
@@ -1082,10 +1082,10 @@
       "codeLines": 438
     },
     "packages/frontend/src/lib/view-models/speaker.svelte.ts": {
-      "metric": 880,
+      "metric": 783,
       "impurity": 8,
       "class": "mixed",
-      "codeLines": 567
+      "codeLines": 519
     },
     "packages/frontend/src/lib/view-models/theme.svelte.ts": {
       "metric": 49,
@@ -1106,10 +1106,10 @@
       "codeLines": 166
     },
     "packages/frontend/src/routes/+layout.svelte": {
-      "metric": 367,
+      "metric": 344,
       "impurity": 24,
       "class": "mixed",
-      "codeLines": 233
+      "codeLines": 217
     },
     "packages/frontend/src/routes/+page.svelte": {
       "metric": 405,

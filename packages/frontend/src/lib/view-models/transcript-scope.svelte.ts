@@ -29,6 +29,15 @@ export class TranscriptScope implements PatchOwner<TranscriptPatch> {
     return this.#displaySnapshot !== null
   }
 
+  recentAssistantMessages(n: number = 3): string[] {
+    const result: string[] = []
+    for (let i = this.#bubbles.length - 1; i >= 0 && result.length < n; i--) {
+      const bubble = this.#bubbles[i]
+      if (bubble?.kind === "message") result.unshift(bubble.segments.map((s) => s.text).join(""))
+    }
+    return result
+  }
+
   applyPatch(patch: TranscriptPatch): void {
     applyPatchMutable(this.#bubbles, patch.patches, { mapToolContent, mapLocations })
   }

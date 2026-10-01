@@ -193,6 +193,71 @@ describe("AgentSession session-scope boundary", () => {
     expect(seen.at(-1)).toBe(0)
   })
 
+  it("reads recent assistant messages through the real wrapper after A→B", async () => {
+    const session = new AgentSession()
+    await session.loadSession({ sessionId: "sess-a", cwd: "/proj", cliKind: "opencode" })
+    const a = session.transcript
+    a.replace([
+      {
+        id: "old",
+        kind: "message",
+        messageId: "old",
+        createdAt: 1,
+        segments: [{ id: "old-seg", text: "old answer" }],
+      },
+    ])
+    session.status = "disconnected"
+    await session.loadSession({ sessionId: "sess-b", cwd: "/proj", cliKind: "opencode" })
+    expect(session.transcript).not.toBe(a)
+    session.transcript.replace([
+      {
+        id: "user",
+        kind: "user",
+        messageId: null,
+        createdAt: 2,
+        segments: [{ id: "u", text: "ask" }],
+      },
+      {
+        id: "answer-1",
+        kind: "message",
+        messageId: "m1",
+        createdAt: 3,
+        segments: [{ id: "a1", text: "one" }],
+      },
+      {
+        id: "thought",
+        kind: "thought",
+        messageId: "t",
+        createdAt: 4,
+        segments: [{ id: "t1", text: "thinking" }],
+      },
+      {
+        id: "answer-2",
+        kind: "message",
+        messageId: "m2",
+        createdAt: 5,
+        segments: [{ id: "a2", text: "two" }],
+      },
+      {
+        id: "tool",
+        kind: "tool",
+        messageId: null,
+        createdAt: 6,
+        segments: [],
+        toolCall: { toolCallId: "call", name: "run", args: {}, status: "completed" },
+      },
+      {
+        id: "answer-3",
+        kind: "message",
+        messageId: "m3",
+        createdAt: 7,
+        segments: [{ id: "a3", text: "three" }],
+      },
+    ])
+    expect(session.recentAssistantMessages(1)).toEqual(["three"])
+    expect(session.recentAssistantMessages(3)).toEqual(["one", "two", "three"])
+  })
+
   it("attachRemoteToLiveAgent applies manual title/notes/fields after enterSession", async () => {
     const snapshot = {
       ...createInitialSessionState({ sessionId: "live-scope-1" }),

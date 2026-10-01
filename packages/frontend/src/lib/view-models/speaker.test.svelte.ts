@@ -9,9 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
 import type { Bubble, MessageBubble } from "$lib/types/bubble"
-import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
+import { translate } from "../adapters/voice/translate"
 import { Settings } from "./settings.svelte"
 import { Speaker } from "./speaker.svelte"
+import type { SpeakerLifecycle } from "./speaker-lifecycle"
+import { TranscriptScope } from "./transcript-scope.svelte"
 
 const mockSynthesize = vi.fn()
 // params declared so the spread into it typechecks against the real
@@ -69,20 +71,17 @@ vi.stubGlobal("localStorage", localStorageMock)
 const LONG_TEXT =
   "This is a long enough sentence for the speaker to enqueue a TTS job without waiting for turn end."
 
-let sessionBubbles = $state<Bubble[]>([])
-
-function makeSession(extra?: Partial<AgentSession>): AgentSession {
+function makeLifecycle(extra?: Partial<SpeakerLifecycle>): SpeakerLifecycle {
   return {
-    get bubbles() {
-      return sessionBubbles
-    },
-    status: "idle" as AgentSessionStatus,
-    turnState: "idle" as TurnState,
+    status: "idle",
+    turnState: "idle",
     isLoadingHistory: false,
     historyEpoch: 0,
     historyMark: { segmentCounts: new Map(), toolCallIds: [] },
+    lastUserMessage: "",
+    recentAssistantMessages: () => [],
     ...extra,
-  } as AgentSession
+  }
 }
 
 function makeMockSink(): AudioSink & { prepared: Set<string> } {
@@ -110,10 +109,11 @@ type Harness = {
 
 function createHarness(
   initial?: Bubble[],
-  extraSession?: Partial<AgentSession>,
+  extraSession?: Partial<SpeakerLifecycle>,
   live?: { isOpen: boolean },
 ): Harness {
-  sessionBubbles = initial ?? []
+  const scope = new TranscriptScope("test")
+  scope.replace(initial ?? [])
   const settings = new Settings()
   settings.ttsProvider = "google"
   settings.muted = false
@@ -121,7 +121,8 @@ function createHarness(
   const sink = makeMockSink()
   const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
   const speaker = new Speaker({
-    session: makeSession(extraSession),
+    transcript: { current: scope },
+    lifecycle: makeLifecycle(extraSession),
     settings,
     playlist,
     audioStream: sink,
@@ -144,6 +145,7 @@ const messageBubble = (text: string): MessageBubble => ({
 })
 
 let active: Harness | null = null
+let portActive: { destroy(): void } | null = null
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -155,6 +157,224 @@ beforeEach(() => {
 afterEach(() => {
   active?.destroy()
   active = null
+  portActive?.destroy()
+  portActive = null
+})
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+function toolBubble(id: string): Bubble {
+  return {
+    id,
+    kind: "tool",
+    messageId: null,
+    createdAt: 1,
+    segments: [],
+    toolCall: {
+      toolCallId: `call-${id}`,
+      name: "run",
+      args: {},
+      kind: "other",
+      status: "completed",
+    },
+  }
+}
+
+function thoughtBubble(id: string): Bubble {
+  return {
+    id,
+    kind: "thought",
+    messageId: "thought-message",
+    createdAt: 1,
+    segments: [{ id: "thought-segment", text: LONG_TEXT }],
+  }
+}
+
+function createPortHarness(initial: Bubble[], loadingHistory = false) {
+  let current = $state(new TranscriptScope("A"))
+  current.replace(initial)
+  const transcript = {
+    get current() {
+      return current
+    },
+  }
+  const lifecycle = $state({
+    status: "idle" as const,
+    turnState: "idle" as const,
+    isLoadingHistory: loadingHistory,
+    historyEpoch: 0,
+    historyMark: { segmentCounts: new Map<string, number>(), toolCallIds: [] as string[] },
+    lastUserMessage: "hello",
+    recentAssistantMessages: (_n: number) => [] as string[],
+  })
+  const settings = new Settings()
+  settings.ttsProvider = "google"
+  settings.muted = false
+  settings.narrateTools = true
+  const sink = makeMockSink()
+  const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+  const speaker = new Speaker({
+    transcript,
+    lifecycle,
+    settings,
+    playlist,
+    audioStream: sink,
+    orderAlloc: new OrderAllocator(),
+  })
+  return {
+    speaker,
+    playlist,
+    lifecycle,
+    get current() {
+      return current
+    },
+    switchTo(next: TranscriptScope) {
+      current = next
+    },
+    destroy() {
+      speaker.destroy()
+    },
+  }
+}
+
+describe("Speaker transcript port and identity", () => {
+  it("keeps replay quiet and speaks a new chunk once", async () => {
+    const historical = messageBubble(LONG_TEXT)
+    const h = createPortHarness([historical], true)
+    portActive = h
+    await flush()
+    expect(h.playlist.items).toHaveLength(0)
+    h.lifecycle.isLoadingHistory = false
+    await flush()
+    expect(h.playlist.items).toHaveLength(0)
+    h.current.replace([
+      {
+        ...historical,
+        segments: [
+          ...historical.segments,
+          { id: "new-segment", text: "A fresh sentence arrives and should be spoken just once." },
+        ],
+      },
+    ])
+    await flush()
+    expect(h.playlist.items.length).toBe(1)
+    await flush()
+    expect(h.playlist.items.length).toBe(1)
+  })
+
+  it("does not write late narration to a new owner with the same bubble id", async () => {
+    const a = new TranscriptScope("A")
+    a.replace([toolBubble("same")])
+    const pending = deferred<string | null>()
+    mockNarrate.mockReturnValueOnce(pending.promise).mockResolvedValue("B narration")
+    const h = createPortHarness(a.bubbles)
+    portActive = h
+    const ownerA = h.current
+    await flush()
+    const b = new TranscriptScope("B")
+    b.replace([toolBubble("same")])
+    const bSpy = vi.spyOn(b, "annotateNarration")
+    h.switchTo(b)
+    await flush()
+    pending.resolve("A narration")
+    await flush()
+    expect(bSpy).not.toHaveBeenCalledWith("same", "A narration")
+    expect(
+      ownerA.renderBubbles[0]?.kind === "tool" && ownerA.renderBubbles[0].toolCall.narration,
+    ).toBe("A narration")
+    expect(b.renderBubbles[0]?.kind === "tool" && b.renderBubbles[0].toolCall.narration).toBe(
+      "B narration",
+    )
+  })
+
+  it("keeps B pending while an abandoned A job finishes", async () => {
+    const aDone = deferred<string | null>()
+    const bDone = deferred<ReadableStream<Uint8Array>>()
+    mockNarrate.mockReturnValueOnce(aDone.promise)
+    mockSynthesize.mockReturnValueOnce(bDone.promise)
+    const h = createPortHarness([toolBubble("a-tool")])
+    portActive = h
+    await flush()
+    const b = new TranscriptScope("B")
+    b.replace([{ ...messageBubble(LONG_TEXT), id: "b-message" }])
+    h.switchTo(b)
+    await flush()
+    expect(h.speaker.hasPendingNarration).toBe(true)
+    aDone.resolve("old narration")
+    await flush()
+    expect(h.speaker.hasPendingNarration).toBe(true)
+    bDone.resolve(new ReadableStream<Uint8Array>())
+    await flush()
+  })
+
+  it("does not write late translation to a new owner with the same bubble and segment", async () => {
+    const pending = deferred<{ status: "translated"; text: string }>()
+    vi.mocked(translate)
+      .mockReturnValueOnce(pending.promise as ReturnType<typeof translate>)
+      .mockResolvedValue({ status: "translated", text: "B translation" })
+    const h = createPortHarness([thoughtBubble("same")])
+    portActive = h
+    const ownerA = h.current
+    await flush()
+    const b = new TranscriptScope("B")
+    b.replace([thoughtBubble("same")])
+    const bSpy = vi.spyOn(b, "annotateTranslation")
+    h.switchTo(b)
+    await flush()
+    pending.resolve({ status: "translated", text: "A translation" })
+    await flush()
+    expect(bSpy).not.toHaveBeenCalledWith("same", 0, LONG_TEXT, "A translation")
+    expect(
+      ownerA.renderBubbles[0]?.kind === "thought" && ownerA.renderBubbles[0].segments[0]?.text,
+    ).toBe("A translation")
+    expect(b.renderBubbles[0]?.kind === "thought" && b.renderBubbles[0].segments[0]?.text).toBe(
+      "B translation",
+    )
+  })
+
+  it("queues a new owner's different bubble without remounting", async () => {
+    const h = createPortHarness([messageBubble(LONG_TEXT)])
+    portActive = h
+    await flush()
+    const b = new TranscriptScope("B")
+    b.replace([
+      { ...messageBubble(LONG_TEXT), id: "new-owner-bubble", messageId: "new-owner-message" },
+    ])
+    h.switchTo(b)
+    await flush()
+    expect(h.playlist.items.some((item) => item.bubbleId === "new-owner-bubble")).toBe(true)
+  })
+
+  it("keeps loaded history in B quiet when owner and epoch change together", async () => {
+    const h = createPortHarness([messageBubble(LONG_TEXT)])
+    portActive = h
+    await flush()
+    const b = new TranscriptScope("B")
+    const bHistory = { ...messageBubble(LONG_TEXT), id: "b-history", messageId: "b-message" }
+    b.replace([bHistory])
+    h.lifecycle.historyMark = { segmentCounts: new Map([["b-history", 1]]), toolCallIds: [] }
+    h.lifecycle.historyEpoch = 1
+    h.switchTo(b)
+    await flush()
+    expect(h.playlist.items.some((item) => item.bubbleId === "b-history")).toBe(false)
+    b.replace([
+      {
+        ...bHistory,
+        segments: [
+          ...bHistory.segments,
+          { id: "b-fresh", text: "A fresh sentence for the new session arrives only now." },
+        ],
+      },
+    ])
+    await flush()
+    expect(h.playlist.items.filter((item) => item.bubbleId === "b-history")).toHaveLength(1)
+  })
 })
 
 describe("Speaker.#fetchJob — FetchOutcome (commit 0)", () => {

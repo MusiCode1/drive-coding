@@ -150,6 +150,7 @@ import {
 import { ErrorScope } from "./error-scope.svelte"
 import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
 import { watchPageVisibility } from "./page-visibility.js"
+import type { SessionStatus, SessionTurnState } from "./speaker-lifecycle"
 import { TranscriptScope } from "./transcript-scope.svelte"
 
 /**
@@ -183,15 +184,10 @@ type SessionModelState = {
   availableModels: Array<{ modelId: string; name: string; description?: string | null }>
 }
 
-export type AgentSessionStatus =
-  | "idle" // טרם נוצר סוכן
-  | "connecting" // יוצר סוכן + לחיצת יד של ACP
-  | "connected" // מוכן לקבל פרומפטים
-  | "error"
-  | "disconnected" // WS נפל, ממתין ל-reconnect (ידני/אוטו) — slice ws-reconnect-infra
+export type AgentSessionStatus = SessionStatus
 
 /** מה המודל עושה בתור הנוכחי. מופרד מ-status (חיבור) — §1 ב-brief. */
-export type TurnState = "idle" | "waiting" | "thinking" | "responding" | "calling-tool"
+export type TurnState = SessionTurnState
 
 /**
  * ─── עיצוב תוספתי בטוח למקביליות ───
@@ -275,6 +271,9 @@ export class AgentSession {
   /** [] = אין כשל-auth ידוע / warm-reattach (מדלג initialize) / CLI לא מפרסם authMethods. */
   authMethods = $state<ReadonlyArray<AuthMethod>>([])
   #transcript = $state(new TranscriptScope(null))
+  get transcript(): TranscriptScope {
+    return this.#transcript
+  }
   get bubbles(): Bubble[] {
     return this.#transcript.bubbles
   }
@@ -416,19 +415,6 @@ export class AgentSession {
   /** true רק בזמן warm-reconnect replay (התצוגה קפואה). לא נדלק בטעינה ראשונית/switchSession. */
   get isReconnectReplay(): boolean {
     return this.#transcript.isReconnectReplay
-  }
-
-  annotateToolNarration(bubbleId: string, text: string): void {
-    this.#transcript.annotateNarration(bubbleId, text)
-  }
-
-  annotateThoughtTranslation(
-    bubbleId: string,
-    index: number,
-    original: string,
-    translated: string,
-  ): boolean {
-    return this.#transcript.annotateTranslation(bubbleId, index, original, translated)
   }
 
   // ─── image-attach: capability gating ─── (slice-image-paste, additive)
@@ -2028,14 +2014,7 @@ export class AgentSession {
    * משמש את ה-Speaker כדי לבנות NarrateContext עבור קריינות קריאה לכלי.
    */
   recentAssistantMessages(n: number = 3): string[] {
-    const result: string[] = []
-    for (let i = this.bubbles.length - 1; i >= 0 && result.length < n; i--) {
-      const b = this.bubbles[i]
-      if (b?.kind === "message") {
-        result.unshift(b.segments.map((s) => s.text).join(""))
-      }
-    }
-    return result
+    return this.#transcript.recentAssistantMessages(n)
   }
 
   // ─── slice 23: session config ─── (תוספתי)

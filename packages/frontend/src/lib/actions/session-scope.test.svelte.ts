@@ -5,8 +5,8 @@
  * G2/G4 local switch/new/delete paths require attach() — agent-session.local-view harness.
  */
 
-import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import type { OrderKey } from "@drive-coding/core/voice/tts-queue"
+import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
@@ -53,7 +53,12 @@ function audioHarness() {
   const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
   const orderAlloc = new OrderAllocator()
   const speaker = new Speaker({
-    session,
+    transcript: {
+      get current() {
+        return session.transcript
+      },
+    },
+    lifecycle: session,
     settings,
     playlist,
     audioStream: sink,
@@ -95,7 +100,11 @@ const lv = vi.hoisted(() => {
   const state = {
     client,
     teedCallbacks: null as (AcpClientCallbacks & { onUpdate: TransportFn }) | null,
-    transports: [] as Array<{ close: TransportFn; closeAndWait: TransportFn; waitForOpen: TransportFn }>,
+    transports: [] as Array<{
+      close: TransportFn
+      closeAndWait: TransportFn
+      waitForOpen: TransportFn
+    }>,
     queue: [] as Array<{ mode: "open" }>,
   }
   return { state }
@@ -122,7 +131,10 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
       lv.state.teedCallbacks = callbacks as (typeof lv.state)["teedCallbacks"]
       return Promise.resolve(lv.state.client)
     }),
-    createAttachedAcpClient: vi.fn(function mockAttachedClient(_transport: unknown, callbacks: unknown) {
+    createAttachedAcpClient: vi.fn(function mockAttachedClient(
+      _transport: unknown,
+      callbacks: unknown,
+    ) {
       lv.state.teedCallbacks = callbacks as (typeof lv.state)["teedCallbacks"]
       return lv.state.client
     }),

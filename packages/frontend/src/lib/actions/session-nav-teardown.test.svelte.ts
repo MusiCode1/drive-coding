@@ -45,7 +45,18 @@ function harness() {
   const sink = makeMockSink()
   const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
   const orderAlloc = new OrderAllocator()
-  const speaker = new Speaker({ session, settings, playlist, audioStream: sink, orderAlloc })
+  const speaker = new Speaker({
+    transcript: {
+      get current() {
+        return session.transcript
+      },
+    },
+    lifecycle: session,
+    settings,
+    playlist,
+    audioStream: sink,
+    orderAlloc,
+  })
   bindSessionScope({ session, speaker, orderAlloc })
   return { session, sink, playlist }
 }

@@ -6,67 +6,64 @@ import "$lib/log"
 import PlaybackDebugPanel from "$lib/components/debug/PlaybackDebugPanel.svelte"
 import "../app.css"
 import type { Locale } from "@drive-coding/core/i18n"
-import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { onDestroy, onMount } from "svelte"
 import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import {
+  createAudioQueue,
+  createVoiceLive,
+  createVoiceOutput,
+} from "$lib/actions/create-voice-output"
+import { createMediaSessionPlaylistBridge } from "$lib/actions/media-session-playlist-wiring"
+import { bindSessionLifecycle } from "$lib/actions/session-lifecycle"
+import {
   setActiveAgents,
   setChatScroll,
   setCliAvailability,
-  setContentViewer,
   setComposerDraft,
-  setSessionMemo,
+  setContentViewer,
   setI18n,
   setModals,
-  setNotify,
   setModelStatus,
+  setNotify,
   setPresencePoller,
   setRecentProjects,
   setResponsive,
   setSession,
+  setSessionMemo,
   setSettings,
   setTheme,
   setUiShell,
   setVoice,
 } from "$lib/context"
 import { installDebugSurface } from "$lib/debug/dc"
-import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import { createConfigChangeRefresher } from "$lib/engines/config-change-socket"
-import { ttsStatus } from "$lib/view-models/tts-status.svelte"
 import { CuesEngine } from "$lib/engines/cues"
-import { createPendingCaptureWiring } from "$lib/engines/pending-capture-wiring"
-import { createMediaSessionPlaylistBridge } from "$lib/actions/media-session-playlist-wiring"
-import { PlayableSink } from "$lib/engines/playable-sink"
-import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { NotifyEngine } from "$lib/engines/notify.svelte"
+import { createPendingCaptureWiring } from "$lib/engines/pending-capture-wiring"
+import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { notifyTexts } from "$lib/notify-texts"
 import { normalizeSessionTransport } from "$lib/session/session-transport"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { beWsUrl } from "$lib/util/be-url"
-import { bindSessionLifecycle } from "$lib/actions/session-lifecycle"
 import { isPageHidden } from "$lib/util/page-visibility.svelte"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
-import { BubblePlayer } from "$lib/view-models/bubble-player.svelte"
 import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
-import { ContentViewerVM } from "$lib/view-models/content-viewer.svelte"
-import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
-import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
-import { I18nVM } from "$lib/view-models/i18n.svelte"
-import { Live } from "$lib/view-models/live.svelte"
 import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
-import { SessionMemoVM } from "$lib/view-models/session-memo.svelte"
+import { ContentViewerVM } from "$lib/view-models/content-viewer.svelte"
 import { Dictate } from "$lib/view-models/dictate.svelte"
+import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
 import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
 import { RecentProjects } from "$lib/view-models/recent-projects.svelte"
 import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
+import { SessionMemoVM } from "$lib/view-models/session-memo.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
-import { Speaker } from "$lib/view-models/speaker.svelte"
 import { ThemeVM } from "$lib/view-models/theme.svelte"
+import { ttsStatus } from "$lib/view-models/tts-status.svelte"
 import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
 
 let { children } = $props()
@@ -89,9 +86,8 @@ const session = new AgentSession({ cues, settings })
 // ─── audio-playlist ─── (A4 — entity משותף בין Speaker ו-BubblePlayer)
 // AudioSink נוצר כאן — Speaker מחזיק ref אליו (prepareSegment/clear).
 // AudioPlaylist נוצר לפני Speaker כי Speaker מקבל אותו כ-dependency.
-const sharedAudioStream = new PlayableSink()
-const sharedOrderAlloc = new OrderAllocator()
-const audioPlaylist = new AudioPlaylist(sharedAudioStream)
+const voiceAudio = createAudioQueue()
+const audioPlaylist = voiceAudio.playlist
 
 // ─── mic ─── (slice 3; voice-pending-persistence recovery)
 const { micRecovery, dictateRecovery } = createPendingCaptureWiring()
@@ -111,43 +107,24 @@ const dictate = new Dictate({ draft: composerDraft, mic, recovery: dictateRecove
 let theme!: ThemeVM
 
 // ─── live ─── (slice live-ears — תלוי ב-mic)
-const live = new Live({
-  mic,
-  session,
-  language: i18n.locale === "he" ? "he" : "en",
-  getVoiceName: () => settings.liveVoice,
-  getSettings: () => settings,
-  getTheme: () => theme,
-})
+const live = createVoiceLive(mic, session, settings, i18n.locale, () => theme)
 
-// ─── speaker ─── (§4.3: live ref — TTS off while Live open)
-const speaker = new Speaker({
+// ─── voice output ─── אותם instances ובאותו סדר יצירה
+const { speaker, voiceMode, modelStatus, bubblePlayer } = createVoiceOutput({
   session,
   settings,
   cues,
-  playlist: audioPlaylist,
-  audioStream: sharedAudioStream,
-  orderAlloc: sharedOrderAlloc,
+  audio: voiceAudio,
+  mic,
   live,
 })
 
-// ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker + live)
-const voiceMode = new VoiceMode({ mic, session, speaker, playlist: audioPlaylist, live })
-
-// ─── model-status ─── (msr-v2 — תלוי ב-session + speaker)
-const modelStatus = new ModelStatus({ session, speaker })
-
-// ─── bubble-player ─── (msr-v2 — תלוי ב-session + settings + audioPlaylist)
-// A4: playlist משותף עם Speaker — BubblePlayer יאוחד ב-Commit 3
-const bubblePlayer = new BubblePlayer({
-  session,
-  settings,
-  playlist: audioPlaylist,
-  orderAlloc: sharedOrderAlloc,
-})
-
 // ─── bt-chat-playback-nav: Media Session ↔ playlist (car mode, no keepalive) ───
-const mediaSessionBridge = createMediaSessionPlaylistBridge({ session, playlist: audioPlaylist, bubblePlayer })
+const mediaSessionBridge = createMediaSessionPlaylistBridge({
+  session,
+  playlist: audioPlaylist,
+  bubblePlayer,
+})
 
 $effect(() => {
   const hasMediaSession = typeof navigator !== "undefined" && "mediaSession" in navigator
@@ -218,7 +195,7 @@ void ttsCapabilities.refresh()
 // ─── presence-poller ─── (slice liveness C3 — חי לכל אורך הסשן, גם כשהפאנל סגור)
 const presencePoller = new PresencePoller(session)
 presencePoller.init()
-bindSessionLifecycle({ session, speaker, orderAlloc: sharedOrderAlloc, presencePoller })
+bindSessionLifecycle({ session, speaker, orderAlloc: voiceAudio.orderAlloc, presencePoller })
 
 // ─── wake-lock ─── (Track C — drive-first chrome)
 const wakeLock = new WakeLockEngine()
