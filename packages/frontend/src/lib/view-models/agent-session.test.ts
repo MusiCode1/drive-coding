@@ -24,6 +24,18 @@ import { stableBubbleKey } from "$lib/util/bubble-key"
 
 let onSessionUpdate: ((notification: unknown) => void) | null = null
 
+/** Wait for the real view reader to apply this frame, including opaque updates. */
+async function emitAndDrain(
+  session: AgentSession,
+  notification: unknown,
+  projected?: () => boolean,
+): Promise<void> {
+  const before = session.sessionState.version
+  if (!onSessionUpdate) throw new Error("ACP update callback was not installed")
+  onSessionUpdate(notification)
+  await vi.waitFor(() => expect(projected?.() ?? session.sessionState.version > before).toBe(true))
+}
+
 vi.mock("@drive-coding/provider/client", async (importActual) => {
   const actual = await importActual<typeof import("@drive-coding/provider/client")>()
   return {
@@ -139,23 +151,23 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     await session.attach({ cwd: "/tmp", cliKind: "opencode" })
   })
 
-  it("routes metadata frames through SessionScope.applyPatch", () => {
+  it("routes metadata frames through SessionScope.applyPatch", async () => {
     const owner = vi.spyOn(SessionScope.prototype, "applyPatch")
-    onSessionUpdate!({
+    await emitAndDrain(session, {
       update: { sessionUpdate: "available_commands_update", availableCommands: [] },
     })
-    onSessionUpdate!({ update: { sessionUpdate: "session_info_update", title: null } })
+    await emitAndDrain(session, { update: { sessionUpdate: "session_info_update", title: null } })
     expect(owner).toHaveBeenCalledWith({ kind: "commands", commands: [] })
     expect(owner).toHaveBeenCalledWith({ kind: "title", title: "" })
     expect(session.sessionTitle).toBe("")
     owner.mockRestore()
   })
 
-  it("Claude-style: 3 agent_message_chunk with same messageId → 1 bubble with 3 segments", () => {
+  it("Claude-style: 3 agent_message_chunk with same messageId → 1 bubble with 3 segments", async () => {
     expect(onSessionUpdate).not.toBeNull()
-    onSessionUpdate!(msgChunk("hello", "abc"))
-    onSessionUpdate!(msgChunk(" world", "abc"))
-    onSessionUpdate!(msgChunk("!", "abc"))
+    await emitAndDrain(session, msgChunk("hello", "abc"))
+    await emitAndDrain(session, msgChunk(" world", "abc"))
+    await emitAndDrain(session, msgChunk("!", "abc"))
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as MessageBubble
@@ -164,11 +176,11 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     expect(bubble.segments.map((s) => s.text).join("")).toBe("hello world!")
   })
 
-  it("Gemini-style: 3 agent_message_chunk with null messageId → 1 bubble with 3 segments", () => {
+  it("Gemini-style: 3 agent_message_chunk with null messageId → 1 bubble with 3 segments", async () => {
     expect(onSessionUpdate).not.toBeNull()
-    onSessionUpdate!(msgChunk("hello", null))
-    onSessionUpdate!(msgChunk(" world", null))
-    onSessionUpdate!(msgChunk("!", null))
+    await emitAndDrain(session, msgChunk("hello", null))
+    await emitAndDrain(session, msgChunk(" world", null))
+    await emitAndDrain(session, msgChunk("!", null))
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as MessageBubble
@@ -177,10 +189,10 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     expect(bubble.segments.map((s) => s.text).join("")).toBe("hello world!")
   })
 
-  it("Gemini-style: 2 agent_thought_chunk with null messageId → 1 bubble with 2 segments", () => {
+  it("Gemini-style: 2 agent_thought_chunk with null messageId → 1 bubble with 2 segments", async () => {
     expect(onSessionUpdate).not.toBeNull()
-    onSessionUpdate!(thoughtChunk("step 1", null))
-    onSessionUpdate!(thoughtChunk(" step 2", null))
+    await emitAndDrain(session, thoughtChunk("step 1", null))
+    await emitAndDrain(session, thoughtChunk(" step 2", null))
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as ThoughtBubble
@@ -188,11 +200,11 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     expect(bubble.segments.map((s) => s.text).join("")).toBe("step 1 step 2")
   })
 
-  it("msg → thought → msg (all null) → 3 bubbles (kind alternates)", () => {
+  it("msg → thought → msg (all null) → 3 bubbles (kind alternates)", async () => {
     expect(onSessionUpdate).not.toBeNull()
-    onSessionUpdate!(msgChunk("hello", null))
-    onSessionUpdate!(thoughtChunk("thinking", null))
-    onSessionUpdate!(msgChunk(" world", null))
+    await emitAndDrain(session, msgChunk("hello", null))
+    await emitAndDrain(session, thoughtChunk("thinking", null))
+    await emitAndDrain(session, msgChunk(" world", null))
 
     expect(session.bubbles).toHaveLength(3)
     expect(session.bubbles[0]!.kind).toBe("message")
@@ -207,20 +219,20 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     )
   })
 
-  it("null msg → null user → 2 bubbles (kind changes)", () => {
+  it("null msg → null user → 2 bubbles (kind changes)", async () => {
     expect(onSessionUpdate).not.toBeNull()
-    onSessionUpdate!(msgChunk("hello", null))
-    onSessionUpdate!(userChunk("user text", null))
+    await emitAndDrain(session, msgChunk("hello", null))
+    await emitAndDrain(session, userChunk("user text", null))
 
     expect(session.bubbles).toHaveLength(2)
     expect(session.bubbles[0]!.kind).toBe("message")
     expect(session.bubbles[1]!.kind).toBe("user")
   })
 
-  it("user_message_chunk with same messageId → 1 bubble with 2 segments (existing behavior)", () => {
+  it("user_message_chunk with same messageId → 1 bubble with 2 segments (existing behavior)", async () => {
     expect(onSessionUpdate).not.toBeNull()
-    onSessionUpdate!(userChunk("first", "x"))
-    onSessionUpdate!(userChunk(" second", "x"))
+    await emitAndDrain(session, userChunk("first", "x"))
+    await emitAndDrain(session, userChunk(" second", "x"))
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as UserBubble
@@ -228,11 +240,11 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     expect(bubble.segments.map((s) => s.text).join("")).toBe("first second")
   })
 
-  it("019fed5d scenario: interleaved chunks with same messageId → zero duplicate keys in stableBubbleKey", () => {
+  it("019fed5d scenario: interleaved chunks with same messageId → zero duplicate keys in stableBubbleKey", async () => {
     expect(onSessionUpdate).not.toBeNull()
-    onSessionUpdate?.(msgChunk("part 1", "msg-019fed5d"))
-    onSessionUpdate?.(thoughtChunk("thinking...", "msg-019fed5d"))
-    onSessionUpdate?.(msgChunk("part 2", "msg-019fed5d"))
+    await emitAndDrain(session, msgChunk("part 1", "msg-019fed5d"))
+    await emitAndDrain(session, thoughtChunk("thinking...", "msg-019fed5d"))
+    await emitAndDrain(session, msgChunk("part 2", "msg-019fed5d"))
 
     // slice msg-coalesce: part 2 coalesces into part 1 (skips same-mid thought)
     expect(session.bubbles).toHaveLength(2)
@@ -244,15 +256,15 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     expect(keys).toEqual(["message:m:msg-019fed5d", "thought:m:msg-019fed5d"])
   })
 
-  it("message → tool → message with same messageId → coalesces into one bubble", () => {
+  it("message → tool → message with same messageId → coalesces into one bubble", async () => {
     expect(onSessionUpdate).not.toBeNull()
-    onSessionUpdate?.(msgChunk("before tool", "m1"))
+    await emitAndDrain(session, msgChunk("before tool", "m1"))
     // ⚠️ מיזוג dev → שרשרת: הגרסה של dev דחפה בועת-כלי ידנית ל-session.bubbles.
     // בשרשרת המצב מונע מ-core, ודחיפה ידנית עוקפת אותו — canGroupWith היה רואה
     // את הודעת "before tool" כאחרונה ומקבץ, כלומר הטסט בדק את ה-harness ולא
     // את הקוד. כאן הכלי עובר במסלול האמיתי, בדיוק כמו בייצור.
-    onSessionUpdate?.(toolCall("call-1", "read"))
-    onSessionUpdate?.(msgChunk("after tool", "m1"))
+    await emitAndDrain(session, toolCall("call-1", "read"))
+    await emitAndDrain(session, msgChunk("after tool", "m1"))
 
     const list = session.renderBubbles
     // slice msg-coalesce: after-tool chunk merges back into the first message bubble
@@ -260,10 +272,10 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     expect(list.map((b) => stableBubbleKey(b, list))).toEqual(["message:m:m1", "tool:t:call-1"])
   })
 
-  it("second tool_call with the same toolCallId updates the existing bubble (no duplicate key)", () => {
+  it("second tool_call with the same toolCallId updates the existing bubble (no duplicate key)", async () => {
     expect(onSessionUpdate).not.toBeNull()
-    onSessionUpdate?.(toolCall("call-1", "Read"))
-    onSessionUpdate?.(toolCall("call-1", "Read file"))
+    await emitAndDrain(session, toolCall("call-1", "Read"))
+    await emitAndDrain(session, toolCall("call-1", "Read file"))
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as ToolBubble
@@ -285,10 +297,10 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
   // patch מסוג reset שבונה את הבועות מחדש מ-core, כך שאין כפילות.
   //
   // מה שנשמר כאן הוא מה ש-dev באמת הגן עליו: **אין מפתחות כפולים**.
-  it("user_message_chunk chunks with the same messageId group into one bubble (no duplicate keys)", () => {
+  it("user_message_chunk chunks with the same messageId group into one bubble (no duplicate keys)", async () => {
     expect(onSessionUpdate).not.toBeNull()
-    onSessionUpdate?.(userChunk("my ", "acp-msg-1"))
-    onSessionUpdate?.(userChunk("prompt", "acp-msg-1"))
+    await emitAndDrain(session, userChunk("my ", "acp-msg-1"))
+    await emitAndDrain(session, userChunk("prompt", "acp-msg-1"))
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as UserBubble
@@ -300,9 +312,9 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     expect(new Set(keys).size).toBe(keys.length)
   })
 
-  it("standalone whitespace-only chunks (\n) do not create empty message bubbles when canGroup is false", () => {
+  it("standalone whitespace-only chunks (\n) do not create empty message bubbles when canGroup is false", async () => {
     expect(onSessionUpdate).not.toBeNull()
-    onSessionUpdate?.(msgChunk("hello", "m1"))
+    await emitAndDrain(session, msgChunk("hello", "m1"))
     // Simulate tool call inserting a non-groupable bubble
     session.bubbles.push({
       id: "t1",
@@ -314,7 +326,7 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     })
 
     // Standalone newline chunk after tool call
-    onSessionUpdate?.(msgChunk("\n", "m1"))
+    await emitAndDrain(session, msgChunk("\n", "m1"))
 
     // Should NOT create a 3rd bubble just for "\n"
     expect(session.bubbles).toHaveLength(2)
@@ -551,7 +563,7 @@ describe("AgentSession.bypassActive — reads configOptions first, falls back to
     await session.attach({ cwd: "/tmp", cliKind: "claude" })
   })
 
-  it("returns true when configOptions has mode=select with currentValue=bypassPermissions", () => {
+  it("returns true when configOptions has mode=select with currentValue=bypassPermissions", async () => {
     session.configOptions = [
       {
         id: "mode",
@@ -565,7 +577,7 @@ describe("AgentSession.bypassActive — reads configOptions first, falls back to
     expect(session.bypassActive).toBe(true)
   })
 
-  it("returns false when configOptions has mode=select with currentValue=default", () => {
+  it("returns false when configOptions has mode=select with currentValue=default", async () => {
     session.configOptions = [
       {
         id: "mode",
@@ -579,7 +591,7 @@ describe("AgentSession.bypassActive — reads configOptions first, falls back to
     expect(session.bypassActive).toBe(false)
   })
 
-  it("falls back to modes.currentModeId when no mode configOption exists", () => {
+  it("falls back to modes.currentModeId when no mode configOption exists", async () => {
     session.configOptions = []
     session.modes = {
       currentModeId: "bypassPermissions",
@@ -650,8 +662,12 @@ describe("AgentSession §11 — user_message_chunk non-text ContentBlocks", () =
     await session.attach({ cwd: "/tmp", cliKind: "opencode" })
   })
 
-  it("image chunk → UserBubble with attachments[0] containing dataBase64+mimeType", () => {
-    onSessionUpdate!(userImageChunk("abc123", "image/jpeg", "msg-1"))
+  it("image chunk → UserBubble with attachments[0] containing dataBase64+mimeType", async () => {
+    await emitAndDrain(
+      session,
+      userImageChunk("abc123", "image/jpeg", "msg-1"),
+      () => (session.bubbles[0] as UserBubble | undefined)?.attachments?.length === 1,
+    )
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as UserBubble
@@ -662,9 +678,13 @@ describe("AgentSession §11 — user_message_chunk non-text ContentBlocks", () =
     expect(bubble.attachments![0]!.mimeType).toBe("image/jpeg")
   })
 
-  it("text chunk + image chunk with same messageId → 1 bubble with segment + attachment", () => {
-    onSessionUpdate!(userChunk("hello", "msg-2"))
-    onSessionUpdate!(userImageChunk("imgdata", "image/png", "msg-2"))
+  it("text chunk + image chunk with same messageId → 1 bubble with segment + attachment", async () => {
+    await emitAndDrain(session, userChunk("hello", "msg-2"))
+    await emitAndDrain(
+      session,
+      userImageChunk("imgdata", "image/png", "msg-2"),
+      () => (session.bubbles[0] as UserBubble | undefined)?.attachments?.length === 1,
+    )
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as UserBubble
@@ -675,8 +695,12 @@ describe("AgentSession §11 — user_message_chunk non-text ContentBlocks", () =
     expect(bubble.attachments![0]!.mimeType).toBe("image/png")
   })
 
-  it("image chunk only (no text) → UserBubble with attachments and empty segments", () => {
-    onSessionUpdate!(userImageChunk("onlyimg", "image/gif", null))
+  it("image chunk only (no text) → UserBubble with attachments and empty segments", async () => {
+    await emitAndDrain(
+      session,
+      userImageChunk("onlyimg", "image/gif", null),
+      () => (session.bubbles[0] as UserBubble | undefined)?.attachments?.length === 1,
+    )
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as UserBubble
@@ -686,8 +710,12 @@ describe("AgentSession §11 — user_message_chunk non-text ContentBlocks", () =
     expect(bubble.attachments![0]!.mimeType).toBe("image/gif")
   })
 
-  it("resource_link chunk → UserBubble with contentPlaceholders[kind=resource_link, label=name] (no silent loss)", () => {
-    onSessionUpdate!(userResourceLinkChunk("report.pdf", "file:///home/user/report.pdf", "msg-3"))
+  it("resource_link chunk → UserBubble with contentPlaceholders[kind=resource_link, label=name] (no silent loss)", async () => {
+    await emitAndDrain(
+      session,
+      userResourceLinkChunk("report.pdf", "file:///home/user/report.pdf", "msg-3"),
+      () => (session.bubbles[0] as UserBubble | undefined)?.contentPlaceholders?.length === 1,
+    )
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as UserBubble
@@ -701,8 +729,12 @@ describe("AgentSession §11 — user_message_chunk non-text ContentBlocks", () =
     expect(bubble.segments).toHaveLength(0)
   })
 
-  it("audio chunk → UserBubble with contentPlaceholders[kind=audio] (no silent loss)", () => {
-    onSessionUpdate!(userAudioChunk("msg-4"))
+  it("audio chunk → UserBubble with contentPlaceholders[kind=audio] (no silent loss)", async () => {
+    await emitAndDrain(
+      session,
+      userAudioChunk("msg-4"),
+      () => (session.bubbles[0] as UserBubble | undefined)?.contentPlaceholders?.length === 1,
+    )
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as UserBubble
@@ -713,8 +745,8 @@ describe("AgentSession §11 — user_message_chunk non-text ContentBlocks", () =
     expect(bubble.segments).toHaveLength(0)
   })
 
-  it("regression: text-only user_message_chunk still creates segment (no attachment)", () => {
-    onSessionUpdate!(userChunk("just text", "msg-5"))
+  it("regression: text-only user_message_chunk still creates segment (no attachment)", async () => {
+    await emitAndDrain(session, userChunk("just text", "msg-5"))
 
     const bubble = session.bubbles[0] as UserBubble
     expect(bubble.segments).toHaveLength(1)
@@ -722,8 +754,8 @@ describe("AgentSession §11 — user_message_chunk non-text ContentBlocks", () =
     expect(bubble.attachments).toBeUndefined()
   })
 
-  it("regression: agent_message_chunk text still works correctly", () => {
-    onSessionUpdate!(msgChunk("agent reply", "msg-6"))
+  it("regression: agent_message_chunk text still works correctly", async () => {
+    await emitAndDrain(session, msgChunk("agent reply", "msg-6"))
 
     expect(session.bubbles).toHaveLength(1)
     expect(session.bubbles[0]!.kind).toBe("message")

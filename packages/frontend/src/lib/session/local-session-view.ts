@@ -11,32 +11,27 @@
  * ─── 3 הדליפות שנסגרות כאן ───
  * 1. waitForOpen/closeAndWait/sendRaw — מוסתרים כאן (WsAcpTransport אינו נחשף לחוץ)
  * 2. createAcpClient vs createAttachedAcpClient — LocalSessionView מחליט internally
- * 3. TAKEOVER_CLOSE_CODE (4409) — מוגדר כ-constant כאן
+ * 3. קוד סגירת takeover מנוהל בשכבת התעבורה, לא ב-view
  *
  * ─── slice session-view-port C2 (TDD) ───
  */
 
-import type {
-  CreateElicitationRequest,
-  RequestPermissionRequest,
-  SessionNotification,
-} from "@agentclientprotocol/sdk"
-import {
-  createInitialSessionState,
-  type Patch,
-  reduce,
-  type SessionState,
-} from "@drive-coding/core/session"
+import type { CreateElicitationRequest, RequestPermissionRequest } from "@agentclientprotocol/sdk"
+import { createInitialSessionState, type SessionState } from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks, PromptBlocks } from "@drive-coding/provider/client"
 import { createExtClient } from "$lib/adapters/ext"
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitation"
 import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
 import type { SessionView, ViewEmission } from "./session-view"
-
-// ─── Takeover close code (סוגר דליפה #3) ───
-/** ⚠️ חייב להתאים ל-TAKEOVER_CODE ב-packages/backend/src/delivery/ws-agent.ts. */
-const TAKEOVER_CLOSE_CODE = 4409
+import {
+  closeViewStream,
+  createViewStream,
+  emitLocalSdkMessage,
+  ingestLocalUpdate as ingest,
+  localClientCallbacks,
+  missingLocalClient,
+} from "./session-view-projection"
 
 /**
  * LocalSessionView — מימוש של SessionView לסביבה in-process.
@@ -49,7 +44,13 @@ export class LocalSessionView implements SessionView {
   readonly patches: ReadableStream<ViewEmission>
 
   // ─── Session state (C1 fields) ───
-  #state: SessionState = createInitialSessionState({ sessionId: null })
+  #state: SessionState
+  #sessionToken = 0
+  emissionSequence = 0
+
+  get sessionToken(): number {
+    return this.#sessionToken
+  }
 
   // ─── Connection ───
   #client: AcpClient | null = null
@@ -65,11 +66,11 @@ export class LocalSessionView implements SessionView {
 
   // ─── Connection params (set at construction) ───
   readonly #cwd: string
-  readonly #cliKind: string
 
   constructor(opts: {
     cwd: string
     cliKind: string
+    initialSessionId?: string
     /**
      * Client factory — invoked by newSession()/loadSession().
      *
@@ -81,14 +82,10 @@ export class LocalSessionView implements SessionView {
     createClient?: (callbacks: AcpClientCallbacks) => Promise<AcpClient>
   }) {
     this.#cwd = opts.cwd
-    this.#cliKind = opts.cliKind
-    this.#createClientFn = opts.createClient ?? this.#defaultCreateClient.bind(this)
+    this.#state = createInitialSessionState({ sessionId: opts.initialSessionId ?? null })
+    this.#createClientFn = opts.createClient ?? missingLocalClient
 
-    this.patches = new ReadableStream<ViewEmission>({
-      start: (controller) => {
-        this.#controller = controller
-      },
-    })
+    this.patches = createViewStream((controller) => (this.#controller = controller))
   }
 
   // ─── State getter ───
@@ -99,23 +96,25 @@ export class LocalSessionView implements SessionView {
 
   // ─── slice local-view-wiring C2: adopt · dispose · observerCallbacks (TDD) ───
 
+  get observerCallbacks(): Pick<AcpClientCallbacks, "onUpdate" | "onExtNotification"> {
+    return {
+      onUpdate: this.ingestUpdate.bind(this),
+      onExtNotification: (method, params) =>
+        emitLocalSdkMessage(this.#controller, this.#sessionToken, this.#state, method, params),
+    }
+  }
+
   /**
    * ה-callbacks שה-observer (ה-VM) צריך. **קריאה בלבד** — מחזירי-ערך
    * (onRequestPermission/onCreateElicitation) אינם כאן: שני עונים = תשובה כפולה.
    */
-  get observerCallbacks(): Pick<AcpClientCallbacks, "onUpdate" | "onExtNotification"> {
-    return {
-      onUpdate: this.#onUpdate.bind(this),
-      onExtNotification: this.#onExtNotification.bind(this),
-    }
-  }
-
   /**
    * מאמץ לקוח שה-VM יצר (ה-VM יוצר, ה-view מאמץ — brief §2.2). **מאפס** את ה-state —
    * כל קריאה היא סשן/חיבור חדש. ⚠️ אינו יורה getQuota (של ה-VM לעשות אם צריך), ואינו
    * סוגר/משחרר לקוח קודם — ה-VM מנהל את הלקוח; כאן רק מצביע + state.
    */
   adopt(input: { client: AcpClient; sessionId: string }): void {
+    this.#sessionToken++
     this.#client = input.client
     this.#sessionId = input.sessionId
     this.#state = createInitialSessionState({ sessionId: input.sessionId })
@@ -129,47 +128,23 @@ export class LocalSessionView implements SessionView {
   dispose(): void {
     this.#client = null
     this.#sessionId = null
-    try {
-      this.#controller?.close()
-    } catch {
-      // כבר סגור/מבוטל
-    }
-  }
-
-  // ─── Default client factory (production wiring — C4) ───
-
-  async #defaultCreateClient(_callbacks: AcpClientCallbacks): Promise<AcpClient> {
-    throw new Error(
-      "LocalSessionView: default production client factory not yet implemented. " +
-        "Pass `createClient` option or use C4 wiring.",
-    )
+    closeViewStream(this.#controller)
   }
 
   // ─── Callbacks (passed to AcpClient) ───
 
   #makeCallbacks(): AcpClientCallbacks {
-    return {
-      onUpdate: this.#onUpdate.bind(this),
-      onRequestPermission: this.#onRequestPermission.bind(this),
-      onCreateElicitation: this.#onCreateElicitation.bind(this),
-      onExtNotification: this.#onExtNotification.bind(this),
-    }
+    return localClientCallbacks(
+      this.observerCallbacks,
+      this.#onRequestPermission.bind(this),
+      this.#onCreateElicitation.bind(this),
+    )
   }
 
-  /**
-   * מקבל session/update notification, מריץ reduce, ומעדכן state + stream.
-   * (סוגר דליפה #1: transport internals אינם נחשפים)
-   */
-  #onUpdate(notification: SessionNotification): void {
-    const { state, patches } = reduce(this.#state, notification.update)
-    this.#state = state
-    if (patches.length > 0) {
-      try {
-        this.#controller?.enqueue({ patches, updates: [] })
-      } catch {
-        // Stream cancelled or closed — ignore
-      }
-    }
+  ingestUpdate(notification: { update: unknown }): void {
+    const result = ingest(this.#controller, this.#sessionToken, this.#state, notification.update)
+    this.#state = result.state
+    if (result.emitted) this.emissionSequence++
   }
 
   /**
@@ -215,14 +190,6 @@ export class LocalSessionView implements SessionView {
         },
       }
     })
-  }
-
-  /**
-   * מקבל ext notifications (_drive/capabilities וכו').
-   * TODO C4: handle _drive/capabilities → update state.capabilities
-   */
-  #onExtNotification(_method: string, _params: Record<string, unknown>): void {
-    // placeholder — C4 יממש
   }
 
   // ─── Cancel helpers ───

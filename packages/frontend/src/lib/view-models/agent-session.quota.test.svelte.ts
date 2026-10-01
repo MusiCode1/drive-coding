@@ -64,7 +64,9 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
           ? callbackOrCallbacks
           : callbackOrCallbacks.onUpdate
       capturedExtCallback =
-        typeof callbackOrCallbacks === "function" ? undefined : callbackOrCallbacks.onExtNotification
+        typeof callbackOrCallbacks === "function"
+          ? undefined
+          : callbackOrCallbacks.onExtNotification
       return Promise.resolve(mockClient as unknown as AcpClient)
     }),
   }
@@ -124,10 +126,10 @@ vi.stubGlobal("fetch", fetchMock)
 
 // ─── Import after mocks ───────────────────────────────────────────────────────
 
-import { AgentSession } from "./agent-session.svelte"
 // slice session-budget-meter Commit 5: the real fixture — proves the committed JSON
 // round-trips through #loadMockSession's mockState handling (data-flow-bridge integration).
 import sessionBudgetMonthlyFixture from "../../../static/fixtures/session-budget-monthly.json"
+import { AgentSession } from "./agent-session.svelte"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -159,7 +161,11 @@ async function buildConnectedSession(): Promise<AgentSession> {
   return session
 }
 
-function makeDeferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void } {
+function makeDeferred<T>(): {
+  promise: Promise<T>
+  resolve: (v: T) => void
+  reject: (e: unknown) => void
+} {
   let resolve!: (v: T) => void
   let reject!: (e: unknown) => void
   const promise = new Promise<T>((res, rej) => {
@@ -332,7 +338,11 @@ describe("AgentSession — refreshQuota() DEV mock harness", () => {
 
   it("before open: quota=null even though a mock session is loaded", async () => {
     const session = new AgentSession()
-    await session.loadSession({ sessionId: "mock:session-budget-monthly", cwd: "/mock", cliKind: "opencode" })
+    await session.loadSession({
+      sessionId: "mock:session-budget-monthly",
+      cwd: "/mock",
+      cliKind: "opencode",
+    })
     session._setMockQuotaForTest({
       provider: "synthetic",
       windows: [
@@ -350,7 +360,11 @@ describe("AgentSession — refreshQuota() DEV mock harness", () => {
 
   it("refreshQuota() copies the injected mock snapshot to quota, without calling ext", async () => {
     const session = new AgentSession()
-    await session.loadSession({ sessionId: "mock:session-budget-monthly", cwd: "/mock", cliKind: "opencode" })
+    await session.loadSession({
+      sessionId: "mock:session-budget-monthly",
+      cwd: "/mock",
+      cliKind: "opencode",
+    })
     const monthlySnapshot: QuotaSnapshot = {
       provider: "synthetic",
       windows: [
@@ -383,7 +397,11 @@ describe("AgentSession — refreshQuota() DEV mock harness", () => {
 
   it("#mockQuota resets on #cleanup — does not leak into the next session", async () => {
     const session = new AgentSession()
-    await session.loadSession({ sessionId: "mock:session-budget-monthly", cwd: "/mock", cliKind: "opencode" })
+    await session.loadSession({
+      sessionId: "mock:session-budget-monthly",
+      cwd: "/mock",
+      cliKind: "opencode",
+    })
     session._setMockQuotaForTest({ provider: "synthetic", windows: [] })
 
     session.detach()
@@ -430,7 +448,33 @@ describe("AgentSession — /chat?mock=session-budget-monthly data-flow-bridge (C
       cliKind: "opencode",
     })
 
-    expect(session.contextUsage).toEqual({ used: 25_000, size: 200_000, cost: undefined })
+    await vi.waitFor(() =>
+      expect(session.contextUsage).toEqual({ used: 25_000, size: 200_000, cost: undefined }),
+    )
+  })
+
+  it("mock fixture raw updates cannot render while its LocalSessionView stream is muted", async () => {
+    const originalGetReader = ReadableStream.prototype.getReader
+    const muted = new ReadableStream()
+    const reader = originalGetReader.call(muted)
+    const spy = vi
+      .spyOn(ReadableStream.prototype, "getReader")
+      .mockImplementation(() => reader as never)
+    try {
+      const session = new AgentSession()
+      await session.loadSession({
+        sessionId: "mock:session-budget-monthly",
+        cwd: "/mock",
+        cliKind: "opencode",
+      })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(session.contextUsage).toBeNull()
+      expect(session.bubbles).toEqual([])
+      expect(session.status).toBe("connected")
+    } finally {
+      spy.mockRestore()
+      await reader.cancel()
+    }
   })
 
   it("mockState.capabilities merges into #capabilities — supports.usage becomes true", async () => {

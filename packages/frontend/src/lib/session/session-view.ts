@@ -11,9 +11,22 @@
 import type { Patch, SessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import type { SessionInfo } from "$lib/adapters/sessions"
+import type { FramePatch } from "./frame-router"
+
+/** One reduced input, captured before a later input can advance the view. */
+export type ViewFrame = {
+  rawUpdate?: unknown
+  state: SessionState
+  corePatches: Patch[]
+  displayIntents: FramePatch[]
+}
 
 /** Single delivery unit from view to VM. Order guaranteed: same channel, same queue. */
 export type ViewEmission = {
+  /** Generation captured when queued; adopt/reconnect invalidates older deliveries. */
+  sessionToken?: number
+  /** Ordered frame-local state, core patches, and classified display intent. */
+  frames?: ViewFrame[]
   /** Patches produced from the batch. Advance view state. */
   patches: Patch[]
   /** Raw session/update as received from the wire. Empty on synthetic reset. */
@@ -30,6 +43,8 @@ export type ViewEmission = {
  * ה-VM (C3) מקבל SessionView ב-DI ואינו יודע על המימוש.
  */
 export interface SessionView {
+  /** Current generation of this view's session. */
+  readonly sessionToken?: number
   /** מצב הסשן העכשווי — כולל כל שדות SessionState מ-C1 (status, turnState, pending, ...). */
   readonly state: SessionState
 

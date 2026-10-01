@@ -107,9 +107,10 @@ async function buildConnectedSession(): Promise<AgentSession> {
 }
 
 /** הזרקת SessionNotification דרך ה-captured listener — האמיתי, לא helper פנימי (brief §4) */
-function inject(update: Record<string, unknown>): void {
+async function inject(update: Record<string, unknown>): Promise<void> {
   if (!capturedListener) throw new Error("listener not captured — attach() not called?")
   capturedListener({ update } as unknown as SessionNotification)
+  await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 // ─── beforeEach ───────────────────────────────────────────────────────────────
@@ -131,7 +132,7 @@ describe("AgentSession — usage_update handler", () => {
     const session = await buildConnectedSession()
     expect(session.contextUsage).toBeNull()
 
-    inject({
+    await inject({
       sessionUpdate: "usage_update",
       used: 25_000,
       size: 200_000,
@@ -148,7 +149,7 @@ describe("AgentSession — usage_update handler", () => {
   it("שומר cost קודם כש-update חדש משמיט cost (anti-flicker)", async () => {
     const session = await buildConnectedSession()
 
-    inject({
+    await inject({
       sessionUpdate: "usage_update",
       used: 10_000,
       size: 200_000,
@@ -157,7 +158,7 @@ describe("AgentSession — usage_update handler", () => {
     expect(session.contextUsage?.cost).toEqual({ amount: 0.05, currency: "USD" })
 
     // update חדש בלי cost — לא אמור למחוק את ה-cost הקודם
-    inject({ sessionUpdate: "usage_update", used: 15_000, size: 200_000 })
+    await inject({ sessionUpdate: "usage_update", used: 15_000, size: 200_000 })
 
     expect(session.contextUsage).toEqual({
       used: 15_000,
@@ -169,22 +170,22 @@ describe("AgentSession — usage_update handler", () => {
   it("מעדכן נכון על פני כמה updates ברצף", async () => {
     const session = await buildConnectedSession()
 
-    inject({ sessionUpdate: "usage_update", used: 1_000, size: 200_000 })
+    await inject({ sessionUpdate: "usage_update", used: 1_000, size: 200_000 })
     expect(session.contextUsage?.used).toBe(1_000)
 
-    inject({ sessionUpdate: "usage_update", used: 2_000, size: 200_000 })
+    await inject({ sessionUpdate: "usage_update", used: 2_000, size: 200_000 })
     expect(session.contextUsage?.used).toBe(2_000)
 
-    inject({ sessionUpdate: "usage_update", used: 3_000, size: 200_000 })
+    await inject({ sessionUpdate: "usage_update", used: 3_000, size: 200_000 })
     expect(session.contextUsage?.used).toBe(3_000)
   })
 
   it("size=0 לא קורס — הערך נשמר כפי שהוא (ה-UI אחראי ל-clamp/הסתרה)", async () => {
     const session = await buildConnectedSession()
 
-    expect(() => {
-      inject({ sessionUpdate: "usage_update", used: 0, size: 0 })
-    }).not.toThrow()
+    await expect(
+      inject({ sessionUpdate: "usage_update", used: 0, size: 0 }),
+    ).resolves.toBeUndefined()
 
     expect(session.contextUsage).toEqual({ used: 0, size: 0, cost: undefined })
   })
@@ -192,7 +193,7 @@ describe("AgentSession — usage_update handler", () => {
   it("#captureSessionConfig מאפס contextUsage בהחלפת/פתיחת סשן", async () => {
     const session = await buildConnectedSession()
 
-    inject({
+    await inject({
       sessionUpdate: "usage_update",
       used: 5_000,
       size: 200_000,
@@ -210,7 +211,7 @@ describe("AgentSession — usage_update handler", () => {
   it("#cleanup (detach) מאפס contextUsage", async () => {
     const session = await buildConnectedSession()
 
-    inject({ sessionUpdate: "usage_update", used: 5_000, size: 200_000 })
+    await inject({ sessionUpdate: "usage_update", used: 5_000, size: 200_000 })
     expect(session.contextUsage).not.toBeNull()
 
     session.detach()

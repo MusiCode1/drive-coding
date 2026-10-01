@@ -24,7 +24,7 @@ import {
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { toPatches } from "$lib/session/frame-router"
-import type { SessionView, ViewEmission } from "$lib/session/session-view"
+import type { SessionView, ViewEmission, ViewFrame } from "$lib/session/session-view"
 import type { WireUpdateBatch } from "$lib/session/sse-reader"
 import type { Bubble } from "$lib/types/bubble"
 
@@ -54,6 +54,7 @@ function rawUpdate(entry: FixtureEntry): unknown {
 // ─── HTTP replay view (mirrors RemoteSessionView.#applyIncoming) ────────────
 
 class HttpReplayView implements SessionView {
+  readonly sessionToken = 1
   state: SessionState = $state(createInitialSessionState({ sessionId: null }))
 
   #controller: ReadableStreamDefaultController<ViewEmission> | null = null
@@ -77,21 +78,28 @@ class HttpReplayView implements SessionView {
     if (batch.version <= this.#lastVersion) return
     let state = this.state
     const produced: Patch[] = []
+    const frames: ViewFrame[] = []
     for (const update of batch.updates) {
       const { state: next, patches } = reduce(state, update)
       state = next
       produced.push(...patches)
+      frames.push({
+        rawUpdate: update,
+        state: { ...next, version: batch.version },
+        corePatches: patches,
+        displayIntents: toPatches({ update }),
+      })
     }
     this.state = { ...state, version: batch.version }
     this.#lastVersion = batch.version
     if (produced.length > 0 || batch.updates.length > 0) {
-      this.#emit(produced, batch.updates)
+      this.#emit(produced, batch.updates, frames)
     }
   }
 
-  #emit(patches: Patch[], updates: unknown[] = []): void {
+  #emit(patches: Patch[], updates: unknown[] = [], frames: ViewFrame[] = []): void {
     try {
-      this.#controller?.enqueue({ patches, updates })
+      this.#controller?.enqueue({ sessionToken: this.sessionToken, frames, patches, updates })
     } catch {
       // stream closed
     }
@@ -318,6 +326,7 @@ async function runWsPath(): Promise<{ observed: unknown[]; bubbles: Bubble[] }> 
       )
     }
   }
+  await delay()
   return { observed, bubbles: [...agent.bubbles] }
 }
 

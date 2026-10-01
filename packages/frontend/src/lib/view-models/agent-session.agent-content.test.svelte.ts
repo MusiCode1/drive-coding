@@ -87,8 +87,9 @@ describe("AgentSession agent non-text content", () => {
     expect(onSessionUpdate).not.toBeNull()
   })
 
-  it("agent_message_chunk with image → MessageBubble with contentPlaceholders (not dropped)", () => {
+  it("agent_message_chunk with image → MessageBubble with contentPlaceholders (not dropped)", async () => {
     onSessionUpdate!(agentImageChunk("msg-img"))
+    await vi.waitFor(() => expect(session.bubbles).toHaveLength(1))
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as MessageBubble
@@ -98,8 +99,9 @@ describe("AgentSession agent non-text content", () => {
     expect(bubble.segments).toHaveLength(0)
   })
 
-  it("regression: agent_message_chunk text behaves as before", () => {
+  it("regression: agent_message_chunk text behaves as before", async () => {
     onSessionUpdate!(agentTextChunk("hello agent", "msg-txt"))
+    await vi.waitFor(() => expect(session.bubbles).toHaveLength(1))
 
     expect(session.bubbles).toHaveLength(1)
     const bubble = session.bubbles[0] as MessageBubble
