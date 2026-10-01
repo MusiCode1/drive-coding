@@ -5,19 +5,15 @@
  * ─── slice live-input-mode (Commit 1) ───
  */
 import {
-  setAudioPlaylist,
   setComposerDraft,
-  setDictate,
   setI18n,
-  setLive,
-  setMic,
   setModelStatus,
   setResponsive,
   setSession,
   setSettings,
-  setSpeaker,
   setUiShell,
-  setVoiceMode,
+  setVoice,
+  type VoiceFacade,
 } from "$lib/context"
 import type { MessageKey } from "@drive-coding/core/i18n"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
@@ -143,17 +139,12 @@ const composerDraft = new ComposerDraft()
 
 setI18n(fakeI18n)
 setComposerDraft(composerDraft)
-setDictate(fakeDictate)
 setSession(fakeSession)
 setResponsive(fakeResponsive)
 setUiShell(uiShell)
-setMic(fakeMic)
-setLive(fakeLive)
-setVoiceMode(fakeVoiceMode)
+setVoice({ dictate: fakeDictate, mic: fakeMic, live: fakeLive, voiceMode: fakeVoiceMode, speaker: fakeSpeaker, audioPlaylist: fakePlaylist as never } as unknown as VoiceFacade)
 setModelStatus(fakeModelStatus)
 setSettings(fakeSettings)
-setSpeaker(fakeSpeaker)
-setAudioPlaylist(fakePlaylist as never)
 </script>
 
 <RecordFooter />

@@ -12,18 +12,12 @@ import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import {
   setActiveAgents,
-  setAudioPlaylist,
-  setBubblePlayer,
   setChatScroll,
   setCliAvailability,
   setContentViewer,
   setComposerDraft,
   setSessionMemo,
-  setCues,
-  setDictate,
   setI18n,
-  setLive,
-  setMic,
   setModals,
   setNotify,
   setModelStatus,
@@ -32,10 +26,9 @@ import {
   setResponsive,
   setSession,
   setSettings,
-  setSpeaker,
   setTheme,
   setUiShell,
-  setVoiceMode,
+  setVoice,
 } from "$lib/context"
 import { installDebugSurface } from "$lib/debug/dc"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
@@ -43,7 +36,7 @@ import { createConfigChangeRefresher } from "$lib/engines/config-change-socket"
 import { ttsStatus } from "$lib/view-models/tts-status.svelte"
 import { CuesEngine } from "$lib/engines/cues"
 import { createPendingCaptureWiring } from "$lib/engines/pending-capture-wiring"
-import { MediaSessionPlaylistBridge } from "$lib/engines/media-session-playlist.js"
+import { createMediaSessionPlaylistBridge } from "$lib/actions/media-session-playlist-wiring"
 import { PlayableSink } from "$lib/engines/playable-sink"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { NotifyEngine } from "$lib/engines/notify.svelte"
@@ -153,30 +146,8 @@ const bubblePlayer = new BubblePlayer({
   orderAlloc: sharedOrderAlloc,
 })
 
-function titleForCurrentPlaylistSegment(): string | undefined {
-  const item = audioPlaylist.items[audioPlaylist.cursor]
-  if (!item) return undefined
-  const bubble = session.renderBubbles.find((b) => b.id === item.bubbleId)
-  if (!bubble || (bubble.kind !== "message" && bubble.kind !== "thought")) return undefined
-  const text = bubble.segments.map((s) => s.text).join("")
-  return text.slice(0, 80) || undefined
-}
-
 // ─── bt-chat-playback-nav: Media Session ↔ playlist (car mode, no keepalive) ───
-const mediaSessionBridge = new MediaSessionPlaylistBridge({
-  controls: {
-    next: () => audioPlaylist.next(),
-    prev: () => audioPlaylist.prev(),
-    pause: () => audioPlaylist.pause(),
-    resume: () => audioPlaylist.resume(),
-  },
-  onStop: () => bubblePlayer.stop(),
-  getState: () => audioPlaylist.state,
-  getTransport: () => audioPlaylist.transport,
-  getCursor: () => audioPlaylist.cursor,
-  getItemCount: () => audioPlaylist.items.length,
-  getTitle: () => titleForCurrentPlaylistSegment(),
-})
+const mediaSessionBridge = createMediaSessionPlaylistBridge({ session, playlist: audioPlaylist, bubblePlayer })
 
 $effect(() => {
   const hasMediaSession = typeof navigator !== "undefined" && "mediaSession" in navigator
@@ -329,15 +300,9 @@ $effect(() => {
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
-setCues(cues)
 setSession(session)
-setSpeaker(speaker)
-setAudioPlaylist(audioPlaylist)
-setMic(mic)
-setLive(live)
-setVoiceMode(voiceMode)
+setVoice({ speaker, mic, live, voiceMode, cues, bubblePlayer, audioPlaylist, dictate })
 setModelStatus(modelStatus)
-setBubblePlayer(bubblePlayer)
 setTheme(theme)
 setResponsive(responsive)
 setUiShell(uiShell)
@@ -350,7 +315,6 @@ setPresencePoller(presencePoller)
 setNotify(notify)
 setComposerDraft(composerDraft)
 setSessionMemo(sessionMemo)
-setDictate(dictate)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
 const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })
