@@ -73,6 +73,7 @@ vi.mock("$lib/adapters/agents-api", () => ({
 // ─── Import after mocks ───────────────────────────────────────────────────────
 
 import { AgentSession } from "./agent-session.svelte"
+import { SessionScope } from "./session-scoped-state.svelte"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -136,6 +137,18 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
 
     session = new AgentSession()
     await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+  })
+
+  it("routes metadata frames through SessionScope.applyPatch", () => {
+    const owner = vi.spyOn(SessionScope.prototype, "applyPatch")
+    onSessionUpdate!({
+      update: { sessionUpdate: "available_commands_update", availableCommands: [] },
+    })
+    onSessionUpdate!({ update: { sessionUpdate: "session_info_update", title: null } })
+    expect(owner).toHaveBeenCalledWith({ kind: "commands", commands: [] })
+    expect(owner).toHaveBeenCalledWith({ kind: "title", title: "" })
+    expect(session.sessionTitle).toBe("")
+    owner.mockRestore()
   })
 
   it("Claude-style: 3 agent_message_chunk with same messageId → 1 bubble with 3 segments", () => {
@@ -244,10 +257,7 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     const list = session.renderBubbles
     // slice msg-coalesce: after-tool chunk merges back into the first message bubble
     expect(list).toHaveLength(2)
-    expect(list.map((b) => stableBubbleKey(b, list))).toEqual([
-      "message:m:m1",
-      "tool:t:call-1",
-    ])
+    expect(list.map((b) => stableBubbleKey(b, list))).toEqual(["message:m:m1", "tool:t:call-1"])
   })
 
   it("second tool_call with the same toolCallId updates the existing bubble (no duplicate key)", () => {

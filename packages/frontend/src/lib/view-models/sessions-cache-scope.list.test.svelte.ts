@@ -5,15 +5,13 @@ import { describe, expect, it, vi } from "vitest"
 import type { SessionInfo } from "$lib/adapters/sessions"
 import { SessionsCacheScope } from "./sessions-cache-scope.svelte"
 
-const sample: SessionInfo[] = [
-  { sessionId: "a", cwd: "/x", title: "A", updatedAt: "" },
-]
+const sample: SessionInfo[] = [{ sessionId: "a", cwd: "/x", title: "A", updatedAt: "" }]
 
 describe("SessionsCacheScope.list", () => {
   it("source === null is a total no-op (loading and error untouched)", async () => {
     const cache = new SessionsCacheScope()
-    cache.loading = true
-    cache.error = "prior"
+    cache.applyPatch({ kind: "loading", loading: true })
+    cache.applyPatch({ kind: "error", error: "prior" })
 
     await cache.list(null)
 
@@ -24,7 +22,7 @@ describe("SessionsCacheScope.list", () => {
   it("skips when already loading (does not double-fetch)", async () => {
     const cache = new SessionsCacheScope()
     const source = vi.fn(async () => sample)
-    cache.loading = true
+    cache.applyPatch({ kind: "loading", loading: true })
 
     await cache.list(source)
 
@@ -48,7 +46,7 @@ describe("SessionsCacheScope.list", () => {
 
   it("clears error at load start and sets loading false in finally on success", async () => {
     const cache = new SessionsCacheScope()
-    cache.error = "old"
+    cache.applyPatch({ kind: "error", error: "old" })
     const source = vi.fn(async () => sample)
 
     await cache.list(source)
@@ -75,18 +73,18 @@ describe("SessionsCacheScope.list", () => {
 
   it("other errors call setError, keep prior sessions, and do not mark loaded", async () => {
     const cache = new SessionsCacheScope()
-    cache.sessions = sample
+    await cache.list(async () => sample)
     const fail = vi.fn(async () => {
       throw new Error("boom")
     })
 
-    await cache.list(fail)
+    await cache.list(fail, true)
 
     expect(cache.error).toBe("boom")
     expect(cache.sessions).toEqual(sample)
     expect(cache.loading).toBe(false)
 
-    await cache.list(fail)
+    await cache.list(fail, true)
     expect(fail).toHaveBeenCalledTimes(2)
   })
 
@@ -100,10 +98,13 @@ describe("SessionsCacheScope.list", () => {
 describe("SessionsCacheScope.remove / reset", () => {
   it("remove filters optimistically", () => {
     const cache = new SessionsCacheScope()
-    cache.sessions = [
-      { sessionId: "keep", cwd: "/", title: "", updatedAt: "" },
-      { sessionId: "drop", cwd: "/", title: "", updatedAt: "" },
-    ]
+    cache.applyPatch({
+      kind: "list",
+      sessions: [
+        { sessionId: "keep", cwd: "/", title: "", updatedAt: "" },
+        { sessionId: "drop", cwd: "/", title: "", updatedAt: "" },
+      ],
+    })
     cache.remove("drop")
     expect(cache.sessions.map((s) => s.sessionId)).toEqual(["keep"])
   })
@@ -112,7 +113,7 @@ describe("SessionsCacheScope.remove / reset", () => {
     const cache = new SessionsCacheScope()
     const source = vi.fn(async () => sample)
     await cache.list(source)
-    cache.error = "x"
+    cache.applyPatch({ kind: "error", error: "x" })
 
     cache.reset()
 

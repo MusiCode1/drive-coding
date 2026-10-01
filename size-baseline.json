@@ -1016,10 +1016,10 @@
       "codeLines": 68
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 2821,
+      "metric": 2768,
       "impurity": 47,
       "class": "scattered",
-      "codeLines": 1876
+      "codeLines": 1843
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
       "metric": 328,
@@ -1082,10 +1082,10 @@
       "codeLines": 438
     },
     "packages/frontend/src/lib/view-models/speaker.svelte.ts": {
-      "metric": 902,
+      "metric": 880,
       "impurity": 8,
       "class": "mixed",
-      "codeLines": 584
+      "codeLines": 567
     },
     "packages/frontend/src/lib/view-models/theme.svelte.ts": {
       "metric": 49,

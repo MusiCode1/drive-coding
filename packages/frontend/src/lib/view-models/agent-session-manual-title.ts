@@ -1,5 +1,6 @@
 /** Manual session title helpers (slice session-title-manual — keeps AgentSession smaller). */
 import { patchAgent } from "$lib/adapters/agents-api"
+import type { SessionScope } from "./session-scoped-state.svelte"
 
 export type ManualTitleInput = {
   title?: string
@@ -8,47 +9,42 @@ export type ManualTitleInput = {
   sessionFields?: Record<string, string>
 }
 
-type TitleVm = {
-  sessionTitle: string
-  titleManual: boolean
-  agentId: string | null
-  userNotes: string
-  sessionFields: Record<string, string>
-}
-
 export function applyManualTitleFromAttach(
-  vm: TitleVm,
+  scope: SessionScope,
   input: ManualTitleInput,
   clearWhenAuto: boolean,
 ): void {
   if (input.titleManual === true) {
-    vm.titleManual = true
-    if (input.title !== undefined) vm.sessionTitle = input.title ?? ""
-  } else if (clearWhenAuto) vm.sessionTitle = ""
-  vm.userNotes = input.userNotes ?? ""
-  vm.sessionFields = input.sessionFields !== undefined ? { ...input.sessionFields } : {}
+    scope.setTitleManual(true)
+    if (input.title !== undefined) scope.setManualTitle(input.title ?? "", true)
+  } else if (clearWhenAuto) scope.setManualTitle("", scope.titleManual)
+  scope.setUserNotes(input.userNotes ?? "")
+  scope.setSessionFields(input.sessionFields !== undefined ? { ...input.sessionFields } : {})
 }
 
 export function applyTitleFromSessionInput(
-  vm: TitleVm,
+  scope: SessionScope,
   input: ManualTitleInput,
   push: (title: string) => void,
 ): void {
-  if (input.titleManual !== undefined) vm.titleManual = input.titleManual === true
-  if (vm.titleManual) return
-  vm.sessionTitle = input.title ?? vm.sessionTitle
-  push(vm.sessionTitle)
+  if (input.titleManual !== undefined) scope.setTitleManual(input.titleManual === true)
+  if (scope.titleManual) return
+  scope.applyPatch({ kind: "title", title: input.title ?? scope.title })
+  push(scope.title)
 }
 
-export function setManualTitleOnAgent(vm: TitleVm, title: string): void {
+export function setManualTitleOnAgent(
+  scope: SessionScope,
+  agentId: string | null,
+  title: string,
+): void {
   const trimmed = title.trim()
   if (!trimmed) return
-  vm.sessionTitle = trimmed
-  vm.titleManual = true
-  const id = vm.agentId
-  if (id) void patchAgent(id, { title: trimmed, titleManual: true }).catch(() => {})
+  scope.setManualTitle(trimmed, true)
+  if (agentId) void patchAgent(agentId, { title: trimmed, titleManual: true }).catch(() => {})
 }
 
-export function syncTitleFromViewState(vm: TitleVm, viewTitle: string): void {
-  if (!vm.titleManual && viewTitle !== vm.sessionTitle) vm.sessionTitle = viewTitle
+export function syncTitleFromViewState(scope: SessionScope, viewTitle: string): void {
+  if (!scope.titleManual && viewTitle !== scope.title)
+    scope.applyPatch({ kind: "title", title: viewTitle })
 }
