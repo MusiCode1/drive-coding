@@ -299,6 +299,7 @@ let uuidCounter = 0
 vi.stubGlobal("crypto", { randomUUID: () => `test-uuid-${uuidCounter++}` })
 
 import { AgentSession } from "./agent-session.svelte"
+import { TranscriptScope } from "./transcript-scope.svelte"
 
 // ─── feed runners ───────────────────────────────────────────────────────────
 
@@ -363,6 +364,24 @@ describe("frame-ingest parity gate", () => {
     expect(mutedWs.observed).toEqual([])
     expect(mutedHttp.observed).toEqual([])
     expect(mutedWs.bubbles.length).toBeLessThan(ws.bubbles.length)
+  })
+
+  it("routes WS and HTTP display patches through TranscriptScope owner", async () => {
+    const owner = vi.spyOn(TranscriptScope.prototype, "applyPatch")
+    const ws = await runWsPath()
+    const wsCalls = owner.mock.calls.length
+    const http = await runHttpPath(snapshotBatches)
+    expect(wsCalls).toBeGreaterThan(0)
+    expect(owner.mock.calls.length).toBeGreaterThan(wsCalls)
+    expect(ws.bubbles.length).toBeGreaterThan(0)
+    expect(http.bubbles.length).toBeGreaterThan(0)
+    owner.mockImplementation(() => {})
+    try {
+      expect((await runWsPath()).bubbles).toEqual([])
+      expect((await runHttpPath(snapshotBatches)).bubbles).toEqual([])
+    } finally {
+      owner.mockRestore()
+    }
   })
 
   it("G1 — every session/update on the HTTP wire is observed in #onSessionUpdate", async () => {

@@ -135,10 +135,13 @@ describe("AgentSession — deleteSession", () => {
     await session.attach({ cwd: "/some/cwd", cliKind: "claude" })
     // הסשן הפעיל אחרי attach הוא "session-delete-test" (mockClient.newSession).
     // הזרק עוד סשן ברשימה כדי לבדוק הסרה סלקטיבית (לא-פעיל).
-    session.sessionsCache.sessions = [
-      { sessionId: "session-delete-test", cwd: "/some/cwd", title: "", updatedAt: "" },
-      { sessionId: "other-session", cwd: "/some/cwd", title: "", updatedAt: "" },
-    ]
+    session.sessionsCache.applyPatch({
+      kind: "list",
+      sessions: [
+        { sessionId: "session-delete-test", cwd: "/some/cwd", title: "", updatedAt: "" },
+        { sessionId: "other-session", cwd: "/some/cwd", title: "", updatedAt: "" },
+      ],
+    })
   })
 
   it("no-op if #client===null (before attach)", async () => {

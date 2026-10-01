@@ -74,11 +74,6 @@ import {
   applyConfigOption as applyConfigOptionExtracted,
 } from "$lib/view-models/agent-session-apply-config"
 import {
-  appendAgentPlaceholder,
-  appendUserImage,
-  appendUserPlaceholder,
-} from "$lib/view-models/agent-session-bubble-append"
-import {
   type CaptureSessionConfigDeps,
   captureSessionConfig,
 } from "$lib/view-models/agent-session-capture-config"
@@ -151,17 +146,15 @@ import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 import { createExtClient, type ExtClient } from "$lib/adapters/ext"
 // ─── slice session-state-reducer C4: FE patch applicator + mappers ─── (additive)
-import { applyPatchMutable } from "$lib/session/apply-patch-mutable"
-import { mapLocations, mapToolContent } from "$lib/session/map-tool-content"
 // ─── slice subagent-transcript-data-v2: פרסר+reducer טהורים (additive) ───
 import {
   type ClaudeSubagentEvent,
   createSubagentIndex,
   parseClaudeSdkMessage,
-  reduceSubagent,
 } from "./claude-subagent-parse"
 import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
 import { watchPageVisibility } from "./page-visibility.js"
+import { TranscriptScope } from "./transcript-scope.svelte"
 
 /**
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
@@ -278,12 +271,17 @@ export class AgentSession {
   // ─── slice auth-guidance: authMethods שנלכדו מ-initialize (client.authMethods) ───
   /** [] = אין כשל-auth ידוע / warm-reattach (מדלג initialize) / CLI לא מפרסם authMethods. */
   authMethods = $state<ReadonlyArray<AuthMethod>>([])
-  bubbles = $state<Bubble[]>([])
+  #transcript = $state(new TranscriptScope(null))
+  get bubbles(): Bubble[] {
+    return this.#transcript.bubbles
+  }
+  set bubbles(value: Bubble[]) {
+    this.#transcript.replace(value)
+  }
   // ─── slice session-state-reducer C4: מצב SessionState פנימי (base ל-reduce) ─── (additive)
   sessionState = $state<SessionState>(createInitialSessionState({ sessionId: null }))
   // ─── slice reconnect-bubble-merge: frozen display בזמן warm-reconnect replay ───
   /** לא-null רק בזמן replay של חיבור מחדש — מקפיא את התצוגה על הרשימה הישנה. */
-  #displaySnapshot = $state<Bubble[] | null>(null)
   agentId = $state<string | null>(null)
   cwd = $state<string | null>(null)
   // ─── slice ws-reconnect-infra: reconnect state ─── (INVASIVE — מאושר)
@@ -355,66 +353,79 @@ export class AgentSession {
     return this.#session.title
   }
   set sessionTitle(v: string) {
-    this.#session.title = v
+    this.#session.setManualTitle(v, this.#session.titleManual)
   }
   get titleManual(): boolean {
     return this.#session.titleManual
   }
   set titleManual(v: boolean) {
-    this.#session.titleManual = v
+    this.#session.setTitleManual(v)
   }
   get userNotes(): string {
     return this.#session.userNotes
   }
   set userNotes(v: string) {
-    this.#session.userNotes = v
+    this.#session.setUserNotes(v)
   }
   get sessionFields(): Record<string, string> {
     return this.#session.sessionFields
   }
   set sessionFields(v: Record<string, string>) {
-    this.#session.sessionFields = v
+    this.#session.setSessionFields(v)
   }
   get availableCommands(): AvailableCommand[] {
     return this.#session.availableCommands
   }
   set availableCommands(v: AvailableCommand[]) {
-    this.#session.availableCommands = v
+    this.#session.applyPatch({ kind: "commands", commands: v })
   }
   get planStore(): PlanStore {
     return this.#session.planStore
   }
   set planStore(v: PlanStore) {
-    this.#session.planStore = v
+    this.#session.applyPatch({ kind: "plan", plan: v })
   }
   get contextUsage(): UsageUpdate | null {
     return this.#session.contextUsage
   }
   set contextUsage(v: UsageUpdate | null) {
-    this.#session.contextUsage = v
+    this.#session.applyPatch({ kind: "usage", usage: v })
   }
   get quota(): QuotaSnapshot | null {
     return this.#session.quota
   }
   set quota(v: QuotaSnapshot | null) {
-    this.#session.quota = v
+    this.#session.applyPatch({ kind: "quota", quota: v })
   }
   get quotaLoading(): boolean {
     return this.#session.quotaLoading
   }
   set quotaLoading(v: boolean) {
-    this.#session.quotaLoading = v
+    this.#session.applyPatch({ kind: "quota-loading", loading: v })
   }
 
   // ─── slice reconnect-bubble-merge: render-consumers (additive) ───
   /** רשימת התצוגה. בזמן warm-reconnect replay מוקפאת ל-snapshot; אחרת = live bubbles. */
   get renderBubbles(): Bubble[] {
-    return this.#displaySnapshot ?? this.bubbles
+    return this.#transcript.renderBubbles
   }
 
   /** true רק בזמן warm-reconnect replay (התצוגה קפואה). לא נדלק בטעינה ראשונית/switchSession. */
   get isReconnectReplay(): boolean {
-    return this.#displaySnapshot !== null
+    return this.#transcript.isReconnectReplay
+  }
+
+  annotateToolNarration(bubbleId: string, text: string): void {
+    this.#transcript.annotateNarration(bubbleId, text)
+  }
+
+  annotateThoughtTranslation(
+    bubbleId: string,
+    index: number,
+    original: string,
+    translated: string,
+  ): boolean {
+    return this.#transcript.annotateTranslation(bubbleId, index, original, translated)
   }
 
   // ─── image-attach: capability gating ─── (slice-image-paste, additive)
@@ -589,14 +600,23 @@ export class AgentSession {
    * from the one the current scope was born for (compare `#session.sessionId`, not `#sessionId`).
    */
   #enterSession(id: string | null): void {
-    if (this.#session.sessionId !== id) this.#session = new SessionScope(id)
+    if (this.#session.sessionId !== id) {
+      const initialBubbles = this.#session.sessionId === null ? this.#transcript.bubbles : []
+      this.#session = new SessionScope(id)
+      this.#transcript = new TranscriptScope(id)
+      if (initialBubbles.length > 0) this.#transcript.replace(initialBubbles)
+    }
     this.#sessionId = id
   }
 
   #subagentToolNestingDeps(): SubagentToolNestingDeps {
     return {
       bubbles: () => this.bubbles,
-      parents: () => this.#session.subagentToolCallParents,
+      appendNestedTool: (parentId, child) => this.#transcript.appendNestedTool(parentId, child),
+      updateNestedTool: (parentId, childId, update) =>
+        this.#transcript.updateNestedTool(parentId, childId, update),
+      getParent: (id) => this.#session.getSubagentParent(id),
+      registerParent: (id, parentId) => this.#session.registerSubagentParent(id, parentId),
       turnEnded: () => this.#turnEnded,
       applyToolCall: (update) => this.#applyToolCall(update),
       setTurnState: (next) => this.#setTurnState(next),
@@ -658,10 +678,10 @@ export class AgentSession {
       mockQuota: () => this.#mockQuota,
       ext: () => this.#ext,
       setQuota: (v) => {
-        this.quota = v
+        this.#session.applyPatch({ kind: "quota", quota: v })
       },
       setQuotaLoading: (v) => {
-        this.quotaLoading = v
+        this.#session.applyPatch({ kind: "quota-loading", loading: v })
       },
     }
   }
@@ -678,23 +698,23 @@ export class AgentSession {
         this.modes = v
       },
       setAvailableCommands: (v) => {
-        this.availableCommands = v
+        this.#session.applyPatch({ kind: "commands", commands: v })
       },
       setContextUsage: (v) => {
-        this.contextUsage = v
+        this.#session.applyPatch({ kind: "usage", usage: v })
       },
       setQuota: (v) => {
-        this.quota = v
+        this.#session.applyPatch({ kind: "quota", quota: v })
       },
       setQuotaLoading: (v) => {
-        this.quotaLoading = v
+        this.#session.applyPatch({ kind: "quota-loading", loading: v })
       },
       setMockQuota: (v) => {
         this.#mockQuota = v
       },
       session: () => this.#session,
       setPlanStore: (v) => {
-        this.planStore = v
+        this.#session.applyPatch({ kind: "plan", plan: v })
       },
     }
   }
@@ -795,7 +815,7 @@ export class AgentSession {
           (p): p is Extract<Patch, { op: "reset" }> => p.op === "reset",
         )
         if (resetPatches.length > 0) {
-          applyPatchMutable(this.bubbles, resetPatches, { mapToolContent, mapLocations })
+          this.#transcript.applyPatch({ kind: "frame", patches: resetPatches })
           for (const patch of resetPatches) {
             const next = applyPatch(this.sessionState, patch)
             if (next) this.sessionState = next
@@ -895,19 +915,26 @@ export class AgentSession {
     // turnState (נגזר מסוג patch ב-reduce) — ✅ ללא תנאי, ה-BE הוא הסמכות (isSpuriousIdle בוטל)
     const vt = viewState.turnState as TurnState
     if (vt !== this.turnState) this.#setTurnState(vt)
-    syncTitleFromViewState(this, viewState.title)
+    syncTitleFromViewState(this.#session, viewState.title)
     // contextUsage (אופציונלי — אפסר לאמץ ל-UsageUpdate סטרקטורלית)
     if (viewState.contextUsage !== this.contextUsage) {
-      this.contextUsage = viewState.contextUsage as typeof this.contextUsage
+      this.#session.applyPatch({
+        kind: "usage",
+        usage: viewState.contextUsage as typeof this.contextUsage,
+      })
     }
     // commands
-    this.availableCommands = viewState.commands as typeof this.availableCommands
+    this.#session.applyPatch({
+      kind: "commands",
+      commands: viewState.commands as typeof this.availableCommands,
+    })
     // modes
     this.modes = viewState.modes as typeof this.modes
     // configOptions
     this.configOptions = viewState.configOptions as typeof this.configOptions
     // quota
-    if (viewState.quota !== this.quota) this.quota = viewState.quota
+    if (viewState.quota !== this.quota)
+      this.#session.applyPatch({ kind: "quota", quota: viewState.quota })
     // ─── slice http-usable C1: capabilities from SessionState → #capabilities ───
     // In remote there is no #client, and _drive/capabilities is only sent by
     // ws-agent — so supportsImageInput was always false over HTTP. The BE now
@@ -1136,6 +1163,10 @@ export class AgentSession {
   _getSessionIdForTest(): string | null {
     return this.#sessionId
   }
+  /** @internal Identity assertion for TranscriptScope lifecycle tests. */
+  _transcriptForTest(): TranscriptScope {
+    return this.#transcript
+  }
   /** @internal Checks owner identity across a failed cold replay. */
   _getConnectionForTest(): Connection | null {
     return this.#connection
@@ -1167,7 +1198,7 @@ export class AgentSession {
         this.error = null
         this.authMethods = []
         this.#errorSurfaced = false
-        this.bubbles = []
+        this.#transcript.replace([])
         this.#detached = false
       },
       setAgent: (agentId, cwd, cliKind) => {
@@ -1209,7 +1240,7 @@ export class AgentSession {
         this.agentId = agent.agentId
         this.cwd = agent.cwd
         this.#cliKind = agent.cliKind
-        applyManualTitleFromAttach(this, agent, true)
+        applyManualTitleFromAttach(this.#session, agent, true)
       },
       failedExisting: () => {
         this.error = "reconnect failed: agent no longer available"
@@ -1231,7 +1262,7 @@ export class AgentSession {
           }
         },
         snapshot: () => {
-          if (this.#displaySnapshot === null) this.#displaySnapshot = this.bubbles
+          this.#transcript.freezeDisplay()
         },
         setStatus: (status) => this.#setStatus(status),
         setAttempt: (attempt) => {
@@ -1269,7 +1300,7 @@ export class AgentSession {
           this.#ext = createExtClient(client)
         },
         startReplay: () => {
-          this.bubbles = []
+          this.#transcript.beginReplay()
           this.sessionState = createInitialSessionState({ sessionId: this.#sessionId })
           this.isLoadingHistory = true
         },
@@ -1327,7 +1358,7 @@ export class AgentSession {
         this.error = null
         this.authMethods = []
         this.#errorSurfaced = false
-        this.bubbles = []
+        this.#transcript.replace([])
         this.#detached = false
         this.#answeredPermissionId = null
         this.#answeredElicitationId = null
@@ -1345,7 +1376,7 @@ export class AgentSession {
         this.#isRemote = true
         void this.#consumeViewPatches(view)
       },
-      applyTitle: (agent) => applyManualTitleFromAttach(this, agent, false),
+      applyTitle: (agent) => applyManualTitleFromAttach(this.#session, agent, false),
       connected: async () => this.#setStatus("connected"),
       rememberedConfig: () => this.#applyRememberedConfig(),
       failed: (error, keepAgent) => {
@@ -1422,7 +1453,7 @@ export class AgentSession {
     this.#cleanup(keepAgent ? { keepAgent: true } : undefined)
     this.#setStatus("idle")
     this.error = null
-    this.bubbles = []
+    this.#transcript.replace([])
     this.sessionsCache.reset()
   }
 
@@ -1588,7 +1619,7 @@ export class AgentSession {
           ? { attachments: atts.map((a) => ({ mimeType: a.mimeType, dataBase64: a.dataBase64 })) }
           : {}),
       }
-      this.bubbles.push(userBubble)
+      this.#transcript.appendOptimistic(userBubble)
     }
     this.#setTurnState("waiting")
     this.#resetTurnTracking() // תחילת תור — #turnEnded=false + נקה טיימר יתום
@@ -1662,7 +1693,7 @@ export class AgentSession {
     this.error = null
     this.authMethods = [] // slice auth-guidance: נקה לפני חיבור חדש — נלכד מחדש אחרי createAcpClient
     this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
-    this.bubbles = []
+    this.#transcript.replace([])
     this.sessionState = createInitialSessionState({ sessionId: input.sessionId })
     this.#detached = false
 
@@ -1898,7 +1929,7 @@ export class AgentSession {
     this.#setStatus("connecting")
     this.error = null
     this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
-    this.bubbles = []
+    this.#transcript.replace([])
 
     // slice local-view-wiring C3 — נקודת-אימוץ 4: **אותו לקוח**, בלי dispose ובלי
     // בנייה מחדש (ה-tee קפוא על ה-view שנוצר ביצירת הלקוח — §4.3). adopt לפני ה-replay:
@@ -1969,7 +2000,7 @@ export class AgentSession {
       if (!cwd) throw new Error("newSession: no cwd")
       this.error = null
       this.#errorSurfaced = false
-      this.sessionTitle = ""
+      this.#session.setManualTitle("", this.titleManual)
       this.isLoadingHistory = true
       try {
         await remoteView.newSession(cwd)
@@ -2004,8 +2035,8 @@ export class AgentSession {
     this.#setStatus("connecting")
     this.error = null
     this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
-    this.bubbles = []
-    this.sessionTitle = "" // slice session-title: סשן חדש = אין כותרת
+    this.#transcript.replace([])
+    this.#session.setManualTitle("", this.titleManual) // slice session-title: סשן חדש = אין כותרת
 
     try {
       const m = this.#sessionMeta()
@@ -2126,7 +2157,7 @@ export class AgentSession {
     // מ-#syncFromViewState. ⇒ גם עם ה-BE מתוקן, המשתמשת לא תראה כלום.
     // ב-remote ה-BE קורא getQuota וכותב ל-state; ה-FE רק צורך.
     if (this.#remoteView() && !isMockWithSnapshot) {
-      this.quotaLoading = false
+      this.#session.applyPatch({ kind: "quota-loading", loading: false })
       return
     }
 
@@ -2135,7 +2166,7 @@ export class AgentSession {
       return
     }
 
-    this.quotaLoading = true
+    this.#session.applyPatch({ kind: "quota-loading", loading: true })
     const fetchPromise = this.#doRefreshQuota(sessionId).finally(() => {
       this.#quotaFetchInFlight = null
     })
@@ -2282,11 +2313,11 @@ export class AgentSession {
   }
 
   setManualTitle(title: string): void {
-    setManualTitleOnAgent(this, title)
+    setManualTitleOnAgent(this.#session, this.agentId, title)
   }
 
   #applyTitleFromSessionInput(input: { title?: string; titleManual?: boolean }): void {
-    applyTitleFromSessionInput(this, input, (t) => this.#pushTitleToServer(t))
+    applyTitleFromSessionInput(this.#session, input, (t) => this.#pushTitleToServer(t))
   }
 
   // ─── slice 6: setter מרכז ─── (additive — מנתב את כל ה-status writes)
@@ -2307,7 +2338,7 @@ export class AgentSession {
     if (next === prev) return
     this.status = next
     if (next === "error") this.#cues?.play("error")
-    if (next === "connected") this.#displaySnapshot = null
+    if (next === "connected") this.#transcript.connected()
   }
 
   // ─── msr-v2: setter ל-turnState ───
@@ -2441,9 +2472,9 @@ export class AgentSession {
     this.#answeredElicitationId = null
     this.#ext = null // slice FE-normalization: נקה facade
     this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
-    this.contextUsage = null // slice session-budget-meter: נקה context-usage (חיבור חדש = caps חדשים)
-    this.quota = null // slice session-budget-meter Commit 4: נקה quota
-    this.quotaLoading = false
+    this.#session.applyPatch({ kind: "usage", usage: null }) // slice session-budget-meter: נקה context-usage
+    this.#session.applyPatch({ kind: "quota", quota: null }) // slice session-budget-meter Commit 4: נקה quota
+    this.#session.applyPatch({ kind: "quota-loading", loading: false })
     this.#mockQuota = undefined
     this.#quotaFetchInFlight = null
     this.#claudeRawSdkMessageCount = 0
@@ -2451,7 +2482,7 @@ export class AgentSession {
     this.#subagentIndex = createSubagentIndex()
     this.#pendingByParent = []
     // slice subagent-tool-nesting: נקה מיפוי-קינון (חיבור חדש = מיפוי חדש)
-    this.#session.subagentToolCallParents = new Map()
+    this.#session.clearSubagentParents()
     // slice reconnect-recovery: keepContext משמר #sessionId/agentId כדי ש-reconnect()
     // הציבורי לא יעשה early-return אחרי כשל cold-reconnect (§4 Commit 0).
     if (!opts?.keepContext) {
@@ -2474,7 +2505,7 @@ export class AgentSession {
         this.cwd = cwd
       },
       setSessionTitle: (title) => {
-        this.sessionTitle = title
+        this.#session.setManualTitle(title, this.titleManual)
       },
       setError: (error) => {
         this.error = error
@@ -2512,17 +2543,9 @@ export class AgentSession {
       if (ev.kind === "ignored") return
       const parentId = this.#subagentIndex.resolve(ev)
       if (parentId === undefined) return // task_updated לפני task_started — לא צפוי (§7), drop
-      const idx = this.bubbles.findIndex(
-        (b) => b.kind === "tool" && b.toolCall.toolCallId === parentId,
-      )
-      if (idx === -1) {
+      if (!this.#transcript.applySubagentEvent(parentId, ev)) {
         this.#pushPendingSubagentEvent(parentId, ev)
-        return
       }
-      const task = this.bubbles[idx]
-      // finding #3: this.bubbles[idx] הוא Bubble|undefined תחת noUncheckedIndexedAccess.
-      if (!task || task.kind !== "tool") return
-      this.bubbles[idx] = reduceSubagent(task, ev)
       return
     }
     // finding #2: ענף _drive/capabilities (וכל ענף עתידי) — ללא שינוי.
@@ -2545,16 +2568,10 @@ export class AgentSession {
     const matching = this.#pendingByParent.filter((p) => p.parentId === toolCallId)
     if (matching.length === 0) return
     this.#pendingByParent = this.#pendingByParent.filter((p) => p.parentId !== toolCallId)
-    const idx = this.bubbles.findIndex(
-      (b) => b.kind === "tool" && b.toolCall.toolCallId === toolCallId,
+    this.#transcript.applySubagentEvents(
+      toolCallId,
+      matching.map((item) => item.event),
     )
-    if (idx === -1) return
-    let task = this.bubbles[idx]
-    if (!task || task.kind !== "tool") return
-    for (const { event } of matching) {
-      task = reduceSubagent(task, event)
-    }
-    this.bubbles[idx] = task
   }
 
   #onSessionUpdate = (notification: FrameInput): void => {
@@ -2602,10 +2619,7 @@ export class AgentSession {
         continue
       }
       if (patch.kind === "tool-call-update") {
-        if (
-          update.toolCallId !== undefined &&
-          this.#session.subagentToolCallParents.has(update.toolCallId)
-        ) {
+        if (update.toolCallId !== undefined && this.#session.hasSubagentParent(update.toolCallId)) {
           handleSubagentToolCallUpdate(
             this.#subagentToolNestingDeps(),
             update as Parameters<typeof handleSubagentToolCallUpdate>[1],
@@ -2650,25 +2664,31 @@ export class AgentSession {
       }
       if (patch.kind === "commands") {
         const cmds = (update as { availableCommands?: unknown }).availableCommands
-        this.availableCommands = Array.isArray(cmds) ? (cmds as AvailableCommand[]) : []
+        this.#session.applyPatch({
+          kind: "commands",
+          commands: Array.isArray(cmds) ? (cmds as AvailableCommand[]) : [],
+        })
         continue
       }
       if (patch.kind === "plan") {
-        this.planStore = reducePlan(this.planStore, update)
+        this.#session.applyPatch({ kind: "plan", plan: reducePlan(this.planStore, update) })
         continue
       }
       if (patch.kind === "usage") {
         const u = update as unknown as UsageUpdate
-        this.contextUsage = { used: u.used, size: u.size, cost: u.cost ?? this.contextUsage?.cost }
+        this.#session.applyPatch({
+          kind: "usage",
+          usage: { used: u.used, size: u.size, cost: u.cost ?? this.contextUsage?.cost },
+        })
         continue
       }
       if (patch.kind === "title") {
         if (this.titleManual) continue
         const title = update.title
         if (title === null) {
-          this.sessionTitle = ""
+          this.#session.applyPatch({ kind: "title", title: "" })
         } else if (typeof title === "string") {
-          this.sessionTitle = title
+          this.#session.applyPatch({ kind: "title", title })
           this.#pushTitleToServer(this.sessionTitle)
         }
         continue
@@ -2682,33 +2702,12 @@ export class AgentSession {
       ) {
         const messageId = patch.messageId
         if (messageId !== null) {
-          for (let i = this.bubbles.length - 1; i >= 0; i--) {
-            const b = this.bubbles[i]
-            if (
-              b !== undefined &&
-              b.kind === "user" &&
-              (b.messageId === messageId || b.messageId === null)
-            ) {
-              if (b.messageId === null) b.messageId = messageId
-              break
-            }
-          }
+          this.#transcript.setMessageId(messageId)
         }
-        const content = update.content
         if (patch.kind === "user-text") {
           this.#applyFrameUpdate(raw)
-        } else if (patch.kind === "user-image") {
-          this.#appendUserImage(messageId, { mimeType: patch.mimeType, data: patch.data })
-        } else if (patch.kind === "user-resource-link") {
-          const label = content?.name ?? content?.uri
-          this.#appendUserPlaceholder(messageId, {
-            kind: "resource_link",
-            label,
-            uri: content?.uri,
-          })
         } else {
-          const kind = patch.kind === "user-audio" ? "audio" : "resource"
-          this.#appendUserPlaceholder(messageId, { kind })
+          this.#transcript.appendNonText(patch, update.content)
         }
         continue
       }
@@ -2719,23 +2718,12 @@ export class AgentSession {
         patch.kind === "agent-audio" ||
         patch.kind === "agent-placeholder"
       ) {
-        const content = update.content
         this.#setTurnState("responding")
         if (this.#turnEnded) this.#scheduleIdle()
         if (patch.kind === "agent-text") {
           this.#applyFrameUpdate(raw)
-        } else if (patch.kind === "agent-resource-link") {
-          const label = content?.name ?? content?.uri ?? ""
-          this.#appendAgentPlaceholder(patch.messageId, {
-            kind: "resource_link",
-            label,
-            uri: content?.uri,
-          })
-        } else if (patch.kind === "agent-image") {
-          this.#appendAgentPlaceholder(patch.messageId, { kind: "image" })
         } else {
-          const kind = patch.kind === "agent-audio" ? "audio" : "resource"
-          this.#appendAgentPlaceholder(patch.messageId, { kind })
+          this.#transcript.appendNonText(patch, update.content)
         }
         continue
       }
@@ -2752,7 +2740,7 @@ export class AgentSession {
   #applyFrameUpdate(update: unknown): void {
     const { state: nextState, patches } = reduce(this.sessionState, update)
     this.sessionState = nextState
-    applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+    this.#transcript.applyPatch({ kind: "frame", patches })
   }
 
   // ─── slice session-state-reducer C4: מתודת-עזר ל-tool_call create (reduce + patches + flush + turnState) ───
@@ -2768,7 +2756,7 @@ export class AgentSession {
       sessionUpdate: "tool_call",
     })
     this.sessionState = nextState
-    applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+    this.#transcript.applyPatch({ kind: "frame", patches })
     // flush pending subagent events for this toolCallId (slice subagent-transcript-data-v2)
     if (typeof update.toolCallId === "string") {
       this.#flushPendingSubagentEvents(update.toolCallId)
@@ -2776,46 +2764,5 @@ export class AgentSession {
     // turnState תמיד calling-tool ללא תנאי (create, לא update)
     this.#setTurnState("calling-tool")
     if (this.#turnEnded) this.#scheduleIdle()
-  }
-
-  /**
-   * §11: מצרף image-attachment לבועת-user — קיבוץ לפי messageId כמו #appendChunk.
-   *
-   * הערה על reactivity: #appendChunk משתמש ב-segments.push() — עובד כי segments[]
-   * הוא deep $state proxy ב-Svelte 5. attachments מתחיל undefined (optional ב-UserBubble),
-   * לכן .push() על undefined יקרוס. לכן כאן **השמה** (`[..., a]`) — פותרת גם את
-   * ה-undefined-init וגם מבטיחה reactivity על מערך שנוסף מאפס.
-   */
-  #appendUserImage(messageId: string | null, img: { mimeType: string; data: string }): void {
-    appendUserImage(this, messageId, img)
-  }
-
-  /**
-   * §11.3א: מצרף placeholder מבני לבועת-user עבור ContentBlocks לא-טקסטואליים (resource_link / audio / resource).
-   *
-   * אותה לוגיקת קיבוץ כמו #appendUserImage — grouping לפי messageId.
-   * contentPlaceholders מתחיל undefined → **השמה** (לא push), כמו attachments.
-   * ה-VM לא מייבא t ולא כותב שום מחרוזת-תצוגה או מפתח i18n — i18n שייך לשכבת-הרכיב.
-   */
-  #appendUserPlaceholder(
-    messageId: string | null,
-    ph: { kind: "resource_link" | "audio" | "resource"; label?: string; uri?: string },
-  ): void {
-    appendUserPlaceholder(this, messageId, ph)
-  }
-
-  /**
-   * tool-render-fidelity: placeholder for non-text agent_message_chunk (§11.3א pattern).
-   * i18n belongs to MessageBubble — VM stores structural marker only.
-   */
-  #appendAgentPlaceholder(
-    messageId: string | null,
-    ph: {
-      kind: "resource_link" | "audio" | "resource" | "image"
-      label?: string
-      uri?: string
-    },
-  ): void {
-    appendAgentPlaceholder(this, messageId, ph)
   }
 }

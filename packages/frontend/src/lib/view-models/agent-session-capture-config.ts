@@ -43,7 +43,7 @@ export function captureSessionConfig(
   d.setQuotaLoading(false)
   d.setMockQuota(undefined)
   // slice subagent-tool-nesting: נקה מיפוי-קינון (החלפת/פתיחת סשן = מיפוי חדש)
-  d.session().subagentToolCallParents = new Map()
+  d.session().clearSubagentParents()
   // slice plan-todo-list: איפוס הצ'קליסט בהחלפת/פתיחת סשן (סשן חדש = אין תוכנית ישנה)
   d.setPlanStore(EMPTY_PLAN_STORE)
 }

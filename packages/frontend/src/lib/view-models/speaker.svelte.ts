@@ -41,7 +41,7 @@ import {
 import type { OrderAllocator, OrderKey } from "@drive-coding/core/voice/tts-queue"
 import { untrack } from "svelte"
 import { registerSpeaker, type SpeakerDebugInfo } from "$lib/debug/playback-registry"
-import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
+import type { ToolBubble } from "$lib/types/bubble"
 import { safeUUID } from "$lib/util/uuid"
 import { narrate } from "../adapters/voice/narrate"
 import { translate } from "../adapters/voice/translate"
@@ -50,8 +50,8 @@ import type { AudioPlaylist, SegmentOwner } from "../engines/audio-playlist.svel
 import type { AudioSink } from "../engines/audio-sink"
 import type { CuesEngine } from "../engines/cues"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
-import type { Live } from "./live.svelte"
 import { ttsCapabilities } from "./capabilities.svelte"
+import type { Live } from "./live.svelte"
 import type { Settings } from "./settings.svelte"
 
 const TARGET_LANG = "he" as const
@@ -802,16 +802,7 @@ export class Speaker implements SegmentOwner {
     if (text === null) return null
 
     // כתוב narration חזרה לבועה (תצוגה) — Svelte 5: החלף בועה שלמה.
-    const cur = this.#session.bubbles.findIndex((x) => x.id === job.bubbleId)
-    if (cur !== -1) {
-      const maybe = this.#session.bubbles[cur]
-      if (maybe !== undefined && maybe.kind === "tool") {
-        this.#session.bubbles[cur] = {
-          ...maybe,
-          toolCall: { ...maybe.toolCall, narration: text },
-        }
-      }
-    }
+    this.#session.annotateToolNarration(job.bubbleId, text)
     return text
   }
 
@@ -831,25 +822,12 @@ export class Speaker implements SegmentOwner {
     originalEnglish: string,
     translatedHebrew: string,
   ): void {
-    const idx = this.#session.bubbles.findIndex((b) => b.id === bubbleId)
-    if (idx === -1) return
-    const maybeBubble = this.#session.bubbles[idx]
-    if (maybeBubble === undefined || maybeBubble.kind !== "thought") return
-    const bubble: ThoughtBubble = maybeBubble
-
     const segIdx = this.#translatedSegByBubble.get(bubbleId) ?? 0
-    if (segIdx >= bubble.segments.length) {
-      // יותר משפטים ממקטעים — אין מקטע לעדכן.
-      return
+    if (
+      this.#session.annotateThoughtTranslation(bubbleId, segIdx, originalEnglish, translatedHebrew)
+    ) {
+      this.#translatedSegByBubble.set(bubbleId, segIdx + 1)
     }
-
-    // החלף את המקטע ב-segIdx: החלף text → עברית, originalText → אנגלית.
-    const updatedSegments: ThoughtBubble["segments"] = bubble.segments.map((seg, i) =>
-      i === segIdx ? { ...seg, text: translatedHebrew, originalText: originalEnglish } : seg,
-    )
-    // החלף בועה שלמה (ריאקטיביות Svelte 5 — השמת index מפעילה עדכון).
-    this.#session.bubbles[idx] = { ...bubble, segments: updatedSegments }
-    this.#translatedSegByBubble.set(bubbleId, segIdx + 1)
   }
 
   #stopAndClear(): void {

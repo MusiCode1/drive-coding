@@ -166,6 +166,33 @@ describe("AgentSession session-scope boundary", () => {
     expect(session.sessionTitle).toBe("kept")
   })
 
+  it("replaces the reactive transcript owner on A→B and preserves it on same-ID reload", async () => {
+    const session = new AgentSession()
+    const seen: number[] = []
+    const stop = $effect.root(() => {
+      $effect(() => {
+        seen.push(session.renderBubbles.length)
+      })
+    })
+    flushSync()
+    await session.loadSession({ sessionId: "sess-a", cwd: "/proj", cliKind: "opencode" })
+    const ownerA = session._transcriptForTest()
+    session.bubbles = [{ id: "a", kind: "message", messageId: null, createdAt: 0, segments: [] }]
+    flushSync()
+    session.status = "disconnected" as typeof session.status
+    await session.loadSession({ sessionId: "sess-a", cwd: "/proj", cliKind: "opencode" })
+    expect(session._transcriptForTest()).toBe(ownerA)
+    session.status = "disconnected" as typeof session.status
+    await session.loadSession({ sessionId: "sess-b", cwd: "/proj", cliKind: "opencode" })
+    flushSync()
+    stop()
+    expect(session._transcriptForTest()).not.toBe(ownerA)
+    expect(session._transcriptForTest().sessionId).toBe("sess-b")
+    expect(session.renderBubbles).toEqual([])
+    expect(seen).toContain(1)
+    expect(seen.at(-1)).toBe(0)
+  })
+
   it("attachRemoteToLiveAgent applies manual title/notes/fields after enterSession", async () => {
     const snapshot = {
       ...createInitialSessionState({ sessionId: "live-scope-1" }),

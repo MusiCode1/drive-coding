@@ -26,7 +26,14 @@ export type SubagentToolCallUpdateInput = {
 
 export type SubagentToolNestingDeps = {
   bubbles: () => Bubble[]
-  parents: () => Map<string, string>
+  appendNestedTool: (parentId: string, child: ToolBubble) => boolean
+  updateNestedTool: (
+    parentId: string,
+    childId: string,
+    update: (child: ToolBubble) => ToolBubble,
+  ) => void
+  getParent: (id: string) => string | undefined
+  registerParent: (id: string, parentId: string) => void
   turnEnded: () => boolean
   applyToolCall: (update: Record<string, unknown>) => void
   setTurnState: (state: "idle" | "waiting" | "thinking" | "responding" | "calling-tool") => void
@@ -69,11 +76,8 @@ export function handleSubagentToolCall(
     segments: [],
   }
 
-  bubbles[parentIdx] = {
-    ...parent,
-    subFrames: [...(parent.subFrames ?? []), childBubble],
-  }
-  deps.parents().set(update.toolCallId, parentToolUseId)
+  deps.appendNestedTool(parentToolUseId, childBubble)
+  deps.registerParent(update.toolCallId, parentToolUseId)
   deps.setTurnState("calling-tool")
   if (deps.turnEnded()) deps.scheduleIdle()
 }
@@ -87,39 +91,23 @@ export function handleSubagentToolCallUpdate(
     deps.setTurnState("calling-tool")
     if (deps.turnEnded()) deps.scheduleIdle()
   }
-  const parentToolUseId = deps.parents().get(update.toolCallId)
+  const parentToolUseId = deps.getParent(update.toolCallId)
   if (parentToolUseId === undefined) return
-  const bubbles = deps.bubbles()
-  const parentIdx = bubbles.findIndex(
-    (b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId,
-  )
-  const parent = parentIdx === -1 ? undefined : bubbles[parentIdx]
-  if (parent === undefined || parent.kind !== "tool") return
-
-  const subFrames = parent.subFrames ?? []
-  const childIdx = subFrames.findIndex(
-    (sf) => sf.kind === "tool" && sf.toolCall.toolCallId === update.toolCallId,
-  )
-  if (childIdx === -1) return
-  const oldChild = subFrames[childIdx]
-  if (oldChild === undefined || oldChild.kind !== "tool") return
-
-  const newToolCall: ToolCall = {
-    ...oldChild.toolCall,
-    ...(update.status !== undefined && { status: update.status }),
-    ...(update.rawInput !== undefined && { args: update.rawInput }),
-    ...(update.rawOutput !== undefined && { result: update.rawOutput }),
-    ...(update.kind !== undefined && { kind: update.kind }),
-    ...(update.title !== undefined && { title: update.title }),
-    ...(update.content !== undefined && {
-      content: update.content === null ? undefined : mapToolContent(update.content),
-    }),
-    ...(update.locations !== undefined && {
-      locations: update.locations === null ? undefined : mapLocations(update.locations),
-    }),
-  }
-  const newChild: ToolBubble = { ...oldChild, toolCall: newToolCall }
-  const newSubFrames = [...subFrames]
-  newSubFrames[childIdx] = newChild
-  bubbles[parentIdx] = { ...parent, subFrames: newSubFrames }
+  deps.updateNestedTool(parentToolUseId, update.toolCallId, (oldChild) => {
+    const newToolCall: ToolCall = {
+      ...oldChild.toolCall,
+      ...(update.status !== undefined && { status: update.status }),
+      ...(update.rawInput !== undefined && { args: update.rawInput }),
+      ...(update.rawOutput !== undefined && { result: update.rawOutput }),
+      ...(update.kind !== undefined && { kind: update.kind }),
+      ...(update.title !== undefined && { title: update.title }),
+      ...(update.content !== undefined && {
+        content: update.content === null ? undefined : mapToolContent(update.content),
+      }),
+      ...(update.locations !== undefined && {
+        locations: update.locations === null ? undefined : mapLocations(update.locations),
+      }),
+    }
+    return { ...oldChild, toolCall: newToolCall }
+  })
 }
