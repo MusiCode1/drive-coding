@@ -1,3 +1,19 @@
+## 2026-09-27 — slice `usage-per-cli` (אליעזר)
+
+ענף: `slice/usage-per-cli` @ base `0f32eabf`. worktree: `.worktrees/usage-per-cli`.
+
+**C1** — `GET /api/usage/clis`: צבירה טהורה `aggregateCliUsage` (טוקנים + registry), handler ב-`http-cli-usage.ts`, גזירות מחזור ב-`core/usage/cli-usage.ts`, re-export ב-`adapters/token-usage.ts`. טסטים: cursor רק ב-registry, מטבעות, cwd.
+
+**C2** — `/usage`: `fetchCliUsage` (ArkType), `CliUsageTable` + `UsageScreen`, `TtsStatusCard` + `ttsStatus.refresh()`, קישור ב-AppHeader וב-Settings. i18n additive בבלוק `// ─── usage ───`.
+
+**שערים (4022):** `application/json`, `.clis` GREEN, `["claude","codex","cursor"]`, cursor `sessions:0` / `reportsUsage:false`.
+
+**בדיקות:** אחרי `bun run --filter @drive-coding/frontend typecheck` — `Test Files 3 failed | 400 passed`, `Tests 5 failed | 4379 passed`; אפס `(0 test)` ב-FE. כשלים קדם-קיימים: `http-mcp.test.ts` (2), `client.attached.test.ts` (2), `client.delete-session.test.ts` (1). §7.1 — לא תוקנו.
+
+**חריגות:** `bun run typecheck` (root) נכשל על provider (`unstable_createElicitation`) גם על `0f32eabf` נקי; `bun run lint` — אי-התאמת גרסת Biome CLI מול `biome.json` (443 diagnostics בריפו). `lint:i18n` ירוק.
+
+---
+
 ## 2026-09-08 14:20 (ביטול טיימר-השאלות + טעינה חמה של קונפיגורציה)
 
 ענף: `integration/run-config-hot-reload`, worktree `edge/.worktrees/config-hot-reload`,
@@ -279,6 +295,41 @@ Rule: `docs-for-llm/design-principles.md` §7 · `.cursor/rules/config-defaults.
 |---|--------|--------|
 | 1 | vitest (specs/resolve/load-config/mapping/registry/liveness) | **127 עברו** |
 | 2 | core typecheck | **עבר** |
+## 2026-08-29 15:10 — slice playlist-nav-chrome · Commit 2 (harness)
+
+Phase 2: 20 MP3 fixtures (ffmpeg) + `/playlist-nav-chrome-test` harness + `tests/smoke/playlist-nav-chrome.mjs` (PLAYLIST_NAV_CHROME=1 gate).
+
+#### בדיקות
+
+- smoke without flag: exit 0 `skipped: no-chrome`
+- chrome DoD: manual (linux-gui CDP)
+
+---
+
+## 2026-08-29 15:08 — slice playlist-nav-chrome · Commit 1 (contract)
+
+Phase 1: `#playLoop` replay branch includes `skipped`+`jumpTarget`+`isComplete`; `#navigate` resets `skipped`+!complete like done/error; `markReady` on `skipped`+`reconsiderable` → ready without cursor move.
+
+#### בדיקות
+
+- audio-playlist*: 50 passed
+- lint:i18n: pass
+
+---
+
+## 2026-08-29 15:07 — slice playlist-nav-chrome · Commit 0 (tdd red)
+
+Phase 0: `audio-playlist.late-arrive.test.ts` — 2 tests red on base `f7d49905`.
+
+| Case | Assert |
+|------|--------|
+| A | late markReady → no cursor jump; prev → sink.play(s1) |
+| B | noteBuffered without markReady; prev while skipped → sink.play(s1) |
+
+#### בדיקות
+
+- late-arrive: 2 failed (expected red)
+- lint:i18n: pass
 
 ---
 

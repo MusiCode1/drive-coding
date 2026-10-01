@@ -95,6 +95,204 @@ and all three had been silently useless for days.
 five of its nine cases assert `exit 0 + empty stdout` — no agent id, backend down,
 non-2xx, wrong content-type, empty body. The happy path was never the risk.
 
+## 🔴 `agent-session.svelte.ts` — ‏מהקובץ הזה **רק מסירים**
+
+```json
+// size-baseline.json — ‏עודכן אחרי סלייס agent-session-mechanical-split (28/09/2026)
+"packages/frontend/src/lib/view-models/agent-session.svelte.ts":
+  { "metric": 3445, "impurity": 78, "class": "scattered", "codeLines": 2124 }
+// size-budgets.json — view-models budget: 400
+```
+
+**3,445 שורות מול תקציב 400 — פי 8.6**, עם `class: "scattered"` (‏הסיווג החמור
+בסכימה). ‏הקובץ הבא אחריו ב-FE הוא 1,351 שורות.
+
+‏הנתיב עד כאן: ‏**3,675 → 3,599 → 3,445**. ‏הירידה האחרונה (‏−154) ‏היא סלייס
+`agent-session-mechanical-split`, ‏שהוציא 13 ‏גושים לתשעה מודולים
+(`agent-session-{apply-config,bubble-append,capture-config,config-choice,delete,`
+`drain-view-patches,quota-refresh,request-permission,session-end}.ts`).
+‏🔑 **‏מה שהסלייס לימד:** ‏חילוץ מכני **‏אינו** ‏מוריד את מה שגודל-הגוש מבטיח.
+‏319 ‏שורות-ברוטו עברו, ‏אבל ‏~165 ‏חזרו כשארית — ‏בלוקי `#…Deps()` (‏~110)
+‏ועוטפים שנשארו במחלקה כדי לא לגעת בקריאות ובטסטים. ‏מי שמתכנן יעד-שורות
+‏מסכימת גדלים ‏**‏יחטיא בפי-שניים**.
+
+‏🟢 **אכיף היום**: `.githooks/pre-commit` מריץ `node scripts/lint-file-size.mjs`,
+‏שהוא ratchet מונוטוני — ‏גדילה של קובץ-בסיס **מפילה את הקומיט**, ו-
+‏`--update-baseline` *"refuses to raise any number"*.
+‏⚠️ ‏**אין CI** — ‏`git commit --no-verify` עוקף. ‏האכיפה תלויה גם במשמעת.
+
+### ‏🔴 ‏אכיפה: ‏`lint:size` ‏דורש **‏כיווץ**, ‏לא רק אי-גדילה
+
+‏מאז 28/09 ‏הכלל אכיף אוטומטית. ‏קובץ ש-`metric > effectiveBudget` ‏**ונמצא
+‏ב-staging של הקומיט** ‏חייב לרדת:
+
+| סף | ערך |
+|---|---|
+| ‏ירידה ב**שורות-קוד** | ‏**≥15** |
+| ‏(‏ירידה ב-`wc -l` ‏≥25) | ‏**‏fallback בלבד** — ‏לרשומת-baseline ישנה בלי `codeLines` |
+
+### ‏🟢 ‏תוקן 29/09 — ‏**‏שינוי שאינו קוד אינו חוסם ואינו חייב מס**
+
+‏עד 29/09 ‏הכלל נגזר מ-`wc -l`, ‏ולכן **‏תיקון הערה בקובץ חורג עלה 25 ‏שורות
+‏חילוץ** — ‏וסוכן דילג על שיפור הערה במקום לשלם. ‏הכלל לימד את ההפך ממטרתו.
+
+| ‏מה שונה | ‏כעת |
+|---|---|
+| ‏כלל הגדילה | ‏נשען על **`codeLines`**. ‏הערה / ‏JSDoc / ‏שורה ריקה — ‏חופשיים |
+| ‏מס-החילוץ | ‏חל רק כש-`codeLines` ‏**‏השתנה**. ‏עריכת-הערה טהורה פטורה |
+| ‏`metric` (`wc -l`) | ‏**‏מידע בלבד**, ‏לא בסיס-חסימה |
+
+‏⚠️ **‏מגבלה מוצהרת של המדידה:** ‏ריפקטור ששומר `codeLines` ‏זהה נקרא
+‏"‏לא-שינוי-קוד" ‏וחומק מהמס. ‏מקובל — ‏זיהוי מבוסס-diff ‏הוא מנגנון גדול
+‏מהכלל עצמו. ‏`scripts/lint-file-size.test.mjs` ‏מקבע את שלושת המקרים, ‏והטסט
+‏של הפטור נושא **‏שער-שפיות** ‏שמאמת שהכלל פעיל לפני שהוא בודק את הפטור.
+
+### ‏🟢 ‏תוקן 30/09 — ‏הערת-תבנית ב-`.svelte`, ‏והמדידה שהיא שיברה
+
+‏הפטור מ-29/09 ‏כיסה `//` ‏ו-`/* */` ‏בלבד. ‏`stripComments` ‏לא הכיר
+‏`<!-- -->`, ‏ולכן **‏הערה בתבנית `.svelte` ‏נספרה כקוד** ‏וחייבה מס-חילוץ —
+‏בדיוק ההפך מכוונת הכלל. ‏נוסף ענף html, ‏**‏מופעל לפי סיומת בלבד** ‏כדי
+‏ש-`a < !--b` ‏ב-TS ‏לא ייגע.
+
+‏🔴 **‏והתיקון חשף שהמספרים עצמם לא היו מדידה.** ‏הערות בעברית מכילות גרש
+‏בודד (`ר'`). ‏בסטריפר הישן הוא **‏פתח מחרוזת** ‏ודה-סינכרן את זוגיות הגרשים
+‏**‏לכל שאר הקובץ**; ‏שורות markup ‏אמיתיות נבלעו ונספרו כריקות.
+
+| ‏קובץ | ‏baseline ‏ישן | ‏אמיתי |
+|---|---|---|
+| `ActiveProcessesPanel.svelte` | 229 | **‏663** |
+| `TypeArea.svelte` | 277 | **‏439** |
+| `routes/+page.svelte` | 145 | **‏307** |
+
+‏**‏9 ‏מתוך 86 ‏קובצי `.svelte`** ‏הושפעו; ‏7 ‏קיבלו רה-בסיס כתיקון-מדידה
+(`3907afc4`). ‏⇒ **‏כל מספר `codeLines` ‏של `.svelte` ‏שנרשם לפני 30/09 ‏חשוד**,
+‏ואין להשוות אליו. ‏שלושה טסטים מקבעים את השלושה: ‏הערה אינה קוד · ‏גרש בהערה
+‏אינו בולע markup · ‏`.ts` ‏אינו מושפע.
+
+### ‏🛑 ‏מלכודת: ‏`size-baseline.json` ‏ורזולוציית-מיזוג
+
+‏קובץ JSON ‏שכל ענף נוגע בו הוא **‏מגנט להתנגשויות**, ‏וההתנגשות **‏שקטה**:
+‏ב-`f7d01bb2` ‏שני צדי המיזוג עדכנו את רשומת `agent-session.svelte.ts`, ‏והפתרון
+‏בחר את המספר **‏הנמוך** (`codeLines` ‏2054 ‏מול 2055, ‏`metric` ‏3321 ‏מול 3330).
+
+‏ה-baseline ‏תיאר גרסה שלא הייתה קיימת אחרי המיזוג, ‏ולכן **‏כל `git push`
+‏ל-edge ‏נחסם על הפרש של שורה אחת** — ‏במשך ימים, ‏בלי שאיש יֵדע למה.
+‏תוקן ב-`d297cc91`.
+
+‏🔑 **‏איך מזהים:** ‏`code grew N → N+1` ‏על קובץ ש**‏לא נגעת בו**. ‏לפני שמניחים
+‏"‏מישהו דחף עם `--no-verify`" — ‏`git log -- size-baseline.json` ‏ו-`git show`
+‏על המיזוג האחרון. ‏נצרב: ‏הסקתי עקיפה מתסמין, ‏והאמת הייתה רזולוציה שגויה.
+
+‏🔑 **‏למה שני מדדים:** ‏`countLines` ‏הוא `wc -l` — ‏סופר הערות ושורות ריקות.
+‏בלי מדידת-קוד נפרדת, ‏מחיקת 25 ‏שורות הערה הייתה מספקת את הכלל **‏בלי לחלץ
+‏דבר**. ‏`codeLines` ‏מחושב מ-`stripCommentsAndStrings`, ‏ונשמר ב-baseline.
+
+‏**‏הכלל אינרטי כשאין staging** — ‏`bun run lint:size` ‏על עץ נקי, ‏ריצה ידנית
+‏וסביבה בלי git אינם מושפעים.
+
+### ‏ארבע שכבות — ‏רכה מוקדם, ‏קשה מאוחר
+
+‏`lint:size` ‏מחזיר **‏שלושה** ‏קודים: ‏`0` ‏נקי · ‏`1` ‏חסימה · ‏`2` ‏must-shrink.
+‏ההבחנה חיה **בסקריפט**, ‏לא ב-hook — ‏git ‏חוסם על כל קוד ≠ 0 ‏(‏נמדד), ‏ולכן
+‏hook שמחזיר 2 ‏היה חוסם בדיוק כמו 1.
+
+| שכבה | מה | חוסם? | שורד `--no-verify`? |
+|---|---|---|---|
+| ‏`bun run lint:size` | ‏`exit 2` | — | — |
+| ‏`pre-commit` | ‏מתרגם 2→0 ‏ומדפיס | ❌ | ❌ |
+| ‏**`post-commit`** | ‏מזכיר אחרי הקומיט | ❌ | ✅ |
+| ‏`pre-push` | ‏חוסם — **‏must-shrink + ‏`tsc --build`** | ✅ | ❌ |
+| ‏**`dod-check.sh check`** | ‏חוסם | ✅ | ✅ — **‏אינו hook** |
+
+**‏למה `exit 2` ולא הודעה בלבד:** ‏סוכן בודק קוד-יציאה, ‏לא טקסט. ‏`exit 0`
+‏פירושו "‏המשך" ‏והאזהרה נבלעת. ‏קוד ≠ 0 ‏נתפס גם בלי לקרוא.
+
+**‏למה `post-commit`:** ‏`--no-verify` ‏מדלג על `pre-commit` ‏**‏כולו**, ‏כלומר מי
+‏שעוקף חסימה מאבד גם את האזהרה. ‏`post-commit` **‏אינו מדולג** (‏נמדד 28/09),
+‏ולכן התזכורת מגיעה גם אליו.
+
+**‏למה הקומיט אינו היחידה הנכונה:** ‏ה-ratchet משווה מול baseline שמתעדכן אחרי
+‏כל כיווץ. ‏סלייס שמחלץ בקומיט אחד ומוסיף גטרים בשני — ‏השני נכשל, ‏אף
+‏שהסלייס בסך-הכול כיווץ. ‏לכן החסימה חיה ב-pre-push וב-dod-check, ‏שם היחידה
+‏היא הענף/הסלייס.
+
+‏עקיפה: ‏`--no-verify` ‏ב-commit וב-push. ‏⚠️ ‏אין CI. ‏**‏`dod-check` ‏הוא השער
+‏היחיד שאינו ניתן לעקיפה בדגל** — ‏רק בכך שלא מריצים אותו, ‏וזה נראה בדוח.
+
+### מס-החילוץ — ‏הכלל
+
+**סלייס שנוגע בקובץ מחלץ ממנו חתיכה לוגית מאותו תחום שהוא עובד עליו.**
+‏מי שנוגע בלוגיקת-איפוס מחלץ לוגיקת-איפוס; ‏מי שנוגע בפריימים מחלץ טיפול-פריימים.
+‏החילוץ נעשה במקום שבו ממילא יש הקשר מלא — ‏וזה מה שהופך אותו לזול ולבטוח.
+
+**מדד-הבחירה הוא צימוד, לא גודל:**
+
+```bash
+# כמה שדות פרטיים הבלוק נוגע בהם
+sed -n '<start>,<end>p' <file> | grep -oE 'this\.#[a-zA-Z][a-zA-Z0-9_]*' | sort -u | wc -l
+```
+
+‏≤5 ⇒ ‏מועמד טוב. ‏20+ ⇒ ‏סלייס נפרד, לא מס-אגב.
+
+‏`#cleanup` — ‏76 שורות, ‏**21** ‏שדות (‏לא לגעת אגב).
+
+### מועמדים ידועים
+
+‏🛑 **‏תוקן 28/09/2026 — ‏הגרסה הקודמת של הטבלה הכילה שלושה מספרים שגויים**,
+‏שנמדדו בספירת-שורות בין כותרות במקום בהתאמת-סוגריים. ‏מי שתכנן לפיהם תכנן
+‏על חילוץ שאינו קיים:
+
+| ‏מה נכתב | ‏מה נמדד בפועל |
+|---|---|
+| ‏`#resetTurnTracking` — ‏106 שורות | ‏**7** (‏הטווח 501–607 ‏הוא ברובו הצהרות-שדה שאחריה) |
+| ‏`constructor` — ‏263 שורות | ‏**26** |
+| ‏`#cleanup` — ‏82 שורות | ‏**76** |
+
+‏⚠️ ‏חתימות בקובץ הזה מכילות **‏טיפוסי-אובייקט מוטבעים**, ‏ולכן ספירת `{`/`}`
+‏נאיבית נסגרת על ה-`},` ‏של הפרמטר ומחזירה גבול שגוי. ‏פרסר תקין חייב להתחיל
+‏לספור רק כשעומק-הסוגריים-העגולים הוא 0.
+
+| חתיכה | שורות | ‏שורות-קוד | צימוד (‏שדות פרטיים) |
+|---|---|---|---|
+| `#onSessionUpdate` | 272 | 213 | 15 |
+| `#warmReconnect` | 140 | 99 | **24** |
+| `switchSession` | 101 | 74 | 12 |
+| `attach` | 87 | 70 | **21** |
+| `#loadMockSession` | 78 | 62 | 7 |
+| `#cleanup` | 76 | 46 | **21** |
+
+‏ששתן = ‏**754 שורות**, ‏כ-22% ‏מהקובץ. ‏בקצב של אחת לסלייס זה נפרע בלי אף
+‏סלייס-ריפקטור ייעודי.
+
+‏🛑 **‏`#handleSubagentToolCallUpdate` ‏הוסר מהטבלה 28/09/2026 — ‏הוא כבר חולץ**
+‏ל-`subagent-tool-nesting.ts`, ‏ומה שנשאר בקובץ הוא קריאה
+(`agent-session.svelte.ts:3163`). ‏השורה הזאת הבטיחה חילוץ בן 50 ‏שורות שאינו קיים.
+
+‏⚠️ **‏מה שסלייס `mechanical-split` ‏כבר לקח** (‏28/09) — ‏אין לתכנן עליהם שוב:
+`#isValidChoice` · ‏`#appendUser{Image,Placeholder}` · ‏`#appendAgentPlaceholder` ·
+`#drainViewPatches` · ‏`#doRefreshQuota` · ‏`#onRequestPermission` ·
+`#applyConfigToClient` + ‏`applyConfigOption` · ‏`deleteSession` ·
+`#captureSessionConfig` · ‏`onSessionEnd` + ‏`#endSessionScope`.
+
+‏🔴 **‏ומה שנמדד כחסום:** ‏`#coldReconnect` (‏8 ‏שדות-גרעין), ‏`cancelTurn` (‏6)
+‏ו-`#loadMockSession` (‏5+) ‏אינם ניתנים לחילוץ מכני — ‏אובייקט-`deps` ‏בגודל כזה
+‏אינו חילוץ אלא העברת-המחלקה. ‏**‏כל שש החתיכות שנשארו בטבלה נוגעות ב-5+ ‏שדות-גרעין**
+(‏נמדד: ‏`switchSession` ‏6, ‏`#cleanup` ‏~11, ‏והשאר יותר) — ‏כלומר הצעד הבא ששווה
+‏משהו הוא **‏הכרעה ארכיטקטונית** (‏המרת `#` ‏ל-`private`, ‏שתפתח חילוץ אמיתי),
+‏לא עוד סבב מכני.
+
+‏"‏גרעין" = ‏22 ‏שדות פרטיים שש-‏6+ ‏חברים נוגעים בהם. ‏לשחזור:
+`node /tmp/ms-block-ranges2.mjs` ‏אינו בריפו — ‏המדידה נעשתה בפרסר-AST חד-פעמי
+‏(‏ר' ‏דוח `mechanical-split-avigail.md` ‏ב-`$BDS_REPORTS/drive-coding/`).
+
+‏🔴 **‏גטר אינו שורה אחת.** ‏Biome ‏מרחיב כל גוף-פונקציה, ‏ולכן זוג get/set
+‏עולה **‏6 שורות**. ‏מי שמחליף שדה בגטר-האצלה **‏מגדיל** ‏את הקובץ, ‏וה-ratchet
+‏חוסם אותו כ-`fails` (‏exit 1), ‏לא כאזהרת must-shrink. ‏נמדד בסלייס
+‏`session-scope-migration`: ‏9 ‏שדות ⇒ ‏+54 ‏שורות גטרים.
+
+**הכרעת-משתמש 28/09:** *"בכל פעם שניגע שם, נוציא חתיכה לוגית בהתאם למה
+שאנחנו מתעסקים איתו. ככה בסוף זה ייגמר."*
+
 ## Versioning — מספור גרסאות (טקס מיזוג)
 
 > ה-bump קורה **בכל מיזוג ל-dev** (לא בכל commit) — חלק מטקס-המיזוג של מרדכי, אחרי calev GO + אישור משתמשת.
@@ -131,9 +329,26 @@ bun run hooks:install # one-time: set core.hooksPath=.githooks (runs pre-commit 
 ```
 
 > ⚠️ **The frontend is inside `typecheck` since 2026-08-31.** `tsconfig.json` at the root
-> references only `core` and `backend`, so `tsc --build` never saw `packages/frontend` —
+> referenced only `core` and `backend`, so `tsc --build` never saw `packages/frontend` —
 > it is checked by `svelte-check`, which nothing ran automatically. 63 type errors
 > accumulated there unnoticed. `typecheck` now chains both; keep it that way.
+
+### ‏🟢 ‏נוסף 29/09 — ‏`tsc --build` ‏הוא שער ב-`pre-push`
+
+‏השורש references ‏היום **‏ארבעה**: ‏`core` ‏· ‏`backend` ‏· ‏`acp-wire` ‏· ‏**‏`provider`**.
+‏האחרון נוסף בסלייס `typecheck-gate`, ‏וזה **‏לא** ‏שינוי-נוחות: ‏בלעדיו קבצי-הטסט
+‏של `provider` ‏**‏אינם עוברים בדיקת-טיפוסים כלל**. ‏נמדד בבקרה — ‏שגיאה שהוזרקה
+‏ל-`client.create-elicitation.test.ts` ‏נתפסה **‏עם** ‏ה-reference, ‏והחזירה `0` ‏שגיאות
+‏**‏בלעדיו**, ‏על אותו קובץ שבור בדיוק.
+
+‏🔴 **‏למה `tsc --build` ‏ולבדו.** ‏השער נולד מ-`bugs/archive/73` (‏elicitation ‏מת
+‏שבוע בעוד `tsc` ‏מדפיס שתי שגיאות שאיש לא הריץ). ‏החצי השני של `bun run typecheck`
+‏הוא `svelte-check` — ‏**‏36ש' ‏מול 12ש'**, ‏והוא בודק **‏רק את ה-FE**. ‏הבאג ישב
+‏ב-`packages/provider`, ‏כלומר `svelte-check` ‏לא היה נוגע בו גם אילו רץ:
+‏שלושה רבעים מהעלות עבור אפס כיסוי על הכשל שקרה בפועל. ‏`svelte-check` ‏נשאר ידני.
+
+‏⚠️ ‏`pre-commit` ‏**‏לא** ‏השתנה — ‏קומיטים תכופים מ-push, ‏והנזק (‏קוד שבור שיוצא
+‏החוצה) ‏מתגלה ב-push. ‏עקיפה: ‏`git push --no-verify`, ‏ואין CI.
 
 > **Per-package commands** stay PM-agnostic via `node scripts/pm.mjs run-filter <pkg> <script>`
 > (it detects bun from the user-agent), or directly as `bun run --filter <pkg> <script>`.
@@ -206,14 +421,45 @@ After clone, run `bun run hooks:install` once. It sets `core.hooksPath=.githooks
 so `.githooks/pre-commit` runs the i18n lint before every commit. To skip a
 specific commit (rare): `git commit --no-verify`.
 
+### Agent docs freshness (`pre-push`)
+
+When the size ratchet passes (`lint-file-size.mjs` exit 0), `pre-push` also runs
+`node scripts/lint-docs-fresh.mjs`. It compares the **push range** (stdin from
+git, or `merge-base` with upstream, or unpushed commits on the branch) against
+agent-docs surfaces: HTTP route registration, MCP tools, render contract, new FE
+pages, config keys, `DOCS_VERSION` vs edited `docs/agents/*.md`, and
+`99-known-issues.md` vs the private bug register.
+
+The gate is **fail-open**: missing `docs-for-llm/`, a non-git tree, or an
+unresolvable range exits 0 with no output. Any internal error also exits 0.
+
+**Convention (not enforced):** when you edit an agent doc, bump `docs_version` on
+that doc and raise `DOCS_VERSION` in `packages/core/src/docs/index.ts` in the
+same push range. The linter only requires that *some* doc change in the range
+pairs with a semver increase of `DOCS_VERSION`; it does not require the edited
+file’s `docs_version` to match HEAD, only `<= DOCS_VERSION`.
+
+There is **no CI**; hooks can be skipped with `git push --no-verify`.
+
 ## Worktrees
 
-All worktrees live under `.worktrees/<name>/`. Branch names use the `slice/` prefix;
-the worktree **directory omits it** (a slash would nest a subdir). Create one with:
+All worktrees live under **`<repo-root>/.worktrees/<name>/`** — a *sibling* of the
+long-lived trees (`main/`, `dev/`, `edge/`), never a child of one. Branch names use the
+`slice/` prefix; the worktree **directory omits it** (a slash would nest a subdir).
+Create one with:
 
 ```bash
-git worktree add .worktrees/<name> -b slice/<name> dev   # branch: slice/<name> | dir: .worktrees/<name>
+ROOT="$(git rev-parse --git-common-dir)/.."   # repo root, from any worktree
+git worktree add "$ROOT/.worktrees/<name>" -b slice/<name> dev   # branch: slice/<name> | dir: .worktrees/<name>
 ```
+
+🛑 **Anchor the path — never write a bare `.worktrees/`.** It resolves against your
+cwd, so the same line run from inside `edge/` silently creates `edge/.worktrees/`
+instead, and nothing warns you. Measured 2026-09-30: **34** worktrees in the right
+place against **22** scattered — 16 under `edge/.worktrees/`, 6 under
+`dev/.worktrees/`. Verified the same day: `git worktree add` **normalizes** the `..`
+in `$ROOT`, so the registered path has no `.bare/..` in it. `git rev-parse` must run
+from inside the repo — pass `-C <any-worktree>` from a script that may not be.
 
 Cleanup after merge (worktrees pile up otherwise — we hit 34 at once):
 
@@ -232,14 +478,14 @@ a running BE takes its `FE_STATIC_DIR` with it. `--keep <name>` spares one by na
 On Windows there is no `/proc`, so the process check cannot run: `--apply` refuses
 unless you also pass `--no-process-check`.
 
-By hand, if you must: `git worktree remove .worktrees/<name>`,
+By hand, if you must: `git worktree remove "$ROOT/.worktrees/<name>"`,
 `git branch -d slice/<name>`, `git worktree prune`.
 
-Don't pollute the project root with worktree directories. The two long-lived
-worktrees `dev/` and `main/` (at the project root) are the exception, not the rule.
-Any new branch for a slice / bugfix / experiment goes under `.worktrees/`.
+Don't pollute the repo root with worktree directories. The long-lived trees there
+(`main/`, `dev/`, `edge/`, plus the bare `.bare/`) are the exception, not the rule.
+Any new branch for a slice / bugfix / experiment goes under `$ROOT/.worktrees/`.
 
-After `cd .worktrees/<name>`, run `bun install && bun run hooks:install`.
+After `cd "$ROOT/.worktrees/<name>"`, run `bun install && bun run hooks:install`.
 
 ## Ports
 
@@ -498,10 +744,29 @@ public clone. Paths under `packages/` are real files here.
 | **Per-slice rationale** (why the code looks the way it does) | `docs-for-llm/decisions/voice-acp.md` | living log (written by מרדכי) |
 | **How to write a slice plan** (handoff to executor) | `docs-for-llm/plans/README.md` | canonical |
 | **Planning history** — *how* we reached D1-D50, mental model, competitor/library research | `docs-for-llm/vnext-planning.md`, `docs-for-llm/vnext-research.md` | **historical** (not maintained) |
+| **What drive-coding offers an agent at runtime** — connect, session lifecycle, what the chat UI renders from your output | `docs/agents/` — **run `bun run docs:list` first** | public, agent-facing |
 
 > **Reading order for a new code task:** `design-principles.md` (rules) →
 > `frontend/AGENTS.md` (FE golden rules) → the relevant spec (`frontend-spec.md` §X)
 > → `parallel-safe-code.md` if you touch a shared file.
+
+### Agent-facing docs (`docs/agents/`) — how to find them
+
+**Work that touches the runtime surface an agent talks to: run `bun run docs:list`,
+then read only the documents whose `read_when` matches your task.** The command prints
+every document's path, `summary` and `read_when`; it reports `[missing front matter]`
+rather than skipping a malformed file. `bun run lint:docs` is the gate over that
+directory and runs in `pre-commit`.
+
+These are **public** docs written for coding agents, not for maintainers — the private
+planning notes stay in `docs-for-llm/`.
+
+> **Three routing channels — all live.** An agent working *inside this repo* reads
+> `docs/agents/` on disk (`bun run docs:list`). A **spawned child** without the repo
+> should use **`docs_get`** (MCP tool), **`drive-coding://docs/<id>`** resources, or
+> **`GET /api/docs`** / **`GET /api/docs/:id`** on the backend. Parent injection still
+> delivers the same pointers via `prompts/surface/*` (CLI hook / `GET /api/agent-prompt` /
+> `session_surface` MCP).
 
 ## עבודה עם מרדכי (planner)
 

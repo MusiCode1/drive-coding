@@ -43,6 +43,7 @@ import { createConfigChangeRefresher } from "$lib/engines/config-change-socket"
 import { ttsStatus } from "$lib/view-models/tts-status.svelte"
 import { CuesEngine } from "$lib/engines/cues"
 import { createPendingCaptureWiring } from "$lib/engines/pending-capture-wiring"
+import { MediaSessionPlaylistBridge } from "$lib/engines/media-session-playlist.js"
 import { PlayableSink } from "$lib/engines/playable-sink"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { NotifyEngine } from "$lib/engines/notify.svelte"
@@ -50,7 +51,7 @@ import { notifyTexts } from "$lib/notify-texts"
 import { normalizeSessionTransport } from "$lib/session/session-transport"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { beWsUrl } from "$lib/util/be-url"
-import { bindSessionScope } from "$lib/actions/session-scope"
+import { bindSessionLifecycle } from "$lib/actions/session-lifecycle"
 import { isPageHidden } from "$lib/util/page-visibility.svelte"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
@@ -152,6 +153,62 @@ const bubblePlayer = new BubblePlayer({
   orderAlloc: sharedOrderAlloc,
 })
 
+function titleForCurrentPlaylistSegment(): string | undefined {
+  const item = audioPlaylist.items[audioPlaylist.cursor]
+  if (!item) return undefined
+  const bubble = session.renderBubbles.find((b) => b.id === item.bubbleId)
+  if (!bubble || (bubble.kind !== "message" && bubble.kind !== "thought")) return undefined
+  const text = bubble.segments.map((s) => s.text).join("")
+  return text.slice(0, 80) || undefined
+}
+
+// ─── bt-chat-playback-nav: Media Session ↔ playlist (car mode, no keepalive) ───
+const mediaSessionBridge = new MediaSessionPlaylistBridge({
+  controls: {
+    next: () => audioPlaylist.next(),
+    prev: () => audioPlaylist.prev(),
+    pause: () => audioPlaylist.pause(),
+    resume: () => audioPlaylist.resume(),
+  },
+  onStop: () => bubblePlayer.stop(),
+  getState: () => audioPlaylist.state,
+  getTransport: () => audioPlaylist.transport,
+  getCursor: () => audioPlaylist.cursor,
+  getItemCount: () => audioPlaylist.items.length,
+  getTitle: () => titleForCurrentPlaylistSegment(),
+})
+
+$effect(() => {
+  const hasMediaSession = typeof navigator !== "undefined" && "mediaSession" in navigator
+  if (!hasMediaSession) {
+    mediaSessionBridge.detach()
+    return
+  }
+  const transport = audioPlaylist.transport
+  if (transport !== "stopped") {
+    mediaSessionBridge.attach()
+  } else {
+    mediaSessionBridge.detach()
+  }
+})
+
+$effect(() => {
+  const hasMediaSession = typeof navigator !== "undefined" && "mediaSession" in navigator
+  if (!hasMediaSession) return
+
+  // reactive deps for sync()
+  void audioPlaylist.transport
+  void audioPlaylist.state
+  void audioPlaylist.cursor
+  void audioPlaylist.items.length
+
+  if (audioPlaylist.transport !== "stopped") {
+    mediaSessionBridge.sync()
+  }
+})
+
+onDestroy(() => mediaSessionBridge.detach())
+
 // ─── car-mode ─── (slice 7)
 
 theme = new ThemeVM()
@@ -190,9 +247,7 @@ void ttsCapabilities.refresh()
 // ─── presence-poller ─── (slice liveness C3 — חי לכל אורך הסשן, גם כשהפאנל סגור)
 const presencePoller = new PresencePoller(session)
 presencePoller.init()
-session.bindConnectionRelease()
-session.setSseReconnectedListener(() => presencePoller.onSseReconnected())
-bindSessionScope({ session, speaker, orderAlloc: sharedOrderAlloc })
+bindSessionLifecycle({ session, speaker, orderAlloc: sharedOrderAlloc, presencePoller })
 
 // ─── wake-lock ─── (Track C — drive-first chrome)
 const wakeLock = new WakeLockEngine()

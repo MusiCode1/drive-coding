@@ -257,6 +257,7 @@ export type MessageKey =
   | "connect.agents.subAgentsOf"
   | "connect.agents.childCount"
   | "connect.agents.watcherCount"
+  | "connect.agents.openedBy"
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   | "settings.screen.label"
   | "settings.toggle.keepScreenOn"
@@ -301,6 +302,9 @@ export type MessageKey =
   | "connect.recent.collapse"
   | "connect.recent.expand"
   // ─── leave-running (slice leave-running-background) ───
+  | "session.titleLabel" // slice session-title-manual: editable session title in options panel
+  | "session.fieldsLabel" // slice session-memory: read-only agent fields in options panel
+  | "session.fieldsEmpty"
   | "session.leaveRunning" // תווית כפתור "צא — השאר רץ" (חדש)
   | "session.closeSession" // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
   | "session.leaveWarning.title"
@@ -401,6 +405,16 @@ export type MessageKey =
   | "sessionBudget.quota.used"
   | "sessionBudget.quota.of"
   | "sessionBudget.quota.resetsIn"
+  // ─── token usage persistence ─── (slice token-usage-persistence)
+  | "sessionBudget.context.compactions"
+  | "sessionBudget.context.sumHeld"
+  | "settings.tokenUsage.title"
+  | "settings.tokenUsage.loading"
+  | "settings.tokenUsage.refresh"
+  | "settings.tokenUsage.error"
+  | "settings.tokenUsage.empty"
+  | "settings.tokenUsage.compactions"
+  | "settings.tokenUsage.sumHeld"
   // ─── plan ─── (slice plan-todo-list)
   | "plan.title"
   | "plan.status.pending"
@@ -516,6 +530,27 @@ export type MessageKey =
   | "sessionMemo.minimize"
   | "sessionMemo.placeholder"
   | "settings.toggle.sessionMemo"
+  // ─── usage ─── (slice usage-per-cli)
+  | "usage.page.title"
+  | "usage.page.loading"
+  | "usage.page.refresh"
+  | "usage.page.error"
+  | "usage.page.empty"
+  | "usage.page.link"
+  | "usage.clis.cardTitle"
+  | "usage.clis.noUsageReport"
+  | "usage.clis.lastSeenPrefix"
+  | "usage.clis.lastSeenSuffix"
+  | "usage.clis.costMixed"
+  | "usage.clis.col.cli"
+  | "usage.clis.col.projects"
+  | "usage.clis.col.sessions"
+  | "usage.clis.col.turns"
+  | "usage.clis.col.peakHeld"
+  | "usage.clis.col.sumHeld"
+  | "usage.clis.col.compactions"
+  | "usage.clis.col.cost"
+  | "usage.clis.col.activity"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

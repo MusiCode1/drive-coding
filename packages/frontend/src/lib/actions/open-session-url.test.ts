@@ -17,14 +17,18 @@ vi.mock("$env/dynamic/public", () => ({
   env: { PUBLIC_SESSION_TRANSPORT: undefined },
 }))
 
+type MockSessionsCache = {
+  sessions: SessionInfo[]
+  error: string | null
+}
+
 type MockSession = {
   status: string
   cliKind: string | null
   sessionId: string | null
   agentId: string | null
   error: string | null
-  sessions: SessionInfo[]
-  sessionsError: string | null
+  sessionsCache: MockSessionsCache
   listSessions: ReturnType<typeof vi.fn>
   switchSession: ReturnType<typeof vi.fn>
   attachToLiveAgent: ReturnType<typeof vi.fn>
@@ -45,19 +49,19 @@ function makeAgent(overrides: Partial<AgentPublic> & Pick<AgentPublic, "id">): A
 }
 
 function makeSession(overrides: Partial<MockSession> = {}): MockSession {
+  const { sessionsCache: cacheOverride, ...rest } = overrides
   return {
     status: "idle",
     cliKind: null,
     sessionId: null,
     agentId: null,
     error: null,
-    sessions: [],
-    sessionsError: null,
+    sessionsCache: { sessions: [], error: null, ...cacheOverride },
     listSessions: vi.fn(async () => {}),
     switchSession: vi.fn(async () => {}),
     attachToLiveAgent: vi.fn(async () => {}),
     attachRemoteToLiveAgent: vi.fn(async () => {}),
-    ...overrides,
+    ...rest,
   }
 }
 
@@ -118,7 +122,10 @@ describe("openSessionUrl", () => {
       status: "connected",
       cliKind: "claude",
       sessionId: "other",
-      sessions: [{ sessionId: "sess-b", cwd: "/proj", title: "B", updatedAt: "" }],
+      sessionsCache: {
+        sessions: [{ sessionId: "sess-b", cwd: "/proj", title: "B", updatedAt: "" }],
+        error: null,
+      },
     })
     session.switchSession.mockImplementation(async () => {
       session.sessionId = "sess-b"
@@ -145,7 +152,7 @@ describe("openSessionUrl", () => {
     const session = makeSession({
       status: "connected",
       cliKind: "claude",
-      sessionsError: "network down",
+      sessionsCache: { sessions: [], error: "network down" },
     })
     expect(
       await openSessionUrl({
@@ -161,7 +168,7 @@ describe("openSessionUrl", () => {
     const session = makeSession({
       status: "connected",
       cliKind: "claude",
-      sessions: [],
+      sessionsCache: { sessions: [], error: null },
     })
     expect(
       await openSessionUrl({
@@ -177,7 +184,10 @@ describe("openSessionUrl", () => {
     const session = makeSession({
       status: "connected",
       cliKind: "claude",
-      sessions: [{ sessionId: "sess-b", cwd: "/proj", title: "", updatedAt: "" }],
+      sessionsCache: {
+        sessions: [{ sessionId: "sess-b", cwd: "/proj", title: "", updatedAt: "" }],
+        error: null,
+      },
     })
     session.switchSession.mockRejectedValue(new Error("cannot switchSession in status connecting"))
 
@@ -195,7 +205,10 @@ describe("openSessionUrl", () => {
     const session = makeSession({
       status: "connected",
       cliKind: "claude",
-      sessions: [{ sessionId: "sess-b", cwd: "/proj", title: "", updatedAt: "" }],
+      sessionsCache: {
+        sessions: [{ sessionId: "sess-b", cwd: "/proj", title: "", updatedAt: "" }],
+        error: null,
+      },
     })
     session.switchSession.mockImplementation(async () => {
       session.status = "error"
@@ -257,7 +270,10 @@ describe("openSessionUrl", () => {
       }),
     ])
     const session = makeSession({
-      sessions: [{ sessionId: "sess-target", cwd: "/other", title: "T", updatedAt: "" }],
+      sessionsCache: {
+        sessions: [{ sessionId: "sess-target", cwd: "/other", title: "T", updatedAt: "" }],
+        error: null,
+      },
     })
     session.attachToLiveAgent.mockImplementation(async () => {
       session.status = "connected"

@@ -779,7 +779,11 @@ export async function createSessionHostFromConnection(
         const acpContent = transformPromptForAcp?.(content) ?? content
         await client.prompt(sessionId, acpContent)
         if (turn === turnLifecycle.turnSeq) {
-          emitTurnEnd(applyTurnEnd(currentState), { stopReason: "end_turn" }) // 3א. הצלחה
+          emitTurnEnd(applyTurnEnd(currentState), {
+            stopReason: "end_turn",
+            contextUsage: currentState.contextUsage,
+            acpSessionId: currentState.sessionId,
+          }) // 3א. הצלחה
           maybeScheduleCloseOnTurnEnd()
           // slice http-state-gaps C3: refresh quota at turn end — the brief asked for
           // it and it was missing (calev finding 7). A turn is exactly when usage
@@ -795,6 +799,8 @@ export async function createSessionHostFromConnection(
           emitTurnEnd(applyTurnEnd(currentState, error), {
             stopReason: error?.message,
             lastTurnError: error ?? null,
+            contextUsage: currentState.contextUsage,
+            acpSessionId: currentState.sessionId,
           }) // 3ב. שגיאה — אין closeOnTurnEnd (הסוכן נשאר כראיה)
         }
         throw err // rethrow — הקורא הישיר עדיין רואה את השגיאה
@@ -949,7 +955,11 @@ export async function createSessionHostFromConnection(
         // best-effort — תואם ל-local
       }
       if (turn === turnLifecycle.turnSeq) {
-        emitTurnEnd(applyTurnEnd(currentState), { stopReason: "cancelled" }) // אותה גדר בדיוק כמו ב-prompt
+        emitTurnEnd(applyTurnEnd(currentState), {
+          stopReason: "cancelled",
+          contextUsage: currentState.contextUsage,
+          acpSessionId: currentState.sessionId,
+        }) // אותה גדר בדיוק כמו ב-prompt
         maybeScheduleCloseOnTurnEnd()
       }
     },

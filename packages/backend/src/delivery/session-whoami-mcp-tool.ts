@@ -137,6 +137,15 @@ export function registerSessionWhoamiMcpTool(
       if (callerRecord.parentAgentId !== undefined) {
         result.parentAgentId = callerRecord.parentAgentId
       }
+      if (callerRecord.openedByEmail !== undefined) {
+        result.openedByEmail = callerRecord.openedByEmail
+      }
+      if (callerRecord.userNotes !== undefined) {
+        result.userNotes = callerRecord.userNotes
+      }
+      if (callerRecord.sessionFields !== undefined) {
+        result.sessionFields = callerRecord.sessionFields
+      }
       const sessionId = deps.agentSessionRegistry.getHost(callerAgentId)?.state.sessionId
       if (typeof sessionId === "string" && sessionId.length > 0) {
         result.sessionId = sessionId

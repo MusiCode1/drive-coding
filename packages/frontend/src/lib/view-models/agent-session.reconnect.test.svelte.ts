@@ -256,6 +256,24 @@ describe("AgentSession — attachToLiveAgent (slice-reconnect-warm-attach Commit
     expect(session.status).toBe("connected")
   })
 
+  test("attachToLiveAgent: titleManual loads title before warm reconnect", async () => {
+    const session = new AgentSession()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._mockWarmReconnectForTest(true)
+
+    await session.attachToLiveAgent({
+      agentId: "agent-1",
+      sessionId: "sess-abc",
+      cwd: "/home/user/project",
+      cliKind: "claude",
+      titleManual: true,
+      title: "kept",
+    })
+
+    expect(session.sessionTitle).toBe("kept")
+    expect(session.titleManual).toBe(true)
+  })
+
   test("attachToLiveAgent: injects sessionId/cwd/cliKind before warm call", async () => {
     const session = new AgentSession()
 

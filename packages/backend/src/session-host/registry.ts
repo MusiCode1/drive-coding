@@ -235,6 +235,8 @@ type AgentSessionRegistryDeps = {
   _httpSweepMs?: number
   /** slice boot-layer C5: env reference for TTL fallback (no direct process.env). */
   env?: NodeJS.ProcessEnv
+  /** slice token-usage-persistence C3: fan-out hook after host+broadcaster registered */
+  afterHostCreated?: (agentId: string, entry: HostEntry) => void
 }
 
 /**
@@ -269,6 +271,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     onScheduleCloseOnTurnEnd,
     onTurnEnded,
     onStallSuspected,
+    afterHostCreated,
   } = deps
 
   const map = new Map<string, HostEntry>()
@@ -422,6 +425,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       // rows are born from GET /events or WS attach (D4).
       const entry: HostEntry = { host, broadcaster }
       map.set(agentId, entry)
+      afterHostCreated?.(agentId, entry)
       return { ok: true, entry }
     } catch (err) {
       // slice handoff-foundations C3: rollback — dispose the orphan host so its

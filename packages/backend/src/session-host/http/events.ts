@@ -57,6 +57,7 @@ import {
   snapshotFrame,
   updateFrame,
 } from "@drive-coding/core/session"
+import { createLogger } from "@drive-coding/core/log"
 import { randomUUID } from "node:crypto"
 import type { Hono } from "hono"
 import { stream } from "hono/streaming"
@@ -71,6 +72,8 @@ import { CONNECTION_ID_HEADER, readConnectionId } from "./connection-id.js"
  * `SSEReader`'s `_fetch`/`_sleep`/`_now` (packages/frontend/src/lib/session/sse-reader.ts):
  * default = the real global, so production is byte-for-byte unchanged.
  */
+const log = createLogger("backend.session-host.events")
+
 export type RegisterEventsRouteOptions = {
   /** @internal For testing — override the keepalive timer's scheduler. */
   _setInterval?: typeof setInterval
@@ -138,6 +141,38 @@ export function registerEventsRoute(
       // only after drain()'s async read, so nothing races between the two calls.
       const snapshot = host.state
       const patchStream = broadcaster.subscribe(snapshot.version)
+
+      // ── slice history-cursor C2: שומר-הפער ────────────────────────────────
+      //
+      // 🔴 **הוא אוכף את ההנחה שמעליו, ואינו אופטימיזציה.** אם בין קריאת
+      // `host.state` לבין ה-`subscribe` ייפלטו ויפונו patches, אז
+      // `subscribe(snapshot.version)` יחזיר פריימים שמתחילים **אחרי** הפער —
+      // frame-zero במצב N ואחריו patches מ-N+5 — והלקוח לא יראה שום סימן.
+      // ‏`subscribe` מסנן את החוצץ ומחזיר את מה שיש: אין ערך-החזרה ואין שגיאה.
+      //
+      // 🔴 **הקריאה כאן היא אחרי ה-`subscribe`, ובלי `await` בשום מקום בדרך.**
+      // ההצמדה של השניים היא בדיוק מה שנבדק; `await` ביניהם היה שובר את מה
+      // שהשומר אמור לאמת.
+      //
+      // ⚠️ **גבולו, במפורש:** זהו מבחן **חסם-תחתון** בלבד. חור *מעל* `oldest`
+      // ישאיר אותו שותק — זה מכוון, כי מה שנאכף הוא ההנחה "no await between"
+      // ולא רציפות-מלאה. ⇒ **שתיקתו אינה הוכחת-רציפות.**
+      //
+      // 🔴 **מדווח ואינו מתקן.** תיקון אמיתי של פער = לשלוח frame-zero מחדש,
+      // וזה שינוי-זרם שאינו בסלייס הזה. אם הוא יורה אי-פעם — זו תגלית, והיא
+      // תיפתח כבאג.
+      const oldestBuffered = broadcaster.oldestBufferedVersion()
+      if (oldestBuffered !== undefined && oldestBuffered > snapshot.version + 1) {
+        log.warn(
+          {
+            agentId,
+            snapshotVersion: snapshot.version,
+            oldestBufferedVersion: oldestBuffered,
+          },
+          "patch buffer starts past the snapshot — the documented no-await-between-snapshot-and-subscribe assumption did not hold; this client is missing patches with no wire signal",
+        )
+      }
+
       connectionRegistry.addConnection(agentId, connectionId, "http", patchStream)
 
       // Epoch after this viewer row is registered — taken-over only when a *later* owner bumps it.

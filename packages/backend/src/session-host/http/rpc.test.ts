@@ -77,6 +77,8 @@ function makeMockBroadcaster(): PatchesBroadcaster {
     subscribe: vi.fn().mockReturnValue(new ReadableStream()),
     unsubscribe: vi.fn(),
     close: vi.fn(),
+    // slice history-cursor C2: חבר חדש בחוזה PatchesBroadcaster.
+    oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
   }
 }
 

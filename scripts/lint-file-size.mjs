@@ -18,8 +18,16 @@
  *   node scripts/lint-file-size.mjs --write-down
  *   node scripts/lint-file-size.mjs --init-baseline
  *
+ * Exit codes:
+ *   0 — clean
+ *   1 — blocking (growth / budget / impurity / stale baseline)
+ *   2 — must-shrink warning only. pre-commit maps it to 0; pre-push and
+ *       dod-check treat it as blocking. An agent running this script directly
+ *       still sees a non-zero code, which is the point.
+ *
  * Skip via `git commit --no-verify`. There is no CI; this is a local + dod-check hook, not an unbypassable gate.
  */
+import { execFileSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -143,6 +151,21 @@ function countLines(src) {
 }
 
 /**
+ * Non-blank, non-comment lines. Reuses stripCommentsAndStrings so a comment-only
+ * deletion does not register as a code shrink.
+ *
+ * Why it exists: `countLines` is `wc -l` — it counts comments and blanks. Without
+ * this, the "must shrink" rule below is satisfiable by deleting 25 comment lines,
+ * which is not an extraction. Measured need, 2026-09-28.
+ */
+function countCodeLines(src, html = false) {
+  const stripped = stripCommentsAndStrings(src, html)
+  let n = 0
+  for (const line of stripped.split("\n")) if (line.trim().length > 0) n++
+  return n
+}
+
+/**
  * Visual lines inside a `<script>` capture: drop the single newline that
  * usually sits against the opening/closing tags, then count remaining lines.
  */
@@ -170,7 +193,14 @@ function analysisSource(absPath, raw) {
 
 // ─── comment / string strip (keeps newlines + indexes) ──────────────────────
 
-function stripComments(src, blankStrings) {
+/**
+ * `html`: also strip `<!-- ... -->`. Markup comments only exist in `.svelte`
+ * templates, and until 2026-09-30 they were counted as CODE — so documenting a
+ * template change cost extraction tax, the exact anti-pattern the 2026-09-29
+ * comment exemption was written to remove — that one reached JS comments only.
+ * Opt-in by extension so a stray `a < !--b` in TS is never touched.
+ */
+function stripComments(src, blankStrings, html = false) {
   const out = []
   const n = src.length
   let i = 0
@@ -182,6 +212,19 @@ function stripComments(src, blankStrings) {
       while (i < n && src[i] !== "\n") {
         out.push(" ")
         i++
+      }
+      continue
+    }
+    if (html && c === "<" && src.startsWith("<!--", i)) {
+      out.push(" ", " ", " ", " ")
+      i += 4
+      while (i < n && !src.startsWith("-->", i)) {
+        out.push(src[i] === "\n" ? "\n" : " ")
+        i++
+      }
+      if (i < n) {
+        out.push(" ", " ", " ")
+        i += 3
       }
       continue
     }
@@ -249,7 +292,7 @@ function stripComments(src, blankStrings) {
             else if (src[i] === "}") depth--
             if (depth > 0) i++
           }
-          out.push(stripComments(src.slice(innerStart, i), blankStrings))
+          out.push(stripComments(src.slice(innerStart, i), blankStrings, html))
           if (i < n && src[i] === "}") {
             out.push(keep("}"))
             i++
@@ -267,8 +310,8 @@ function stripComments(src, blankStrings) {
   return out.join("")
 }
 
-function stripCommentsAndStrings(src) {
-  return stripComments(src, true)
+function stripCommentsAndStrings(src, html = false) {
+  return stripComments(src, true, html)
 }
 
 function stripCommentsKeepStrings(src) {
@@ -612,6 +655,7 @@ function measureTree(root, budgets) {
     const kind = isTestFile(rel) ? "test" : "prod"
     const layer = classifyLayer(rel)
     const lines = countLines(raw)
+    const codeLines = countCodeLines(raw, abs.endsWith(".svelte") && !abs.endsWith(".svelte.ts"))
     const scriptLines =
       abs.endsWith(".svelte") && !abs.endsWith(".svelte.ts") ? countScriptLines(raw) : null
     const src = analysisSource(abs, raw)
@@ -626,6 +670,7 @@ function measureTree(root, budgets) {
       kind,
       layer,
       lines,
+      codeLines,
       scriptLines,
       impurity,
       impurityShape: shape,
@@ -633,6 +678,52 @@ function measureTree(root, budgets) {
     })
   }
   return out
+}
+
+// ─── must-shrink rule (2026-09-28) ─────────────────────────────────────────
+// A file already over its effective budget may not be *touched* without being
+// reduced. Rationale + the extraction method: AGENTS.md §"agent-session.svelte.ts
+// — מהקובץ הזה רק מסירים".
+const MUST_SHRINK_MIN_LINES = 25
+const MUST_SHRINK_MIN_CODE = 15
+
+/**
+ * Paths staged for the current commit. Empty set = rule is inert (plain runs,
+ * CI, `bun run lint:size` on a clean tree all stay unaffected).
+ */
+function stagedPaths(root) {
+  try {
+    const out = execFileSync("git", ["diff", "--cached", "--name-only"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+    return new Set(out.split("\n").map((l) => l.trim()).filter(Boolean))
+  } catch {
+    return new Set() // not a repo / no git / no index — rule simply does not apply
+  }
+}
+
+function mustShrinkMessage(f, prev, metric, eff, drop, codeDrop) {
+  const why =
+    drop < MUST_SHRINK_MIN_LINES
+      ? `ירידה ${drop} < ${MUST_SHRINK_MIN_LINES} שורות`
+      : `הירידה היא בהערות/שורות ריקות — קוד ירד ב-${codeDrop} < ${MUST_SHRINK_MIN_CODE}`
+  return [
+    `${f.path}: שונה אך לא הוקטן מספיק (${prev.metric} → ${metric}; ${why})`,
+    ``,
+    `  הקובץ מעל תקציב-השכבה (${metric} > ${eff}, layer=${f.layer}).`,
+    `  סלייס שנוגע בו חייב לחלץ ממנו חתיכה לוגית מאותו תחום שבו הוא עובד.`,
+    ``,
+    `  מדד-הבחירה הוא צימוד, לא גודל:`,
+    `    sed -n '<from>,<to>p' ${f.path} | grep -oE 'this\\.#\\w+' | sort -u | wc -l`,
+    `  ≤5 שדות פרטיים ⇒ מועמד טוב · 20+ ⇒ סלייס נפרד`,
+    ``,
+    `  ⚠️ מחיקת הערות אינה חילוץ — הסקריפט מודד שורות-קוד בנפרד.`,
+    ``,
+    `  ר' AGENTS.md §"agent-session.svelte.ts — מהקובץ הזה רק מסירים"`,
+    `  עקיפה מודעת: git commit --no-verify`,
+  ].join("\n")
 }
 
 function shouldTrack(f, eff) {
@@ -666,7 +757,7 @@ function runLint(argv = process.argv.slice(2)) {
       // Stage-2: size-debt (metric > effective) AND impurity ratchet (impurity > 0),
       // including files still under their line budget. See docs-for-llm/investigations/2026-08-29-architecture-compliance/05-prevention.md §7 / §11.4.
       if (shouldTrack(f, eff)) {
-        entries[f.path] = { metric, impurity: f.impurity, class: f.class }
+        entries[f.path] = { metric, impurity: f.impurity, class: f.class, codeLines: f.codeLines }
       }
     }
     fs.writeFileSync(
@@ -689,10 +780,14 @@ function runLint(argv = process.argv.slice(2)) {
   const fails = []
   /** @type {string[]} */
   const stale = []
+  /** ‏must-shrink — ‏ערוץ נפרד: ‏מחזיר 2 (‏אזהרה) ‏ולא 1 (‏חסימה). ‏ר' §exit codes. */
+  /** @type {string[]} */
+  const shrinkWarnings = []
   const next = { ...baseline }
 
   const byPath = new Map(measured.map((f) => [f.path, f]))
 
+  const staged = stagedPaths(args.root)
   for (const f of measured) {
     const metric = metricOf(f)
     const eff = effectiveBudget(f, budgets)
@@ -715,12 +810,25 @@ function runLint(argv = process.argv.slice(2)) {
 
     if (prev) {
       const prevEff = effectiveBudget({ ...f, class: prev.class }, budgets)
-      // Size-debt files (already over effective) must not grow at all.
-      // Impurity-only entries may grow in lines up to the effective budget
-      // (cli-resolve.ts: green on lines, red only if impurity rises — §7).
-      if (metric > prev.metric) {
+      // Size-debt files (already over effective) must not grow — **in code**.
+      // Comments, JSDoc and blank lines are free.
+      //
+      // Why: gating on `metric` (= wc -l) meant a one-line comment fix cost a
+      // 25-line extraction, so an agent skipped improving a comment rather than
+      // pay it. Measured 2026-09-29 — the rule taught the opposite of its intent.
+      // `codeLines` comes from stripCommentsAndStrings, the same source the
+      // must-shrink check below already (correctly) used.
+      //
+      // Fallback: a baseline entry written before codeLines existed has no code
+      // number to compare, so it keeps the old metric behaviour until backfilled.
+      const codeGrew =
+        prev.codeLines != null ? f.codeLines > prev.codeLines : metric > prev.metric
+      if (codeGrew) {
         if (prev.metric > prevEff || metric > eff) {
-          fails.push(`${f.path}: metric grew ${prev.metric} → ${metric}`)
+          fails.push(
+            `${f.path}: code grew ${prev.codeLines ?? prev.metric} → ${f.codeLines ?? metric}` +
+              ` (lines ${prev.metric} → ${metric})`,
+          )
         }
       } else if (metric > eff && prev.metric <= prevEff) {
         fails.push(
@@ -730,11 +838,42 @@ function runLint(argv = process.argv.slice(2)) {
       if (f.impurity > prev.impurity) {
         fails.push(`${f.path}: impurity grew ${prev.impurity} → ${f.impurity}`)
       }
+      // must-shrink: an over-budget file that is part of this commit has to lose
+      // real code, not just comments. Inert when nothing is staged.
+      //
+      // 🔑 The bar is **code**, and raw lines are only the fallback. An extraction
+      // that also adds JSDoc can cut 30 code lines while wc -l barely moves —
+      // that is a real extraction, and the old `drop < MIN_LINES` test flagged it.
+      // Same correction as the growth rule above (2026-09-29).
+      // 🔴 The tax is owed for touching **code**. A comment/JSDoc-only edit owes
+      // nothing: demanding a 25-line extraction for a one-line comment fix is
+      // what made an agent skip the comment instead (2026-09-29).
+      // ⚠️ Known limit of the measure: a refactor that keeps codeLines identical
+      // reads as "not a code change" and escapes the tax. Accepted — the
+      // alternative (diff-based detection) is a bigger mechanism than the rule.
+      const codeUnchanged = prev.codeLines != null && f.codeLines === prev.codeLines
+      if (staged.has(f.path) && prev.metric > prevEff && !codeUnchanged) {
+        const drop = prev.metric - metric
+        const codeDrop = prev.codeLines != null ? prev.codeLines - f.codeLines : Number.NaN
+        const shrankEnough = Number.isNaN(codeDrop)
+          ? drop >= MUST_SHRINK_MIN_LINES
+          : codeDrop >= MUST_SHRINK_MIN_CODE
+        if (!shrankEnough) {
+          shrinkWarnings.push(mustShrinkMessage(f, prev, metric, eff, drop, codeDrop))
+        }
+      }
+      // backfill: an entry written before codeLines existed has no baseline to
+      // compare code-shrink against, which silently disables the must-shrink
+      // code check. Record it the first time we see the file.
+      if (prev.codeLines == null) {
+        next[f.path] = { ...next[f.path], codeLines: f.codeLines }
+        stale.push(`${f.path}: codeLines missing from baseline — backfill`)
+      }
       if (metric < prev.metric || f.impurity < prev.impurity) {
         stale.push(
           `${f.path}: baseline stale ${prev.metric}/${prev.impurity} → ${metric}/${f.impurity}`,
         )
-        next[f.path] = { metric, impurity: f.impurity, class: f.class }
+        next[f.path] = { metric, impurity: f.impurity, class: f.class, codeLines: f.codeLines }
       }
       // Drop only when no axis still needs tracking (under budget AND pure).
       if (metric <= eff && f.impurity === 0) {
@@ -782,7 +921,16 @@ function runLint(argv = process.argv.slice(2)) {
     fs.writeFileSync(baselinePath, JSON.stringify({ ...baselineDoc, files: next }, null, 2) + "\n")
     console.log(`wrote-down ${baselinePath}`)
   }
-  if (fails.length === 0 && (stale.length === 0 || args.writeDown)) {
+  if (shrinkWarnings.length) {
+    console.error("⚠️  must-shrink — קובץ מעל תקציב נגע בלי להתכווץ מספיק:")
+    for (const l of shrinkWarnings) console.error("  " + l)
+  }
+  // must-shrink ‏אינו חוסם בפני עצמו (‏exit 2), ‏גם כשהכיווץ הביא איתו
+  // ‏`stale baseline` — ‏שהוא תוצאה ישירה של אותו כיווץ ולא פגם נפרד.
+  // ‏חסימה אמיתית (`fails`) ‏תמיד גוברת.
+  if (fails.length) return 1
+  if (shrinkWarnings.length) return 2
+  if (stale.length === 0 || args.writeDown) {
     console.log("✅ size/impurity ratchet: no growth")
     return 0
   }

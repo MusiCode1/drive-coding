@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# post-commit — reminder that survives `--no-verify`.
+#
+# Why this exists: `--no-verify` skips pre-commit entirely, so someone who
+# bypasses the block also loses the warning. post-commit is NOT skipped by
+# --no-verify (measured 2026-09-28), so the reminder still reaches them.
+#
+# It can never block — the commit already exists by the time this runs.
+
+REPO_ROOT="$(git rev-parse --show-toplevel)" || exit 0
+cd "$REPO_ROOT" || exit 0
+
+node scripts/lint-file-size.mjs >/dev/null 2>&1
+if [ $? -eq 2 ]; then
+  echo ""
+  echo "⚠️  קובץ מעל תקציב נגע בלי להתכווץ מספיק."
+  echo "   הקומיט נוצר, אבל pre-push ו-dod-check יחסמו."
+  echo "   פרטים:  bun run lint:size"
+fi
+exit 0

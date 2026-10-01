@@ -19,7 +19,7 @@
  */
 
 /** זהה ל-EXT_TO_CONTENT_TYPE ב-http-fs-file.ts. */
-const EXT = "md|markdown|txt|png|jpe?g|svg|webp|gif|pdf"
+const EXT = "md|markdown|txt|png|jpe?g|svg|webp|gif|pdf|mp3|wav|ogg|m4a|aac|flac|webm"
 
 /**
  * שלוש חלופות: `file:///…` מפורש · נתיב אבסולוטי · נתיב יחסי (עם `./` אופציונלי).

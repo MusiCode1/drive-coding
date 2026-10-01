@@ -173,6 +173,14 @@ export const Agent = type({
   "notifyOnDone?": "string.uuid",
   // slice agent-role-label: free-form display label (e.g. planner / executor).
   "roleLabel?": "string",
+  // slice session-attribution-core: CF Access email at creation (attribution, not auth).
+  "openedByEmail?": "string",
+  // slice session-title-manual: user-set title must survive ACP session_info_update + BE restart.
+  "titleManual?": "boolean",
+  // slice session-memory: shared session note (user + agent read; user writes via PATCH).
+  "userNotes?": "string",
+  // slice session-memory: agent-written key→value map (MCP only; read-only in UI).
+  "sessionFields?": { "[string]": "string" },
   // slice charter-in-hook: the charter text is kept on the record so the surface
   // endpoint can serve it to provider hooks. Deliberately NOT on AgentPublic —
   // it is content, not display metadata, and can be long.
@@ -219,6 +227,14 @@ export const AgentPublic = type({
   "parentAgentId?": "string",
   // slice agent-role-label: free-form display label (e.g. planner / executor).
   "roleLabel?": "string",
+  // slice session-attribution-core: CF Access email at creation (attribution, not auth).
+  "openedByEmail?": "string",
+  // slice session-title-manual: user-set title must survive ACP session_info_update + BE restart.
+  "titleManual?": "boolean",
+  // slice session-memory: shared session note (user + agent read; user writes via PATCH).
+  "userNotes?": "string",
+  // slice session-memory: agent-written key→value map (MCP only; read-only in UI).
+  "sessionFields?": { "[string]": "string" },
 })
 export type AgentPublic = typeof AgentPublic.infer
 
@@ -250,6 +266,8 @@ export const CreateAgentInput = type({
   "includeLastAssistantText?": "boolean",
   // slice agent-role-label: free-form display label (e.g. planner / executor).
   "roleLabel?": "string",
+  // slice session-attribution-core: set server-side from CF Access header on POST /api/agents.
+  "openedByEmail?": "string",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 
@@ -286,6 +304,18 @@ export function toAgentPublic(agent: Agent): AgentPublic {
   }
   if (agent.roleLabel !== undefined) {
     pub.roleLabel = agent.roleLabel
+  }
+  if (agent.openedByEmail !== undefined) {
+    pub.openedByEmail = agent.openedByEmail
+  }
+  if (agent.titleManual !== undefined) {
+    pub.titleManual = agent.titleManual
+  }
+  if (agent.userNotes !== undefined) {
+    pub.userNotes = agent.userNotes
+  }
+  if (agent.sessionFields !== undefined) {
+    pub.sessionFields = agent.sessionFields
   }
   return pub
 }

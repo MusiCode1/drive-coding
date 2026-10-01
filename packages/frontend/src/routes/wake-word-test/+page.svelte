@@ -162,7 +162,7 @@
     align-items: center;
     gap: 1.5rem;
     padding: 2rem 1rem 3rem;
-    min-height: 100vh;
+    min-height: 100dvh; /* not vh - on mobile vh is the largest viewport (mobile-parity) */
   }
 
   h1 {

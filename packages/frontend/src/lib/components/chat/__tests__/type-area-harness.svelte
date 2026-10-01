@@ -15,6 +15,10 @@
  *
  * ─── slice dictate-to-input-polish (C1) ───
  * finishListening, dictateState, session ref for send-during-listening tests.
+ *
+ * ─── slice ltr-in-english-mic-denied ───
+ * dir (locale direction) + micPermissionDenied for the composer-direction and
+ * denied-icon tests.
  */
 
 import {
@@ -48,9 +52,16 @@ let props: {
   dictateState?: DictateState
   finishListening?: () => Promise<FinishListeningResult>
   session?: { status: AgentSession["status"] }
+  dir?: "rtl" | "ltr"
+  micPermissionDenied?: boolean
 } = $props()
 
-const fakeI18n = { t: (key: string) => key } as unknown as I18nVM
+const fakeI18n = {
+  t: (key: string) => key,
+  get dir() {
+    return props.dir ?? "ltr"
+  },
+} as unknown as I18nVM
 
 const sessionRef = $derived(props.session ?? { status: "connected" as AgentSession["status"] })
 
@@ -97,6 +108,9 @@ const fakeDictate = {
 
 const fakeMic = {
   state: "idle" as MicState,
+  get permissionDenied() {
+    return props.micPermissionDenied ?? false
+  },
 }
 
 const fakeUiShell = {

@@ -950,9 +950,9 @@ describe("AgentSession + remote view — session management via #view (remote-se
     await agent.listSessions()
 
     expect(view.listSessionsMock).toHaveBeenCalledTimes(1)
-    expect(agent.sessions).toHaveLength(2)
-    expect(agent.sessions[0]?.sessionId).toBe("s-1")
-    expect(agent.sessionsError).toBeNull()
+    expect(agent.sessionsCache.sessions).toHaveLength(2)
+    expect(agent.sessionsCache.sessions[0]?.sessionId).toBe("s-1")
+    expect(agent.sessionsCache.error).toBeNull()
   })
 
   it("listSessions with -32601 → empty list, sessionsError stays gentle/null (like local, no crash)", async () => {
@@ -962,9 +962,9 @@ describe("AgentSession + remote view — session management via #view (remote-se
 
     await agent.listSessions()
 
-    expect(agent.sessions).toEqual([])
+    expect(agent.sessionsCache.sessions).toEqual([])
     // Gentle handling (DoD): no scary error — the empty list renders.
-    expect(agent.sessionsError).toBeNull()
+    expect(agent.sessionsCache.error).toBeNull()
   })
 
   it("listSessions with a generic error → sessionsError is set", async () => {
@@ -972,7 +972,7 @@ describe("AgentSession + remote view — session management via #view (remote-se
 
     await agent.listSessions()
 
-    expect(agent.sessionsError).toContain("network down")
+    expect(agent.sessionsCache.error).toContain("network down")
   })
 
   it("deleteSession with -32601 → false (graceful no-op, button hidden)", async () => {
@@ -981,7 +981,7 @@ describe("AgentSession + remote view — session management via #view (remote-se
     )
 
     await expect(agent.deleteSession("s-x")).resolves.toBe(false)
-    expect(agent.sessionsError).toBeNull()
+    expect(agent.sessionsCache.error).toBeNull()
   })
 
   it("deleteSession success removes optimistically; deleting the ACTIVE session detaches (wasActive)", async () => {
@@ -997,11 +997,11 @@ describe("AgentSession + remote view — session management via #view (remote-se
       { sessionId: "other", cwd: "/b", title: "", updatedAt: "" },
     ])
     await agent.listSessions()
-    expect(agent.sessions).toHaveLength(2)
+    expect(agent.sessionsCache.sessions).toHaveLength(2)
 
     // Deleting a NON-active session → optimistic removal, no detach
     await expect(agent.deleteSession("other")).resolves.toBe(false)
-    expect(agent.sessions).toHaveLength(1)
+    expect(agent.sessionsCache.sessions).toHaveLength(1)
     expect(view.closeMock).not.toHaveBeenCalled()
 
     // Deleting the ACTIVE session → wasActive true → detach() (view closed;

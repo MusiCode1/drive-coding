@@ -8,6 +8,7 @@
 
 import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import MicIcon from "@lucide/svelte/icons/mic"
+import MicOffIcon from "@lucide/svelte/icons/mic-off"
 import OctagonXIcon from "@lucide/svelte/icons/octagon-x"
 import XIcon from "@lucide/svelte/icons/x"
 import { getI18n, getLive, getMic, getModelStatus, getVoiceMode } from "$lib/context"
@@ -58,10 +59,12 @@ function onClick() {
       onclick={onClick}
       disabled={isDisabled}
       aria-busy={isArming || mic.state === "transcribing" ? true : undefined}
-      aria-label={t(`voiceMode.status.${mic.state}`)}
+      aria-label={mic.permissionDenied ? t("mic.error.permission") : t(`voiceMode.status.${mic.state}`)}
     >
       {#if mic.state === "transcribing"}
         <Loader2Icon size={40} strokeWidth={1.5} class="animate-spin" />
+      {:else if mic.permissionDenied}
+        <MicOffIcon size={40} strokeWidth={1.5} />
       {:else}
         <MicIcon size={40} strokeWidth={1.5} />
       {/if}

@@ -254,3 +254,64 @@ describe("replay — synthetic tool_call + tool_call_update", () => {
     if (toolB?.role === "tool") expect(toolB.toolCall.result).toBe("b done")
   })
 })
+
+// ─── slice carried-snapshot C2: האינווריאנט חל גם על `carried` ───
+
+describe("replay — carried נרשם בשני המסלולים", () => {
+  // ⚠️ ה-fixture הקיים (`wire-replay.jsonl`) מכיל **רק** chunk-ים מוכרים,
+  // ולכן אינו מייצר אף `opaque` — כלומר הוא לא היה שומר על המנגנון הזה.
+  // חובה רצף ייעודי.
+  const carriedFrames: object[] = [
+    {
+      sessionUpdate: "agent_message",
+      messageId: "a-1",
+      content: [{ type: "text", text: "starting" }],
+    },
+    { sessionUpdate: "plan", entries: [{ content: "step one", status: "pending" }] },
+    {
+      sessionUpdate: "agent_message",
+      messageId: "a-2",
+      content: [{ type: "text", text: "working" }],
+    },
+    {
+      sessionUpdate: "plan_update",
+      plan: {
+        type: "items",
+        planId: "p-1",
+        entries: [{ content: "step one", status: "completed" }],
+      },
+    },
+  ]
+
+  it("applyPatch(patches) ≡ reduce(frames) — כולל carried", () => {
+    // 🔴 זה השער של §4.4: ‏`replay.test.ts` מקבע deep-equality בין המסלולים,
+    // ולכן אם רק `reduce` ימלא את ה-buffer — השוויון נשבר. אימות שהטסט
+    // אכן נושך: הערת-שורה על הקריאה ל-`recordCarried` ב-`applyPatch`
+    // ⇒ הטסט הזה מאדים.
+    const { finalState, patches } = replayFrames(
+      carriedFrames,
+      createInitialSessionState({ sessionId: null }),
+    )
+    const replayed = applyAllPatches(patches, createInitialSessionState({ sessionId: null }))
+
+    expect(replayed).toEqual(finalState)
+    // ...ולא "שווה כי שניהם ריקים": שתי המשבצות אכן שם, בעוגנים שלהן.
+    expect(finalState.carried).toEqual([
+      { key: "plan:__default__", after: "m_0", update: carriedFrames[1] },
+      { key: "plan:p-1", after: "m_1", update: carriedFrames[3] },
+    ])
+    expect(replayed.carried).toEqual(finalState.carried)
+  })
+
+  it("שני המסלולים מנקים carried ב-reset", () => {
+    const frames: object[] = [...carriedFrames, { sessionUpdate: "_drive/reset" }]
+    const { finalState, patches } = replayFrames(
+      frames,
+      createInitialSessionState({ sessionId: null }),
+    )
+    const replayed = applyAllPatches(patches, createInitialSessionState({ sessionId: null }))
+
+    expect(finalState.carried).toEqual([])
+    expect(replayed).toEqual(finalState)
+  })
+})

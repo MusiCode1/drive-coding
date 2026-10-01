@@ -1,11 +1,10 @@
 /**
  * session-memo.svelte.ts — פתק ממו לכל סשן: תזכורות או תקציר על נושא הסשן.
- * (slice session-memo-pad)
+ * (slice session-memo-pad · session-memory)
  *
  * למה זה entity ולא state של מסך (חוק זהב #2): הממו מתאר את **הסשן**, לא את
  * המסך שפתוח עליו. הוא שורד ניווט, רענון, וסגירת המסך; הוא נטען מחדש כשחוזרים
- * לאותו סשן. הפרסיסטנס בנוי על התבנית של `ComposerDraft` — localStorage,
- * debounce, best-effort — אבל עם מפתח לכל סשן במקום מפתח יחיד.
+ * לאותו סשן. minimized נשמר ב-localStorage; תוכן הטקסט (`userNotes`) חי ב-BE.
  *
  * המיקום (`left`/`top`) נשמר **גלובלית** ולא לפי סשן — מפתח נפרד,
  * `dc:session-memo-pos`. המיקום הוא העדפת-ממשק ("איפה נוח לי שהפתק ישב"),
@@ -13,11 +12,12 @@
  * גודל לא נשמר — הפתק בגודל קבוע.
  */
 
+import { patchAgent } from "$lib/adapters/agents-api"
+
 const STORAGE_PREFIX = "dc:session-memo:"
 const DEBOUNCE_MS = 300
 
 type PersistedMemo = {
-  text: string
   minimized: boolean
 }
 
@@ -33,26 +33,25 @@ export function memoStorageKey(sessionId: string | null): string | null {
  * בהרבה מממו שנפתח ריק.
  */
 export function parseMemo(raw: string | null): PersistedMemo {
-  if (!raw) return { text: "", minimized: true }
+  if (!raw) return { minimized: true }
   try {
     const parsed = JSON.parse(raw) as Partial<PersistedMemo>
     return {
-      text: typeof parsed.text === "string" ? parsed.text : "",
       // כל מה שאינו false מפורש = מצומצם. ברירת המחדל היא לא להפריע.
       minimized: parsed.minimized !== false,
     }
   } catch {
-    return { text: "", minimized: true }
+    return { minimized: true }
   }
 }
 
 function loadMemo(sessionId: string | null): PersistedMemo {
   const key = memoStorageKey(sessionId)
-  if (!key || typeof localStorage === "undefined") return { text: "", minimized: true }
+  if (!key || typeof localStorage === "undefined") return { minimized: true }
   try {
     return parseMemo(localStorage.getItem(key))
   } catch {
-    return { text: "", minimized: true }
+    return { minimized: true }
   }
 }
 
@@ -60,8 +59,8 @@ function saveMemo(sessionId: string | null, memo: PersistedMemo): void {
   const key = memoStorageKey(sessionId)
   if (!key || typeof localStorage === "undefined") return
   try {
-    // ממו ריק ומצומצם אינו מידע — לא משאירים רשומה שתצטבר לכל סשן שנפתח אי פעם.
-    if (memo.text.length === 0 && memo.minimized) {
+    // minimized-only אינו מידע — לא משאירים רשומה שתצטבר לכל סשן שנפתח אי פעם.
+    if (memo.minimized) {
       localStorage.removeItem(key)
       return
     }
@@ -74,11 +73,11 @@ function saveMemo(sessionId: string | null, memo: PersistedMemo): void {
 /**
  * מה שה-VM צריך מהסשן — טיפוס מבני צר, בלי תלות ב-AgentSession עצמו.
  *
- * `status`/`agentId` הם ה-**טריגר** בלבד: `sessionId` הוא getter מעל שדה פרטי
+ * `status`/`agentId`/`userNotes` הם ה-**טריגר** בלבד: `sessionId` הוא getter מעל שדה פרטי
  * רגיל (`#sessionId`) ולא $state, ולכן קריאה שלו אינה נרשמת כתלות reactive.
  * effect שקורא רק אותו לא היה רץ שוב לעולם, הממו היה נשאר בלי מפתח, ושום דבר
  * לא היה נשמר — כשל שקט שהטסטים לא תופסים (הם מזריקים sessionId ידנית) והתגלה
- * רק בבדיקת דפדפן. שני השדות האלה כן reactive ומתעדכנים בדיוק כשסשן נטען או
+ * רק בבדיקת דפדפן. השדות האלה כן reactive ומתעדכנים בדיוק כשסשן נטען או
  * מוחלף.
  */
 const POS_KEY = "dc:session-memo-pos"
@@ -136,6 +135,7 @@ export type MemoSessionSource = {
   readonly status: unknown
   readonly agentId: string | null
   readonly sessionId: string | null
+  readonly userNotes?: string
 }
 
 export class SessionMemoVM {
@@ -151,6 +151,8 @@ export class SessionMemoVM {
 
   /** הסשן שהתוכן הנוכחי שייך לו. plain field, לא $state — ראה persist למטה. */
   #loadedId: string | null = null
+  /** agent UUID for BE note flush — sibling of #loadedId (slice session-memory). */
+  #loadedAgentId: string | null = null
 
   /**
    * `source` אופציונלי: בלעדיו ה-VM מונע-סשן ידנית (`setSessionId`), וכך הטסטים
@@ -162,35 +164,50 @@ export class SessionMemoVM {
       $effect(() => {
         void source.status
         void source.agentId
-        this.setSessionId(source.sessionId)
+        void source.userNotes
+        this.setSessionId(source.sessionId, source.agentId, source.userNotes)
       })
     }
 
     $effect(() => {
-      const snapshot: PersistedMemo = { text: this.text, minimized: this.minimized }
+      const minimizedSnapshot = this.minimized
+      const textSnapshot = this.text
       const timer = setTimeout(() => {
-        // #loadedId נקרא בזמן השמירה ולא בזמן התזמון, ולכן הוא תמיד הסשן
-        // שהתוכן שייך לו. הוא בכוונה לא $state — אחרת מעבר-סשן היה מפעיל את
-        // ה-effect מחדש ושומר את התוכן הישן תחת המפתח החדש.
-        saveMemo(this.#loadedId, snapshot)
+        saveMemo(this.#loadedId, { minimized: minimizedSnapshot })
+        const agentId = this.#loadedAgentId
+        if (agentId !== null) {
+          void patchAgent(agentId, { userNotes: textSnapshot }).catch(() => {})
+        }
       }, DEBOUNCE_MS)
       return () => clearTimeout(timer)
     })
   }
 
   /**
-   * מיתוג לסשן אחר: שומר מיָדית את התוכן הנוכחי תחת המפתח הישן, ואז טוען את
-   * הממו של החדש. הכתיבה המיָדית היא הנקודה הקריטית — בלעדיה מעבר-סשן בתוך
-   * חלון ה-debounce היה מאבד את מה שהוקלד הרגע.
+   * מיתוג לסשן אחר: שומר מיָדית את התוכן תחת ה-agent הישן, minimized תחת sessionId
+   * הישן, ואז טוען את הממו של החדש. הכתיבה המיָדית היא הנקודה הקריטית — בלעדיה
+   * מעבר-סשן בתוך חלון ה-debounce היה מאבד את מה שהוקלד הרגע.
    */
-  setSessionId(sessionId: string | null): void {
-    if (sessionId === this.#loadedId) return
-    if (this.#loadedId !== null) {
-      saveMemo(this.#loadedId, { text: this.text, minimized: this.minimized })
+  setSessionId(
+    sessionId: string | null,
+    agentId?: string | null,
+    userNotes?: string,
+  ): void {
+    const nextAgentId = agentId ?? null
+    if (sessionId === this.#loadedId && nextAgentId === this.#loadedAgentId) return
+
+    if (this.#loadedAgentId !== null) {
+      void patchAgent(this.#loadedAgentId, { userNotes: this.text }).catch(() => {})
     }
+    if (this.#loadedId !== null) {
+      saveMemo(this.#loadedId, { minimized: this.minimized })
+    }
+
     this.#loadedId = sessionId
+    this.#loadedAgentId = nextAgentId
+
     const loaded = loadMemo(sessionId)
-    this.text = loaded.text
+    this.text = userNotes ?? ""
     this.minimized = loaded.minimized
   }
 
@@ -206,7 +223,7 @@ export class SessionMemoVM {
     if (this.minimized === value) return
     this.minimized = value
     // כתיבה מיָדית: הצמצום הוא לרוב הפעולה האחרונה לפני מעבר מסך או ניתוק.
-    saveMemo(this.#loadedId, { text: this.text, minimized: value })
+    saveMemo(this.#loadedId, { minimized: value })
   }
 
   /**

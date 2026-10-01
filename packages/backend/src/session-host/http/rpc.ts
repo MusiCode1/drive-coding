@@ -79,26 +79,26 @@ const RPC_WAIT_METHODS = new Set<string>([
 // ─── slice remote-images C1: PromptBlocks ContentBlock schema ───
 // חמשת הווריאנטים לפי SDK schema/types.gen.d.ts:236. annotations/_meta לא
 // צריכים הצהרה — ArkType משמר מפתחות לא-מוצהרים (נבדק בהרצה).
-const TextBlock = type({ type: "'text'", text: "string" })
-const ImageBlock = type({ type: "'image'", mimeType: "string", data: "string" })
-const AudioBlock = type({ type: "'audio'", mimeType: "string", data: "string" })
-const ResourceLinkBlock = type({ type: "'resource_link'", name: "string", uri: "string" })
-const ResourceBlock = type({ type: "'resource'", resource: "object" })
+export const TextBlock = type({ type: "'text'", text: "string" })
+export const ImageBlock = type({ type: "'image'", mimeType: "string", data: "string" })
+export const AudioBlock = type({ type: "'audio'", mimeType: "string", data: "string" })
+export const ResourceLinkBlock = type({ type: "'resource_link'", name: "string", uri: "string" })
+export const ResourceBlock = type({ type: "'resource'", resource: "object" })
 const ContentBlockSchema = TextBlock.or(ImageBlock)
   .or(AudioBlock)
   .or(ResourceLinkBlock)
   .or(ResourceBlock)
 const PromptContent = ContentBlockSchema.array()
 
-const PromptParams = type({
+export const PromptParams = type({
   sessionId: "string",
   content: type("string").or(PromptContent),
   "meta?": { "[string]": "unknown" },
 })
-const CancelParams = type({ sessionId: "string" })
-const LoadSessionParams = type({ sessionId: "string", "cwd?": "string" })
-const NewSessionParams = type({ "cwd?": "string" })
-const DeleteSessionParams = type({ sessionId: "string" })
+export const CancelParams = type({ sessionId: "string" })
+export const LoadSessionParams = type({ sessionId: "string", "cwd?": "string" })
+export const NewSessionParams = type({ "cwd?": "string" })
+export const DeleteSessionParams = type({ sessionId: "string" })
 
 // ─── slice remote-session-mgmt C3: JSON-RPC error mapping ───
 // A JSON-RPC error is not necessarily an Error instance — the `code` sits on a

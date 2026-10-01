@@ -100,3 +100,53 @@ describe("AgentSession — reconnect אחרי כשל switchSession/newSession ח
     expect(session.status).toBe("error")
   })
 })
+
+// ─── slice http-live-side-effects C0: SSE reconnect clears transient switchSession error ───
+
+describe("AgentSession — _onSseReconnectedForTest (HTTP SSE reconnect)", () => {
+  test("מנקה switchSession failed כש-#errorSurfaced=false", () => {
+    const session = new AgentSession()
+    session.error = "switchSession failed: boom"
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._onSseReconnectedForTest()
+
+    expect(session.error).toBeNull()
+  })
+
+  test("שומר שגיאה טרמינלית כש-#errorSurfaced=true (attach/loadSession)", () => {
+    const session = new AgentSession()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._setErrorSurfacedForTest(true)
+    session.error = "Cannot find module '@anthropic-ai/claude-agent-sdk'"
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._onSseReconnectedForTest()
+
+    expect(session.error).toBe("Cannot find module '@anthropic-ai/claude-agent-sdk'")
+  })
+
+  test("שומר switchSession failed כש-#errorSurfaced=true", () => {
+    const session = new AgentSession()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._setErrorSurfacedForTest(true)
+    session.error = "switchSession failed: boom"
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._onSseReconnectedForTest()
+
+    expect(session.error).toBe("switchSession failed: boom")
+  })
+
+  test("שומר שגיאה אחרת כש-#errorSurfaced=true", () => {
+    const session = new AgentSession()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._setErrorSurfacedForTest(true)
+    session.error = "newSession failed: boom"
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._onSseReconnectedForTest()
+
+    expect(session.error).toBe("newSession failed: boom")
+  })
+})

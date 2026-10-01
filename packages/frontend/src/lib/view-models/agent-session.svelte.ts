@@ -43,8 +43,9 @@ import {
   patchAgent,
   releaseConnection,
 } from "$lib/adapters/agents-api"
-// ─── slice sessions-inline: ייבוא טיפוס + normalize ───
+// ─── slice sessions-inline: normalize ───
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
+import { SessionsCacheScope } from "$lib/view-models/sessions-cache-scope.svelte"
 import type { CuesEngine } from "$lib/engines/cues"
 // ─── slice leave-running-background ───
 import {
@@ -80,9 +81,60 @@ import type { PermissionParams, PermissionResponse } from "$lib/types/permission
 import { connInfo, connWarn } from "$lib/util/conn-log"
 import { isBypassMode } from "$lib/util/permission-mode"
 import { safeUUID } from "$lib/util/uuid"
+import {
+  type ApplyConfigOptionDeps,
+  type ApplyConfigToClientDeps,
+  applyConfigOption as applyConfigOptionExtracted,
+} from "$lib/view-models/agent-session-apply-config"
+import {
+  appendAgentPlaceholder,
+  appendUserImage,
+  appendUserPlaceholder,
+} from "$lib/view-models/agent-session-bubble-append"
+import {
+  type CaptureSessionConfigDeps,
+  captureSessionConfig,
+} from "$lib/view-models/agent-session-capture-config"
+import { isValidChoice } from "$lib/view-models/agent-session-config-choice"
+import {
+  type DeleteSessionDeps,
+  deleteSession as deleteSessionExtracted,
+} from "$lib/view-models/agent-session-delete"
+import {
+  type DrainViewPatchesDeps,
+  drainViewPatches,
+} from "$lib/view-models/agent-session-drain-view-patches"
 // ─── slice surface-real-error: עדיפות data.details→data.message→message→String(e) ───
+import {
+  applyManualTitleFromAttach,
+  applyTitleFromSessionInput,
+  type ManualTitleInput,
+  setManualTitleOnAgent,
+  syncTitleFromViewState,
+} from "$lib/view-models/agent-session-manual-title"
+import { doRefreshQuota, type QuotaRefreshDeps } from "$lib/view-models/agent-session-quota-refresh"
+import {
+  onRequestPermission as onRequestPermissionExtracted,
+  type RequestPermissionDeps,
+} from "$lib/view-models/agent-session-request-permission"
+import {
+  endSessionScope,
+  registerSessionEndListener,
+  type SessionEndReason,
+  type SessionEndScopeDeps,
+} from "$lib/view-models/agent-session-session-end"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
+import { sendDetachFrame, type TransportTestStub } from "$lib/view-models/agent-session-detach-frame"
+import { loadMockSession, type LoadMockSessionDeps } from "$lib/view-models/agent-session-load-mock"
+import { SessionScope } from "$lib/view-models/session-scoped-state.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
+import {
+  handleSubagentToolCall,
+  handleSubagentToolCallUpdate,
+  type SubagentToolNestingDeps,
+} from "$lib/view-models/subagent-tool-nesting"
+
+export type { SessionEndReason } from "$lib/view-models/agent-session-session-end"
 
 // ─── image-attach kill-switch ─── (slice-image-paste Commit 2)
 // Commit 4b הפך ל-true — שליחה מולטימודלית פעילה.
@@ -126,6 +178,7 @@ import {
   reduceSubagent,
 } from "./claude-subagent-parse"
 import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
+import { watchPageVisibility } from "./page-visibility.js"
 
 /**
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
@@ -167,16 +220,6 @@ export type AgentSessionStatus =
 
 /** מה המודל עושה בתור הנוכחי. מופרד מ-status (חיבור) — §1 ב-brief. */
 export type TurnState = "idle" | "waiting" | "thinking" | "responding" | "calling-tool"
-
-/** slice session-scope-core S1 — reason passed to onSessionEnd listeners. "navigate" reserved for S2. */
-export type SessionEndReason =
-  | "detach"
-  | "leave-running"
-  | "switch"
-  | "new"
-  | "load"
-  | "delete"
-  | "navigate"
 
 /**
  * ─── עיצוב תוספתי בטוח למקביליות ───
@@ -235,12 +278,8 @@ export class AgentSession {
       this.#isRemote = true // slice local-view-wiring C1: DI של view == remote (כל 5 הקונסטרוקציות)
       void this.#consumeViewPatches(opts.view)
     }
-    // ─── slice ws-reconnect-infra: visibility tracking ───
+    // ─── slice ws-reconnect-infra: visibility tracking (עבר ל-#visibility) ───
     if (typeof document !== "undefined") {
-      this.#pageHidden = document.hidden
-      document.addEventListener("visibilitychange", () => {
-        this.#pageHidden = document.hidden
-      })
       // watchdog §2 — רק בדפדפן. בטסטים/SSR אין טיימר רקע שידלוף.
       this.#startStallWatch()
     }
@@ -298,7 +337,7 @@ export class AgentSession {
   /**
    * שאלה מובנת ממתינה מהסוכן — pending יחיד (בקשה שנייה סוגרת את הקודמת כ-cancelled).
    * null = אין בקשה פעילה. ה-UI (ElicitationDialog) מרנדר inline כשזה לא-null.
-   * `resolve` הוא ה-resolver של ה-Promise שהוחזר ל-`createClientImpl.unstable_createElicitation`
+   * `resolve` הוא ה-resolver של ה-Promise שהוחזר ל-`createClientImpl.createElicitation`
    * — חובה לפתור אותו בכל נקודה ש-#client מתאפס, אחרת ה-turn נתקע (מחקה pendingPermission —
    * הסיכון #1 יורש מ-A1). ר' docs/plans/slice-elicitation-ui.md §4 Commit 2.
    * ─── slice view-switch C3-ו: requestId אופציונלי ─── (additive, מקביל ל-pendingPermission)
@@ -317,36 +356,63 @@ export class AgentSession {
   /** מצב ה-modes הזמינים — null אם ה-agent לא חשף מידע mode. */
   modes = $state<SessionModeState | null>(null)
 
-  // ─── slice-slash-commands Commit 0: פקודות ה-slash שהספק חשף ─── (תוספתי)
-  /** פקודות ה-slash שהספק חשף (available_commands_update). [] = אין/טרם. */
-  availableCommands = $state<AvailableCommand[]>([])
+  // ─── slice session-scope-migration: per-session holder ($state required — §3.5) ───
+  #session = $state(new SessionScope(null))
 
-  // ─── slice session-title: כותרת הסשן הפעיל ─── (תוספתי)
-  /** כותרת הסשן הפעיל. snapshot מרגע הטעינה/החלפה. "" = אין כותרת (סשן חדש). */
-  sessionTitle = $state<string>("")
-
-  // ─── slice plan-todo-list Commit 1: תוכנית-עבודה חיה (TodoWrite/update_plan) ─── (תוספתי)
-  /** מצב הצ'קליסט הנעוץ, מ-session/update מסוגי plan/plan_update/plan_removed. reducer טהור ב-core. */
-  planStore = $state<PlanStore>(EMPTY_PLAN_STORE)
-
-  // ─── slice session-budget-meter: context state מ-ACP usage_update התקני ─── (תוספתי)
-  /**
-   * מצב ניצול חלון-הקונטקסט + עלות, מתוך `session/update` מסוג `usage_update` (ACP תקני —
-   * לא ext, לא `_meta._claude/rateLimit`). null = טרם התקבל update בסשן הנוכחי.
-   * cost אופציונלי ב-ACP — אם update חדש משמיט אותו, הערך הקודם נשמר (למניעת flicker).
-   */
-  contextUsage = $state<UsageUpdate | null>(null)
-
-  // ─── slice session-budget-meter Commit 4: quota (רב-ספקי, generic) ─── (תוספתי)
-  /**
-   * Snapshot מכסה גנרי (windows[]) מ-`_drive/getQuota`. null = אין מגבלות זמינות
-   * (תגובה תקינה) **או** שהספק לא תומך (`supports.usage===false`) **או** שגיאה — ה-UI
-   * מבחין ביניהם דרך `supports.usage` + `quotaLoading`, לא דרך ה-VM. מתעדכן רק דרך
-   * `refreshQuota()` הציבורית (on-open, לא polling — brief §9 Q4).
-   */
-  quota = $state<QuotaSnapshot | null>(null)
-  /** True בזמן בקשת `refreshQuota()` פעילה. */
-  quotaLoading = $state(false)
+  get sessionTitle(): string {
+    return this.#session.title
+  }
+  set sessionTitle(v: string) {
+    this.#session.title = v
+  }
+  get titleManual(): boolean {
+    return this.#session.titleManual
+  }
+  set titleManual(v: boolean) {
+    this.#session.titleManual = v
+  }
+  get userNotes(): string {
+    return this.#session.userNotes
+  }
+  set userNotes(v: string) {
+    this.#session.userNotes = v
+  }
+  get sessionFields(): Record<string, string> {
+    return this.#session.sessionFields
+  }
+  set sessionFields(v: Record<string, string>) {
+    this.#session.sessionFields = v
+  }
+  get availableCommands(): AvailableCommand[] {
+    return this.#session.availableCommands
+  }
+  set availableCommands(v: AvailableCommand[]) {
+    this.#session.availableCommands = v
+  }
+  get planStore(): PlanStore {
+    return this.#session.planStore
+  }
+  set planStore(v: PlanStore) {
+    this.#session.planStore = v
+  }
+  get contextUsage(): UsageUpdate | null {
+    return this.#session.contextUsage
+  }
+  set contextUsage(v: UsageUpdate | null) {
+    this.#session.contextUsage = v
+  }
+  get quota(): QuotaSnapshot | null {
+    return this.#session.quota
+  }
+  set quota(v: QuotaSnapshot | null) {
+    this.#session.quota = v
+  }
+  get quotaLoading(): boolean {
+    return this.#session.quotaLoading
+  }
+  set quotaLoading(v: boolean) {
+    this.#session.quotaLoading = v
+  }
 
   // ─── slice reconnect-bubble-merge: render-consumers (additive) ───
   /** רשימת התצוגה. בזמן warm-reconnect replay מוקפאת ל-snapshot; אחרת = live bubbles. */
@@ -456,11 +522,8 @@ export class AgentSession {
     return this.#ext
   }
 
-  // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
-  sessions = $state<SessionInfo[]>([])
-  sessionsLoading = $state<boolean>(false)
-  sessionsError = $state<string | null>(null)
-  #sessionsLoaded = false // True אחרי טעינה מוצלחת אחת — cache; force=true מרענן
+  // ─── slice sessions-cache-scope: connection-scoped session list ───
+  sessionsCache = $state(new SessionsCacheScope())
 
   // ─── slice drop-a5-watchdog (25/08): `slice-A5-watchdog` הוסר ───
   // היה טיימר של 45ש' שכפה `idle` והדליק `turnInterrupted`. נמחק, לא כוונן:
@@ -523,14 +586,6 @@ export class AgentSession {
   #subagentIndex = createSubagentIndex()
   /** אירועים שהגיעו לפני שה-Task ToolBubble נוצר ב-bubbles (bounded — §7 Risks). */
   #pendingByParent: { parentId: string; event: ClaudeSubagentEvent }[] = []
-  // ─── slice subagent-tool-nesting: קינון-כלים של תת-סוכן (additive) ───
-  /**
-   * מפת toolCallId (של כלי-בן) → parentToolUseId (toolCallId של בועת ה-Task האב).
-   * נבנית ב-`#handleSubagentToolCall` (create), נקראת ב-`#handleSubagentToolCallUpdate` —
-   * מקור-קישור אמין ל-tool_call_update, בלי תלות בשאלה אם ה-update עצמו נושא parentToolUseId
-   * (חלק כן, חלק לא — brief §3 אביגיל #3). מתאפס ב-#captureSessionConfig/#cleanup.
-   */
-  #subagentToolCallParents: Map<string, string> = new Map()
   static readonly #SUBAGENT_PENDING_CAP = 50
   // ─── slice ws-reconnect-fix-nbug2: ref ל-transport החי (NBug2 root fix) ───
   /** ref ל-transport הפעיל — נשמר בכל יצירת transport, מנוקה עם #client. */
@@ -539,6 +594,131 @@ export class AgentSession {
   readonly #connectionId = safeUUID()
   #pageHideReleaseBound = false
   #sessionId: string | null = null
+
+  /**
+   * Session-identity boundary. A new scope is born only when the incoming identity differs
+   * from the one the current scope was born for (compare `#session.sessionId`, not `#sessionId`).
+   */
+  #enterSession(id: string | null): void {
+    if (this.#session.sessionId !== id) this.#session = new SessionScope(id)
+    this.#sessionId = id
+  }
+
+  #subagentToolNestingDeps(): SubagentToolNestingDeps {
+    return {
+      bubbles: () => this.bubbles,
+      parents: () => this.#session.subagentToolCallParents,
+      turnEnded: () => this.#turnEnded,
+      applyToolCall: (update) => this.#applyToolCall(update),
+      setTurnState: (next) => this.#setTurnState(next),
+      scheduleIdle: () => this.#scheduleIdle(),
+    }
+  }
+
+  #drainViewPatchesDeps(): DrainViewPatchesDeps {
+    return { view: () => this.#view }
+  }
+
+  #sessionEndScopeDeps(): SessionEndScopeDeps {
+    return { sessionEndListeners: () => this.#sessionEndListeners }
+  }
+
+  #requestPermissionDeps(): RequestPermissionDeps {
+    return {
+      pendingPermission: () => this.pendingPermission,
+      setPendingPermission: (v) => {
+        this.pendingPermission = v
+      },
+      bypassActive: () => this.bypassActive,
+      resolvePendingPermission: (response) => this.#resolvePendingPermission(response),
+    }
+  }
+
+  #applyConfigToClientDeps(): ApplyConfigToClientDeps {
+    return {
+      configOptions: () => this.configOptions,
+      setConfigOptions: (v) => {
+        this.configOptions = v
+      },
+      client: () => this.#client,
+      sessionId: () => this.#sessionId,
+      models: () => this.models,
+      setModels: (v) => {
+        this.models = v
+      },
+      modes: () => this.modes,
+      setModes: (v) => {
+        this.modes = v
+      },
+    }
+  }
+
+  #applyConfigOptionDeps(): ApplyConfigOptionDeps {
+    return {
+      ...this.#applyConfigToClientDeps(),
+      status: () => this.status,
+      remoteView: () => this.#remoteView(),
+      cliKind: () => this.#cliKind,
+      settings: () => this.#settings,
+    }
+  }
+
+  #quotaRefreshDeps(): QuotaRefreshDeps {
+    return {
+      sessionId: () => this.#sessionId,
+      mockQuota: () => this.#mockQuota,
+      ext: () => this.#ext,
+      setQuota: (v) => {
+        this.quota = v
+      },
+      setQuotaLoading: (v) => {
+        this.quotaLoading = v
+      },
+    }
+  }
+
+  #captureSessionConfigDeps(): CaptureSessionConfigDeps {
+    return {
+      setConfigOptions: (v) => {
+        this.configOptions = v
+      },
+      setModels: (v) => {
+        this.models = v
+      },
+      setModes: (v) => {
+        this.modes = v
+      },
+      setAvailableCommands: (v) => {
+        this.availableCommands = v
+      },
+      setContextUsage: (v) => {
+        this.contextUsage = v
+      },
+      setQuota: (v) => {
+        this.quota = v
+      },
+      setQuotaLoading: (v) => {
+        this.quotaLoading = v
+      },
+      setMockQuota: (v) => {
+        this.#mockQuota = v
+      },
+      session: () => this.#session,
+      setPlanStore: (v) => {
+        this.planStore = v
+      },
+    }
+  }
+
+  #deleteSessionDeps(): DeleteSessionDeps {
+    return {
+      remoteView: () => this.#remoteView(),
+      client: () => this.#client,
+      sessionId: () => this.#sessionId,
+      cache: () => this.sessionsCache,
+      detachWith: (reason) => this.#detachWith(reason),
+    }
+  }
   /**
    * הערך הוא True בין detach() ל-attach() הבא. משתיק
    * שגיאות `WS closed (1005)` מזויפות מאירועי onClose שמופעלים לאחר שהמשתמש
@@ -580,8 +760,11 @@ export class AgentSession {
   /** ה-cliKind של ה-attach/loadSession האחרון — נדרש ל-cold reconnect.
    * $state כדי שה-getter הציבורי יהיה ריאקטיבי (slice cli-name-in-chat). */
   #cliKind = $state<string | null>(null)
-  /** True כשה-document.hidden (הדף ברקע). */
-  #pageHidden = false
+  /** slice reconnect-on-visible: רקע/פוקוס. חזרה לפוקוס מחמשת reconnect חולף בלבד
+   * (error!==null = טרמינלי: takeover / session-host-active. חימוש שם = ping-pong). */
+  #visibility = watchPageVisibility(() => {
+    if (this.status === "disconnected" && this.error === null) this.#scheduleReconnect()
+  })
   /** טיימר לניסיון reconnect הבא. */
   #reconnectTimer: ReturnType<typeof setTimeout> | undefined
   /** Guard למניעת שתי לולאות reconnect מקבילות. */
@@ -691,31 +874,8 @@ export class AgentSession {
     this.#localView?.adopt({ client, sessionId })
   }
 
-  /**
-   * הניקוז המקומי — קורא-ריק על view.patches (**לא** #consumeViewPatches): ב-local
-   * ה-VM הוא הצרכן היחיד של bubbles (primary handler), והדרינה/סינכרון מ-state
-   * של ה-view היו מכפילים בועות ומדרסים quota. lifecycle: dispose/close סוגרים
-   * את ה-controller ⇒ read() נפתר done ⇒ הלולאה יוצאת. אין מונה-דור (§4.5 —
-   * await read() תלוי אינו ניתן להפקעה מבחוץ).
-   */
   async #drainViewPatches(view: SessionView): Promise<void> {
-    const reader = view.patches.getReader()
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (this.#view !== view) break // זהות — view הוחלף/אופס
-        void value // קורא-ריק: patches נצרכים כדי למנוע backpressure
-      }
-    } catch {
-      // stream נסגר או בוטל — תקין
-    } finally {
-      try {
-        reader.releaseLock()
-      } catch {
-        /* */
-      }
-    }
+    await drainViewPatches(this.#drainViewPatchesDeps(), view)
   }
 
   /**
@@ -730,8 +890,7 @@ export class AgentSession {
     // turnState (נגזר מסוג patch ב-reduce) — ✅ ללא תנאי, ה-BE הוא הסמכות (isSpuriousIdle בוטל)
     const vt = viewState.turnState as TurnState
     if (vt !== this.turnState) this.#setTurnState(vt)
-    // title
-    if (viewState.title !== this.sessionTitle) this.sessionTitle = viewState.title
+    syncTitleFromViewState(this, viewState.title)
     // contextUsage (אופציונלי — אפסר לאמץ ל-UsageUpdate סטרקטורלית)
     if (viewState.contextUsage !== this.contextUsage) {
       this.contextUsage = viewState.contextUsage as typeof this.contextUsage
@@ -856,27 +1015,34 @@ export class AgentSession {
 
   /** Registers a listener for session-scope end. Returns unsubscribe. Listeners run in registration order. */
   onSessionEnd(cb: (reason: SessionEndReason) => void): () => void {
-    this.#sessionEndListeners.push(cb)
-    return () => {
-      const i = this.#sessionEndListeners.indexOf(cb)
-      if (i >= 0) this.#sessionEndListeners.splice(i, 1)
-    }
+    return registerSessionEndListener(this.#sessionEndScopeDeps(), cb)
   }
 
   #endSessionScope(reason: SessionEndReason): void {
-    for (const cb of this.#sessionEndListeners) {
-      try {
-        cb(reason)
-      } catch {
-        // one listener must not break teardown
-      }
-    }
+    endSessionScope(this.#sessionEndScopeDeps(), reason)
   }
 
-  #remoteViewOpts(): { headers: Record<string, string>; onSseReconnected?: () => void } {
+  /** Fires session-end with reason "navigate". No-op when status is "idle" (never opened, or already torn down). */
+  notifySessionNavigatedAway(): void {
+    if (this.status === "idle") return
+    void this.#leaveSession("navigate", true).catch((e) => {
+      this.error = formatAcpError(e)
+    })
+  }
+
+  // slice http-live-side-effects: onSseReconnected אינו אופציונלי יותר — הגוף מספק אותו תמיד.
+  #remoteViewOpts(): { headers: Record<string, string>; onSseReconnected: () => void } {
     const headers = { "Acp-Connection-Id": this.#connectionId }
-    const listener = this.#sseReconnectedListener
-    return listener ? { headers, onSseReconnected: () => listener() } : { headers }
+    return { headers, onSseReconnected: () => this._onSseReconnectedForTest() }
+  }
+
+  /**
+   * @internal slice http-live-side-effects — המסלול האמיתי של onSseReconnected.
+   * שגיאה חולפת (switchSession/newSession) נמחקת ב-reconnect; טרמינלית (#errorSurfaced) שורדת.
+   */
+  _onSseReconnectedForTest(): void {
+    if (!this.#errorSurfaced) this.error = null
+    this.#sseReconnectedListener?.()
   }
 
   #agentWsUrl(agentId: string): string {
@@ -946,14 +1112,14 @@ export class AgentSession {
    * @internal מזריק transport stub ל-#transport (לטסט DoD#4: closeAndWait נקרא ב-#doReconnect).
    * stub: אובייקט עם closeAndWait spy בלבד — לא WsAcpTransport אמיתי.
    */
-  _setTransportForTest(t: { closeAndWait: () => Promise<void> } | null): void {
+  _setTransportForTest(t: TransportTestStub | null): void {
     this.#transport = t as WsAcpTransport | null
   }
   /**
    * @internal מגדיר #sessionId + cwd + #cliKind ישירות — כדי ש-reconnect() לא יחזור מוקדם.
    */
   _setSessionContextForTest(ctx: { sessionId: string; cwd: string; cliKind: string }): void {
-    this.#sessionId = ctx.sessionId
+    this.#enterSession(ctx.sessionId)
     this.cwd = ctx.cwd
     this.#cliKind = ctx.cliKind
   }
@@ -1108,7 +1274,7 @@ export class AgentSession {
       this.error = null
       connWarn("ws-closed", { code, reason: reason || "no reason", agentId: this.agentId })
     }
-    if (this.#pageHidden) {
+    if (this.#visibility.hidden) {
       this.#setStatus("disconnected") // רקע — לא אוטו
       return
     }
@@ -1492,7 +1658,7 @@ export class AgentSession {
         mcpServers: [],
         ...(m && { _meta: m }),
       })
-      this.#sessionId = (sessionResult as { sessionId?: string }).sessionId ?? null
+      this.#enterSession((sessionResult as { sessionId?: string }).sessionId ?? null)
       if (!this.#sessionId) {
         throw new Error("newSession returned no sessionId")
       }
@@ -1580,7 +1746,7 @@ export class AgentSession {
       // slice http-cold-parity: אימוץ ה-sessionId מהסנאפשוט — תקדים חי זהה ב-
       // attachRemoteToLiveAgent (slice http-state-gaps C4). מיד אחרי בלוק הכשל-המהיר
       // (שכבר הבטיח view.state.sessionId != null) ולפני this.#view = view.
-      this.#sessionId = view.state.sessionId
+      this.#enterSession(view.state.sessionId)
 
       // 6.
       this.#view = view
@@ -1613,20 +1779,10 @@ export class AgentSession {
 
   // ─── slice remote-warm-reconnect C3: attachRemoteToLiveAgent ───
 
-  /**
-   * חיבור-מחדש במצב remote לסוכן **חי** (warm reconnect מהפאנל): שלבי attachRemote
-   * פחות createAgent — ה-host כבר קיים ב-BE (נוצר ב-attachRemote המקורי), ו-getOrCreateHost
-   * מחזיר אותו בלי ליצור סשן חדש. מקור-האמת ל-sessionId הוא ה-snapshot (frame-zero של
-   * GET /events), לא agent.acpSessionId מהפאנל (עלול להיות ישן). ❌ בלי WS, ❌ בלי
-   * createAgent, ❌ בלי notifySessionAttached (ה-BE הוא הבעלים — דווח ב-C1).
-   * הערה: this.#sessionId נשאר null — עקבי עם attachRemote (נתיבי WS חסומים ב-#view
-   * ו-reconnect() ממילא early-return); זו התנהגות צפויה, לא באג.
-   */
-  attachRemoteToLiveAgent = async (input: {
-    agentId: string
-    cwd: string
-    cliKind: string
-  }): Promise<void> => {
+  /** Remote warm reconnect to a live host (no WS / no createAgent). */
+  attachRemoteToLiveAgent = async (
+    input: { agentId: string; cwd: string; cliKind: string } & ManualTitleInput,
+  ): Promise<void> => {
     // 0. ⚠️⚠️ קודם guard-הכפילות, ורק אחריו #cleanup() — אותו סדר קריטי כמו attachRemote
     // (חיבור-חוזר במצב connected היה הורג חיבור קיים לפני שהוא זורק).
     if (this.status === "connecting" || this.status === "connected") {
@@ -1675,7 +1831,8 @@ export class AgentSession {
       // refreshQuota יוצא בשורה הראשונה ולעולם לא מרענן. נמדד, לא הונח.
       // שאר מסלולי ה-remote (attachToLiveAgent :1767, switchSession :1813,
       // newSession :1921) כן משימים; זה היה החריג.
-      this.#sessionId = view.state.sessionId
+      this.#enterSession(view.state.sessionId)
+      applyManualTitleFromAttach(this, input, false)
 
       // 5. #consumeViewPatches מכמת בזהות (this.#view !== view → break) — כמו attachRemote.
       this.#view = view
@@ -1700,71 +1857,33 @@ export class AgentSession {
   }
 
   #detachWith(reason: SessionEndReason): void {
-    this.#endSessionScope(reason)
-    this.#detached = true // ‏לפני ה-cleanup — ‏ה-WS close fires async
-    // ─── slice ws-reconnect-infra: ביטול לולאת reconnect ───
-    this.#clearReconnectTimer()
-    this.#reconnecting = false
-    this.reconnectAttempt = 0
-    this.#cleanup()
-    this.#setStatus("idle")
-    this.error = null
-    this.bubbles = []
-    // ─── slice sessions-inline: ניקוי cache סשנים ───
-    this.sessions = []
-    this.#sessionsLoaded = false
-    this.sessionsError = null
+    this.#leaveSession(reason, false).catch((e) => {
+      this.error = formatAcpError(e)
+      this.#errorSurfaced = true
+    })
   }
 
-  /** יציאה מהסשן בלי להרוג את הסוכן ב-BE — ה-child שורד (ws-agent.ts:126),
-   *  ה-WS נסגר, ה-VM מתאפס ל-idle. מאפשר reconnect/חזרה דרך רשימת-התהליכים.
-   *  ⚠️ סנכרן גוף זה מול detach() אם detach() משתנה. הבדלים מ-detach: cleanup({keepAgent:true})
-   *  + flush של permission ה-pending לפני הסגירה (למטה). */
-  leaveRunning = async (): Promise<void> => {
-    this.#endSessionScope("leave-running")
+  async #leaveSession(reason: SessionEndReason, keepAgent: boolean): Promise<void> {
+    this.#endSessionScope(reason)
     this.#detached = true
     this.#clearReconnectTimer()
     this.#reconnecting = false
     this.reconnectAttempt = 0
-    // slice-permission-ui-basic fix (calev NO-GO — "יציאה בלי כיבוי" תקעה את הסוכן):
-    // ב-keepAgent ה-agent שורד וממתין לתשובת permission. חייבים למסור לו cancelled *לפני*
-    // סגירת ה-WS. #resolvePendingPermission פותר את ה-Promise, אבל השליחה בפועל היא microtask;
-    // setTimeout(0) (macrotask) נותן ל-ws.send לרוץ בזמן שה-WS עוד פתוח, ואז #cleanup סוגר.
-    // (detach לא נפגע — הוא הורג את ה-agent, אין מי שממתין.)
-    // slice-elicitation-ui: אותו טיפול גם ל-elicitation ה-pending — ה-agent ששרד ממתין
-    // לתשובת unstable_createElicitation; חייבים למסור לו cancel לפני סגירת ה-WS.
-    if (this.pendingPermission || this.pendingElicitation) {
+    if (keepAgent && (this.pendingPermission || this.pendingElicitation)) {
       this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
       this.#resolvePendingElicitation({ action: "cancel" })
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
-    // ─── slice view-switch C3-ה2: ב-remote, leaveRunning = detach מלא ───
-    // keepAgent:true היה מותיר agent+SessionHost+child חיים בלי בעלים ובלי דרך לחזור
-    // אליהם מהנתיב המרוחק (אין attachToLiveAgent ל-remote — חסום, ר' C3-ה). known-gap:
-    // "השארת סוכן רץ" אינה נתמכת ב-remote ב-S6 (מתועד ב-runbook C4).
-    // ─── slice http-usable C2: unify — keepAgent on both transports ───────────
-    // Reported bug: leaving without shutdown actually closed the session. The old
-    // remote branch called #cleanup(), i.e. killed the agent. The original reason
-    // (view-switch C3) was valid then: there was no way back to a remote agent, so
-    // keepAgent would orphan it. attachRemoteToLiveAgent now returns to it, and
-    // phase B2 added eviction. The host stays registered on purpose (lifecycle
-    // decision A) — it does not leak a second ACP client, and returning is simple.
-    // unregisterHost alone would have been unsafe.
-    //
-    // הנימוק המקורי (view-switch C3-ה2) היה נכון בזמנו: לא הייתה דרך לחזור
-    // לסוכן מרוחק, אז keepAgent היה מייתם אותו. **זה כבר לא נכון** —
-    // attachRemoteToLiveAgent מחזיר אליו, ושלב ב2 נתן את הפינוי.
-    //
-    // ה-host נשאר רשום בכוונה (הכרעת lifecycle, גישה א) — הוא אינו מדליף
-    // לקוח ACP שני, והחזרה אליו פשוטה. unregisterHost לבדו היה מסוכן.
-    this.#cleanup({ keepAgent: true })
+    this.#cleanup(keepAgent ? { keepAgent: true } : undefined)
     this.#setStatus("idle")
     this.error = null
     this.bubbles = []
-    // ─── slice sessions-inline: ניקוי cache סשנים ───
-    this.sessions = []
-    this.#sessionsLoaded = false
-    this.sessionsError = null
+    this.sessionsCache.reset()
+  }
+
+  /** Leave session without killing the BE agent — child survives for reconnect / process list. */
+  leaveRunning = async (): Promise<void> => {
+    await this.#leaveSession("leave-running", true)
   }
 
   /** האם הסשן הנוכחי במצב עקיפת-הרשאות (claude בלבד כרגע — ראה permission-mode.ts).
@@ -1810,25 +1929,7 @@ export class AgentSession {
    * נקראים, או כש-#client מתאפס (כל נקודות ה-teardown — ר' #resolvePendingPermission).
    */
   #onRequestPermission = (params: PermissionParams): Promise<PermissionResponse> => {
-    return new Promise<PermissionResponse>((resolve) => {
-      // pending יחיד — בקשה שנייה סוגרת את הקודמת כ-cancelled (החלטת המשתמשת, §4 Commit 2).
-      if (this.pendingPermission) {
-        this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
-      }
-      // הגנה: bypass לא אמור לשלוח בקשת הרשאה כלל (הסוכן עוקף) — אך אם בכל זאת הגיעה
-      // (race/CLI לא-סטנדרטי), auto-allow כדי לא לתקוע turn בלי UI רלוונטי.
-      if (this.bypassActive) {
-        const byKind = (k: string) => params.options.find((o) => o.kind === k)
-        const chosen = byKind("allow_once") ?? byKind("allow_always") ?? params.options[0]
-        resolve(
-          chosen
-            ? { outcome: { outcome: "selected", optionId: chosen.optionId } }
-            : { outcome: { outcome: "cancelled" } },
-        )
-        return
-      }
-      this.pendingPermission = { params, resolve }
-    })
+    return onRequestPermissionExtracted(this.#requestPermissionDeps(), params)
   }
 
   /** המשתמש בחר אפשרות — פותר את ה-Promise הממתין עם ה-optionId שנבחר. */
@@ -1994,6 +2095,7 @@ export class AgentSession {
       cwd: string
       cliKind: string
       title?: string // ← slice session-title: תוספתי (קוראים קיימים לא נשברים)
+      titleManual?: boolean
     },
     // slice reconnect-recovery: preserveContextOnError — רק #coldReconnect מעביר true.
     // בטעינה-ראשונית/switchSession/newSession (בלי opts) — התנהגות ללא שינוי (#cleanup מלא).
@@ -2018,7 +2120,7 @@ export class AgentSession {
     // זורם updates גולמיים מ-fixture דרך אותו #onSessionUpdate כמו ACP חי —
     // ללא createAgent/WS/ACP. כלי דיבוג עיצוב; tree-shaken מ-prod build.
     if (import.meta.env.MODE !== "production" && input.sessionId.startsWith("mock:")) {
-      await this.#loadMockSession(input.sessionId.slice("mock:".length), input.cwd)
+      await loadMockSession(this.#loadMockSessionDeps(), input.sessionId.slice("mock:".length), input.cwd)
       return
     }
 
@@ -2081,12 +2183,11 @@ export class AgentSession {
         this.isLoadingHistory = false
         this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState (replay אינו תור)
       }
-      this.#sessionId = input.sessionId
-      this.sessionTitle = input.title ?? this.sessionTitle // keep-on-undefined: reconnect לא מאפס
-      this.#pushTitleToServer(this.sessionTitle) // slice session-title-in-process-list
+      this.#enterSession(input.sessionId)
+      this.#applyTitleFromSessionInput(input)
 
       // 4. הודע ל-BE (זהה ל-attach, מאמץ מיטבי)
-      await notifySessionAttached(agentId, this.#sessionId).catch(() => {})
+      await notifySessionAttached(agentId, input.sessionId).catch(() => {})
 
       this.#setStatus("connected")
     } catch (e) {
@@ -2126,19 +2227,15 @@ export class AgentSession {
 
   // ─── slice reconnect-warm-attach: חיבור מחדש ל-agent חי מהווידג'ט ─── (תוספתי)
 
-  /**
-   * חיבור-מחדש ל-agent חי קיים בצד-השרת (warm-attach), מ-state נקי (מהווידג'ט).
-   * שונה מ-reconnect(): מקבל את ה-agentId/sessionId/cwd/cliKind מבחוץ (ה-VM לא מחזיק
-   * אותם אחרי refresh). מזריק אותם וקורא ל-#warmReconnect הקיים (WS לאותו agentId +
-   * session/load על ה-process החי + MED-8). אם warm נכשל — שגיאה (לא cold-spawn, כי
-   * cold ייכשל על session שה-CLI לא persisted).
-   */
-  attachToLiveAgent = async (input: {
-    agentId: string
-    sessionId: string
-    cwd: string
-    cliKind: string
-  }): Promise<void> => {
+  /** Warm-attach to a live BE agent after refresh (widget reconnect). */
+  attachToLiveAgent = async (
+    input: {
+      agentId: string
+      sessionId: string
+      cwd: string
+      cliKind: string
+    } & ManualTitleInput,
+  ): Promise<void> => {
     // ─── slice view-switch C3-ה: המסוכן מבין ארבעתן — פותח WS בלי שום שמירה על status/#view ───
     // ⇒ ב-remote אפשר היה להגיע ל-WS מקביל ל-SessionHost על אותו wire (ממצא 5).
     if (this.#remoteView()) return
@@ -2155,10 +2252,10 @@ export class AgentSession {
       this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
       this.#resolvePendingElicitation({ action: "cancel" })
     }
-    this.#sessionId = input.sessionId
+    this.#enterSession(input.sessionId)
     this.cwd = input.cwd
     this.#cliKind = input.cliKind
-    this.sessionTitle = "" // slice session-title: process חי בלי title → fallback ל-"drive-coding"
+    applyManualTitleFromAttach(this, input, true)
     // slice reconnect-bubble-merge, תיקון-במקום 2: מסלול-attach הזה קורא ל-#warmReconnect
     // ישירות, בלי לעבור דרך #doReconnect — לכן ההקפאה (שעברה לראש #doReconnect) לא
     // הייתה מכסה אותו. הקפא גם כאן (idempotent, כמו ב-#doReconnect).
@@ -2186,6 +2283,7 @@ export class AgentSession {
     cwd: string
     cliKind: string
     title?: string // ← slice session-title: תוספתי
+    titleManual?: boolean
   }): Promise<void> => {
     // ─── slice remote-session-mgmt C5: remote switch through the SessionHost ───
     // (replaces the blanket view-switch C3-ה block — the WS-opening paths stay
@@ -2203,13 +2301,12 @@ export class AgentSession {
       try {
         await remoteView.loadSession(input.sessionId, input.cwd)
         // Direct assignment — #syncFromViewState does NOT sync sessionId; cannot rely on it.
-        this.#sessionId = input.sessionId
+        this.#enterSession(input.sessionId)
         // Parity with the local success path: cwd + title (the BE reset preserves
         // the old title — without this assignment session A's title would stay)
         // + push to the server.
         this.cwd = input.cwd
-        this.sessionTitle = input.title ?? this.sessionTitle // keep-on-undefined
-        this.#pushTitleToServer(this.sessionTitle)
+        this.#applyTitleFromSessionInput(input)
       } catch (e) {
         this.error = `switchSession failed: ${formatAcpError(e)}`
       } finally {
@@ -2257,10 +2354,9 @@ export class AgentSession {
         this.isLoadingHistory = false
         this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState
       }
-      this.#sessionId = input.sessionId
+      this.#enterSession(input.sessionId)
       this.cwd = input.cwd
-      this.sessionTitle = input.title ?? this.sessionTitle // keep-on-undefined
-      this.#pushTitleToServer(this.sessionTitle) // slice session-title-in-process-list
+      this.#applyTitleFromSessionInput(input)
 
       // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים)
       // replace:true — warm switch מכוון, מאפשר דריסת sessionId קיים (עוקף guard MED-9)
@@ -2313,7 +2409,7 @@ export class AgentSession {
         await remoteView.newSession(cwd)
         const newId = remoteView.state.sessionId
         if (!newId) throw new Error("newSession returned no sessionId")
-        this.#sessionId = newId
+        this.#enterSession(newId)
         this.cwd = cwd
         // Empty title: skip #pushTitleToServer (it no-ops on !title) — host already
         // cleared title via update-session; agent list stays blank until a real title.
@@ -2354,7 +2450,7 @@ export class AgentSession {
       })
       const newId = (result as { sessionId?: string }).sessionId ?? null
       if (!newId) throw new Error("newSession returned no sessionId")
-      this.#sessionId = newId
+      this.#enterSession(newId)
       this.cwd = cwd
       // slice local-view-wiring C3 — נקודת-אימוץ 5: **אותו לקוח**, בלי rebuild; אחרי
       // newSession (sessionId מהתשובה; סשן חדש = אין היסטוריה לאבד — §4.4).
@@ -2410,100 +2506,7 @@ export class AgentSession {
    * persist נקרא רק אם applied===true — כיסוי כל 5 מסלולי-ההצלחה.
    */
   applyConfigOption = async (configId: string, value: string | boolean): Promise<void> => {
-    if (this.status !== "connected") return
-    // ─── slice view-switch C3-ד: guard view-aware — אחרת כל נתיב ה-config ב-remote no-op שקט ───
-    if (!this.#remoteView() && (!this.#client || !this.#sessionId)) return
-    let applied: boolean
-    const remoteView = this.#remoteView()
-    if (remoteView) {
-      // ⚠️ ה-UI שולח ids סינתטיים ("mode"/"model") — שקילות ל-local חייבת לחקות את
-      // שלושת השלבים של #applyConfigToClient, לא רק את ה-fallback האחרון.
-      const byId = this.configOptions.find((o) => o.id === configId)
-      // חיפוש-קטגוריה — רק "mode"/"model", ורק כש-value הוא string (כמו local)
-      const byCat =
-        !byId && typeof value === "string" && (configId === "mode" || configId === "model")
-          ? this.configOptions.find((o) => o.category === configId)
-          : undefined
-      const opt = byId ?? byCat
-      if (opt) {
-        await remoteView.setConfigOption(opt.id, value)
-        applied = true
-      } else if (configId === "mode" && typeof value === "string") {
-        await remoteView.setMode(value)
-        applied = true
-      } else if (configId === "model" && typeof value === "string") {
-        await remoteView.setSessionModel(value)
-        applied = true
-      } else {
-        // ⚠️ כמו local: לא נמצא = skip בשקט
-        applied = false
-      }
-      // ⚠️ ב-local #applyConfigToClient מעדכן ידנית גם this.modes/this.models מתשובת
-      // ה-RPC. ב-remote אין תשובה כזו — יתעדכנו רק כשיגיע *_update מה-wire. known-gap
-      // מתועד (runbook C4) — ❌ אל תזייף עדכון מקומי.
-    } else {
-      applied = await this.#applyConfigToClient(configId, value)
-    }
-    const cli = this.#cliKind
-    if (applied && this.#settings && cli) {
-      this.#settings.setLastConfig(cli, configId, value)
-    }
-  }
-
-  /**
-   * הגוף הפנימי של apply. מחזיר true בכל מסלול-הצלחה, false אם configId לא נמצא.
-   * מניח ש-guard (status, #client, #sessionId) כבר עבר בקורא.
-   */
-  #applyConfigToClient = async (configId: string, value: string | boolean): Promise<boolean> => {
-    // מסלול 1: option קיים ב-configOptions לפי id
-    const optById = this.configOptions.find((o) => o.id === configId)
-    if (optById) {
-      const res = await this.#client!.setSessionConfigOption({
-        sessionId: this.#sessionId!,
-        configId,
-        value,
-      })
-      this.configOptions = res.configOptions
-      return true
-    }
-
-    // מסלול 2: fallback key "model"/"mode" — חפש לפי category
-    if (configId === "model" && typeof value === "string") {
-      const byCat = this.configOptions.find((o) => o.category === "model")
-      if (byCat) {
-        const res = await this.#client!.setSessionConfigOption({
-          sessionId: this.#sessionId!,
-          configId: byCat.id,
-          value,
-        })
-        this.configOptions = res.configOptions
-        return true
-      }
-      // fallback — setSessionModel ישיר; עדכן models ידנית למניעת UI desync
-      await this.#client!.setSessionModel({ sessionId: this.#sessionId!, modelId: value })
-      if (this.models) this.models = { ...this.models, currentModelId: value }
-      return true
-    }
-    if (configId === "mode" && typeof value === "string") {
-      const byCat = this.configOptions.find((o) => o.category === "mode")
-      if (byCat) {
-        const res = await this.#client!.setSessionConfigOption({
-          sessionId: this.#sessionId!,
-          configId: byCat.id,
-          value,
-        })
-        this.configOptions = res.configOptions
-        return true
-      }
-      // fallback — setSessionMode ישיר; עדכן modes ידנית
-      await this.#client!.setSessionMode({ sessionId: this.#sessionId!, modeId: value })
-      if (this.modes) this.modes = { ...this.modes, currentModeId: value }
-      return true
-    }
-
-    // מסלול 3: לא נמצא — skip בשקט
-    console.warn(`[AgentSession] configId "${configId}" not available — skipping`)
-    return false
+    await applyConfigOptionExtracted(this.#applyConfigOptionDeps(), configId, value)
   }
 
   // ─── slice FEAT-thinking-live: setThinkingTokens ─── (תוספתי)
@@ -2576,28 +2579,7 @@ export class AgentSession {
 
   /** מבצע את בקשת ה-quota בפועל, עם guard נגד כתיבה אחרי session switch/cleanup. */
   #doRefreshQuota = async (sessionId: string): Promise<void> => {
-    try {
-      // DEV-only mock harness — אותו תנאי כמו ה-mock loader הקיים (brief §4 Commit 4).
-      if (
-        import.meta.env.MODE !== "production" &&
-        sessionId.startsWith("mock:") &&
-        this.#mockQuota !== undefined
-      ) {
-        if (this.#sessionId === sessionId) this.quota = this.#mockQuota
-        return
-      }
-      if (!this.#ext) {
-        // אין ext פעיל (session מנותק/mock ללא mockState.quota) — unavailable, לא קריסה.
-        if (this.#sessionId === sessionId) this.quota = null
-        return
-      }
-      const snapshot = await this.#ext.getQuota(sessionId)
-      if (this.#sessionId === sessionId) this.quota = snapshot
-    } catch {
-      if (this.#sessionId === sessionId) this.quota = null
-    } finally {
-      if (this.#sessionId === sessionId) this.quotaLoading = false
-    }
+    await doRefreshQuota(this.#quotaRefreshDeps(), sessionId)
   }
 
   // ─── slice-restore-last-config: apply remembered config ─── (תוספתי)
@@ -2612,25 +2594,7 @@ export class AgentSession {
    *   SessionConfigOption = discriminated union { type:"select"|"boolean" }
    */
   #isValidChoice(key: string, value: string | boolean): boolean {
-    if (key === "mode" && this.modes) {
-      return typeof value === "string" && this.modes.availableModes.some((m) => m.id === value)
-    }
-    if (key === "model" && this.models) {
-      return (
-        typeof value === "string" && this.models.availableModels.some((m) => m.modelId === value)
-      )
-    }
-    const opt = this.configOptions.find((o) => o.id === key || o.category === key)
-    if (!opt) return false
-    if (opt.type === "select" && typeof value === "string") {
-      // flatten זהה ללוגיקה של flattenSelectOptions (SessionOptionsPanel) — inline ב-VM
-      const flat = (
-        opt.options as Array<{ value?: string; options?: Array<{ value: string }> }>
-      ).flatMap((i) => ("options" in i && i.options ? i.options : [i as { value: string }]))
-      return flat.some((c) => c.value === value)
-    }
-    if (opt.type === "boolean") return typeof value === "boolean"
-    return true
+    return isValidChoice(this, key, value)
   }
 
   /**
@@ -2663,53 +2627,21 @@ export class AgentSession {
    *  בחירת סשן נעשית מתוך הסשן הפעיל דרך SessionOptionsPanel.)
    */
   listSessions = async (force = false): Promise<void> => {
-    // ─── slice remote-session-mgmt C5: remote path — view.listSessions ───
     const remoteView = this.#remoteView()
+    let source: (() => Promise<SessionInfo[]>) | null
     if (remoteView) {
-      if (this.sessionsLoading) return
-      if (this.#sessionsLoaded && !force) return
-      this.sessionsLoading = true
-      this.sessionsError = null
-      try {
-        // already normalized in the view (RemoteSessionView.listSessions)
-        this.sessions = await remoteView.listSessions()
-        this.#sessionsLoaded = true
-      } catch (e) {
-        // -32601 = the CLI doesn't support listing → empty list, not an error
-        // (exactly like the local path; sessionsError stays null so the empty
-        // list renders — the DoD's "gentle" handling, no crash).
-        if ((e as { code?: number }).code === -32601) {
-          this.sessions = []
-          this.#sessionsLoaded = true
-        } else {
-          this.sessionsError = e instanceof Error ? e.message : String(e)
-        }
-      } finally {
-        this.sessionsLoading = false
+      // already normalized in the view (RemoteSessionView.listSessions)
+      source = () => remoteView.listSessions()
+    } else if (this.#client !== null) {
+      source = async () => {
+        const res = await this.#client!.listSessions()
+        const raw = (res as { sessions?: unknown[] }).sessions ?? []
+        return raw.map(normalizeSessionInfo)
       }
-      return
+    } else {
+      source = null
     }
-    if (this.#client === null) return // אין חיבור — לא טוענים פה
-    if (this.sessionsLoading) return
-    if (this.#sessionsLoaded && !force) return
-    this.sessionsLoading = true
-    this.sessionsError = null
-    try {
-      const res = await this.#client.listSessions()
-      const raw = (res as { sessions?: unknown[] }).sessions ?? []
-      this.sessions = raw.map(normalizeSessionInfo)
-      this.#sessionsLoaded = true
-    } catch (e) {
-      // -32601 = ה-CLI לא תומך (Gemini) → רשימה ריקה, לא שגיאה
-      if ((e as { code?: number }).code === -32601) {
-        this.sessions = []
-        this.#sessionsLoaded = true
-      } else {
-        this.sessionsError = e instanceof Error ? e.message : String(e)
-      }
-    } finally {
-      this.sessionsLoading = false
-    }
+    await this.sessionsCache.list(source, force)
   }
 
   // ─── slice session-delete: מחיקת סשן (session/delete) ─── (תוספתי)
@@ -2731,39 +2663,7 @@ export class AgentSession {
    * חי בשכבת הקומפוננטה ולא ב-VM. (calev NO-GO fix: DoD #7 — active-delete השאיר /chat ריק.)
    */
   deleteSession = async (sessionId: string): Promise<boolean> => {
-    // ─── slice remote-session-mgmt C5: remote path — view.deleteSession ───
-    const remoteView = this.#remoteView()
-    if (remoteView) {
-      try {
-        await remoteView.deleteSession(sessionId)
-      } catch (e) {
-        if ((e as { code?: number }).code === -32601) return false // button hidden; defensive no-op
-        this.sessionsError = e instanceof Error ? e.message : String(e)
-        return false
-      }
-      // optimistic removal — same as local (the rpc already confirmed the delete)
-      this.sessions = this.sessions.filter((s) => s.sessionId !== sessionId)
-      const wasActive = sessionId === this.#sessionId
-      if (wasActive) {
-        this.#detachWith("delete") // navigates out — same wasActive logic as local
-      }
-      return wasActive
-    }
-    if (this.#client === null) return false
-    try {
-      await this.#client.deleteSession(sessionId)
-    } catch (e) {
-      if ((e as { code?: number }).code === -32601) return false // הכפתור מוסתר; defensive no-op
-      this.sessionsError = e instanceof Error ? e.message : String(e)
-      return false
-    }
-    // הסרה אופטימית — ה-ACP call כבר אישר את המחיקה, אין צורך בעוד round-trip (listSessions(true)).
-    this.sessions = this.sessions.filter((s) => s.sessionId !== sessionId)
-    const wasActive = sessionId === this.#sessionId
-    if (wasActive) {
-      this.#detachWith("delete") // מנקה גם sessions/sessionsLoaded/sessionsError — עקבי עם onDisconnect
-    }
-    return wasActive // הקומפוננטה מנווטת החוצה כשזה true
+    return deleteSessionExtracted(this.#deleteSessionDeps(), sessionId)
   }
 
   // ─── הקלטות (recordings) ─── (יתווסף ב-slice 10)
@@ -2810,17 +2710,19 @@ export class AgentSession {
     return this.#cliKind === "claude" ? CLAUDE_SESSION_META : undefined
   }
 
-  // ─── slice session-title-in-process-list: דחיפת title ל-BE ───
-
-  /**
-   * דוחף את כותרת-הסשן הנוכחית ל-BE (PATCH /api/agents/:id) כדי שרשימת "תהליכים
-   * פעילים" תציג אותה. best-effort — כשל דחיפה לא שובר UI (הכותרת המקומית כבר עודכנה
-   * ב-this.sessionTitle לפני הקריאה). client הוא הבעלים — ה-BE שכבת-אחסון טיפשה.
-   */
+  /** Best-effort PATCH title to BE for the active-processes list. */
   #pushTitleToServer(title: string): void {
     const id = this.agentId
     if (!id || !title) return // אין agentId / כותרת ריקה → דלג
     void patchAgent(id, { title }).catch(() => {})
+  }
+
+  setManualTitle(title: string): void {
+    setManualTitleOnAgent(this, title)
+  }
+
+  #applyTitleFromSessionInput(input: { title?: string; titleManual?: boolean }): void {
+    applyTitleFromSessionInput(this, input, (t) => this.#pushTitleToServer(t))
   }
 
   // ─── slice 6: setter מרכז ─── (additive — מנתב את כל ה-status writes)
@@ -2921,22 +2823,7 @@ export class AgentSession {
     models?: SessionModelState | null
     modes?: SessionModeState | null
   }): void {
-    this.configOptions = result.configOptions ?? []
-    this.models = result.models ?? null
-    this.modes = result.modes ?? null
-    // slice-slash-commands: ניקוי בהחלפת/פתיחת סשן; ה-update הטרי יאכלס
-    this.availableCommands = []
-    // slice session-budget-meter: איפוס context-usage/quota בהחלפת/פתיחת סשן (#captureSessionConfig
-    // אינו מאפס capabilities — ר' brief §0 — אבל contextUsage/quota הם שדות תוספתיים חדשים
-    // ללא reset קודם, ולכן מתווספים כאן וב-#cleanup במפורש).
-    this.contextUsage = null
-    this.quota = null
-    this.quotaLoading = false
-    this.#mockQuota = undefined
-    // slice subagent-tool-nesting: נקה מיפוי-קינון (החלפת/פתיחת סשן = מיפוי חדש)
-    this.#subagentToolCallParents = new Map()
-    // slice plan-todo-list: איפוס הצ'קליסט בהחלפת/פתיחת סשן (סשן חדש = אין תוכנית ישנה)
-    this.planStore = EMPTY_PLAN_STORE
+    captureSessionConfig(this.#captureSessionConfigDeps(), result)
   }
 
   #cleanup(opts?: { keepAgent?: boolean; keepContext?: boolean }): void {
@@ -2963,8 +2850,7 @@ export class AgentSession {
     // slice-elicitation-ui: אותו דפוס — פתור גם elicitation ה-pending לפני close.
     this.#resolvePendingElicitation({ action: "cancel" })
     if (opts?.keepAgent && this.#transport) {
-      this.#transport.sendRaw(`${JSON.stringify({ jsonrpc: "2.0", method: "$/detach" })}
-`)
+      sendDetachFrame(this.#transport)
     } else if (opts?.keepAgent && this.#isRemote) {
       this.releaseConnection()
     }
@@ -2998,7 +2884,7 @@ export class AgentSession {
     this.#subagentIndex = createSubagentIndex()
     this.#pendingByParent = []
     // slice subagent-tool-nesting: נקה מיפוי-קינון (חיבור חדש = מיפוי חדש)
-    this.#subagentToolCallParents = new Map()
+    this.#session.subagentToolCallParents = new Map()
     this.#transport = null // slice ws-reconnect-fix-nbug2: נקה ref
     // slice reconnect-recovery: keepContext משמר #sessionId/agentId כדי ש-reconnect()
     // הציבורי לא יעשה early-return אחרי כשל cold-reconnect (§4 Commit 0).
@@ -3016,87 +2902,32 @@ export class AgentSession {
     if (!opts?.keepAgent && !opts?.keepContext && agentId) void deleteAgent(agentId).catch(() => {})
   }
 
-  /**
-   * DEV-only: טוען fixture של updates גולמיים ומזרים אותם דרך #onSessionUpdate —
-   * בדיוק כמו loadSession אמיתי (אותו ממיר, אותו status flow). מקור: static/fixtures/<name>.json.
-   * delayMs > 0 → השהיה בין updates (לדמות streaming חי לדיבוג scroll/animations).
-   */
-  #loadMockSession = async (name: string, cwd: string): Promise<void> => {
-    try {
-      const res = await fetch(`/fixtures/${name}.json`)
-      if (!res.ok) throw new Error(`fixture "${name}" not found (${res.status})`)
-      const data = (await res.json()) as {
-        updates: unknown[]
-        loadResult?: {
-          configOptions?: SessionConfigOption[] | null
-          models?: SessionModelState | null
-          modes?: SessionModeState | null
-        }
-        // ─── slice session-budget-meter Commit 5: mockState גנרי ─── (additive)
-        mockState?: {
-          capabilities?: Partial<NormalizedCapabilities>
-          quota?: QuotaSnapshot | null
-        }
-      }
-      this.cwd = cwd
-      this.#sessionId = `mock:${name}`
-      this.sessionTitle = `🧪 ${name}` // slice session-title: כותרת-דמו לharness הוויזואלי
-      // DEV: לכוד configOptions/modes/models מ-loadResult של ה-fixture (אם קיים) —
-      // מאפשר mockup של בוררי ה-config (mode/model/agent/effort) + descriptions ללא ACP חי.
-      if (data.loadResult) this.#captureSessionConfig(data.loadResult)
-
-      // ─── slice session-budget-meter Commit 5: mockState.capabilities/quota ───
-      // #mockQuota מתאפס תמיד תחילה — מונע דליפה מ-mock session קודם (brief §0/§4 Commit 4).
-      // fixture ללא mockState.quota → #mockQuota נשאר undefined → refreshQuota() נופל
-      // ל-נתיב "אין #ext" (unavailable), לא מציג snapshot ישן.
-      this.#mockQuota = undefined
-      if (data.mockState) {
-        if (data.mockState.capabilities) {
-          // ממזג עם defaults בטוחים (כל השאר false) — לא מניח שהמפתח קיים ב-fixture.
-          this.#capabilities = {
-            mcp: false,
-            compact: false,
-            commands: false,
-            usage: false,
-            configOptions: false,
-            rename: false,
-            thinkingTokens: false,
-            image: false,
-            systemPrompt: "unsupported",
-            ...data.mockState.capabilities,
-          }
-        }
-        if ("quota" in data.mockState) {
-          this.#mockQuota = data.mockState.quota
-        }
-      }
-
-      // delay אופציונלי דרך ?stream=<ms> (ללא תשתית — sleep צד-לקוח בלבד)
-      const params = new URLSearchParams(typeof location !== "undefined" ? location.search : "")
-      const delayMs = Number(params.get("stream") ?? "0") || 0
-
-      this.#resetTurnTracking() // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
-      this.isLoadingHistory = true
-      try {
-        for (const update of data.updates) {
-          // עוטף בצורת SessionNotification ({ update }) כמו ב-ACP אמיתי
-          this.#onSessionUpdate({ update } as unknown as SessionNotification)
-          if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs))
-        }
-        // tick(): מאלץ flush של ה-$effect של ה-Speaker בעוד isLoadingHistory=true,
-        // כך שכל הבועות מסומנות כמעובדות (replay-quiet) לפני ההצבה ל-false.
-        // בלי זה הלולאה הסינכרונית מסתיימת לפני שה-effect רץ → ה-Speaker מקריא הכל.
-        await tick()
-      } finally {
-        this.isLoadingHistory = false
-        this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState
-      }
-      this.status = "connected"
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      this.error = `mock loadSession failed: ${msg}`
-      this.#setTurnState("idle") // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
-      this.status = "error"
+  #loadMockSessionDeps(): LoadMockSessionDeps {
+    return {
+      setCwd: (cwd) => {
+        this.cwd = cwd
+      },
+      setSessionTitle: (title) => {
+        this.sessionTitle = title
+      },
+      setError: (error) => {
+        this.error = error
+      },
+      setIsLoadingHistory: (v) => {
+        this.isLoadingHistory = v
+      },
+      enterSession: (sessionKey) => this.#enterSession(sessionKey),
+      captureSessionConfig: (result) => this.#captureSessionConfig(result),
+      setMockQuota: (v) => {
+        this.#mockQuota = v
+      },
+      setCapabilities: (v) => {
+        this.#capabilities = v
+      },
+      resetTurnTracking: () => this.#resetTurnTracking(),
+      setTurnState: (state) => this.#setTurnState(state),
+      onSessionUpdate: (n) => this.#onSessionUpdate(n),
+      setStatus: (status) => this.#setStatus(status),
     }
   }
 
@@ -3201,7 +3032,7 @@ export class AgentSession {
       // מקונן ב-subFrames של בועת ה-Task האב — לא top-level.
       const parentToolUseId = extractParentToolUseId(notification.update)
       if (parentToolUseId !== undefined) {
-        this.#handleSubagentToolCall(update, parentToolUseId)
+        handleSubagentToolCall(this.#subagentToolNestingDeps(), update, parentToolUseId)
       } else {
         this.#applyToolCall(update)
       }
@@ -3210,8 +3041,11 @@ export class AgentSession {
     if (update.sessionUpdate === "tool_call_update") {
       // slice subagent-tool-nesting §3 (אביגיל #3/#6): ה-Map (מבוסס tool_call create) הוא
       // מקור-הקישור האמין — לא ה-_meta של ה-update עצמו (חלק מה-updates לא נושאים parent).
-      if (update.toolCallId !== undefined && this.#subagentToolCallParents.has(update.toolCallId)) {
-        this.#handleSubagentToolCallUpdate(update)
+      if (
+        update.toolCallId !== undefined &&
+        this.#session.subagentToolCallParents.has(update.toolCallId)
+      ) {
+        handleSubagentToolCallUpdate(this.#subagentToolNestingDeps(), update)
       } else {
         // slice meta-passthrough §3(ד): HTTP wire never emits tool_call — nest from _meta on
         // tool_call_update when the map misses but the parent Task bubble already exists.
@@ -3223,7 +3057,7 @@ export class AgentSession {
           update.toolCallId !== undefined &&
           this.bubbles.some((b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId)
         if (parentToolUseId !== undefined && parentBubbleExists && !childAlreadyTopLevel) {
-          this.#handleSubagentToolCall(update, parentToolUseId)
+          handleSubagentToolCall(this.#subagentToolNestingDeps(), update, parentToolUseId)
         } else {
           // סדר חובה: turnState פר-pending/in_progress לפני ה-no-op guard (idx===-1) של reduce (אביגיל #4)
           if (update.status === "pending" || update.status === "in_progress") {
@@ -3278,7 +3112,7 @@ export class AgentSession {
 
     // ─── slice session-budget-meter Commit 1: usage_update (ACP תקני) ───────
     // לא נושא content.text — חובה לטפל בו לפני ה-gate `if (!text) return`.
-    // cost אופציונלי: אם ה-update החדש משמיט אותו, שומר את הקודם (anti-flicker, brief §4).
+    // cost אופציונלי + anti-flicker WS (נרמול object/number ב-core reduce.ts)
     if (update.sessionUpdate === "usage_update") {
       const u = update as unknown as UsageUpdate
       this.contextUsage = {
@@ -3293,15 +3127,16 @@ export class AgentSession {
     // לא נושא content.text — חובה לטפל בו לפני ה-gate `if (!text) return`.
     // semantics עקבי עם ה-keep-on-undefined הקיים ב-sessionTitle setter paths (:999, :1114).
     if (update.sessionUpdate === "session_info_update") {
+      if (this.titleManual) return
       // SessionInfoUpdate: title?: string | null; updatedAt?: string | null (types.gen.d.ts:3905)
       const title = (update as { title?: string | null }).title
       if (title === null) {
         this.sessionTitle = "" // null = clear (לפי הסכמה)
       } else if (typeof title === "string") {
         this.sessionTitle = title
-        if (!this.#isRemote) {
-          this.#pushTitleToServer(this.sessionTitle) // slice session-title-in-process-list
-        }
+        // slice http-live-side-effects (bug #56): ללא תנאי — במסלול HTTP ה-FE הוא
+        // הכותב היחיד למרשם, ולכן `!#isRemote` השאיר title=null בדיוק שם.
+        this.#pushTitleToServer(this.sessionTitle)
       }
       // undefined → keep-on-undefined (עקבי עם loadSession :999 / :1114)
       return
@@ -3452,127 +3287,6 @@ export class AgentSession {
     if (this.#turnEnded) this.#scheduleIdle()
   }
 
-  // ─── slice subagent-tool-nesting: כלים מקוננים של תת-סוכן ─────────────────────────
-
-  /**
-
-  // ─── slice subagent-tool-nesting: כלים מקוננים של תת-סוכן ─────────────────────────
-
-  /**
-   * tool_call של כלי-בן של תת-סוכן (`_meta.claudeCode.parentToolUseId`) — בונה `ToolBubble` עשיר
-   * (אותה צורה שיוצר `#handleToolCall`) ומקנן אותו ב-`subFrames` של בועת ה-Task האב, במקום
-   * top-level (brief §3). **fallback**: אם בועת-Task האב לא נמצאה — top-level רגיל (אל תשמיט).
-   */
-  #handleSubagentToolCall(
-    update: {
-      toolCallId?: string
-      title?: string
-      kind?: string
-      rawInput?: unknown
-      rawOutput?: unknown
-      status?: ToolCall["status"]
-      content?: unknown[] | null
-      locations?: unknown[] | null
-    },
-    parentToolUseId: string,
-  ): void {
-    if (update.toolCallId === undefined) return
-    const parentIdx = this.bubbles.findIndex(
-      (b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId,
-    )
-    const parent = parentIdx === -1 ? undefined : this.bubbles[parentIdx]
-    if (parent === undefined || parent.kind !== "tool") {
-      // fallback (אביגיל r4 #1) — בועת-Task אב לא נמצאה: עדיף כלי top-level על כלי נעלם.
-      this.#applyToolCall(update as Record<string, unknown>)
-      return
-    }
-
-    const childBubble: ToolBubble = {
-      id: safeUUID(),
-      kind: "tool",
-      messageId: null,
-      createdAt: Date.now(),
-      toolCall: {
-        toolCallId: update.toolCallId,
-        name: update.kind ?? update.title ?? "tool",
-        kind: update.kind,
-        args: update.rawInput ?? {},
-        status: update.status ?? "pending",
-        title: update.title,
-        narration: undefined,
-        result: update.rawOutput,
-        content: update.content != null ? mapToolContent(update.content) : undefined,
-        locations: update.locations != null ? mapLocations(update.locations) : undefined,
-      },
-      segments: [],
-    }
-
-    // immutable append + object-replacement (שומר reactivity, כמו B1).
-    this.bubbles[parentIdx] = {
-      ...parent,
-      subFrames: [...(parent.subFrames ?? []), childBubble],
-    }
-    this.#subagentToolCallParents.set(update.toolCallId, parentToolUseId)
-    this.#setTurnState("calling-tool")
-    if (this.#turnEnded) this.#scheduleIdle()
-  }
-
-  /**
-   * tool_call_update לכלי-בן מקונן (toolCallId ב-`#subagentToolCallParents`) — מאתר את ה-ToolBubble
-   * ב-subFrames של בועת ה-Task האב **לפי `toolCall.toolCallId`** (לא `sf.id`/UUID — אביגיל #6)
-   * ומעדכן אותו בתוך ה-subFrames (לא top-level).
-   */
-  #handleSubagentToolCallUpdate(update: {
-    toolCallId?: string
-    status?: ToolCall["status"]
-    rawInput?: unknown
-    rawOutput?: unknown
-    kind?: string
-    title?: string
-    content?: unknown[] | null
-    locations?: unknown[] | null
-  }): void {
-    if (update.toolCallId === undefined) return
-    if (update.status === "pending" || update.status === "in_progress") {
-      this.#setTurnState("calling-tool")
-      if (this.#turnEnded) this.#scheduleIdle()
-    }
-    const parentToolUseId = this.#subagentToolCallParents.get(update.toolCallId)
-    if (parentToolUseId === undefined) return
-    const parentIdx = this.bubbles.findIndex(
-      (b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId,
-    )
-    const parent = parentIdx === -1 ? undefined : this.bubbles[parentIdx]
-    if (parent === undefined || parent.kind !== "tool") return
-
-    const subFrames = parent.subFrames ?? []
-    const childIdx = subFrames.findIndex(
-      (sf) => sf.kind === "tool" && sf.toolCall.toolCallId === update.toolCallId,
-    )
-    if (childIdx === -1) return
-    const oldChild = subFrames[childIdx]
-    if (oldChild === undefined || oldChild.kind !== "tool") return
-
-    const newToolCall: ToolCall = {
-      ...oldChild.toolCall,
-      ...(update.status !== undefined && { status: update.status }),
-      ...(update.rawInput !== undefined && { args: update.rawInput }),
-      ...(update.rawOutput !== undefined && { result: update.rawOutput }),
-      ...(update.kind !== undefined && { kind: update.kind }),
-      ...(update.title !== undefined && { title: update.title }),
-      ...(update.content !== undefined && {
-        content: update.content === null ? undefined : mapToolContent(update.content),
-      }),
-      ...(update.locations !== undefined && {
-        locations: update.locations === null ? undefined : mapLocations(update.locations),
-      }),
-    }
-    const newChild: ToolBubble = { ...oldChild, toolCall: newToolCall }
-    const newSubFrames = [...subFrames]
-    newSubFrames[childIdx] = newChild
-    this.bubbles[parentIdx] = { ...parent, subFrames: newSubFrames }
-  }
-
   /**
    * §11: מצרף image-attachment לבועת-user — קיבוץ לפי messageId כמו #appendChunk.
    *
@@ -3582,29 +3296,7 @@ export class AgentSession {
    * ה-undefined-init וגם מבטיחה reactivity על מערך שנוסף מאפס.
    */
   #appendUserImage(messageId: string | null, img: { mimeType: string; data: string }): void {
-    const last = this.bubbles[this.bubbles.length - 1]
-    const canGroup =
-      last !== undefined &&
-      last.kind === "user" &&
-      (messageId !== null ? last.messageId === messageId : last.messageId === null)
-
-    const attachment = { mimeType: img.mimeType, dataBase64: img.data }
-
-    if (canGroup && last !== undefined) {
-      const userBubble = last as UserBubble
-      // השמה (לא push) כי attachments מתחיל undefined — ר' הערה מעל
-      userBubble.attachments = [...(userBubble.attachments ?? []), attachment]
-    } else {
-      const newBubble: UserBubble = {
-        id: safeUUID(),
-        kind: "user",
-        messageId,
-        createdAt: Date.now(),
-        segments: [],
-        attachments: [attachment],
-      }
-      this.bubbles.push(newBubble)
-    }
+    appendUserImage(this, messageId, img)
   }
 
   /**
@@ -3618,27 +3310,7 @@ export class AgentSession {
     messageId: string | null,
     ph: { kind: "resource_link" | "audio" | "resource"; label?: string; uri?: string },
   ): void {
-    const last = this.bubbles[this.bubbles.length - 1]
-    const canGroup =
-      last !== undefined &&
-      last.kind === "user" &&
-      (messageId !== null ? last.messageId === messageId : last.messageId === null)
-
-    if (canGroup && last !== undefined) {
-      const userBubble = last as UserBubble
-      // השמה (לא push) כי contentPlaceholders מתחיל undefined — ר' הערה ב-#appendUserImage
-      userBubble.contentPlaceholders = [...(userBubble.contentPlaceholders ?? []), ph]
-    } else {
-      const newBubble: UserBubble = {
-        id: safeUUID(),
-        kind: "user",
-        messageId,
-        createdAt: Date.now(),
-        segments: [],
-        contentPlaceholders: [ph],
-      }
-      this.bubbles.push(newBubble)
-    }
+    appendUserPlaceholder(this, messageId, ph)
   }
 
   /**
@@ -3653,25 +3325,6 @@ export class AgentSession {
       uri?: string
     },
   ): void {
-    const last = this.bubbles[this.bubbles.length - 1]
-    const canGroup =
-      last !== undefined &&
-      last.kind === "message" &&
-      (messageId !== null ? last.messageId === messageId : last.messageId === null)
-
-    if (canGroup && last !== undefined) {
-      const msgBubble = last as MessageBubble
-      msgBubble.contentPlaceholders = [...(msgBubble.contentPlaceholders ?? []), ph]
-    } else {
-      const newBubble: MessageBubble = {
-        id: safeUUID(),
-        kind: "message",
-        messageId,
-        createdAt: Date.now(),
-        segments: [],
-        contentPlaceholders: [ph],
-      }
-      this.bubbles.push(newBubble)
-    }
+    appendAgentPlaceholder(this, messageId, ph)
   }
 }

@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from "vitest"
 import { reduce } from "./reduce"
+import { stateToSessionUpdates } from "./to-session-update"
 import type { Patch, SessionState } from "./types"
 import { createInitialSessionState } from "./types"
 
@@ -551,15 +552,47 @@ describe("reduce — usage_update (C1)", () => {
   })
 
   it("preserves previous cost when new update omits it (anti-flicker)", () => {
-    const s: SessionState = { ...mkState(), contextUsage: { used: 50, size: 1000, cost: 0.05 } }
+    const s: SessionState = {
+      ...mkState(),
+      contextUsage: { used: 50, size: 1000, cost: { amount: 0.05 } },
+    }
     const { state } = reduce(s, { sessionUpdate: "usage_update", used: 100, size: 1000 })
-    expect(state.contextUsage?.cost).toBe(0.05)
+    expect(state.contextUsage?.cost).toEqual({ amount: 0.05 })
   })
 
-  it("accepts cost when provided", () => {
+  it("accepts cost object from wire (claude)", () => {
+    const s = mkState()
+    const { state } = reduce(s, {
+      sessionUpdate: "usage_update",
+      used: 100,
+      size: 1000,
+      cost: { amount: 0.4857, currency: "USD" },
+    })
+    expect(state.contextUsage?.cost).toEqual({ amount: 0.4857, currency: "USD" })
+  })
+
+  it("accepts numeric cost (unmeasured CLI) and normalizes to object", () => {
     const s = mkState()
     const { state } = reduce(s, { sessionUpdate: "usage_update", used: 100, size: 1000, cost: 0.1 })
-    expect(state.contextUsage?.cost).toBe(0.1)
+    expect(state.contextUsage?.cost).toEqual({ amount: 0.1 })
+  })
+
+  it("object cost survives reduce → stateToSessionUpdates round-trip", () => {
+    const wire = {
+      sessionUpdate: "usage_update" as const,
+      used: 58_059,
+      size: 1_000_000,
+      cost: { amount: 0.4857, currency: "USD" },
+    }
+    const { state } = reduce(mkState(), wire)
+    const updates = stateToSessionUpdates(state)
+    const usage = updates.find((u) => u.sessionUpdate === "usage_update")
+    expect(usage).toEqual({
+      sessionUpdate: "usage_update",
+      used: 58_059,
+      size: 1_000_000,
+      cost: { amount: 0.4857, currency: "USD" },
+    })
   })
 })
 
@@ -652,5 +685,67 @@ describe("reduce — מקטע רווחים בלבד אינו פותח בועה �
     expect(second.patches).toHaveLength(1) // מקובץ — לא נפגע
     const msg = second.state.messages[0]!
     if (msg.role !== "tool") expect(msg.segments).toHaveLength(2)
+  })
+})
+
+// ─── slice sdk-timestamp: assistant timestamp מ-_claude/sdkMessage ───
+function sdkAssistant(msgId: string, timestamp: string): object {
+  return {
+    sessionUpdate: "_drive/ext_notification",
+    method: "_claude/sdkMessage",
+    params: {
+      sessionId: "s1",
+      message: { type: "assistant", timestamp, message: { id: msgId, role: "assistant", content: [] } },
+    },
+  }
+}
+
+describe("reduce — _claude/sdkMessage assistant timestamp", () => {
+  it("מקורלט timestamp להודעה לפי messageId + משמר passthrough opaque", () => {
+    const created = reduce(mkState(), makeChunk("agent_message_chunk", "Hi", "msg-1"))
+    const before = created.state.messages[0]!
+    if (before.role !== "tool") expect(before.timestamp).toBeUndefined()
+
+    const r = reduce(created.state, sdkAssistant("msg-1", "2026-09-20T22:23:07.655Z"))
+    const after = r.state.messages[0]!
+    if (after.role !== "tool") expect(after.timestamp).toBe("2026-09-20T22:23:07.655Z")
+    const ops = r.patches.map((p) => p.op)
+    expect(ops).toContain("opaque") // ה-passthrough ל-FE (subagents) לא נפגע
+    expect(ops).toContain("set-message")
+  })
+
+  it("messageId לא-תואם → רק opaque, בלי timestamp", () => {
+    const created = reduce(mkState(), makeChunk("agent_message_chunk", "Hi", "msg-1"))
+    const r = reduce(created.state, sdkAssistant("msg-OTHER", "2026-09-20T00:00:00.000Z"))
+    expect(r.patches.map((p) => p.op)).toEqual(["opaque"])
+    const m = r.state.messages[0]!
+    if (m.role !== "tool") expect(m.timestamp).toBeUndefined()
+  })
+
+  it("idempotent — אותו timestamp שוב → רק opaque בשנייה", () => {
+    const created = reduce(mkState(), makeChunk("agent_message_chunk", "Hi", "msg-1"))
+    const first = reduce(created.state, sdkAssistant("msg-1", "2026-09-20T22:23:07.655Z"))
+    const second = reduce(first.state, sdkAssistant("msg-1", "2026-09-20T22:23:07.655Z"))
+    expect(second.patches.map((p) => p.op)).toEqual(["opaque"])
+  })
+
+  it("buffer — sdkMessage מגיע לפני יצירת ההודעה → ההודעה נוצרת עם timestamp", () => {
+    const ts = "2026-09-20T22:23:07.655Z"
+    // אירוע ה-timestamp מגיע כשאין עוד בועה (buffer בלבד, בלי set-message)
+    const buffered = reduce(mkState(), sdkAssistant("msg-1", ts))
+    expect(buffered.patches.map((p) => p.op)).toEqual(["opaque"])
+    // ואז ה-chunk יוצר את בועת ה-assistant — שמקבלת את הזמן מה-buffer
+    const created = reduce(buffered.state, makeChunk("agent_message_chunk", "Hi", "msg-1"))
+    const m = created.state.messages[0]!
+    if (m.role !== "tool") expect(m.timestamp).toBe(ts)
+  })
+
+  it("thinking — thought לפני assistant, אירוע ביניהם → assistant מקבל timestamp", () => {
+    const ts = "2026-09-20T22:23:07.655Z"
+    let s = reduce(mkState(), makeChunk("agent_thought_chunk", "מחשבה", "msg-1")).state
+    s = reduce(s, sdkAssistant("msg-1", ts)).state // אירוע כשקיים רק thought
+    s = reduce(s, makeChunk("agent_message_chunk", "תשובה", "msg-1")).state // assistant נוצר אחרי
+    const asst = s.messages.find((m) => m.role === "assistant")!
+    if (asst.role !== "tool") expect(asst.timestamp).toBe(ts)
   })
 })

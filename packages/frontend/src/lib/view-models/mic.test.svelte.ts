@@ -92,7 +92,7 @@ describe("Mic pending capture", () => {
     expect(mic.canRetry).toBe(true)
   })
 
-  it("NotAllowedError sets mic.error.permission without pending retry", async () => {
+  it("NotAllowedError flags permissionDenied and shows no text error", async () => {
     mockStart.mockRejectedValueOnce(new DOMException("denied", "NotAllowedError"))
     const recovery = createRecovery({ hasPending: false })
     const mic = new Mic({ session: fakeSession, recovery })
@@ -100,7 +100,9 @@ describe("Mic pending capture", () => {
     await mic.toggle()
 
     expect(mic.state).toBe("idle")
-    expect(mic.error).toBe("mic.error.permission")
+    expect(mic.permissionDenied).toBe(true)
+    expect(mic.error).toBeNull()
+    expect(mic.permissionHint).toBeNull()
     expect(mic.canRetry).toBe(false)
   })
 

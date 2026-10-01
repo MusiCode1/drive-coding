@@ -1,4 +1,5 @@
 dist/
 frontend-dist/
 plugins/
+docs-agents/
 *.tgz

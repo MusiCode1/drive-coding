@@ -111,7 +111,11 @@ export type McpToolName =
   | "session_subscribe"
   | "session_whoami"
   | "session_surface"
+  | "session_note_set"
+  | "session_field_set"
+  | "session_field_delete"
   | "notify_parent"
+  | "docs_get"
 
 export const MCP_TOOL_META: Record<
   Exclude<McpToolName, "notify_parent">,
@@ -156,6 +160,26 @@ export const MCP_TOOL_META: Record<
     title: "Read this UI's surface prompt",
     description:
       "Return the drive-coding surface prompt for the calling agent: what this product is, how to reach this backend (loopback base, MCP endpoint, file proxy, public origin, your agent id), the session-bus tools, and the display capabilities of the chat UI — how to give the user a clickable link to a local file, embed an image, or render a mermaid diagram. Same body as GET /api/agent-prompt, which normally arrives through a CLI hook; call this when that hook is not wired. No parameters; identity comes from X-Drive-Coding-Agent. Read it before dumping a raw filesystem path at the user.",
+  },
+  session_note_set: {
+    title: "Set session note",
+    description:
+      "Replace the caller's shared session note (userNotes on the agent record). No agent parameter — identity from X-Drive-Coding-Agent only. Replaces the entire note string.",
+  },
+  session_field_set: {
+    title: "Set session field",
+    description:
+      "Merge one key into the caller's sessionFields map (get → merge key → update). No agent parameter — identity from X-Drive-Coding-Agent only. Empty key after trim is rejected.",
+  },
+  session_field_delete: {
+    title: "Delete session field",
+    description:
+      "Remove one key from the caller's sessionFields map. No agent parameter — identity from X-Drive-Coding-Agent only. Empty key after trim is rejected.",
+  },
+  docs_get: {
+    title: "Get agent documentation",
+    description:
+      "Fetch drive-coding agent-facing docs without the repository. Pass id for full markdown, tags or query for index entries, or omit all for the full catalog (same as GET /api/docs).",
   },
 }
 

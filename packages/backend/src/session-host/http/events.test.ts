@@ -19,6 +19,7 @@ import {
   STREAM_ALIVE_INTERVAL_MS,
   StreamAliveNotification,
 } from "@drive-coding/core/session"
+import { addSink, type LogEntry } from "@drive-coding/core/log"
 import { type } from "arktype"
 import { Hono } from "hono"
 import { describe, expect, it, vi } from "vitest"
@@ -72,6 +73,9 @@ function makeMockBroadcaster(patchStream?: ReadableStream<Patch>): PatchesBroadc
     subscribe: subscribeFn,
     unsubscribe: unsubscribeFn,
     close: closeFn,
+    // slice history-cursor C2 — ברירת-מחדל "חוצץ ריק": השומר שותק, ולכן כל
+    // הטסטים שקדמו לסלייס רואים בדיוק את מה שראו קודם.
+    oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
   }
 }
 
@@ -283,6 +287,8 @@ describe("GET /api/agents/:id/events", () => {
         }),
         unsubscribe: vi.fn(),
         close: vi.fn(),
+        // slice history-cursor C2: חבר חדש בחוזה PatchesBroadcaster.
+        oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
       }
 
       const host: ExtendedSessionHost = {
@@ -758,5 +764,159 @@ describe("keepalive timer (slice host-result-reason C2 — no real-time wait)", 
     expect(res.status).toBe(200)
 
     sse.cancel()
+  })
+})
+
+// ─── slice history-cursor C2: שומר-הפער ──────────────────────────────────────
+//
+// 🔴 **AGENTS.md: "a fail-open path is not implemented until its silence is
+// pinned".** השומר הזה מדווח ואינו משנה התנהגות, כלומר הוא בדיוק הצורה
+// המסוכנת: שתיקה של מנגנון בריא ושתיקה של מנגנון מת נראות זהות. ⇒ **שני**
+// הענפים נבדקים — שותק כשאין פער, ו**יורה** כשמזריקים אחד.
+//
+// מה שהוא אוכף הוא ההנחה המתועדת ב-events.ts: "No await between — host.state
+// and subscribe() are both synchronous". אם בין השניים ייפלטו ויפונו patches,
+// ‏`subscribe(snapshot.version)` יחזיר פריימים שמתחילים אחרי הפער והלקוח לא
+// יראה סימן.
+
+describe("שומר-הפער — oldestBufferedVersion מול snapshot.version (slice history-cursor C2)", () => {
+  /** אוסף את שורות ה-warn של ה-namespace הזה בלבד. */
+  function captureWarns(): { warns: LogEntry[]; stop: () => void } {
+    const warns: LogEntry[] = []
+    const stop = addSink((e) => {
+      if (e.level === "warn" && e.ns === "backend.session-host.events") warns.push(e)
+    })
+    return { warns, stop }
+  }
+
+  /** broadcaster מוק שה-oldestBufferedVersion שלו מוכתב מבחוץ. */
+  function broadcasterWithOldest(oldest: number | undefined): PatchesBroadcaster {
+    return { ...makeMockBroadcaster(), oldestBufferedVersion: vi.fn().mockReturnValue(oldest) }
+  }
+
+  async function run(broadcaster: PatchesBroadcaster, version: number): Promise<string[]> {
+    const host = makeMockHost(makeMockState({ version, title: "כותרת" }))
+    const registry = makeMockRegistry({ host, broadcaster })
+    const res = await makeApp(registry).request("/api/agents/agent-1/events")
+    return readSseEvents(res, 1, 200)
+  }
+
+  it("🔴 ‏פער מוזרק (oldest = snapshot.version + 5) — השומר **יורה**, warn אחד עם שני המספרים", async () => {
+    const { warns, stop } = captureWarns()
+    try {
+      await run(broadcasterWithOldest(15), 10)
+    } finally {
+      stop()
+    }
+
+    expect(warns).toHaveLength(1)
+    expect(warns[0]!.fields).toMatchObject({ snapshotVersion: 10, oldestBufferedVersion: 15 })
+  })
+
+  it("‏מסלול תקין, **חוצץ לא-ריק** — השומר שותק, וההשוואה רצה על מספר אמיתי", async () => {
+    // 🔴 חוצץ ריק כאן היה מקרה `undefined` מחופש: הענף הראשון של השומר היה
+    // חוסם, וההשוואה שאנחנו רוצים לקבע לא הייתה רצה כלל. ⇒ broadcaster
+    // **אמיתי** עם patches בחוצץ, ו-snapshot.version שמכסה אותם.
+    const { stream, push } = (() => {
+      let ctrl!: ReadableStreamDefaultController<Patch>
+      const s = new ReadableStream<Patch>({
+        start(c) {
+          ctrl = c
+        },
+      })
+      return { stream: s, push: (p: Patch) => ctrl.enqueue(p) }
+    })()
+    const broadcaster = createPatchesBroadcaster(stream)
+    push({ version: 3, op: "update-session", changes: { title: "a" } })
+    push({ version: 4, op: "update-session", changes: { title: "b" } })
+    await new Promise((r) => setTimeout(r, 20))
+
+    // החוצץ מתחיל ב-3, ה-snapshot ב-9 ⇒ oldest <= snapshot.version, מספר אמיתי.
+    expect(broadcaster.oldestBufferedVersion()).toBe(3)
+
+    const { warns, stop } = captureWarns()
+    try {
+      const events = await run(broadcaster, 9)
+      expect(events[0]).toContain("event: snapshot")
+    } finally {
+      stop()
+    }
+
+    expect(warns).toHaveLength(0)
+  })
+
+  it("‏oldestBufferedVersion מחזיר undefined — שותק", async () => {
+    const { warns, stop } = captureWarns()
+    try {
+      await run(broadcasterWithOldest(undefined), 10)
+    } finally {
+      stop()
+    }
+
+    expect(warns).toHaveLength(0)
+  })
+
+  it("‏oldest === snapshot.version + 1 — שותק, זה המצב התקין ולא פער", async () => {
+    const { warns, stop } = captureWarns()
+    try {
+      await run(broadcasterWithOldest(11), 10)
+    } finally {
+      stop()
+    }
+
+    expect(warns).toHaveLength(0)
+  })
+
+  it("‏oldest === snapshot.version — שותק (החוצץ מכיל את ה-snapshot עצמו)", async () => {
+    const { warns, stop } = captureWarns()
+    try {
+      await run(broadcasterWithOldest(10), 10)
+    } finally {
+      stop()
+    }
+
+    expect(warns).toHaveLength(0)
+  })
+
+  it("🔴 ‏השומר **מדווח בלבד** — הבתים על החוט זהים עם פער ובלעדיו", async () => {
+    const { stop } = captureWarns()
+    try {
+      const withGap = await run(broadcasterWithOldest(15), 10)
+      const without = await run(broadcasterWithOldest(10), 10)
+      expect(withGap).toEqual(without)
+    } finally {
+      stop()
+    }
+  })
+
+  it("‏oldestBufferedVersion נקרא **אחרי** ה-subscribe, לא בינו לבין ה-snapshot", async () => {
+    // §4.4: `snapshot` ו-`subscribe` נשארים צמודים. הסדר הזה הוא ההנחה
+    // שהשומר אמור לאמת — קריאה שמפרידה ביניהם שוברת בדיוק את מה שנבדק.
+    const order: string[] = []
+    const base = makeMockBroadcaster()
+    const broadcaster: PatchesBroadcaster = {
+      ...base,
+      subscribe: vi.fn((v?: number) => {
+        order.push(`subscribe:${v}`)
+        return base.subscribe(v)
+      }),
+      oldestBufferedVersion: vi.fn(() => {
+        order.push("oldest")
+        return undefined
+      }),
+    }
+    const state = makeMockState({ version: 10 })
+    const host: ExtendedSessionHost = {
+      ...makeMockHost(state),
+      get state() {
+        order.push("read-state")
+        return state
+      },
+    }
+    const registry = makeMockRegistry({ host, broadcaster })
+    const res = await makeApp(registry).request("/api/agents/agent-1/events")
+    await readSseEvents(res, 1, 200)
+
+    expect(order.slice(0, 3)).toEqual(["read-state", "subscribe:10", "oldest"])
   })
 })

@@ -6,6 +6,7 @@
  *
  * ─── slice session-state-reducer C2 (TDD) ───
  */
+import { recordCarried } from "./carried"
 import type { Patch, SessionMessage, SessionState, TurnStateValue } from "./types"
 
 /** גוזר nextSeq מ-id בצורת prefix_<n> (m_3 → 4, s_0 → 1). */
@@ -128,6 +129,8 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
         messages: patch.messages,
         nextMessageSeq: patch.nextMessageSeq,
         nextSegmentSeq: patch.nextSegmentSeq,
+        // ‏reset מאפס `messages`, ולכן כל `after` הופך לעוגן תלוי-באוויר.
+        carried: [],
       }
     }
 
@@ -141,10 +144,16 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
     }
 
     case "opaque": {
-      // 🔴 אנחנו לא יודעים מה יש בפנים, ולכן **לא נוגעים ב-state** — אבל
-      // ה-version כן מתקדם, כדי שהסדר והדדופ ימשיכו לעבוד. הצרכן שכן מבין
-      // את התוכן (למשל `reducePlan` ב-FE) מטפל בו בעצמו.
-      return { ...state, version: patch.version }
+      // 🔴 אנחנו לא **מפרשים** מה יש בפנים, ואין לזה op משלו ב-state —
+      // אבל ה-version כן מתקדם, כדי שהסדר והדדופ ימשיכו לעבוד. הצרכן שכן
+      // מבין את התוכן (למשל `reducePlan` ב-FE) מטפל בו בעצמו.
+      //
+      // ‏slice carried-snapshot C1: הרישום ל-`carried` קורה **גם כאן**, לא
+      // רק ב-`reduce`. ‏`replay.test.ts` מקבע `applyPatch(patches) ≡
+      // reduce(frames)` ב-deep-equality — אם רק `reduce` ימלא את ה-buffer,
+      // השוויון נשבר. ‏`carryKeyOf` טהור ב-update, ולכן ההכרעה כאן זהה
+      // בדיוק לזו שבצד השני; כאן המקור הוא `patch.update`.
+      return recordCarried({ ...state, version: patch.version }, patch.update)
     }
 
     default: {

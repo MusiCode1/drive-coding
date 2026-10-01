@@ -11,6 +11,28 @@
     --radius: 14px;
     --font: "Heebo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
+    /* ── safe-area ── (slice mobile-parity)
+       app.html opts into `viewport-fit=cover` + `black-translucent`, i.e. the page
+       is told to paint *under* the notch and the home indicator. That is only
+       correct if every edge-anchored element pays the inset back. These tokens are
+       that payment, resolved once, so no component repeats the env()+fallback dance.
+       0px wherever there is no cutout → desktop is unchanged. */
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    /* --safe-x: the inline-axis inset to spend on BOTH sides. safe-l/safe-r are
+       physical, so mapping them onto padding-inline-start/end would put the left
+       cutout on the right in RTL. Taking the max and applying it symmetrically is
+       direction-neutral and stays correct when <html dir> flips. */
+    --safe-x: max(var(--safe-l), var(--safe-r));
+
+    /* ── on-screen-keyboard inset ── (slice mobile-parity)
+       Written by engines/viewport-insets.ts from visualViewport. `dvh` follows
+       browser chrome but NOT the OSK, so without this the composer sits behind the
+       keyboard on a phone. Stays 0px on desktop and wherever visualViewport is absent. */
+    --kb: 0px;
+
     /* alias -- מחרוזת --muted בשימוש ב-3 מקומות (ChatInput, ChatBubbles, +page.svelte)
        --fg-muted מוגדר תחת כל [data-palette]; נפתר בזמן-שימוש = תקין. */
     --muted: var(--fg-muted);
@@ -342,13 +364,17 @@
     box-shadow: none;
     background: transparent;
     max-width: 100%;
+    /* pb-5 (1.25rem, from RecordFooter) + the home-indicator inset. Without this the
+       mic button and TypeArea's send row sit inside the gesture strip. (mobile-parity) */
+    padding-block-end: calc(1.25rem + var(--safe-b));
   }
 
   /* מצב hidden (מובייל): pb גדול כדי שה-toggle ירחף מעל ידית ה-BottomSheet (28px).
      ה-delay 0.3s רק בהגדלה (→hidden) — אחרי שה-pane דהה וה-rows התכווץ; כך ה-footer
      לא "מתרומם" לפני שמתכווץ. ההקטנה (→record) נשארת מיידית (מה-.mic-card הבסיסי). */
   .is-hidden.mic-plain .mic-card {
-    padding-block-end: 2.25rem;
+    /* clears the sheet handle, which is itself pushed up by the same inset. (mobile-parity) */
+    padding-block-end: calc(2.25rem + var(--safe-b));
     transition: background .3s, box-shadow .3s, border-color .3s,
                 padding-block-end .3s ease .3s;
   }

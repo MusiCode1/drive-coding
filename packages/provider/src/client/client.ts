@@ -185,7 +185,7 @@ type PermissionResponse = Awaited<ReturnType<Client["requestPermission"]>>
 
 /**
  * ─── slice-elicitation-ui: elicitation/create ─── ייבוא ישיר (לא Parameters<Client[...]>
- * — unstable_createElicitation אופציונלי על Client → נכשל ב-TS2344).
+ * — createElicitation אופציונלי על Client → נכשל ב-TS2344).
  */
 type ElicitationParams = CreateElicitationRequest
 type ElicitationResponse = CreateElicitationResponse

@@ -9,6 +9,7 @@
 
 import type { QuotaPeriod } from "@drive-coding/provider/extensions"
 import { describe, expect, it } from "vitest"
+import { formatContextUsageCost } from "./context-usage-cost"
 import { formatQuotaPeriod, formatRelativeTime, formatTime, formatTimeUntil } from "./formatting"
 
 describe("formatTime", () => {
@@ -176,5 +177,17 @@ describe("formatTimeUntil", () => {
     const result = formatTimeUntil(BASE + 30 * 60_000, "en", BASE)
     expect(result).not.toMatch(/-/)
     expect(result).toMatch(/^in /)
+  })
+})
+
+describe("formatContextUsageCost (token-usage-persistence C1)", () => {
+  it("cost without currency does not throw (SessionBudgetPopover gate)", () => {
+    expect(() => formatContextUsageCost({ amount: 0.1 }, "en")).not.toThrow()
+    expect(formatContextUsageCost({ amount: 0.1 }, "en")).toMatch(/\$0\.10|US\$0\.10/)
+  })
+
+  it("passes through currency when present", () => {
+    const out = formatContextUsageCost({ amount: 0.4857, currency: "USD" }, "en")
+    expect(out).toMatch(/0\.49|0\.486/)
   })
 })

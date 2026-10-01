@@ -2,11 +2,15 @@
  * agent-events-turn.ts — turn-ended → AgentEventBus wiring (slice be-events-subscribe C1).
  */
 
+import type { SessionUsage } from "@drive-coding/core/session"
 import type { AgentEventBus } from "../session-host/agent-events.js"
 
 export type TurnEndedInfo = {
   stopReason?: string
   lastTurnError?: { message: string; at: number } | null
+  /** Internal — consumed by token-usage-store; not emitted on AgentEventBus. */
+  contextUsage?: SessionUsage | null
+  acpSessionId?: string | null
 }
 
 export type OnTurnEndedHandler = (agentId: string, info: TurnEndedInfo) => void

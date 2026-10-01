@@ -85,12 +85,7 @@ export async function getAgent(
   return (await res.json()) as { agent: { cwd: string; status: string; crashReason?: string } }
 }
 
-/**
- * notifySessionAttached — עדכון "עובדת-חיבור" (acpSessionId + cwd אופציונלי) דרך
- * PATCH הגנרי (slice agent-patch-unify, C3). מבטל את POST …/session-attached — אותה
- * חתימה ציבורית, גוף מאציל ל-patchAgent. `opts.cwd` נשלח רק בשני אתרים בלבד
- * (switchSession, newSession — §3.5 D6 בבריף); שאר האתרים משמיטים אותו במכוון.
- */
+/** notifySessionAttached — PATCH acpSessionId (+ optional cwd/replace); replaces POST …/session-attached. */
 export async function notifySessionAttached(
   agentId: string,
   sessionId: string,
@@ -115,13 +110,11 @@ export async function deleteAgent(agentId: string): Promise<void> {
   }
 }
 
-/**
- * הגוף הכולל של ה-PATCH הגנרי (slice agent-patch-unify, C3) — דלת אחת במקום שלוש
- * (POST …/session-attached, POST …/persistent, PATCH {title}). תואם 1:1 ל-`PatchAgentInput`
- * ב-http-agents.ts. `replace` הוא דגל-בקרה (D3) — לא שדה-רישום.
- */
+/** PATCH body — 1:1 with `PatchAgentInput` in http-agents.ts (`replace` is control-only). */
 export type PatchAgentBody = {
   title?: string | null
+  titleManual?: boolean
+  userNotes?: string
   persistent?: boolean
   acpSessionId?: string
   status?: "ready"

@@ -128,7 +128,8 @@ export function buildSurfaceRuntime(info: SurfaceRuntimeInfo): string {
     `[README.md](${exampleLink})`,
     "",
     "Encode the whole `file://` URI. Never leave trailing `]` or other markdown",
-    "punctuation inside the URL. Allowed extensions are listed under display capabilities.",
+    "punctuation inside the URL. Allowed extensions and size caps:",
+    "`docs_get({id:\"render-contract\"})` and `docs_get({id:\"files\"})`.",
   )
 
   return lines.join("\n")

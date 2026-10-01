@@ -1,9 +1,9 @@
 /**
- * playable-sink.test.ts — Commit 2b: resume() touches #current only.
+ * playable-sink.test.ts — Commit 2b: resume() on shared output.
  */
 import { describe, expect, it, vi } from "vitest"
-import { PlayableSink, type SegmentFactory } from "./playable-sink"
-import type { PlayableSegment } from "./segments/playable-segment"
+import { PlayableSink, type SegmentFactory } from "./playable-sink.js"
+import type { PlayableSegment } from "./segments/playable-segment.js"
 
 function makeSeg(id: string): PlayableSegment {
   return {
@@ -19,7 +19,7 @@ function makeSeg(id: string): PlayableSegment {
 }
 
 describe("PlayableSink.resume()", () => {
-  it("resume() calls only the current segment", async () => {
+  it("resume() delegates to shared output (not per-segment loop)", async () => {
     const seg0 = makeSeg("s0")
     const seg1 = makeSeg("s1")
     const factory: SegmentFactory = (id) => (id === "s0" ? seg0 : seg1)
@@ -35,7 +35,8 @@ describe("PlayableSink.resume()", () => {
 
     sink.resume()
 
-    expect(seg1.resume).toHaveBeenCalledTimes(1)
+    // resume goes to SharedAudioOutput — segment.resume not called
+    expect(seg1.resume).not.toHaveBeenCalled()
     expect(seg0.resume).not.toHaveBeenCalled()
   })
 })

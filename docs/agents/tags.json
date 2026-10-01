@@ -1,0 +1,9 @@
+{
+  "$comment": "Closed tag vocabulary for docs/agents/*.md. Adding a tag here is a deliberate act.",
+  "tags": [
+    "orientation", "connect", "session", "ownership", "turnstate",
+    "config", "output", "render", "errors", "ui", "rpc",
+    "identity", "subagents", "providers", "files", "voice",
+    "diagnostics", "cli", "transports", "known-issues"
+  ]
+}

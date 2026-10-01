@@ -53,6 +53,7 @@ type StoreFile = { version: number; agents: unknown[] }
 
 /** Fields that describe a live process and must never outlive it. */
 export function stripRuntimeFields(agent: Agent): Agent {
+  if (agent.titleManual === true) return agent
   const { title: _title, ...rest } = agent
   return rest as Agent
 }

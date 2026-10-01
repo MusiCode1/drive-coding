@@ -5,9 +5,7 @@
  * redesign-3: חיווט dropdowns (סוכן/מודל/חשיבה) מתוך לוגיקת AgentOptionsPanel.
  * AgentOptionsPanel נמחק; כל הלוגיקה כאן.
  *
- * ─── redesign-2 ───
- * ─── redesign-3 (חיווט dropdowns) ───
- * ─── slice sessions-inline: סשנים inline (מחליף SessionsDialog) ───
+ * ─── redesign-2/3 · slice sessions-inline (סשנים inline, מחליף SessionsDialog) ───
  */
 
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
@@ -24,6 +22,8 @@ import { goto } from "$app/navigation"
 import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import MachineStatsBar from "$lib/components/connect/MachineStatsBar.svelte"
+import SessionFieldsList from "$lib/components/layout/SessionFieldsList.svelte"
+import SessionTitleField from "$lib/components/layout/SessionTitleField.svelte"
 import SessionsFilterBar from "$lib/components/layout/SessionsFilterBar.svelte"
 import SessionCard from "$lib/components/modals/SessionCard.svelte"
 import CliBadge from "$lib/components/ui/CliBadge.svelte"
@@ -59,16 +59,16 @@ const onSettings = $derived(page.url.pathname === "/settings")
 
 let sessionsSearchQuery = $state("")
 const filteredSessions = $derived(
-  filterSessions(session.sessions, {
+  filterSessions(session.sessionsCache.sessions, {
     query: sessionsSearchQuery,
     currentCwd: session.cwd,
     currentCwdOnly: settings.sessionsCurrentCwdOnly,
   }),
 )
 const sessionsFilteredEmpty = $derived(
-  !session.sessionsLoading &&
-    !session.sessionsError &&
-    session.sessions.length > 0 &&
+  !session.sessionsCache.loading &&
+    !session.sessionsCache.error &&
+    session.sessionsCache.sessions.length > 0 &&
     filteredSessions.length === 0,
 )
 
@@ -232,12 +232,7 @@ async function onCheckboxChange(configId: string, e: Event) {
 
 // ─── slice sessions-inline: טעינת סשנים inline ───
 
-/**
- * פותר את דגל sessionTransport (query ← override ← stored ← env ← "ws") — אותו עזר
- * ואותם ארגומנטים כמו connect-agent.ts / handleReconnect (+page.svelte). C4 ממצא 2:
- * בלי זה, ניווט מהפאנל פולט נתיב עירום, ורענון (F5) אחרי בחירת-סשן ב-http מאבד
- * את דגל-התעבורה (נופל בחזרה ל-ws בפעם הבאה).
- */
+/** sessionTransport: query ← override ← stored ← env ← "ws" (same as handleReconnect). */
 function currentTransport() {
   return readSessionTransport({
     env: env.PUBLIC_SESSION_TRANSPORT,
@@ -288,7 +283,8 @@ $effect(() => {
 
 <!-- machine stats from presence poller (slice machine-stats-in-session) -->
 <MachineStatsBar stats={poller.machine} />
-
+<SessionTitleField />
+<SessionFieldsList />
 <!-- שורת פעולות עליונה: נתק · השאר-רץ · השתק · ⚙ — בראש בכל המצבים (redesign-fix) -->
 <!-- סדר DOM ב-RTL: disconnect=ימני-קיצוני, leave-running משמאלו, audio, settings -->
 <div class="flex items-center gap-2 shrink-0">
@@ -578,11 +574,11 @@ $effect(() => {
 
   <!-- רשימת סשנים inline — בלי scroll/flex-1 פנימי: גוללת יחד עם אזור הגלילה המאוחד -->
   <div class="flex flex-col gap-2">
-    {#if session.sessionsLoading}
+    {#if session.sessionsCache.loading}
       <div class="text-[12px] opacity-50 px-1">{t("modal.sessions.loading")}</div>
-    {:else if session.sessionsError}
-      <div class="text-[12px] px-1" style="color:var(--recording)">{t("modal.sessions.error")}: {session.sessionsError}</div>
-    {:else if session.sessions.length === 0}
+    {:else if session.sessionsCache.error}
+      <div class="text-[12px] px-1" style="color:var(--recording)">{t("modal.sessions.error")}: {session.sessionsCache.error}</div>
+    {:else if session.sessionsCache.sessions.length === 0}
       <div class="text-[12px] opacity-50 px-1">{t("modal.sessions.empty")}</div>
     {:else if sessionsFilteredEmpty}
       <div class="text-[12px] opacity-50 px-1">{t("sidebar.sessionsNoMatches")}</div>

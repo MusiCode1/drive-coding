@@ -14,7 +14,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { registerFsFileHttp } from "../src/delivery/http-fs-file.js"
+import { parseBytesRange, registerFsFileHttp } from "../src/delivery/http-fs-file.js"
 
 let workDir: string
 
@@ -286,5 +286,102 @@ describe("GET /api/fs/file", () => {
     await writeFile(p, "<svg></svg>", "utf8")
     const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`)
     expect(res.headers.get("content-type")).toBe("image/svg+xml")
+  })
+
+  // ─── audio allowlist + Range (slice audio-via-fs-file, Commit 0) ───
+
+  it("25. tiny .mp3 without Range → 200 + audio/mpeg + Accept-Ranges: bytes", async () => {
+    const app = makeApp()
+    const p = join(workDir, "tiny.mp3")
+    await writeFile(p, Buffer.from([0, 1, 2, 3, 4]))
+    const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get("content-type")).toBe("audio/mpeg")
+    expect(res.headers.get("accept-ranges")).toBe("bytes")
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff")
+  })
+
+  it("26. Range: bytes=0-3 on known file → 206 + body length 4 + Content-Range", async () => {
+    const app = makeApp()
+    const p = join(workDir, "range.mp3")
+    const body = Buffer.from([10, 20, 30, 40, 50])
+    await writeFile(p, body)
+    const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`, {
+      headers: { Range: "bytes=0-3" },
+    })
+    expect(res.status).toBe(206)
+    expect(res.headers.get("content-range")).toBe("bytes 0-3/5")
+    expect(res.headers.get("content-length")).toBe("4")
+    const slice = new Uint8Array(await res.arrayBuffer())
+    expect(slice).toEqual(new Uint8Array([10, 20, 30, 40]))
+  })
+
+  it("27. Range beyond file → 416 + Content-Range: bytes */<n>", async () => {
+    const app = makeApp()
+    const p = join(workDir, "beyond.mp3")
+    await writeFile(p, Buffer.from([1, 2, 3]))
+    const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`, {
+      headers: { Range: "bytes=10-20" },
+    })
+    expect(res.status).toBe(416)
+    expect(res.headers.get("content-range")).toBe("bytes */3")
+  })
+
+  it("28. mp3 between 8MB and 32MB without Range → 200 (not 413)", async () => {
+    const app = makeApp()
+    const p = join(workDir, "mid.mp3")
+    await writeFile(p, Buffer.alloc(9 * 1024 * 1024, 1))
+    const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get("content-type")).toBe("audio/mpeg")
+  })
+
+  it("29. mp3 between 8MB and 512MB with Range: bytes=0-3 → 206 (not 413)", async () => {
+    const app = makeApp()
+    const p = join(workDir, "big-audio.mp3")
+    await writeFile(p, Buffer.alloc(9 * 1024 * 1024, 1))
+    const res = await app.request(`/api/fs/file?uri=${encodeURIComponent(p)}`, {
+      headers: { Range: "bytes=0-3" },
+    })
+    expect(res.status).toBe(206)
+    expect(res.headers.get("content-length")).toBe("4")
+  })
+})
+
+describe("parseBytesRange", () => {
+  const size = 100
+
+  it("absent when header is undefined or empty", () => {
+    expect(parseBytesRange(undefined, size)).toEqual({ kind: "absent" })
+    expect(parseBytesRange("", size)).toEqual({ kind: "absent" })
+  })
+
+  it("bytes=0-3 → single range", () => {
+    expect(parseBytesRange("bytes=0-3", size)).toEqual({
+      kind: "single",
+      start: 0,
+      endInclusive: 3,
+    })
+  })
+
+  it("bytes=2- → single range to EOF", () => {
+    expect(parseBytesRange("bytes=2-", size)).toEqual({
+      kind: "single",
+      start: 2,
+      endInclusive: 99,
+    })
+  })
+
+  it("comma (multi-range) → unsatisfiable", () => {
+    expect(parseBytesRange("bytes=0-1,2-3", size)).toEqual({ kind: "unsatisfiable" })
+  })
+
+  it("bytes=-3 (suffix) → unsatisfiable", () => {
+    expect(parseBytesRange("bytes=-3", size)).toEqual({ kind: "unsatisfiable" })
+  })
+
+  it("start >= size → unsatisfiable", () => {
+    expect(parseBytesRange("bytes=100-", size)).toEqual({ kind: "unsatisfiable" })
+    expect(parseBytesRange("bytes=200-300", size)).toEqual({ kind: "unsatisfiable" })
   })
 })

@@ -30,6 +30,7 @@ import LanguageSelect from "./LanguageSelect.svelte"
 import PalettePicker from "./PalettePicker.svelte"
 import SettingsCard from "./SettingsCard.svelte"
 import SettingToggle from "./SettingToggle.svelte"
+import TokenContextUsageCard from "./TokenContextUsageCard.svelte"
 import TtsStatusCard from "./TtsStatusCard.svelte"
 
 const settings = getSettings()
@@ -279,6 +280,17 @@ $effect(() => {
   <!-- כרטיס מצב TTS — tts-status-ui -->
   <SettingsCard title={t("settings.ttsStatus.title")}>
     <TtsStatusCard />
+  </SettingsCard>
+
+  <SettingsCard title={t("settings.tokenUsage.title")}>
+    <a
+      href="/usage"
+      class="text-[13px] font-medium mb-2 inline-block"
+      style="color:var(--accent)"
+    >
+      {t("usage.page.link")}
+    </a>
+    <TokenContextUsageCard />
   </SettingsCard>
 
   <!-- כרטיס מסך — wake-lock (slice-wake-lock) -->

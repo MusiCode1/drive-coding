@@ -24,6 +24,7 @@
       "packages/core/src/async/with-retry.ts",
       "packages/core/src/async/with-timeout.ts",
       "packages/core/src/cli-resolve.ts",
+      "packages/core/src/docs/dev-source.ts",
       "packages/core/src/cwd-hash.ts",
       "packages/core/src/i18n/index.ts",
       "packages/core/src/log/browser.ts",

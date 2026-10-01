@@ -24,12 +24,16 @@ import {
 } from "../delivery/http-history.js"
 import { registerLiveTokenHttp } from "../delivery/http-live-token.js"
 import { registerAgentPromptHttp } from "../delivery/http-agent-prompt.js"
+import { registerDocsHttp } from "../delivery/http-docs.js"
+import { agentDocFiles } from "../agent-docs-runtime.js"
 import { bootAgentEvents } from "../delivery/agent-events-boot.js"
 import { registerMcpHttp } from "../delivery/http-mcp.js"
 import { registerHttpOptions } from "../delivery/http-options.js"
 import { registerProxyHttp } from "../delivery/http-proxy.js"
 import { registerReloadConfigHttp } from "../delivery/http-reload-config.js"
 import { registerTtsCapabilitiesHttp } from "../delivery/http-tts-capabilities.js"
+import { registerCliUsageHttp } from "../delivery/http-cli-usage.js"
+import { registerTokenUsageHttp } from "../delivery/http-token-usage.js"
 import { registerUsageHttp } from "../delivery/http-usage.js"
 import { ensureStateSubdir } from "../paths.js"
 import type { BootDeps } from "./deps.js"
@@ -51,6 +55,7 @@ export async function buildApp(
     agentEventBus,
     orchestrator,
     usageStore,
+    tokenUsageStore,
     memoryGuard,
   } = deps
 
@@ -86,6 +91,8 @@ export async function buildApp(
     memoryGuard,
   })
   registerAgentPromptHttp(app, { registry, urlConfig })
+  registerDocsHttp(app)
+  agentDocFiles()
   registerHealthHttp(app, { registry, connectionRegistry })
   registerProjectsHttp(app, { projectsRegistry })
   registerRecordingsHttp(app, { recordingsStore })
@@ -103,6 +110,8 @@ export async function buildApp(
   })
 
   registerUsageHttp(app, { usageStore })
+  registerTokenUsageHttp(app, { tokenUsageStore })
+  registerCliUsageHttp(app, { tokenUsageStore, projectsRegistry })
   registerCliAvailabilityHttp(app, env)
 
   // Extended: the same event also re-resolves config.jsonc + secrets.json and

@@ -192,6 +192,9 @@ function reconnectTitle(agent: AgentPublic): string {
         {#if agent.roleLabel}
           <span class="role-label" title={agent.roleLabel}><bdi>{agent.roleLabel}</bdi></span>
         {/if}
+        {#if agent.openedByEmail}
+          <span class="opened-by" title={t("connect.agents.openedBy")}><bdi>{agent.openedByEmail}</bdi></span>
+        {/if}
         <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
         {#if (agent.connectionCount ?? 0) >= 2}
           <span class="meta-sep">·</span>
@@ -642,6 +645,17 @@ function reconnectTitle(agent: AgentPublic): string {
 
   /* role label (slice agent-role-label) — metadata beside CliBadge, not title/displayName */
   .role-label {
+    color: var(--fg-dim);
+    font-size: 0.78rem;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* opened-by email (slice session-attribution-core) — attribution beside role label */
+  .opened-by {
     color: var(--fg-dim);
     font-size: 0.78rem;
     font-weight: 500;
