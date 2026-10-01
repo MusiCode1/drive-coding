@@ -23,14 +23,13 @@
 
 import {
   setComposerDraft,
-  setDictate,
   setI18n,
-  setMic,
   setModelStatus,
   setSession,
   setSettings,
   setUiShell,
-  setVoiceMode,
+  setVoice,
+  type VoiceFacade,
 } from "$lib/context"
 import type { MessageKey } from "@drive-coding/core/i18n"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
@@ -120,11 +119,9 @@ const fakeUiShell = {
 setI18n(fakeI18n)
 setSession(fakeSession)
 setSettings(fakeSettings)
-setVoiceMode(fakeVoiceMode)
 setModelStatus(fakeModelStatus)
 setComposerDraft(composerDraft)
-setDictate(fakeDictate as unknown as Dictate)
-setMic(fakeMic)
+setVoice({ voiceMode: fakeVoiceMode, dictate: fakeDictate as unknown as Dictate, mic: fakeMic } as VoiceFacade)
 setUiShell(fakeUiShell)
 </script>
 

@@ -4,7 +4,7 @@
  *
  * ─── slice live-transcript-box ───
  */
-import { setI18n, setLive, setVoiceMode } from "$lib/context"
+import { setI18n, setVoice, type VoiceFacade } from "$lib/context"
 import type { LiveTranscriptEntry } from "$lib/engines/live-session"
 import type { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import type { I18nVM } from "$lib/view-models/i18n.svelte"
@@ -23,8 +23,7 @@ const fakeI18n = { t: (key: string) => key } as unknown as I18nVM
 const fakeVoiceMode = { ear: "listening" } as unknown as VoiceMode
 
 setI18n(fakeI18n)
-setLive(liveStub as unknown as Live)
-setVoiceMode(fakeVoiceMode)
+setVoice({ live: liveStub as unknown as Live, voiceMode: fakeVoiceMode } as VoiceFacade)
 </script>
 
 <LiveTranscript />

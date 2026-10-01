@@ -28,12 +28,12 @@
  */
 
 import {
-  setBubblePlayer,
   setContentViewer,
   setI18n,
   setSession,
   setSettings,
-  setSpeaker,
+  setVoice,
+  type VoiceFacade,
 } from "$lib/context"
 import type { MessageBubble as MessageBubbleType } from "$lib/types/bubble"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
@@ -79,8 +79,7 @@ const fakeSettings = { autoLoadRemoteImages: false } as unknown as Settings
 
 setI18n(fakeI18n)
 setSession(fakeSession)
-setSpeaker(fakeSpeaker)
-setBubblePlayer(fakeBubblePlayer)
+setVoice({ speaker: fakeSpeaker, bubblePlayer: fakeBubblePlayer } as VoiceFacade)
 setContentViewer(fakeViewer)
 setSettings(fakeSettings)
 </script>
