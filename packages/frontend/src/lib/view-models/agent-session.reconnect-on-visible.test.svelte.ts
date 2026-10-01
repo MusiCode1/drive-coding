@@ -90,6 +90,7 @@ describe("AgentSession — auto-reconnect on returning to the foreground", () =>
   test("takeover (openedElsewhere) stays parked: error is set, so no reconnect", async () => {
     const { session, fire } = disconnectedInBackground()
     session.error = "session already open elsewhere"
+    session._setTerminalErrorForTest()
 
     fire(false)
 
@@ -100,11 +101,24 @@ describe("AgentSession — auto-reconnect on returning to the foreground", () =>
   test("1008 session-host-active stays parked: error is set, so no reconnect", async () => {
     const { session, fire } = disconnectedInBackground()
     session.error = "held by another transport"
+    session._setTerminalErrorForTest()
 
     fire(false)
 
     await vi.advanceTimersByTimeAsync(5000)
     expect(session.reconnectAttempt).toBe(0)
+  })
+
+  test("dismissing a terminal banner keeps a disconnected session parked", async () => {
+    const { session, fire } = disconnectedInBackground()
+    session._setTerminalErrorForTest()
+    session.error = "session already open elsewhere"
+    session.error = null
+
+    fire(false)
+
+    expect(session.reconnectAttempt).toBe(0)
+    session.detach()
   })
 
   test("a connected session is left alone when the tab becomes visible", async () => {
@@ -127,6 +141,17 @@ describe("AgentSession — auto-reconnect on returning to the foreground", () =>
     fire(false)
 
     await vi.advanceTimersByTimeAsync(5000)
+    expect(session.reconnectAttempt).toBe(0)
+  })
+
+  test("a late close after leaveRunning does not arm reconnect on visibility", async () => {
+    const { session, fire } = disconnectedInBackground()
+    await session.leaveRunning()
+
+    await session._handleUnexpectedCloseForTest(1006, "late close")
+    fire(false)
+
+    expect(session.status).toBe("idle")
     expect(session.reconnectAttempt).toBe(0)
   })
 

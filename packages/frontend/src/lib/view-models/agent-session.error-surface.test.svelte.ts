@@ -1,7 +1,7 @@
 /**
  * agent-session.error-surface.test.svelte.ts — TDD (Commit 1, slice surface-real-error).
  * עודכן ב-Commit 4 (calev-heavy §10.2): ה-guard עבר מ-`status==="error"` ל-flag ייעודי
- * `#errorSurfaced` — ר' agent-session.reconnect-after-transient-error.test.svelte.ts
+ * `terminal policy` — ר' agent-session.reconnect-after-transient-error.test.svelte.ts
  * לטסט החדש שמכסה את ה-gap ש-calev מצא (switchSession/newSession fail לא אמור להשתיק
  * reconnect מאוחר יותר).
  *
@@ -9,7 +9,7 @@
  * של AgentSession — ר' agent-session.reconnect.test.svelte.ts לתקדים.
  *
  * DoD#5 (anti-clobber gate): onClose גנרי לא דורס שגיאה טרמינלית קיימת.
- * - gate: #errorSurfaced=true (attach/loadSession catch) + error="X" קיים →
+ * - gate: terminal policy=true (attach/loadSession catch) + error="X" קיים →
  *   onClose(1005) → error נשאר "X" (לא נדרס).
  * - control: אין error קודם → onClose(1005) → "WS closed (1005): no reason" (כרגיל).
  *
@@ -52,13 +52,13 @@ beforeEach(() => {
 })
 
 describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit 1 + calev-heavy §10.2 Commit 4)", () => {
-  test("gate: שגיאה טרמינלית קיימת (#errorSurfaced=true, error=X) שורדת onClose(1005)", async () => {
+  test("gate: שגיאה טרמינלית קיימת (terminal policy=true, error=X) שורדת onClose(1005)", async () => {
     const session = new AgentSession()
     session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setStatusForTest("error")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setErrorSurfacedForTest(true) // מדמה attach/loadSession catch טרמינלי
+    ;(session as any)._setTerminalErrorForTest() // מדמה attach/loadSession catch טרמינלי
     session.error = "Cannot find module '@anthropic-ai/claude-agent-sdk'"
     const ownedClose = spyOnOwnedClose(session)
 
@@ -93,7 +93,7 @@ describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setStatusForTest("error")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setErrorSurfacedForTest(true)
+    ;(session as any)._setTerminalErrorForTest()
     session.error = null
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -105,7 +105,7 @@ describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit
     expect(session.error).toBeNull()
   })
 
-  test("control: status=error אך #errorSurfaced=false (switchSession/newSession fail) → לא נחסם", async () => {
+  test("control: status=error אך terminal policy=false (switchSession/newSession fail) → לא נחסם", async () => {
     const session = new AgentSession()
     session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
     const ownedClose = spyOnOwnedClose(session)

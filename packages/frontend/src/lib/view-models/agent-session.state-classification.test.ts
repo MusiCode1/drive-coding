@@ -56,7 +56,6 @@ describe("agent-session $state classification gate", () => {
         "authMethods",
         "configOptions",
         "cwd",
-        "error",
         "historyEpoch",
         "isLoadingHistory",
         "lastUserMessage",
@@ -76,7 +75,12 @@ describe("agent-session $state classification gate", () => {
   it("PENDING only shrinks", () => {
     expect(PENDING_CAP).toBeLessThanOrEqual(19)
   })
+
+  it("ErrorScope owns the reactive banner message", () => {
+    expect(extractStateFields(`${vmDir}/agent-session.svelte.ts`)).not.toContain("error")
+    expect(extractStateFields(`${vmDir}/error-scope.svelte.ts`)).toContain("message")
+  })
 })
 
-/** Measured after TranscriptScope C2 — 17 fields remain unscoped in AgentSession holders. */
-const PENDING_CAP = 17
+/** Measured after ErrorScope B6 — 16 fields remain unscoped in AgentSession holders. */
+const PENDING_CAP = 16

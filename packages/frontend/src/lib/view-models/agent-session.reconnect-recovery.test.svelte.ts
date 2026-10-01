@@ -2,13 +2,13 @@
  * agent-session.reconnect-recovery.test.svelte.ts — TDD (slice reconnect-recovery, Commit 0).
  *
  * מכסה את §4 Commit 0 של הבריף: `loadSession(input, { preserveContextOnError })` +
- * `#cleanup({ keepContext })` + reset `#errorSurfaced` ב-`#warmReconnect`.
+ * `#cleanup({ keepContext })` + reset `terminal policy` ב-`#warmReconnect`.
  *
  * הבעיה שהתיקון פותר: כשל cold-reconnect (loadSession שנקרא מ-#coldReconnect) היה
  * מריץ `#cleanup()` מלא — מוחק `#sessionId`/`agentId` — כך ש-`reconnect()` הציבורי
  * (guard :1271) עושה early-return לנצח (dead-end). התיקון: `#coldReconnect` מעביר
  * `{ preserveContextOnError: true }`; נתיב-השימור ב-loadSession קורא ל-`#cleanup({keepContext:true})`
- * (כל ה-teardown הקנוני, בלי לאבד את הקשר-הסשן) ומדליק `#errorSurfaced=true` (guard 601 —
+ * (כל ה-teardown הקנוני, בלי לאבד את הקשר-הסשן) ומדליק `terminal policy=true` (guard 601 —
  * מגן על ה-async WS-close שרץ אחרי ש-#tearingDown כבר חזר ל-false).
  *
  * דפוס מוקים: agent-session.permission.test.svelte.ts (createAcpClient) +
@@ -21,10 +21,10 @@
  *      #sessionId+agentId נשמרים, deleteAgent של #cleanup לא נקרא.
  *   3. regression #cleanup: קריאה ללא keepContext (detach) → מאפסת sessionId/agentId וקוראת deleteAgent.
  *   4. regression loadSession: טעינה-ראשונית שנכשלת (בלי opts) → #cleanup() מלא + status="error"
- *      + #errorSurfaced=true (כמו היום) — כולל deleteAgent (agentId כבר הוקצה).
- *   5. #errorSurfaced guard (התנהגותי, כמו error-surface.test.svelte.ts): preserve שנכשל →
+ *      + terminal policy=true (כמו היום) — כולל deleteAgent (agentId כבר הוקצה).
+ *   5. terminal policy guard (התנהגותי, כמו error-surface.test.svelte.ts): preserve שנכשל →
  *      onClose לא-צפוי לא דורס את השגיאה (anti-clobber guard 601 פעיל).
- *   6. reset ב-warm: אחרי #warmReconnect מוצלח → #errorSurfaced===false (guard 601 לא חוסם
+ *   6. reset ב-warm: אחרי #warmReconnect מוצלח → terminal policy===false (guard 601 לא חוסם
  *      auto-reconnect עתידי) — מוכח דרך אותה טכניקת anti-clobber-probe.
  */
 
@@ -221,14 +221,14 @@ describe("AgentSession — regressions (§4 Commit 0, DoD#5/#6)", () => {
     // agentId כבר הוקצה (createAgent הצליח) לפני שה-client.loadSession נכשל → #cleanup המלא מוחק אותו
     expect(deleteAgent).toHaveBeenCalledWith("agent-1")
 
-    // #errorSurfaced===true (כמו היום): anti-clobber guard 601 שורד onClose לא-צפוי
+    // terminal policy===true (כמו היום): anti-clobber guard 601 שורד onClose לא-צפוי
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal")
     expect(session.error).toContain("loadSession failed")
     expect(session.status).toBe("error") // anti-clobber מחזיר מוקדם — לא עובר ל-disconnected
   })
 
-  test("5. #errorSurfaced guard (🔴 r3): preserve שנכשל → anti-clobber מגן על ה-async close", async () => {
+  test("5. terminal policy guard (🔴 r3): preserve שנכשל → anti-clobber מגן על ה-async close", async () => {
     const session = new AgentSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setSessionContextForTest({
@@ -246,7 +246,7 @@ describe("AgentSession — regressions (§4 Commit 0, DoD#5/#6)", () => {
     const preserveError = session.error
 
     // WS close אסינכרוני שמגיע *אחרי* ש-#coldReconnect כבר איפס #tearingDown=false —
-    // guard 601 (#errorSurfaced, לא #tearingDown) חייב לחסום את זה.
+    // guard 601 (terminal policy, לא #tearingDown) חייב לחסום את זה.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal")
 
@@ -254,7 +254,7 @@ describe("AgentSession — regressions (§4 Commit 0, DoD#5/#6)", () => {
     expect(session.status).toBe("disconnected") // anti-clobber מחזיר מוקדם — לא scheduleReconnect
   })
 
-  test("6. reset ב-#warmReconnect (🔴 r2): אחרי warm מוצלח → #errorSurfaced===false, guard 601 לא חוסם auto-reconnect עתידי", async () => {
+  test("6. reset ב-#warmReconnect (🔴 r2): אחרי warm מוצלח → terminal policy===false, guard 601 לא חוסם auto-reconnect עתידי", async () => {
     const session = new AgentSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setSessionContextForTest({
@@ -264,7 +264,7 @@ describe("AgentSession — regressions (§4 Commit 0, DoD#5/#6)", () => {
     })
     // מדמה כשל טרמינלי-קודם שהדליק את הדגל (למשל loadSession רגיל שנכשל בעבר)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setErrorSurfacedForTest(true)
+    ;(session as any)._setTerminalErrorForTest()
     session.error = "old terminal error"
 
     vi.mocked(listAgents).mockResolvedValueOnce([
@@ -279,7 +279,7 @@ describe("AgentSession — regressions (§4 Commit 0, DoD#5/#6)", () => {
     // ("WS closed (1006): dropped again"), וזו הייתה ההוכחה ש-anti-clobber לא חסם.
     // היום המחרוזת הגולמית ירדה מהמסך (הבאנר הוא בעל-הבית), ולכן ההוכחה היא
     // שהשגיאה הישנה **נעלמה** — warm מוצלח מנקה (#onReconnectSuccess), ו-close
-    // חולף אחריו לא מחזיר אותה. לו #errorSurfaced נשאר true, "old terminal error"
+    // חולף אחריו לא מחזיר אותה. לו terminal policy נשאר true, "old terminal error"
     // היה שורד את שניהם.
     expect(session.error).toBeNull() // ניקוי אחרי warm מוצלח
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

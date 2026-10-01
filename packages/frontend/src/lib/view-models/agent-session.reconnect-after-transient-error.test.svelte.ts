@@ -7,9 +7,9 @@
  * נופל מאוחר יותר, ה-guard הישן היה חוזר מוקדם → אין reconnect, וההודעה הישנה
  * ("switchSession failed…") נתקעת לנצח.
  *
- * ההכרעה (מרדכי, §10.2): guard חדש דרך flag ייעודי `#errorSurfaced` — מוצת רק ב-catch
+ * ההכרעה (מרדכי, §10.2): guard חדש דרך flag ייעודי `terminal policy` — מוצת רק ב-catch
  * טרמינלי (attach/loadSession), *לא* ב-switchSession/newSession. הטסט כאן מוכיח את
- * ההתנהגות המתוקנת: switchSession-fail (WS חי, #errorSurfaced=false) → drop לא-צפוי →
+ * ההתנהגות המתוקנת: switchSession-fail (WS חי, terminal policy=false) → drop לא-צפוי →
  * reconnect כן מוצת (status→disconnected) + ההודעה הישנה מוחלפת ב-WS closed.
  *
  * pageHidden=false (document.hidden=false, בפוקוס) — כדי ש-#handleUnexpectedClose *כן*
@@ -35,7 +35,7 @@ import { AgentSession } from "./agent-session.svelte"
 
 beforeEach(() => {
   vi.unstubAllGlobals()
-  // בפוקוס (לא ברקע) — כדי שה-guard הרלוונטי (#errorSurfaced) יגיע להיבדק לפני #scheduleReconnect,
+  // בפוקוס (לא ברקע) — כדי שה-guard הרלוונטי (terminal policy) יגיע להיבדק לפני #scheduleReconnect,
   // ולא ייחסם מוקדם ע"י ענף ה-pageHidden.
   vi.stubGlobal("document", { hidden: false, addEventListener: vi.fn() })
   vi.useFakeTimers()
@@ -47,11 +47,11 @@ afterEach(() => {
 })
 
 describe("AgentSession — reconnect אחרי כשל switchSession/newSession חולף (calev-heavy §10.2, Commit 4)", () => {
-  test("switchSession fail (WS חי, #errorSurfaced=false) → drop לא-צפוי → reconnect מוצת, ההודעה מוחלפת", async () => {
+  test("switchSession fail (WS חי, terminal policy=false) → drop לא-צפוי → reconnect מוצת, ההודעה מוחלפת", async () => {
     const session = new AgentSession()
     session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
     // מדמה את מצב ה-VM מיד אחרי switchSession catch: status="error" + הודעה ספציפית,
-    // אך #errorSurfaced *נשאר false* (switchSession לא מדליק אותו — §10.2).
+    // אך terminal policy *נשאר false* (switchSession לא מדליק אותו — §10.2).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setStatusForTest("error")
     session.error = "switchSession failed: boom"
@@ -59,7 +59,7 @@ describe("AgentSession — reconnect אחרי כשל switchSession/newSession ח
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal closure")
 
-    // ההודעה הישנה הוחלפה — anti-clobber לא חסם (לא #errorSurfaced)
+    // ההודעה הישנה הוחלפה — anti-clobber לא חסם (לא terminal policy)
     // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
     // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
     // ההבחנה שהטסט בודק נשמרת: "נחסם" ⇒ ההודעה הישנה שורדת; "לא נחסם" ⇒ null.
@@ -69,7 +69,7 @@ describe("AgentSession — reconnect אחרי כשל switchSession/newSession ח
     expect(session.status).toBe("disconnected")
   })
 
-  test("newSession fail (WS חי, #errorSurfaced=false) → drop לא-צפוי → reconnect מוצת, ההודעה מוחלפת", async () => {
+  test("newSession fail (WS חי, terminal policy=false) → drop לא-צפוי → reconnect מוצת, ההודעה מוחלפת", async () => {
     const session = new AgentSession()
     session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -86,12 +86,12 @@ describe("AgentSession — reconnect אחרי כשל switchSession/newSession ח
     expect(session.status).toBe("disconnected")
   })
 
-  test("control: attach/loadSession fail (#errorSurfaced=true) → drop לא-צפוי → לא מוצת, ההודעה שורדת", async () => {
+  test("control: attach/loadSession fail (terminal policy=true) → drop לא-צפוי → לא מוצת, ההודעה שורדת", async () => {
     const session = new AgentSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setStatusForTest("error")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setErrorSurfacedForTest(true) // מדמה attach/loadSession catch טרמינלי
+    ;(session as any)._setTerminalErrorForTest() // מדמה attach/loadSession catch טרמינלי
     session.error = "Cannot find module '@anthropic-ai/claude-agent-sdk'"
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,7 +106,20 @@ describe("AgentSession — reconnect אחרי כשל switchSession/newSession ח
 // ─── slice http-live-side-effects C0: SSE reconnect clears transient switchSession error ───
 
 describe("AgentSession — _onSseReconnectedForTest (HTTP SSE reconnect)", () => {
-  test("מנקה switchSession failed כש-#errorSurfaced=false", () => {
+  test("terminal with a dismissed banner remains terminal through SSE clear", () => {
+    const session = new AgentSession()
+    session._setTerminalErrorForTest()
+    session.error = null
+
+    session._onSseReconnectedForTest()
+
+    expect(session.error).toBeNull()
+    session.error = "external after dismiss"
+    session._onSseReconnectedForTest()
+    expect(session.error).toBe("external after dismiss")
+  })
+
+  test("מנקה switchSession failed כש-terminal policy=false", () => {
     const session = new AgentSession()
     session.error = "switchSession failed: boom"
 
@@ -116,10 +129,10 @@ describe("AgentSession — _onSseReconnectedForTest (HTTP SSE reconnect)", () =>
     expect(session.error).toBeNull()
   })
 
-  test("שומר שגיאה טרמינלית כש-#errorSurfaced=true (attach/loadSession)", () => {
+  test("שומר שגיאה טרמינלית כש-terminal policy=true (attach/loadSession)", () => {
     const session = new AgentSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setErrorSurfacedForTest(true)
+    ;(session as any)._setTerminalErrorForTest()
     session.error = "Cannot find module '@anthropic-ai/claude-agent-sdk'"
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -128,10 +141,10 @@ describe("AgentSession — _onSseReconnectedForTest (HTTP SSE reconnect)", () =>
     expect(session.error).toBe("Cannot find module '@anthropic-ai/claude-agent-sdk'")
   })
 
-  test("שומר switchSession failed כש-#errorSurfaced=true", () => {
+  test("שומר switchSession failed כש-terminal policy=true", () => {
     const session = new AgentSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setErrorSurfacedForTest(true)
+    ;(session as any)._setTerminalErrorForTest()
     session.error = "switchSession failed: boom"
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -140,10 +153,10 @@ describe("AgentSession — _onSseReconnectedForTest (HTTP SSE reconnect)", () =>
     expect(session.error).toBe("switchSession failed: boom")
   })
 
-  test("שומר שגיאה אחרת כש-#errorSurfaced=true", () => {
+  test("שומר שגיאה אחרת כש-terminal policy=true", () => {
     const session = new AgentSession()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setErrorSurfacedForTest(true)
+    ;(session as any)._setTerminalErrorForTest()
     session.error = "newSession failed: boom"
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
