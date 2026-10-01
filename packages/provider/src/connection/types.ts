@@ -39,7 +39,7 @@ export interface ConnectOpts {
   /**
    * shapeEnv — hook for spawn-path env injection (opencode config, etc.).
    * **Spawn-only** — in-process bridges (claude, codex) ignore this; they use
-   * `agentEnv` via `_meta.claudeCode.options.env` (claude) or have no env channel (codex).
+   * `agentEnv` via `_meta.claudeCode.options.env` (claude) or the app-server spawn (codex).
    */
   shapeEnv?: (cliKind: SpawnBridgeInput["cliKind"], base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
   /**

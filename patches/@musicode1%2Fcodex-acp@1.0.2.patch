@@ -1,0 +1,14 @@
+diff --git a/dist/lib.js b/dist/lib.js
+index 72927bb6bc71d90c51ee8d7e669cd41863e4234a..d879a997b3d24532f2a31fd96a97fdedc1775e36 100644
+--- a/dist/lib.js
++++ b/dist/lib.js
+@@ -29023,7 +29023,8 @@ function startAcpServer(readable = process.stdin, writable = process.stdout, opt
+     authRequest: authRequestString ?? null,
+     defaultAuthRequest: defaultAuthRequest ?? null
+   });
+-  const codexConnection = startCodexConnection(codexPath);
++  const env = opts.env ? { ...process.env, ...opts.env } : undefined;
++  const codexConnection = startCodexConnection(codexPath, env);
+   const maxStderrTailChars = 2 * 1024;
+   let stderr = "";
+   codexConnection.process.stderr.addListener("data", (data) => {

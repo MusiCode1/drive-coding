@@ -116,7 +116,7 @@
         "@anthropic-ai/claude-agent-sdk": "0.3.274",
         "@drive-coding/acp-wire": "workspace:*",
         "@drive-coding/core": "workspace:*",
-        "@musicode1/codex-acp": "^1.0.2",
+        "@musicode1/codex-acp": "1.0.2",
         "arktype": "^2.0.0",
       },
       "devDependencies": {
@@ -138,6 +138,9 @@
         "pino-pretty": "^13.1.3",
       },
     },
+  },
+  "patchedDependencies": {
+    "@musicode1/codex-acp@1.0.2": "patches/@musicode1%2Fcodex-acp@1.0.2.patch",
   },
   "overrides": {
     "@agentclientprotocol/sdk": "1.4.0",
