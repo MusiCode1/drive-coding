@@ -31,7 +31,7 @@ const viewer = getContentViewer()
 
 const tc = $derived(bubble.toolCall)
 const view = $derived(normalizeToolCall(tc, { narration: tc.narration, outputMapping }))
-const hasContent = $derived(view.richContent.length > 0)
+const hasContent = $derived(view.richContent.some((c) => c.type !== "terminal")) // bugs/86
 const outputView = $derived(view.output)
 const showNormalizedOutput = $derived(!hasContent && outputView.kind !== "empty")
 const showRawOutput = $derived(tc.result !== undefined && outputView.kind !== "json")
