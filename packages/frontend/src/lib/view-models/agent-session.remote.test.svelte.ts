@@ -27,7 +27,12 @@ import {
 import { toWireText } from "@drive-coding/core/session/testing"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
+import {
+  createAgent,
+  deleteAgent,
+  listAgents,
+  notifySessionAttached,
+} from "$lib/adapters/agents-api"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── Module-level mocks (חייבים להיות לפני import AgentSession — נדרש לרגרסיית ה-local) ───
@@ -332,6 +337,37 @@ describe("AgentSession + remote view — pending sync (guard-זהות)", () => {
 // ── lastTurnError → session.error ──────────────────────────────────────────
 
 describe("AgentSession + remote view — lastTurnError", () => {
+  it("repeated turn snapshots preserve external and dismissed banners; a new at is displayed", async () => {
+    const view = new MockSessionView()
+    view.connect("remote-sess-b6")
+    const agent = new AgentSession({ view })
+    agent._setStatusForTest("connected")
+    const first = applyTurnEnd(view.state, { message: "same", at: 10 })
+    view.applyAndEmit(first.patches[0]!)
+    await delay()
+    expect(agent.error).toBe("prompt failed: same")
+
+    agent.error = "external"
+    view.applyAndEmit(first.patches[0]!)
+    await delay()
+    expect(agent.error).toBe("external")
+
+    agent.error = null
+    view.applyAndEmit(first.patches[0]!)
+    await delay()
+    expect(agent.error).toBeNull()
+
+    const next = applyTurnEnd(view.state, { message: "same", at: 11 })
+    view.applyAndEmit(next.patches[0]!)
+    await delay()
+    expect(agent.error).toBe("prompt failed: same")
+
+    const cleared = applyTurnStart(view.state)
+    view.applyAndEmit(cleared.patches[0]!)
+    await delay()
+    expect(agent.error).toBeNull()
+  })
+
   it("lastTurnError syncs to session.error, and clearing it (null) clears the banner it wrote", async () => {
     const view = new MockSessionView()
     view.connect("remote-sess-9")

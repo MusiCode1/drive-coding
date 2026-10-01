@@ -147,6 +147,7 @@ import {
   createSubagentIndex,
   parseClaudeSdkMessage,
 } from "./claude-subagent-parse"
+import { ErrorScope } from "./error-scope.svelte"
 import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
 import { watchPageVisibility } from "./page-visibility.js"
 import { TranscriptScope } from "./transcript-scope.svelte"
@@ -263,7 +264,13 @@ export class AgentSession {
   status = $state<AgentSessionStatus>("idle")
   /** מה המודל עושה בתור הנוכחי. idle = אין תור פעיל. */
   turnState = $state<TurnState>("idle")
-  error = $state<string | null>(null)
+  #errors = new ErrorScope()
+  get error(): string | null {
+    return this.#errors.message
+  }
+  set error(message: string | null) {
+    this.#errors.setExternal(message)
+  }
   // ─── slice auth-guidance: authMethods שנלכדו מ-initialize (client.authMethods) ───
   /** [] = אין כשל-auth ידוע / warm-reattach (מדלג initialize) / CLI לא מפרסם authMethods. */
   authMethods = $state<ReadonlyArray<AuthMethod>>([])
@@ -732,16 +739,6 @@ export class AgentSession {
    * שונה מ-#detached: detach=סיום סופי; tearingDown=מעבר זמני בתוך cold.
    */
   #tearingDown = false
-  /**
-   * True רק אחרי catch **טרמינלי** (attach/loadSession — שם #cleanup רץ / ה-agent מת).
-   * anti-clobber guard ב-#handleUnexpectedClose (calev-heavy §10.2, Commit 4): במקור
-   * ה-guard היה `status==="error"`, אבל switchSession/newSession גם קובעים status="error"
-   * ומשאירים את ה-WS חי (בלי #cleanup) — כשל שם לא אמור להשתיק reconnect אם ה-WS נופל
-   * מאוחר יותר. הדגל מוצת רק בכשל טרמינלי, ומתאפס בתחילת כל מתודת-חיבור (attach/
-   * loadSession/switchSession/newSession/attachToLiveAgent) כדי שסשן חדש לא ייתקע.
-   */
-  #errorSurfaced = false
-
   // ─── slice view-switch C3-ו: guard-זהות ל-pending (remote) ─── (additive)
   /**
    * ה-id שזה עתה נענה, פר-סוג — סוגר patch-מעופש (BE שרת פותר pending, ולכן patch
@@ -751,12 +748,6 @@ export class AgentSession {
    */
   #answeredPermissionId: number | null = null
   #answeredElicitationId: number | null = null
-  /**
-   * ה-error string שהסנכרון מ-lastTurnError עצמו כתב — מאפשר ניקוי ממוקד (תור חדש
-   * מנקה רק באנר שמקורו כאן; אזהרה אחרת — reply failed / כשל-שיגור — שורדת, מכוון).
-   */
-  #errorFromTurn: string | null = null
-
   // ─── slice ws-reconnect-infra: reconnect internals ───
   /** ה-cliKind של ה-attach/loadSession האחרון — נדרש ל-cold reconnect.
    * $state כדי שה-getter הציבורי יהיה ריאקטיבי (slice cli-name-in-chat). */
@@ -764,7 +755,7 @@ export class AgentSession {
   /** slice reconnect-on-visible: רקע/פוקוס. חזרה לפוקוס מחמשת reconnect חולף בלבד
    * (error!==null = טרמינלי: takeover / session-host-active. חימוש שם = ping-pong). */
   #visibility = watchPageVisibility(() => {
-    if (this.status === "disconnected" && this.error === null) {
+    if (this.status === "disconnected" && !this.#errors.terminal) {
       if (this.#connection instanceof WsConnection)
         void this.#connection.onUnexpectedClose(1006, "visible")
     }
@@ -931,16 +922,7 @@ export class AgentSession {
     this.#syncPendingPermission(viewState.pending.permission, view)
     this.#syncPendingElicitation(viewState.pending.elicitation, view)
 
-    // ─── slice view-switch C3-ו.2: lastTurnError → session.error (דו-כיווני, ממוקד) ───
-    if (viewState.lastTurnError) {
-      this.error = `prompt failed: ${viewState.lastTurnError.message}`
-      this.#errorFromTurn = this.error
-    } else if (this.error !== null && this.error === this.#errorFromTurn) {
-      // תור חדש מנקה **רק** באנר שמקורו כאן — אזהרה ממקור אחר (reply failed, כשל-שיגור)
-      // שורדת (הצד השני של אותו מטבע: known-gap — שום דבר לא מנקה אזהרות כאלה, S6 לא סוגר).
-      this.error = null
-      this.#errorFromTurn = null
-    }
+    this.#errors.syncTurnError(viewState.lastTurnError)
   }
 
   /**
@@ -970,7 +952,7 @@ export class AgentSession {
             // #answeredPermissionId/error לתוך הסשן שיהיה נוכחי כשזה נפתר (רפאים).
             if (this.#tearingDown || this.#view !== view) return
             this.#answeredPermissionId = null // ביטול הסימון — יוכל להיפתח שוב
-            this.error = "reply failed"
+            this.#errors.setTransient("reply failed")
           })
         } catch {
           // ה-shim לעולם לא זורק — #cleanup קורא לו בלי try/catch מסביב
@@ -1000,7 +982,7 @@ export class AgentSession {
           void view.respond(id, r).catch(() => {
             if (this.#tearingDown || this.#view !== view) return
             this.#answeredElicitationId = null
-            this.error = "reply failed"
+            this.#errors.setTransient("reply failed")
           })
         } catch {
           // ה-shim לעולם לא זורק
@@ -1041,7 +1023,7 @@ export class AgentSession {
   notifySessionNavigatedAway(): void {
     if (this.status === "idle") return
     void this.#leaveSession("navigate", true).catch((e) => {
-      this.error = formatAcpError(e)
+      this.#errors.setTransient(formatAcpError(e))
     })
   }
 
@@ -1053,10 +1035,10 @@ export class AgentSession {
 
   /**
    * @internal slice http-live-side-effects — המסלול האמיתי של onSseReconnected.
-   * שגיאה חולפת (switchSession/newSession) נמחקת ב-reconnect; טרמינלית (#errorSurfaced) שורדת.
+   * שגיאה חולפת (switchSession/newSession) נמחקת ב-reconnect; טרמינלית שורדת.
    */
   _onSseReconnectedForTest(): void {
-    if (!this.#errorSurfaced) this.error = null
+    this.#errors.clearTransient()
     this.#sseReconnectedListener?.()
   }
 
@@ -1096,12 +1078,12 @@ export class AgentSession {
     this.#tearingDown = v
   }
   /**
-   * @internal מזריק את #errorSurfaced ישירות (calev-heavy §10.2, Commit 4) — מאפשר
+   * @internal מזריק מצב טרמינלי (calev-heavy §10.2, Commit 4) — מאפשר
    * לטסטים לדמות מצב "כשל טרמינלי כבר הוצג" (attach/loadSession) בלי לעבור דרך
    * ה-catch המלא (createAgent/WS/ACP handshake מלא).
    */
-  _setErrorSurfacedForTest(v: boolean): void {
-    this.#errorSurfaced = v
+  _setTerminalErrorForTest(): void {
+    this.#errors.setTerminal(this.error)
   }
   /**
    * @internal slice session-budget-meter Commit 4 — מזריק #mockQuota ישירות לטסט,
@@ -1167,8 +1149,7 @@ export class AgentSession {
   // ─── reconnect events ──────────────────────────────────────────────────
 
   async #handleUnexpectedClose(code: number, reason: string): Promise<void> {
-    if (this.#errorSurfaced && this.error) return
-    if (this.#connection instanceof WsConnection)
+    if (!this.#errors.terminal && this.#connection instanceof WsConnection)
       await this.#connection.onUnexpectedClose(code, reason)
   }
 
@@ -1178,9 +1159,8 @@ export class AgentSession {
     const connection = new WsConnection({
       prepareNew: () => {
         this.#setStatus("connecting")
-        this.error = null
+        this.#errors.reset()
         this.authMethods = []
-        this.#errorSurfaced = false
         this.#transcript.replace([])
         this.#detached = false
       },
@@ -1210,14 +1190,12 @@ export class AgentSession {
         await this.#applyRememberedConfig()
       },
       failed: (error) => {
-        this.error = formatAcpError(error)
-        this.#errorSurfaced = true
+        this.#errors.setTerminal(formatAcpError(error))
         this.#setStatus("error")
         this.#cleanup()
       },
       prepareExisting: (agent) => {
-        this.error = null
-        this.#errorSurfaced = false
+        this.#errors.reset()
         this.#detached = false
         this.#enterSession(agent.sessionId)
         this.agentId = agent.agentId
@@ -1226,7 +1204,7 @@ export class AgentSession {
         applyManualTitleFromAttach(this.#session, agent, true)
       },
       failedExisting: () => {
-        this.error = "reconnect failed: agent no longer available"
+        this.#errors.setTransient("reconnect failed: agent no longer available")
         this.#setStatus("error")
       },
       reconnect: {
@@ -1241,7 +1219,7 @@ export class AgentSession {
             detached: this.#detached,
             tearingDown: this.#tearingDown,
             remote: this.#isRemote,
-            terminalError: this.#errorSurfaced && this.error !== null,
+            terminalError: this.#errors.terminal,
           }
         },
         snapshot: () => {
@@ -1252,18 +1230,16 @@ export class AgentSession {
           this.reconnectAttempt = attempt
         },
         setTerminal: (kind, detail) => {
-          if (kind === "crash") this.error = detail ?? null
+          if (kind === "crash") this.#errors.setTerminal(detail ?? null)
           else {
             const t = createI18n({ locale: this.#settings?.locale ?? detectLocale() }).t
-            this.error = t(
-              kind === "takeover" ? "session.openedElsewhere" : "session.heldByOtherTransport",
+            this.#errors.setTerminal(
+              t(kind === "takeover" ? "session.openedElsewhere" : "session.heldByOtherTransport"),
             )
           }
           this.#setStatus("disconnected")
         },
-        clearTransientError: () => {
-          this.error = null
-        },
+        clearTransientError: () => this.#errors.clearTransient(),
         clearClient: () => {
           this.#client = null
           this.#ext = null
@@ -1271,7 +1247,7 @@ export class AgentSession {
         },
         prepareWarm: () => {
           this.#detached = false
-          this.#errorSurfaced = false
+          this.#errors.reset()
           this.#client = null
           this.#cancelPendingDialogs()
         },
@@ -1326,8 +1302,7 @@ export class AgentSession {
             },
           ),
         connected: () => {
-          this.error = null
-          this.#errorSurfaced = false
+          this.#errors.reset()
           connInfo("reconnected", { agentId: this.agentId })
         },
       },
@@ -1338,9 +1313,8 @@ export class AgentSession {
   #newHttpConnection(): HttpConnection {
     return new HttpConnection({
       prepare: (agent) => {
-        this.error = null
+        this.#errors.reset()
         this.authMethods = []
-        this.#errorSurfaced = false
         this.#transcript.replace([])
         this.#detached = false
         this.#answeredPermissionId = null
@@ -1364,14 +1338,12 @@ export class AgentSession {
       rememberedConfig: () => this.#applyRememberedConfig(),
       failed: (error, keepAgent) => {
         this.#cleanup(keepAgent ? { keepAgent: true } : undefined)
-        this.error = formatAcpError(error)
-        this.#errorSurfaced = true
+        this.#errors.setTerminal(formatAcpError(error))
         this.#setStatus("error")
       },
       missingSessionId: (keepAgent) => {
         this.#cleanup(keepAgent ? { keepAgent: true } : undefined)
-        this.error = "remote mode: backend did not provide a sessionId"
-        this.#errorSurfaced = true
+        this.#errors.setTerminal("remote mode: backend did not provide a sessionId")
         this.#setStatus("error")
       },
     })
@@ -1419,8 +1391,7 @@ export class AgentSession {
 
   #detachWith(reason: SessionEndReason): void {
     this.#leaveSession(reason, false).catch((e) => {
-      this.error = formatAcpError(e)
-      this.#errorSurfaced = true
+      this.#errors.setTerminal(formatAcpError(e))
     })
   }
 
@@ -1435,7 +1406,7 @@ export class AgentSession {
     }
     this.#cleanup(keepAgent ? { keepAgent: true } : undefined)
     this.#setStatus("idle")
-    this.error = null
+    this.#errors.reset()
     this.#transcript.replace([])
     this.sessionsCache.reset()
   }
@@ -1632,7 +1603,7 @@ export class AgentSession {
       this.#setTurnState("idle")
       // slice auth-guidance: formatAcpError (data.details→data.message→message) במקום
       // err.message הגולמי — היה מציג "Internal error" גנרי (claude: auth_required).
-      this.error = `prompt failed: ${formatAcpError(err)}`
+      this.#errors.setTransient(`prompt failed: ${formatAcpError(err)}`)
       // ─── slice view-switch C3-ב.5: #setStatus("error") רק ב-local ───
       // ב-remote דחיית-שיגור (למשל 404 חולף) הייתה נועלת sendPrompt לצמיתות (status
       // מתחיל ב-guard status!=="connected") — בזמן שה-SessionHost חי לגמרי. השגיאה
@@ -1673,9 +1644,8 @@ export class AgentSession {
       this.#endSessionScope("load")
     }
     this.#setStatus("connecting")
-    this.error = null
+    this.#errors.reset()
     this.authMethods = [] // slice auth-guidance: נקה לפני חיבור חדש — נלכד מחדש אחרי createAcpClient
-    this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
     this.#transcript.replace([])
     this.sessionState = createInitialSessionState({ sessionId: input.sessionId })
     this.#detached = false
@@ -1796,19 +1766,17 @@ export class AgentSession {
         cancelled()
         return
       }
-      this.error = `loadSession failed: ${formatAcpError(e)}`
+      this.#errors.setTerminal(`loadSession failed: ${formatAcpError(e)}`)
       this.#setTurnState("idle") // NBug3: throw מוקדם (createAgent/waitForOpen) — ה-finally הפנימי לא רץ
       // slice reconnect-recovery: נתיב-השימור (cold-reconnect שנכשל) — לא #cleanup() מלא
       // (שהיה מוחק #sessionId/agentId ותוקע את reconnect() ב-early-return). שומר את
       // הקשר-הסשן כדי שלחיצת reconnect הבאה תמצא #sessionId ותנסה שוב (§3 diagram).
       if (opts?.preserveContextOnError) {
-        this.#errorSurfaced = true // חובה: ה-WS close אסינכרוני ורץ אחרי ניסיון cold
-        // מאפס #tearingDown=false → guard 601 (#errorSurfaced) הוא מה שמונע clobber+
+        // ה-WS close אסינכרוני ורץ אחרי ניסיון cold. terminal מונע clobber+
         // auto-reconnect על ה-async close (אביגיל r3 🔴).
         this.#cleanup({ keepContext: true }) // teardown מלא; אותו owner נשמר לניסיון הבא
         this.#setStatus("disconnected") // מציג כפתור reconnect; reconnect() לא-early-return (context נשמר)
       } else {
-        this.#errorSurfaced = true // calev-heavy §10.2: כשל טרמינלי — #cleanup הורג את ה-WS
         this.#setStatus("error")
         this.#cleanup()
       }
@@ -1876,7 +1844,7 @@ export class AgentSession {
         throw new Error(`cannot switchSession in status ${this.status}`)
       }
       this.#endSessionScope("switch")
-      this.error = null // parity with the local path — a stale error must not survive
+      this.#errors.reset() // parity with the local path — a stale error must not survive
       this.isLoadingHistory = true // silences TTS during the replay (like local)
       try {
         await remoteView.loadSession(input.sessionId, input.cwd)
@@ -1888,7 +1856,7 @@ export class AgentSession {
         this.cwd = input.cwd
         this.#applyTitleFromSessionInput(input)
       } catch (e) {
-        this.error = `switchSession failed: ${formatAcpError(e)}`
+        this.#errors.setTransient(`switchSession failed: ${formatAcpError(e)}`)
       } finally {
         this.isLoadingHistory = false
       }
@@ -1910,8 +1878,7 @@ export class AgentSession {
     this.#resetTurnTracking() // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
     this.#endSessionScope("switch")
     this.#setStatus("connecting")
-    this.error = null
-    this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
+    this.#errors.reset() // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
     this.#transcript.replace([])
 
     // slice local-view-wiring C3 — נקודת-אימוץ 4: **אותו לקוח**, בלי dispose ובלי
@@ -1951,11 +1918,11 @@ export class AgentSession {
 
       this.#setStatus("connected")
     } catch (e) {
-      this.error = `switchSession failed: ${formatAcpError(e)}`
+      this.#errors.setTransient(`switchSession failed: ${formatAcpError(e)}`)
       this.#setTurnState("idle") // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
       this.#setStatus("error")
       // לא #cleanup — החיבור עדיין תקין; רק הטעינה נכשלה. השאר את ה-#client חי.
-      // calev-heavy §10.2: לא מדליק #errorSurfaced — ה-WS נשאר חי; drop מאוחר יותר
+      // ה-WS נשאר חי; drop מאוחר יותר
       // צריך כן להצית reconnect (במקום להיתקע על ההודעה הישנה).
     }
   }
@@ -1981,8 +1948,7 @@ export class AgentSession {
       }
       const cwd = input.cwd ?? this.cwd
       if (!cwd) throw new Error("newSession: no cwd")
-      this.error = null
-      this.#errorSurfaced = false
+      this.#errors.reset()
       this.#session.setManualTitle("", this.titleManual)
       this.isLoadingHistory = true
       try {
@@ -1995,7 +1961,7 @@ export class AgentSession {
         // cleared title via update-session; agent list stays blank until a real title.
         await this.#applyRememberedConfig()
       } catch (e) {
-        this.error = `newSession failed: ${formatAcpError(e)}`
+        this.#errors.setTransient(`newSession failed: ${formatAcpError(e)}`)
       } finally {
         this.isLoadingHistory = false
       }
@@ -2016,8 +1982,7 @@ export class AgentSession {
 
     this.#endSessionScope("new")
     this.#setStatus("connecting")
-    this.error = null
-    this.#errorSurfaced = false // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
+    this.#errors.reset() // calev-heavy §10.2: סשן חדש לא יורש כשל טרמינלי קודם
     this.#transcript.replace([])
     this.#session.setManualTitle("", this.titleManual) // slice session-title: סשן חדש = אין כותרת
 
@@ -2048,10 +2013,10 @@ export class AgentSession {
       // ─── slice-restore-last-config: החל בחירות אחרונות (אחרי connected — חובה) ───
       await this.#applyRememberedConfig()
     } catch (e) {
-      this.error = `newSession failed: ${formatAcpError(e)}`
+      this.#errors.setTransient(`newSession failed: ${formatAcpError(e)}`)
       this.#setStatus("error")
       // לא #cleanup — החיבור עדיין תקין; רק יצירת הסשן נכשלה. השאר את ה-#client חי.
-      // calev-heavy §10.2: לא מדליק #errorSurfaced — ה-WS נשאר חי; drop מאוחר יותר
+      // ה-WS נשאר חי; drop מאוחר יותר
       // צריך כן להצית reconnect (במקום להיתקע על ההודעה הישנה).
     }
   }
@@ -2492,7 +2457,8 @@ export class AgentSession {
         this.#session.setManualTitle(title, this.titleManual)
       },
       setError: (error) => {
-        this.error = error
+        if (error === null) this.#errors.dismiss()
+        else this.#errors.setTransient(error)
       },
       setIsLoadingHistory: (v) => {
         this.isLoadingHistory = v

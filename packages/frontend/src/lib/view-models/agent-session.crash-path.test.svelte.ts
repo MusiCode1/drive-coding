@@ -10,7 +10,7 @@
  * #scheduleReconnect כדי לא להצית async מודלף/network אמיתי דרך #runReconnectLoop.
  *
  * עודכן ב-Commit 4 (calev-heavy §10.2): ה-anti-clobber guard עבר מ-`status==="error"`
- * ל-flag ייעודי `#errorSurfaced` — טסט האנטי-קלובר כאן מדמה זאת דרך _setErrorSurfacedForTest.
+ * ל-flag ייעודי `terminal policy` — טסט האנטי-קלובר כאן מדמה זאת דרך _setTerminalErrorForTest.
  */
 
 import { beforeEach, describe, expect, test, vi } from "vitest"
@@ -116,7 +116,7 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setStatusForTest("error")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setErrorSurfacedForTest(true) // מדמה attach/loadSession catch טרמינלי
+    ;(session as any)._setTerminalErrorForTest() // מדמה attach/loadSession catch טרמינלי
     session.error = "specific error from attach catch"
     const connection = session._getConnectionForTest()
     if (!(connection instanceof WsConnection)) throw new Error("expected WS connection")
