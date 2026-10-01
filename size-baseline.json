@@ -926,16 +926,16 @@
       "codeLines": 15
     },
     "packages/frontend/src/lib/session/local-session-view.ts": {
-      "metric": 409,
+      "metric": 376,
       "impurity": 14,
       "class": "scattered",
-      "codeLines": 249
+      "codeLines": 233
     },
     "packages/frontend/src/lib/session/remote-session-view.ts": {
-      "metric": 620,
+      "metric": 596,
       "impurity": 19,
       "class": "scattered",
-      "codeLines": 348
+      "codeLines": 326
     },
     "packages/frontend/src/lib/session/session-transport-read.ts": {
       "metric": 41,
@@ -1016,10 +1016,10 @@
       "codeLines": 68
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 2768,
-      "impurity": 47,
+      "metric": 2742,
+      "impurity": 46,
       "class": "scattered",
-      "codeLines": 1843
+      "codeLines": 1828
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
       "metric": 328,

@@ -105,9 +105,10 @@ async function buildConnectedSession(): Promise<AgentSession> {
 }
 
 /** הזרקת SessionNotification דרך ה-captured listener */
-function inject(update: Record<string, unknown>): void {
+async function inject(update: Record<string, unknown>): Promise<void> {
   if (!capturedListener) throw new Error("listener not captured — attach() not called?")
   capturedListener({ update } as unknown as SessionNotification)
+  await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 // ─── beforeEach ───────────────────────────────────────────────────────────────
@@ -133,7 +134,7 @@ describe("AgentSession — available_commands_update handler", () => {
       { name: "commit", description: "Create a git commit" },
       { name: "code-review", description: "Review the current diff" },
     ]
-    inject({ sessionUpdate: "available_commands_update", availableCommands: cmds })
+    await inject({ sessionUpdate: "available_commands_update", availableCommands: cmds })
 
     expect(session.availableCommands).toEqual(cmds)
   })
@@ -141,28 +142,28 @@ describe("AgentSession — available_commands_update handler", () => {
   it("מאפס ל-[] כש-availableCommands ב-payload ריק", async () => {
     const session = await buildConnectedSession()
 
-    inject({
+    await inject({
       sessionUpdate: "available_commands_update",
       availableCommands: [{ name: "commit", description: "x" }],
     })
     expect(session.availableCommands).toHaveLength(1)
 
-    inject({ sessionUpdate: "available_commands_update", availableCommands: [] })
+    await inject({ sessionUpdate: "available_commands_update", availableCommands: [] })
     expect(session.availableCommands).toEqual([])
   })
 
   it("לא קורס ומאפס ל-[] כש-availableCommands אינו מערך", async () => {
     const session = await buildConnectedSession()
 
-    inject({
+    await inject({
       sessionUpdate: "available_commands_update",
       availableCommands: [{ name: "commit", description: "x" }],
     })
     expect(session.availableCommands).toHaveLength(1)
 
-    expect(() => {
-      inject({ sessionUpdate: "available_commands_update", availableCommands: "not-an-array" })
-    }).not.toThrow()
+    await expect(
+      inject({ sessionUpdate: "available_commands_update", availableCommands: "not-an-array" }),
+    ).resolves.toBeUndefined()
 
     expect(session.availableCommands).toEqual([])
   })
@@ -170,7 +171,7 @@ describe("AgentSession — available_commands_update handler", () => {
   it("#captureSessionConfig מאפס availableCommands ל-[] בפתיחת/החלפת סשן", async () => {
     const session = await buildConnectedSession()
 
-    inject({
+    await inject({
       sessionUpdate: "available_commands_update",
       availableCommands: [{ name: "commit", description: "x" }],
     })

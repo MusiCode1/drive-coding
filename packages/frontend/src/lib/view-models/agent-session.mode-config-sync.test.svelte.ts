@@ -105,9 +105,10 @@ async function buildConnectedSession(): Promise<AgentSession> {
 }
 
 /** הזרקת SessionNotification דרך ה-captured listener */
-function inject(update: Record<string, unknown>): void {
+async function inject(update: Record<string, unknown>): Promise<void> {
   if (!capturedListener) throw new Error("listener not captured — attach() not called?")
   capturedListener({ update } as unknown as SessionNotification)
+  await Promise.resolve()
 }
 
 // ─── beforeEach ───────────────────────────────────────────────────────────────
@@ -144,7 +145,7 @@ describe("AgentSession — current_mode_update handler", () => {
     expect(session.modes?.currentModeId).toBe("default")
 
     // inject event
-    inject({ sessionUpdate: "current_mode_update", currentModeId: "bypassPermissions" })
+    await inject({ sessionUpdate: "current_mode_update", currentModeId: "bypassPermissions" })
 
     expect(session.modes?.currentModeId).toBe("bypassPermissions")
   })
@@ -166,7 +167,7 @@ describe("AgentSession — current_mode_update handler", () => {
     const session = await buildConnectedSession()
     const originalAvailable = session.modes?.availableModes
 
-    inject({ sessionUpdate: "current_mode_update", currentModeId: "bypassPermissions" })
+    await inject({ sessionUpdate: "current_mode_update", currentModeId: "bypassPermissions" })
 
     // availableModes לא נמחק
     expect(session.modes?.availableModes).toEqual(originalAvailable)
@@ -179,9 +180,9 @@ describe("AgentSession — current_mode_update handler", () => {
     expect(session.modes).toBeNull()
 
     // לא צריך לזרוק
-    expect(() => {
-      inject({ sessionUpdate: "current_mode_update", currentModeId: "bypassPermissions" })
-    }).not.toThrow()
+    await expect(
+      inject({ sessionUpdate: "current_mode_update", currentModeId: "bypassPermissions" }),
+    ).resolves.toBeUndefined()
 
     expect(session.modes?.currentModeId).toBe("bypassPermissions")
     expect(session.modes?.availableModes).toEqual([])
@@ -201,9 +202,9 @@ describe("AgentSession — current_mode_update handler", () => {
     const session = await buildConnectedSession()
 
     // inject עם ערך לא-תקף — לא אמור לשנות כלום
-    expect(() => {
-      inject({ sessionUpdate: "current_mode_update", currentModeId: 42 })
-    }).not.toThrow()
+    await expect(
+      inject({ sessionUpdate: "current_mode_update", currentModeId: 42 }),
+    ).resolves.toBeUndefined()
 
     // מצב נשמר
     expect(session.modes?.currentModeId).toBe("default")
@@ -234,7 +235,7 @@ describe("AgentSession — config_option_update handler", () => {
     expect(session.configOptions).toHaveLength(1)
 
     const newOptions = [makeOption("opt-new-1"), makeOption("opt-new-2")]
-    inject({ sessionUpdate: "config_option_update", configOptions: newOptions })
+    await inject({ sessionUpdate: "config_option_update", configOptions: newOptions })
 
     expect(session.configOptions).toEqual(newOptions)
     expect(session.configOptions).toHaveLength(2)
@@ -250,9 +251,9 @@ describe("AgentSession — config_option_update handler", () => {
 
     const session = await buildConnectedSession()
 
-    expect(() => {
-      inject({ sessionUpdate: "config_option_update", configOptions: "not-an-array" })
-    }).not.toThrow()
+    await expect(
+      inject({ sessionUpdate: "config_option_update", configOptions: "not-an-array" }),
+    ).resolves.toBeUndefined()
 
     // לא שינה את configOptions
     expect(session.configOptions).toHaveLength(1)

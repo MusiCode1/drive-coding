@@ -127,7 +127,7 @@ import { AgentSession } from "./agent-session.svelte"
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** מריץ entries דרך ה-callbacks האמיתיים שנתפסו, בסדר-ההופעה המקורי בפיקסצ'ר. */
-function replay(entries: FixtureEntry[]): void {
+async function replay(entries: FixtureEntry[]): Promise<void> {
   for (const e of entries) {
     if (e.channel === "acp" && e.frame.method === "session/update") {
       capturedOnUpdate?.(e.frame.params as SessionNotification)
@@ -135,6 +135,7 @@ function replay(entries: FixtureEntry[]): void {
       capturedExtNotification?.("_claude/sdkMessage", e.frame.params as Record<string, unknown>)
     }
   }
+  await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 describe("AgentSession — subagent transcript replay (slice subagent-transcript-data-v2)", () => {
@@ -148,7 +149,7 @@ describe("AgentSession — subagent transcript replay (slice subagent-transcript
     // סשן A: ACP-only replay — baseline לספירת בועות.
     const sessionA = new AgentSession()
     await sessionA.attach({ cwd: "/proj", cliKind: "claude" })
-    replay(acpUpdateEntries)
+    await replay(acpUpdateEntries)
     const baselineCount = sessionA.bubbles.length
     expect(baselineCount).toBeGreaterThan(0)
 
@@ -157,7 +158,7 @@ describe("AgentSession — subagent transcript replay (slice subagent-transcript
     capturedExtNotification = null
     const sessionB = new AgentSession()
     await sessionB.attach({ cwd: "/proj", cliKind: "claude" })
-    replay(inbound)
+    await replay(inbound)
 
     expect(sessionB.bubbles.length).toBe(baselineCount)
   })
@@ -165,7 +166,7 @@ describe("AgentSession — subagent transcript replay (slice subagent-transcript
   it("subFrames מתמלא על בועת ה-Task אחרי replay מלא", async () => {
     const session = new AgentSession()
     await session.attach({ cwd: "/proj", cliKind: "claude" })
-    replay(inbound)
+    await replay(inbound)
 
     const taskBubble = session.bubbles.find(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === TASK_TOOL_CALL_ID,
@@ -179,7 +180,7 @@ describe("AgentSession — subagent transcript replay (slice subagent-transcript
   it("task metadata (prompt/summary/status) מאוכלס אחרי replay מלא", async () => {
     const session = new AgentSession()
     await session.attach({ cwd: "/proj", cliKind: "claude" })
-    replay(inbound)
+    await replay(inbound)
 
     const taskBubble = session.bubbles.find(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === TASK_TOOL_CALL_ID,
@@ -196,7 +197,7 @@ describe("AgentSession — subagent transcript replay (slice subagent-transcript
   it("Bash tool_call המקונן (ACP session/update רגיל, לא raw) מקונן ב-subFrames של ה-Task — לא top-level", async () => {
     const session = new AgentSession()
     await session.attach({ cwd: "/proj", cliKind: "claude" })
-    replay(inbound)
+    await replay(inbound)
 
     const bashBubbleTopLevel = session.bubbles.find(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === "toolu_01RcvmgbihnkJJnFJnk9ksRc",
@@ -230,7 +231,7 @@ describe("AgentSession — subagent transcript replay (slice subagent-transcript
   it("כלי top-level אמיתי (בלי parentToolUseId, למשל ה-Task tool_call עצמו) — נשאר top-level (רגרסיה)", async () => {
     const session = new AgentSession()
     await session.attach({ cwd: "/proj", cliKind: "claude" })
-    replay(inbound)
+    await replay(inbound)
 
     const taskBubble = session.bubbles.find(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === TASK_TOOL_CALL_ID,
@@ -242,15 +243,16 @@ describe("AgentSession — subagent transcript replay (slice subagent-transcript
     const session = new AgentSession()
     await session.attach({ cwd: "/proj", cliKind: "claude" })
     expect(session.claudeRawSdkMessageCount).toBe(0)
-    replay(inbound)
+    await replay(inbound)
     expect(session.claudeRawSdkMessageCount).toBe(rawSdkEntries.length)
   })
 })
 
 // ─── slice meta-passthrough Commit 3: approach B on tool_call_update ─────────
 
-function emitSessionUpdate(update: Record<string, unknown>): void {
+async function emitSessionUpdate(update: Record<string, unknown>): Promise<void> {
   capturedOnUpdate?.({ update } as SessionNotification)
+  await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 /** Collect every toolCallId in the bubble tree (top-level + subFrames). */
@@ -278,7 +280,7 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
     const session = new AgentSession()
     await session.attach({ cwd: "/proj", cliKind: "claude" })
 
-    emitSessionUpdate({
+    await emitSessionUpdate({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_PARENT",
       title: "Task",
@@ -286,7 +288,7 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
       status: "in_progress",
       rawInput: {},
     })
-    emitSessionUpdate({
+    await emitSessionUpdate({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_CHILD",
       title: "echo hello-from-subagent",
@@ -315,7 +317,7 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
     const session = new AgentSession()
     await session.attach({ cwd: "/proj", cliKind: "claude" })
 
-    emitSessionUpdate({
+    await emitSessionUpdate({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_CHILD",
       title: "echo",
@@ -324,7 +326,7 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
       rawInput: {},
       _meta: { claudeCode: { parentToolUseId: "toolu_PARENT" } },
     })
-    emitSessionUpdate({
+    await emitSessionUpdate({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_PARENT",
       title: "Task",
@@ -332,7 +334,7 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
       status: "in_progress",
       rawInput: {},
     })
-    emitSessionUpdate({
+    await emitSessionUpdate({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_CHILD",
       status: "completed",

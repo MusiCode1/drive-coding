@@ -153,6 +153,7 @@ vi.mock("$lib/session/local-session-view", async (importActual) => {
       drainEnded = false
       static instances: CapturedLocalSessionView[] = []
       static throwOnUpdate = false
+      static throwAfterUpdate = false
 
       constructor(opts: ConstructorParameters<typeof actual.LocalSessionView>[0]) {
         super(opts)
@@ -182,15 +183,16 @@ vi.mock("$lib/session/local-session-view", async (importActual) => {
       /** DoD 16: כשה-dגל דלוק — ה-observer זורק (התוספת החדשה היחידה ל-view). */
       override get observerCallbacks(): Pick<AcpClientCallbacks, "onUpdate" | "onExtNotification"> {
         const base = super.observerCallbacks
-        if (CapturedLocalSessionView.throwOnUpdate) {
-          return {
-            ...base,
-            onUpdate: () => {
+        return {
+          ...base,
+          onUpdate: (notification) => {
+            if (CapturedLocalSessionView.throwOnUpdate)
               throw new Error("observer exploded (DoD 16)")
-            },
-          }
+            base.onUpdate?.(notification)
+            if (CapturedLocalSessionView.throwAfterUpdate)
+              throw new Error("observer exploded after enqueue")
+          },
         }
-        return base
       }
     },
   }
@@ -216,6 +218,7 @@ const LocalSessionViewCaptured = (await import("$lib/session/local-session-view"
   .LocalSessionView as unknown as {
   instances: CapturedViewLike[]
   throwOnUpdate: boolean
+  throwAfterUpdate: boolean
 }
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
@@ -229,7 +232,7 @@ function lastView(): CapturedViewLike {
 function getViews(): CapturedViewLike[] {
   return LocalSessionViewCaptured.instances
 }
-function sendReplayChunk(text: string, messageId: string): void {
+async function sendReplayChunk(text: string, messageId: string): Promise<void> {
   vh.state.teedCallbacks?.onUpdate?.({
     update: {
       sessionUpdate: "agent_message_chunk",
@@ -237,6 +240,7 @@ function sendReplayChunk(text: string, messageId: string): void {
       messageId,
     },
   } as never)
+  await Promise.resolve()
 }
 
 function makeSettingsMock(lastConfig: Record<string, Record<string, string | boolean>>) {
@@ -254,6 +258,7 @@ beforeEach(() => {
   vh.state.failNextCreate = false
   LocalSessionViewCaptured.instances = []
   LocalSessionViewCaptured.throwOnUpdate = false
+  LocalSessionViewCaptured.throwAfterUpdate = false
   vi.stubGlobal("location", { protocol: "http:", host: "localhost:4000" })
   vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("test-uuid") })
 })
@@ -562,7 +567,7 @@ describe("DoD 14 — הודעה אחת → בועה אחת (הניקוז לא מ
     const session = new AgentSession()
     await session.attach({ cwd: "/tmp", cliKind: "opencode" })
 
-    sendReplayChunk("single bubble", "m-1")
+    await sendReplayChunk("single bubble", "m-1")
     // שים לב: אין כאן ניקוז-כתיבה — ה-drain הוא קורא-ריק (§4.5)
     expect(session.bubbles.filter((b) => b.kind === "message")).toHaveLength(1)
   })
@@ -571,9 +576,9 @@ describe("DoD 14 — הודעה אחת → בועה אחת (הניקוז לא מ
     const session = new AgentSession()
     await session.attach({ cwd: "/tmp", cliKind: "opencode" })
 
-    sendReplayChunk("a", "m-2")
-    sendReplayChunk("b", "m-2")
-    sendReplayChunk("c", "m-2")
+    await sendReplayChunk("a", "m-2")
+    await sendReplayChunk("b", "m-2")
+    await sendReplayChunk("c", "m-2")
 
     const msgs = session.bubbles.filter((b) => b.kind === "message")
     expect(msgs).toHaveLength(1)
@@ -623,9 +628,37 @@ describe("DoD 16 — throw ב-view.#onUpdate לא נוגע ל-VM", () => {
     await session.attach({ cwd: "/tmp", cliKind: "opencode" })
 
     LocalSessionViewCaptured.throwOnUpdate = true
-    sendReplayChunk("kept", "m-safe")
+    await sendReplayChunk("kept", "m-safe")
 
     expect(session.status).toBe("connected") // לא קרס
     expect(session.bubbles.filter((b) => b.kind === "message")).toHaveLength(1)
+  })
+
+  it("throw אחרי enqueue אינו פולט frame כפול", async () => {
+    const session = new AgentSession()
+    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+    LocalSessionViewCaptured.throwAfterUpdate = true
+    await sendReplayChunk("once", "m-after")
+    const messages = session.bubbles.filter((bubble) => bubble.kind === "message")
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.segments.map((segment) => segment.text)).toEqual(["once"])
+  })
+
+  it("אותו notification object בשתי קריאות tee הוא שני chunks חוקיים", async () => {
+    const session = new AgentSession()
+    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+    const notification = {
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "same" },
+        messageId: "m-repeat",
+      },
+    }
+    vh.state.teedCallbacks?.onUpdate?.(notification as never)
+    vh.state.teedCallbacks?.onUpdate?.(notification as never)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const messages = session.bubbles.filter((bubble) => bubble.kind === "message")
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.segments.map((segment) => segment.text)).toEqual(["same", "same"])
   })
 })

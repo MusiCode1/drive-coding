@@ -254,5 +254,7 @@ describe("VM + RemoteSessionView integration (C4)", () => {
       expect(bubble.segments.some((s) => s.text === "recovered")).toBe(true)
     }
     expect(view.state.version).toBe(5)
+    expect(agent.historyEpoch).toBe(1)
+    expect([...agent.historyMark.segmentCounts]).toEqual([["m_0", 1]])
   })
 })

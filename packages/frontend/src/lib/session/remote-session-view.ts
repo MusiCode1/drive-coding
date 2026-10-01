@@ -21,11 +21,9 @@
  */
 
 import {
-  applyPatch,
   createInitialSessionState,
   type Patch,
   RPC_METHODS,
-  reduce,
   type SessionState,
 } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
@@ -33,6 +31,7 @@ import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import { registerView, unregisterView, type ViewDebugInfo } from "$lib/debug/session-registry"
 import { connWarn } from "$lib/util/conn-log"
 import type { SessionView, ViewEmission } from "./session-view.js"
+import { enqueueViewFrames, projectRemoteBatch, resetViewFrame } from "./session-view-projection"
 import type { WireUpdateBatch } from "./sse-reader"
 import { SSEReader } from "./sse-reader.js"
 
@@ -79,6 +78,10 @@ export class RemoteSessionView implements SessionView {
   readonly #reader: SSEReader
 
   #state: SessionState
+  #sessionToken = 1
+  get sessionToken(): number {
+    return this.#sessionToken
+  }
   #sessionId: string | null = null
   /**
    * slice remote-session-mgmt C4: raw sessionCapabilities from the listSessions
@@ -217,14 +220,7 @@ export class RemoteSessionView implements SessionView {
     // גרסה), version = snapshot.version (בלי לגעת ב-#lastVersion, כבר מעודכן),
     // **לפני** #drainPatches — סדר דטרמיניסטי בערוץ ה-VM. רגרסיה: "היסטוריה לא מוכפלת".
     if (snapshot.messages.length > 0) {
-      const resetPatch: Patch = {
-        version: snapshot.version,
-        op: "reset",
-        messages: snapshot.messages,
-        nextMessageSeq: snapshot.nextMessageSeq,
-        nextSegmentSeq: snapshot.nextSegmentSeq,
-      }
-      this.#emit([resetPatch], [])
+      enqueueViewFrames(this.#patchesCtrl, this.#sessionToken, [resetViewFrame(snapshot)])
     }
     void this.#drainUpdates(updates)
   }
@@ -305,30 +301,16 @@ export class RemoteSessionView implements SessionView {
     // appearing twice after one server-side drop). Skip anything already applied.
     if (batch.version <= this.#lastVersion) return
 
-    let state = this.#state
-    const produced: Patch[] = []
-    for (const update of batch.updates) {
-      const { state: next, patches } = reduce(state, update)
-      state = next
-      produced.push(...patches)
-    }
+    const { state, patches, frames } = projectRemoteBatch(this.#state, batch)
     // ⚠️ **ה-version נדרס לזה של השרת.** `reduce` מקדם מונה מקומי אחד לכל
     // update, וה-batch יכול להחזיק כמה — ספירה מקומית הייתה מסיטה את המונה
     // מזה של השרת בהדרגה, ואז כל השוואת-watermark הופכת לשקר. זו בדיוק
     // רגרסיית-הגרסה שבאג #41 נבנה סביבה.
-    this.#state = { ...state, version: batch.version }
+    this.#state = state
     this.#lastVersion = batch.version
-    for (const p of produced) this.#advanceWaterMark(p)
-    if (produced.length > 0 || batch.updates.length > 0) {
-      this.#emit(produced, batch.updates)
-    }
-  }
-
-  #emit(patches: Patch[], updates: unknown[] = []): void {
-    try {
-      this.#patchesCtrl?.enqueue({ patches, updates })
-    } catch {
-      // stream cancelled by consumer — ignore
+    for (const patch of patches) this.#advanceWaterMark(patch)
+    if (patches.length > 0 || batch.updates.length > 0) {
+      enqueueViewFrames(this.#patchesCtrl, this.#sessionToken, frames)
     }
   }
 
@@ -379,19 +361,13 @@ export class RemoteSessionView implements SessionView {
       }
       return
     }
-    const resetPatch: Patch = {
-      version: snapshot.version,
-      op: "reset",
-      messages: snapshot.messages,
-      nextMessageSeq: snapshot.nextMessageSeq,
-      nextSegmentSeq: snapshot.nextSegmentSeq,
-    }
     this.#state = snapshot
     this.#sessionId = snapshot.sessionId
     this.#lastVersion = snapshot.version
     this.#lastReadMessageId = null
     this.#lastReadSegmentIndex = 0
-    this.#emit([resetPatch], [])
+    this.#sessionToken++
+    enqueueViewFrames(this.#patchesCtrl, this.#sessionToken, [resetViewFrame(snapshot)])
     this.#onSseReconnected?.()
   }
 

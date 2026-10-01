@@ -12,8 +12,8 @@
  * Commit 7 ב-slice-msr-v2.
  */
 
-import { beforeEach, describe, expect, test, vi } from "vitest"
 import type { SessionNotification } from "@agentclientprotocol/sdk"
+import { beforeEach, describe, expect, test, vi } from "vitest"
 
 // ─── Mocks לפני ייבוא AgentSession ───────────────────────────────────────────
 
@@ -63,21 +63,23 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
   const actual = await importActual<typeof import("@drive-coding/provider/client")>()
   return {
     ...actual,
-    createAcpClient: vi.fn().mockImplementation(
-      (
-        _transport: unknown,
-        callbackOrCallbacks:
-          | ((n: SessionNotification) => void)
-          | { onUpdate: (n: SessionNotification) => void; onExtNotification?: unknown },
-      ) => {
-        // ─── slice FE-normalization: תמיכה בשתי חתימות ───
-        capturedListener =
-          typeof callbackOrCallbacks === "function"
-            ? callbackOrCallbacks
-            : callbackOrCallbacks.onUpdate
-        return Promise.resolve(mockClient)
-      },
-    ),
+    createAcpClient: vi
+      .fn()
+      .mockImplementation(
+        (
+          _transport: unknown,
+          callbackOrCallbacks:
+            | ((n: SessionNotification) => void)
+            | { onUpdate: (n: SessionNotification) => void; onExtNotification?: unknown },
+        ) => {
+          // ─── slice FE-normalization: תמיכה בשתי חתימות ───
+          capturedListener =
+            typeof callbackOrCallbacks === "function"
+              ? callbackOrCallbacks
+              : callbackOrCallbacks.onUpdate
+          return Promise.resolve(mockClient)
+        },
+      ),
   }
 })
 
@@ -133,9 +135,10 @@ async function buildConnectedSession(): Promise<AgentSession> {
 }
 
 /** הזרקת SessionNotification דרך ה-captured listener */
-function inject(update: Record<string, unknown>): void {
+async function inject(update: Record<string, unknown>): Promise<void> {
   if (!capturedListener) throw new Error("listener not captured — attach() not called?")
   capturedListener({ update } as unknown as SessionNotification)
+  await Promise.resolve()
 }
 
 // ─── BeforeEach ───────────────────────────────────────────────────────────────
@@ -167,7 +170,7 @@ describe("AgentSession — turnState flow (NBug1 tail-debounce + cancel + replay
       expect(session.turnState).toBe("idle")
 
       // הזרק tail chunk (אחרי RESP → #turnEnded=true)
-      inject({
+      await inject({
         sessionUpdate: "agent_message_chunk",
         content: { type: "text", text: "tail content" },
         messageId: "m-tail",
@@ -176,9 +179,7 @@ describe("AgentSession — turnState flow (NBug1 tail-debounce + cancel + replay
 
       // content ה-tail כן נכנס (לא נאבד) — לפחות בועה אחת עם הטקסט
       const hasContent = session.bubbles.some(
-        (b) =>
-          b.kind === "message" &&
-          b.segments.some((s) => s.text === "tail content"),
+        (b) => b.kind === "message" && b.segments.some((s) => s.text === "tail content"),
       )
       expect(hasContent).toBe(true)
 
@@ -205,7 +206,7 @@ describe("AgentSession — turnState flow (NBug1 tail-debounce + cancel + replay
       expect(session.turnState).toBe("waiting")
 
       // הזרק chunk לפני RESP — #turnEnded=false → אין #scheduleIdle()
-      inject({
+      await inject({
         sessionUpdate: "agent_message_chunk",
         content: { type: "text", text: "live chunk" },
         messageId: "m-live",
@@ -232,7 +233,7 @@ describe("AgentSession — turnState flow (NBug1 tail-debounce + cancel + replay
 
       void session.sendPrompt("hello")
       // הזרק chunk להכנסת responding
-      inject({
+      await inject({
         sessionUpdate: "agent_message_chunk",
         content: { type: "text", text: "mid-turn" },
         messageId: "m-mid",

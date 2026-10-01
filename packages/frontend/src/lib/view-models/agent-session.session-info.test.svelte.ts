@@ -112,9 +112,10 @@ async function buildConnectedSession(): Promise<AgentSession> {
 }
 
 /** הזרקת SessionNotification דרך ה-captured listener — האמיתי, לא helper פנימי (brief §4) */
-function inject(update: Record<string, unknown>): void {
+async function inject(update: Record<string, unknown>): Promise<void> {
   if (!capturedListener) throw new Error("listener not captured — attach() not called?")
   capturedListener({ update } as unknown as SessionNotification)
+  await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 // ─── beforeEach ───────────────────────────────────────────────────────────────
@@ -136,7 +137,7 @@ describe("AgentSession — session_info_update handler", () => {
   it("קובע sessionTitle כש-title הוא string", async () => {
     const session = await buildConnectedSession()
 
-    inject({ sessionUpdate: "session_info_update", title: "Fix auth bug" })
+    await inject({ sessionUpdate: "session_info_update", title: "Fix auth bug" })
 
     expect(session.sessionTitle).toBe("Fix auth bug")
   })
@@ -144,10 +145,10 @@ describe("AgentSession — session_info_update handler", () => {
   it("מנקה sessionTitle ל-'' כש-title הוא null", async () => {
     const session = await buildConnectedSession()
 
-    inject({ sessionUpdate: "session_info_update", title: "Fix auth bug" })
+    await inject({ sessionUpdate: "session_info_update", title: "Fix auth bug" })
     expect(session.sessionTitle).toBe("Fix auth bug")
 
-    inject({ sessionUpdate: "session_info_update", title: null })
+    await inject({ sessionUpdate: "session_info_update", title: null })
 
     expect(session.sessionTitle).toBe("")
   })
@@ -155,11 +156,11 @@ describe("AgentSession — session_info_update handler", () => {
   it("שומר sessionTitle כש-title הוא undefined (keep-on-undefined)", async () => {
     const session = await buildConnectedSession()
 
-    inject({ sessionUpdate: "session_info_update", title: "Fix auth bug" })
+    await inject({ sessionUpdate: "session_info_update", title: "Fix auth bug" })
     expect(session.sessionTitle).toBe("Fix auth bug")
 
     // update בלי title בכלל (שדה חסר) — לא אמור למחוק את הכותרת הקודמת
-    inject({ sessionUpdate: "session_info_update" })
+    await inject({ sessionUpdate: "session_info_update" })
 
     expect(session.sessionTitle).toBe("Fix auth bug")
   })
@@ -169,7 +170,7 @@ describe("AgentSession — session_info_update handler", () => {
     session.setManualTitle("User title")
     expect(session.sessionTitle).toBe("User title")
 
-    inject({ sessionUpdate: "session_info_update", title: "ACP overwrite" })
+    await inject({ sessionUpdate: "session_info_update", title: "ACP overwrite" })
     expect(session.sessionTitle).toBe("User title")
   })
 
@@ -177,7 +178,7 @@ describe("AgentSession — session_info_update handler", () => {
     const session = await buildConnectedSession()
     session.setManualTitle("User title")
 
-    inject({ sessionUpdate: "session_info_update", title: null })
+    await inject({ sessionUpdate: "session_info_update", title: null })
     expect(session.sessionTitle).toBe("User title")
   })
 })

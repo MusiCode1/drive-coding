@@ -21,9 +21,11 @@ import {
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { vi } from "vitest"
 import type { SessionInfo } from "$lib/adapters/sessions"
+import { toPatches } from "$lib/session/frame-router"
 import type { SessionView, ViewEmission } from "$lib/session/session-view"
 
 export class MockSessionView implements SessionView {
+  readonly sessionToken = 1
   // ─── state (plain object, updated by fireUpdate) ───
   state: SessionState = $state(createInitialSessionState({ sessionId: null }))
 
@@ -73,7 +75,14 @@ export class MockSessionView implements SessionView {
     const { state, patches } = reduce(this.state, update)
     this.state = state
     try {
-      this.#controller?.enqueue({ patches, updates: [update] })
+      this.#controller?.enqueue({
+        sessionToken: this.sessionToken,
+        frames: [
+          { rawUpdate: update, state, corePatches: patches, displayIntents: toPatches({ update }) },
+        ],
+        patches,
+        updates: [update],
+      })
     } catch {
       // stream closed
     }
@@ -88,7 +97,12 @@ export class MockSessionView implements SessionView {
     const next = applyPatch(this.state, patch)
     if (next) this.state = next
     try {
-      this.#controller?.enqueue({ patches: [patch], updates: [] })
+      this.#controller?.enqueue({
+        sessionToken: this.sessionToken,
+        frames: [{ state: this.state, corePatches: [patch], displayIntents: [] }],
+        patches: [patch],
+        updates: [],
+      })
     } catch {
       // stream closed
     }

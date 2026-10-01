@@ -56,7 +56,8 @@ import { HttpConnection } from "$lib/session/http-connection"
 // ─── slice local-view-wiring: LocalSessionView + tee ───
 import { LocalSessionView } from "$lib/session/local-session-view"
 // ─── slice session-view-port C3: SessionView DI ───
-import type { SessionView } from "$lib/session/session-view"
+import type { SessionView, ViewEmission, ViewFrame } from "$lib/session/session-view"
+import { findResetPatch, recoveringObserver } from "$lib/session/session-view-projection"
 import { teeAcpCallbacks } from "$lib/session/tee-acp-callbacks"
 import { WsConnection } from "$lib/session/ws-connection"
 import { runColdReconnect } from "$lib/session/ws-reconnect-controller"
@@ -86,10 +87,6 @@ import {
   sendDetachFrame,
   type TransportTestStub,
 } from "$lib/view-models/agent-session-detach-frame"
-import {
-  type DrainViewPatchesDeps,
-  drainViewPatches,
-} from "$lib/view-models/agent-session-drain-view-patches"
 import { type LoadMockSessionDeps, loadMockSession } from "$lib/view-models/agent-session-load-mock"
 // ─── slice surface-real-error: עדיפות data.details→data.message→message→String(e) ───
 import {
@@ -132,10 +129,8 @@ const IMAGE_INPUT_ENABLED = true
 import { type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
 // ─── slice session-state-reducer C4: reduce + types ─── (additive)
 import {
-  applyPatch,
   createInitialSessionState,
   type Patch,
-  reduce,
   type SessionState,
 } from "@drive-coding/core/session"
 // ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
@@ -223,6 +218,7 @@ export class AgentSession {
    * ⚠️ לא `as LocalSessionView` על `#view` — הוא ישקר בשקט אם view של remote יגיע לשם.
    */
   #localView: LocalSessionView | null = null
+  #viewReader: ReadableStreamDefaultReader<ViewEmission> | null = null
   /**
    * slice local-view-wiring C1: ה-view **כמתג-מצב**. `#view !== null` נשא נטל כפול —
    * "יש אובייקט" **וגם** "אנחנו ב-remote". 15 אתרים קראו אותו כמתג. עכשיו המתג הוא
@@ -253,7 +249,7 @@ export class AgentSession {
     // ─── slice session-view-port C3: אם view הוזרק ─── (additive)
     if (opts?.view) {
       this.#view = opts.view
-      this.#isRemote = true // slice local-view-wiring C1: DI של view == remote (כל 5 הקונסטרוקציות)
+      this.#isRemote = !(opts.view instanceof LocalSessionView)
       void this.#consumeViewPatches(opts.view)
     }
     // ─── slice ws-reconnect-infra: visibility tracking (עבר ל-#visibility) ───
@@ -609,7 +605,7 @@ export class AgentSession {
     this.#sessionId = id
   }
 
-  #subagentToolNestingDeps(): SubagentToolNestingDeps {
+  #subagentToolNestingDeps(patches: Patch[] = []): SubagentToolNestingDeps {
     return {
       bubbles: () => this.bubbles,
       appendNestedTool: (parentId, child) => this.#transcript.appendNestedTool(parentId, child),
@@ -618,14 +614,10 @@ export class AgentSession {
       getParent: (id) => this.#session.getSubagentParent(id),
       registerParent: (id, parentId) => this.#session.registerSubagentParent(id, parentId),
       turnEnded: () => this.#turnEnded,
-      applyToolCall: (update) => this.#applyToolCall(update),
+      applyToolCall: (update) => this.#applyToolCall(update, patches),
       setTurnState: (next) => this.#setTurnState(next),
       scheduleIdle: () => this.#scheduleIdle(),
     }
-  }
-
-  #drainViewPatchesDeps(): DrainViewPatchesDeps {
-    return { view: () => this.#view }
   }
 
   #sessionEndScopeDeps(): SessionEndScopeDeps {
@@ -786,7 +778,9 @@ export class AgentSession {
    * כל batch patches: עדכון bubbles ביעד (applyPatchMutable) + סינכון metadata.
    */
   async #consumeViewPatches(view: SessionView): Promise<void> {
+    this.#cancelViewReader()
     const reader = view.patches.getReader()
+    this.#viewReader = reader
     // ─── slice empty-session-sync ───
     // סנכרון ראשוני מה-snapshot, **לפני** הלולאה.
     // הסנכרון שבתוך הלולאה מותנה ב-patches, וסשן **חדש** הוא ריק: אין הודעות,
@@ -795,7 +789,7 @@ export class AgentSession {
     // (capabilities) — עד שנטענת היסטוריה שמייצרת patches.
     // ⚠️ זה חייב לרוץ גם כש-view.state ריק — הוא נושא את המטא-דאטה בלי קשר
     // למספר ההודעות.
-    this.#syncFromViewState(view.state)
+    if (this.#isRemote) this.#syncFromViewState(view.state)
     let attachWindow = true
     try {
       while (true) {
@@ -806,43 +800,30 @@ export class AgentSession {
         // הישן עדיין יכולה למסור batch — guard שבודק רק this.#view !== null היה מעביר
         // אותו אל ה-VM החדש. אותו כלל בדיוק כמו ב-shim (#syncPendingPermission/Elicitation).
         if (this.#view !== view) break
-        const emission = value ?? { patches: [], updates: [] }
-        if (emission.patches.length === 0 && emission.updates.length === 0) continue
-        const patches = emission.patches
-
-        // 1. structural reset → bubbles (hydration / SSE-reconnect)
-        const resetPatches = patches.filter(
-          (p): p is Extract<Patch, { op: "reset" }> => p.op === "reset",
-        )
-        if (resetPatches.length > 0) {
-          this.#transcript.applyPatch({ kind: "frame", patches: resetPatches })
-          for (const patch of resetPatches) {
-            const next = applyPatch(this.sessionState, patch)
-            if (next) this.sessionState = next
-          }
-          if (attachWindow) {
-            attachWindow = false
-            const reset = resetPatches[0]
-            if (reset) {
+        const emission = value
+        if (!emission?.frames || emission.sessionToken !== view.sessionToken) continue
+        for (const frame of emission.frames) {
+          if (this.#view !== view || emission.sessionToken !== view.sessionToken) break
+          const reset = findResetPatch(frame.corePatches)
+          if (reset) {
+            this.#transcript.applyPatch({ kind: "frame", patches: [reset] })
+            this.sessionState = frame.state
+            if (attachWindow) {
+              attachWindow = false
               this.#historyMark = historyMarkFromReset(reset.messages)
               this.historyEpoch++
             }
+          } else {
+            this.sessionState = frame.state
+            this.#onSessionUpdate({ update: frame.rawUpdate }, frame)
           }
+          if (this.#isRemote) this.#syncFromViewState(frame.state)
         }
-
-        // 2. other patches → view state only (void for bubbles — same as #drainViewPatches)
-        // RemoteSessionView already applied them to view.state in #applyIncoming.
-
-        // 3. all raw wire updates → #onSessionUpdate (WS tee parity)
-        for (const update of emission.updates) {
-          this.#onSessionUpdate({ update })
-        }
-
-        this.#syncFromViewState(view.state)
       }
     } catch {
       // stream נסגר או בוטל — תקין
     } finally {
+      if (this.#viewReader === reader) this.#viewReader = null
       try {
         reader.releaseLock()
       } catch {
@@ -851,24 +832,30 @@ export class AgentSession {
     }
   }
 
+  #cancelViewReader(): void {
+    if (this.#viewReader) void this.#viewReader.cancel().catch(() => {})
+    this.#viewReader = null
+  }
+
   // ─── slice local-view-wiring C3: קשירה ואימוץ מקומיים (brief §4.3-§4.5) ───
 
   /**
    * שלב א' — **לפני** יצירת הלקוח (ה-callbacks קופאים ביצירתו — §2.5): משחרר את
    * הקודם (`#localView.dispose()`, לא close — הלקוח משותף), בונה view חדש, **מציב
    * אותו ב-#localView וב-#view מיד** (סוגר את חלון-היתום של attach/loadSession
-   * שנכשלים אחריו — §4.5), מפעיל את הניקוז (קורא-ריק — §4.5: patching כפול היה
-   * מכפיל בועות), ומחזיר אותו כדי לעטוף ב-tee.
+   * שנכשלים אחריו — §4.5), מפעיל את צרכן ה-frames היחיד ומחזיר אותו ל-tee.
    */
-  #bindLocalView(): LocalSessionView {
+  #bindLocalView(initialSessionId?: string): LocalSessionView {
+    this.#cancelViewReader()
     this.#localView?.dispose()
     const view = new LocalSessionView({
       cwd: this.cwd ?? "",
       cliKind: this.#cliKind ?? "",
+      initialSessionId,
     })
     this.#localView = view
     this.#view = view
-    void this.#drainViewPatches(view)
+    void this.#consumeViewPatches(view)
     return view
   }
 
@@ -880,7 +867,7 @@ export class AgentSession {
         onRequestPermission: this.#onRequestPermission,
         onCreateElicitation: this.#onCreateElicitation,
       },
-      view.observerCallbacks,
+      recoveringObserver(view, view.observerCallbacks),
     )
   }
 
@@ -897,10 +884,6 @@ export class AgentSession {
    */
   #adoptLocalView(client: AcpClient, sessionId: string): void {
     this.#localView?.adopt({ client, sessionId })
-  }
-
-  async #drainViewPatches(view: SessionView): Promise<void> {
-    await drainViewPatches(this.#drainViewPatchesDeps(), view)
   }
 
   /**
@@ -1702,7 +1685,7 @@ export class AgentSession {
     // ללא createAgent/WS/ACP. כלי דיבוג עיצוב; tree-shaken מ-prod build.
     if (import.meta.env.MODE !== "production" && input.sessionId.startsWith("mock:")) {
       await loadMockSession(
-        this.#loadMockSessionDeps(),
+        this.#loadMockSessionDeps(this.#bindLocalView(input.sessionId)),
         input.sessionId.slice("mock:".length),
         input.cwd,
       )
@@ -2422,6 +2405,7 @@ export class AgentSession {
   }
 
   #cleanup(opts?: { keepAgent?: boolean; keepContext?: boolean }): void {
+    this.#cancelViewReader()
     const transport = this.#connection instanceof WsConnection ? this.#connection.transport : null
     if (!opts?.keepContext) {
       this.#connection?.cancelReconnect()
@@ -2499,7 +2483,7 @@ export class AgentSession {
     if (!opts?.keepAgent && !opts?.keepContext && agentId) void deleteAgent(agentId).catch(() => {})
   }
 
-  #loadMockSessionDeps(): LoadMockSessionDeps {
+  #loadMockSessionDeps(view: LocalSessionView): LoadMockSessionDeps {
     return {
       setCwd: (cwd) => {
         this.cwd = cwd
@@ -2523,7 +2507,7 @@ export class AgentSession {
       },
       resetTurnTracking: () => this.#resetTurnTracking(),
       setTurnState: (state) => this.#setTurnState(state),
-      onSessionUpdate: (n) => this.#onSessionUpdate(n),
+      onSessionUpdate: (n) => view.observerCallbacks.onUpdate?.(n),
       setStatus: (status) => this.#setStatus(status),
     }
   }
@@ -2537,21 +2521,22 @@ export class AgentSession {
    */
   #onExtNotification = (method: string, params: Record<string, unknown>): void => {
     if (method === "_claude/sdkMessage") {
-      // finding #1: השאר את ה-counter — agent-session.capabilities.test.svelte.ts:191 מצפה 0→2.
       this.#claudeRawSdkMessageCount += 1
-      const ev = parseClaudeSdkMessage(params)
-      if (ev.kind === "ignored") return
-      const parentId = this.#subagentIndex.resolve(ev)
-      if (parentId === undefined) return // task_updated לפני task_started — לא צפוי (§7), drop
-      if (!this.#transcript.applySubagentEvent(parentId, ev)) {
-        this.#pushPendingSubagentEvent(parentId, ev)
-      }
       return
     }
     // finding #2: ענף _drive/capabilities (וכל ענף עתידי) — ללא שינוי.
     if (method === "_drive/capabilities") {
       this.#capabilities = params as unknown as NormalizedCapabilities
     }
+  }
+
+  #applySubagentDisplay(params: Record<string, unknown>): void {
+    const ev = parseClaudeSdkMessage(params)
+    if (ev.kind === "ignored") return
+    const parentId = this.#subagentIndex.resolve(ev)
+    if (parentId === undefined) return
+    if (!this.#transcript.applySubagentEvent(parentId, ev))
+      this.#pushPendingSubagentEvent(parentId, ev)
   }
 
   /** דוחף אירוע-תת-סוכן שממתין ל-Task ToolBubble שטרם נוצר. bounded (drop-oldest) — §7 Risks. */
@@ -2574,17 +2559,20 @@ export class AgentSession {
     )
   }
 
-  #onSessionUpdate = (notification: FrameInput): void => {
-    for (const patch of toPatches({ update: notification.update })) {
+  #onSessionUpdate = (notification: FrameInput, frame?: ViewFrame): void => {
+    for (const patch of frame?.displayIntents ?? toPatches({ update: notification.update })) {
       if (patch.kind === "observed") {
+        if (frame && !this.#isRemote) continue
         this.#onUpdateObserved?.(patch.update)
         this.#noteAgentActivity()
         continue
       }
       if (patch.kind === "ext-notification") {
-        this.#onExtNotification(patch.method, patch.params)
+        if (!frame || this.#isRemote) this.#onExtNotification(patch.method, patch.params)
+        if (frame && patch.method === "_claude/sdkMessage") this.#applySubagentDisplay(patch.params)
         continue
       }
+      if (!frame) continue
       const update = patch.update as {
         sessionUpdate?: string
         content?: {
@@ -2604,24 +2592,23 @@ export class AgentSession {
         status?: ToolCall["status"]
         locations?: unknown[] | null
       }
-      const raw = patch.update
       if (patch.kind === "tool-call") {
         const parentToolUseId = extractParentToolUseId(patch.update)
         if (parentToolUseId !== undefined) {
           handleSubagentToolCall(
-            this.#subagentToolNestingDeps(),
+            this.#subagentToolNestingDeps(frame.corePatches),
             update as Parameters<typeof handleSubagentToolCall>[1],
             parentToolUseId,
           )
         } else {
-          this.#applyToolCall(update)
+          this.#applyToolCall(update, frame.corePatches)
         }
         continue
       }
       if (patch.kind === "tool-call-update") {
         if (update.toolCallId !== undefined && this.#session.hasSubagentParent(update.toolCallId)) {
           handleSubagentToolCallUpdate(
-            this.#subagentToolNestingDeps(),
+            this.#subagentToolNestingDeps(frame.corePatches),
             update as Parameters<typeof handleSubagentToolCallUpdate>[1],
           )
         } else {
@@ -2636,7 +2623,7 @@ export class AgentSession {
             )
           if (parentToolUseId !== undefined && parentBubbleExists && !childAlreadyTopLevel) {
             handleSubagentToolCall(
-              this.#subagentToolNestingDeps(),
+              this.#subagentToolNestingDeps(frame.corePatches),
               update as Parameters<typeof handleSubagentToolCall>[1],
               parentToolUseId,
             )
@@ -2645,7 +2632,7 @@ export class AgentSession {
               this.#setTurnState("calling-tool")
               if (this.#turnEnded) this.#scheduleIdle()
             }
-            this.#applyFrameUpdate(raw)
+            this.#transcript.applyPatch({ kind: "frame", patches: frame.corePatches })
           }
         }
         continue
@@ -2701,11 +2688,9 @@ export class AgentSession {
         patch.kind === "user-placeholder"
       ) {
         const messageId = patch.messageId
-        if (messageId !== null) {
-          this.#transcript.setMessageId(messageId)
-        }
+        if (messageId !== null) this.#transcript.setMessageId(messageId)
         if (patch.kind === "user-text") {
-          this.#applyFrameUpdate(raw)
+          this.#transcript.applyPatch({ kind: "frame", patches: frame.corePatches })
         } else {
           this.#transcript.appendNonText(patch, update.content)
         }
@@ -2721,7 +2706,7 @@ export class AgentSession {
         this.#setTurnState("responding")
         if (this.#turnEnded) this.#scheduleIdle()
         if (patch.kind === "agent-text") {
-          this.#applyFrameUpdate(raw)
+          this.#transcript.applyPatch({ kind: "frame", patches: frame.corePatches })
         } else {
           this.#transcript.appendNonText(patch, update.content)
         }
@@ -2730,17 +2715,11 @@ export class AgentSession {
       if (patch.kind === "thought-text") {
         this.#setTurnState("thinking")
         if (this.#turnEnded) this.#scheduleIdle()
-        this.#applyFrameUpdate(raw)
+        this.#transcript.applyPatch({ kind: "frame", patches: frame.corePatches })
         continue
       }
-      this.#applyFrameUpdate(raw)
+      this.#transcript.applyPatch({ kind: "frame", patches: frame.corePatches })
     }
-  }
-
-  #applyFrameUpdate(update: unknown): void {
-    const { state: nextState, patches } = reduce(this.sessionState, update)
-    this.sessionState = nextState
-    this.#transcript.applyPatch({ kind: "frame", patches })
   }
 
   // ─── slice session-state-reducer C4: מתודת-עזר ל-tool_call create (reduce + patches + flush + turnState) ───
@@ -2750,12 +2729,7 @@ export class AgentSession {
    * קרוא משני מקומות: (1) dispatch tool_call של #onSessionUpdate (non-subagent),
    * (2) fallback של #handleSubagentToolCall (אב לא נמצא — אביגיל r4 #1).
    */
-  #applyToolCall(update: Record<string, unknown>): void {
-    const { state: nextState, patches } = reduce(this.sessionState, {
-      ...update,
-      sessionUpdate: "tool_call",
-    })
-    this.sessionState = nextState
+  #applyToolCall(update: Record<string, unknown>, patches: Patch[]): void {
     this.#transcript.applyPatch({ kind: "frame", patches })
     // flush pending subagent events for this toolCallId (slice subagent-transcript-data-v2)
     if (typeof update.toolCallId === "string") {
