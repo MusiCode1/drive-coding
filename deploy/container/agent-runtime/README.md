@@ -1,33 +1,50 @@
-# runtime נייד לסוכן drive-coding
+# הרצת Drive Coding בקונטיינר
 
-מדריך quickstart להרצת backend עם systemd בתוך קונטיינר, release נפרד
-מ-Bun, ו-frontend בנוי — בלי ידע ארגוני.
+מדריך להתקנת Drive Coding עם systemd, בית משתמש קבוע, ושדרוג היישום תוך
+שמירת תהליכי סוכנים שהופעלו כיחידות sidecar נפרדות.
+
+תמונת הקונטיינר מספקת את מערכת ההפעלה וכלי הבסיס. קוד היישום, ה-frontend
+הבנוי ועותק Bun נעוץ נשמרים יחד בכל תיקיית release בבית המשתמש.
+כלים שמותקנים בבית, הגדרות ואישורי התחברות נשמרים ב-bind מהמארח.
+החלפת קונטיינר עוצרת את התהליכים שבו; ראו את סעיף restart מול recreate.
+
+הפקודות מיועדות ל-Bash במארח, כמשתמש רגיל עם גישה למנוע הקונטיינרים.
+בחרו Docker או Podman; אל תריצו את שניהם על אותו בית משתמש במקביל.
+בסעיפי השימוש המשותפים החליפו `docker exec` ב-`podman exec` אם בחרתם Podman.
 
 ## דרישות
 
 - Git ו-Docker **28+** (rootful, cgroup v2) לנתיב Docker, או Podman 5.4+ לנתיב Podman.
-- מארח Linux עם `curl`, `unzip`, ומקום פנוי לבניית release.
+- מארח Linux **x86-64** עם Bash, `curl`, `unzip` ומקום פנוי לבניית release.
+  קובצי Node ו-Bun במימוש הנוכחי הם `linux-x64`; אין תמיכה מובנית ב-ARM64.
+- לנתיב Docker נדרש גם תוסף Docker Compose.
 - פורט מקומי פנוי על המארח (`DC_AGENT_PORT`, למשל **18400**). בתוך הקונטיינר
-  ה-backend מאזין תמיד על **18400** — אל תגדירו `PORT` ב-compose/Podman; אם
+  בתצורה המסופקת ה-backend מאזין על **18400** — אל תגדירו `PORT` ב-compose/Podman; אם
   משנים mapping, עדכנו רק את `ports:` / `-p`, לא את `PORT` בתוך הקונטיינר.
   `EnvironmentFile` בבית (`agent-runtime.env`) יכול לשנות הגדרות אחרות.
 
-### שער Docker (writable cgroups)
+### systemd ב-Docker וב-Podman
 
-נתיב Docker/Compose דורש Docker **rootful 28+** עם **cgroup v2** ואופציית
-`writable-cgroups=true`. האופציה מרכיבה את cgroup **של הקונטיינר** לכתיבה —
-זו **לא** גישה לעץ cgroup של המארח. **Rootless Docker** לא נבדק; לפי המקור
-האופציה אינה נתמכת שם. **נבדק בפועל** עם Docker **29.6.1**.
-AppArmor נשאר `docker-default` (אין `apparmor=unconfined`).
+Compose משתמש ב-Docker rootful עם cgroup v2 ובאופציה
+`writable-cgroups=true`, שנוספה ב-[Docker 28](https://docs.docker.com/engine/release-notes/28/).
+האופציה מאפשרת כתיבה ל-cgroups של הקונטיינר. התצורה משתמשת ב-namespace
+פרטי, ללא privileged או bind של עץ cgroup מהמארח, ומשאירה את AppArmor
+בברירת המחדל של Docker.
 
-Podman משתמש ב-`--systemd=always` (מנגנון Podman), לא באותה אופציית Docker.
+בדיקות התאימות ב-2026-10-07 בוצעו עם Docker rootful 29.6.1 ו-Podman
+rootless 5.4.2. Docker rootless לא נבדק עבור התצורה הזאת.
+Podman משתמש ב-`--systemd=always` וב-`--userns=keep-id --user 0`.
 
 ## הכנת עץ ובניית תמונה
 
 ```bash
-git clone <repository-url> drive-coding
+set -euo pipefail
+git clone https://github.com/MusiCode1/drive-coding.git drive-coding
 cd drive-coding
-git checkout <commit-sha>
+read -r -p 'Git ref to install (tag, branch or commit): ' INSTALL_REF
+test -n "${INSTALL_REF}"
+git checkout --detach "${INSTALL_REF}"
+export REPO="$(pwd)"
 
 export SRC="$(mktemp -d /tmp/dc-agent-runtime-src-XXXXXX)"
 git archive HEAD | tar -x -C "${SRC}"
@@ -43,7 +60,7 @@ docker run --rm --entrypoint node "${DC_AGENT_IMAGE}" --version
 ```
 
 אם `id -u` אינו **1000**, חובה `--build-arg DC_UID=…` תואם לבעלות תיקיית
-הבית שת bind-ים (למשל **1001** על מארח שבו uid 1000 שייך למשתמש אחר).
+הבית שמחברים ב-bind (למשל **1001** על מארח שבו uid 1000 שייך למשתמש אחר).
 
 ## בית משתמש (bind)
 
@@ -55,26 +72,28 @@ export DC_AGENT_PORT=18400
 "${SRC}/deploy/container/agent-runtime/prepare-agent-home.sh" "${DC_AGENT_HOME}"
 ```
 
-🛑 **`DC_AGENT_IMAGE`, `DC_AGENT_NAME`, `DC_AGENT_HOME`, וכן `SRC` עצמו
-נדרשים גם בסעיפי "גיבוי ושחזור" ו-"ניקוי" למטה — לא רק כאן.** אם אלה
-מגיעים בסשן shell חדש, שחזרו אותם לפני המשך. `printf '%q'` כדי שנתיב עם
-רווח (למשל `DC_AGENT_HOME` תחת `~/.local/share/My Drive/…`) לא ישבור את
-ה-`source` בסשן החדש:
+שמרו את משתני ההתקנה כדי להמשיך בטרמינל חדש. לכל התקנה נוצר קובץ נפרד;
+שמרו את פקודת ה-`source` שמודפסת בסוף. `SRC` מצביע לעץ שחולץ ב-`/tmp`:
+שמרו גם אותו כל עוד פקודות התחזוקה משתמשות בו, או עדכנו את הנתיב בקובץ
+המשתנים לעותק קבוע של אותו מקור.
 
 ```bash
+mkdir -p "${HOME}/.config/drive-coding-containers"
+RUNTIME_ENV="${HOME}/.config/drive-coding-containers/${DC_AGENT_NAME}.env"
 {
+  printf 'REPO=%q\n' "${REPO}"
   printf 'SRC=%q\n' "${SRC}"
+  printf 'DC_UID=%q\n' "${DC_UID}"
   printf 'DC_AGENT_IMAGE=%q\n' "${DC_AGENT_IMAGE}"
   printf 'DC_AGENT_NAME=%q\n' "${DC_AGENT_NAME}"
   printf 'DC_AGENT_HOME=%q\n' "${DC_AGENT_HOME}"
   printf 'DC_AGENT_PORT=%q\n' "${DC_AGENT_PORT}"
-} >"${SRC}/.dc-agent-runtime.env"
-# בסשן חדש: set -a; source "${SRC}/.dc-agent-runtime.env"; set +a
+} >"${RUNTIME_ENV}"
+printf 'set -a; source %q; set +a\n' "${RUNTIME_ENV}"
 ```
 
-`compose-project.sh` (נקרא בכל סעיף שמריץ `docker compose`) מאמת בפועל
-ש-`DC_AGENT_NAME` ו-`DC_AGENT_HOME` מוגדרים ונכשל במפורש אם לא — זו
-ההגנה שעוצרת המשך-ריצה עם משתנים חסרים, לא רק תזכורת.
+`compose-project.sh` דורש `DC_AGENT_IMAGE`, `DC_AGENT_NAME` ו-`DC_AGENT_HOME`
+מוגדרים לפני הרצת Compose.
 
 ## התקנת release (Bun מה-release בלבד)
 
@@ -92,7 +111,7 @@ Bun מהתמונה.
 
 ```bash
 cd "${SRC}/deploy/container/agent-runtime"
-# project name = DC_AGENT_NAME (לא ברירת המחדל agent-runtime — מונע דריסת ניסויים אחרים)
+# שם פרויקט Compose נגזר מ-DC_AGENT_NAME, אלא אם הוגדר COMPOSE_PROJECT_NAME
 source ./compose-project.sh
 docker compose up -d
 docker compose ps
@@ -125,9 +144,11 @@ export DC_UID="${DC_UID:-$(id -u)}"
 podman port "${DC_AGENT_NAME}"
 ```
 
-כש-uid המארח תואם ל-`DC_UID` בתמונה, הסקריפט מוסיף `--userns=keep-id`.
-הסקריפט יוצר/מסיר רק קונטיינרים עם התווית
-`org.drivecoding.agent-runtime=trial`.
+הסקריפט דורש התאמה בין UID המארח ל-`DC_UID` ומשתמש ב-`--userns=keep-id`
+וב-`--user 0`, כדי ש-systemd יעלה כ-PID 1 ויישום Drive Coding ירוץ כ-`dc`.
+אם כבר קיים קונטיינר באותו שם עם התווית `org.drivecoding.agent-runtime=trial`,
+הסקריפט **מסיר אותו ומקים חדש**, ועוצר בכך את התהליכים שבו. קונטיינר באותו
+שם ללא התווית הזאת לא יוסר. לשדרוג היישום השתמשו בסעיף השדרוג למטה.
 
 ## systemd, sidecar, ו-PATH
 
@@ -143,10 +164,12 @@ podman port "${DC_AGENT_NAME}"
 | `EnvironmentFile=-…/agent-runtime.env` | קובץ חסר לא מפיל; ערכים שם **גוברים** על `Environment=` |
 | `DC_DEPLOYMENT_DIR` | תחת הבית — **לא** תחת `/run` (שורד recreate) |
 
-זה מה שגורם לסוכן להיוולד כ-**transient unit** (`systemd-run --user`) ולשרוד
-restart של יחידת ה-backend — **לא** shell אינטראקטיבי.
+סוכן שמופעל במסלול sidecar עם user manager זמין נוצר כיחידת משתמש נפרדת
+באמצעות `systemd-run --user`. הפרדה זו מאפשרת לתהליך להמשיך לרוץ כאשר
+מפעילים מחדש את יחידת ה-backend.
 
-**שער:** `journalctl -u dc-agent-runtime` **אינו** מכיל `no systemd user manager`.
+בדקו את סביבת היחידה. הודעת `no systemd user manager` ביומן מצביעה על
+שיגור חלופי שאינו שומר את התהליך בעת restart ליחידת ה-backend.
 
 ```bash
 docker exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p Environment
@@ -173,12 +196,10 @@ uid="$(docker exec "${DC_AGENT_NAME}" cat /etc/dc-agent-runtime/uid)"
 
 ## recoll
 
-Bootstrap יוצר דוגמה עם האסימון `dc-agent-runtime-recoll-token`. לפני/אחרי
-recreate, שמרו inode/ctime/hash של `~/.recoll/recoll.conf` וקבצי
-`~/.recoll/xapian-db/` (לא רק שורת שאילתה):
+Recoll מותקן עם מסמך דוגמה ואינדקס תחת `/home/dc/.recoll`, שנשמר בבית
+הקבוע. בדקו חיפוש במסמך הדוגמה:
 
 ```bash
-"${SRC}/deploy/container/agent-runtime/recoll-path-meta.sh" "${DC_AGENT_HOME}"
 docker exec -u dc "${DC_AGENT_NAME}" recollq -c /home/dc/.recoll \
   -e 'dc-agent-runtime-recoll-token'
 ```
@@ -187,57 +208,26 @@ docker exec -u dc "${DC_AGENT_NAME}" recollq -c /home/dc/.recoll \
 
 ```bash
 curl -fsS "http://127.0.0.1:${DC_AGENT_PORT}/api/health"
-curl -fsS "http://127.0.0.1:${DC_AGENT_PORT}/" | head
+curl -fsS "http://127.0.0.1:${DC_AGENT_PORT}/" -o /dev/null
 ```
 
-## fixture (בלי credentials, בלי turn)
-
-🛑 **שם-היחידה חייב להיות ייחודי לכל ריצה.** ‏`systemd-run --user --unit=X`
-מסרב אם `X` עדיין `loaded` — גם אם הוא `failed`, לא רק `active` — ולכן שם
-קבוע חוסם כל ריצה שנייה על אותו קונטיינר עד `reset-failed` ידני. קבעו
-`RUN_ID` **פעם אחת** ובנו ממנו את שם-היחידה.
-
-🛑 **הסעיף הזה הוא דמו עצמאי — לא תנאי-מוקדם לסעיף "החלפת release" למטה.**
-שם ה-fixture כאן (`-demo-`) שונה מהפאר שהסעיף ההוא יוצר לעצמו, ושני הסעיפים
-לא תלויים זה בזה: אפשר לדלג על הסעיף הזה ולהריץ A→B→A בסשן נקי, ואפשר
-להריץ את הסעיף הזה בלי להמשיך ל-A→B→A בכלל.
-
-```bash
-export RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
-FIXTURE_A="dc-fixture-hold-demo-${RUN_ID}"
-
-uid="$(docker exec "${DC_AGENT_NAME}" cat /etc/dc-agent-runtime/uid)"
-release="$(docker exec -u dc "${DC_AGENT_NAME}" \
-  bash -lc 'source ~/.config/drive-coding/release.env && echo "$DC_RELEASE"')"
-docker exec -u dc "${DC_AGENT_NAME}" env \
-  "XDG_RUNTIME_DIR=/run/user/${uid}" \
-  "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
-  systemd-run --user --unit="${FIXTURE_A}" \
-  "${release}/.runtime/bin/bun" /usr/local/lib/dc-agent-runtime/fixture-hold.js
-docker exec -u dc "${DC_AGENT_NAME}" env \
-  "XDG_RUNTIME_DIR=/run/user/${uid}" \
-  "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
-  systemctl --user status "${FIXTURE_A}"
-```
-
-## אימות מול ספקים
+## התחברות לספק
 
 אין לאפות מפתחות או `secrets.json` לתוך התמונה. הקובץ, אם קיים, יושב רק על
 ה-bind: `${DC_AGENT_HOME}/.config/drive-coding/secrets.json` (בתוך הקונטיינר:
 `/home/dc/.config/drive-coding/secrets.json`). קובץ חסר אינו עוצר את ה-backend.
 התחברות אינטראקטיבית של CLI רצה כמשתמש `dc`:
 
-🛑 **`docker exec -u dc` ללא shell-login אינו כולל `/home/dc/.local/bin`
-ב-PATH** (ה-prefix של `npm -g`, שם `codex` יושב) — רק `bash -lc` קורא את
-ה-profile ומוסיף אותו. `docker exec -u dc "${DC_AGENT_NAME}" codex --version`
-כלשונו נכשל (`exit 127`, `executable file not found in $PATH`).
+השתמשו ב-`bash -lc` כדי לטעון את ה-PATH של המשתמש, הכולל את הכלים
+שהותקנו ב-`/home/dc/.local/bin`. הפקודות הבאות בודקות את זמינות Codex
+ואפשרות ההתחברות; הן אינן מבצעות התחברות.
 
 ```bash
 docker exec -u dc "${DC_AGENT_NAME}" bash -lc 'codex --version'
 docker exec -u dc "${DC_AGENT_NAME}" bash -lc 'codex login --help' | grep -F device-auth
 ```
 
-התחברות אינטראקטיבית (מכונת המשתמש, לא חלק מניסוי אוטומטי):
+להתחברות, הריצו מהטרמינל שלכם ופעלו לפי ההוראות ש-Codex מציג:
 
 ```bash
 docker exec -it -u dc "${DC_AGENT_NAME}" bash -lc 'codex login --device-auth'
@@ -245,148 +235,72 @@ docker exec -it -u dc "${DC_AGENT_NAME}" bash -lc 'codex login --device-auth'
 
 (Podman: `podman exec -it -u dc … bash -lc '…'`.)
 
-## החלפת release (A → B → A)
+## שדרוג היישום
 
-🛑 **הבלוק הזה עצמאי — אינו תלוי בסעיף "fixture" למעלה ולא במשתנה-shell
-כלשהו מסשן קודם.** נמדד (D-1): סשן טרמינל חדש ששיחזר רק את
-`.dc-agent-runtime.env` (SRC/IMAGE/NAME/HOME/PORT, כמתואר ב-"בית משתמש")
-ואז דילג היישר לכאן נכשל על `RUN_ID: unbound variable` — `RUN_ID` ו-`uid`
-היו משתנים מקומיים של סעיף "fixture", לא חלק מבלוק-השחזור. התיקון: הבלוק
-מחשב `uid` משלו, מגדיר `RUN_ID` טרי משלו (זמן+PID, לא תלוי בסעיף הקודם),
-ויוצר **פאר fixture עצמאי** (`FIXTURE_A`/`FIXTURE_B`) בשם שלא מתנגש עם זה
-של סעיף "fixture" — אין כאן `stop`/`reset-failed` על שום יחידה שהבלוק הזה
-לא יצר בעצמו.
+טענו את משתני ההתקנה ששמרתם. בחרו tag או commit חדש מהריפו והתקינו אותו
+במזהה release חדש. בניית ה-release מתקיימת במארח ואינה מחליפה את התמונה.
+דרושים מקום נוסף לתיקיית release וזיכרון לבניית ה-frontend.
 
-`dc-release-install` מסרב אם תיקיית ה-id כבר קיימת, וכותב את `release.env`
-ל-id החדש. אחרי ההתקנה צריך restart של היחידה. העוגן הוא `exe`, `cmdline`
-ו-`maps`, לא cwd. `B_ID` למטה הוא **אותו מזהה** שמוזרק להתקנה ולשלושת
-העוגנים — לא ערך-קוד נפרד; שינוי `B_ID` אחד מספיק להרצה על בית שכבר שימש.
-
-🛑 **הרצה חוזרת על בית שבו `releases/B` כבר קיים** (ניסוי קודם, לא נוקה) —
-`dc-release-install --id "$B_ID"` יסרב, וההרנסים (`guide-quickstart-e2e.sh` /
-`guide-podman-e2e.sh`) **לא** ינסו להזיז או למחוק אותו: לא ניתן להוכיח
-מה-host בוודאות שאף תהליך (למשל fixture) לא רץ על אותו release, ולכן
-העברה/מחיקה אוטומטית היא בדיוק סוג הניחוש-המסוכן ש-F1 הזהיר ממנו. קבעו
-`B_ID` לערך שלא היה בשימוש — ברירת-המחדל של ההרנסים היא id עם חותמת-זמן.
-בדיקה וניקוי ידני של release ישן (שלא בשימוש בפועל) הם באחריות המפעיל.
-
-**חמש נקודות, לא שתיים:** (1) backend על A, (2) `FIXTURE_A` — נוצר כאן,
-אחרי אימות ה-backend על A ולפני התקנת B, ובלתי-תלוי ביחידת ה-backend —
-(3) backend עובר ל-B **ו-`FIXTURE_A` נשאר אותו PID ואותו exe A**,
-(4) `FIXTURE_B` **חדש** מוקם בזמן ש-`$DC_RELEASE` מצביע ל-B ואכן מריץ
-את ה-exe של B (מוכיח ש-fixture חדש אוסף את ה-release הנוכחי, לא רק
-ש-fixture ישן שורד), (5) backend חוזר ל-A ו-`FIXTURE_A` עדיין לא זע.
-
-🛑 **קריאת `/proc/<pid>/exe` ו-`/proc/<pid>/maps` חייבת `-u dc`.** ה-backend
-רץ כמשתמש `dc`, לא כ-root; `docker exec` (ברירת-מחדל root) מקבל `Permission
-denied` על שתיהן — ו-`readlink` נכשל **בשקט** (exit 1, פלט ריק) אם לא בודקים
-את קוד-היציאה.
-
-🛑 **הבלוק מתחיל ב-`set -euo pipefail`** — בלי זה, `cmd | grep -F …` שבו
-`cmd` נכשל (למשל `Permission denied`) עדיין מחזיר את קוד-היציאה של `grep`
-(שנכשל גם הוא, אבל זו מקריות ולא אכיפה), והרצף הבא ממשיך על נתון ריק.
-וכל restart מחכה ל-health **מוגבל** לפני שהוא קורא PID — אחרת יש חשש שה-PID
-שנקרא שייך לתהליך שעדיין בתהליך crash-restart ולא לזה שבאמת עונה.
+הפקודות שומרות עותק של `release.env` לפני ההתקנה ב-`release.env.before-upgrade`.
+כל שדרוג מחליף את הגיבוי הזה. `dc-release-install` מעדכן את ה-release הנבחר
+רק לאחר הצלחת הבנייה; restart של יחידת ה-backend מפעיל אותו.
 
 ```bash
 set -euo pipefail
+ENGINE=docker                 # ל-Podman: ENGINE=podman
+read -r -p 'Git ref to upgrade to (tag or commit): ' RELEASE_REF
+test -n "${RELEASE_REF}"
+git -C "${REPO}" fetch origin --tags
+RELEASE_SHA="$(git -C "${REPO}" rev-parse --verify "${RELEASE_REF}^{commit}")"
+NEXT_SRC="$(mktemp -d /tmp/dc-agent-runtime-upgrade-XXXXXX)"
+git -C "${REPO}" archive "${RELEASE_SHA}" | tar -x -C "${NEXT_SRC}"
+RELEASE_ID="${RELEASE_SHA:0:12}-$(date -u +%Y%m%dT%H%M%SZ)"
 
-uid="$(docker exec "${DC_AGENT_NAME}" cat /etc/dc-agent-runtime/uid)"
-B_ID="${DC_RELEASE_B_ID:-B-$(date -u +%Y%m%dT%H%M%SZ)}"
-SWAP_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"   # עצמאי מ-RUN_ID של סעיף "fixture"
-FIXTURE_A="dc-fixture-hold-swap-${SWAP_RUN_ID}-a"
-FIXTURE_B="dc-fixture-hold-swap-${SWAP_RUN_ID}-b"
-
-wait_health() {
-  local i
-  for i in $(seq 1 40); do
-    curl -fsS "http://127.0.0.1:${DC_AGENT_PORT}/api/health" >/dev/null 2>&1 && return 0
-    sleep 3
-  done
-  echo "wait_health: timed out" >&2
-  return 1
-}
-unit_pid() {   # MainPID של יחידת --user, כמו ב-guide-contract-lib.sh
-  docker exec -u dc "${DC_AGENT_NAME}" env \
-    "XDG_RUNTIME_DIR=/run/user/${uid}" \
-    "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
-    systemctl --user show "$1" -p MainPID --value | tr -d '[:space:]'
-}
-run_fixture() {   # systemd-run עם TimeoutStopSec קצר — רק ליחידות שהבלוק הזה יוצר
-  local unit="$1" release_path="$2"
-  docker exec -u dc "${DC_AGENT_NAME}" env \
-    "XDG_RUNTIME_DIR=/run/user/${uid}" \
-    "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
-    systemd-run --user --unit="${unit}" --property=TimeoutStopSec=5s \
-    "${release_path}/.runtime/bin/bun" /usr/local/lib/dc-agent-runtime/fixture-hold.js
-}
-
-pid_a="$(docker exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value)"
-docker exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${pid_a}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
-
-# FIXTURE_A: פאר עצמאי שהבלוק הזה יוצר, אחרי אימות A ולפני התקנת B
-run_fixture "$FIXTURE_A" /home/dc/releases/A
-fix_a_pid="$(unit_pid "$FIXTURE_A")"
-docker exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${fix_a_pid}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
-
+config_dir="${DC_AGENT_HOME}/.config/drive-coding"
+cp -p "${config_dir}/release.env" "${config_dir}/release.env.before-upgrade"
 HOME="${DC_AGENT_HOME}" "${SRC}/deploy/container/agent-runtime/dc-release-install" \
-  --id "$B_ID" \
-  --source "${SRC}" \
-  --bun-version 1.3.14
-docker exec "${DC_AGENT_NAME}" systemctl restart dc-agent-runtime
-wait_health
-pid_b="$(docker exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value)"
-test "$pid_b" != "$pid_a"
-docker exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${pid_b}/exe" | grep -F "/home/dc/releases/${B_ID}/.runtime/bin/bun"
-docker exec -u dc "${DC_AGENT_NAME}" bash -lc "tr '\\0' ' ' </proc/${pid_b}/cmdline" | grep -F "/home/dc/releases/${B_ID}/.runtime/bin/bun"
-docker exec -u dc "${DC_AGENT_NAME}" grep -F "/home/dc/releases/${B_ID}/.runtime/bin/bun" "/proc/${pid_b}/maps"
-
-# FIXTURE_A: לא זע מהחלפת ה-backend (אותו PID, exe עדיין A)
-fix_a_pid_after="$(unit_pid "$FIXTURE_A")"
-test "$fix_a_pid_after" = "$fix_a_pid"
-docker exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${fix_a_pid_after}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
-
-# FIXTURE_B: יחידה חדשה, מוקמת עכשיו בעוד $DC_RELEASE מצביע ל-B
-run_fixture "$FIXTURE_B" "/home/dc/releases/${B_ID}"
-fix_b_pid="$(unit_pid "$FIXTURE_B")"
-docker exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${fix_b_pid}/exe" | grep -F "/home/dc/releases/${B_ID}/.runtime/bin/bun"
-
-rollback_env="$(mktemp "${DC_AGENT_HOME}/.config/drive-coding/release.env.XXXXXX")"
-printf 'DC_RELEASE=%s\n' /home/dc/releases/A >"$rollback_env"
-chmod 600 "$rollback_env"
-mv -f "$rollback_env" "${DC_AGENT_HOME}/.config/drive-coding/release.env"
-docker exec "${DC_AGENT_NAME}" systemctl restart dc-agent-runtime
-wait_health
-pid_back="$(docker exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value)"
-docker exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${pid_back}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
-
-# FIXTURE_A: עדיין לא זע
-fix_a_pid_back="$(unit_pid "$FIXTURE_A")"
-test "$fix_a_pid_back" = "$fix_a_pid"
-
-# ניקוי — רק הפאר שהבלוק הזה יצר (לא נוגע ב-FIXTURE_A של סעיף "fixture")
-for u in "$FIXTURE_A" "$FIXTURE_B"; do
-  docker exec -u dc "${DC_AGENT_NAME}" env \
-    "XDG_RUNTIME_DIR=/run/user/${uid}" \
-    "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
-    systemctl --user stop "$u" || true
-  docker exec -u dc "${DC_AGENT_NAME}" env \
-    "XDG_RUNTIME_DIR=/run/user/${uid}" \
-    "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
-    systemctl --user reset-failed "$u" 2>/dev/null || true
-done
+  --id "${RELEASE_ID}" --source "${NEXT_SRC}" --bun-version 1.3.14
+"${ENGINE}" exec "${DC_AGENT_NAME}" systemctl restart dc-agent-runtime
+curl --retry 40 --retry-delay 3 --retry-connrefused --retry-all-errors \
+  -fsS "http://127.0.0.1:${DC_AGENT_PORT}/api/health"
 ```
 
-(Podman: `podman exec -u dc …` ו-`podman exec …` במקום `docker exec …`.)
+אל תשנו או תמחקו release ישן כל עוד סוכנים פעילים משתמשים בו. גם Bun
+שבתוכו נדרש להם. מזהה שכבר קיים נדחה; בחרו מזהה חדש גם אחרי בנייה שנכשלה
+והשאירה תיקייה חלקית. פרטי בדיקת שימור תהליכים נמצאים ב-[מדריך הבדיקות](TESTING.md).
+
+## חזרה לגרסה שלפני השדרוג
+
+טענו את משתני ההתקנה. שחזרו את ההפניה השמורה והפעילו מחדש את יחידת
+ה-backend. תיקיית ה-release הישן צריכה עדיין להיות קיימת.
+
+```bash
+set -euo pipefail
+ENGINE=docker                 # ל-Podman: ENGINE=podman
+config_dir="${DC_AGENT_HOME}/.config/drive-coding"
+rollback_env="$(mktemp "${config_dir}/release.env.XXXXXX")"
+cp -p "${config_dir}/release.env.before-upgrade" "${rollback_env}"
+mv -f "${rollback_env}" "${config_dir}/release.env"
+"${ENGINE}" exec "${DC_AGENT_NAME}" systemctl restart dc-agent-runtime
+curl --retry 40 --retry-delay 3 --retry-connrefused --retry-all-errors \
+  -fsS "http://127.0.0.1:${DC_AGENT_PORT}/api/health"
+```
 
 ## restart מול recreate
 
-- **Restart יחידה** (`systemctl restart dc-agent-runtime`): state deployment תחת
-  `DC_DEPLOYMENT_DIR` בבית נשמר; sidecar transient ישרוד אם הוגדר כך.
-- **Recreate קונטיינר**: tmpfs של `/run` מתאפס; **הבית על ה-bind נשמר**
-  (releases, npm, recoll, `agent-runtime.env`).
+| פעולה | תהליכים פעילים | קבצים בבית המשתמש |
+|-------|----------------|-------------------|
+| `systemctl restart dc-agent-runtime` | ה-backend מוחלף; סוכנים שהופעלו כיחידות sidecar נפרדות ממשיכים לרוץ | נשמרים |
+| עצירה או יצירה מחדש של הקונטיינר | כל התהליכים בקונטיינר נעצרים; יש להפעיל סוכנים מחדש | נשמרים כשמשתמשים באותו bind |
+
+שימור תהליך sidecar אינו מבטיח רציפות של חיבור הממשק, הגדרות הסשן או כל
+הפלט בזמן ניתוק ה-backend. בהחלפת היישום יש הפרעה לשירות ה-backend;
+אין כאן הבטחת zero-downtime.
 
 ## גיבוי ושחזור
+
+הגיבוי הבא עוצר את הקונטיינר ואת הסוכנים שבו כדי להעתיק בית שאינו משתנה.
+הפעלתו מחדש אינה מחזירה תהליכים שנעצרו. נדרש מקום לארכיון ולעותק המשוחזר.
 
 ```bash
 cd "${SRC}/deploy/container/agent-runtime"
@@ -414,7 +328,8 @@ cd "${SRC}/deploy/container/agent-runtime" && source ./compose-project.sh && doc
 # Podman: podman rm -f "${DC_AGENT_NAME}"  # רק אם התווית trial
 ```
 
-## אזהרה
+## בדיקות נוספות
 
-ניתוק backend / restart מאפס הגדרות סשן פעילות ומאבד פלט שלא נצבר — **אין
-zero-downtime**.
+[מדריך הבדיקות](TESTING.md) כולל תהליכי דמה, בדיקת החלפת release וחזרה,
+והסבר על סקריפטי האימות ל-Docker ול-Podman. הריצו בדיקות אלה על התקנה
+נפרדת מזו שמריצה את הסוכנים שלכם.

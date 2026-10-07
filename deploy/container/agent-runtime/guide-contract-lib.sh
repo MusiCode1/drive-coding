@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Shared gate functions for guide-quickstart-e2e.sh (Docker) and guide-podman-e2e.sh
-# (Podman) — one implementation of the README contract, parametrized by $ENGINE
-# (docker|podman), so the two harnesses cannot drift from each other or from the
-# README again. Every gate fails loudly (set -e, explicit test/grep) — no gate
-# here is allowed to exit 0 on a silently-empty check.
+# Shared checks for the Docker and Podman runtime test scripts (see TESTING.md).
+# Checks cover selected installation and persistence contracts; they do not
+# execute the README verbatim or authenticate with a provider.
 #
 # Caller must set before sourcing/calling: ENGINE, root (this dir), SRC,
 # DC_AGENT_NAME, DC_AGENT_HOME, DC_AGENT_PORT, DC_UID, DC_AGENT_IMAGE.
@@ -39,14 +37,8 @@ require_free_space_mb() {
   echo "require_free_space_mb: ok (${avail_mb}MB free >= ${need_mb}MB needed at ${path})" >&2
 }
 
-# Never moves or deletes an existing releases/<id> -- a scanner that tries to
-# prove "nothing is using it" via /proc (exe/cwd/cmdline, let alone maps) hits
-# the exact same shape as F1: a permission or visibility gap that silently
-# resolves to "looks free" when it isn't (readlink without -u dc, a failed
-# check swallowed as empty, no coverage for maps at all). Rather than growing
-# that scanner, this refuses outright when the id is taken: pick a release id
-# that has never been used (DC_RELEASE_B_ID, or a fresh timestamp-based one),
-# never reuse/rename someone else's.
+# Refuse existing release directories: processes may still use their code or
+# interpreter. Pick a fresh id instead of inferring liveness from /proc access.
 require_free_release_slot() {
   local id="$1"
   local dir="${DC_AGENT_HOME}/releases/${id}"
@@ -66,14 +58,8 @@ unit_pid() {
     systemctl --user show "${unit}" -p MainPID --value | tr -d '[:space:]'
 }
 
-# Builds a fixture unit name scoped to one contract run (the fixture-A /
-# fixture-B pair share the run id, each a distinct suffix). A *fixed* name
-# (what this used to be) blocks every run after the first: systemd-run
-# refuses to reuse a unit name that is still `loaded` -- active OR merely
-# `failed` -- until something resets it, so the harness's own first run
-# could leave a landmine for its second. DC_FIXTURE_RUN_ID lets a caller
-# pin the id explicitly (e.g. to resume); the harnesses default to a fresh
-# one per invocation so back-to-back runs never collide.
+# Scope fixture units to one run; a loaded or failed unit cannot be reused.
+# Both units share DC_FIXTURE_RUN_ID, with distinct suffixes.
 fixture_unit_name() {
   local pair="$1" # "a" or "b"
   printf 'dc-fixture-hold-%s-%s' "${DC_FIXTURE_RUN_ID:?DC_FIXTURE_RUN_ID must be set}" "$pair"
@@ -174,10 +160,8 @@ gate_user_tools() {
   "${root}/user-unit-tool-check.sh" "$ENGINE" "${DC_AGENT_NAME}" "$uid"
 }
 
-gate_provider_auth() {
-  # Plain `exec -u dc` does not carry /home/dc/.local/bin (npm -g prefix) in
-  # PATH -- only a login shell (.profile) does. Measured: `docker exec -u dc
-  # NAME codex --version` -> "executable file not found in $PATH" (exit 127).
+gate_provider_cli() {
+  # Load the user's PATH; verify CLI availability and help, without logging in.
   eng exec -u dc "${DC_AGENT_NAME}" bash -lc 'codex --version'
   eng exec -u dc "${DC_AGENT_NAME}" bash -lc 'codex login --help' | grep -F device-auth
 }
@@ -208,7 +192,7 @@ gate_fixture() {
   printf '%s' "$state" | grep -q active
 }
 
-# Five-point A -> B -> A, anchored on exe/maps/cmdline with -u dc (fixes F1):
+# Five-point A -> B -> A, anchored on exe/maps/cmdline with -u dc:
 #   1. backend on A        2. fixture-A on A (started by gate_fixture, same PID throughout)
 #   3. backend swaps to B, *fixture-A stays the same PID and exe A* (decoupled from the backend unit)
 #   4. a brand-new fixture-B is started *while backend is on B* and its exe resolves to B

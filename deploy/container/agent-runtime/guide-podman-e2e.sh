@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs every README quickstart contract gate, in README order (Podman engine).
+# Verify runtime installation and persistence contracts with Podman. See TESTING.md.
 # Image must already exist locally or be loadable via DC_IMAGE_TAR.
 # Set DC_SKIP_HOME=1 to reuse an already-running DC_AGENT_NAME/DC_AGENT_HOME.
 set -euo pipefail
@@ -75,8 +75,8 @@ dc_uid="$(gate_systemd_pid1_linger_uid)"
 gate_log "user tools (npm cowsay+codex, uv, uv tool ruff) + user-unit-tool-check"
 gate_user_tools "$dc_uid"
 
-gate_log "provider auth (codex --version, login --help device-auth)"
-gate_provider_auth
+gate_log "provider CLI availability (codex --version, device-auth help; no login)"
+gate_provider_cli
 
 gate_log "recoll query does not touch index metadata"
 gate_recoll

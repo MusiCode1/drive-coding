@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs every README quickstart contract gate, in README order (Docker engine).
+# Verify runtime installation and persistence contracts with Docker. See TESTING.md.
 # Set DC_SKIP_BUILD=1 to reuse an already-built DC_AGENT_IMAGE (still proves
 # baked content via image-baked-hashes.sh). Set DC_SKIP_HOME=1 to reuse an
 # already-running DC_AGENT_NAME/DC_AGENT_HOME instead of creating a fresh one.
@@ -77,8 +77,8 @@ dc_uid="$(gate_systemd_pid1_linger_uid)"
 gate_log "user tools (npm cowsay+codex, uv, uv tool ruff) + user-unit-tool-check"
 gate_user_tools "$dc_uid"
 
-gate_log "provider auth (codex --version, login --help device-auth)"
-gate_provider_auth
+gate_log "provider CLI availability (codex --version, device-auth help; no login)"
+gate_provider_cli
 
 gate_log "recoll query does not touch index metadata"
 gate_recoll
@@ -106,8 +106,8 @@ else
 fi
 
 # 🛑 A DC_SKIP_* run is not a pass of the full contract — never print "ok" for
-# it. A reader (or a coordinator grepping the log) must not be able to mistake
-# a partial, disk-constrained run for a complete one.
+# it. Report skipped checks explicitly so a partial run is distinguishable
+# from a complete one.
 if [[ "${#skipped[@]}" -gt 0 ]]; then
   echo "guide-quickstart-e2e: PARTIAL — skipped gates: ${skipped[*]}"
   exit 2
