@@ -6,10 +6,12 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${root}/../../.." && pwd)"
 
-export SRC="${SRC:-/tmp/dc-agent-runtime-podman-src}"
+if [[ -z "${SRC:-}" ]]; then
+  SRC="$(mktemp -d /tmp/dc-agent-runtime-podman-src-XXXXXX)"
+fi
+export SRC
 export DC_UID="${DC_UID:-$(id -u)}"
 export DC_AGENT_IMAGE="${DC_AGENT_IMAGE:-dc-agent-runtime:podman-e2e}"
-export DC_AGENT_HOME="${DC_AGENT_HOME:-${HOME}/.local/share/dc-agent-runtime-podman-e2e/home}"
 export DC_AGENT_NAME="${DC_AGENT_NAME:-dc-agent-runtime-podman-e2e}"
 export DC_AGENT_PORT="${DC_AGENT_PORT:-18409}"
 export DC_IMAGE_TAR="${DC_IMAGE_TAR:-}"
@@ -26,15 +28,13 @@ fi
 
 echo "=== E2E Podman: archive source for release (if needed) ==="
 if [[ ! -f "${SRC}/package.json" ]]; then
-  rm -rf "${SRC}"
-  mkdir -p "${SRC}"
   git -C "${repo_root}" archive HEAD | tar -x -C "${SRC}"
 fi
 
+export DC_AGENT_HOME="${DC_AGENT_HOME:-$(mktemp -d /tmp/dc-agent-runtime-podman-e2e-home-XXXXXX)}"
+
 echo "=== E2E Podman: home + release ==="
-rm -rf "${DC_AGENT_HOME}"
-mkdir -p "${DC_AGENT_HOME}"
-chown -R "${DC_UID}:${DC_UID}" "${DC_AGENT_HOME}"
+"${root}/prepare-agent-home.sh" "${DC_AGENT_HOME}" "${DC_UID}"
 HOME="${DC_AGENT_HOME}" "${SRC}/deploy/container/agent-runtime/dc-release-install" \
   --id A --source "${SRC}" --bun-version 1.3.14
 

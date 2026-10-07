@@ -51,9 +51,8 @@ docker run --rm --entrypoint node "${DC_AGENT_IMAGE}" --version
 export DC_AGENT_HOME="${HOME}/.local/share/dc-agent-runtime/home"
 export DC_AGENT_NAME="dc-agent-runtime-trial"
 export DC_AGENT_PORT=18400
-mkdir -p "${DC_AGENT_HOME}"
-# בעלות חייבת להתאים ל-DC_UID שבתמונה
-chown -R "${DC_UID}:${DC_UID}" "${DC_AGENT_HOME}"
+# בית חדש בלבד — אם הנתיב כבר קיים, בחרו נתיב אחר.
+"${SRC}/deploy/container/agent-runtime/prepare-agent-home.sh" "${DC_AGENT_HOME}"
 ```
 
 ## התקנת release (Bun מה-release בלבד)

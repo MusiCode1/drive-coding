@@ -11,7 +11,7 @@ fi
 export SRC
 export DC_UID="${DC_UID:-$(id -u)}"
 export DC_AGENT_IMAGE="${DC_AGENT_IMAGE:-dc-agent-runtime:e2e-local}"
-export DC_AGENT_HOME="${DC_AGENT_HOME:-${HOME}/.local/share/dc-agent-runtime-e2e/home}"
+export DC_AGENT_HOME="${DC_AGENT_HOME:-$(mktemp -d /tmp/dc-agent-runtime-e2e-home-XXXXXX)}"
 export DC_AGENT_NAME="${DC_AGENT_NAME:-dc-agent-runtime-e2e-local}"
 export DC_AGENT_PORT="${DC_AGENT_PORT:-18400}"
 
@@ -26,9 +26,7 @@ echo "=== E2E: bootstrap ownership proof (no systemd PID 1) ==="
 "${root}/bootstrap-ownership-image-proof.sh" "${DC_AGENT_IMAGE}"
 
 echo "=== E2E: home + release ==="
-rm -rf "${DC_AGENT_HOME}"
-mkdir -p "${DC_AGENT_HOME}"
-chown -R "${DC_UID}:${DC_UID}" "${DC_AGENT_HOME}"
+"${root}/prepare-agent-home.sh" "${DC_AGENT_HOME}" "${DC_UID}"
 HOME="${DC_AGENT_HOME}" "${SRC}/deploy/container/agent-runtime/dc-release-install" \
   --id A --source "${SRC}" --bun-version 1.3.14
 

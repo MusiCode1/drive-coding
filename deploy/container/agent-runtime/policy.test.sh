@@ -32,11 +32,14 @@ while IFS= read -r -d '' file; do
   if grep -q '/sys/fs/cgroup' "$file" 2>/dev/null; then
     fail "/sys/fs/cgroup reference in ${file#$root/}"
   fi
-  if grep -q '/home/user' "$file" 2>/dev/null; then
-    fail "/home/user path in ${file#$root/}"
+  if grep -qE '/home/[a-zA-Z0-9_-]+/Projects/' "$file" 2>/dev/null; then
+    fail "developer Projects path in ${file#$root/}"
   fi
-  if grep -q 'mission13' "$file" 2>/dev/null; then
-    fail "mission13 reference in ${file#$root/}"
+  if grep -qE '(violate|mission)[0-9]+' "$file" 2>/dev/null; then
+    fail "private host label in ${file#$root/}"
+  fi
+  if grep -qE 'chown[[:space:]]+-R' "$file" 2>/dev/null; then
+    fail "chown -R in ${file#$root/}"
   fi
 done < <(find "$root" -type f -print0)
 

@@ -33,7 +33,7 @@ fi
 
 owner="$(stat -c '%u' "$DC_AGENT_HOME")"
 if [[ "$owner" != "$expected_uid" ]]; then
-  die "home ${DC_AGENT_HOME} owned by uid ${owner}, expected ${expected_uid} (set DC_UID at build or chown)"
+  die "home ${DC_AGENT_HOME} owned by uid ${owner}, expected ${expected_uid} (new empty home or rebuild --build-arg DC_UID=${owner})"
 fi
 
 if command -v podman >/dev/null 2>&1; then
@@ -49,7 +49,7 @@ fi
 userns_args=()
 user_args=()
 if [[ "$host_uid" != "$expected_uid" ]]; then
-  die "host uid ${host_uid} != image DC_UID ${expected_uid}; rebuild with --build-arg DC_UID=${host_uid} or chown home"
+  die "host uid ${host_uid} != image DC_UID ${expected_uid}; rebuild with --build-arg DC_UID=${host_uid} or use a new home"
 fi
 
 userns_args=(--userns=keep-id)
