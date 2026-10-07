@@ -129,32 +129,33 @@ restart של יחידת ה-backend — **לא** shell אינטראקטיבי.
 docker exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p Environment
 ```
 
-## כלי משתמש (npm global, uv)
+## כלי משתמש (npm global, uv, uv tool)
 
 ```bash
-docker exec -u dc "${DC_AGENT_NAME}" npm install -g cowsay
+docker exec -u dc "${DC_AGENT_NAME}" npm install -g cowsay @openai/codex
 docker exec -u dc "${DC_AGENT_NAME}" bash -lc 'command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh'
-docker exec -u dc "${DC_AGENT_NAME}" bash -lc 'export PATH="/home/dc/.local/bin:$PATH"; uv --version'
+docker exec -u dc "${DC_AGENT_NAME}" bash -lc 'export PATH="/home/dc/.local/bin:$PATH"; uv tool install --python 3.12 ruff'
 ```
 
 אימות מתוך סביבת היחידה (לא רק מ-login shell). `systemd-run --user` רק
-כמשתמש `dc`, עם runtime dir ו-bus של user manager:
+כמשתמש `dc`, עם runtime dir ו-bus של user manager — **גם אחרי recreate
+קונטיינר**:
 
 ```bash
 uid="$(docker exec "${DC_AGENT_NAME}" cat /etc/dc-agent-runtime/uid)"
-docker exec -u dc "${DC_AGENT_NAME}" env \
-  "XDG_RUNTIME_DIR=/run/user/${uid}" \
-  "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
-  systemd-run --user --wait --pipe \
-  --setenv=PATH=/home/dc/.local/bin:/usr/local/bin:/usr/bin \
-  which cowsay
+"${SRC}/deploy/container/agent-runtime/user-unit-tool-check.sh" docker "${DC_AGENT_NAME}" "${uid}"
 ```
+
+(ב-Podman: החליפו `docker` ב-`podman` בארגומנט הראשון.)
 
 ## recoll
 
-Bootstrap יוצר דוגמה עם האסימון `dc-agent-runtime-recoll-token`. אחרי recreate:
+Bootstrap יוצר דוגמה עם האסימון `dc-agent-runtime-recoll-token`. לפני/אחרי
+recreate, שמרו inode/ctime/hash של `~/.recoll/recoll.conf` וקבצי
+`~/.recoll/xapian-db/` (לא רק שורת שאילתה):
 
 ```bash
+"${SRC}/deploy/container/agent-runtime/recoll-path-meta.sh" "${DC_AGENT_HOME}"
 docker exec -u dc "${DC_AGENT_NAME}" recollq -c /home/dc/.recoll \
   -e 'dc-agent-runtime-recoll-token'
 ```
@@ -190,13 +191,18 @@ docker exec -u dc "${DC_AGENT_NAME}" env \
 `/home/dc/.config/drive-coding/secrets.json`). קובץ חסר אינו עוצר את ה-backend.
 התחברות אינטראקטיבית של CLI רצה כמשתמש `dc`:
 
-דוגמה ל-CLI (בלי turn בתשלום): `codex login --help` מציג `--device-auth`;
-אין להריץ login אינטראקטיבי בניסוי.
+```bash
+docker exec -u dc "${DC_AGENT_NAME}" codex --version
+docker exec -u dc "${DC_AGENT_NAME}" codex login --help | grep -F device-auth
+```
+
+התחברות אינטראקטיבית (מכונת המשתמש, לא חלק מניסוי אוטומטי):
 
 ```bash
-docker exec -u dc "${DC_AGENT_NAME}" codex login --help | grep -F device-auth
-docker exec -it -u dc "${DC_AGENT_NAME}" bash
+docker exec -it -u dc "${DC_AGENT_NAME}" codex login --device-auth
 ```
+
+(Podman: `podman exec -it -u dc …`.)
 
 ## החלפת release (A → B → A)
 
@@ -217,8 +223,10 @@ docker exec "${DC_AGENT_NAME}" readlink "/proc/${pid_b}/exe"
 docker exec "${DC_AGENT_NAME}" bash -lc "tr '\\0' ' ' </proc/${pid_b}/cmdline"
 docker exec "${DC_AGENT_NAME}" grep -F '/home/dc/releases/B/.runtime/bin/bun' "/proc/${pid_b}/maps"
 
-printf 'DC_RELEASE=%s\n' /home/dc/releases/A \
-  >"${DC_AGENT_HOME}/.config/drive-coding/release.env"
+rollback_env="$(mktemp "${DC_AGENT_HOME}/.config/drive-coding/release.env.XXXXXX")"
+printf 'DC_RELEASE=%s\n' /home/dc/releases/A >"$rollback_env"
+chmod 600 "$rollback_env"
+mv -f "$rollback_env" "${DC_AGENT_HOME}/.config/drive-coding/release.env"
 docker exec "${DC_AGENT_NAME}" systemctl restart dc-agent-runtime
 pid_back="$(docker exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value)"
 docker exec "${DC_AGENT_NAME}" readlink "/proc/${pid_back}/exe"
@@ -234,14 +242,22 @@ docker exec "${DC_AGENT_NAME}" readlink "/proc/${pid_back}/exe"
 ## גיבוי ושחזור
 
 ```bash
-"${SRC}/deploy/container/agent-runtime/tree-sha256.sh" "${DC_AGENT_HOME}" >"${DC_AGENT_HOME}.sha256"
+cd "${SRC}/deploy/container/agent-runtime"
+docker compose stop
+hash_live="$("${SRC}/deploy/container/agent-runtime/tree-sha256.sh" "${DC_AGENT_HOME}")"
 tar -C "$(dirname "${DC_AGENT_HOME}")" -czf "${DC_AGENT_HOME}.tgz" "$(basename "${DC_AGENT_HOME}")"
-restore_root="$(mktemp -d "${DC_AGENT_HOME}.restore-XXXXXX")"
-tar -C "${restore_root}" -xzf "${DC_AGENT_HOME}.tgz"
-"${SRC}/deploy/container/agent-runtime/tree-sha256.sh" "${restore_root}/$(basename "${DC_AGENT_HOME}")"
+docker compose start
+
+restore_parent="$(mktemp -d /tmp/dc-agent-restore-parent-XXXXXX)"
+tar -C "${restore_parent}" -xzf "${DC_AGENT_HOME}.tgz"
+restored="${restore_parent}/$(basename "${DC_AGENT_HOME}")"
+hash_restored="$("${SRC}/deploy/container/agent-runtime/tree-sha256.sh" "${restored}")"
+test "$hash_live" = "$hash_restored"
 ```
 
-לפני חיבור הבית המשוחזר, הבעלות חייבת להתאים ל-`DC_UID` שבתמונה.
+לפני bind של בית משוחזר לקונטיינר חדש, הבעלות חייבת להתאים ל-`DC_UID`
+(בית **חדש** — `prepare-agent-home.sh`, לא דריסת בית קיים). Podman: `podman
+stop` / `podman start` במקום `docker compose stop/start`.
 
 ## ניקוי (לא מוחק את הבית)
 
