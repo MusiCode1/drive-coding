@@ -214,24 +214,34 @@ docker exec -u dc "${DC_AGENT_NAME}" env \
 `/home/dc/.config/drive-coding/secrets.json`). קובץ חסר אינו עוצר את ה-backend.
 התחברות אינטראקטיבית של CLI רצה כמשתמש `dc`:
 
+🛑 **`docker exec -u dc` ללא shell-login אינו כולל `/home/dc/.local/bin`
+ב-PATH** (ה-prefix של `npm -g`, שם `codex` יושב) — רק `bash -lc` קורא את
+ה-profile ומוסיף אותו. `docker exec -u dc "${DC_AGENT_NAME}" codex --version`
+כלשונו נכשל (`exit 127`, `executable file not found in $PATH`).
+
 ```bash
-docker exec -u dc "${DC_AGENT_NAME}" codex --version
-docker exec -u dc "${DC_AGENT_NAME}" codex login --help | grep -F device-auth
+docker exec -u dc "${DC_AGENT_NAME}" bash -lc 'codex --version'
+docker exec -u dc "${DC_AGENT_NAME}" bash -lc 'codex login --help' | grep -F device-auth
 ```
 
 התחברות אינטראקטיבית (מכונת המשתמש, לא חלק מניסוי אוטומטי):
 
 ```bash
-docker exec -it -u dc "${DC_AGENT_NAME}" codex login --device-auth
+docker exec -it -u dc "${DC_AGENT_NAME}" bash -lc 'codex login --device-auth'
 ```
 
-(Podman: `podman exec -it -u dc …`.)
+(Podman: `podman exec -it -u dc … bash -lc '…'`.)
 
 ## החלפת release (A → B → A)
 
 `dc-release-install` מסרב אם תיקיית ה-id כבר קיימת, וכותב את `release.env`
 ל-id החדש. אחרי ההתקנה צריך restart של היחידה. העוגן הוא `exe`, `cmdline`
 ו-`maps`, לא cwd.
+
+🛑 **הרצה חוזרת על בית שבו `releases/B` כבר קיים** (ניסוי קודם, לא נוקה) —
+`dc-release-install --id B` יסרב. לא למחוק: שנו שם לצד (`releases/B.stale-…`)
+ווודאו ש-`release.env` הפעיל אינו מצביע עליו, ואז הריצו שוב. ההרנסים
+(`guide-quickstart-e2e.sh` / `guide-podman-e2e.sh`) עושים זאת אוטומטית.
 
 **ארבע נקודות, לא שתיים:** (1) backend על A, (2) ה-fixture מסעיף "fixture"
 למעלה — שכבר רץ על A ובלתי-תלוי ביחידת ה-backend — (3) backend עובר ל-B

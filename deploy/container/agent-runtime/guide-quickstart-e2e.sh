@@ -30,6 +30,8 @@ if [[ -z "${DC_AGENT_HOME:-}" ]]; then
 fi
 export DC_AGENT_HOME
 
+skipped=()
+
 gate_log "archive source (always — helper scripts run from here)"
 git -C "${repo_root}" archive HEAD | tar -x -C "${SRC}"
 
@@ -44,6 +46,7 @@ if [[ "${DC_SKIP_BUILD:-0}" != 1 ]]; then
 else
   gate_log "skip build (DC_SKIP_BUILD=1) — reuse ${DC_AGENT_IMAGE}"
   docker image inspect "${DC_AGENT_IMAGE}" >/dev/null
+  skipped+=("build+ownership-proof")
 fi
 
 gate_log "image baked-content == source archive"
@@ -58,6 +61,7 @@ if [[ "${DC_SKIP_HOME:-0}" != 1 ]]; then
   (cd "${root}" && source ./compose-project.sh && docker compose up -d)
 else
   gate_log "skip home/release/compose (DC_SKIP_HOME=1) — reuse running ${DC_AGENT_NAME}"
+  skipped+=("home+release-A+compose-up")
 fi
 
 gate_log "health + FE"
@@ -83,6 +87,7 @@ if [[ "${DC_SKIP_RELEASE_SWAP:-0}" != 1 ]]; then
   gate_release_swap "$dc_uid"
 else
   gate_log "skip release swap (DC_SKIP_RELEASE_SWAP=1 — needs ~release-A-sized free disk for B)"
+  skipped+=("release-swap-A-B-A")
 fi
 
 gate_log "recreate container (sentinel + recoll meta + tools persist)"
@@ -93,6 +98,14 @@ if [[ "${DC_SKIP_BACKUP_RESTORE:-0}" != 1 ]]; then
   gate_backup_restore
 else
   gate_log "skip backup/restore (DC_SKIP_BACKUP_RESTORE=1 — needs ~home-sized free disk for the .tgz)"
+  skipped+=("backup-restore")
 fi
 
+# 🛑 A DC_SKIP_* run is not a pass of the full contract — never print "ok" for
+# it. A reader (or a coordinator grepping the log) must not be able to mistake
+# a partial, disk-constrained run for a complete one.
+if [[ "${#skipped[@]}" -gt 0 ]]; then
+  echo "guide-quickstart-e2e: PARTIAL — skipped gates: ${skipped[*]}"
+  exit 2
+fi
 echo "guide-quickstart-e2e: ok"

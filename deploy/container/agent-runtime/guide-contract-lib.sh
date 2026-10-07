@@ -8,6 +8,14 @@
 # Caller must set before sourcing/calling: ENGINE, root (this dir), SRC,
 # DC_AGENT_NAME, DC_AGENT_HOME, DC_AGENT_PORT, DC_UID, DC_AGENT_IMAGE.
 set -euo pipefail
+# 🛑 Without this, `errexit` does NOT propagate into a function run via
+# command substitution (bash gives that subshell its own, unset -e state
+# unless inherit_errexit is on). Measured: `set -euo pipefail; f(){ false;
+# printf accepted; }; result=$(f)` prints "accepted" with exit 0 -- a failing
+# assertion earlier in a multi-statement function is invisible once a later
+# statement succeeds. gate_systemd_pid1_linger_uid is called as
+# `dc_uid="$(gate_systemd_pid1_linger_uid)"` and is exactly this shape.
+shopt -s inherit_errexit
 
 eng() {
   if [[ "$ENGINE" == podman ]]; then
@@ -29,6 +37,26 @@ require_free_space_mb() {
     exit 1
   fi
   echo "require_free_space_mb: ok (${avail_mb}MB free >= ${need_mb}MB needed at ${path})" >&2
+}
+
+# Preserves an existing releases/<id> aside (rename, never delete) so a
+# repeated gate_release_swap run is idempotent and `dc-release-install`'s own
+# "release directory already exists" guard doesn't block a fresh install.
+# Verifies first that the *currently active* release isn't the one being
+# cleared (release.env still points at it) -- clearing the live release out
+# from under the running backend would be a real regression, not a safe retry.
+ensure_fresh_release_slot() {
+  local id="$1" dir="${DC_AGENT_HOME}/releases/${id}" active stale
+  [[ -e "$dir" ]] || return 0
+  active="$(eng exec -u dc "${DC_AGENT_NAME}" bash -lc \
+    'source ~/.config/drive-coding/release.env && echo "$DC_RELEASE"' 2>/dev/null || true)"
+  if [[ "$active" == "/home/dc/releases/${id}" ]]; then
+    echo "ensure_fresh_release_slot: releases/${id} is the ACTIVE release.env target, refusing to move it" >&2
+    exit 1
+  fi
+  stale="${dir}.stale-$(date -u +%Y%m%dT%H%M%SZ)"
+  mv "$dir" "$stale"
+  echo "ensure_fresh_release_slot: preserved existing releases/${id} as $(basename "$stale")" >&2
 }
 
 # MainPID of a transient --user unit.
@@ -80,13 +108,22 @@ gate_health() {
   printf '%s' "$port_body" | grep -q 127.0.0.1
 }
 
-# Echoes the in-container uid of `dc` on success.
+# Echoes the in-container uid of `dc` on success. Called as
+# `dc_uid="$(gate_systemd_pid1_linger_uid)"` -- every assertion below is
+# explicit (`|| exit 1`), not a bare statement relying on inherited errexit,
+# so a failure can never be masked by this function's own later success.
 gate_systemd_pid1_linger_uid() {
   local comm linger_list
   comm="$(eng exec "${DC_AGENT_NAME}" cat /proc/1/comm)"
-  printf '%s' "$comm" | grep -q systemd
+  printf '%s' "$comm" | grep -q systemd || {
+    echo "gate_systemd: PID 1 comm is not systemd (${comm})" >&2
+    exit 1
+  }
   linger_list="$(eng exec "${DC_AGENT_NAME}" ls /var/lib/systemd/linger/)"
-  printf '%s' "$linger_list" | grep -q dc
+  printf '%s' "$linger_list" | grep -q dc || {
+    echo "gate_systemd: dc not in /var/lib/systemd/linger/ (${linger_list})" >&2
+    exit 1
+  }
   local uid mp mp_uid no_mgr
   uid="$(eng exec "${DC_AGENT_NAME}" cat /etc/dc-agent-runtime/uid | tr -d '[:space:]')"
   mp="$(eng exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value | tr -d '[:space:]')"
@@ -112,8 +149,11 @@ gate_user_tools() {
 }
 
 gate_provider_auth() {
-  eng exec -u dc "${DC_AGENT_NAME}" codex --version
-  eng exec -u dc "${DC_AGENT_NAME}" codex login --help | grep -F device-auth
+  # Plain `exec -u dc` does not carry /home/dc/.local/bin (npm -g prefix) in
+  # PATH -- only a login shell (.profile) does. Measured: `docker exec -u dc
+  # NAME codex --version` -> "executable file not found in $PATH" (exit 127).
+  eng exec -u dc "${DC_AGENT_NAME}" bash -lc 'codex --version'
+  eng exec -u dc "${DC_AGENT_NAME}" bash -lc 'codex login --help' | grep -F device-auth
 }
 
 # Proves a recoll query does not touch index metadata (no reindex-on-query).
@@ -148,13 +188,21 @@ gate_fixture() {
 #      — proving both generations side by side, not just that the old one survives
 #   5. backend rolls back to A; fixture-A still unchanged; fixture-B is stopped (test-only)
 # Requires gate_fixture to have been run first (same uid). Installs a real
-# release B (bun install + FE build) — needs ~as much disk as release A.
+# release B (bun install + FE build). `du -sm releases/A` is a *correct upper
+# bound* but can badly overstate the real new disk need: `bun install`
+# hardlinks from its package cache (location follows $BUN_INSTALL if set,
+# not $HOME), so a second release sharing that cache mostly adds directory
+# entries, not new bytes. Default stays the conservative full-A-size
+# estimate; override DC_RELEASE_B_MIN_MB only after confirming the cache is
+# actually warm and shared (e.g. `stat -c %h` on a node_modules file shows
+# nlink > 1 into $BUN_INSTALL/install/cache, not a per-release-home cache).
 gate_release_swap() {
   local uid="$1"
-  local pid_a fix_a_pid fix_a_pid_b fix_a_pid_back fix_b_pid pid_b pid_back rollback_env a_size_mb
+  local pid_a fix_a_pid fix_a_pid_b fix_a_pid_back fix_b_pid pid_b pid_back rollback_env a_size_mb min_mb
 
   a_size_mb="$(du -sm "${DC_AGENT_HOME}/releases/A" 2>/dev/null | awk '{print $1}')"
-  require_free_space_mb "$(dirname "${DC_AGENT_HOME}")" "${a_size_mb:-2048}"
+  min_mb="${DC_RELEASE_B_MIN_MB:-${a_size_mb:-2048}}"
+  require_free_space_mb "$(dirname "${DC_AGENT_HOME}")" "$min_mb"
 
   pid_a="$(eng exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value | tr -d '[:space:]')"
   eng exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${pid_a}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
@@ -166,6 +214,7 @@ gate_release_swap() {
   }
   eng exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${fix_a_pid}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
 
+  ensure_fresh_release_slot B
   HOME="${DC_AGENT_HOME}" "${SRC}/deploy/container/agent-runtime/dc-release-install" \
     --id B --source "${SRC}" --bun-version 1.3.14
   eng exec "${DC_AGENT_NAME}" systemctl restart dc-agent-runtime
@@ -262,23 +311,27 @@ gate_recreate() {
   "${root}/user-unit-tool-check.sh" "$ENGINE" "${DC_AGENT_NAME}" "$uid"
 }
 
-# Backup (stop) / restore, compared with tree-sha256.sh. DC_RESTORE_DIR picks
-# where the restored copy lands (default: next to DC_AGENT_HOME) — override it
-# when that filesystem's /tmp is small (e.g. the server). The experiment is
-# always restarted before this function returns or exits, even if tar/hash
-# fails mid-way; the backup tgz uses a unique mktemp name so it never collides
-# with (or deletes) a pre-existing one.
+# Backup (stop) / restore, compared with tree-sha256.sh. DC_BACKUP_DIR picks
+# where the .tgz is written and DC_RESTORE_DIR where it is extracted back to
+# (both default to next to DC_AGENT_HOME) — override either when that
+# filesystem is tight (e.g. a tmpfs backup dir, a separate restore disk). Each
+# target's *own* free space is checked, not DC_AGENT_HOME's filesystem, so a
+# tgz routed to e.g. /dev/shm doesn't get budgeted against the wrong disk. The
+# experiment is always restarted before this function returns or exits, even
+# if tar/hash fails mid-way; the backup tgz uses a unique mktemp name so it
+# never collides with (or deletes) a pre-existing one.
 gate_backup_restore() {
-  local hash_live hash_restored restore_parent restored tgz restore_dir home_size_mb rc
+  local hash_live hash_restored restore_parent restored tgz backup_dir restore_dir home_size_mb rc
 
   home_size_mb="$(du -sm "${DC_AGENT_HOME}" 2>/dev/null | awk '{print $1}')"
   home_size_mb="${home_size_mb:-1}"
+  backup_dir="${DC_BACKUP_DIR:-$(dirname "${DC_AGENT_HOME}")}"
   restore_dir="${DC_RESTORE_DIR:-$(dirname "${DC_AGENT_HOME}")}"
-  mkdir -p "$restore_dir"
-  require_free_space_mb "$(dirname "${DC_AGENT_HOME}")" "$home_size_mb"
+  mkdir -p "$backup_dir" "$restore_dir"
+  require_free_space_mb "$backup_dir" "$home_size_mb"
   require_free_space_mb "$restore_dir" "$home_size_mb"
 
-  tgz="$(mktemp "$(dirname "${DC_AGENT_HOME}")/dc-agent-home-backup-XXXXXX.tgz")"
+  tgz="$(mktemp "${backup_dir}/dc-agent-home-backup-XXXXXX.tgz")"
 
   stop_experiment() {
     if [[ "$ENGINE" == podman ]]; then
@@ -320,6 +373,11 @@ gate_backup_restore() {
     hash_restored="$("${root}/tree-sha256.sh" "${restored}")" || rc=$?
   fi
 
+  # Log both hashes *before* cleanup -- rc=0 alone proves nothing to a reader
+  # of the log; the actual values are the evidence, and once restore_parent
+  # and the tgz are removed they cannot be recovered.
+  echo "gate_backup_restore: hash_live=${hash_live} hash_restored=${hash_restored}" >&2
+
   rm -rf "${restore_parent}" "$tgz"
 
   if [[ "$rc" -ne 0 ]]; then
@@ -328,9 +386,10 @@ gate_backup_restore() {
   fi
 
   [[ "$hash_live" == "$hash_restored" ]] || {
-    echo "gate_backup_restore: tree-sha256 mismatch live=${hash_live} restored=${hash_restored}" >&2
+    echo "gate_backup_restore: tree-sha256 MISMATCH live=${hash_live} restored=${hash_restored}" >&2
     exit 1
   }
+  echo "gate_backup_restore: match confirmed (live == restored)" >&2
 }
 
 gate_image_baked_hashes() {
