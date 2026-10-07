@@ -21,6 +21,9 @@ bunx drive-coding
 דורש [Bun](https://bun.sh) ≥ 1.3. למדריך המלא למשתמש-קצה (flags, משתני
 סביבה, פתרון תקלות) — [`packages/release/README.he.md`](packages/release/README.he.md).
 
+להרצה בקונטיינר עם systemd, בית משתמש קבוע ושדרוג היישום ב-Docker או Podman — ראו
+[`deploy/container/agent-runtime/README.md`](deploy/container/agent-runtime/README.md).
+
 ## פיתוח / תרומה לפרויקט
 
 זהו מונו-רפו מבוסס Bun-workspaces.
