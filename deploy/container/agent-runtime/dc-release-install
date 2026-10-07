@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# Install a drive-coding release tree under $HOME/releases/<id>.
+set -euo pipefail
+
+BUN_VERSION_DEFAULT="1.3.14"
+BUN_SHA256="951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f"
+
+usage() {
+  echo "usage: dc-release-install --id <name> --source <repo-root> [--bun-version ${BUN_VERSION_DEFAULT}]" >&2
+  exit 2
+}
+
+id=""
+source=""
+bun_version="$BUN_VERSION_DEFAULT"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --id)
+      id="${2:-}"
+      shift 2
+      ;;
+    --source)
+      source="${2:-}"
+      shift 2
+      ;;
+    --bun-version)
+      bun_version="${2:-}"
+      shift 2
+      ;;
+    -h | --help)
+      usage
+      ;;
+    *)
+      echo "dc-release-install: unknown argument: $1" >&2
+      usage
+      ;;
+  esac
+done
+
+[[ -n "$id" && -n "$source" ]] || usage
+
+if [[ ! "$id" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || [[ "$id" == *"/"* ]] || [[ "$id" == *".."* ]]; then
+  echo "dc-release-install: invalid --id (use a single safe name, no slashes or ..)" >&2
+  exit 1
+fi
+
+if [[ "$source" != /* ]]; then
+  echo "dc-release-install: --source must be an absolute path" >&2
+  exit 1
+fi
+
+[[ -d "$source" ]] || {
+  echo "dc-release-install: --source is not a directory: ${source}" >&2
+  exit 1
+}
+
+source="$(cd "$source" && pwd)"
+
+if [[ ! -f "${source}/package.json" || ! -f "${source}/bun.lock" ]]; then
+  echo "dc-release-install: --source does not look like a drive-coding repo root" >&2
+  exit 1
+fi
+
+dest="${HOME}/releases/${id}"
+mkdir -p "${HOME}/releases"
+
+case "$dest" in
+  "$source" | "$source"/*)
+    echo "dc-release-install: release path is inside --source; use a clean archive tree" >&2
+    exit 1
+    ;;
+esac
+case "$source" in
+  "$dest" | "$dest"/*)
+    echo "dc-release-install: --source is inside the release directory" >&2
+    exit 1
+    ;;
+esac
+
+if [[ -e "$dest" ]]; then
+  echo "dc-release-install: release directory already exists: ${dest}" >&2
+  exit 1
+fi
+
+mkdir -p "$dest"
+# Copy only missing tree — fresh dest, so full copy.
+if command -v rsync >/dev/null 2>&1; then
+  rsync -a --exclude '.git' "${source}/" "${dest}/"
+else
+  cp -a "${source}/." "${dest}/"
+  rm -rf "${dest}/.git" 2>/dev/null || true
+fi
+
+runtime_bin="${dest}/.runtime/bin"
+mkdir -p "$runtime_bin"
+
+if [[ "$bun_version" != "$BUN_VERSION_DEFAULT" ]]; then
+  echo "dc-release-install: only bun ${BUN_VERSION_DEFAULT} is supported (pin a matching SHA-256 first)" >&2
+  exit 1
+fi
+
+zip="$(mktemp /tmp/bun-linux-x64-XXXXXX.zip)"
+curl -fsSL "https://github.com/oven-sh/bun/releases/download/bun-v${bun_version}/bun-linux-x64.zip" -o "$zip"
+sha="$(sha256sum "$zip" | awk '{print $1}')"
+if [[ "$sha" != "$BUN_SHA256" ]]; then
+  echo "dc-release-install: bun zip SHA-256 mismatch (got ${sha})" >&2
+  rm -f "$zip"
+  exit 1
+fi
+unzip -q -j "$zip" "bun-linux-x64/bun" -d "$runtime_bin"
+rm -f "$zip"
+chmod +x "${runtime_bin}/bun"
+
+(
+  cd "$dest"
+  export PATH="${runtime_bin}:${PATH}"
+  "${runtime_bin}/bun" install --frozen-lockfile
+  "${runtime_bin}/bun" scripts/dc-build-fe.mjs
+)
+
+config_dir="${HOME}/.config/drive-coding"
+mkdir -p "$config_dir"
+tmp_env="$(mktemp "${config_dir}/release.env.XXXXXX")"
+# Path as seen inside the runtime container (bind mount → /home/dc).
+printf 'DC_RELEASE=%s\n' "/home/dc/releases/${id}" >"$tmp_env"
+chmod 600 "$tmp_env"
+mv -f "$tmp_env" "${config_dir}/release.env"
+
+echo "dc-release-install: installed release ${id} at ${dest}"

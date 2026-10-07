@@ -1,0 +1,72 @@
+# Agent runtime image — systemd PID 1, drive-coding release executed from $HOME.
+# Build context: repository root (git archive recommended).
+#
+#   docker build -f deploy/container/agent-runtime/Containerfile \
+#     --build-arg DC_UID="$(id -u)" -t dc-agent-runtime:local .
+
+FROM debian:bookworm@sha256:2c037a04925515fdd6ea85ea14a682d0e79931f5e9f5d07b6dbfc6ba12f9e858
+
+ARG DC_UID=1000
+ARG NODE_VERSION=22.23.3
+ARG NODE_SHA256=df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    HOME=/home/dc \
+    NPM_CONFIG_PREFIX=/home/dc/.local \
+    PORT=18400
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    dbus \
+    dbus-user-session \
+    poppler-utils \
+    recollcmd \
+    systemd \
+    systemd-sysv \
+    unzip \
+    util-linux \
+    xz-utils \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN NODE_TAR="node-v${NODE_VERSION}-linux-x64.tar.xz" \
+  && curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_TAR}" -o "/tmp/${NODE_TAR}" \
+  && echo "${NODE_SHA256}  /tmp/${NODE_TAR}" | sha256sum -c - \
+  && tar -xJf "/tmp/${NODE_TAR}" -C /usr/local --strip-components=1 \
+  && rm -f "/tmp/${NODE_TAR}" \
+  && node --version | grep -q "v${NODE_VERSION}"
+
+RUN groupadd -g "${DC_UID}" dc 2>/dev/null || groupmod -g "${DC_UID}" dc \
+  && useradd -u "${DC_UID}" -g dc -m -d /home/dc -s /bin/bash dc 2>/dev/null \
+    || usermod -u "${DC_UID}" -g dc -d /home/dc -s /bin/bash dc \
+  && mkdir -p /var/lib/systemd/linger \
+  && : >/var/lib/systemd/linger/dc
+
+RUN mkdir -p /etc/dc-agent-runtime /usr/local/lib/dc-agent-runtime \
+  && echo "${DC_UID}" >/etc/dc-agent-runtime/uid
+
+COPY deploy/container/healthcheck.js /usr/local/lib/dc-agent-runtime/healthcheck.js
+COPY deploy/container/agent-runtime/entrypoint.sh /usr/local/bin/dc-agent-runtime-entrypoint.sh
+COPY deploy/container/agent-runtime/dc-release-exec /usr/local/bin/dc-release-exec
+COPY deploy/container/agent-runtime/bootstrap-user-home.sh /usr/local/lib/dc-agent-runtime/bootstrap-user-home.sh
+COPY deploy/container/agent-runtime/bootstrap-template /usr/local/lib/dc-agent-runtime/bootstrap-template
+COPY deploy/container/agent-runtime/fixture-hold.js /usr/local/lib/dc-agent-runtime/fixture-hold.js
+COPY deploy/container/agent-runtime/dc-agent-runtime.service.in /tmp/dc-agent-runtime.service.in
+
+RUN sed "s/__DC_UID__/${DC_UID}/g" /tmp/dc-agent-runtime.service.in \
+    >/etc/systemd/system/dc-agent-runtime.service \
+  && rm -f /tmp/dc-agent-runtime.service.in \
+  && ln -sf /etc/systemd/system/dc-agent-runtime.service \
+    /etc/systemd/system/multi-user.target.wants/dc-agent-runtime.service \
+  && chmod +x /usr/local/bin/dc-agent-runtime-entrypoint.sh /usr/local/bin/dc-release-exec \
+    /usr/local/lib/dc-agent-runtime/bootstrap-user-home.sh
+
+STOPSIGNAL SIGRTMIN+3
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD node /usr/local/lib/dc-agent-runtime/healthcheck.js
+
+VOLUME ["/home/dc"]
+
+ENTRYPOINT ["/usr/local/bin/dc-agent-runtime-entrypoint.sh"]

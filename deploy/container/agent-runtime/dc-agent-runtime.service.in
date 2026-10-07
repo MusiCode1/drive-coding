@@ -1,0 +1,24 @@
+[Unit]
+Description=drive-coding agent runtime backend
+After=network.target dbus.service
+Wants=user@__DC_UID__.service
+After=user@__DC_UID__.service
+
+[Service]
+Type=simple
+User=dc
+KillMode=control-group
+Environment=AGENT_SIDECAR=cursor,opencode,gemini,claude,codex
+Environment=XDG_RUNTIME_DIR=/run/user/__DC_UID__
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/__DC_UID__/bus
+Environment=PATH=/home/dc/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PORT=18400
+Environment=DC_DEPLOYMENT_DIR=/home/dc/.config/drive-coding/deployments/agent-runtime
+Environment=DRIVE_CODING_HOST=0.0.0.0
+Environment=HOME=/home/dc
+EnvironmentFile=-/home/dc/.config/drive-coding/agent-runtime.env
+ExecStart=/usr/local/bin/dc-release-exec
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

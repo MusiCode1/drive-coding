@@ -1,0 +1,19 @@
+# drive-coding agent runtime — Docker (rootful, cgroup v2).
+# Requires Docker 28+ with writable-cgroups support. Rootless / userns are not supported.
+services:
+  agent-runtime:
+    image: ${DC_AGENT_IMAGE:-dc-agent-runtime:local}
+    container_name: ${DC_AGENT_NAME:?set DC_AGENT_NAME}
+    privileged: false
+    cgroup: private
+    security_opt:
+      - writable-cgroups=true
+    stop_signal: SIGRTMIN+3
+    tmpfs:
+      - /run:rw,nosuid,nodev,mode=755
+      - /run/lock:rw,nosuid,nodev,noexec,mode=755
+      - /tmp:rw,nosuid,nodev,mode=1777
+    ports:
+      - "127.0.0.1:${DC_AGENT_PORT:-18400}:18400"
+    volumes:
+      - ${DC_AGENT_HOME:?set DC_AGENT_HOME}:/home/dc
