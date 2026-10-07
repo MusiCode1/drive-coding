@@ -27,4 +27,4 @@ run_as_dc() {
 
 run_as_dc systemd-run --user --wait --pipe \
   --setenv=PATH=/home/dc/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
-  bash -lc 'cowsay --version; uv --version; ruff --version; codex --version'
+  bash -lc 'set -e; cowsay --version; uv --version; ruff --version; codex --version'

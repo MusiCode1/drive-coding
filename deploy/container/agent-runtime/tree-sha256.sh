@@ -9,8 +9,6 @@ if [[ -z "$root" || ! -d "$root" ]]; then
 fi
 
 root="$(cd "$root" && pwd)"
-tmp="$(mktemp)"
-trap 'rm -f "$tmp"' EXIT
 
 (
   cd "$root"
@@ -28,6 +26,4 @@ trap 'rm -f "$tmp"' EXIT
       printf '\0'
     fi
   done
-) >"$tmp"
-
-sha256sum "$tmp" | awk '{print $1}'
+) | sha256sum | awk '{print $1}'

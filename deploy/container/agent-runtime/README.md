@@ -55,6 +55,27 @@ export DC_AGENT_PORT=18400
 "${SRC}/deploy/container/agent-runtime/prepare-agent-home.sh" "${DC_AGENT_HOME}"
 ```
 
+🛑 **`DC_AGENT_IMAGE`, `DC_AGENT_NAME`, `DC_AGENT_HOME`, וכן `SRC` עצמו
+נדרשים גם בסעיפי "גיבוי ושחזור" ו-"ניקוי" למטה — לא רק כאן.** אם אלה
+מגיעים בסשן shell חדש, שחזרו אותם לפני המשך. `printf '%q'` כדי שנתיב עם
+רווח (למשל `DC_AGENT_HOME` תחת `~/.local/share/My Drive/…`) לא ישבור את
+ה-`source` בסשן החדש:
+
+```bash
+{
+  printf 'SRC=%q\n' "${SRC}"
+  printf 'DC_AGENT_IMAGE=%q\n' "${DC_AGENT_IMAGE}"
+  printf 'DC_AGENT_NAME=%q\n' "${DC_AGENT_NAME}"
+  printf 'DC_AGENT_HOME=%q\n' "${DC_AGENT_HOME}"
+  printf 'DC_AGENT_PORT=%q\n' "${DC_AGENT_PORT}"
+} >"${SRC}/.dc-agent-runtime.env"
+# בסשן חדש: set -a; source "${SRC}/.dc-agent-runtime.env"; set +a
+```
+
+`compose-project.sh` (נקרא בכל סעיף שמריץ `docker compose`) מאמת בפועל
+ש-`DC_AGENT_NAME` ו-`DC_AGENT_HOME` מוגדרים ונכשל במפורש אם לא — זו
+ההגנה שעוצרת המשך-ריצה עם משתנים חסרים, לא רק תזכורת.
+
 ## התקנת release (Bun מה-release בלבד)
 
 ```bash
@@ -212,27 +233,59 @@ docker exec -it -u dc "${DC_AGENT_NAME}" codex login --device-auth
 ל-id החדש. אחרי ההתקנה צריך restart של היחידה. העוגן הוא `exe`, `cmdline`
 ו-`maps`, לא cwd.
 
+**ארבע נקודות, לא שתיים:** (1) backend על A, (2) ה-fixture מסעיף "fixture"
+למעלה — שכבר רץ על A ובלתי-תלוי ביחידת ה-backend — (3) backend עובר ל-B
+**וה-fixture נשאר אותו PID ואותו exe A**, (4) backend חוזר ל-A ו-ה-fixture
+עדיין לא זע. אם ה-fixture לא רץ (סעיף "fixture" לא בוצע) — אין מה להשוות אליו.
+
+🛑 **קריאת `/proc/<pid>/exe` ו-`/proc/<pid>/maps` חייבת `-u dc`.** ה-backend
+רץ כמשתמש `dc`, לא כ-root; `docker exec` (ברירת-מחדל root) מקבל `Permission
+denied` על שתיהן — ו-`readlink` נכשל **בשקט** (exit 1, פלט ריק) אם לא בודקים
+את קוד-היציאה.
+
+🛑 **הבלוק מתחיל ב-`set -euo pipefail`** — בלי זה, `cmd | grep -F …` שבו
+`cmd` נכשל (למשל `Permission denied`) עדיין מחזיר את קוד-היציאה של `grep`
+(שנכשל גם הוא, אבל זו מקריות ולא אכיפה), והרצף הבא ממשיך על נתון ריק.
+וכל restart מחכה ל-health **מוגבל** לפני שהוא קורא PID — אחרת יש חשש שה-PID
+שנקרא שייך לתהליך שעדיין בתהליך crash-restart ולא לזה שבאמת עונה.
+
 ```bash
+set -euo pipefail
+
+wait_health() {
+  local i
+  for i in $(seq 1 40); do
+    curl -fsS "http://127.0.0.1:${DC_AGENT_PORT}/api/health" >/dev/null 2>&1 && return 0
+    sleep 3
+  done
+  echo "wait_health: timed out" >&2
+  return 1
+}
+
 pid_a="$(docker exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value)"
 HOME="${DC_AGENT_HOME}" "${SRC}/deploy/container/agent-runtime/dc-release-install" \
   --id B \
   --source "${SRC}" \
   --bun-version 1.3.14
 docker exec "${DC_AGENT_NAME}" systemctl restart dc-agent-runtime
+wait_health
 pid_b="$(docker exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value)"
 test "$pid_b" != "$pid_a"
-docker exec "${DC_AGENT_NAME}" readlink "/proc/${pid_b}/exe"
-docker exec "${DC_AGENT_NAME}" bash -lc "tr '\\0' ' ' </proc/${pid_b}/cmdline"
-docker exec "${DC_AGENT_NAME}" grep -F '/home/dc/releases/B/.runtime/bin/bun' "/proc/${pid_b}/maps"
+docker exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${pid_b}/exe" | grep -F '/home/dc/releases/B/.runtime/bin/bun'
+docker exec -u dc "${DC_AGENT_NAME}" bash -lc "tr '\\0' ' ' </proc/${pid_b}/cmdline" | grep -F '/home/dc/releases/B/.runtime/bin/bun'
+docker exec -u dc "${DC_AGENT_NAME}" grep -F '/home/dc/releases/B/.runtime/bin/bun' "/proc/${pid_b}/maps"
 
 rollback_env="$(mktemp "${DC_AGENT_HOME}/.config/drive-coding/release.env.XXXXXX")"
 printf 'DC_RELEASE=%s\n' /home/dc/releases/A >"$rollback_env"
 chmod 600 "$rollback_env"
 mv -f "$rollback_env" "${DC_AGENT_HOME}/.config/drive-coding/release.env"
 docker exec "${DC_AGENT_NAME}" systemctl restart dc-agent-runtime
+wait_health
 pid_back="$(docker exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value)"
-docker exec "${DC_AGENT_NAME}" readlink "/proc/${pid_back}/exe"
+docker exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${pid_back}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
 ```
+
+(Podman: `podman exec -u dc …` ו-`podman exec …` במקום `docker exec …`.)
 
 ## restart מול recreate
 
