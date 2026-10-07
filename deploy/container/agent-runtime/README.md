@@ -239,9 +239,14 @@ docker exec -it -u dc "${DC_AGENT_NAME}" bash -lc 'codex login --device-auth'
 ו-`maps`, לא cwd.
 
 🛑 **הרצה חוזרת על בית שבו `releases/B` כבר קיים** (ניסוי קודם, לא נוקה) —
-`dc-release-install --id B` יסרב. לא למחוק: שנו שם לצד (`releases/B.stale-…`)
-ווודאו ש-`release.env` הפעיל אינו מצביע עליו, ואז הריצו שוב. ההרנסים
-(`guide-quickstart-e2e.sh` / `guide-podman-e2e.sh`) עושים זאת אוטומטית.
+`dc-release-install --id B` יסרב, וההרנסים (`guide-quickstart-e2e.sh` /
+`guide-podman-e2e.sh`) **לא** ינסו להזיז או למחוק אותו: לא ניתן להוכיח
+מה-host בוודאות שאף תהליך (למשל fixture) לא רץ על אותו release, ולכן
+העברה/מחיקה אוטומטית היא בדיוק סוג הניחוש-המסוכן ש-F1 הזהיר ממנו. אם
+מתכוונים לבצע A→B→A נוסף על בית קיים, קבעו id שלא היה בשימוש
+(`DC_RELEASE_B_ID=B2` וכו') — ברירת-המחדל של ההרנסים היא id עם חותמת-זמן
+(`B-<UTC>`), כך שהרצות חוזרות לא מתנגשות. בדיקה וניקוי ידני של release
+ישן (שלא בשימוש בפועל) הם באחריות המפעיל, לא ההרנס.
 
 **ארבע נקודות, לא שתיים:** (1) backend על A, (2) ה-fixture מסעיף "fixture"
 למעלה — שכבר רץ על A ובלתי-תלוי ביחידת ה-backend — (3) backend עובר ל-B

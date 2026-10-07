@@ -39,24 +39,22 @@ require_free_space_mb() {
   echo "require_free_space_mb: ok (${avail_mb}MB free >= ${need_mb}MB needed at ${path})" >&2
 }
 
-# Preserves an existing releases/<id> aside (rename, never delete) so a
-# repeated gate_release_swap run is idempotent and `dc-release-install`'s own
-# "release directory already exists" guard doesn't block a fresh install.
-# Verifies first that the *currently active* release isn't the one being
-# cleared (release.env still points at it) -- clearing the live release out
-# from under the running backend would be a real regression, not a safe retry.
-ensure_fresh_release_slot() {
-  local id="$1" dir="${DC_AGENT_HOME}/releases/${id}" active stale
-  [[ -e "$dir" ]] || return 0
-  active="$(eng exec -u dc "${DC_AGENT_NAME}" bash -lc \
-    'source ~/.config/drive-coding/release.env && echo "$DC_RELEASE"' 2>/dev/null || true)"
-  if [[ "$active" == "/home/dc/releases/${id}" ]]; then
-    echo "ensure_fresh_release_slot: releases/${id} is the ACTIVE release.env target, refusing to move it" >&2
+# Never moves or deletes an existing releases/<id> -- a scanner that tries to
+# prove "nothing is using it" via /proc (exe/cwd/cmdline, let alone maps) hits
+# the exact same shape as F1: a permission or visibility gap that silently
+# resolves to "looks free" when it isn't (readlink without -u dc, a failed
+# check swallowed as empty, no coverage for maps at all). Rather than growing
+# that scanner, this refuses outright when the id is taken: pick a release id
+# that has never been used (DC_RELEASE_B_ID, or a fresh timestamp-based one),
+# never reuse/rename someone else's.
+require_free_release_slot() {
+  local id="$1"
+  local dir="${DC_AGENT_HOME}/releases/${id}"
+  if [[ -e "$dir" ]]; then
+    echo "require_free_release_slot: releases/${id} already exists -- refusing to touch it." >&2
+    echo "require_free_release_slot: set DC_RELEASE_B_ID to an id that has never been used." >&2
     exit 1
   fi
-  stale="${dir}.stale-$(date -u +%Y%m%dT%H%M%SZ)"
-  mv "$dir" "$stale"
-  echo "ensure_fresh_release_slot: preserved existing releases/${id} as $(basename "$stale")" >&2
 }
 
 # MainPID of a transient --user unit.
@@ -198,7 +196,14 @@ gate_fixture() {
 # nlink > 1 into $BUN_INSTALL/install/cache, not a per-release-home cache).
 gate_release_swap() {
   local uid="$1"
-  local pid_a fix_a_pid fix_a_pid_b fix_a_pid_back fix_b_pid pid_b pid_back rollback_env a_size_mb min_mb
+  local b_id pid_a fix_a_pid fix_a_pid_b fix_a_pid_back fix_b_pid pid_b pid_back rollback_env a_size_mb min_mb
+
+  # A fresh id by default (never reused across runs) -- set DC_RELEASE_B_ID
+  # explicitly to pin it. Either way, require_free_release_slot refuses
+  # outright if that exact id is already on disk; nothing here ever moves
+  # or deletes existing material.
+  b_id="${DC_RELEASE_B_ID:-B-$(date -u +%Y%m%dT%H%M%SZ)}"
+  require_free_release_slot "$b_id"
 
   a_size_mb="$(du -sm "${DC_AGENT_HOME}/releases/A" 2>/dev/null | awk '{print $1}')"
   min_mb="${DC_RELEASE_B_MIN_MB:-${a_size_mb:-2048}}"
@@ -214,37 +219,37 @@ gate_release_swap() {
   }
   eng exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${fix_a_pid}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
 
-  ensure_fresh_release_slot B
   HOME="${DC_AGENT_HOME}" "${SRC}/deploy/container/agent-runtime/dc-release-install" \
-    --id B --source "${SRC}" --bun-version 1.3.14
+    --id "$b_id" --source "${SRC}" --bun-version 1.3.14
   eng exec "${DC_AGENT_NAME}" systemctl restart dc-agent-runtime
   gate_health
   pid_b="$(eng exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value | tr -d '[:space:]')"
   [[ "$pid_b" != "$pid_a" ]] || {
-    echo "gate_release_swap: backend MainPID did not change A -> B" >&2
+    echo "gate_release_swap: backend MainPID did not change A -> ${b_id}" >&2
     exit 1
   }
-  eng exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${pid_b}/exe" | grep -F '/home/dc/releases/B/.runtime/bin/bun'
-  eng exec -u dc "${DC_AGENT_NAME}" bash -lc "tr '\\0' ' ' </proc/${pid_b}/cmdline" | grep -F '/home/dc/releases/B/.runtime/bin/bun'
-  eng exec -u dc "${DC_AGENT_NAME}" grep -F '/home/dc/releases/B/.runtime/bin/bun' "/proc/${pid_b}/maps"
+  eng exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${pid_b}/exe" | grep -F "/home/dc/releases/${b_id}/.runtime/bin/bun"
+  eng exec -u dc "${DC_AGENT_NAME}" bash -lc "tr '\\0' ' ' </proc/${pid_b}/cmdline" | grep -F "/home/dc/releases/${b_id}/.runtime/bin/bun"
+  eng exec -u dc "${DC_AGENT_NAME}" grep -F "/home/dc/releases/${b_id}/.runtime/bin/bun" "/proc/${pid_b}/maps"
 
   # fixture-A: untouched by the backend swap (same PID, exe still release A)
   fix_a_pid_b="$(unit_pid "$uid" dc-fixture-hold)"
   [[ "$fix_a_pid_b" == "$fix_a_pid" ]] || {
-    echo "gate_release_swap: fixture-A PID changed across backend swap A->B (${fix_a_pid} -> ${fix_a_pid_b})" >&2
+    echo "gate_release_swap: fixture-A PID changed across backend swap A->${b_id} (${fix_a_pid} -> ${fix_a_pid_b})" >&2
     exit 1
   }
   eng exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${fix_a_pid_b}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
 
-  # fixture-B: a *new* unit started now, while $DC_RELEASE resolves to B — both
-  # generations exist side by side, proving new fixtures pick up the current release.
+  # fixture-B: a *new* unit started now, while $DC_RELEASE resolves to the new
+  # id — both generations exist side by side, proving new fixtures pick up
+  # the current release.
   start_fixture_unit "$uid" dc-fixture-hold-b
   fix_b_pid="$(unit_pid "$uid" dc-fixture-hold-b)"
   [[ -n "$fix_b_pid" && "$fix_b_pid" != 0 ]] || {
     echo "gate_release_swap: fixture-B MainPID missing after start_fixture_unit" >&2
     exit 1
   }
-  eng exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${fix_b_pid}/exe" | grep -F '/home/dc/releases/B/.runtime/bin/bun'
+  eng exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${fix_b_pid}/exe" | grep -F "/home/dc/releases/${b_id}/.runtime/bin/bun"
 
   rollback_env="$(mktemp "${DC_AGENT_HOME}/.config/drive-coding/release.env.XXXXXX")"
   printf 'DC_RELEASE=%s\n' /home/dc/releases/A >"$rollback_env"
@@ -257,7 +262,7 @@ gate_release_swap() {
 
   fix_a_pid_back="$(unit_pid "$uid" dc-fixture-hold)"
   [[ "$fix_a_pid_back" == "$fix_a_pid" ]] || {
-    echo "gate_release_swap: fixture-A PID changed across rollback B->A (${fix_a_pid} -> ${fix_a_pid_back})" >&2
+    echo "gate_release_swap: fixture-A PID changed across rollback ${b_id}->A (${fix_a_pid} -> ${fix_a_pid_back})" >&2
     exit 1
   }
 
