@@ -43,6 +43,8 @@ HOME="${DC_AGENT_HOME}" "${SRC}/deploy/container/agent-runtime/dc-release-instal
 
 echo "=== E2E: docker compose ==="
 cd "${SRC}/deploy/container/agent-runtime"
+# shellcheck source=compose-project.sh
+source ./compose-project.sh
 docker compose up -d
 for _ in $(seq 1 40); do
   if curl -fsS "http://127.0.0.1:${DC_AGENT_PORT}/api/health" >/dev/null 2>&1; then

@@ -71,6 +71,8 @@ Bun מהתמונה.
 
 ```bash
 cd "${SRC}/deploy/container/agent-runtime"
+# project name = DC_AGENT_NAME (לא ברירת המחדל agent-runtime — מונע דריסת ניסויים אחרים)
+source ./compose-project.sh
 docker compose up -d
 docker compose ps
 docker port "${DC_AGENT_NAME}"
@@ -243,6 +245,7 @@ docker exec "${DC_AGENT_NAME}" readlink "/proc/${pid_back}/exe"
 
 ```bash
 cd "${SRC}/deploy/container/agent-runtime"
+source ./compose-project.sh
 docker compose stop
 hash_live="$("${SRC}/deploy/container/agent-runtime/tree-sha256.sh" "${DC_AGENT_HOME}")"
 tar -C "$(dirname "${DC_AGENT_HOME}")" -czf "${DC_AGENT_HOME}.tgz" "$(basename "${DC_AGENT_HOME}")"
@@ -262,7 +265,7 @@ stop` / `podman start` במקום `docker compose stop/start`.
 ## ניקוי (לא מוחק את הבית)
 
 ```bash
-cd "${SRC}/deploy/container/agent-runtime" && docker compose down
+cd "${SRC}/deploy/container/agent-runtime" && source ./compose-project.sh && docker compose down
 # Podman: podman rm -f "${DC_AGENT_NAME}"  # רק אם התווית trial
 ```
 
