@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Run drive-coding from the pinned release bun only (no ~/.bun or image bun).
+set -euo pipefail
+
+config="${HOME}/.config/drive-coding/release.env"
+if [[ ! -f "$config" ]]; then
+  echo "dc-release-exec: missing ${config}" >&2
+  exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$config"
+
+if [[ -z "${DC_RELEASE:-}" ]]; then
+  echo "dc-release-exec: DC_RELEASE is not set in ${config}" >&2
+  exit 1
+fi
+
+root="$DC_RELEASE"
+bun="${root}/.runtime/bin/bun"
+
+if [[ ! -x "$bun" ]]; then
+  echo "dc-release-exec: release bun missing or not executable: ${bun}" >&2
+  exit 1
+fi
+
+export AGENT_SIDECAR_ENTRY="${root}/packages/backend/src/bin/agent-sidecar.ts"
+export FE_STATIC_DIR="${root}/packages/frontend/build"
+
+cd "$root"
+exec "$bun" packages/backend/src/bin/drive-coding.ts "$@"
