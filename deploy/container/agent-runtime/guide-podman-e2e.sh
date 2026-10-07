@@ -14,6 +14,10 @@ if [[ -z "${SRC:-}" ]]; then
   SRC="$(mktemp -d /tmp/dc-agent-runtime-podman-src-XXXXXX)"
 fi
 export SRC
+# A fresh id per invocation (unless the caller pins one) -- fixture unit
+# names are built from this, so two runs never collide on a `loaded`/`failed`
+# systemd --user unit left by the previous one.
+export DC_FIXTURE_RUN_ID="${DC_FIXTURE_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 export DC_UID="${DC_UID:-$(id -u)}"
 export DC_AGENT_IMAGE="${DC_AGENT_IMAGE:-dc-agent-runtime:podman-e2e}"
 export DC_AGENT_NAME="${DC_AGENT_NAME:-dc-agent-runtime-podman-e2e}"
@@ -47,6 +51,8 @@ if [[ -z "${DC_AGENT_HOME:-}" ]]; then
 fi
 export DC_AGENT_HOME
 
+skipped=()
+
 if [[ "${DC_SKIP_HOME:-0}" != 1 ]]; then
   gate_log "home + release A"
   [[ -d "${DC_AGENT_HOME}" ]] || "${root}/prepare-agent-home.sh" "${DC_AGENT_HOME}" "${DC_UID}"
@@ -57,6 +63,7 @@ if [[ "${DC_SKIP_HOME:-0}" != 1 ]]; then
   "${root}/podman-run.sh"
 else
   gate_log "skip home/release/run (DC_SKIP_HOME=1) — reuse running ${DC_AGENT_NAME}"
+  skipped+=("home+release-A+podman-run")
 fi
 
 gate_log "health + FE"
@@ -86,4 +93,11 @@ gate_recreate
 gate_log "backup/restore (tree-sha256)"
 gate_backup_restore
 
+# 🛑 Same rule as guide-quickstart-e2e.sh: a DC_SKIP_* run is not a pass of
+# the full contract. Printing "ok" here for a skipped-home run would make
+# the two harnesses draw opposite conclusions from the same flag.
+if [[ "${#skipped[@]}" -gt 0 ]]; then
+  echo "guide-podman-e2e: PARTIAL — skipped gates: ${skipped[*]}"
+  exit 2
+fi
 echo "guide-podman-e2e: ok"

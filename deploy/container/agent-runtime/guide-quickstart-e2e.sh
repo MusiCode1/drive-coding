@@ -15,6 +15,10 @@ if [[ -z "${SRC:-}" ]]; then
   SRC="$(mktemp -d /tmp/dc-agent-runtime-e2e-src-XXXXXX)"
 fi
 export SRC
+# A fresh id per invocation (unless the caller pins one) -- fixture unit
+# names are built from this, so two runs never collide on a `loaded`/`failed`
+# systemd --user unit left by the previous one.
+export DC_FIXTURE_RUN_ID="${DC_FIXTURE_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 export DC_UID="${DC_UID:-$(id -u)}"
 export DC_AGENT_IMAGE="${DC_AGENT_IMAGE:-dc-agent-runtime:e2e-local}"
 export DC_AGENT_NAME="${DC_AGENT_NAME:-dc-agent-runtime-e2e-local}"

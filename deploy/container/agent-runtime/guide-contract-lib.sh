@@ -66,11 +66,31 @@ unit_pid() {
     systemctl --user show "${unit}" -p MainPID --value | tr -d '[:space:]'
 }
 
+# Builds a fixture unit name scoped to one contract run (the fixture-A /
+# fixture-B pair share the run id, each a distinct suffix). A *fixed* name
+# (what this used to be) blocks every run after the first: systemd-run
+# refuses to reuse a unit name that is still `loaded` -- active OR merely
+# `failed` -- until something resets it, so the harness's own first run
+# could leave a landmine for its second. DC_FIXTURE_RUN_ID lets a caller
+# pin the id explicitly (e.g. to resume); the harnesses default to a fresh
+# one per invocation so back-to-back runs never collide.
+fixture_unit_name() {
+  local pair="$1" # "a" or "b"
+  printf 'dc-fixture-hold-%s-%s' "${DC_FIXTURE_RUN_ID:?DC_FIXTURE_RUN_ID must be set}" "$pair"
+}
+
 # Starts fixture-hold.js as a transient --user unit, bound to $DC_RELEASE as
 # it resolves *right now* (so calling this while backend is on B starts a
-# fixture running release B's bun, not A's).
+# fixture running release B's bun, not A's). reset-failed first is safe and
+# never touches another run's unit: the name itself is this run's own
+# (fixture_unit_name), so a leftover `failed` record under that exact name
+# can only be this run's own retry, never someone else's.
 start_fixture_unit() {
   local uid="$1" unit="$2" release
+  eng exec -u dc "${DC_AGENT_NAME}" env \
+    "XDG_RUNTIME_DIR=/run/user/${uid}" \
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
+    systemctl --user reset-failed "${unit}" >/dev/null 2>&1 || true
   release="$(eng exec -u dc "${DC_AGENT_NAME}" bash -lc \
     'source ~/.config/drive-coding/release.env && echo "$DC_RELEASE"')"
   eng exec -u dc "${DC_AGENT_NAME}" env \
@@ -80,12 +100,20 @@ start_fixture_unit() {
     "${release}/.runtime/bin/bun" /usr/local/lib/dc-agent-runtime/fixture-hold.js
 }
 
+# Stops and clears a fixture unit *this run created* (never a fixed/shared
+# name) so it doesn't sit `loaded failed` and isn't left for a future run
+# to trip over, even if that future run happens to reuse the same
+# DC_FIXTURE_RUN_ID on purpose.
 stop_fixture_unit() {
   local uid="$1" unit="$2"
   eng exec -u dc "${DC_AGENT_NAME}" env \
     "XDG_RUNTIME_DIR=/run/user/${uid}" \
     "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
     systemctl --user stop "${unit}" || true
+  eng exec -u dc "${DC_AGENT_NAME}" env \
+    "XDG_RUNTIME_DIR=/run/user/${uid}" \
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
+    systemctl --user reset-failed "${unit}" >/dev/null 2>&1 || true
 }
 
 gate_health() {
@@ -170,12 +198,13 @@ gate_recoll() {
 }
 
 gate_fixture() {
-  local uid="$1" state
-  start_fixture_unit "$uid" dc-fixture-hold
+  local uid="$1" unit_a state
+  unit_a="$(fixture_unit_name a)"
+  start_fixture_unit "$uid" "$unit_a"
   state="$(eng exec -u dc "${DC_AGENT_NAME}" env \
     "XDG_RUNTIME_DIR=/run/user/${uid}" \
     "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
-    systemctl --user is-active dc-fixture-hold)"
+    systemctl --user is-active "$unit_a")"
   printf '%s' "$state" | grep -q active
 }
 
@@ -209,10 +238,14 @@ gate_release_swap() {
   min_mb="${DC_RELEASE_B_MIN_MB:-${a_size_mb:-2048}}"
   require_free_space_mb "$(dirname "${DC_AGENT_HOME}")" "$min_mb"
 
+  local unit_a unit_b
+  unit_a="$(fixture_unit_name a)"
+  unit_b="$(fixture_unit_name b)"
+
   pid_a="$(eng exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value | tr -d '[:space:]')"
   eng exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${pid_a}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
 
-  fix_a_pid="$(unit_pid "$uid" dc-fixture-hold)"
+  fix_a_pid="$(unit_pid "$uid" "$unit_a")"
   [[ -n "$fix_a_pid" && "$fix_a_pid" != 0 ]] || {
     echo "gate_release_swap: fixture-A MainPID missing — run gate_fixture first" >&2
     exit 1
@@ -233,7 +266,7 @@ gate_release_swap() {
   eng exec -u dc "${DC_AGENT_NAME}" grep -F "/home/dc/releases/${b_id}/.runtime/bin/bun" "/proc/${pid_b}/maps"
 
   # fixture-A: untouched by the backend swap (same PID, exe still release A)
-  fix_a_pid_b="$(unit_pid "$uid" dc-fixture-hold)"
+  fix_a_pid_b="$(unit_pid "$uid" "$unit_a")"
   [[ "$fix_a_pid_b" == "$fix_a_pid" ]] || {
     echo "gate_release_swap: fixture-A PID changed across backend swap A->${b_id} (${fix_a_pid} -> ${fix_a_pid_b})" >&2
     exit 1
@@ -243,8 +276,8 @@ gate_release_swap() {
   # fixture-B: a *new* unit started now, while $DC_RELEASE resolves to the new
   # id — both generations exist side by side, proving new fixtures pick up
   # the current release.
-  start_fixture_unit "$uid" dc-fixture-hold-b
-  fix_b_pid="$(unit_pid "$uid" dc-fixture-hold-b)"
+  start_fixture_unit "$uid" "$unit_b"
+  fix_b_pid="$(unit_pid "$uid" "$unit_b")"
   [[ -n "$fix_b_pid" && "$fix_b_pid" != 0 ]] || {
     echo "gate_release_swap: fixture-B MainPID missing after start_fixture_unit" >&2
     exit 1
@@ -260,13 +293,16 @@ gate_release_swap() {
   pid_back="$(eng exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value | tr -d '[:space:]')"
   eng exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${pid_back}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
 
-  fix_a_pid_back="$(unit_pid "$uid" dc-fixture-hold)"
+  fix_a_pid_back="$(unit_pid "$uid" "$unit_a")"
   [[ "$fix_a_pid_back" == "$fix_a_pid" ]] || {
     echo "gate_release_swap: fixture-A PID changed across rollback ${b_id}->A (${fix_a_pid} -> ${fix_a_pid_back})" >&2
     exit 1
   }
 
-  stop_fixture_unit "$uid" dc-fixture-hold-b
+  # fixture-A is left running: it's still live evidence (same unit, same PID)
+  # that the backend swap/rollback never touched it. Only fixture-B, a
+  # test-only artifact of this function, is cleaned up here.
+  stop_fixture_unit "$uid" "$unit_b"
 }
 
 # Recreate the container (not just restart the unit): an *existing* sentinel
@@ -378,17 +414,22 @@ gate_backup_restore() {
     hash_restored="$("${root}/tree-sha256.sh" "${restored}")" || rc=$?
   fi
 
-  # Log both hashes *before* cleanup -- rc=0 alone proves nothing to a reader
-  # of the log; the actual values are the evidence, and once restore_parent
-  # and the tgz are removed they cannot be recovered.
-  echo "gate_backup_restore: hash_live=${hash_live} hash_restored=${hash_restored}" >&2
-
+  # `hash_restored` is only ever referenced below the rc check now -- it is
+  # declared via `local` but, on a tar/hash failure, never assigned, and
+  # under `set -u` a bare `${hash_restored}` expansion there is itself a
+  # fatal "unbound variable" that aborts the function *before* the intended
+  # "restore step failed" message prints (and loses hash_live along with
+  # it). rc=0 is the only path where hash_restored is guaranteed set.
   rm -rf "${restore_parent}" "$tgz"
 
   if [[ "$rc" -ne 0 ]]; then
-    echo "gate_backup_restore: restore step failed" >&2
+    echo "gate_backup_restore: restore step failed (hash_live=${hash_live})" >&2
     exit 1
   fi
+
+  # Log both hashes -- rc=0 alone proves nothing to a reader of the log; the
+  # actual values are the evidence, and restore_parent/tgz are already gone.
+  echo "gate_backup_restore: hash_live=${hash_live} hash_restored=${hash_restored}" >&2
 
   [[ "$hash_live" == "$hash_restored" ]] || {
     echo "gate_backup_restore: tree-sha256 MISMATCH live=${hash_live} restored=${hash_restored}" >&2
