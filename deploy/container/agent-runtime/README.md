@@ -195,12 +195,16 @@ curl -fsS "http://127.0.0.1:${DC_AGENT_PORT}/" | head
 🛑 **שם-היחידה חייב להיות ייחודי לכל ריצה.** ‏`systemd-run --user --unit=X`
 מסרב אם `X` עדיין `loaded` — גם אם הוא `failed`, לא רק `active` — ולכן שם
 קבוע חוסם כל ריצה שנייה על אותו קונטיינר עד `reset-failed` ידני. קבעו
-`RUN_ID` **פעם אחת** בתחילת הסשן ובנו ממנו את שם-היחידה; שני ה-fixture-ים
-בסעיף "החלפת release" למטה (`-a`/`-b`) חולקים את אותו `RUN_ID`.
+`RUN_ID` **פעם אחת** ובנו ממנו את שם-היחידה.
+
+🛑 **הסעיף הזה הוא דמו עצמאי — לא תנאי-מוקדם לסעיף "החלפת release" למטה.**
+שם ה-fixture כאן (`-demo-`) שונה מהפאר שהסעיף ההוא יוצר לעצמו, ושני הסעיפים
+לא תלויים זה בזה: אפשר לדלג על הסעיף הזה ולהריץ A→B→A בסשן נקי, ואפשר
+להריץ את הסעיף הזה בלי להמשיך ל-A→B→A בכלל.
 
 ```bash
 export RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
-FIXTURE_A="dc-fixture-hold-${RUN_ID}-a"
+FIXTURE_A="dc-fixture-hold-demo-${RUN_ID}"
 
 uid="$(docker exec "${DC_AGENT_NAME}" cat /etc/dc-agent-runtime/uid)"
 release="$(docker exec -u dc "${DC_AGENT_NAME}" \
@@ -243,6 +247,16 @@ docker exec -it -u dc "${DC_AGENT_NAME}" bash -lc 'codex login --device-auth'
 
 ## החלפת release (A → B → A)
 
+🛑 **הבלוק הזה עצמאי — אינו תלוי בסעיף "fixture" למעלה ולא במשתנה-shell
+כלשהו מסשן קודם.** נמדד (D-1): סשן טרמינל חדש ששיחזר רק את
+`.dc-agent-runtime.env` (SRC/IMAGE/NAME/HOME/PORT, כמתואר ב-"בית משתמש")
+ואז דילג היישר לכאן נכשל על `RUN_ID: unbound variable` — `RUN_ID` ו-`uid`
+היו משתנים מקומיים של סעיף "fixture", לא חלק מבלוק-השחזור. התיקון: הבלוק
+מחשב `uid` משלו, מגדיר `RUN_ID` טרי משלו (זמן+PID, לא תלוי בסעיף הקודם),
+ויוצר **פאר fixture עצמאי** (`FIXTURE_A`/`FIXTURE_B`) בשם שלא מתנגש עם זה
+של סעיף "fixture" — אין כאן `stop`/`reset-failed` על שום יחידה שהבלוק הזה
+לא יצר בעצמו.
+
 `dc-release-install` מסרב אם תיקיית ה-id כבר קיימת, וכותב את `release.env`
 ל-id החדש. אחרי ההתקנה צריך restart של היחידה. העוגן הוא `exe`, `cmdline`
 ו-`maps`, לא cwd. `B_ID` למטה הוא **אותו מזהה** שמוזרק להתקנה ולשלושת
@@ -256,13 +270,12 @@ docker exec -it -u dc "${DC_AGENT_NAME}" bash -lc 'codex login --device-auth'
 `B_ID` לערך שלא היה בשימוש — ברירת-המחדל של ההרנסים היא id עם חותמת-זמן.
 בדיקה וניקוי ידני של release ישן (שלא בשימוש בפועל) הם באחריות המפעיל.
 
-**חמש נקודות, לא שתיים:** (1) backend על A, (2) `FIXTURE_A` מסעיף "fixture"
-למעלה — שכבר רץ על A ובלתי-תלוי ביחידת ה-backend — (3) backend עובר ל-B
-**ו-`FIXTURE_A` נשאר אותו PID ואותו exe A**, (4) `FIXTURE_B` **חדש** מוקם
-בזמן ש-`$DC_RELEASE` מצביע ל-B ואכן מריץ את ה-exe של B (מוכיח ש-fixture
-חדש אוסף את ה-release הנוכחי, לא רק ש-fixture ישן שורד), (5) backend חוזר
-ל-A ו-`FIXTURE_A` עדיין לא זע. אם `FIXTURE_A` לא רץ (סעיף "fixture" לא
-בוצע) — אין מה להשוות אליו, והשלבים 2/3/5 לא ניתנים למדידה.
+**חמש נקודות, לא שתיים:** (1) backend על A, (2) `FIXTURE_A` — נוצר כאן,
+אחרי אימות ה-backend על A ולפני התקנת B, ובלתי-תלוי ביחידת ה-backend —
+(3) backend עובר ל-B **ו-`FIXTURE_A` נשאר אותו PID ואותו exe A**,
+(4) `FIXTURE_B` **חדש** מוקם בזמן ש-`$DC_RELEASE` מצביע ל-B ואכן מריץ
+את ה-exe של B (מוכיח ש-fixture חדש אוסף את ה-release הנוכחי, לא רק
+ש-fixture ישן שורד), (5) backend חוזר ל-A ו-`FIXTURE_A` עדיין לא זע.
 
 🛑 **קריאת `/proc/<pid>/exe` ו-`/proc/<pid>/maps` חייבת `-u dc`.** ה-backend
 רץ כמשתמש `dc`, לא כ-root; `docker exec` (ברירת-מחדל root) מקבל `Permission
@@ -278,9 +291,11 @@ denied` על שתיהן — ו-`readlink` נכשל **בשקט** (exit 1, פלט 
 ```bash
 set -euo pipefail
 
+uid="$(docker exec "${DC_AGENT_NAME}" cat /etc/dc-agent-runtime/uid)"
 B_ID="${DC_RELEASE_B_ID:-B-$(date -u +%Y%m%dT%H%M%SZ)}"
-FIXTURE_A="dc-fixture-hold-${RUN_ID}-a"   # מסעיף "fixture" — חייב לרוץ כבר
-FIXTURE_B="dc-fixture-hold-${RUN_ID}-b"
+SWAP_RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"   # עצמאי מ-RUN_ID של סעיף "fixture"
+FIXTURE_A="dc-fixture-hold-swap-${SWAP_RUN_ID}-a"
+FIXTURE_B="dc-fixture-hold-swap-${SWAP_RUN_ID}-b"
 
 wait_health() {
   local i
@@ -297,9 +312,20 @@ unit_pid() {   # MainPID של יחידת --user, כמו ב-guide-contract-lib.sh
     "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
     systemctl --user show "$1" -p MainPID --value | tr -d '[:space:]'
 }
+run_fixture() {   # systemd-run עם TimeoutStopSec קצר — רק ליחידות שהבלוק הזה יוצר
+  local unit="$1" release_path="$2"
+  docker exec -u dc "${DC_AGENT_NAME}" env \
+    "XDG_RUNTIME_DIR=/run/user/${uid}" \
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
+    systemd-run --user --unit="${unit}" --property=TimeoutStopSec=5s \
+    "${release_path}/.runtime/bin/bun" /usr/local/lib/dc-agent-runtime/fixture-hold.js
+}
 
 pid_a="$(docker exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value)"
 docker exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${pid_a}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
+
+# FIXTURE_A: פאר עצמאי שהבלוק הזה יוצר, אחרי אימות A ולפני התקנת B
+run_fixture "$FIXTURE_A" /home/dc/releases/A
 fix_a_pid="$(unit_pid "$FIXTURE_A")"
 docker exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${fix_a_pid}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
 
@@ -321,13 +347,7 @@ test "$fix_a_pid_after" = "$fix_a_pid"
 docker exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${fix_a_pid_after}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
 
 # FIXTURE_B: יחידה חדשה, מוקמת עכשיו בעוד $DC_RELEASE מצביע ל-B
-release_now="$(docker exec -u dc "${DC_AGENT_NAME}" bash -lc \
-  'source ~/.config/drive-coding/release.env && echo "$DC_RELEASE"')"
-docker exec -u dc "${DC_AGENT_NAME}" env \
-  "XDG_RUNTIME_DIR=/run/user/${uid}" \
-  "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
-  systemd-run --user --unit="${FIXTURE_B}" \
-  "${release_now}/.runtime/bin/bun" /usr/local/lib/dc-agent-runtime/fixture-hold.js
+run_fixture "$FIXTURE_B" "/home/dc/releases/${B_ID}"
 fix_b_pid="$(unit_pid "$FIXTURE_B")"
 docker exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${fix_b_pid}/exe" | grep -F "/home/dc/releases/${B_ID}/.runtime/bin/bun"
 
@@ -340,18 +360,21 @@ wait_health
 pid_back="$(docker exec "${DC_AGENT_NAME}" systemctl show dc-agent-runtime -p MainPID --value)"
 docker exec -u dc "${DC_AGENT_NAME}" readlink "/proc/${pid_back}/exe" | grep -F '/home/dc/releases/A/.runtime/bin/bun'
 
-# FIXTURE_A: עדיין לא זע; FIXTURE_B מנוקה (רק ל-FIXTURE_B — FIXTURE_A נשאר
-# כראיה חיה, כמו בסעיף "fixture")
+# FIXTURE_A: עדיין לא זע
 fix_a_pid_back="$(unit_pid "$FIXTURE_A")"
 test "$fix_a_pid_back" = "$fix_a_pid"
-docker exec -u dc "${DC_AGENT_NAME}" env \
-  "XDG_RUNTIME_DIR=/run/user/${uid}" \
-  "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
-  systemctl --user stop "${FIXTURE_B}" || true
-docker exec -u dc "${DC_AGENT_NAME}" env \
-  "XDG_RUNTIME_DIR=/run/user/${uid}" \
-  "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
-  systemctl --user reset-failed "${FIXTURE_B}" 2>/dev/null || true
+
+# ניקוי — רק הפאר שהבלוק הזה יצר (לא נוגע ב-FIXTURE_A של סעיף "fixture")
+for u in "$FIXTURE_A" "$FIXTURE_B"; do
+  docker exec -u dc "${DC_AGENT_NAME}" env \
+    "XDG_RUNTIME_DIR=/run/user/${uid}" \
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
+    systemctl --user stop "$u" || true
+  docker exec -u dc "${DC_AGENT_NAME}" env \
+    "XDG_RUNTIME_DIR=/run/user/${uid}" \
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${uid}/bus" \
+    systemctl --user reset-failed "$u" 2>/dev/null || true
+done
 ```
 
 (Podman: `podman exec -u dc …` ו-`podman exec …` במקום `docker exec …`.)
