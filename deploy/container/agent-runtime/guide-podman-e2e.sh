@@ -31,10 +31,21 @@ if [[ ! -f "${SRC}/package.json" ]]; then
   git -C "${repo_root}" archive HEAD | tar -x -C "${SRC}"
 fi
 
-export DC_AGENT_HOME="${DC_AGENT_HOME:-$(mktemp -d /tmp/dc-agent-runtime-podman-e2e-home-XXXXXX)}"
+if [[ -z "${DC_AGENT_HOME:-}" ]]; then
+  DC_AGENT_HOME="$(mktemp -d /tmp/dc-agent-runtime-podman-e2e-home-XXXXXX)"
+  export DC_AGENT_HOME
+  home_owner="$(stat -c '%u' "$DC_AGENT_HOME")"
+  if [[ "$home_owner" != "$DC_UID" ]]; then
+    echo "guide-podman-e2e: temp home uid ${home_owner} != DC_UID ${DC_UID}" >&2
+    exit 1
+  fi
+fi
+export DC_AGENT_HOME
 
 echo "=== E2E Podman: home + release ==="
-"${root}/prepare-agent-home.sh" "${DC_AGENT_HOME}" "${DC_UID}"
+if [[ ! -d "${DC_AGENT_HOME}" ]]; then
+  "${root}/prepare-agent-home.sh" "${DC_AGENT_HOME}" "${DC_UID}"
+fi
 HOME="${DC_AGENT_HOME}" "${SRC}/deploy/container/agent-runtime/dc-release-install" \
   --id A --source "${SRC}" --bun-version 1.3.14
 
