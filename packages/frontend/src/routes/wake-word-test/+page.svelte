@@ -41,13 +41,9 @@
 
   onMount(async () => {
     // טעינת מודלים ורשימת מכשירים במקביל
-    const [loadResult] = await Promise.allSettled([
-      vm.load(),
-      vm.loadDevices(),
-    ])
-    if (loadResult.status === "rejected") {
-      const err = loadResult.reason
-      status = `model load failed: ${err instanceof Error ? err.message : String(err)}`
+    await Promise.all([vm.load(), vm.loadDevices()])
+    if (vm.loadFailed) {
+      status = `model load failed: ${vm.lastError ?? "unknown error"}`
       return
     }
     status = "ready — tap the orb to listen"
