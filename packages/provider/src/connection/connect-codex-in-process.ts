@@ -3,7 +3,7 @@
  * the codex ACP agent in-process via the @musicode1/codex-acp fork.
  *
  * Architecture:
- *   FE ←[wire: string onLine/write]→ PassThrough pair ←[NDJSON]→ startAcpServer(codex)
+ *   FE ←[wire: string onLine/write]→ PassThrough pair ←[NDJSON]→ startCodexAcp → codex-acp
  *
  * Key difference from connectInProcess (claude):
  *   - codex fork uses Node NDJSON streams (createJsonStream over Readable/Writable),
@@ -25,11 +25,11 @@ import * as path from "node:path"
 import { PassThrough } from "node:stream"
 import { extractPromptCaps } from "@drive-coding/core/acp/extract-prompt-caps"
 import { resolveCliBinary } from "@drive-coding/core/cli-resolve"
-import { startAcpServer } from "@musicode1/codex-acp/lib"
 import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
 import type { BridgeCrashInfo } from "../spawn/index.js"
 import type { NormalizedCapabilities } from "../types.js"
+import { startCodexAcp } from "./codex-acp-startup.js"
 import { staticCapsFor } from "./capabilities-static.js"
 import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
 
@@ -142,24 +142,39 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
   const serverIn = new PassThrough()
   const serverOut = new PassThrough()
 
-  // Start the codex ACP server in-process.
-  // modelOverride is intentionally NOT passed — model selection is FE-driven via the wire
-  // (session/new params / setSessionModel). codex does not accept modelOverride in opts.
-  // systemPrompt (slice project-system-prompt): opts.config → codex-acp ממזג ל-thread/start
-  // config (startAcpServer, dist/lib.js:29014). developer_instructions מתווסף (append-equivalent)
-  // ל-base של codex — בניגוד ל-instructions שמחליף אותו. אומת חי 2026-07-19: codex כיבד את
-  // developer_instructions (ZQX_CDX_7).
+  // Closed flag — must be declared before startCodexAcp (TDZ when instructions empty).
+  let closed = false
+
   const codexPath = resolveCodexPath()
-  startAcpServer(serverIn, serverOut, {
+  const instructions = opts.agentPrompt ?? opts.systemPrompt ?? undefined
+
+  startCodexAcp({
+    serverIn,
+    serverOut,
+    cwd: opts.cwd,
     codexPath,
-    config: opts.systemPrompt ? { developer_instructions: opts.systemPrompt } : undefined,
+    instructions,
+    isClosed: () => closed,
+    onStartupError: (err) => {
+      const info: BridgeCrashInfo = {
+        exitCode: null,
+        signal: null,
+        spawnError: {
+          message: err instanceof Error ? err.message : String(err),
+        },
+      }
+      for (const cb of crashListeners) {
+        try {
+          cb(info)
+        } catch {
+          /* listener must not break the pipe */
+        }
+      }
+    },
   })
 
   // Line buffer for serverOut — accumulate bytes until '\n'.
   let lineBuffer = ""
-
-  // Closed flag — used to prevent double-close.
-  let closed = false
 
   // Wire line listeners (agent→FE direction).
   const lineListeners = new Set<(line: string) => void>()
