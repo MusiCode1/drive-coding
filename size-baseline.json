@@ -1100,10 +1100,10 @@
       "codeLines": 23
     },
     "packages/frontend/src/lib/view-models/wake-word.svelte.ts": {
-      "metric": 232,
+      "metric": 231,
       "impurity": 7,
       "class": "mixed",
-      "codeLines": 166
+      "codeLines": 164
     },
     "packages/frontend/src/routes/+layout.svelte": {
       "metric": 403,
@@ -1130,10 +1130,10 @@
       "codeLines": 92
     },
     "packages/frontend/src/routes/wake-word-test/+page.svelte": {
-      "metric": 326,
+      "metric": 322,
       "impurity": 5,
       "class": "mixed",
-      "codeLines": 265
+      "codeLines": 258
     },
     "packages/frontend/src/service-worker.ts": {
       "metric": 65,
