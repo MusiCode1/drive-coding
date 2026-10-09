@@ -273,11 +273,13 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
       if (pendingCrash !== undefined) {
         const pending = pendingCrash
         pendingCrash = undefined
-        try {
-          cb(pending)
-        } catch {
-          /* listener must not break the pipe */
-        }
+        queueMicrotask(() => {
+          try {
+            cb(pending)
+          } catch {
+            /* listener must not break the pipe */
+          }
+        })
       }
       return () => {
         crashListeners.delete(cb)
