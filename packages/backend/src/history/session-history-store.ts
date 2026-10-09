@@ -4,6 +4,7 @@
 
 import { join } from "node:path"
 import type { TokenUsageRecord } from "../usage/token-usage-store.js"
+import { listProjectsFromDb } from "./session-history-projects.js"
 import { applySessionHistorySchema } from "./session-history-schema.js"
 import {
   buildUsageRecord,
@@ -173,36 +174,7 @@ export function createSessionHistoryStore(dbFile: string): SessionHistoryStore {
     },
 
     listProjects(opts) {
-      const includeHidden = opts?.includeHidden === true
-      const hiddenClause = includeHidden ? "" : " AND s.cwd NOT IN (SELECT cwd FROM hidden_folders)"
-      const rows = db
-        .prepare(
-          `SELECT s.cwd,
-            COUNT(*) AS sessionCount,
-            MAX(s.lastAttachedAt) AS lastAttached
-           FROM sessions s
-           WHERE 1=1${hiddenClause}
-           GROUP BY s.cwd
-           ORDER BY sessionCount DESC, lastAttached DESC, s.cwd ASC`,
-        )
-        .all<{ cwd: string; sessionCount: number; lastAttached: number }>()
-      return rows.map((r) => {
-        const latest = db
-          .prepare(
-            `SELECT cliKind, acpSessionId, lastAttachedAt FROM sessions
-             WHERE cwd = ?
-             ORDER BY lastAttachedAt DESC, cliKind ASC, acpSessionId ASC
-             LIMIT 1`,
-          )
-          .get<{ cliKind: string; acpSessionId: string; lastAttachedAt: number }>(r.cwd)
-        return {
-          cwd: r.cwd,
-          kind: latest?.cliKind ?? "",
-          lastSeen: new Date(latest?.lastAttachedAt ?? r.lastAttached).toISOString(),
-          lastSessionId: latest?.acpSessionId,
-          sessionCount: r.sessionCount,
-        }
-      })
+      return listProjectsFromDb(db, opts)
     },
 
     listCliSessionRows(opts) {
