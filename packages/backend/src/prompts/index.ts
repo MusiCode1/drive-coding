@@ -10,6 +10,7 @@
  * כאן + ייצוא למטה.
  */
 export { AUDIO_FRIENDLY_PROMPT } from "./audio-friendly.js"
+export { buildAgentPromptText } from "./agent-prompt.js"
 export {
   SURFACE_ABOUT,
   SURFACE_CAPABILITIES,

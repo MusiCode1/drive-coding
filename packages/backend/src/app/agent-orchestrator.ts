@@ -33,7 +33,7 @@ import { clearGrantsFor } from "../agent-scope.js"
 import { stopAgentUnit } from "../agents/agent-launcher.js"
 import { loopbackBaseUrl, type UrlConfig } from "../delivery/public-url.js"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
-import { AUDIO_FRIENDLY_PROMPT } from "../prompts/index.js"
+import { AUDIO_FRIENDLY_PROMPT, buildAgentPromptText } from "../prompts/index.js"
 import { type CloseAllResult, closeAllAgents } from "./close-all-agents.js"
 import type { ProjectsRegistry } from "./projects-registry.js"
 
@@ -212,6 +212,17 @@ export function createAgentOrchestrator(deps: {
       }
 
       try {
+        const agentPrompt = buildAgentPromptText(
+          {
+            agentId: agent.id,
+            parentAgentId: agent.parentAgentId,
+            charter: agent.systemPrompt ?? undefined,
+            userNotes: agent.userNotes,
+            sessionFields: agent.sessionFields,
+          },
+          urlConfig,
+        )
+
         // ── הפעלת connection (connectSpawn דרך connectionRegistry) ──────────────
         // modelOverride (🔴 avigail): מועבר מ-input — לא מקובע null.
         // shapeEnv: spawn-only (opencode config + DRIVE_CODING_AGENT_ID + BASE).
@@ -224,6 +235,7 @@ export function createAgentOrchestrator(deps: {
           shapeEnv: composeShapeEnv(childEnv),
           agentEnv: childEnv,
           systemPrompt: input.systemPrompt ?? null,
+          agentPrompt,
         })
 
         // ⚠️ port/wsUrl stub (🟡 avigail): in-process pipe — אין WS-bridge אמיתי.

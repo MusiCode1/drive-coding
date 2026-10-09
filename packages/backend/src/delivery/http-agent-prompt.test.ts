@@ -6,7 +6,8 @@ import { describe, expect, it, vi } from "vitest"
 import { Hono } from "hono"
 import type { Agent, AgentRegistry } from "@drive-coding/core"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
-import { buildAgentPromptText, registerAgentPromptHttp } from "./http-agent-prompt.js"
+import { buildAgentPromptText } from "../prompts/index.js"
+import { registerAgentPromptHttp } from "./http-agent-prompt.js"
 
 function stubRegistry(agent: Agent | null): AgentRegistry {
   return {
