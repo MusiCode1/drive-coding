@@ -3,7 +3,7 @@
  */
 
 import type { Agent, AgentRegistry, CreateAgentInput } from "@drive-coding/core"
-import type { ProviderConnection } from "@drive-coding/provider/connection"
+import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/connection"
 import { describe, expect, it, vi } from "vitest"
 import { Hono } from "hono"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
@@ -155,5 +155,86 @@ describe("surface prompt — three delivery paths", () => {
     expect(direct).toContain("# Your assignment")
     expect(direct.match(/# Your assignment/g)?.length).toBe(1)
     expect(direct).toContain(charter)
+  })
+})
+
+describe("createAndSpawn → connect agentPrompt chain", () => {
+  it("passes non-empty agentPrompt containing /api/fs/file to connectionRegistry.connect", async () => {
+    let connectOpts: ConnectOpts | undefined
+    const connectionRegistry: ConnectionRegistry = {
+      connect: vi.fn(async (_id, _kind, opts) => {
+        connectOpts = opts
+        return {
+          wire: { onLine: () => () => {}, write: () => true },
+          capabilities: {},
+          onFrame: () => () => {},
+          turn: { isBusy: () => false, lastActivityAt: () => null, onChange: () => () => {} },
+          onCrash: () => () => {},
+          close: async () => {},
+          ext: undefined,
+          pid: null,
+        } as unknown as ProviderConnection
+      }),
+      get: vi.fn(),
+      getCwd: vi.fn(),
+      getCharter: vi.fn(),
+      consumeCharter: vi.fn(),
+      getCliKind: vi.fn(),
+      list: vi.fn(() => []),
+      addConnection: vi.fn(),
+      removeConnection: vi.fn(),
+      touchConnection: vi.fn(),
+      clearAllConnections: vi.fn(),
+      getConnectionCount: vi.fn(() => 0),
+      isAttached: vi.fn(() => false),
+      getEpoch: vi.fn(() => 0),
+      isOwnedByWs: vi.fn(() => false),
+      getRuntimeInfo: vi.fn(() => null),
+      getLastSeenAt: vi.fn(() => null),
+      listHttpConnectionIds: vi.fn(() => []),
+      setWsSocketChecker: vi.fn(),
+      close: vi.fn(),
+      onCrash: vi.fn(() => () => {}),
+    }
+
+    const state = new Map<string, Agent>()
+    const registry: AgentRegistry = {
+      async create(input: CreateAgentInput) {
+        const row = sampleAgent({ cliKind: input.cliKind, cwd: input.cwd })
+        state.set(row.id, row)
+        return row
+      },
+      async get(id: string) {
+        return state.get(id) ?? null
+      },
+      async list() {
+        return [...state.values()]
+      },
+      async update(id, patch) {
+        const cur = state.get(id)
+        if (!cur) throw new Error("missing")
+        const next = { ...cur, ...patch }
+        state.set(id, next)
+        return next
+      },
+      async delete(id: string) {
+        state.delete(id)
+      },
+    }
+
+    const orch = createAgentOrchestrator({
+      registry,
+      connectionRegistry,
+      urlConfig: { port: 4372, host: "127.0.0.1" },
+    })
+    await orch.createAndSpawn({
+      cliKind: "codex",
+      cwd: "/tmp/codex-spawn-chain",
+      modelOverride: null,
+    })
+
+    expect(connectOpts?.agentPrompt).toBeDefined()
+    expect(connectOpts?.agentPrompt?.length).toBeGreaterThan(200)
+    expect(connectOpts?.agentPrompt).toContain("/api/fs/file")
   })
 })
