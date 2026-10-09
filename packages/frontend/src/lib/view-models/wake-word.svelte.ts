@@ -64,14 +64,13 @@ export class WakeWordVM {
     })
   }
 
+  get loadFailed(): boolean {
+    return this.#engine.loadFailed
+  }
+
   /** טוען מודלים. לקרוא פעם אחת לפני toggle(). */
   async load(): Promise<void> {
-    try {
-      await this.#engine.load()
-    } catch (err) {
-      this.lastError = err instanceof Error ? err.message : String(err)
-      throw err
-    }
+    await this.#engine.load()
   }
 
   /** toggle: off↔listening. */

@@ -14,12 +14,13 @@ import { MODEL_FILE_MAP, DETECT_THRESHOLD, VAD_THRESHOLD } from "./types.js"
 import { computeRms, FRAME_SIZE, SAMPLE_RATE } from "./audio-math.js"
 import { createVadState, runVadStep } from "./vad.js"
 import { createScorePipeline } from "./pipeline.js"
+import { ONNX_WASM_BASE_URL } from "../onnx-assets.js"
 
 // single-thread mode — עוקף COOP/COEP שאינן מוגדרות (לקח מה-POC)
 ort.env.wasm.numThreads = 1
 // wasm files: CDN — זהה לגישת ה-POC (ort.wasm.min.js = onnxruntime-web 1.22.0 bundle)
 // ⚠️ הOracle env לא אידאלי (Vite wasm MIME), CDN הוא הפתרון הסביר לbuild קיים.
-ort.env.wasm.wasmPaths = "https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.22.0/"
+ort.env.wasm.wasmPaths = ONNX_WASM_BASE_URL
 
 // ─── Tiny event emitter ───────────────────────────────────────────────────────
 
@@ -86,6 +87,12 @@ export class WakeWordEngine {
   private vadState: ReturnType<typeof createVadState> | null = null
   private mic: { setGain(v: number): void; stop(): Promise<void> } | null = null
   private loaded = false
+  #loadFailed = false
+
+  /** true when load() failed. Mirrors LiveVad.loadFailed. */
+  get loadFailed(): boolean {
+    return this.#loadFailed
+  }
 
   // runtime state
   private frameIdx = 0
@@ -128,33 +135,41 @@ export class WakeWordEngine {
 
   async load(): Promise<void> {
     if (this.loaded) return
-    const base = this.config.baseAssetUrl.replace(/\/+$/, "")
-    const opts = { executionProviders: ["wasm"] as const }
-    const url = (f: string) => `${base}/${f}`
+    try {
+      const base = this.config.baseAssetUrl.replace(/\/+$/, "")
+      const opts = { executionProviders: ["wasm"] as const }
+      const url = (f: string) => `${base}/${f}`
 
-    const [melspec, embedding, vad] = await Promise.all([
-      ort.InferenceSession.create(url("melspectrogram.onnx"), opts),
-      ort.InferenceSession.create(url("embedding_model.onnx"), opts),
-      ort.InferenceSession.create(url("silero_vad.onnx"), opts),
-    ])
+      const [melspec, embedding, vad] = await Promise.all([
+        ort.InferenceSession.create(url("melspectrogram.onnx"), opts),
+        ort.InferenceSession.create(url("embedding_model.onnx"), opts),
+        ort.InferenceSession.create(url("silero_vad.onnx"), opts),
+      ])
 
-    const classifiers: Record<string, ort.InferenceSession> = {}
-    for (const kw of this.config.keywords) {
-      const file = MODEL_FILE_MAP[kw]
-      if (!file) throw new Error(`No model file for keyword "${kw}"`)
-      classifiers[kw] = await ort.InferenceSession.create(url(file), opts)
+      const classifiers: Record<string, ort.InferenceSession> = {}
+      for (const kw of this.config.keywords) {
+        const file = MODEL_FILE_MAP[kw]
+        if (!file) throw new Error(`No model file for keyword "${kw}"`)
+        classifiers[kw] = await ort.InferenceSession.create(url(file), opts)
+      }
+
+      this.models = { melspec, embedding, vad, classifiers }
+      this.pipeline = createScorePipeline({
+        melModel: melspec,
+        embModel: embedding,
+        classifiers,
+        ortRef: ort,
+      })
+      this.vadState = createVadState(ort)
+      this.loaded = true
+      this.emitter.emit("ready", undefined as never)
+    } catch (err) {
+      this.#loadFailed = true
+      this.emitter.emit(
+        "error",
+        err instanceof Error ? err : new Error(String(err)),
+      )
     }
-
-    this.models = { melspec, embedding, vad, classifiers }
-    this.pipeline = createScorePipeline({
-      melModel: melspec,
-      embModel: embedding,
-      classifiers,
-      ortRef: ort,
-    })
-    this.vadState = createVadState(ort)
-    this.loaded = true
-    this.emitter.emit("ready", undefined as never)
   }
 
   async start(deviceId?: string | null): Promise<void> {
