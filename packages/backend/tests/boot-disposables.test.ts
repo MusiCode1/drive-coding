@@ -2,8 +2,8 @@
  * boot-disposables.test.ts — C2 TDD: createDeps registers pre-serve disposables.
  */
 
-import { describe, expect, it, vi } from "vitest"
 import { Hono } from "hono"
+import { describe, expect, it, vi } from "vitest"
 import { createDeps } from "../src/boot/deps.js"
 
 describe("createDeps disposables", () => {
@@ -16,7 +16,7 @@ describe("createDeps disposables", () => {
     expect(names).toContain("connectionRegistry")
     expect(names).toContain("stopWatching")
     expect(names).toContain("usageStore")
-    expect(names).toContain("tokenUsageStore")
+    expect(names).toContain("sessionHistoryStore")
   })
 
   it("memoryGuard disposable calls stop()", () => {

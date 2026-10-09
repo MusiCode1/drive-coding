@@ -21,13 +21,15 @@ import { createRecordingsStore } from "../app/recordings-store.js"
 import { createEvictionController } from "../delivery/eviction-controller.js"
 import { createMemoryGuard, type MemoryGuard } from "../delivery/memory-guard.js"
 import { createWireRecorder } from "../delivery/wire-recorder.js"
+import { asTokenUsageStore } from "../history/session-history-as-token-usage.js"
+import { createSessionHistoryStore } from "../history/session-history-store.js"
 import { ensureStateSubdir } from "../paths.js"
 import { createSessionHostRegistryOpts } from "../server-session-host-opts.js"
 import { type AgentEventBus, createAgentEventBus } from "../session-host/agent-events.js"
 import { createAndRegisterSessionHostHttp } from "../session-host/http/index.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { wireTokenUsagePatches } from "../usage/token-usage-patch-wire.js"
-import { createTokenUsageStore, type TokenUsageStore } from "../usage/token-usage-store.js"
+import type { TokenUsageStore } from "../usage/token-usage-store.js"
 import { createUsageStore, type UsageStore } from "../usage/usage-store.js"
 import { wireRecorderDir } from "./config.js"
 
@@ -113,7 +115,12 @@ export function createDeps(
   orchestratorRef.current = orchestrator
 
   const usageStore = createUsageStore(ensureStateSubdir("usage"))
-  const tokenUsageStore = createTokenUsageStore(ensureStateSubdir("token-usage"))
+  const historyDbFile =
+    env.HISTORY_DB_FILE ??
+    process.env.HISTORY_DB_FILE ??
+    `${ensureStateSubdir("history")}/history.sqlite`
+  const sessionHistoryStore = createSessionHistoryStore(historyDbFile)
+  const tokenUsageStore = asTokenUsageStore(sessionHistoryStore)
   tokenUsageStoreRef.current = tokenUsageStore
   const memoryGuard = createMemoryGuard({
     thresholdBytes: (config.rssBudgetMb ?? configDefault("rssBudgetMb")) * 1024 * 1024,
@@ -130,7 +137,7 @@ export function createDeps(
     },
     { name: "stopWatching", dispose: () => stopWatching() },
     { name: "usageStore", dispose: () => usageStore.flushUsageOnShutdown() },
-    { name: "tokenUsageStore", dispose: () => tokenUsageStore.flushOnShutdown() },
+    { name: "sessionHistoryStore", dispose: () => sessionHistoryStore.close() },
     { name: "agentsStore", dispose: () => registry.flush() },
   ]
 

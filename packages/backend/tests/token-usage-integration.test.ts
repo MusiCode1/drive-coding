@@ -2,31 +2,43 @@
  * token-usage-integration.test.ts — C3 host + patch fan-out + disk record.
  */
 
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { AcpTransport } from "@drive-coding/provider/transport"
-import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createInMemoryAgentRegistry } from "../src/agents/registry.js"
+import { asTokenUsageStore } from "../src/history/session-history-as-token-usage.js"
+import {
+  createSessionHistoryStore,
+  sessionHistoryDbPath,
+} from "../src/history/session-history-store.js"
 import { createAgentEventBus } from "../src/session-host/agent-events.js"
 import { createTurnEndedEmitter } from "../src/session-host/agent-events-turn.js"
 import { createAgentSessionRegistry } from "../src/session-host/registry.js"
 import { createSessionHostFromConnection } from "../src/session-host/session-host.js"
-import { createTokenUsageStore } from "../src/usage/token-usage-store.js"
 import { wireTokenUsagePatches } from "../src/usage/token-usage-patch-wire.js"
 
 function usage(used: number): SessionNotification {
   return {
     sessionId: "s1",
-    update: { sessionUpdate: "usage_update", used, size: 1_000_000, cost: { amount: 0.1, currency: "USD" } },
+    update: {
+      sessionUpdate: "usage_update",
+      used,
+      size: 1_000_000,
+      cost: { amount: 0.1, currency: "USD" },
+    },
   } as SessionNotification
 }
 
 function running(): SessionNotification {
-  return { sessionId: "s1", update: { sessionUpdate: "state_update", state: "running" } } as SessionNotification
+  return {
+    sessionId: "s1",
+    update: { sessionUpdate: "state_update", state: "running" },
+  } as SessionNotification
 }
 
 function idleEnd(): SessionNotification {
@@ -45,7 +57,7 @@ describe("token-usage-persistence C3 integration", () => {
 
   it("tracks rising usage_updates, compaction, turn end — keyed by acpSessionId", async () => {
     dir = mkdtempSync(join(tmpdir(), "dc-token-int-"))
-    const store = createTokenUsageStore(dir)
+    const store = asTokenUsageStore(createSessionHistoryStore(sessionHistoryDbPath(dir)))
     const eventBus = createAgentEventBus()
     const busTurn = createTurnEndedEmitter(eventBus)
 
@@ -90,7 +102,13 @@ describe("token-usage-persistence C3 integration", () => {
         store.onTurnEnded(agentId, info.acpSessionId ?? null, Date.now())
       },
       afterHostCreated: (agentId, entry) => {
-        wireTokenUsagePatches(agentId, entry.host, entry.broadcaster, () => store, connectionRegistry as never)
+        wireTokenUsagePatches(
+          agentId,
+          entry.host,
+          entry.broadcaster,
+          () => store,
+          connectionRegistry as never,
+        )
       },
       _createHostFn: async (conn, opts) =>
         createSessionHostFromConnection(conn, {

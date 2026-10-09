@@ -1,11 +1,16 @@
-import { describe, expect, it } from "vitest"
 import { Hono } from "hono"
-import { createTokenUsageStore } from "../usage/token-usage-store.js"
+import { describe, expect, it } from "vitest"
+import { asTokenUsageStore } from "../history/session-history-as-token-usage.js"
+import {
+  createSessionHistoryStore,
+  sessionHistoryDbPath,
+} from "../history/session-history-store.js"
 import { registerTokenUsageHttp } from "./http-token-usage.js"
 
 describe("GET /api/usage/tokens", () => {
   it("returns sessions sorted by lastSeenAt desc", async () => {
-    const store = createTokenUsageStore(`/tmp/dc-http-token-${Date.now()}`)
+    const base = `/tmp/dc-http-token-${Date.now()}`
+    const store = asTokenUsageStore(createSessionHistoryStore(sessionHistoryDbPath(base)))
     store.ingestUsageUpdate({
       agentId: "a1",
       acpSessionId: "s1",
