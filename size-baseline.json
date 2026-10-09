@@ -764,10 +764,10 @@
       "codeLines": 123
     },
     "packages/frontend/src/lib/components/settings/SettingsScreen.svelte": {
-      "metric": 200,
-      "impurity": 6,
+      "metric": 141,
+      "impurity": 5,
       "class": "mixed",
-      "codeLines": 355
+      "codeLines": 260
     },
     "packages/frontend/src/lib/components/settings/TtsStatusCard.svelte": {
       "metric": 62,
@@ -1076,16 +1076,16 @@
       "codeLines": 12
     },
     "packages/frontend/src/lib/view-models/settings.svelte.ts": {
-      "metric": 681,
-      "impurity": 6,
+      "metric": 540,
+      "impurity": 2,
       "class": "mixed",
-      "codeLines": 438
+      "codeLines": 349
     },
     "packages/frontend/src/lib/view-models/speaker.svelte.ts": {
-      "metric": 902,
-      "impurity": 8,
+      "metric": 790,
+      "impurity": 4,
       "class": "mixed",
-      "codeLines": 584
+      "codeLines": 499
     },
     "packages/frontend/src/lib/view-models/theme.svelte.ts": {
       "metric": 49,

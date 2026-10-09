@@ -13,175 +13,16 @@
  * הרלוונטי ללא מתודת set שכותבת ל-localStorage.
  */
 
-import { DEFAULT_LOCALE, detectLocale, type Locale } from "@drive-coding/core/i18n"
+import type { Locale } from "@drive-coding/core/i18n"
 import type { SpeechPace, SpeechTone } from "@drive-coding/core/voice/tts-types"
 import type { SessionTransport } from "$lib/session/session-transport"
+import type { ElevenLabsTtsModelId, GeminiTtsModelId } from "../adapters/voice/tts-resolve"
 import { listVoices, type Voice } from "../adapters/voice/voices"
-import { DEFAULT_GEMINI_VOICE, DEFAULT_LIVE_VOICE } from "../adapters/voice/voices-gemini"
 import { setBeUrlBase } from "../util/be-url"
-import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH_REM } from "../util/sidebar-width"
+import { clampSidebarWidth } from "../util/sidebar-width"
 import { ttsCapabilities } from "./capabilities.svelte"
+import { DEFAULTS, loadSettings, saveSettings } from "./settings-persistence"
 import { coerceInputMode, type InputMode } from "./ui-shell.svelte"
-
-const STORAGE_KEY = "drive-coding-v2-settings"
-
-const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL" // Sarah, ElevenLabs
-
-type Persisted = {
-  /** open-cli-registry-fe: string (לא CliKind) — כל kind ברג'יסטרי האפקטיבי, כולל קונפ'. */
-  cliKind: string
-  lastCwd: string
-  voiceId: string
-  beUrl: string
-  // ─── דיבור ─── (redesign-3 / 9a)
-  speakThoughts: boolean
-  narrateTools: boolean
-  translateThoughts: boolean
-  // ─── רכב ─── (redesign-3, חיווט מלא: slice 7)
-  carMode: boolean
-  // ─── שפה ─── (rtl-ltr-bidi)
-  locale: Locale
-  // ─── השתקה ─── (ui-polish-batch · C7)
-  muted: boolean
-  // ─── מסך ─── (slice-wake-lock)
-  screenWakeLock: boolean
-  // ─── תצוגת צ'אט ─── (display-toggle-consistency — פולריות חיובית: ON=מציג)
-  showThoughts: boolean
-  showTools: boolean
-  compactActivity: boolean
-  // ─── session-memo ─── (slice session-memo-pad)
-  showSessionMemo: boolean
-  // ─── Enter toggle ─── (slice-enter-toggle)
-  enterToSend: boolean
-  autoLoadRemoteImages: boolean
-  // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
-  // מפה: cliKind → { configId/category → value }
-  lastConfig: Record<string, Record<string, string | boolean>>
-  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
-  ttsProvider: "elevenlabs" | "google"
-  // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
-  recentCollapsed: boolean
-  // ─── leave-running (runtime-gate fixes) ───
-  suppressLeaveWarning: boolean
-  // ─── קול Gemini ─── (V4b-gemini-voice-picker)
-  geminiVoice: string
-  // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker) — נפרד מ-TTS כדי למנוע Kore↔Kore
-  liveVoice: string
-  projectSystemPrompt: Record<string, string>
-  // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
-  recentPanelHeight: number
-  activePanelHeight: number
-  // ─── sidebar-resize ───
-  sidebarWidthRem: number
-  // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
-  geminiPace: SpeechPace
-  geminiTone: SpeechTone
-  sessionTransport: SessionTransport | null
-  // ─── notifications ─── (slice notify-local)
-  notifications: boolean
-  // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
-  sessionsCurrentCwdOnly: boolean
-  inputMode: InputMode
-}
-
-const DEFAULTS: Persisted = {
-  cliKind: "opencode",
-  lastCwd: "",
-  voiceId: DEFAULT_VOICE_ID,
-  beUrl: "",
-  // ─── דיבור ─── (redesign-3 / 9a)
-  speakThoughts: true,
-  narrateTools: true,
-  translateThoughts: true,
-  // ─── רכב ───
-  carMode: false,
-  // ─── שפה ─── (rtl-ltr-bidi) — DEFAULT_LOCALE="he"; detectLocale() רץ רק כש-localStorage ריק
-  locale: DEFAULT_LOCALE,
-  // ─── השתקה ─── (ui-polish-batch · C7)
-  muted: true,
-  // ─── מסך ─── (slice-wake-lock)
-  screenWakeLock: true,
-  // ─── תצוגת צ'אט ─── (display-toggle-consistency) — ברירות מחדל = התנהגות נוכחית (מחשבות פתוחות, כלים סגורים)
-  showThoughts: true,
-  showTools: false,
-  compactActivity: false,
-  // אופט-אין: כבוי כברירת מחדל; ערך שמור גובר (load עושה {...DEFAULTS, ...parsed}).
-  showSessionMemo: false,
-  enterToSend: true,
-  // ─── תמונות מרוחקות ─── (slice msg-media) — ברירת מחדל = בטוח (click-to-load)
-  autoLoadRemoteImages: false,
-  // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
-  lastConfig: {},
-  // ─── TTS provider ─── (V4a) — ברירת מחדל = ElevenLabs (Q1=לא flip)
-  ttsProvider: "elevenlabs" as const,
-  // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
-  recentCollapsed: false,
-  // ─── leave-running (runtime-gate fixes) ───
-  suppressLeaveWarning: false,
-  // ─── קול Gemini ─── (V4b-gemini-voice-picker)
-  geminiVoice: DEFAULT_GEMINI_VOICE,
-  // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker)
-  liveVoice: DEFAULT_LIVE_VOICE,
-  // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
-  projectSystemPrompt: {},
-  // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize) — 256px = 16rem, זהה להתנהגות היום
-  recentPanelHeight: 256,
-  activePanelHeight: 256,
-  sidebarWidthRem: DEFAULT_SIDEBAR_WIDTH_REM,
-  geminiPace: "normal",
-  geminiTone: "neutral",
-  // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4) — null = env נבחר
-  sessionTransport: "http",
-  // ─── notifications ─── (slice notify-local) — opt-in
-  notifications: false,
-  // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
-  sessionsCurrentCwdOnly: false,
-  inputMode: "record",
-}
-
-/**
- * Legacy values for the three fields flipped in slice fe-defaults.
- * Frozen: an **existing** blob missing a key gets this value — not the new DEFAULTS.
- * The choice is by **blob existence**, not by key existence.
- */
-const LEGACY_DEFAULTS: Pick<Persisted, "muted" | "screenWakeLock" | "sessionTransport"> = {
-  muted: false,
-  screenWakeLock: false,
-  sessionTransport: null,
-}
-
-function load(): Persisted {
-  if (typeof localStorage === "undefined") return { ...DEFAULTS, locale: detectLocale() }
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    // ללא ערך שמור: locale נגזר מהדפדפן (detectLocale), שאר ה-DEFAULTS.
-    if (!raw) return { ...DEFAULTS, locale: detectLocale() }
-    const parsed = JSON.parse(raw) as Partial<Persisted> & {
-      collapseThoughts?: boolean
-      expandTools?: boolean
-    }
-    // migration (display-toggle-consistency): מפתחות ישנים → פולריות חיובית.
-    // נשמר רק אם המפתח החדש עדיין לא קיים (לא לדרוס בחירה חדשה).
-    if (parsed.showThoughts === undefined && parsed.collapseThoughts !== undefined) {
-      parsed.showThoughts = !parsed.collapseThoughts
-    }
-    if (parsed.showTools === undefined && parsed.expandTools !== undefined) {
-      parsed.showTools = parsed.expandTools
-    }
-    return { ...DEFAULTS, ...LEGACY_DEFAULTS, ...parsed }
-  } catch {
-    return { ...DEFAULTS, ...LEGACY_DEFAULTS, locale: detectLocale() }
-  }
-}
-
-function save(s: Persisted): void {
-  if (typeof localStorage === "undefined") return
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
-  } catch {
-    // מכסה (quota) / אחסון מושבת — דלג בשקט
-  }
-}
 
 export class Settings {
   // ─── טופס חיבור ───
@@ -239,6 +80,10 @@ export class Settings {
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   ttsProvider = $state<"elevenlabs" | "google">(DEFAULTS.ttsProvider)
 
+  // ─── TTS model ─── (tts-model-choice)
+  elevenLabsModelId = $state<ElevenLabsTtsModelId>(DEFAULTS.elevenLabsModelId)
+  geminiModelId = $state<GeminiTtsModelId>(DEFAULTS.geminiModelId)
+
   // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
   recentCollapsed = $state<boolean>(DEFAULTS.recentCollapsed)
   // ─── leave-running (runtime-gate fixes) ───
@@ -275,7 +120,7 @@ export class Settings {
   inputMode = $state<InputMode>(DEFAULTS.inputMode)
 
   constructor() {
-    const loaded = load()
+    const loaded = loadSettings()
     this.cliKind = loaded.cliKind
     this.lastCwd = loaded.lastCwd
     this.voiceId = loaded.voiceId
@@ -296,6 +141,8 @@ export class Settings {
     this.autoLoadRemoteImages = loaded.autoLoadRemoteImages
     this.lastConfig = loaded.lastConfig
     this.ttsProvider = loaded.ttsProvider
+    this.elevenLabsModelId = loaded.elevenLabsModelId
+    this.geminiModelId = loaded.geminiModelId
     this.recentCollapsed = loaded.recentCollapsed
     this.suppressLeaveWarning = loaded.suppressLeaveWarning
     this.geminiVoice = loaded.geminiVoice
@@ -538,6 +385,16 @@ export class Settings {
     this.#persist()
   }
 
+  setElevenLabsModelId = (v: ElevenLabsTtsModelId): void => {
+    this.elevenLabsModelId = v
+    this.#persist()
+  }
+
+  setGeminiModelId = (v: GeminiTtsModelId): void => {
+    this.geminiModelId = v
+    this.#persist()
+  }
+
   // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
 
   setRecentCollapsed = (v: boolean): void => {
@@ -642,7 +499,7 @@ export class Settings {
   // ─── פרטי ───
 
   #persist(): void {
-    save({
+    saveSettings({
       cliKind: this.cliKind,
       lastCwd: this.lastCwd,
       voiceId: this.voiceId,
@@ -662,6 +519,8 @@ export class Settings {
       autoLoadRemoteImages: this.autoLoadRemoteImages,
       lastConfig: this.lastConfig,
       ttsProvider: this.ttsProvider,
+      elevenLabsModelId: this.elevenLabsModelId,
+      geminiModelId: this.geminiModelId,
       recentCollapsed: this.recentCollapsed,
       suppressLeaveWarning: this.suppressLeaveWarning,
       geminiVoice: this.geminiVoice,

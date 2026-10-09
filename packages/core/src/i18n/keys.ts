@@ -281,6 +281,14 @@ export type MessageKey =
   | "settings.ttsProvider.label"
   | "settings.ttsProvider.elevenlabs"
   | "settings.ttsProvider.gemini"
+  // ─── TTS model ─── (tts-model-choice)
+  | "settings.ttsModel.label"
+  | "settings.ttsModel.eleven_v3"
+  | "settings.ttsModel.eleven_v4"
+  | "settings.ttsModel.eleven_v4_turbo"
+  | "settings.ttsModel.gemini_3_1_flash_tts_preview"
+  | "settings.ttsModel.gemini_3_8_flash_tts"
+  | "settings.ttsModel.gemini_3_8_flash_lite_tts"
   // ─── session transport ─── (slice transport-polish C4)
   | "settings.sessionTransport.label"
   | "settings.sessionTransport.ws"

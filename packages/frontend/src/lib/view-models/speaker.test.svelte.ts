@@ -19,16 +19,20 @@ const mockSynthesize = vi.fn()
 const mockIsAvailable = vi.fn((_provider: "elevenlabs" | "google") => true)
 const mockNarrate = vi.fn()
 
-vi.mock("$lib/adapters/voice/tts-resolve", () => ({
-  resolveTts: vi.fn(() => ({
-    provider: {
-      format: "pcm" as const,
-      synthesize: (...args: unknown[]) => mockSynthesize(...args),
-    },
-    voiceId: "voice",
-    modelId: "model",
-  })),
-}))
+vi.mock("$lib/adapters/voice/tts-resolve", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/adapters/voice/tts-resolve")>()
+  return {
+    ...actual,
+    resolveTts: vi.fn(() => ({
+      provider: {
+        format: "pcm" as const,
+        synthesize: (...args: unknown[]) => mockSynthesize(...args),
+      },
+      voiceId: "voice",
+      modelId: "model",
+    })),
+  }
+})
 
 vi.mock("./capabilities.svelte", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./capabilities.svelte")>()

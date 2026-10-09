@@ -262,6 +262,13 @@ export const he: Catalog = {
   "settings.ttsProvider.label": "ספק TTS",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",
   "settings.ttsProvider.gemini": "Gemini",
+  "settings.ttsModel.label": "מודל TTS",
+  "settings.ttsModel.eleven_v3": "Eleven v3 (ברירת מחדל)",
+  "settings.ttsModel.eleven_v4": "Eleven v4",
+  "settings.ttsModel.eleven_v4_turbo": "Eleven v4 Turbo",
+  "settings.ttsModel.gemini_3_1_flash_tts_preview": "Gemini 3.1 Flash TTS (ברירת מחדל)",
+  "settings.ttsModel.gemini_3_8_flash_tts": "Gemini 3.8 Flash TTS",
+  "settings.ttsModel.gemini_3_8_flash_lite_tts": "Gemini 3.8 Flash Lite TTS",
   // ─── session transport ─── (slice transport-polish C4)
   "settings.sessionTransport.label": "טרנספורט סשן",
   "settings.sessionTransport.ws": "WebSocket",

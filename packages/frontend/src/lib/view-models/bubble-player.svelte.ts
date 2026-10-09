@@ -196,6 +196,10 @@ export class BubblePlayer implements SegmentOwner {
       this.#settings.ttsProvider,
       this.#settings.voiceId,
       this.#settings.geminiVoice,
+      {
+        elevenLabsModelId: this.#settings.elevenLabsModelId,
+        geminiModelId: this.#settings.geminiModelId,
+      },
     )
     // Commit 4 capability-gate: אל תנסה synthesize לספק לא-זמין.
     if (!ttsCapabilities.isAvailable(this.#settings.ttsProvider)) {

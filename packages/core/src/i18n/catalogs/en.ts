@@ -267,6 +267,13 @@ export const en: Catalog = {
   "settings.ttsProvider.label": "TTS provider",
   "settings.ttsProvider.elevenlabs": "ElevenLabs",
   "settings.ttsProvider.gemini": "Gemini",
+  "settings.ttsModel.label": "TTS model",
+  "settings.ttsModel.eleven_v3": "Eleven v3 (default)",
+  "settings.ttsModel.eleven_v4": "Eleven v4",
+  "settings.ttsModel.eleven_v4_turbo": "Eleven v4 Turbo",
+  "settings.ttsModel.gemini_3_1_flash_tts_preview": "Gemini 3.1 Flash TTS (default)",
+  "settings.ttsModel.gemini_3_8_flash_tts": "Gemini 3.8 Flash TTS",
+  "settings.ttsModel.gemini_3_8_flash_lite_tts": "Gemini 3.8 Flash Lite TTS",
   // ─── session transport ─── (slice transport-polish C4)
   "settings.sessionTransport.label": "Session transport",
   "settings.sessionTransport.ws": "WebSocket",
