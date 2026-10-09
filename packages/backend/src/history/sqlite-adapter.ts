@@ -60,7 +60,6 @@ export function isSqliteBusyCause(e: unknown): boolean {
     if (typeof x !== "object" || x === null) continue
     const o = x as Record<string, unknown>
     if (o.code === "SQLITE_BUSY") return true
-    if (o.errno === 5) return true
     const msg = String(o.message ?? "")
     if (/database is locked|SQLITE_BUSY/i.test(msg)) return true
   }

@@ -104,38 +104,37 @@ describe("openSqliteDb", () => {
     db2.close()
   })
 
-  it("classifies SQLITE_BUSY as SqliteBusyError, not corrupt (DoD 11)", () => {
-    const busy = { code: "SQLITE_BUSY", errno: 5, message: "database is locked" }
-    expect(isSqliteBusyCause(busy)).toBe(true)
-    const err = classifySqliteHealthError(busy, "/tmp/x.sqlite")
-    expect(err).toBeInstanceOf(SqliteBusyError)
-    expect(err.message).toMatch(/locked/)
-    expect(err.message).not.toMatch(/not a valid SQLite file/)
-  })
+  describe("classifySqliteHealthError — busy vs EIO vs corrupt (DoD 11)", () => {
+    it("1. SQLITE_BUSY (synthetic driver shape) ⇒ SqliteBusyError", () => {
+      const busy = { code: "SQLITE_BUSY", message: "database is locked" }
+      expect(isSqliteBusyCause(busy)).toBe(true)
+      const err = classifySqliteHealthError(busy, "/tmp/x.sqlite")
+      expect(err).toBeInstanceOf(SqliteBusyError)
+      expect(err.message).toMatch(/locked/)
+      expect(err.message).not.toMatch(/not a valid SQLite file/)
+    })
 
-  it("classifies non-busy driver errors as corrupt SqliteOpenError", () => {
-    const corrupt = { code: "SQLITE_NOTADB", message: "file is not a database" }
-    expect(isSqliteBusyCause(corrupt)).toBe(false)
-    const err = classifySqliteHealthError(corrupt, "/tmp/bad.sqlite")
-    expect(err).toBeInstanceOf(SqliteOpenError)
-    expect(err.message).toMatch(/not a valid SQLite file/)
-  })
+    it("2. EIO shape (synthetic — not measured real disk I/O failure) ⇒ not SqliteBusyError", () => {
+      const eio = { errno: 5, code: "EIO", message: "EIO: i/o error" }
+      expect(isSqliteBusyCause(eio)).toBe(false)
+      const err = classifySqliteHealthError(eio, "/tmp/x.sqlite")
+      expect(err).not.toBeInstanceOf(SqliteBusyError)
+      expect(err).toBeInstanceOf(SqliteOpenError)
+      expect(err.message).toMatch(/not a valid SQLite file/)
+    })
 
-  it("positive: pre-fix catch would label busy as corrupt", () => {
-    const busy = { code: "SQLITE_BUSY", message: "database is locked" }
-    const legacyMessage = `Database at /tmp/gate.sqlite is not a valid SQLite file`
-    const fixed = classifySqliteHealthError(busy, "/tmp/gate.sqlite")
-    expect(String(fixed)).not.toBe(legacyMessage)
-    expect(fixed.name).toBe("SqliteBusyError")
-  })
+    it("positive: pre-fix errno===5 alone misclassified synthetic EIO as busy", () => {
+      expect(isSqliteBusyCause({ errno: 5, code: "EIO" })).toBe(false)
+    })
 
-  it("throws SqliteOpenError on corrupt file without truncating source bytes", () => {
-    dir = mkdtempSync(join(tmpdir(), "dc-sqlite-corrupt-"))
-    dbPath = join(dir, "corrupt.sqlite")
-    const garbage = "this is not a database"
-    writeFileSync(dbPath, garbage)
-    expect(() => openSqliteDb(dbPath)).toThrow(SqliteOpenError)
-    expect(() => openSqliteDb(dbPath)).toThrow(/not a valid SQLite|integrity_check|Failed to open/)
-    expect(readFileSync(dbPath, "utf8")).toBe(garbage)
+    it("3. non-SQLite file ⇒ SqliteOpenError without truncating bytes", () => {
+      dir = mkdtempSync(join(tmpdir(), "dc-sqlite-corrupt-"))
+      dbPath = join(dir, "corrupt.sqlite")
+      const garbage = "this is not a database"
+      writeFileSync(dbPath, garbage)
+      expect(() => openSqliteDb(dbPath)).toThrow(SqliteOpenError)
+      expect(() => openSqliteDb(dbPath)).toThrow(/not a valid SQLite|integrity_check|Failed to open/)
+      expect(readFileSync(dbPath, "utf8")).toBe(garbage)
+    })
   })
 })
