@@ -154,7 +154,7 @@ export function createSessionHistoryStore(dbFile: string): SessionHistoryStore {
         const row = db
           .prepare("SELECT cliKind FROM sessions WHERE acpSessionId = ? AND agentId = ? LIMIT 1")
           .get<{ cliKind: string }>(acpSessionId, agentId)
-        if (row === undefined) return
+        if (row == null) return
         db.prepare(
           `UPDATE sessions SET turns = turns + 1, lastSeenAt = ?
            WHERE cliKind = ? AND acpSessionId = ? AND agentId = ?`,
@@ -213,7 +213,7 @@ export function createSessionHistoryStore(dbFile: string): SessionHistoryStore {
           lastSeenAt: s.lastSeenAt,
           turns: s.turns,
         }
-        if (usageRow !== undefined) {
+        if (usageRow != null) {
           const { cycles, cyclesTruncated } = loadCycles(db, key)
           row.usage = {
             lastUsed: usageRow.lastUsed,

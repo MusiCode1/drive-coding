@@ -33,7 +33,7 @@ function migrationDone(db: SqliteDb): boolean {
   const row = db
     .prepare("SELECT 1 FROM history_migrations WHERE migrationId = ?")
     .get(LEGACY_IMPORT_MIGRATION_ID)
-  return row !== undefined
+  return row != null
 }
 
 function readJson(path: string): unknown {

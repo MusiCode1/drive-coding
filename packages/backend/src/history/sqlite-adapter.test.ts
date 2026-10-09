@@ -6,7 +6,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { openSqliteDb, SqliteOpenError } from "./sqlite-adapter.js"
+import {
+  classifySqliteHealthError,
+  isSqliteBusyCause,
+  openSqliteDb,
+  SqliteBusyError,
+  SqliteOpenError,
+} from "./sqlite-adapter.js"
 
 describe("openSqliteDb", () => {
   let dir: string
@@ -76,6 +82,51 @@ describe("openSqliteDb", () => {
     const fk = db.prepare("PRAGMA foreign_keys").get<{ foreign_keys: number }>()
     expect(fk?.foreign_keys).toBe(1)
     db.close()
+  })
+
+  it("get() on zero rows returns undefined (not null)", () => {
+    const db = openFresh()
+    const miss = db.prepare("SELECT 1 AS n WHERE 0").get<{ n: number }>()
+    expect(miss).toBeUndefined()
+    db.close()
+  })
+
+  it("transaction succeeds after a failed BEGIN once the lock is released", () => {
+    dir = mkdtempSync(join(tmpdir(), "dc-sqlite-lock-"))
+    dbPath = join(dir, "lock.sqlite")
+    const db1 = openSqliteDb(dbPath)
+    const db2 = openSqliteDb(dbPath)
+    db1.exec("BEGIN IMMEDIATE")
+    expect(() => db2.transaction(() => 1)).toThrow(/locked|SQLITE_BUSY|re-entrant/i)
+    db1.exec("ROLLBACK")
+    expect(db2.transaction(() => 42)).toBe(42)
+    db1.close()
+    db2.close()
+  })
+
+  it("classifies SQLITE_BUSY as SqliteBusyError, not corrupt (DoD 11)", () => {
+    const busy = { code: "SQLITE_BUSY", errno: 5, message: "database is locked" }
+    expect(isSqliteBusyCause(busy)).toBe(true)
+    const err = classifySqliteHealthError(busy, "/tmp/x.sqlite")
+    expect(err).toBeInstanceOf(SqliteBusyError)
+    expect(err.message).toMatch(/locked/)
+    expect(err.message).not.toMatch(/not a valid SQLite file/)
+  })
+
+  it("classifies non-busy driver errors as corrupt SqliteOpenError", () => {
+    const corrupt = { code: "SQLITE_NOTADB", message: "file is not a database" }
+    expect(isSqliteBusyCause(corrupt)).toBe(false)
+    const err = classifySqliteHealthError(corrupt, "/tmp/bad.sqlite")
+    expect(err).toBeInstanceOf(SqliteOpenError)
+    expect(err.message).toMatch(/not a valid SQLite file/)
+  })
+
+  it("positive: pre-fix catch would label busy as corrupt", () => {
+    const busy = { code: "SQLITE_BUSY", message: "database is locked" }
+    const legacyMessage = `Database at /tmp/gate.sqlite is not a valid SQLite file`
+    const fixed = classifySqliteHealthError(busy, "/tmp/gate.sqlite")
+    expect(String(fixed)).not.toBe(legacyMessage)
+    expect(fixed.name).toBe("SqliteBusyError")
   })
 
   it("throws SqliteOpenError on corrupt file without truncating source bytes", () => {

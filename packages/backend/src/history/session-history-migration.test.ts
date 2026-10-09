@@ -204,4 +204,59 @@ describe("runLegacyImport", () => {
     ).toBe("ok")
     verifyDb.close()
   })
+
+  it("transaction rollback leaves no migration marker", () => {
+    setupFixtures()
+    const db = openDb()
+    expect(() =>
+      db.transaction(() => {
+        db.prepare("INSERT INTO history_migrations (migrationId, completedAt) VALUES (?, ?)").run(
+          LEGACY_IMPORT_MIGRATION_ID,
+          Date.now(),
+        )
+        throw new Error("abort")
+      }),
+    ).toThrow("abort")
+    const mark = db
+      .prepare("SELECT migrationId FROM history_migrations WHERE migrationId = ?")
+      .get(LEGACY_IMPORT_MIGRATION_ID)
+    expect(mark).toBeUndefined()
+    db.close()
+  })
+
+  it("two parallel worker processes on empty DB import exactly once", async () => {
+    setupFixtures()
+
+    function runWorker(): Promise<{ result: string }> {
+      return new Promise((resolve, reject) => {
+        const child = spawn("bun", [workerScript, dbPath, usagePath, projectsPath], {
+          cwd: workerDir,
+          env: { ...process.env, HISTORY_DB_FILE: dbPath },
+        })
+        let out = ""
+        child.stdout.on("data", (chunk) => {
+          out += String(chunk)
+        })
+        child.stderr.on("data", (chunk) => {
+          out += String(chunk)
+        })
+        child.on("error", reject)
+        child.on("close", (code) => {
+          if (code !== 0) {
+            reject(new Error(`worker exit ${code}: ${out}`))
+            return
+          }
+          const line = out.trim().split("\n").pop() ?? ""
+          resolve(JSON.parse(line) as { result: string })
+        })
+      })
+    }
+
+    const parsed = await Promise.all([runWorker(), runWorker()])
+    expect(parsed.map((p) => p.result).sort()).toEqual(["imported", "skipped"])
+    const verifyDb = openDb()
+    const n = verifyDb.prepare("SELECT count(*) AS n FROM sessions").get<{ n: number }>()?.n ?? 0
+    expect(n).toBeGreaterThan(0)
+    verifyDb.close()
+  })
 })

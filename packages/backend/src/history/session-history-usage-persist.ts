@@ -118,7 +118,7 @@ export function buildUsageRecord(
       costAmount: number | null
       costCurrency: string | null
     }>(key.cliKind, key.acpSessionId)
-  if (sess === undefined || usage === undefined) return undefined
+  if (sess == null || usage == null) return undefined
   const { cycles, cyclesTruncated } = loadCycles(db, key)
   const rec: TokenUsageRecord = {
     acpSessionId: meta.acpSessionId,
@@ -160,7 +160,7 @@ export function ingestUsageInTransaction(
     acpSessionId: p.acpSessionId,
   })
   let rec: TokenUsageRecord
-  if (existing === undefined) {
+  if (existing == null) {
     rec = createInitialTokenUsageRecord({
       acpSessionId: p.acpSessionId,
       agentId: p.agentId,

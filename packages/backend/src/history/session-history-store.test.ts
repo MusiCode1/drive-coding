@@ -210,6 +210,20 @@ describe("createSessionHistoryStore", () => {
     s2.close()
   })
 
+  it("listCliSessionRows omits usage when there is no usage report", () => {
+    const s = openStore()
+    s.recordAttach({
+      agentId: "a1",
+      cliKind: "claude",
+      cwd: "/p",
+      acpSessionId: "no-usage",
+      now: 100,
+    })
+    const row = s.listCliSessionRows().find((r) => r.cliKind === "claude")
+    expect(row?.usage).toBeUndefined()
+    s.close()
+  })
+
   it("onTurnEnded increments turns", () => {
     const s = openStore()
     s.ingestUsageUpdate({

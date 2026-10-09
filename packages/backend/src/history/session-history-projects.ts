@@ -58,7 +58,7 @@ export function listProjectsFromDb(db: SqliteDb, opts?: ListProjectsOpts): Proje
   for (const r of fromSessions) {
     if (!includeHidden) {
       const hid = db.prepare("SELECT 1 FROM hidden_folders WHERE cwd = ?").get(r.cwd)
-      if (hid !== undefined) continue
+      if (hid != null) continue
     }
     const latest = latestSessionForCwd(db, r.cwd)
     rows.push({
