@@ -9,14 +9,14 @@
    */
   import { onMount } from "svelte"
   import { WakeWordVM } from "$lib/view-models/wake-word.svelte.js"
+  import { ONNX_MODEL_BASE_URL } from "$lib/engines/onnx-assets.js"
   import VoiceOrb from "$lib/components/VoiceOrb.svelte"
 
-  const BASE_ASSET_URL = "/wake-word/models"
   const KEYWORDS = ["hey_jarvis", "alexa", "hey_mycroft", "hey_rhasspy"]
 
   const vm = new WakeWordVM({
     keywords: KEYWORDS,
-    baseAssetUrl: BASE_ASSET_URL,
+    baseAssetUrl: ONNX_MODEL_BASE_URL,
   })
 
   let status = $state("loading models...")

@@ -14,12 +14,13 @@ import { MODEL_FILE_MAP, DETECT_THRESHOLD, VAD_THRESHOLD } from "./types.js"
 import { computeRms, FRAME_SIZE, SAMPLE_RATE } from "./audio-math.js"
 import { createVadState, runVadStep } from "./vad.js"
 import { createScorePipeline } from "./pipeline.js"
+import { ONNX_WASM_BASE_URL } from "../onnx-assets.js"
 
 // single-thread mode — עוקף COOP/COEP שאינן מוגדרות (לקח מה-POC)
 ort.env.wasm.numThreads = 1
 // wasm files: CDN — זהה לגישת ה-POC (ort.wasm.min.js = onnxruntime-web 1.22.0 bundle)
 // ⚠️ הOracle env לא אידאלי (Vite wasm MIME), CDN הוא הפתרון הסביר לbuild קיים.
-ort.env.wasm.wasmPaths = "https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.22.0/"
+ort.env.wasm.wasmPaths = ONNX_WASM_BASE_URL
 
 // ─── Tiny event emitter ───────────────────────────────────────────────────────
 
