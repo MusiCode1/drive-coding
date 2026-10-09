@@ -68,7 +68,11 @@ function loadUsageRecords(path: string | undefined): TokenUsageRecord[] {
 function loadProjects(path: string | undefined): ProjectEntry[] {
   if (path === undefined) return []
   const data = readJson(path)
-  if (typeof data !== "object" || data === null || !Array.isArray((data as { projects?: unknown }).projects)) {
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    !Array.isArray((data as { projects?: unknown }).projects)
+  ) {
     throw new LegacyImportError(`Unexpected projects registry shape at ${path}`)
   }
   return (data as { projects: ProjectEntry[] }).projects

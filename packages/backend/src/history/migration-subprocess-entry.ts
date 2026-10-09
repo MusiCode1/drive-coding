@@ -3,8 +3,8 @@
  * Usage: bun migration-subprocess-entry.ts <dbPath> <usageJson> <projectsJson>
  */
 
-import { applySessionHistorySchema } from "./session-history-schema.js"
 import { runLegacyImport } from "./session-history-migration.js"
+import { applySessionHistorySchema } from "./session-history-schema.js"
 import { openSqliteDb } from "./sqlite-adapter.js"
 
 const [dbPath, usageJson, projectsJson] = process.argv.slice(2)

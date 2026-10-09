@@ -7,12 +7,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import { insertLegacyFolder } from "./session-history-projects.js"
-import {
-  createSessionHistoryStore,
-  sessionHistoryDbPath,
-} from "./session-history-store.js"
-import { openSqliteDb } from "./sqlite-adapter.js"
 import { applySessionHistorySchema } from "./session-history-schema.js"
+import { createSessionHistoryStore, sessionHistoryDbPath } from "./session-history-store.js"
+import { openSqliteDb } from "./sqlite-adapter.js"
 
 describe("session history projects", () => {
   let dir: string

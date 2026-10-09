@@ -8,15 +8,15 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
-import { createSessionHistoryStore, sessionHistoryDbPath } from "./session-history-store.js"
 import {
   LEGACY_IMPORT_MIGRATION_ID,
   LegacyImportError,
   runLegacyImport,
   vacuumIntoBackup,
 } from "./session-history-migration.js"
-import { openSqliteDb } from "./sqlite-adapter.js"
 import { applySessionHistorySchema } from "./session-history-schema.js"
+import { createSessionHistoryStore, sessionHistoryDbPath } from "./session-history-store.js"
+import { openSqliteDb } from "./sqlite-adapter.js"
 
 const workerDir = fileURLToPath(new URL(".", import.meta.url))
 const workerScript = join(workerDir, "migration-subprocess-entry.ts")
@@ -86,7 +86,10 @@ describe("runLegacyImport", () => {
     setupFixtures()
     const db = openDb()
     expect(
-      runLegacyImport({ db, legacySources: { usageJsonPath: usagePath, projectsJsonPath: projectsPath } }),
+      runLegacyImport({
+        db,
+        legacySources: { usageJsonPath: usagePath, projectsJsonPath: projectsPath },
+      }),
     ).toBe("imported")
     const store = createSessionHistoryStore(dbPath)
     const rec = store.listUsageRecords()[0]
@@ -94,9 +97,12 @@ describe("runLegacyImport", () => {
     expect(rec?.cycles[0]?.closedAt).toBeNull()
     expect(store.listProjects().some((p) => p.cwd === "/legacy-no-sid")).toBe(true)
     store.close()
-    expect(runLegacyImport({ db, legacySources: { usageJsonPath: usagePath, projectsJsonPath: projectsPath } })).toBe(
-      "skipped",
-    )
+    expect(
+      runLegacyImport({
+        db,
+        legacySources: { usageJsonPath: usagePath, projectsJsonPath: projectsPath },
+      }),
+    ).toBe("skipped")
     db.close()
   })
 
@@ -104,7 +110,10 @@ describe("runLegacyImport", () => {
     setupFixtures()
     writeFileSync(projectsPath, JSON.stringify({ projects: [] }))
     const db = openDb()
-    runLegacyImport({ db, legacySources: { usageJsonPath: usagePath, projectsJsonPath: projectsPath } })
+    runLegacyImport({
+      db,
+      legacySources: { usageJsonPath: usagePath, projectsJsonPath: projectsPath },
+    })
     db.close()
     const store = createSessionHistoryStore(dbPath)
     expect(store.listProjects().some((p) => p.cwd === "/proj-a")).toBe(false)
@@ -123,9 +132,9 @@ describe("runLegacyImport", () => {
     setupFixtures()
     writeFileSync(usagePath, "{not-json")
     const db = openDb()
-    expect(() =>
-      runLegacyImport({ db, legacySources: { usageJsonPath: usagePath } }),
-    ).toThrow(LegacyImportError)
+    expect(() => runLegacyImport({ db, legacySources: { usageJsonPath: usagePath } })).toThrow(
+      LegacyImportError,
+    )
     expect(readFileSync(usagePath, "utf8")).toBe("{not-json")
     db.close()
   })
@@ -133,7 +142,10 @@ describe("runLegacyImport", () => {
   it("VACUUM INTO backup opens with imported rows", () => {
     setupFixtures()
     const db = openDb()
-    runLegacyImport({ db, legacySources: { usageJsonPath: usagePath, projectsJsonPath: projectsPath } })
+    runLegacyImport({
+      db,
+      legacySources: { usageJsonPath: usagePath, projectsJsonPath: projectsPath },
+    })
     const backup = join(dir, "backup.sqlite")
     vacuumIntoBackup(db, backup)
     db.close()
@@ -147,7 +159,10 @@ describe("runLegacyImport", () => {
     setupFixtures()
     const db = openDb()
     expect(
-      runLegacyImport({ db, legacySources: { usageJsonPath: usagePath, projectsJsonPath: projectsPath } }),
+      runLegacyImport({
+        db,
+        legacySources: { usageJsonPath: usagePath, projectsJsonPath: projectsPath },
+      }),
     ).toBe("imported")
     db.close()
 
@@ -184,9 +199,9 @@ describe("runLegacyImport", () => {
       .get(LEGACY_IMPORT_MIGRATION_ID)
     expect(mark).toBeDefined()
     expect(
-      verifyDb.prepare("PRAGMA integrity_check").get<{ integrity_check: string }>()?.integrity_check,
+      verifyDb.prepare("PRAGMA integrity_check").get<{ integrity_check: string }>()
+        ?.integrity_check,
     ).toBe("ok")
     verifyDb.close()
   })
-
 })
