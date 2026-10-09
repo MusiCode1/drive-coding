@@ -55,13 +55,12 @@ function errorChain(e: unknown): unknown[] {
   return chain
 }
 
+/** Only `SQLITE_BUSY` from the driver — no message-regex (avoids false positives). */
 export function isSqliteBusyCause(e: unknown): boolean {
+  if (e instanceof SqliteBusyError) return true
   for (const x of errorChain(e)) {
     if (typeof x !== "object" || x === null) continue
-    const o = x as Record<string, unknown>
-    if (o.code === "SQLITE_BUSY") return true
-    const msg = String(o.message ?? "")
-    if (/database is locked|SQLITE_BUSY/i.test(msg)) return true
+    if ((x as Record<string, unknown>).code === "SQLITE_BUSY") return true
   }
   return false
 }

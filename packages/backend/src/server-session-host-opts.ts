@@ -10,7 +10,7 @@ import { agentEventSessionHostOpts } from "./delivery/agent-events-boot.js"
 import { createStallSuspectedEmitter } from "./session-host/agent-events-stall.js"
 import type { AgentSessionRegistry } from "./session-host/registry.js"
 import { createOnSessionAttached } from "./server-on-session-attached.js"
-import type { ProjectsRegistry } from "./app/projects-registry.js"
+import type { SessionHistoryStore } from "./history/session-history-store.js"
 import { createLogger } from "@drive-coding/core/log"
 import { createAgentSessionRegistry } from "./session-host/registry.js"
 
@@ -18,7 +18,7 @@ const log = createLogger("backend.server")
 
 export function createSessionHostRegistryOpts(deps: {
   registry: AgentRegistry
-  projectsRegistry: ProjectsRegistry
+  sessionHistoryStore: SessionHistoryStore
   acpSessionIdCache: Map<string, string>
   agentEventBus: AgentEventBus
   getOrchestrator: () => AgentOrchestrator | null
@@ -28,7 +28,7 @@ export function createSessionHostRegistryOpts(deps: {
     agentRegistry: deps.registry,
     onSessionAttached: createOnSessionAttached({
       registry: deps.registry,
-      projectsRegistry: deps.projectsRegistry,
+      sessionHistoryStore: deps.sessionHistoryStore,
       acpSessionIdCache: deps.acpSessionIdCache,
     }),
     evictionController: deps.evictionController,

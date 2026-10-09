@@ -49,8 +49,8 @@ export async function buildApp(
   const {
     registry,
     connectionRegistry,
-    projectsRegistry,
     recordingsStore,
+    sessionHistoryStore,
     agentSessionRegistry,
     agentEventBus,
     orchestrator,
@@ -77,7 +77,7 @@ export async function buildApp(
   registerAgentsHttp(app, {
     registry,
     orchestrator: orchestratorWithEvents,
-    projectsRegistry,
+    sessionHistoryStore,
     bridgeManager: connectionRegistry,
     env,
   })
@@ -94,7 +94,7 @@ export async function buildApp(
   registerDocsHttp(app)
   agentDocFiles()
   registerHealthHttp(app, { registry, connectionRegistry })
-  registerProjectsHttp(app, { projectsRegistry })
+  registerProjectsHttp(app, { sessionHistoryStore })
   registerRecordingsHttp(app, { recordingsStore })
   registerRecordingsPostHttp(app, { recordingsStore })
   registerFsBrowseHttp(app, {
@@ -111,7 +111,7 @@ export async function buildApp(
 
   registerUsageHttp(app, { usageStore })
   registerTokenUsageHttp(app, { tokenUsageStore })
-  registerCliUsageHttp(app, { tokenUsageStore, projectsRegistry })
+  registerCliUsageHttp(app, { sessionHistoryStore })
   registerCliAvailabilityHttp(app, env)
 
   // Extended: the same event also re-resolves config.jsonc + secrets.json and

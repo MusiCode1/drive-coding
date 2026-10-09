@@ -123,7 +123,7 @@ describe("openSqliteDb", () => {
       expect(err.message).toMatch(/not a valid SQLite file/)
     })
 
-    it("positive: pre-fix errno===5 alone misclassified synthetic EIO as busy", () => {
+    it("regression: errno 5 without SQLITE_BUSY code is not classified as busy", () => {
       expect(isSqliteBusyCause({ errno: 5, code: "EIO" })).toBe(false)
     })
 

@@ -13,6 +13,7 @@ import { createInMemoryAgentRegistry } from "../src/agents/registry"
 import type { AgentOrchestrator, CreateAndSpawnResult } from "../src/app/agent-orchestrator"
 import { closeAllAgents } from "../src/app/close-all-agents.js"
 import { registerAgentsHttp } from "../src/delivery/http-agents"
+import type { SessionHistoryStore } from "../src/history/session-history-store.js"
 import { CF_ACCESS_EMAIL_HEADER } from "../src/delivery/opened-by-email.js"
 // slice liveness C2: ה-http-cache הוא module-level — מנקים בין טסטים כדי שלא ידלוף.
 import { httpCacheInvalidateAll } from "../src/delivery/http-cache"
@@ -22,18 +23,23 @@ beforeEach(() => {
   mockLogInfo.mockClear()
 })
 
-// עזר-בדיקה: זיוף projectsRegistry עם ריגול (vi.fn) — עדיף על דיסק אמיתי
-// כדי לבדוק במפורש *האם* ותחת אילו ארגומנטים הוא נקרא (D7).
-function makeFakeProjectsRegistry() {
+// עזר-בדיקה: זיוף sessionHistoryStore עם ריגול — עדיף על דיסק אמיתי (D7).
+function makeFakeSessionHistoryStore(): SessionHistoryStore {
   return {
-    recordCwd: vi.fn(async () => {}),
-    recordSession: vi.fn(async () => {}),
-    removeCwd: vi.fn(async () => {}),
-    getProjects: vi.fn(async () => []),
-  }
+    recordAttach: vi.fn(),
+    hideFolder: vi.fn(),
+    listProjects: vi.fn(() => []),
+    listCliSessionRows: vi.fn(() => []),
+    listUsageRecords: vi.fn(() => []),
+    ingestUsageUpdate: vi.fn(),
+    onTurnEnded: vi.fn(),
+    close: vi.fn(),
+  } as unknown as SessionHistoryStore
 }
 
-function makeApp(opts?: { projectsRegistry?: ReturnType<typeof makeFakeProjectsRegistry> }) {
+function makeApp(opts?: {
+  sessionHistoryStore?: ReturnType<typeof makeFakeSessionHistoryStore>
+}) {
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
 
@@ -68,13 +74,14 @@ function makeApp(opts?: { projectsRegistry?: ReturnType<typeof makeFakeProjectsR
     getBridgePort: vi.fn(() => 7100),
   }
 
+  const sessionHistoryStore = opts?.sessionHistoryStore ?? makeFakeSessionHistoryStore()
   registerAgentsHttp(app, {
     registry,
     orchestrator,
-    projectsRegistry: opts?.projectsRegistry,
+    sessionHistoryStore,
     env: process.env,
   })
-  return { app, registry, orchestrator }
+  return { app, registry, orchestrator, sessionHistoryStore }
 }
 
 describe("HTTP /api/agents", () => {
@@ -209,7 +216,12 @@ describe("HTTP /api/agents", () => {
         },
         getBridgePort: vi.fn(() => 7100),
       }
-      registerAgentsHttp(app, { registry, orchestrator, env: process.env })
+      registerAgentsHttp(app, {
+        registry,
+        orchestrator,
+        sessionHistoryStore: makeFakeSessionHistoryStore(),
+        env: process.env,
+      })
 
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -260,7 +272,12 @@ describe("HTTP /api/agents", () => {
         },
         getBridgePort: vi.fn(() => 7100),
       }
-      registerAgentsHttp(app, { registry, orchestrator, env: process.env })
+      registerAgentsHttp(app, {
+        registry,
+        orchestrator,
+        sessionHistoryStore: makeFakeSessionHistoryStore(),
+        env: process.env,
+      })
 
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -298,7 +315,12 @@ describe("HTTP /api/agents", () => {
         },
         getBridgePort: vi.fn(() => 7100),
       }
-      registerAgentsHttp(app, { registry, orchestrator, env: process.env })
+      registerAgentsHttp(app, {
+        registry,
+        orchestrator,
+        sessionHistoryStore: makeFakeSessionHistoryStore(),
+        env: process.env,
+      })
 
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -320,7 +342,12 @@ describe("HTTP /api/agents", () => {
         async deleteAndKill() {},
         getBridgePort: vi.fn(() => null),
       }
-      registerAgentsHttp(app, { registry, orchestrator: failingOrchestrator, env: process.env })
+      registerAgentsHttp(app, {
+        registry,
+        orchestrator: failingOrchestrator,
+        sessionHistoryStore: makeFakeSessionHistoryStore(),
+        env: process.env,
+      })
 
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -829,9 +856,9 @@ describe("HTTP /api/agents", () => {
 
     // D7 — תופעות-projectsRegistry מותנות בנוכחות acpSessionId (עובדת-חיבור).
     // PATCH {title} בלבד לא אמור לרשום פרויקט או לדרוס lastSessionId.
-    it("PATCH {title} alone does not touch projectsRegistry (D7 conditional side-effects)", async () => {
-      const projectsRegistry = makeFakeProjectsRegistry()
-      const { app, registry } = makeApp({ projectsRegistry })
+    it("PATCH {title} alone does not touch sessionHistoryStore (D7 conditional side-effects)", async () => {
+      const sessionHistoryStore = makeFakeSessionHistoryStore()
+      const { app, registry } = makeApp({ sessionHistoryStore })
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       await registry.update(agent.id, { status: "ready", acpSessionId: "sess-1" })
 
@@ -841,15 +868,14 @@ describe("HTTP /api/agents", () => {
         body: JSON.stringify({ title: "x" }),
       })
       expect(res.status).toBe(200)
-      expect(projectsRegistry.recordCwd).not.toHaveBeenCalled()
-      expect(projectsRegistry.recordSession).not.toHaveBeenCalled()
+      expect(sessionHistoryStore.recordAttach).not.toHaveBeenCalled()
     })
 
-    // חלק ב של הפרוב: attach מלא עם cwd → 200, agent.cwd משתנה, ו-projectsRegistry
+    // חלק ב של הפרוב: attach מלא עם cwd → 200, agent.cwd משתנה, ו-sessionHistoryStore
     // רושם תחת ה-cwd *החדש* (לא הישן) — זו שרשרת ה-cwd שכל הסלייס נבנה סביבה.
-    it("full attach (acpSessionId+status+cwd) → 200, agent.cwd updated, projectsRegistry recorded under new cwd", async () => {
-      const projectsRegistry = makeFakeProjectsRegistry()
-      const { app, registry } = makeApp({ projectsRegistry })
+    it("full attach (acpSessionId+status+cwd) → 200, agent.cwd updated, sessionHistoryStore recorded under new cwd", async () => {
+      const sessionHistoryStore = makeFakeSessionHistoryStore()
+      const { app, registry } = makeApp({ sessionHistoryStore })
       const agent = await registry.create({ cliKind: "opencode", cwd: "/tmp/probe-dirA" })
 
       const res = await app.request(`/api/agents/${agent.id}`, {
@@ -868,10 +894,12 @@ describe("HTTP /api/agents", () => {
       expect(updated?.status).toBe("ready")
       expect(updated?.acpSessionId).toBe("sess-from-dirB")
 
-      expect(projectsRegistry.recordCwd).toHaveBeenCalledWith("/tmp/probe-dirB", "opencode")
-      expect(projectsRegistry.recordSession).toHaveBeenCalledWith(
-        "/tmp/probe-dirB",
-        "sess-from-dirB",
+      expect(sessionHistoryStore.recordAttach).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cwd: "/tmp/probe-dirB",
+          acpSessionId: "sess-from-dirB",
+          cliKind: "opencode",
+        }),
       )
     })
   })
@@ -911,7 +939,13 @@ describe("HTTP /api/agents", () => {
         getConnectionCount: vi.fn(() => 1),
       }
 
-      registerAgentsHttp(app, { registry, orchestrator, bridgeManager, env: process.env })
+      registerAgentsHttp(app, {
+        registry,
+        orchestrator,
+        bridgeManager,
+        sessionHistoryStore: makeFakeSessionHistoryStore(),
+        env: process.env,
+      })
 
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       const res = await app.request("/api/agents")

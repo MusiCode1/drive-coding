@@ -16,21 +16,21 @@
 import { readdir, realpath } from "node:fs/promises"
 import { join, relative, resolve } from "node:path"
 import type { Hono } from "hono"
-import type { ProjectsRegistry } from "../app/projects-registry.js"
 import type { RecordingsStore } from "../app/recordings-store.js"
+import type { SessionHistoryStore } from "../history/session-history-store.js"
+import { listProjectsForApi } from "./http-projects-api.js"
 
 // ─── /api/projects ────────────────────────────────────────────────────────────
 
 export function registerProjectsHttp(
   app: Hono,
   deps: {
-    projectsRegistry: ProjectsRegistry
+    sessionHistoryStore: SessionHistoryStore
   },
 ): void {
   // GET /api/projects
   app.get("/api/projects", async (c) => {
-    const projects = await deps.projectsRegistry.getProjects()
-    return c.json({ projects })
+    return c.json({ projects: listProjectsForApi(deps.sessionHistoryStore) })
   })
 
   // DELETE /api/projects  { cwd }  → מוחק את הרשומה לגמרי
@@ -40,7 +40,7 @@ export function registerProjectsHttp(
     const body = (await c.req.json().catch(() => ({}))) as { cwd?: unknown }
     const cwd = typeof body.cwd === "string" ? body.cwd : ""
     if (!cwd) return c.json({ error: "cwd required" }, 400)
-    await deps.projectsRegistry.removeCwd(cwd)
+    deps.sessionHistoryStore.hideFolder(cwd)
     return c.body(null, 204)
   })
 }

@@ -14,8 +14,8 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { createProjectsRegistry } from "../src/app/projects-registry.js"
 import { createRecordingsStore } from "../src/app/recordings-store.js"
+import { createSessionHistoryStore } from "../src/history/session-history-store.js"
 import {
   normalizeRealpath,
   registerFsBrowseHttp,
@@ -44,9 +44,25 @@ describe("GET /api/projects", () => {
 
   function makeApp() {
     const app = new Hono()
-    const projectsRegistry = createProjectsRegistry(tmpDir)
-    registerProjectsHttp(app, { projectsRegistry })
-    return { app, projectsRegistry }
+    const dbFile = join(tmpDir, "history.sqlite")
+    const sessionHistoryStore = createSessionHistoryStore(dbFile)
+    registerProjectsHttp(app, { sessionHistoryStore })
+    return { app, sessionHistoryStore }
+  }
+
+  function seed(
+    store: ReturnType<typeof createSessionHistoryStore>,
+    cwd: string,
+    cliKind: string,
+    acpSessionId: string,
+  ) {
+    store.recordAttach({
+      agentId: "a1",
+      acpSessionId,
+      cliKind,
+      cwd,
+      now: Date.now(),
+    })
   }
 
   it("returns empty array when no projects recorded", async () => {
@@ -58,8 +74,8 @@ describe("GET /api/projects", () => {
   })
 
   it("returns recorded projects with cwd, kind, lastSeen", async () => {
-    const { app, projectsRegistry } = makeApp()
-    await projectsRegistry.recordCwd("/home/user/proj", "opencode")
+    const { app, sessionHistoryStore } = makeApp()
+    seed(sessionHistoryStore, "/home/user/proj", "opencode", "sess-1")
 
     const res = await app.request("/api/projects")
     expect(res.status).toBe(200)
@@ -70,9 +86,8 @@ describe("GET /api/projects", () => {
   })
 
   it("returns lastSessionId when recordSession was called", async () => {
-    const { app, projectsRegistry } = makeApp()
-    await projectsRegistry.recordCwd("/proj/z", "opencode")
-    await projectsRegistry.recordSession("/proj/z", "sess-xyz")
+    const { app, sessionHistoryStore } = makeApp()
+    seed(sessionHistoryStore, "/proj/z", "opencode", "sess-xyz")
 
     const res = await app.request("/api/projects")
     const body = await res.json()
@@ -93,14 +108,30 @@ describe("DELETE /api/projects", () => {
 
   function makeApp() {
     const app = new Hono()
-    const projectsRegistry = createProjectsRegistry(tmpDir)
-    registerProjectsHttp(app, { projectsRegistry })
-    return { app, projectsRegistry }
+    const dbFile = join(tmpDir, "history.sqlite")
+    const sessionHistoryStore = createSessionHistoryStore(dbFile)
+    registerProjectsHttp(app, { sessionHistoryStore })
+    return { app, sessionHistoryStore }
+  }
+
+  function seed(
+    store: ReturnType<typeof createSessionHistoryStore>,
+    cwd: string,
+    cliKind: string,
+    acpSessionId: string,
+  ) {
+    store.recordAttach({
+      agentId: "a1",
+      acpSessionId,
+      cliKind,
+      cwd,
+      now: Date.now(),
+    })
   }
 
   it("removes a project (204) and GET no longer returns it", async () => {
-    const { app, projectsRegistry } = makeApp()
-    await projectsRegistry.recordCwd("/home/user/proj", "opencode")
+    const { app, sessionHistoryStore } = makeApp()
+    seed(sessionHistoryStore, "/home/user/proj", "opencode", "sess-1")
 
     const delRes = await app.request("/api/projects", {
       method: "DELETE",
@@ -115,8 +146,8 @@ describe("DELETE /api/projects", () => {
   })
 
   it("removed project returns after recordCwd (new-entry semantics)", async () => {
-    const { app, projectsRegistry } = makeApp()
-    await projectsRegistry.recordCwd("/home/user/proj", "opencode")
+    const { app, sessionHistoryStore } = makeApp()
+    seed(sessionHistoryStore, "/home/user/proj", "opencode", "sess-1")
 
     // מחק את הרשומה
     await app.request("/api/projects", {
@@ -126,7 +157,7 @@ describe("DELETE /api/projects", () => {
     })
 
     // חיבור מחדש → רשומה חדשה
-    await projectsRegistry.recordCwd("/home/user/proj", "opencode")
+    seed(sessionHistoryStore, "/home/user/proj", "opencode", "sess-re")
 
     const getRes = await app.request("/api/projects")
     const body = await getRes.json()

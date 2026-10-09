@@ -1,23 +1,39 @@
 import { describe, expect, it } from "vitest"
-import type { ProjectEntry } from "../app/projects-registry.js"
+import type { ProjectEntry } from "../app/project-entry.js"
+import type { CliSessionRow } from "../history/session-history-store.js"
 import { aggregateCliUsage } from "./aggregate-cli-usage.js"
-import type { TokenUsageRecord } from "./token-usage-store.js"
 
-function rec(
-  over: Partial<TokenUsageRecord> & Pick<TokenUsageRecord, "acpSessionId" | "cliKind">,
-): TokenUsageRecord {
+function cliRow(
+  over: Partial<CliSessionRow> & Pick<CliSessionRow, "cliKind">,
+): CliSessionRow {
   return {
-    agentId: "a1",
     cwd: "/proj",
     firstSeenAt: 1000,
     lastSeenAt: 2000,
     turns: 1,
-    lastUsed: 100,
-    size: 100,
-    cycles: [{ startedAt: 1000, peakUsed: 50, closedAt: null }],
-    cyclesTruncated: false,
     ...over,
   }
+}
+
+function cliRowWithUsage(
+  over: Partial<CliSessionRow> &
+    Pick<CliSessionRow, "cliKind"> & {
+      costAmount?: number
+      costCurrency?: string
+      cycles?: { startedAt: number; peakUsed: number; closedAt: number | null }[]
+    },
+): CliSessionRow {
+  const { costAmount, costCurrency, cycles, ...rest } = over
+  const row = cliRow(rest)
+  row.usage = {
+    lastUsed: 100,
+    size: 100,
+    cycles: cycles ?? [{ startedAt: 1000, peakUsed: 50, closedAt: null }],
+    cyclesTruncated: false,
+  }
+  if (costAmount !== undefined) row.usage.costAmount = costAmount
+  if (costCurrency !== undefined) row.usage.costCurrency = costCurrency
+  return row
 }
 
 function proj(cwd: string, kind: string, lastSeen = "2026-09-27T12:00:00.000Z"): ProjectEntry {
@@ -35,10 +51,20 @@ describe("aggregateCliUsage", () => {
     expect(cursor!.lastSeenAtRegistry).toBe("2026-09-27T12:00:00.000Z")
   })
 
-  it("merges two acpSessionId of same CLI into one row with sessions 2", () => {
+  it("sessions without usage: reportsUsage false but sessions counts rows", () => {
+    const sessionRows = [
+      cliRow({ cliKind: "claude" }),
+      cliRow({ cliKind: "claude", cwd: "/p2", lastSeenAt: 3000 }),
+    ]
+    const rows = aggregateCliUsage(sessionRows, [])
+    expect(rows[0]!.sessions).toBe(2)
+    expect(rows[0]!.reportsUsage).toBe(false)
+  })
+
+  it("merges two session rows of same CLI into one row with sessions 2", () => {
     const records = [
-      rec({ acpSessionId: "s1", cliKind: "claude" }),
-      rec({ acpSessionId: "s2", cliKind: "claude", firstSeenAt: 500, lastSeenAt: 3000 }),
+      cliRowWithUsage({ cliKind: "claude" }),
+      cliRowWithUsage({ cliKind: "claude", firstSeenAt: 500, lastSeenAt: 3000 }),
     ]
     const rows = aggregateCliUsage(records, [])
     expect(rows).toHaveLength(1)
@@ -50,8 +76,8 @@ describe("aggregateCliUsage", () => {
 
   it("sets costMixedCurrency when two defined currencies differ", () => {
     const records = [
-      rec({ acpSessionId: "s1", cliKind: "claude", costAmount: 1, costCurrency: "USD" }),
-      rec({ acpSessionId: "s2", cliKind: "claude", costAmount: 2, costCurrency: "EUR" }),
+      cliRowWithUsage({ cliKind: "claude", costAmount: 1, costCurrency: "USD" }),
+      cliRowWithUsage({ cliKind: "claude", costAmount: 2, costCurrency: "EUR" }),
     ]
     const row = aggregateCliUsage(records, [])[0]!
     expect(row.costMixedCurrency).toBe(true)
@@ -60,8 +86,8 @@ describe("aggregateCliUsage", () => {
 
   it("sums cost when USD and a record without currency (undefined is not a currency)", () => {
     const records = [
-      rec({ acpSessionId: "s1", cliKind: "codex", costAmount: 1.5, costCurrency: "USD" }),
-      rec({ acpSessionId: "s2", cliKind: "codex", costAmount: 0.5 }),
+      cliRowWithUsage({ cliKind: "codex", costAmount: 1.5, costCurrency: "USD" }),
+      cliRowWithUsage({ cliKind: "codex", costAmount: 0.5 }),
     ]
     const row = aggregateCliUsage(records, [])[0]!
     expect(row.costAmount).toBe(2)
@@ -71,8 +97,8 @@ describe("aggregateCliUsage", () => {
 
   it("filters both sources by cwd and lastSeenProjects is at most 1", () => {
     const records = [
-      rec({ acpSessionId: "s1", cliKind: "claude", cwd: "/only" }),
-      rec({ acpSessionId: "s2", cliKind: "claude", cwd: "/other" }),
+      cliRowWithUsage({ cliKind: "claude", cwd: "/only" }),
+      cliRowWithUsage({ cliKind: "claude", cwd: "/other" }),
     ]
     const projects = [proj("/only", "claude"), proj("/other", "cursor")]
     const rows = aggregateCliUsage(records, projects, { cwd: "/only" })
@@ -84,8 +110,7 @@ describe("aggregateCliUsage", () => {
 
   it("aggregates sumHeld and compactions from cycles across records", () => {
     const records = [
-      rec({
-        acpSessionId: "s1",
+      cliRowWithUsage({
         cliKind: "claude",
         cycles: [
           { startedAt: 1, peakUsed: 10, closedAt: 2 },

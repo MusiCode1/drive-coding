@@ -1,6 +1,5 @@
 /**
- * aggregate-cli-usage.ts — pure merge of token records + projects registry by cliKind.
- * slice usage-per-cli
+ * aggregate-cli-usage.ts — pure merge of CLI session rows + project folders by cliKind.
  */
 
 import {
@@ -8,7 +7,8 @@ import {
   peakOfCycles,
   sumOfCyclePeaks,
 } from "@drive-coding/core/usage/cli-usage"
-import type { ProjectEntry } from "../app/projects-registry.js"
+import type { ProjectEntry } from "../app/project-entry.js"
+import type { CliSessionRow } from "../history/session-history-store.js"
 import type { TokenUsageRecord } from "./token-usage-store.js"
 
 export type CliUsageRow = {
@@ -28,14 +28,34 @@ export type CliUsageRow = {
   costMixedCurrency?: true
 }
 
-function filterRecords(records: readonly TokenUsageRecord[], cwd?: string): TokenUsageRecord[] {
-  if (cwd === undefined || cwd === "") return [...records]
-  return records.filter((r) => r.cwd === cwd)
+function filterSessionRows(rows: readonly CliSessionRow[], cwd?: string): CliSessionRow[] {
+  if (cwd === undefined || cwd === "") return [...rows]
+  return rows.filter((r) => r.cwd === cwd)
 }
 
 function filterProjects(projects: readonly ProjectEntry[], cwd?: string): ProjectEntry[] {
   if (cwd === undefined || cwd === "") return [...projects]
   return projects.filter((p) => p.cwd === cwd)
+}
+
+function toUsageRecord(row: CliSessionRow): TokenUsageRecord | undefined {
+  if (row.usage === undefined) return undefined
+  const u = row.usage
+  return {
+    acpSessionId: "",
+    agentId: "",
+    cliKind: row.cliKind,
+    cwd: row.cwd,
+    firstSeenAt: row.firstSeenAt,
+    lastSeenAt: row.lastSeenAt,
+    turns: row.turns,
+    lastUsed: u.lastUsed,
+    size: u.size,
+    cycles: u.cycles,
+    cyclesTruncated: u.cyclesTruncated,
+    ...(u.costAmount !== undefined ? { costAmount: u.costAmount } : {}),
+    ...(u.costCurrency !== undefined ? { costCurrency: u.costCurrency } : {}),
+  }
 }
 
 function aggregateCost(
@@ -62,8 +82,24 @@ function aggregateCost(
   return { costAmount: total }
 }
 
-function rowFromRecords(cliKind: string, recs: TokenUsageRecord[]): Partial<CliUsageRow> {
+function rowFromUsageRecords(recs: TokenUsageRecord[]): Partial<CliUsageRow> {
   if (recs.length === 0) {
+    return {
+      peakUsed: 0,
+      sumHeld: 0,
+      compactions: 0,
+    }
+  }
+  return {
+    peakUsed: Math.max(...recs.map((r) => peakOfCycles(r.cycles))),
+    sumHeld: recs.reduce((s, r) => s + sumOfCyclePeaks(r.cycles), 0),
+    compactions: recs.reduce((s, r) => s + compactionsFromCycles(r.cycles), 0),
+    ...aggregateCost(recs),
+  }
+}
+
+function rowFromSessionRows(cliKind: string, rows: CliSessionRow[]): Partial<CliUsageRow> {
+  if (rows.length === 0) {
     return {
       sessions: 0,
       reportsUsage: false,
@@ -75,16 +111,14 @@ function rowFromRecords(cliKind: string, recs: TokenUsageRecord[]): Partial<CliU
       compactions: 0,
     }
   }
+  const usageRecs = rows.map(toUsageRecord).filter((r): r is TokenUsageRecord => r !== undefined)
   return {
-    sessions: recs.length,
-    reportsUsage: recs.length > 0,
-    turns: recs.reduce((s, r) => s + r.turns, 0),
-    firstSeenAt: Math.min(...recs.map((r) => r.firstSeenAt)),
-    lastSeenAt: Math.max(...recs.map((r) => r.lastSeenAt)),
-    peakUsed: Math.max(...recs.map((r) => peakOfCycles(r.cycles))),
-    sumHeld: recs.reduce((s, r) => s + sumOfCyclePeaks(r.cycles), 0),
-    compactions: recs.reduce((s, r) => s + compactionsFromCycles(r.cycles), 0),
-    ...aggregateCost(recs),
+    sessions: rows.length,
+    reportsUsage: usageRecs.length > 0,
+    turns: rows.reduce((s, r) => s + r.turns, 0),
+    firstSeenAt: Math.min(...rows.map((r) => r.firstSeenAt)),
+    lastSeenAt: Math.max(...rows.map((r) => r.lastSeenAt)),
+    ...rowFromUsageRecords(usageRecs),
   }
 }
 
@@ -104,52 +138,48 @@ function projectsStats(
 }
 
 export function aggregateCliUsage(
-  records: readonly TokenUsageRecord[],
+  sessionRows: readonly CliSessionRow[],
   projects: readonly ProjectEntry[],
   opts?: { cwd?: string },
 ): CliUsageRow[] {
   const cwd = opts?.cwd
-  const filteredRecords = filterRecords(records, cwd)
+  const filteredRows = filterSessionRows(sessionRows, cwd)
   const filteredProjects = filterProjects(projects, cwd)
 
   const kinds = new Set<string>()
-  for (const r of filteredRecords) kinds.add(r.cliKind)
+  for (const r of filteredRows) kinds.add(r.cliKind)
   for (const p of filteredProjects) kinds.add(p.kind)
 
-  const byKind = new Map<string, TokenUsageRecord[]>()
-  for (const r of filteredRecords) {
+  const byKind = new Map<string, CliSessionRow[]>()
+  for (const r of filteredRows) {
     const list = byKind.get(r.cliKind) ?? []
     list.push(r)
     byKind.set(r.cliKind, list)
   }
 
-  const rows: CliUsageRow[] = [...kinds]
-    .sort((a, b) => a.localeCompare(b))
-    .map((cliKind) => {
-      const recs = byKind.get(cliKind) ?? []
-      const fromRecs = rowFromRecords(cliKind, recs)
-      const fromProjects = projectsStats(cliKind, filteredProjects)
-      return {
-        cliKind,
-        sessions: fromRecs.sessions ?? 0,
-        reportsUsage: fromRecs.reportsUsage ?? false,
-        lastSeenProjects: fromProjects.lastSeenProjects,
-        ...(fromProjects.lastSeenAtRegistry !== undefined
-          ? { lastSeenAtRegistry: fromProjects.lastSeenAtRegistry }
-          : {}),
-        turns: fromRecs.turns ?? 0,
-        firstSeenAt: fromRecs.firstSeenAt ?? 0,
-        lastSeenAt: fromRecs.lastSeenAt ?? 0,
-        peakUsed: fromRecs.peakUsed ?? 0,
-        sumHeld: fromRecs.sumHeld ?? 0,
-        compactions: fromRecs.compactions ?? 0,
-        ...(fromRecs.costAmount !== undefined ? { costAmount: fromRecs.costAmount } : {}),
-        ...(fromRecs.costCurrency !== undefined ? { costCurrency: fromRecs.costCurrency } : {}),
-        ...(fromRecs.costMixedCurrency !== undefined
-          ? { costMixedCurrency: fromRecs.costMixedCurrency }
-          : {}),
-      }
-    })
-
-  return rows
+  return [...kinds].sort((a, b) => a.localeCompare(b)).map((cliKind) => {
+    const rows = byKind.get(cliKind) ?? []
+    const fromSessions = rowFromSessionRows(cliKind, rows)
+    const fromProjects = projectsStats(cliKind, filteredProjects)
+    return {
+      cliKind,
+      sessions: fromSessions.sessions ?? 0,
+      reportsUsage: fromSessions.reportsUsage ?? false,
+      lastSeenProjects: fromProjects.lastSeenProjects,
+      ...(fromProjects.lastSeenAtRegistry !== undefined
+        ? { lastSeenAtRegistry: fromProjects.lastSeenAtRegistry }
+        : {}),
+      turns: fromSessions.turns ?? 0,
+      firstSeenAt: fromSessions.firstSeenAt ?? 0,
+      lastSeenAt: fromSessions.lastSeenAt ?? 0,
+      peakUsed: fromSessions.peakUsed ?? 0,
+      sumHeld: fromSessions.sumHeld ?? 0,
+      compactions: fromSessions.compactions ?? 0,
+      ...(fromSessions.costAmount !== undefined ? { costAmount: fromSessions.costAmount } : {}),
+      ...(fromSessions.costCurrency !== undefined ? { costCurrency: fromSessions.costCurrency } : {}),
+      ...(fromSessions.costMixedCurrency !== undefined
+        ? { costMixedCurrency: fromSessions.costMixedCurrency }
+        : {}),
+    }
+  })
 }

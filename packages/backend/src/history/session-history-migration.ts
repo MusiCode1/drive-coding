@@ -2,7 +2,9 @@
  * session-history-migration.ts — one-shot import from legacy JSON into history.sqlite.
  */
 
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
+import { join } from "node:path"
+import { ensureStateSubdir } from "../paths.js"
 import type { TokenUsageRecord } from "../usage/token-usage-store.js"
 import { insertLegacyFolder } from "./session-history-projects.js"
 import type { SqliteDb } from "./sqlite-adapter.js"
@@ -12,6 +14,16 @@ export const LEGACY_IMPORT_MIGRATION_ID = "import-legacy-json-v1"
 export type LegacySources = {
   usageJsonPath?: string
   projectsJsonPath?: string
+}
+
+/** Legacy JSON filenames live only in this module (boot import discovers via here). */
+export function discoverLegacyJsonSources(): LegacySources {
+  const usagePath = join(ensureStateSubdir("token-usage"), "sessions.json")
+  const projectsPath = join(ensureStateSubdir("cache"), "projects-registry.json")
+  return {
+    usageJsonPath: existsSync(usagePath) ? usagePath : undefined,
+    projectsJsonPath: existsSync(projectsPath) ? projectsPath : undefined,
+  }
 }
 
 export class LegacyImportError extends Error {

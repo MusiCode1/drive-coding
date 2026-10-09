@@ -35,7 +35,6 @@ import { loopbackBaseUrl, type UrlConfig } from "../delivery/public-url.js"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT, buildAgentPromptText } from "../prompts/index.js"
 import { type CloseAllResult, closeAllAgents } from "./close-all-agents.js"
-import type { ProjectsRegistry } from "./projects-registry.js"
 
 /** Loopback BASE env every child gets (never PUBLIC_BASE_URL). */
 export function buildChildBaseEnv(urlConfig: UrlConfig): Record<string, string> {
@@ -137,7 +136,6 @@ export function composeShapeEnv(
 export function createAgentOrchestrator(deps: {
   registry: AgentRegistry
   connectionRegistry: ConnectionRegistry
-  projectsRegistry?: ProjectsRegistry
   /**
    * slice remote-warm-reconnect C2b (אופציונלי): רישום ה-hosts של ה-session-host.
    * deleteAndKill וה-crash handler מסירים את ה-host מיד — אחרת GET /events ממשיך

@@ -1,6 +1,6 @@
 /**
  * TDD tests for storage layer (updated fe-fetch-sessions):
- *   - projects-registry.ts: disk-backed JSON store of cwds
+ *   - session-history-store: SQLite projects + hide semantics
  *   - recordings-store.ts: disk-backed recordings (webm/mp3/wav)
  *
  * sessions-cache.ts removed — session listing is now FE-driven via ACP WS.
@@ -10,8 +10,8 @@ import { rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { createProjectsRegistry } from "../src/app/projects-registry.js"
 import { createRecordingsStore } from "../src/app/recordings-store.js"
+import { createSessionHistoryStore } from "../src/history/session-history-store.js"
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 
@@ -20,12 +20,33 @@ let tmpDir: string
 async function makeTmpDir(): Promise<string> {
   // Use randomUUID so parallel test runs don't collide
   const dir = join(tmpdir(), `drive-coding-test-${crypto.randomUUID()}`)
-  return dir // createProjectsRegistry / createRecordingsStore create the dir themselves
+  return dir
 }
 
-// ─── projects-registry ───────────────────────────────────────────────────────
+function openStore() {
+  const dbFile = join(tmpDir, "history.sqlite")
+  return createSessionHistoryStore(dbFile)
+}
 
-describe("createProjectsRegistry", () => {
+function attach(
+  store: ReturnType<typeof createSessionHistoryStore>,
+  cwd: string,
+  cliKind: string,
+  acpSessionId: string,
+  now: number,
+) {
+  store.recordAttach({
+    agentId: "agent-1",
+    acpSessionId,
+    cliKind,
+    cwd,
+    now,
+  })
+}
+
+// ─── session-history projects ───────────────────────────────────────────────
+
+describe("sessionHistoryStore listProjects / hideFolder", () => {
   beforeEach(async () => {
     tmpDir = await makeTmpDir()
   })
@@ -34,97 +55,74 @@ describe("createProjectsRegistry", () => {
     await rm(tmpDir, { recursive: true, force: true })
   })
 
-  it("returns empty array when no cwds recorded yet", async () => {
-    const registry = createProjectsRegistry(tmpDir)
-    const projects = await registry.getProjects()
-    expect(projects).toHaveLength(0)
+  it("returns empty array when no sessions recorded yet", () => {
+    const store = openStore()
+    expect(store.listProjects()).toHaveLength(0)
+    store.close()
   })
 
-  it("persists a cwd + kind across instances (simulates server restart)", async () => {
-    const reg1 = createProjectsRegistry(tmpDir)
-    await reg1.recordCwd("/home/user/proj1", "opencode")
+  it("persists cwd + kind across store instances (simulates restart)", () => {
+    const dbFile = join(tmpDir, "history.sqlite")
+    const s1 = createSessionHistoryStore(dbFile)
+    attach(s1, "/home/user/proj1", "opencode", "sess-1", 1000)
+    s1.close()
 
-    // New instance from same baseDir = simulated restart
-    const reg2 = createProjectsRegistry(tmpDir)
-    const projects = await reg2.getProjects()
-
+    const s2 = createSessionHistoryStore(dbFile)
+    const projects = s2.listProjects()
     expect(projects).toHaveLength(1)
     expect(projects[0]?.cwd).toBe("/home/user/proj1")
     expect(projects[0]?.kind).toBe("opencode")
     expect(projects[0]?.lastSeen).toBeTruthy()
+    s2.close()
   })
 
-  it("duplicate cwd updates lastSeen instead of adding a new entry", async () => {
-    const reg = createProjectsRegistry(tmpDir)
-    await reg.recordCwd("/proj", "opencode")
-
-    const before = await reg.getProjects()
-    const firstSeen = before[0]?.lastSeen ?? ""
-
-    // Ensure at least 1ms passes
-    await new Promise((r) => setTimeout(r, 2))
-    await reg.recordCwd("/proj", "opencode")
-
-    const after = await reg.getProjects()
+  it("re-attach updates lastSeen for same cwd", () => {
+    const store = openStore()
+    attach(store, "/proj", "opencode", "sess-a", 1000)
+    const first = store.listProjects()[0]?.lastSeen ?? ""
+    attach(store, "/proj", "opencode", "sess-b", 2000)
+    const after = store.listProjects()
     expect(after).toHaveLength(1)
-    expect(after[0]?.lastSeen).not.toBe(firstSeen)
+    expect(after[0]?.lastSeen).not.toBe(first)
+    expect(after[0]?.lastSessionId).toBe("sess-b")
+    store.close()
   })
 
-  it("getProjects returns sorted by lastSeen DESC (newest first)", async () => {
-    const reg = createProjectsRegistry(tmpDir)
-    await reg.recordCwd("/proj/a", "opencode")
-    await new Promise((r) => setTimeout(r, 5))
-    await reg.recordCwd("/proj/b", "claude")
-
-    const projects = await reg.getProjects()
-    expect(projects[0]?.cwd).toBe("/proj/b") // newer
-    expect(projects[1]?.cwd).toBe("/proj/a") // older
+  it("listProjects sorted by lastSeen DESC", () => {
+    const store = openStore()
+    attach(store, "/proj/a", "opencode", "s1", 1000)
+    attach(store, "/proj/b", "claude", "s2", 5000)
+    const projects = store.listProjects()
+    expect(projects[0]?.cwd).toBe("/proj/b")
+    expect(projects[1]?.cwd).toBe("/proj/a")
+    store.close()
   })
 
-  it("recordSession updates lastSessionId for a known cwd", async () => {
-    const reg = createProjectsRegistry(tmpDir)
-    await reg.recordCwd("/proj", "opencode")
-    await reg.recordSession("/proj", "sess-abc-123")
-
-    const projects = await reg.getProjects()
-    expect(projects[0]?.lastSessionId).toBe("sess-abc-123")
+  it("hideFolder removes from listProjects", () => {
+    const store = openStore()
+    attach(store, "/proj/secret", "opencode", "s1", 1000)
+    store.hideFolder("/proj/secret")
+    expect(store.listProjects()).toHaveLength(0)
+    store.close()
   })
 
-  // ─── removeCwd (slice recent-projects-controls) ──────────────────────────────
-
-  it("removeCwd removes a project from getProjects", async () => {
-    const reg = createProjectsRegistry(tmpDir)
-    await reg.recordCwd("/proj/secret", "opencode")
-
-    await reg.removeCwd("/proj/secret")
-
-    const projects = await reg.getProjects()
-    expect(projects).toHaveLength(0)
-  })
-
-  it("a removed project returns after a subsequent recordCwd", async () => {
-    const reg = createProjectsRegistry(tmpDir)
-    await reg.recordCwd("/proj/secret", "opencode")
-    await reg.removeCwd("/proj/secret")
-
-    // חיבור חוזר לאותו cwd — הרשומה נוצרת מחדש ומוחזרת
-    await reg.recordCwd("/proj/secret", "opencode")
-
-    const projects = await reg.getProjects()
+  it("hidden folder reappears after recordAttach to same cwd", () => {
+    const store = openStore()
+    attach(store, "/proj/secret", "opencode", "s1", 1000)
+    store.hideFolder("/proj/secret")
+    attach(store, "/proj/secret", "opencode", "s2", 2000)
+    const projects = store.listProjects()
     expect(projects).toHaveLength(1)
     expect(projects[0]?.cwd).toBe("/proj/secret")
+    store.close()
   })
 
-  it("removeCwd on unknown cwd is a no-op", async () => {
-    const reg = createProjectsRegistry(tmpDir)
-    await reg.recordCwd("/proj/known", "opencode")
-
-    // לא אמור לזרוק ולא לשנות שום דבר
-    await expect(reg.removeCwd("/proj/unknown")).resolves.toBeUndefined()
-
-    const projects = await reg.getProjects()
-    expect(projects).toHaveLength(1)
-    expect(projects[0]?.cwd).toBe("/proj/known")
+  it("hideFolder on unknown cwd is a no-op", () => {
+    const store = openStore()
+    attach(store, "/proj/known", "opencode", "s1", 1000)
+    store.hideFolder("/proj/unknown")
+    expect(store.listProjects()).toHaveLength(1)
+    store.close()
   })
 })
 

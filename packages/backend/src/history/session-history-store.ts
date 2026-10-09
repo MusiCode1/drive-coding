@@ -14,6 +14,7 @@ import {
   loadCycles,
   type SessionKey,
 } from "./session-history-usage-persist.js"
+import { runHistoryWriteFailOpen } from "./session-history-fail-open.js"
 import { openSqliteDb, type SqliteDb } from "./sqlite-adapter.js"
 
 export type { SessionKey }
@@ -107,6 +108,7 @@ export function createSessionHistoryStore(dbFile: string): SessionHistoryStore {
 
   return {
     recordAttach(p) {
+      runHistoryWriteFailOpen("recordAttach", () => {
       db.transaction(() => {
         db.prepare(
           `INSERT INTO sessions (
@@ -142,16 +144,20 @@ export function createSessionHistoryStore(dbFile: string): SessionHistoryStore {
         )
         db.prepare("DELETE FROM hidden_folders WHERE cwd = ?").run(p.cwd)
       })
+      })
     },
 
     ingestUsageUpdate(p) {
       if (p.acpSessionId === null) return
       const acpSessionId = p.acpSessionId
+      runHistoryWriteFailOpen("ingestUsageUpdate", () => {
       db.transaction(() => ingestUsageInTransaction(db, { ...p, acpSessionId }))
+      })
     },
 
     onTurnEnded(agentId, acpSessionId, now) {
       if (acpSessionId === null) return
+      runHistoryWriteFailOpen("onTurnEnded", () => {
       db.transaction(() => {
         const row = db
           .prepare("SELECT cliKind FROM sessions WHERE acpSessionId = ? AND agentId = ? LIMIT 1")
@@ -162,13 +168,16 @@ export function createSessionHistoryStore(dbFile: string): SessionHistoryStore {
            WHERE cliKind = ? AND acpSessionId = ? AND agentId = ?`,
         ).run(now, row.cliKind, acpSessionId, agentId)
       })
+      })
     },
 
     hideFolder(cwd) {
-      db.prepare("INSERT OR REPLACE INTO hidden_folders (cwd, hiddenAt) VALUES (?, ?)").run(
-        cwd,
-        Date.now(),
-      )
+      runHistoryWriteFailOpen("hideFolder", () => {
+        db.prepare("INSERT OR REPLACE INTO hidden_folders (cwd, hiddenAt) VALUES (?, ?)").run(
+          cwd,
+          Date.now(),
+        )
+      })
     },
 
     listUsageRecords(opts) {
