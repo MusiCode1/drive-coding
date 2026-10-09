@@ -4,7 +4,7 @@
 
 import { EventEmitter } from "node:events"
 import { PassThrough } from "node:stream"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const startAcpServerMock = vi.fn()
 const spawnMock = vi.fn()
@@ -146,10 +146,6 @@ describe("startCodexAcp", () => {
         }),
       ]),
     )
-  })
-
-  afterEach(() => {
-    vi.restoreAllMocks()
   })
 
   it("passes composed developer_instructions when instructions set", async () => {

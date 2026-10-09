@@ -3,12 +3,14 @@
  */
 
 import type { Agent, AgentRegistry, CreateAgentInput } from "@drive-coding/core"
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/connection"
 import { describe, expect, it, vi } from "vitest"
 import { Hono } from "hono"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { createAgentOrchestrator } from "../app/agent-orchestrator.js"
 import { registerAgentPromptHttp } from "../delivery/http-agent-prompt.js"
+import { registerSessionSurfaceMcpTool } from "../delivery/session-surface-mcp-tool.js"
 import { buildAgentPromptText } from "./index.js"
 
 const urlConfig = { port: 4371, host: "127.0.0.1", publicBaseUrl: "https://public.example.com" }
@@ -39,6 +41,33 @@ function promptOptsFromAgent(agent: Agent) {
   }
 }
 
+async function invokeSessionSurfaceMcp(agent: Agent): Promise<string> {
+  let handler:
+    | ((parsed: unknown) => Promise<{ content: Array<{ type: "text"; text: string }> }>)
+    | undefined
+  const registerArkTool = vi.fn(
+    (
+      _server: McpServer,
+      _name: string,
+      _meta: { title: string; description: string },
+      _ark: { toJsonSchema: () => object; (data: unknown): unknown },
+      h: (parsed: unknown) => Promise<{ content: Array<{ type: "text"; text: string }> }>,
+    ) => {
+      handler = h
+    },
+  )
+  registerSessionSurfaceMcpTool(
+    {} as McpServer,
+    { urlConfig },
+    { callerAgentId: agent.id },
+    agent,
+    registerArkTool,
+  )
+  if (handler === undefined) throw new Error("session_surface handler not registered")
+  const result = await handler({})
+  return result.content[0]?.text ?? ""
+}
+
 describe("surface prompt — three delivery paths", () => {
   it("HTTP, MCP compose, and orchestrator connect opts share one text (assignment once)", async () => {
     const agent = sampleAgent()
@@ -57,7 +86,7 @@ describe("surface prompt — three delivery paths", () => {
     registerAgentPromptHttp(app, { registry, urlConfig })
     const httpBody = await (await app.request(`/api/agent-prompt?agent=${agent.id}`)).text()
 
-    const mcpBody = buildAgentPromptText(promptOptsFromAgent(agent), urlConfig)
+    const mcpBody = await invokeSessionSurfaceMcp(agent)
 
     let connectAgentPrompt: string | undefined
     const connectionRegistry: ConnectionRegistry = {
