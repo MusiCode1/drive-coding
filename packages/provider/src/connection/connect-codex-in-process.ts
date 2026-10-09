@@ -29,8 +29,8 @@ import { createTurnTracker } from "../shared/turn-tracker.js"
 import { decodeWireLine } from "../shared/wire-decode.js"
 import type { BridgeCrashInfo } from "../spawn/index.js"
 import type { NormalizedCapabilities } from "../types.js"
-import { startCodexAcp } from "./codex-acp-startup.js"
 import { staticCapsFor } from "./capabilities-static.js"
+import { startCodexAcp } from "./codex-acp-startup.js"
 import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
 
 /**
@@ -148,6 +148,9 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
   const codexPath = resolveCodexPath()
   const instructions = opts.agentPrompt ?? opts.systemPrompt ?? undefined
 
+  // codex `developer_instructions` override **replaces** the effective config value (not append).
+  // Measured 2026-10-09 — docs-for-llm/probes/codex-developer-instructions/README.md.
+  // startCodexAcp reads the effective user instructions and composes them with the surface prompt.
   startCodexAcp({
     serverIn,
     serverOut,
