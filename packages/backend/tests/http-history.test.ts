@@ -21,7 +21,10 @@ import {
   registerProjectsHttp,
   registerRecordingsHttp,
 } from "../src/delivery/http-history.js"
-import { createSessionHistoryStore } from "../src/history/session-history-store.js"
+import {
+  createSessionHistoryStore,
+  type SessionHistoryStore,
+} from "../src/history/session-history-store.js"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -42,16 +45,16 @@ describe("GET /api/projects", () => {
     await rm(tmpDir, { recursive: true, force: true })
   })
 
-  function makeApp() {
+  async function makeApp() {
     const app = new Hono()
     const dbFile = join(tmpDir, "history.sqlite")
-    const sessionHistoryStore = createSessionHistoryStore(dbFile)
+    const sessionHistoryStore = await createSessionHistoryStore(dbFile)
     registerProjectsHttp(app, { sessionHistoryStore })
     return { app, sessionHistoryStore }
   }
 
   function seed(
-    store: ReturnType<typeof createSessionHistoryStore>,
+    store: SessionHistoryStore,
     cwd: string,
     cliKind: string,
     acpSessionId: string,
@@ -66,7 +69,7 @@ describe("GET /api/projects", () => {
   }
 
   it("returns empty array when no projects recorded", async () => {
-    const { app } = makeApp()
+    const { app } = await makeApp()
     const res = await app.request("/api/projects")
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -74,7 +77,7 @@ describe("GET /api/projects", () => {
   })
 
   it("returns recorded projects with cwd, kind, lastSeen", async () => {
-    const { app, sessionHistoryStore } = makeApp()
+    const { app, sessionHistoryStore } = await makeApp()
     seed(sessionHistoryStore, "/home/user/proj", "opencode", "sess-1")
 
     const res = await app.request("/api/projects")
@@ -86,7 +89,7 @@ describe("GET /api/projects", () => {
   })
 
   it("returns lastSessionId when recordSession was called", async () => {
-    const { app, sessionHistoryStore } = makeApp()
+    const { app, sessionHistoryStore } = await makeApp()
     seed(sessionHistoryStore, "/proj/z", "opencode", "sess-xyz")
 
     const res = await app.request("/api/projects")
@@ -106,16 +109,16 @@ describe("DELETE /api/projects", () => {
     await rm(tmpDir, { recursive: true, force: true })
   })
 
-  function makeApp() {
+  async function makeApp() {
     const app = new Hono()
     const dbFile = join(tmpDir, "history.sqlite")
-    const sessionHistoryStore = createSessionHistoryStore(dbFile)
+    const sessionHistoryStore = await createSessionHistoryStore(dbFile)
     registerProjectsHttp(app, { sessionHistoryStore })
     return { app, sessionHistoryStore }
   }
 
   function seed(
-    store: ReturnType<typeof createSessionHistoryStore>,
+    store: SessionHistoryStore,
     cwd: string,
     cliKind: string,
     acpSessionId: string,
@@ -130,7 +133,7 @@ describe("DELETE /api/projects", () => {
   }
 
   it("removes a project (204) and GET no longer returns it", async () => {
-    const { app, sessionHistoryStore } = makeApp()
+    const { app, sessionHistoryStore } = await makeApp()
     seed(sessionHistoryStore, "/home/user/proj", "opencode", "sess-1")
 
     const delRes = await app.request("/api/projects", {
@@ -146,7 +149,7 @@ describe("DELETE /api/projects", () => {
   })
 
   it("removed project returns after recordCwd (new-entry semantics)", async () => {
-    const { app, sessionHistoryStore } = makeApp()
+    const { app, sessionHistoryStore } = await makeApp()
     seed(sessionHistoryStore, "/home/user/proj", "opencode", "sess-1")
 
     // מחק את הרשומה
@@ -166,7 +169,7 @@ describe("DELETE /api/projects", () => {
   })
 
   it("returns 400 when cwd is missing from body", async () => {
-    const { app } = makeApp()
+    const { app } = await makeApp()
 
     const res = await app.request("/api/projects", {
       method: "DELETE",
@@ -208,7 +211,7 @@ describe("GET /api/recordings/:id", () => {
   })
 
   it("returns 404 when recording not found", async () => {
-    const { app } = makeApp()
+    const { app } = await makeApp()
     const res = await app.request("/api/recordings/non-existent-uuid")
     expect(res.status).toBe(404)
   })
@@ -232,7 +235,7 @@ describe("GET /api/fs/browse", () => {
   }
 
   it("returns directory entries for a valid path", async () => {
-    const { app } = makeApp()
+    const { app } = await makeApp()
     const res = await app.request(`/api/fs/browse?path=${encodeURIComponent(tmpdir())}`)
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -240,7 +243,7 @@ describe("GET /api/fs/browse", () => {
   })
 
   it("each entry has name and isDir fields", async () => {
-    const { app } = makeApp()
+    const { app } = await makeApp()
     const res = await app.request(`/api/fs/browse?path=${encodeURIComponent(tmpdir())}`)
     const body = await res.json()
     if (body.entries.length > 0) {
@@ -257,7 +260,7 @@ describe("GET /api/fs/browse", () => {
     const sub = join(base, "subdir")
     await mkdir(sub)
     try {
-      const { app } = makeApp() // no allowedBase → allow-all
+      const { app } = await makeApp() // no allowedBase → allow-all
       const res = await app.request(`/api/fs/browse?path=${encodeURIComponent(sub)}`)
       expect(res.status).toBe(200)
       const body = await res.json()
@@ -298,7 +301,7 @@ describe("GET /api/fs/browse", () => {
   })
 
   it("returns 400 when path query param is missing", async () => {
-    const { app } = makeApp()
+    const { app } = await makeApp()
     const res = await app.request("/api/fs/browse")
     expect(res.status).toBe(400)
   })

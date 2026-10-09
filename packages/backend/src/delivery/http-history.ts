@@ -18,7 +18,7 @@ import { join, relative, resolve } from "node:path"
 import type { Hono } from "hono"
 import type { RecordingsStore } from "../app/recordings-store.js"
 import type { SessionHistoryStore } from "../history/session-history-store.js"
-import { listProjectsForApi } from "./http-projects-api.js"
+import { listProjectsForApi, registerProjectDeleteRoute } from "./http-projects-api.js"
 
 // ─── /api/projects ────────────────────────────────────────────────────────────
 
@@ -28,21 +28,10 @@ export function registerProjectsHttp(
     sessionHistoryStore: SessionHistoryStore
   },
 ): void {
-  // GET /api/projects
   app.get("/api/projects", async (c) => {
     return c.json({ projects: listProjectsForApi(deps.sessionHistoryStore) })
   })
-
-  // DELETE /api/projects  { cwd }  → מוחק את הרשומה לגמרי
-  // slice: recent-projects-controls
-  // עיצוב: cwd מכיל תווים מיוחדים (: ב-Windows, \, /) → body במקום path-param
-  app.delete("/api/projects", async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as { cwd?: unknown }
-    const cwd = typeof body.cwd === "string" ? body.cwd : ""
-    if (!cwd) return c.json({ error: "cwd required" }, 400)
-    deps.sessionHistoryStore.hideFolder(cwd)
-    return c.body(null, 204)
-  })
+  registerProjectDeleteRoute(app, deps.sessionHistoryStore)
 }
 
 // ─── /api/recordings/:id ─────────────────────────────────────────────────────

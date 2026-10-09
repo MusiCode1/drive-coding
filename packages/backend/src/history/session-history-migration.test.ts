@@ -82,7 +82,7 @@ describe("runLegacyImport", () => {
     return db
   }
 
-  it("imports fixtures and second run skips", () => {
+  it("imports fixtures and second run skips", async () => {
     setupFixtures()
     const db = openDb()
     expect(
@@ -91,7 +91,7 @@ describe("runLegacyImport", () => {
         legacySources: { usageJsonPath: usagePath, projectsJsonPath: projectsPath },
       }),
     ).toBe("imported")
-    const store = createSessionHistoryStore(dbPath)
+    const store = await createSessionHistoryStore(dbPath)
     const rec = store.listUsageRecords()[0]
     expect(rec?.costCurrency).toBe("USD")
     expect(rec?.cycles[0]?.closedAt).toBeNull()
@@ -106,7 +106,7 @@ describe("runLegacyImport", () => {
     db.close()
   })
 
-  it("hides cwd present in usage but absent from projects registry", () => {
+  it("hides cwd present in usage but absent from projects registry", async () => {
     setupFixtures()
     writeFileSync(projectsPath, JSON.stringify({ projects: [] }))
     const db = openDb()
@@ -115,7 +115,7 @@ describe("runLegacyImport", () => {
       legacySources: { usageJsonPath: usagePath, projectsJsonPath: projectsPath },
     })
     db.close()
-    const store = createSessionHistoryStore(dbPath)
+    const store = await createSessionHistoryStore(dbPath)
     expect(store.listProjects().some((p) => p.cwd === "/proj-a")).toBe(false)
     expect(store.listProjects({ includeHidden: true }).some((p) => p.cwd === "/proj-a")).toBe(true)
     store.close()

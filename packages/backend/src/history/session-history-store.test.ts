@@ -38,13 +38,13 @@ describe("createSessionHistoryStore", () => {
     if (dir) rmSync(dir, { recursive: true, force: true })
   })
 
-  function openStore() {
+  async function openStore() {
     dir = mkdtempSync(join(tmpdir(), "dc-hist-store-"))
-    return createSessionHistoryStore(sessionHistoryDbPath(dir))
+    return await createSessionHistoryStore(sessionHistoryDbPath(dir))
   }
 
-  it("same cliKind+acpSessionId is one session; different cliKind same id is two", () => {
-    const s = openStore()
+  it("same cliKind+acpSessionId is one session; different cliKind same id is two", async () => {
+    const s = await openStore()
     s.recordAttach({
       agentId: "a1",
       cliKind: "claude",
@@ -63,8 +63,8 @@ describe("createSessionHistoryStore", () => {
     s.close()
   })
 
-  it("reconnect does not add a session row", () => {
-    const s = openStore()
+  it("reconnect does not add a session row", async () => {
+    const s = await openStore()
     s.recordAttach({
       agentId: "a1",
       cliKind: "claude",
@@ -83,8 +83,8 @@ describe("createSessionHistoryStore", () => {
     s.close()
   })
 
-  it("firstSeenAt and createdAt are not overwritten on reconnect", () => {
-    const s = openStore()
+  it("firstSeenAt and createdAt are not overwritten on reconnect", async () => {
+    const s = await openStore()
     s.recordAttach({
       agentId: "a1",
       cliKind: "claude",
@@ -109,8 +109,8 @@ describe("createSessionHistoryStore", () => {
     s.close()
   })
 
-  it("openedByEmail and parentAgentId fill only when empty", () => {
-    const s = openStore()
+  it("openedByEmail and parentAgentId fill only when empty", async () => {
+    const s = await openStore()
     s.recordAttach({
       agentId: "a1",
       cliKind: "claude",
@@ -139,8 +139,8 @@ describe("createSessionHistoryStore", () => {
     s.close()
   })
 
-  it("ignores usage when acpSessionId is null", () => {
-    const s = openStore()
+  it("ignores usage when acpSessionId is null", async () => {
+    const s = await openStore()
     s.ingestUsageUpdate({
       agentId: "a1",
       acpSessionId: null,
@@ -153,8 +153,8 @@ describe("createSessionHistoryStore", () => {
     s.close()
   })
 
-  it("disk round-trip: open cycle survives reload and compaction matches", () => {
-    const s1 = openStore()
+  it("disk round-trip: open cycle survives reload and compaction matches", async () => {
+    const s1 = await openStore()
     s1.ingestUsageUpdate({
       agentId: "a1",
       acpSessionId: "wire-sess",
@@ -165,7 +165,7 @@ describe("createSessionHistoryStore", () => {
     })
     s1.close()
 
-    const s2 = createSessionHistoryStore(sessionHistoryDbPath(dir))
+    const s2 = await createSessionHistoryStore(sessionHistoryDbPath(dir))
     s2.ingestUsageUpdate({
       agentId: "a1",
       acpSessionId: "wire-sess",
@@ -193,8 +193,8 @@ describe("createSessionHistoryStore", () => {
     s2.close()
   })
 
-  it("closedAt null survives reload", () => {
-    const s = openStore()
+  it("closedAt null survives reload", async () => {
+    const s = await openStore()
     s.ingestUsageUpdate({
       agentId: "a1",
       acpSessionId: "s1",
@@ -204,14 +204,14 @@ describe("createSessionHistoryStore", () => {
       size: 1000,
     })
     s.close()
-    const s2 = createSessionHistoryStore(sessionHistoryDbPath(dir))
+    const s2 = await createSessionHistoryStore(sessionHistoryDbPath(dir))
     const c = s2.listUsageRecords()[0]?.cycles[0]
     expect(c?.closedAt).toBeNull()
     s2.close()
   })
 
-  it("listCliSessionRows omits usage when there is no usage report", () => {
-    const s = openStore()
+  it("listCliSessionRows omits usage when there is no usage report", async () => {
+    const s = await openStore()
     s.recordAttach({
       agentId: "a1",
       cliKind: "claude",
@@ -224,8 +224,8 @@ describe("createSessionHistoryStore", () => {
     s.close()
   })
 
-  it("onTurnEnded increments turns", () => {
-    const s = openStore()
+  it("onTurnEnded increments turns", async () => {
+    const s = await openStore()
     s.ingestUsageUpdate({
       agentId: "a1",
       acpSessionId: "s1",
@@ -239,8 +239,8 @@ describe("createSessionHistoryStore", () => {
     s.close()
   })
 
-  it("stores titleManual as 0/1 CHECK", () => {
-    const s = openStore()
+  it("stores titleManual as 0/1 CHECK", async () => {
+    const s = await openStore()
     s.close()
     const db = openSqliteDb(sessionHistoryDbPath(dir))
     applySessionHistorySchema(db)

@@ -21,6 +21,7 @@ import { createEvictionController } from "../delivery/eviction-controller.js"
 import { createMemoryGuard, type MemoryGuard } from "../delivery/memory-guard.js"
 import { createWireRecorder } from "../delivery/wire-recorder.js"
 import { asTokenUsageStore } from "../history/session-history-as-token-usage.js"
+import { bootDeadlineFromNow } from "./sqlite-bootstrap.js"
 import {
   createSessionHistoryStore,
   resolveHistoryDbFile,
@@ -60,11 +61,11 @@ export type BootDeps = {
   memoryGuard: MemoryGuard
 }
 
-export function createDeps(
+export async function createDeps(
   config: DriveCodingConfig,
   env: NodeJS.ProcessEnv,
   app: Hono,
-): { deps: BootDeps; disposables: Disposable[] } {
+): Promise<{ deps: BootDeps; disposables: Disposable[] }> {
   const registry = createPersistentAgentRegistry({
     file: resolveAgentsStoreFile(config, env, configDefault("port")),
   })
@@ -79,7 +80,9 @@ export function createDeps(
   const agentEventBus = createAgentEventBus()
 
   const historyDbFile = resolveHistoryDbFile(config, env)
-  const sessionHistoryStore = createSessionHistoryStore(historyDbFile)
+  const sessionHistoryStore = await createSessionHistoryStore(historyDbFile, {
+    deadlineAt: bootDeadlineFromNow(),
+  })
   const tokenUsageStore = asTokenUsageStore(sessionHistoryStore)
   tokenUsageStoreRef.current = tokenUsageStore
 

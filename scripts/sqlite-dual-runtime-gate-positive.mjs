@@ -4,8 +4,8 @@
  * Exit 0 when each broken path is shown to violate the gate requirements.
  */
 import { spawnSync } from "node:child_process"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { join, dirname } from "node:path"
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 const gate = join(root, "packages/backend/src/history/sqlite-dual-runtime-gate.ts")
@@ -25,7 +25,7 @@ assert(bunMiss !== undefined, "Bun miss is not `undefined` — strict checks mis
 assert((null !== undefined) === true, "broken migrationDone treats empty DB as already migrated")
 
 // Stuck inTransaction after failed BEGIN (pre-fix adapter)
-let inTransaction = true
+const inTransaction = true
 assert(inTransaction, "stuck inTransaction blocks retry with re-entrant error")
 
 // Full gate on pre-fix tree must fail (measured on 89cbfab4)

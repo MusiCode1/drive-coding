@@ -3,8 +3,8 @@
  * DoD 21 — run sqlite-dual-runtime-gate.ts under Bun and Node (10× each, all must pass).
  */
 import { spawnSync } from "node:child_process"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { join, dirname } from "node:path"
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..")
 const gateTs = join(root, "packages/backend/src/history/sqlite-dual-runtime-gate.ts")

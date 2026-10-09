@@ -39,7 +39,8 @@ export class SqliteBusyError extends Error {
   }
 }
 
-const BUSY_TIMEOUT_MS = 2000
+/** Native spin-wait inside the driver — short sync block only (fix4). */
+export const SQLITE_BUSY_TIMEOUT_MS = 50
 
 function errorChain(e: unknown): unknown[] {
   const chain: unknown[] = []
@@ -55,12 +56,18 @@ function errorChain(e: unknown): unknown[] {
   return chain
 }
 
-/** Only `SQLITE_BUSY` from the driver — no message-regex (avoids false positives). */
+function isNodeSqliteBusyRecord(rec: Record<string, unknown>): boolean {
+  return rec.code === "ERR_SQLITE_ERROR" && rec.errcode === 5
+}
+
+/** Driver BUSY only — Bun `SQLITE_BUSY`, Node `ERR_SQLITE_ERROR` + errcode 5 (not bare errno). */
 export function isSqliteBusyCause(e: unknown): boolean {
   if (e instanceof SqliteBusyError) return true
   for (const x of errorChain(e)) {
     if (typeof x !== "object" || x === null) continue
-    if ((x as Record<string, unknown>).code === "SQLITE_BUSY") return true
+    const rec = x as Record<string, unknown>
+    if (rec.code === "SQLITE_BUSY") return true
+    if (isNodeSqliteBusyRecord(rec)) return true
   }
   return false
 }
@@ -121,7 +128,7 @@ function loadRawDb(file: string): RawDb {
 
 function assertHealthyDb(raw: RawDb, file: string): void {
   try {
-    raw.exec(`PRAGMA busy_timeout=${BUSY_TIMEOUT_MS}`)
+    raw.exec(`PRAGMA busy_timeout=${SQLITE_BUSY_TIMEOUT_MS}`)
     raw.exec(
       `PRAGMA journal_mode=DELETE;
        PRAGMA synchronous=FULL;

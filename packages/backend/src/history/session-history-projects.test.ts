@@ -18,13 +18,13 @@ describe("session history projects", () => {
     if (dir) rmSync(dir, { recursive: true, force: true })
   })
 
-  function openStore() {
+  async function openStore() {
     dir = mkdtempSync(join(tmpdir(), "dc-hist-proj-"))
-    return createSessionHistoryStore(sessionHistoryDbPath(dir))
+    return await createSessionHistoryStore(sessionHistoryDbPath(dir))
   }
 
-  it("ranks folder with 8 sessions before folder with 3", () => {
-    const s = openStore()
+  it("ranks folder with 8 sessions before folder with 3", async () => {
+    const s = await openStore()
     for (let i = 0; i < 8; i++) {
       s.recordAttach({
         agentId: "a",
@@ -51,8 +51,8 @@ describe("session history projects", () => {
     s.close()
   })
 
-  it("reconnect to existing session does not inflate sessionCount", () => {
-    const s = openStore()
+  it("reconnect to existing session does not inflate sessionCount", async () => {
+    const s = await openStore()
     for (let i = 0; i < 3; i++) {
       s.recordAttach({
         agentId: "a",
@@ -73,8 +73,8 @@ describe("session history projects", () => {
     s.close()
   })
 
-  it("legacy_folders appear with sessionCount 0", () => {
-    const s = openStore()
+  it("legacy_folders appear with sessionCount 0", async () => {
+    const s = await openStore()
     const db = openSqliteDb(sessionHistoryDbPath(dir))
     applySessionHistorySchema(db)
     insertLegacyFolder(db, {
@@ -90,8 +90,8 @@ describe("session history projects", () => {
     s.close()
   })
 
-  it("hide survives store reopen; attach removes hide", () => {
-    const s1 = openStore()
+  it("hide survives store reopen; attach removes hide", async () => {
+    const s1 = await openStore()
     s1.recordAttach({
       agentId: "a",
       cliKind: "claude",
@@ -99,11 +99,11 @@ describe("session history projects", () => {
       acpSessionId: "s1",
       now: 1,
     })
-    s1.hideFolder("/hidden")
+    await s1.hideFolder("/hidden")
     expect(s1.listProjects().some((p) => p.cwd === "/hidden")).toBe(false)
     s1.close()
 
-    const s2 = createSessionHistoryStore(sessionHistoryDbPath(dir))
+    const s2 = await createSessionHistoryStore(sessionHistoryDbPath(dir))
     expect(s2.listProjects().some((p) => p.cwd === "/hidden")).toBe(false)
     s2.recordAttach({
       agentId: "a",
@@ -117,9 +117,9 @@ describe("session history projects", () => {
     s2.close()
   })
 
-  it("usage ingest does not unhide a hidden folder", () => {
-    const s = openStore()
-    s.hideFolder("/h")
+  it("usage ingest does not unhide a hidden folder", async () => {
+    const s = await openStore()
+    await s.hideFolder("/h")
     s.ingestUsageUpdate({
       agentId: "a",
       acpSessionId: "u1",
@@ -133,8 +133,8 @@ describe("session history projects", () => {
     s.close()
   })
 
-  it("includeHidden lists hidden cwd for CLI aggregate consumers", () => {
-    const s = openStore()
+  it("includeHidden lists hidden cwd for CLI aggregate consumers", async () => {
+    const s = await openStore()
     s.recordAttach({
       agentId: "a",
       cliKind: "claude",
@@ -142,7 +142,7 @@ describe("session history projects", () => {
       acpSessionId: "s1",
       now: 1,
     })
-    s.hideFolder("/x")
+    await s.hideFolder("/x")
     expect(s.listProjects({ includeHidden: true }).some((p) => p.cwd === "/x")).toBe(true)
     s.close()
   })

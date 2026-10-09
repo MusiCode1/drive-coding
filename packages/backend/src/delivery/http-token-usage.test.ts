@@ -10,7 +10,9 @@ import { registerTokenUsageHttp } from "./http-token-usage.js"
 describe("GET /api/usage/tokens", () => {
   it("returns sessions sorted by lastSeenAt desc", async () => {
     const base = `/tmp/dc-http-token-${Date.now()}`
-    const store = asTokenUsageStore(createSessionHistoryStore(sessionHistoryDbPath(base)))
+    const store = asTokenUsageStore(
+      await createSessionHistoryStore(sessionHistoryDbPath(base)),
+    )
     store.ingestUsageUpdate({
       agentId: "a1",
       acpSessionId: "s1",

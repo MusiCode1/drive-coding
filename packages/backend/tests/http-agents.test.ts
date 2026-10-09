@@ -27,7 +27,7 @@ beforeEach(() => {
 function makeFakeSessionHistoryStore(): SessionHistoryStore {
   return {
     recordAttach: vi.fn(),
-    hideFolder: vi.fn(),
+    hideFolder: vi.fn(() => Promise.resolve()),
     listProjects: vi.fn(() => []),
     listCliSessionRows: vi.fn(() => []),
     listUsageRecords: vi.fn(() => []),

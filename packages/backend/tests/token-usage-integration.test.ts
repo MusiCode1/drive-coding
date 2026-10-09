@@ -57,7 +57,7 @@ describe("token-usage-persistence C3 integration", () => {
 
   it("tracks rising usage_updates, compaction, turn end — keyed by acpSessionId", async () => {
     dir = mkdtempSync(join(tmpdir(), "dc-token-int-"))
-    const store = asTokenUsageStore(createSessionHistoryStore(sessionHistoryDbPath(dir)))
+    const store = asTokenUsageStore(await createSessionHistoryStore(sessionHistoryDbPath(dir)))
     const eventBus = createAgentEventBus()
     const busTurn = createTurnEndedEmitter(eventBus)
 

@@ -194,10 +194,10 @@
       "codeLines": 82
     },
     "packages/backend/src/delivery/http-history.ts": {
-      "metric": 240,
-      "impurity": 13,
+      "metric": 229,
+      "impurity": 12,
       "class": "mixed",
-      "codeLines": 140
+      "codeLines": 134
     },
     "packages/backend/src/delivery/http-live-token.ts": {
       "metric": 155,
@@ -264,12 +264,6 @@
       "impurity": 7,
       "class": "mixed",
       "codeLines": 110
-    },
-    "packages/backend/src/main.ts": {
-      "metric": 82,
-      "impurity": 5,
-      "class": "mixed",
-      "codeLines": 65
     },
     "packages/backend/src/paths.ts": {
       "metric": 15,

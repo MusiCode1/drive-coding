@@ -9,7 +9,12 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { applySessionHistorySchema } from "./session-history-schema.js"
-import { openSqliteDb, SqliteBusyError } from "./sqlite-adapter.js"
+import {
+  classifySqliteHealthError,
+  isSqliteBusyCause,
+  openSqliteDb,
+  SqliteBusyError,
+} from "./sqlite-adapter.js"
 
 const LEGACY_IMPORT_MIGRATION_ID = "import-legacy-json-v1"
 
@@ -97,8 +102,11 @@ function checkLockRetry(): void {
     db2.transaction(() => 1)
     fail("expected locked error on second transaction")
   } catch (e) {
-    const msg = String(e)
-    if (!/locked|SQLITE_BUSY|re-entrant/i.test(msg)) fail(`unexpected lock error: ${msg}`)
+    if (!isSqliteBusyCause(e)) fail(`expected busy cause, got ${String(e)}`)
+    const classified = classifySqliteHealthError(e, path)
+    if (!(classified instanceof SqliteBusyError)) {
+      fail(`expected SqliteBusyError, got ${classified.name}`)
+    }
   }
   db1.exec("ROLLBACK")
   try {

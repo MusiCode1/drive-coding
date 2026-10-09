@@ -11,7 +11,10 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createRecordingsStore } from "../src/app/recordings-store.js"
-import { createSessionHistoryStore } from "../src/history/session-history-store.js"
+import {
+  createSessionHistoryStore,
+  type SessionHistoryStore,
+} from "../src/history/session-history-store.js"
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 
@@ -23,13 +26,13 @@ async function makeTmpDir(): Promise<string> {
   return dir
 }
 
-function openStore() {
+async function openStore(): Promise<SessionHistoryStore> {
   const dbFile = join(tmpDir, "history.sqlite")
-  return createSessionHistoryStore(dbFile)
+  return await createSessionHistoryStore(dbFile)
 }
 
 function attach(
-  store: ReturnType<typeof createSessionHistoryStore>,
+  store: SessionHistoryStore,
   cwd: string,
   cliKind: string,
   acpSessionId: string,
@@ -55,19 +58,19 @@ describe("sessionHistoryStore listProjects / hideFolder", () => {
     await rm(tmpDir, { recursive: true, force: true })
   })
 
-  it("returns empty array when no sessions recorded yet", () => {
-    const store = openStore()
+  it("returns empty array when no sessions recorded yet", async () => {
+    const store = await openStore()
     expect(store.listProjects()).toHaveLength(0)
     store.close()
   })
 
-  it("persists cwd + kind across store instances (simulates restart)", () => {
+  it("persists cwd + kind across store instances (simulates restart)", async () => {
     const dbFile = join(tmpDir, "history.sqlite")
-    const s1 = createSessionHistoryStore(dbFile)
+    const s1 = await createSessionHistoryStore(dbFile)
     attach(s1, "/home/user/proj1", "opencode", "sess-1", 1000)
     s1.close()
 
-    const s2 = createSessionHistoryStore(dbFile)
+    const s2 = await createSessionHistoryStore(dbFile)
     const projects = s2.listProjects()
     expect(projects).toHaveLength(1)
     expect(projects[0]?.cwd).toBe("/home/user/proj1")
@@ -76,8 +79,8 @@ describe("sessionHistoryStore listProjects / hideFolder", () => {
     s2.close()
   })
 
-  it("re-attach updates lastSeen for same cwd", () => {
-    const store = openStore()
+  it("re-attach updates lastSeen for same cwd", async () => {
+    const store = await openStore()
     attach(store, "/proj", "opencode", "sess-a", 1000)
     const first = store.listProjects()[0]?.lastSeen ?? ""
     attach(store, "/proj", "opencode", "sess-b", 2000)
@@ -88,8 +91,8 @@ describe("sessionHistoryStore listProjects / hideFolder", () => {
     store.close()
   })
 
-  it("listProjects sorted by lastSeen DESC", () => {
-    const store = openStore()
+  it("listProjects sorted by lastSeen DESC", async () => {
+    const store = await openStore()
     attach(store, "/proj/a", "opencode", "s1", 1000)
     attach(store, "/proj/b", "claude", "s2", 5000)
     const projects = store.listProjects()
@@ -98,18 +101,18 @@ describe("sessionHistoryStore listProjects / hideFolder", () => {
     store.close()
   })
 
-  it("hideFolder removes from listProjects", () => {
-    const store = openStore()
+  it("hideFolder removes from listProjects", async () => {
+    const store = await openStore()
     attach(store, "/proj/secret", "opencode", "s1", 1000)
-    store.hideFolder("/proj/secret")
+    await store.hideFolder("/proj/secret")
     expect(store.listProjects()).toHaveLength(0)
     store.close()
   })
 
-  it("hidden folder reappears after recordAttach to same cwd", () => {
-    const store = openStore()
+  it("hidden folder reappears after recordAttach to same cwd", async () => {
+    const store = await openStore()
     attach(store, "/proj/secret", "opencode", "s1", 1000)
-    store.hideFolder("/proj/secret")
+    await store.hideFolder("/proj/secret")
     attach(store, "/proj/secret", "opencode", "s2", 2000)
     const projects = store.listProjects()
     expect(projects).toHaveLength(1)
@@ -117,10 +120,10 @@ describe("sessionHistoryStore listProjects / hideFolder", () => {
     store.close()
   })
 
-  it("hideFolder on unknown cwd is a no-op", () => {
-    const store = openStore()
+  it("hideFolder on unknown cwd is a no-op", async () => {
+    const store = await openStore()
     attach(store, "/proj/known", "opencode", "s1", 1000)
-    store.hideFolder("/proj/unknown")
+    await store.hideFolder("/proj/unknown")
     expect(store.listProjects()).toHaveLength(1)
     store.close()
   })

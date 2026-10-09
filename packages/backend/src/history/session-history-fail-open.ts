@@ -4,7 +4,8 @@
 
 import { createLogger } from "@drive-coding/core/log"
 import { isSqliteBusyCause, SqliteBusyError, SqliteOpenError } from "./sqlite-adapter.js"
-import { withSqliteBusyRetry } from "./sqlite-busy-retry.js"
+import { WRITE_DB_BUDGET_MS } from "../boot/sqlite-bootstrap.js"
+import { withSqliteBusyRetryUntil } from "./sqlite-busy-retry.js"
 
 const log = createLogger("backend.history.store")
 
@@ -22,7 +23,8 @@ function logHistoryWriteFailure(label: string, e: unknown): void {
 
 /** Async busy retry (DoD 11); on exhaustion logs and swallows — ACP continues. */
 export function runHistoryWriteFailOpen(label: string, fn: () => void): void {
-  void withSqliteBusyRetry(fn).catch((e) => {
+  const deadlineAt = Date.now() + WRITE_DB_BUDGET_MS
+  void withSqliteBusyRetryUntil(fn, deadlineAt).catch((e) => {
     logHistoryWriteFailure(label, e)
   })
 }

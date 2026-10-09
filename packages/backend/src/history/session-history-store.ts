@@ -6,16 +6,21 @@ import { join } from "node:path"
 import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
 import { ensureStateSubdir } from "../paths.js"
 import type { TokenUsageRecord } from "../usage/token-usage-store.js"
+import {
+  bootDeadlineFromNow,
+  openSqliteDbWithSchema,
+  WRITE_DB_BUDGET_MS,
+} from "../boot/sqlite-bootstrap.js"
 import { runHistoryWriteFailOpen } from "./session-history-fail-open.js"
 import { listProjectsFromDb } from "./session-history-projects.js"
-import { applySessionHistorySchema } from "./session-history-schema.js"
 import {
   buildUsageRecord,
   ingestUsageInTransaction,
   loadCycles,
   type SessionKey,
 } from "./session-history-usage-persist.js"
-import { openSqliteDb, type SqliteDb } from "./sqlite-adapter.js"
+import { type SqliteDb } from "./sqlite-adapter.js"
+import { withSqliteBusyRetryUntil } from "./sqlite-busy-retry.js"
 
 export type { SessionKey }
 
@@ -59,7 +64,7 @@ export type SessionHistoryStore = {
     cost?: { amount: number; currency?: string }
   }): void
   onTurnEnded(agentId: string, acpSessionId: string | null, now: number): void
-  hideFolder(cwd: string): void
+  hideFolder(cwd: string): Promise<void>
   listUsageRecords(opts?: { cwd?: string; limit?: number }): TokenUsageRecord[]
   listProjects(opts?: { includeHidden?: boolean }): ProjectRow[]
   listCliSessionRows(opts?: { cwd?: string }): CliSessionRow[]
@@ -102,10 +107,7 @@ function listUsageFromDb(
   }))
 }
 
-export function createSessionHistoryStore(dbFile: string): SessionHistoryStore {
-  const db = openSqliteDb(dbFile)
-  applySessionHistorySchema(db)
-
+function createSessionHistoryStoreFromDb(db: SqliteDb): SessionHistoryStore {
   return {
     recordAttach(p) {
       runHistoryWriteFailOpen("recordAttach", () => {
@@ -171,13 +173,16 @@ export function createSessionHistoryStore(dbFile: string): SessionHistoryStore {
       })
     },
 
-    hideFolder(cwd) {
-      runHistoryWriteFailOpen("hideFolder", () => {
-        db.prepare("INSERT OR REPLACE INTO hidden_folders (cwd, hiddenAt) VALUES (?, ?)").run(
-          cwd,
-          Date.now(),
-        )
-      })
+    async hideFolder(cwd) {
+      const deadlineAt = Date.now() + WRITE_DB_BUDGET_MS
+      await withSqliteBusyRetryUntil(() => {
+        db.transaction(() => {
+          db.prepare("INSERT OR REPLACE INTO hidden_folders (cwd, hiddenAt) VALUES (?, ?)").run(
+            cwd,
+            Date.now(),
+          )
+        })
+      }, deadlineAt)
     },
 
     listUsageRecords(opts) {
@@ -243,6 +248,24 @@ export function createSessionHistoryStore(dbFile: string): SessionHistoryStore {
       db.close()
     },
   }
+}
+
+export async function createSessionHistoryStore(
+  dbFile: string,
+  opts?: { deadlineAt?: number },
+): Promise<SessionHistoryStore> {
+  const deadlineAt = opts?.deadlineAt ?? bootDeadlineFromNow()
+  const db = await openSqliteDbWithSchema(dbFile, deadlineAt)
+  return createSessionHistoryStoreFromDb(db)
+}
+
+export function isHistoryDbFileOverridden(
+  config: Pick<DriveCodingConfig, "historyDbFile">,
+  env: NodeJS.ProcessEnv,
+): boolean {
+  if (config.historyDbFile !== undefined && config.historyDbFile !== "") return true
+  const fromEnv = env.HISTORY_DB_FILE
+  return fromEnv !== undefined && fromEnv !== ""
 }
 
 export function sessionHistoryDbPath(baseDir: string): string {

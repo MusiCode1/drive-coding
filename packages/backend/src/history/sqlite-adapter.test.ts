@@ -105,7 +105,7 @@ describe("openSqliteDb", () => {
   })
 
   describe("classifySqliteHealthError — busy vs EIO vs corrupt (DoD 11)", () => {
-    it("1. SQLITE_BUSY (synthetic driver shape) ⇒ SqliteBusyError", () => {
+    it("1. Bun SQLITE_BUSY driver shape ⇒ SqliteBusyError", () => {
       const busy = { code: "SQLITE_BUSY", message: "database is locked" }
       expect(isSqliteBusyCause(busy)).toBe(true)
       const err = classifySqliteHealthError(busy, "/tmp/x.sqlite")
@@ -125,6 +125,32 @@ describe("openSqliteDb", () => {
 
     it("regression: errno 5 without SQLITE_BUSY code is not classified as busy", () => {
       expect(isSqliteBusyCause({ errno: 5, code: "EIO" })).toBe(false)
+    })
+
+    it("Node ERR_SQLITE_ERROR errcode 5 ⇒ busy (not bare errno)", () => {
+      const nodeBusy = { code: "ERR_SQLITE_ERROR", errcode: 5, message: "database is locked" }
+      expect(isSqliteBusyCause(nodeBusy)).toBe(true)
+      expect(classifySqliteHealthError(nodeBusy, "/tmp/x.sqlite")).toBeInstanceOf(SqliteBusyError)
+    })
+
+    it("real EXCLUSIVE lock ⇒ SqliteBusyError via product classifiers", () => {
+      dir = mkdtempSync(join(tmpdir(), "dc-sqlite-real-busy-"))
+      dbPath = join(dir, "real-busy.sqlite")
+      const db1 = openSqliteDb(dbPath)
+      const db2 = openSqliteDb(dbPath)
+      db1.exec("BEGIN EXCLUSIVE")
+      let caught: unknown
+      try {
+        db2.transaction(() => 1)
+      } catch (e) {
+        caught = e
+      }
+      expect(caught).toBeDefined()
+      expect(isSqliteBusyCause(caught)).toBe(true)
+      expect(classifySqliteHealthError(caught, dbPath)).toBeInstanceOf(SqliteBusyError)
+      db1.exec("ROLLBACK")
+      db1.close()
+      db2.close()
     })
 
     it("3. non-SQLite file ⇒ SqliteOpenError without truncating bytes", () => {

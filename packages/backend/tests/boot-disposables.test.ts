@@ -21,9 +21,9 @@ function bootConfig() {
 }
 
 describe("createDeps disposables", () => {
-  it("registers memoryGuard, httpSweep, connectionRegistry, stopWatching, usageStore", () => {
+  it("registers memoryGuard, httpSweep, connectionRegistry, stopWatching, usageStore", async () => {
     const app = new Hono()
-    const { deps, disposables } = createDeps(bootConfig(), process.env, app)
+    const { deps, disposables } = await createDeps(bootConfig(), process.env, app)
     const names = disposables.map((d) => d.name)
     expect(names).toContain("memoryGuard")
     expect(names).toContain("httpSweep")
@@ -34,9 +34,9 @@ describe("createDeps disposables", () => {
     expect(deps.tokenUsageStore).toBeDefined()
   })
 
-  it("memoryGuard disposable calls stop()", () => {
+  it("memoryGuard disposable calls stop()", async () => {
     const app = new Hono()
-    const { deps, disposables } = createDeps(bootConfig(), process.env, app)
+    const { deps, disposables } = await createDeps(bootConfig(), process.env, app)
     const stopSpy = vi.spyOn(deps.memoryGuard, "stop")
     const mg = disposables.find((d) => d.name === "memoryGuard")
     expect(mg).toBeDefined()
@@ -44,9 +44,9 @@ describe("createDeps disposables", () => {
     expect(stopSpy).toHaveBeenCalledOnce()
   })
 
-  it("httpSweep disposable calls agentSessionRegistry.stop()", () => {
+  it("httpSweep disposable calls agentSessionRegistry.stop()", async () => {
     const app = new Hono()
-    const { deps, disposables } = createDeps(bootConfig(), process.env, app)
+    const { deps, disposables } = await createDeps(bootConfig(), process.env, app)
     const stopSpy = vi.spyOn(deps.agentSessionRegistry, "stop")
     const sweep = disposables.find((d) => d.name === "httpSweep")
     expect(sweep).toBeDefined()
@@ -54,10 +54,10 @@ describe("createDeps disposables", () => {
     expect(stopSpy).toHaveBeenCalledOnce()
   })
 
-  it("deps.env is the same reference as passed env", () => {
+  it("deps.env is the same reference as passed env", async () => {
     const app = new Hono()
     const env = { TEST_BOOT_LAYER: "1" }
-    const { deps } = createDeps(bootConfig(), env, app)
+    const { deps } = await createDeps(bootConfig(), env, app)
     expect(deps.env).toBe(env)
   })
 })
