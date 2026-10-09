@@ -2,10 +2,11 @@
  * session-history-store.ts — SQLite-backed session history (attach, usage, folders).
  */
 
-import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
 import { join } from "node:path"
+import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
 import { ensureStateSubdir } from "../paths.js"
 import type { TokenUsageRecord } from "../usage/token-usage-store.js"
+import { runHistoryWriteFailOpen } from "./session-history-fail-open.js"
 import { listProjectsFromDb } from "./session-history-projects.js"
 import { applySessionHistorySchema } from "./session-history-schema.js"
 import {
@@ -14,7 +15,6 @@ import {
   loadCycles,
   type SessionKey,
 } from "./session-history-usage-persist.js"
-import { runHistoryWriteFailOpen } from "./session-history-fail-open.js"
 import { openSqliteDb, type SqliteDb } from "./sqlite-adapter.js"
 
 export type { SessionKey }
@@ -109,9 +109,9 @@ export function createSessionHistoryStore(dbFile: string): SessionHistoryStore {
   return {
     recordAttach(p) {
       runHistoryWriteFailOpen("recordAttach", () => {
-      db.transaction(() => {
-        db.prepare(
-          `INSERT INTO sessions (
+        db.transaction(() => {
+          db.prepare(
+            `INSERT INTO sessions (
             cliKind, acpSessionId, agentId, cwd,
             openedByEmail, parentAgentId,
             firstSeenAt, lastSeenAt, lastAttachedAt, turns, createdAt
@@ -130,20 +130,20 @@ export function createSessionHistoryStore(dbFile: string): SessionHistoryStore {
               WHEN sessions.parentAgentId IS NULL AND excluded.parentAgentId IS NOT NULL
               THEN excluded.parentAgentId ELSE sessions.parentAgentId END,
             turns = sessions.turns`,
-        ).run(
-          p.cliKind,
-          p.acpSessionId,
-          p.agentId,
-          p.cwd,
-          p.openedByEmail ?? null,
-          p.parentAgentId ?? null,
-          p.now,
-          p.now,
-          p.now,
-          p.now,
-        )
-        db.prepare("DELETE FROM hidden_folders WHERE cwd = ?").run(p.cwd)
-      })
+          ).run(
+            p.cliKind,
+            p.acpSessionId,
+            p.agentId,
+            p.cwd,
+            p.openedByEmail ?? null,
+            p.parentAgentId ?? null,
+            p.now,
+            p.now,
+            p.now,
+            p.now,
+          )
+          db.prepare("DELETE FROM hidden_folders WHERE cwd = ?").run(p.cwd)
+        })
       })
     },
 
@@ -151,23 +151,23 @@ export function createSessionHistoryStore(dbFile: string): SessionHistoryStore {
       if (p.acpSessionId === null) return
       const acpSessionId = p.acpSessionId
       runHistoryWriteFailOpen("ingestUsageUpdate", () => {
-      db.transaction(() => ingestUsageInTransaction(db, { ...p, acpSessionId }))
+        db.transaction(() => ingestUsageInTransaction(db, { ...p, acpSessionId }))
       })
     },
 
     onTurnEnded(agentId, acpSessionId, now) {
       if (acpSessionId === null) return
       runHistoryWriteFailOpen("onTurnEnded", () => {
-      db.transaction(() => {
-        const row = db
-          .prepare("SELECT cliKind FROM sessions WHERE acpSessionId = ? AND agentId = ? LIMIT 1")
-          .get<{ cliKind: string }>(acpSessionId, agentId)
-        if (row == null) return
-        db.prepare(
-          `UPDATE sessions SET turns = turns + 1, lastSeenAt = ?
+        db.transaction(() => {
+          const row = db
+            .prepare("SELECT cliKind FROM sessions WHERE acpSessionId = ? AND agentId = ? LIMIT 1")
+            .get<{ cliKind: string }>(acpSessionId, agentId)
+          if (row == null) return
+          db.prepare(
+            `UPDATE sessions SET turns = turns + 1, lastSeenAt = ?
            WHERE cliKind = ? AND acpSessionId = ? AND agentId = ?`,
-        ).run(now, row.cliKind, acpSessionId, agentId)
-      })
+          ).run(now, row.cliKind, acpSessionId, agentId)
+        })
       })
     },
 

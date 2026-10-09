@@ -8,8 +8,8 @@ vi.mock("@drive-coding/core/log", () => ({
   createLogger: () => ({ warn: mockWarn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 
-import { SqliteBusyError, SqliteOpenError } from "./sqlite-adapter.js"
 import { runHistoryWriteFailOpen } from "./session-history-fail-open.js"
+import { SqliteBusyError, SqliteOpenError } from "./sqlite-adapter.js"
 
 describe("runHistoryWriteFailOpen", () => {
   beforeEach(() => {

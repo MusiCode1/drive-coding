@@ -15,7 +15,7 @@ import {
   vacuumIntoBackup,
 } from "./session-history-migration.js"
 import { applySessionHistorySchema } from "./session-history-schema.js"
-import { createSessionHistoryStore, sessionHistoryDbPath } from "./session-history-store.js"
+import { createSessionHistoryStore } from "./session-history-store.js"
 import { openSqliteDb } from "./sqlite-adapter.js"
 
 const workerDir = fileURLToPath(new URL(".", import.meta.url))

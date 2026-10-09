@@ -15,13 +15,13 @@ import { join } from "node:path"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { createRecordingsStore } from "../src/app/recordings-store.js"
-import { createSessionHistoryStore } from "../src/history/session-history-store.js"
 import {
   normalizeRealpath,
   registerFsBrowseHttp,
   registerProjectsHttp,
   registerRecordingsHttp,
 } from "../src/delivery/http-history.js"
+import { createSessionHistoryStore } from "../src/history/session-history-store.js"
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

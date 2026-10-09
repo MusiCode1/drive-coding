@@ -158,10 +158,10 @@
       "codeLines": 41
     },
     "packages/backend/src/delivery/http-agents.ts": {
-      "metric": 149,
+      "metric": 140,
       "impurity": 6,
       "class": "mixed",
-      "codeLines": 109
+      "codeLines": 100
     },
     "packages/backend/src/delivery/http-cache.ts": {
       "metric": 51,

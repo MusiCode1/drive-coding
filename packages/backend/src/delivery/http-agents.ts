@@ -1,21 +1,12 @@
-import {
-  type Agent,
-  type AgentRegistry,
-  type BridgeKind,
-  toAgentPublic,
-  validateCwd,
-} from "@drive-coding/core"
+import { type AgentRegistry, toAgentPublic } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
 import type { SessionHistoryStore } from "../history/session-history-store.js"
-import { registerAgentsPatchHttp } from "./http-agents-patch.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
+import { registerAgentsPatchHttp } from "./http-agents-patch.js"
 import { httpCacheGet, httpCacheSet } from "./http-cache.js"
-import {
-  CF_ACCESS_EMAIL_HEADER,
-  readOpenedByEmail,
-} from "./opened-by-email.js"
+import { CF_ACCESS_EMAIL_HEADER, readOpenedByEmail } from "./opened-by-email.js"
 
 const log = createLogger("backend.agents.http")
 

@@ -4,13 +4,11 @@
 
 import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
 import { createLogger } from "@drive-coding/core/log"
-import {
-  discoverLegacyJsonSources,
-  runLegacyImport,
-} from "../history/session-history-migration.js"
+import { discoverLegacyJsonSources, runLegacyImport } from "../history/session-history-migration.js"
 import { applySessionHistorySchema } from "../history/session-history-schema.js"
 import { resolveHistoryDbFile } from "../history/session-history-store.js"
 import { openSqliteDb } from "../history/sqlite-adapter.js"
+
 const log = createLogger("backend.history.import")
 
 export function runBootLegacyImport(config: DriveCodingConfig, env: NodeJS.ProcessEnv): void {
