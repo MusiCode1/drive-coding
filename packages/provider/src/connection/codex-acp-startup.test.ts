@@ -90,6 +90,20 @@ describe("readEffectiveDeveloperInstructions", () => {
     ).resolves.toBeNull()
   })
 
+  it("returns null when spawn throws synchronously (not rejected)", async () => {
+    spawnMock.mockImplementation(() => {
+      throw new Error("EINVAL")
+    })
+    await expect(
+      readEffectiveDeveloperInstructions({ cwd: "/tmp/x", codexPath: "bad\u0000path" }),
+    ).resolves.toBeNull()
+  })
+
+  it("returns null on JSON null line without throwing", async () => {
+    spawnMock.mockImplementation(() => fakeSpawnChild(["null"]))
+    await expect(readEffectiveDeveloperInstructions({ cwd: "/tmp/x" })).resolves.toBeNull()
+  })
+
   it("returns null on timeout and kills the child", async () => {
     let captured: ReturnType<typeof fakeSpawnChild> | undefined
     spawnMock.mockImplementation(() => {

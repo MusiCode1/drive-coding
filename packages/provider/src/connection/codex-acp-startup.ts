@@ -6,12 +6,18 @@
 
 import { type ChildProcess, spawn } from "node:child_process"
 import type { Readable, Writable } from "node:stream"
-import { startAcpServer } from "@musicode1/codex-acp/lib"
 import { createLogger } from "@drive-coding/core/log"
+import { startAcpServer } from "@musicode1/codex-acp/lib"
 
 const log = createLogger("provider.codex.startup")
 
-const DEFAULT_READ_TIMEOUT_MS = 20_000
+const DEFAULT_READ_TIMEOUT_MS = 8_000
+
+type ConfigReadLine = {
+  id?: unknown
+  result?: { config?: { developer_instructions?: unknown } }
+  error?: unknown
+}
 
 /** `projects={ "<cwd>" = { trust_level = "trusted" } }` — embedded table (dot paths break dotted keys). */
 export function projectTrustConfigArg(cwd: string): string {
@@ -42,6 +48,17 @@ function killQuiet(child: ChildProcess | undefined): void {
   }
 }
 
+function parseConfigReadLine(line: string): ConfigReadLine | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(line)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== "object" || parsed === null) return null
+  return parsed as ConfigReadLine
+}
+
 /** Effective developer_instructions for cwd, or null. Never throws; silent paths kill the child. */
 export function readEffectiveDeveloperInstructions(opts: {
   cwd: string
@@ -55,14 +72,20 @@ export function readEffectiveDeveloperInstructions(opts: {
   return new Promise((resolve) => {
     let settled = false
     let child: ChildProcess | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
 
     const finish = (value: string | null) => {
       if (settled) return
       settled = true
-      clearTimeout(timer)
+      if (timer !== undefined) clearTimeout(timer)
       killQuiet(child)
       resolve(value)
     }
+
+    timer = setTimeout(() => {
+      log.warn({ timeoutMs, cwd: opts.cwd }, "codex config/read timed out")
+      finish(null)
+    }, timeoutMs)
 
     try {
       child = spawn(bin, ["app-server", "-c", trustArg], {
@@ -75,8 +98,6 @@ export function readEffectiveDeveloperInstructions(opts: {
     }
 
     child.on("error", () => finish(null))
-
-    const timer = setTimeout(() => finish(null), timeoutMs)
 
     let buf = ""
     const send = (payload: unknown) => {
@@ -94,10 +115,8 @@ export function readEffectiveDeveloperInstructions(opts: {
         const line = buf.slice(0, idx)
         buf = buf.slice(idx + 1)
         if (!line.trim()) continue
-        let msg: { id?: number; result?: { config?: { developer_instructions?: unknown } }; error?: unknown }
-        try {
-          msg = JSON.parse(line) as typeof msg
-        } catch {
+        const msg = parseConfigReadLine(line)
+        if (msg === null) {
           finish(null)
           return
         }
@@ -146,6 +165,11 @@ export function startCodexAcp(deps: {
           codexPath: deps.codexPath,
         })
         const composed = composeDeveloperInstructions(existing, ours)
+        const existingChars = existing?.trim().length ?? 0
+        const ourChars = ours.length
+        const composedChars = composed?.length ?? 0
+        const preserved = existingChars > 0
+        log.info({ existingChars, ourChars, composedChars, preserved }, "codex developer_instructions prepared")
         if (composed !== undefined) {
           config = { developer_instructions: composed }
         }

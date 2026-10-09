@@ -149,7 +149,7 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
   const instructions = opts.agentPrompt ?? opts.systemPrompt ?? undefined
 
   // codex `developer_instructions` override **replaces** the effective config value (not append).
-  // Measured 2026-10-09 — docs-for-llm/probes/codex-developer-instructions/README.md.
+  // Measured 2026-10-09 — see codex-acp-startup.integration.test.ts (live config/read probe).
   // startCodexAcp reads the effective user instructions and composes them with the surface prompt.
   startCodexAcp({
     serverIn,
