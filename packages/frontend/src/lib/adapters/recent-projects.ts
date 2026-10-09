@@ -15,6 +15,7 @@ export type RecentProject = {
   kind: string
   lastSeen: string // ISO 8601
   lastSessionId?: string
+  sessionCount?: number
 }
 
 /**
@@ -50,5 +51,11 @@ function normalizeRecentProject(p: unknown): RecentProject {
     kind: String(item["kind"] ?? ""),
     lastSeen: String(item["lastSeen"] ?? ""),
     lastSessionId: item["lastSessionId"] ? String(item["lastSessionId"]) : undefined,
+    sessionCount:
+      typeof item["sessionCount"] === "number"
+        ? item["sessionCount"]
+        : item["sessionCount"] != null
+          ? Number(item["sessionCount"])
+          : undefined,
   }
 }
