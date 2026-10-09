@@ -99,6 +99,7 @@ export const CONFIG_SPECS = [
   },
   { key: "feStaticDir", env: "FE_STATIC_DIR", flag: "fe-static-dir" },
   { key: "agentsStoreFile", env: "AGENTS_STORE_FILE", flag: "agents-store-file" },
+  { key: "historyDbFile", env: "HISTORY_DB_FILE", flag: "history-db-file" },
   {
     key: "publicBaseUrl",
     env: "PUBLIC_BASE_URL",

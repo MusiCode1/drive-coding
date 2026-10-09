@@ -272,10 +272,10 @@
       "codeLines": 110
     },
     "packages/backend/src/main.ts": {
-      "metric": 107,
+      "metric": 82,
       "impurity": 5,
       "class": "mixed",
-      "codeLines": 102
+      "codeLines": 65
     },
     "packages/backend/src/paths.ts": {
       "metric": 15,

@@ -22,7 +22,11 @@ import { createEvictionController } from "../delivery/eviction-controller.js"
 import { createMemoryGuard, type MemoryGuard } from "../delivery/memory-guard.js"
 import { createWireRecorder } from "../delivery/wire-recorder.js"
 import { asTokenUsageStore } from "../history/session-history-as-token-usage.js"
-import { createSessionHistoryStore } from "../history/session-history-store.js"
+import {
+  createSessionHistoryStore,
+  resolveHistoryDbFile,
+  type SessionHistoryStore,
+} from "../history/session-history-store.js"
 import { ensureStateSubdir } from "../paths.js"
 import { createSessionHostRegistryOpts } from "../server-session-host-opts.js"
 import { type AgentEventBus, createAgentEventBus } from "../session-host/agent-events.js"
@@ -54,6 +58,7 @@ export type BootDeps = {
   orchestrator: AgentOrchestrator
   usageStore: UsageStore
   tokenUsageStore: TokenUsageStore
+  sessionHistoryStore: SessionHistoryStore
   memoryGuard: MemoryGuard
 }
 
@@ -115,10 +120,7 @@ export function createDeps(
   orchestratorRef.current = orchestrator
 
   const usageStore = createUsageStore(ensureStateSubdir("usage"))
-  const historyDbFile =
-    env.HISTORY_DB_FILE ??
-    process.env.HISTORY_DB_FILE ??
-    `${ensureStateSubdir("history")}/history.sqlite`
+  const historyDbFile = resolveHistoryDbFile(config, env)
   const sessionHistoryStore = createSessionHistoryStore(historyDbFile)
   const tokenUsageStore = asTokenUsageStore(sessionHistoryStore)
   tokenUsageStoreRef.current = tokenUsageStore
@@ -156,6 +158,7 @@ export function createDeps(
     orchestrator,
     usageStore,
     tokenUsageStore,
+    sessionHistoryStore,
     memoryGuard,
   }
 

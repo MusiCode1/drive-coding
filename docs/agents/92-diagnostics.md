@@ -17,8 +17,8 @@ routes:
   - POST /api/client-log
   - POST /api/reload-config
   - GET /api/options
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.4.0
+updated: 2026-10-09
 ---
 
 # Diagnostics and operations
@@ -33,6 +33,16 @@ updated: 2026-09-28
 | `GET /api/diag` | `200` JSON (short cache — `http-cache`) | `http-health.ts:57`, `http-health.ts:108` |
 
 If the event loop is fully frozen, this handler never runs and the fetch times out — that timeout is itself a signal (`http-health.ts:7-9`).
+
+## Session history storage
+
+Session metadata, folder ranking, and token-usage cycles persist in a single SQLite file.
+
+| Config key | Env | CLI flag | Default |
+|------------|-----|----------|---------|
+| `historyDbFile` | `HISTORY_DB_FILE` | `--history-db-file` | `<stateDir>/history/history.sqlite` |
+
+On first boot after upgrade, the server may import legacy JSON from `<stateDir>/token-usage/sessions.json` and `<stateDir>/cache/projects-registry.json` into that database once (`main.ts` → `runBootLegacyImport`).
 
 ## Usage
 

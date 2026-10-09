@@ -2,7 +2,9 @@
  * session-history-store.ts — SQLite-backed session history (attach, usage, folders).
  */
 
+import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
 import { join } from "node:path"
+import { ensureStateSubdir } from "../paths.js"
 import type { TokenUsageRecord } from "../usage/token-usage-store.js"
 import { listProjectsFromDb } from "./session-history-projects.js"
 import { applySessionHistorySchema } from "./session-history-schema.js"
@@ -236,4 +238,16 @@ export function createSessionHistoryStore(dbFile: string): SessionHistoryStore {
 
 export function sessionHistoryDbPath(baseDir: string): string {
   return join(baseDir, "history.sqlite")
+}
+
+export function resolveHistoryDbFile(
+  config: Pick<DriveCodingConfig, "historyDbFile">,
+  env: NodeJS.ProcessEnv,
+): string {
+  if (config.historyDbFile !== undefined && config.historyDbFile !== "") {
+    return config.historyDbFile
+  }
+  const fromEnv = env.HISTORY_DB_FILE
+  if (fromEnv !== undefined && fromEnv !== "") return fromEnv
+  return join(ensureStateSubdir("history"), "history.sqlite")
 }
