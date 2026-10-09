@@ -135,6 +135,21 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
   // onCrash listeners — codex child is managed by startAcpServer.
   // We detect "crash" by watching serverOut close event.
   const crashListeners = new Set<(info: BridgeCrashInfo) => void>()
+  let pendingCrash: BridgeCrashInfo | undefined
+
+  function emitCrash(info: BridgeCrashInfo): void {
+    if (crashListeners.size === 0) {
+      pendingCrash = info
+      return
+    }
+    for (const cb of crashListeners) {
+      try {
+        cb(info)
+      } catch {
+        /* listener must not break the pipe */
+      }
+    }
+  }
 
   // PassThrough pair:
   //   serverIn  — FE→agent (we write lines here; startAcpServer reads from it)
@@ -159,20 +174,13 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
     instructions,
     isClosed: () => closed,
     onStartupError: (err) => {
-      const info: BridgeCrashInfo = {
+      emitCrash({
         exitCode: null,
         signal: null,
         spawnError: {
           message: err instanceof Error ? err.message : String(err),
         },
-      }
-      for (const cb of crashListeners) {
-        try {
-          cb(info)
-        } catch {
-          /* listener must not break the pipe */
-        }
-      }
+      })
     },
   })
 
@@ -206,14 +214,7 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
   // onCrash: notify when serverOut closes unexpectedly.
   serverOut.on("close", () => {
     if (closed) return
-    const info: BridgeCrashInfo = { exitCode: null, signal: null }
-    for (const cb of crashListeners) {
-      try {
-        cb(info)
-      } catch {
-        /* listener must not break the pipe */
-      }
-    }
+    emitCrash({ exitCode: null, signal: null })
   })
 
   // Build the wire interface.
@@ -269,6 +270,15 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
 
     onCrash(cb: (info: BridgeCrashInfo) => void): () => void {
       crashListeners.add(cb)
+      if (pendingCrash !== undefined) {
+        const pending = pendingCrash
+        pendingCrash = undefined
+        try {
+          cb(pending)
+        } catch {
+          /* listener must not break the pipe */
+        }
+      }
       return () => {
         crashListeners.delete(cb)
       }
@@ -284,6 +294,7 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
       frameListeners.clear()
       changeListeners.clear()
       crashListeners.clear()
+      pendingCrash = undefined
       lineListeners.clear()
     },
 

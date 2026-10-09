@@ -155,6 +155,7 @@ export function startCodexAcp(deps: {
   onStartupError: (err: unknown) => void
 }): void {
   void (async () => {
+    await Promise.resolve()
     try {
       let config: { developer_instructions: string } | undefined
       const ours = deps.instructions?.trim() ? deps.instructions.trim() : undefined
