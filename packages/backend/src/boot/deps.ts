@@ -61,10 +61,16 @@ export type BootDeps = {
   memoryGuard: MemoryGuard
 }
 
+export type CreateDepsOpts = {
+  /** Shared boot budget from `prepareBoot` — product path must pass this. */
+  bootDeadlineAt?: number
+}
+
 export async function createDeps(
   config: DriveCodingConfig,
   env: NodeJS.ProcessEnv,
   app: Hono,
+  opts?: CreateDepsOpts,
 ): Promise<{ deps: BootDeps; disposables: Disposable[] }> {
   const registry = createPersistentAgentRegistry({
     file: resolveAgentsStoreFile(config, env, configDefault("port")),
@@ -81,7 +87,7 @@ export async function createDeps(
 
   const historyDbFile = resolveHistoryDbFile(config, env)
   const sessionHistoryStore = await createSessionHistoryStore(historyDbFile, {
-    deadlineAt: bootDeadlineFromNow(),
+    deadlineAt: opts?.bootDeadlineAt ?? bootDeadlineFromNow(),
   })
   const tokenUsageStore = asTokenUsageStore(sessionHistoryStore)
   tokenUsageStoreRef.current = tokenUsageStore

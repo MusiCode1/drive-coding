@@ -17,13 +17,13 @@ import { resolveTls } from "../tls.js"
 const log = createLogger("backend.server")
 
 export async function startBackendServer(): Promise<void> {
-  const config = await prepareBoot()
+  const { config, bootDeadlineAt } = await prepareBoot()
 
   preferPathClaudeExecutable()
 
   const app = createAppWithCors(config)
 
-  const { deps, disposables } = await createDeps(config, process.env, app)
+  const { deps, disposables } = await createDeps(config, process.env, app, { bootDeadlineAt })
 
   const ws = createWsStack()
 

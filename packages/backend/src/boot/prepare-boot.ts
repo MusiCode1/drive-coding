@@ -7,10 +7,15 @@ import { loadAppConfig } from "./config.js"
 import { runBootLegacyImport } from "./history-import.js"
 import { registerProcessGuards } from "./process-guards.js"
 
-export async function prepareBoot(): Promise<ReturnType<typeof loadAppConfig>> {
+export type PrepareBootResult = {
+  config: ReturnType<typeof loadAppConfig>
+  bootDeadlineAt: number
+}
+
+export async function prepareBoot(): Promise<PrepareBootResult> {
   registerProcessGuards()
   const config = loadAppConfig()
-  const deadlineAt = bootDeadlineFromNow(BOOT_DB_BUDGET_MS)
-  await runBootLegacyImport(config, process.env, { deadlineAt })
-  return config
+  const bootDeadlineAt = bootDeadlineFromNow(BOOT_DB_BUDGET_MS)
+  await runBootLegacyImport(config, process.env, { deadlineAt: bootDeadlineAt })
+  return { config, bootDeadlineAt }
 }
