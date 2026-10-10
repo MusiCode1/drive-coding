@@ -8,6 +8,7 @@ vi.mock("@drive-coding/core/log", () => ({
   createLogger: () => ({ warn: mockWarn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }))
 
+import { WRITE_DB_BUDGET_MS } from "../boot/sqlite-bootstrap.js"
 import { runHistoryWriteFailOpen } from "./session-history-fail-open.js"
 import { SqliteBusyError, SqliteOpenError } from "./sqlite-adapter.js"
 
@@ -27,10 +28,16 @@ describe("runHistoryWriteFailOpen", () => {
   })
 
   it("logs and swallows persistent SQLITE_BUSY (no fake success)", async () => {
+    let threw = false
     runHistoryWriteFailOpen("busy", () => {
+      threw = true
       throw new SqliteBusyError("locked")
     })
-    await vi.waitFor(() => expect(mockWarn).toHaveBeenCalled())
+    await vi.waitFor(() => expect(mockWarn).toHaveBeenCalled(), {
+      timeout: WRITE_DB_BUDGET_MS + 500,
+      interval: 20,
+    })
+    expect(threw).toBe(true)
     expect(mockWarn.mock.calls[0]?.[1]).toMatch(/database locked/)
   })
 
@@ -38,7 +45,10 @@ describe("runHistoryWriteFailOpen", () => {
     runHistoryWriteFailOpen("open", () => {
       throw new SqliteOpenError("bad file")
     })
-    await vi.waitFor(() => expect(mockWarn).toHaveBeenCalled())
+    await vi.waitFor(() => expect(mockWarn).toHaveBeenCalled(), {
+      timeout: WRITE_DB_BUDGET_MS + 500,
+      interval: 20,
+    })
     expect(mockWarn.mock.calls[0]?.[1]).toMatch(/open\/health/)
   })
 
@@ -46,7 +56,10 @@ describe("runHistoryWriteFailOpen", () => {
     runHistoryWriteFailOpen("other", () => {
       throw new Error("boom")
     })
-    await vi.waitFor(() => expect(mockWarn).toHaveBeenCalled())
+    await vi.waitFor(() => expect(mockWarn).toHaveBeenCalled(), {
+      timeout: WRITE_DB_BUDGET_MS + 500,
+      interval: 20,
+    })
     expect(mockWarn.mock.calls[0]?.[1]).toMatch(/unexpected/)
   })
 })

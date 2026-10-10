@@ -2,7 +2,7 @@
  * sqlite-busy-retry.ts — async, deadline-bounded retry for SQLITE_BUSY (DoD 11).
  */
 
-import { isSqliteBusyCause } from "./sqlite-adapter.js"
+import { isSqliteBusyCause, SqliteDeadlineError } from "./sqlite-adapter.js"
 
 export function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -64,6 +64,9 @@ export async function withSqliteBusyRetryUntil<T>(
     }
   }
   lastRetryAttemptCount = attempt
+  if (attempt === 0 || last === undefined) {
+    throw new SqliteDeadlineError()
+  }
   throw last
 }
 

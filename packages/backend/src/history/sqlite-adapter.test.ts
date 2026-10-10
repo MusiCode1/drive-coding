@@ -11,6 +11,7 @@ import {
   isSqliteBusyCause,
   openSqliteDb,
   SqliteBusyError,
+  SqliteDeadlineError,
   SqliteOpenError,
 } from "./sqlite-adapter.js"
 
@@ -153,13 +154,22 @@ describe("openSqliteDb", () => {
       db2.close()
     })
 
+    it("preserves SqliteDeadlineError identity through classify", () => {
+      const deadline = new SqliteDeadlineError("boot budget exhausted")
+      const out = classifySqliteHealthError(deadline, "/tmp/x.sqlite")
+      expect(out).toBe(deadline)
+      expect(out.name).toBe("SqliteDeadlineError")
+    })
+
     it("3. non-SQLite file ⇒ SqliteOpenError without truncating bytes", () => {
       dir = mkdtempSync(join(tmpdir(), "dc-sqlite-corrupt-"))
       dbPath = join(dir, "corrupt.sqlite")
       const garbage = "this is not a database"
       writeFileSync(dbPath, garbage)
       expect(() => openSqliteDb(dbPath)).toThrow(SqliteOpenError)
-      expect(() => openSqliteDb(dbPath)).toThrow(/not a valid SQLite|integrity_check|Failed to open/)
+      expect(() => openSqliteDb(dbPath)).toThrow(
+        /not a valid SQLite|integrity_check|Failed to open/,
+      )
       expect(readFileSync(dbPath, "utf8")).toBe(garbage)
     })
   })

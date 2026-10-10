@@ -32,10 +32,18 @@ export class SqliteOpenError extends Error {
 
 /** Live database held by another connection — retry after release, not corruption. */
 export class SqliteBusyError extends Error {
-  override readonly name = "SqliteBusyError"
+  override readonly name: string = "SqliteBusyError"
   constructor(message: string, cause?: unknown) {
     super(message)
     if (cause !== undefined) this.cause = cause
+  }
+}
+
+/** Boot/read budget expired before a new retry attempt could start. */
+export class SqliteDeadlineError extends SqliteBusyError {
+  override readonly name = "SqliteDeadlineError"
+  constructor(message = "SQLite busy retry deadline exceeded") {
+    super(message)
   }
 }
 
@@ -77,7 +85,7 @@ export function classifySqliteHealthError(
   e: unknown,
   file: string,
 ): SqliteOpenError | SqliteBusyError {
-  if (e instanceof SqliteOpenError) return e
+  if (e instanceof SqliteOpenError || e instanceof SqliteBusyError) return e
   if (isSqliteBusyCause(e)) {
     return new SqliteBusyError(`Database at ${file} is locked`, e)
   }
