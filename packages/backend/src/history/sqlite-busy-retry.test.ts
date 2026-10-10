@@ -48,8 +48,9 @@ describe("withSqliteBusyRetryUntil", () => {
       }, timerDelayMs)
       const work = withSqliteBusyRetryUntil(() => db2.transaction(() => 1), Date.now() + 400)
       await sleepMs(20)
-      expect(firedAt).toBeDefined()
-      expect(firedAt! - targetAt).toBeLessThanOrEqual(150)
+      const fired = firedAt
+      if (fired === undefined) throw new Error("heartbeat timer never fired")
+      expect(fired - targetAt).toBeLessThanOrEqual(150)
       try {
         db1.exec("ROLLBACK")
       } catch {
