@@ -4,12 +4,12 @@
 
 import type { Hono } from "hono"
 import type { TokenUsageStore } from "../usage/token-usage-store.js"
-import {
-  sqliteHistoryHttpErrorResponse,
-  withHistoryReadRetry,
-} from "./http-sqlite-read-retry.js"
+import { sqliteHistoryHttpErrorResponse, withHistoryReadRetry } from "./http-sqlite-read-retry.js"
 
-export function registerTokenUsageHttp(app: Hono, deps: { tokenUsageStore: TokenUsageStore }): void {
+export function registerTokenUsageHttp(
+  app: Hono,
+  deps: { tokenUsageStore: TokenUsageStore },
+): void {
   app.get("/api/usage/tokens", async (c) => {
     const cwd = c.req.query("cwd")
     const limitRaw = c.req.query("limit")

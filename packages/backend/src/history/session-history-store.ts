@@ -4,13 +4,13 @@
 
 import { join } from "node:path"
 import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
-import { ensureStateSubdir } from "../paths.js"
-import type { TokenUsageRecord } from "../usage/token-usage-store.js"
 import {
   bootDeadlineFromNow,
   openSqliteDbWithSchema,
   WRITE_DB_BUDGET_MS,
 } from "../boot/sqlite-bootstrap.js"
+import { ensureStateSubdir } from "../paths.js"
+import type { TokenUsageRecord } from "../usage/token-usage-store.js"
 import { runHistoryWriteFailOpen } from "./session-history-fail-open.js"
 import { listProjectsFromDb } from "./session-history-projects.js"
 import {
@@ -19,7 +19,7 @@ import {
   loadCycles,
   type SessionKey,
 } from "./session-history-usage-persist.js"
-import { type SqliteDb } from "./sqlite-adapter.js"
+import type { SqliteDb } from "./sqlite-adapter.js"
 import { withSqliteBusyRetryUntil } from "./sqlite-busy-retry.js"
 
 export type { SessionKey }

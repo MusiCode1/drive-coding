@@ -2,10 +2,10 @@
  * prepare-boot.ts — process guards, config load, and legacy history import.
  */
 
-import { BOOT_DB_BUDGET_MS, bootDeadlineFromNow } from "./sqlite-bootstrap.js"
 import { loadAppConfig } from "./config.js"
 import { runBootLegacyImport } from "./history-import.js"
 import { registerProcessGuards } from "./process-guards.js"
+import { BOOT_DB_BUDGET_MS, bootDeadlineFromNow } from "./sqlite-bootstrap.js"
 
 export type PrepareBootResult = {
   config: ReturnType<typeof loadAppConfig>

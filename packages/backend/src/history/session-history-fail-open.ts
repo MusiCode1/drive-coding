@@ -3,13 +3,13 @@
  */
 
 import { createLogger } from "@drive-coding/core/log"
+import { WRITE_DB_BUDGET_MS } from "../boot/sqlite-bootstrap.js"
 import {
   isSqliteBusyCause,
   SqliteBusyError,
   SqliteIoError,
   SqliteOpenError,
 } from "./sqlite-adapter.js"
-import { WRITE_DB_BUDGET_MS } from "../boot/sqlite-bootstrap.js"
 import { withSqliteBusyRetryUntil } from "./sqlite-busy-retry.js"
 
 const log = createLogger("backend.history.store")

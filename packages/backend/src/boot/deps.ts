@@ -21,7 +21,6 @@ import { createEvictionController } from "../delivery/eviction-controller.js"
 import { createMemoryGuard, type MemoryGuard } from "../delivery/memory-guard.js"
 import { createWireRecorder } from "../delivery/wire-recorder.js"
 import { asTokenUsageStore } from "../history/session-history-as-token-usage.js"
-import { bootDeadlineFromNow } from "./sqlite-bootstrap.js"
 import {
   createSessionHistoryStore,
   resolveHistoryDbFile,
@@ -36,6 +35,7 @@ import { wireTokenUsagePatches } from "../usage/token-usage-patch-wire.js"
 import type { TokenUsageStore } from "../usage/token-usage-store.js"
 import { createUsageStore, type UsageStore } from "../usage/usage-store.js"
 import { wireRecorderDir } from "./config.js"
+import { bootDeadlineFromNow } from "./sqlite-bootstrap.js"
 
 const log = createLogger("backend.server")
 

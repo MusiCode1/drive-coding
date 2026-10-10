@@ -1,9 +1,6 @@
 import type { Context, Hono } from "hono"
 import type { SessionHistoryStore } from "../history/session-history-store.js"
-import {
-  sqliteHistoryHttpErrorResponse,
-  withHistoryReadRetry,
-} from "./http-sqlite-read-retry.js"
+import { sqliteHistoryHttpErrorResponse, withHistoryReadRetry } from "./http-sqlite-read-retry.js"
 
 /** Maps hideFolder failures to HTTP status (503 busy · 500 I/O · 500 corruption/open). */
 export function hideFolderHttpErrorResponse(c: Context, e: unknown): Response {

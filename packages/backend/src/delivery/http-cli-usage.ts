@@ -6,14 +6,9 @@ import type { Hono } from "hono"
 import type { ProjectEntry } from "../app/project-entry.js"
 import type { SessionHistoryStore } from "../history/session-history-store.js"
 import { aggregateCliUsage } from "../usage/aggregate-cli-usage.js"
-import {
-  sqliteHistoryHttpErrorResponse,
-  withHistoryReadRetry,
-} from "./http-sqlite-read-retry.js"
+import { sqliteHistoryHttpErrorResponse, withHistoryReadRetry } from "./http-sqlite-read-retry.js"
 
-function toProjectEntries(
-  rows: ReturnType<SessionHistoryStore["listProjects"]>,
-): ProjectEntry[] {
+function toProjectEntries(rows: ReturnType<SessionHistoryStore["listProjects"]>): ProjectEntry[] {
   return rows.map((p) => ({
     cwd: p.cwd,
     kind: p.kind as ProjectEntry["kind"],
@@ -32,9 +27,7 @@ export function registerCliUsageHttp(
     try {
       const { projects, sessionRows } = await withHistoryReadRetry(() => ({
         projects: deps.sessionHistoryStore.listProjects({ includeHidden: true }),
-        sessionRows: deps.sessionHistoryStore.listCliSessionRows(
-          cwd !== undefined ? { cwd } : {},
-        ),
+        sessionRows: deps.sessionHistoryStore.listCliSessionRows(cwd !== undefined ? { cwd } : {}),
       }))
       return c.json({
         clis: aggregateCliUsage(
