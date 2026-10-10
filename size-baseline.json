@@ -692,10 +692,10 @@
       "codeLines": 663
     },
     "packages/frontend/src/lib/components/connect/CwdPathCombo.svelte": {
-      "metric": 99,
+      "metric": 97,
       "impurity": 1,
       "class": "mixed",
-      "codeLines": 347
+      "codeLines": 273
     },
     "packages/frontend/src/lib/components/debug/PlaybackDebugPanel.svelte": {
       "metric": 31,

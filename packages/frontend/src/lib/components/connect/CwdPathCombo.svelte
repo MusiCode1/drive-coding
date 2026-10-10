@@ -10,21 +10,20 @@
  * Arrow placement: end of row (after input, visually adjacent to typed path).
  * Search box: top of menu (receives focus on open — conventional filter UX).
  */
-import { Dialog, Popover } from "bits-ui"
+
 import ChevronDownIcon from "@lucide/svelte/icons/chevron-down"
 import FolderIcon from "@lucide/svelte/icons/folder"
+import { Dialog, Popover } from "bits-ui"
 import type { RecentProject } from "$lib/adapters/recent-projects"
-import CliBadge from "$lib/components/ui/CliBadge.svelte"
+import CwdPathComboRow from "$lib/components/connect/CwdPathComboRow.svelte"
 import {
   applyMenuSearchQuery,
   applyPathSelection,
   openFromArrow,
   shouldOpenOnFocus,
 } from "$lib/components/connect/cwd-path-combo-logic"
-import { getCliAvailability, getI18n, getRecentProjects, getResponsive } from "$lib/context"
-import { formatRelativeTime } from "$lib/util/formatting"
+import { getI18n, getRecentProjects, getResponsive } from "$lib/context"
 import { filterPaths } from "$lib/util/filter-paths"
-import { basename } from "$lib/util/path"
 
 /** Max rows when search query is empty (§8 — adjust with visual check). */
 const DISPLAY_LIMIT = 20
@@ -52,7 +51,6 @@ const responsive = getResponsive()
 const recent = getRecentProjects()
 const i18n = getI18n()
 const t = i18n.t
-const cliAvailability = getCliAvailability()
 
 let open = $state(false)
 let query = $state("")
@@ -203,24 +201,7 @@ function pick(project: RecentProject) {
       <div class="combo-status">{t("connect.cwd.combo.empty")}</div>
     {:else}
       {#each filtered as project (project.cwd)}
-        <button type="button" class="combo-item" onclick={() => pick(project)}>
-          <div class="combo-item-top">
-            <CliBadge
-              id={project.kind}
-              displayName={cliAvailability.details[project.kind]?.displayName}
-              logo={cliAvailability.details[project.kind]?.logo}
-              variant="badge"
-            />
-            <span class="combo-basename" title={project.cwd}><bdi>{basename(project.cwd)}</bdi></span>
-            {#if project.lastSeen}
-              <span class="combo-sep">·</span>
-              <span class="combo-time">
-                {formatRelativeTime(new Date(project.lastSeen).getTime(), i18n.locale)}
-              </span>
-            {/if}
-          </div>
-          <div class="combo-path" title={project.cwd} dir="ltr"><bdi>{project.cwd}</bdi></div>
-        </button>
+        <CwdPathComboRow {project} onPick={pick} />
       {/each}
     {/if}
   </div>
@@ -336,64 +317,4 @@ function pick(project: RecentProject) {
     text-align: center;
   }
 
-  .combo-item {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    padding: 0.55rem 0.5rem;
-    background: transparent;
-    border: none;
-    border-radius: 0.5rem;
-    cursor: pointer;
-    text-align: start;
-  }
-
-  .combo-item:hover {
-    background: var(--bg-hover, rgba(127, 127, 127, 0.08));
-  }
-
-  .combo-item-top {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    font-size: 0.82rem;
-  }
-
-  .combo-basename {
-    color: var(--fg);
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 0 1 auto;
-    min-width: 0;
-  }
-
-  .combo-basename > :global(bdi),
-  .combo-path > :global(bdi) {
-    direction: ltr;
-  }
-
-  .combo-sep {
-    color: var(--fg-dim);
-    opacity: 0.5;
-  }
-
-  .combo-time {
-    direction: ltr;
-    flex-shrink: 0;
-    color: var(--fg-dim);
-    font-size: 0.72rem;
-  }
-
-  .combo-path {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.72rem;
-    color: var(--fg-dim);
-    min-width: 0;
-  }
 </style>

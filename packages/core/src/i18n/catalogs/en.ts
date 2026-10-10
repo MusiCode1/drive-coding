@@ -488,6 +488,7 @@ export const en: Catalog = {
   "sidebar.resizeHandle": "Drag to resize width",
   // ─── cwd-path-combo ───
   "connect.cwd.combo.toggle": "Show recent folders",
+  "connect.cwd.combo.sessionCount": "sessions",
   "connect.cwd.combo.searchPlaceholder": "Search path…",
   "connect.cwd.combo.empty": "No folders to show",
   "connect.cwd.combo.loadError": "Failed to load folders",
