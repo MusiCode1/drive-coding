@@ -18,7 +18,7 @@ import { join, relative, resolve } from "node:path"
 import type { Hono } from "hono"
 import type { RecordingsStore } from "../app/recordings-store.js"
 import type { SessionHistoryStore } from "../history/session-history-store.js"
-import { listProjectsForApi, registerProjectDeleteRoute } from "./http-projects-api.js"
+import { registerProjectDeleteRoute, registerProjectsListRoute } from "./http-projects-api.js"
 
 // ─── /api/projects ────────────────────────────────────────────────────────────
 
@@ -28,9 +28,7 @@ export function registerProjectsHttp(
     sessionHistoryStore: SessionHistoryStore
   },
 ): void {
-  app.get("/api/projects", async (c) => {
-    return c.json({ projects: listProjectsForApi(deps.sessionHistoryStore) })
-  })
+  registerProjectsListRoute(app, deps.sessionHistoryStore)
   registerProjectDeleteRoute(app, deps.sessionHistoryStore)
 }
 

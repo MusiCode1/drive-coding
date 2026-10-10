@@ -11,6 +11,7 @@ import { withSqliteBusyRetryUntil } from "../history/sqlite-busy-retry.js"
 
 export const BOOT_DB_BUDGET_MS = 3000
 export const WRITE_DB_BUDGET_MS = 1000
+export const READ_DB_BUDGET_MS = 600
 
 export function bootDeadlineFromNow(ms: number = BOOT_DB_BUDGET_MS): number {
   return Date.now() + ms

@@ -1,31 +1,13 @@
 import type { Context, Hono } from "hono"
-import {
-  classifySqliteHealthError,
-  SqliteBusyError,
-  SqliteIoError,
-  SqliteOpenError,
-} from "../history/sqlite-adapter.js"
 import type { SessionHistoryStore } from "../history/session-history-store.js"
+import {
+  sqliteHistoryHttpErrorResponse,
+  withHistoryReadRetry,
+} from "./http-sqlite-read-retry.js"
 
-/** Maps hideFolder failures to HTTP status (503 busy · 500 I/O/open · 500 generic). */
+/** Maps hideFolder failures to HTTP status (503 busy · 500 I/O · 500 corruption/open). */
 export function hideFolderHttpErrorResponse(c: Context, e: unknown): Response {
-  if (e instanceof SqliteBusyError) {
-    return c.json({ error: "database_locked", code: "SQLITE_BUSY" }, 503)
-  }
-  if (e instanceof SqliteIoError) {
-    return c.json({ error: "history_write_failed", code: "HISTORY_WRITE" }, 500)
-  }
-  if (e instanceof SqliteOpenError) {
-    return c.json({ error: "database_unavailable", code: "SQLITE_OPEN" }, 500)
-  }
-  const classified = classifySqliteHealthError(e, "history")
-  if (classified instanceof SqliteBusyError) {
-    return c.json({ error: "database_locked", code: "SQLITE_BUSY" }, 503)
-  }
-  if (classified instanceof SqliteIoError) {
-    return c.json({ error: "history_write_failed", code: "HISTORY_WRITE" }, 500)
-  }
-  return c.json({ error: "database_unavailable", code: "SQLITE_OPEN" }, 500)
+  return sqliteHistoryHttpErrorResponse(c, e)
 }
 
 export function registerProjectDeleteRoute(app: Hono, store: SessionHistoryStore): void {
@@ -39,6 +21,17 @@ export function registerProjectDeleteRoute(app: Hono, store: SessionHistoryStore
       return hideFolderHttpErrorResponse(c, e)
     }
     return c.body(null, 204)
+  })
+}
+
+export function registerProjectsListRoute(app: Hono, store: SessionHistoryStore): void {
+  app.get("/api/projects", async (c) => {
+    try {
+      const projects = await withHistoryReadRetry(() => listProjectsForApi(store))
+      return c.json({ projects })
+    } catch (e) {
+      return sqliteHistoryHttpErrorResponse(c, e)
+    }
   })
 }
 
