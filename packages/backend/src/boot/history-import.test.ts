@@ -105,10 +105,15 @@ describe("boot import survives malformed legacy records", () => {
       expect(result).toBe("imported")
       expect(stats.usageSkipped).toBe(1)
       expect(db.prepare("SELECT count(*) AS c FROM sessions").get<{ c: number }>()?.c).toBe(1)
-      // the marker IS written — so the next boot skips instead of retrying the failure
+      // The marker IS written — so the next boot skips instead of retrying the failure.
+      // One ledger holds both kinds: `schema-v1` (shape) and the data import. They are
+      // separate questions — a fresh install is a valid v1 with nothing imported.
       expect(
-        db.prepare("SELECT count(*) AS c FROM history_migrations").get<{ c: number }>()?.c,
-      ).toBe(1)
+        db
+          .prepare("SELECT migrationId FROM history_migrations ORDER BY migrationId")
+          .all<{ migrationId: string }>()
+          .map((r) => r.migrationId),
+      ).toEqual(["import-legacy-json-v1", "schema-v1"])
       db.close()
     } finally {
       rmSync(dir, { recursive: true, force: true })

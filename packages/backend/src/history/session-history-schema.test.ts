@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
+import { SchemaVersionError } from "./schema-migrations.js"
 import {
   applySessionHistorySchema,
   listSessionTableColumns,
@@ -66,36 +67,48 @@ afterEach(() => {
 })
 
 describe("applySessionHistorySchema atomicity", () => {
-  it("runs the probe, the DDL and the version bump inside one transaction", () => {
+  // The intent of these three is unchanged since fix6 — the version probe and the
+  // writes must be ONE unit. What moved is where the guarantee lives: the runner now
+  // re-reads the version under BEGIN IMMEDIATE, so the assertion is "every call is
+  // inside the transaction", not a fixed call sequence.
+  it("every probe and every write happens inside one transaction", () => {
     const { db, calls } = recordingDb(0)
-    applySessionHistorySchema(db)
+    // The column check is off here and ONLY here: this fake answers every query with
+    // [], so it has no columns to report. Drift is proven against real files in
+    // schema-migrations.test.ts; what this case owns is the transaction boundary.
+    applySessionHistorySchema(db, { expectedColumns: null })
 
-    expect(calls[0]).toBe("begin")
+    // 🛑 No WRITE outside the transaction. One read is allowed and expected: the
+    // pre-flight probe that decides whether a backup is worth taking, because
+    // VACUUM INTO cannot run inside a transaction. It decides nothing that writes —
+    // the authoritative read happens again under the lock, asserted below.
+    expect(calls.filter((c) => c.startsWith("bare:exec"))).toEqual([])
+    expect(calls.filter((c) => c.startsWith("bare:"))).toEqual(["bare:prepare:PRAGMA user_version"])
     expect(calls.at(-1)).toBe("commit")
-    // nothing may touch the file outside the transaction
-    expect(calls.filter((c) => c.startsWith("bare:"))).toEqual([])
-    // and both writes are in there
+    expect(calls.filter((c) => c === "begin")).toHaveLength(1)
+    // 🔑 the version is read INSIDE — reading it outside is the race measured at
+    // 9 failures per 500 before fix6
+    expect(calls.some((c) => c === "tx:prepare:PRAGMA user_version")).toBe(true)
     expect(calls.some((c) => c.startsWith("tx:exec:CREATE TABLE"))).toBe(true)
     expect(
       calls.some((c) => c === `tx:exec:PRAGMA user_version = ${SESSION_HISTORY_USER_VERSION}`),
     ).toBe(true)
-    expect(calls.filter((c) => c === "begin")).toHaveLength(1)
   })
 
-  it("probes inside the transaction and writes nothing when already current", () => {
+  it("writes nothing when the file is already at the latest version", () => {
     const { db, calls } = recordingDb(SESSION_HISTORY_USER_VERSION)
     applySessionHistorySchema(db)
 
-    expect(calls).toEqual(["begin", "tx:prepare:PRAGMA user_version", "commit"])
+    // the pre-flight read answers it; no transaction is opened at all
+    expect(calls).toEqual(["bare:prepare:PRAGMA user_version"])
   })
 
-  // The `Unsupported … user_version` throw is unreachable while
-  // SESSION_HISTORY_USER_VERSION === 1: the `current >= VERSION` guard returns
-  // first, so a NEWER file is accepted as-is. This pins what actually happens.
-  it("treats a newer user_version as current and writes nothing", () => {
+  // Before this slice a NEWER file was accepted as-is: `current >= VERSION` returned
+  // first, so the `Unsupported` branch was unreachable. Now it is refused.
+  it("refuses a file newer than this build instead of accepting it", () => {
     const { db, calls } = recordingDb(SESSION_HISTORY_USER_VERSION + 1)
-    applySessionHistorySchema(db)
-    expect(calls).toEqual(["begin", "tx:prepare:PRAGMA user_version", "commit"])
+    expect(() => applySessionHistorySchema(db)).toThrow(SchemaVersionError)
+    expect(calls.some((c) => c.includes("exec"))).toBe(false)
   })
 
   it("commits a complete schema on a real file, and is idempotent", () => {
