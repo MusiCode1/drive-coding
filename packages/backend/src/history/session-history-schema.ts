@@ -93,14 +93,24 @@ CREATE TABLE IF NOT EXISTS history_migrations (
 `
 
 export function applySessionHistorySchema(db: SqliteDb): void {
-  const row = db.prepare("PRAGMA user_version").get<{ user_version: number }>()
-  const current = row?.user_version ?? 0
-  if (current >= SESSION_HISTORY_USER_VERSION) return
-  if (current !== 0) {
-    throw new Error(`Unsupported session history schema user_version=${current}`)
-  }
-  db.exec(DDL)
-  db.exec(`PRAGMA user_version = ${SESSION_HISTORY_USER_VERSION}`)
+  // The version probe and the DDL must be one atomic unit. Without it, two
+  // processes booting together interleave statement by statement: measured
+  // 9/500 failures under load with `no such table: main.sessions` thrown from
+  // exec(DDL). That error is errno 1 (SQLITE_ERROR), not BUSY, so
+  // withSqliteBusyRetryUntil rethrows instead of retrying it.
+  // BEGIN IMMEDIATE serialises the two: the loser sees user_version === 1 and
+  // returns. `PRAGMA user_version` is transactional in both runtimes (probed:
+  // it rolls back with the DDL), so the file is either empty or complete.
+  db.transaction(() => {
+    const row = db.prepare("PRAGMA user_version").get<{ user_version: number }>()
+    const current = row?.user_version ?? 0
+    if (current >= SESSION_HISTORY_USER_VERSION) return
+    if (current !== 0) {
+      throw new Error(`Unsupported session history schema user_version=${current}`)
+    }
+    db.exec(DDL)
+    db.exec(`PRAGMA user_version = ${SESSION_HISTORY_USER_VERSION}`)
+  })
 }
 
 export function listSessionTableColumns(db: SqliteDb): string[] {
