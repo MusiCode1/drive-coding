@@ -20,7 +20,11 @@ const session = getSession()
 const speaker = getSpeaker()
 const uiShell = getUiShell()
 const onSettings = $derived(page.url.pathname === "/settings")
-/** "idle" = טרם נוצר סוכן ⇒ פקדים שפועלים על סשן מוסתרים. */
+/**
+ * "idle" = טרם נוצר סוכן ⇒ רק הכיבוי (ההורג) מוסתר.
+ * ⇥ נשאר: בלי סשן turnState הוא "idle" ⇒ shouldWarnOnLeave=false ⇒ הוא פשוט
+ * מנווט הביתה, וזו הדרך החוצה מ-/usage כשאין סשן.
+ */
 const hasSession = $derived(session.status !== "idle")
 
 function onDisconnect() {
@@ -50,8 +54,8 @@ function toggleSettings() {
     >
       <PowerIcon size={16} strokeWidth={1.75} />
     </button>
-    <LeaveRunningButton />
   {/if}
+  <LeaveRunningButton />
 
   <!-- audio master toggle — גלובלי, לא תלוי-סשן -->
   <button

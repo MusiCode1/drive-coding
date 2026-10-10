@@ -240,8 +240,10 @@ $effect(() => {
 
 <!-- machine stats from presence poller (slice machine-stats-in-session) -->
 <MachineStatsBar stats={poller.machine} />
+{#if hasSession}
 <SessionTitleField />
 <SessionFieldsList />
+{/if}
 <SessionActionsRow />
 
 <!-- אזור גלילה מאוחד: תצוגה + אפשרויות סוכן + סשנים.
@@ -250,7 +252,6 @@ $effect(() => {
 
 {#if hasSession}
 <DisplayOptionsRow />
-{/if}
 
 <!-- ─── cli-name-in-chat: שם ה-CLI מעל אפשרויות סוכן ─── -->
 {#if session.cliKind}
@@ -265,7 +266,6 @@ $effect(() => {
   </div>
 {/if}
 
-{#if hasSession}
 <!-- אפשרויות סוכן — מחווט מ-redesign-3 -->
 <div class="flex flex-col gap-2.5 shrink-0">
   <div class="text-[11px] font-semibold uppercase tracking-wider px-1" style="color:var(--fg-dim)">
