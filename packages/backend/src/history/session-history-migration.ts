@@ -6,6 +6,12 @@ import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { ensureStateSubdir } from "../paths.js"
 import type { TokenUsageRecord } from "../usage/token-usage-store.js"
+import {
+  type LegacyImportStats,
+  noteReason,
+  validateLegacyProjectEntry,
+  validateLegacyUsageRecord,
+} from "./legacy-record-schema.js"
 import { insertLegacyFolder } from "./session-history-projects.js"
 import type { SqliteDb } from "./sqlite-adapter.js"
 
@@ -62,22 +68,31 @@ function readJson(path: string): unknown {
   }
 }
 
-function loadUsageRecords(path: string | undefined): TokenUsageRecord[] {
+function loadUsageRecords(path: string | undefined, stats?: LegacyImportStats): TokenUsageRecord[] {
   if (path === undefined) return []
   const data = readJson(path)
   if (typeof data !== "object" || data === null) {
     throw new LegacyImportError(`Unexpected usage JSON shape at ${path}`)
   }
   const out: TokenUsageRecord[] = []
+  // A bad record is skipped, never thrown: an unvalidated one reached the INSERT and
+  // raised NOT NULL, which propagates out of prepareBoot() and stops the backend from
+  // starting — permanently, because the marker is written in the transaction that failed.
   for (const v of Object.values(data as Record<string, unknown>)) {
-    if (v && typeof v === "object" && typeof (v as TokenUsageRecord).acpSessionId === "string") {
-      out.push(v as TokenUsageRecord)
+    const checked = validateLegacyUsageRecord(v)
+    if (!checked.ok) {
+      if (stats) stats.usageSkipped++
+      noteReason(stats, checked.reason)
+      continue
     }
+    if (stats) stats.fieldsDropped += checked.droppedFields.length
+    for (const f of checked.droppedFields) noteReason(stats, `dropped field ${f}`)
+    out.push(checked.value)
   }
   return out
 }
 
-function loadProjects(path: string | undefined): ProjectEntry[] {
+function loadProjects(path: string | undefined, stats?: LegacyImportStats): ProjectEntry[] {
   if (path === undefined) return []
   const data = readJson(path)
   if (
@@ -87,7 +102,18 @@ function loadProjects(path: string | undefined): ProjectEntry[] {
   ) {
     throw new LegacyImportError(`Unexpected projects registry shape at ${path}`)
   }
-  return (data as { projects: ProjectEntry[] }).projects
+  const out: ProjectEntry[] = []
+  for (const v of (data as { projects: unknown[] }).projects) {
+    const checked = validateLegacyProjectEntry(v)
+    if (!checked.ok) {
+      if (stats) stats.projectsSkipped++
+      noteReason(stats, checked.reason)
+      continue
+    }
+    if (stats) stats.fieldsDropped += checked.droppedFields.length
+    out.push(checked.value as ProjectEntry)
+  }
+  return out
 }
 
 function importUsageRecord(db: SqliteDb, rec: TokenUsageRecord): void {
@@ -153,12 +179,21 @@ function importProjects(
   projects: ProjectEntry[],
   knownCwds: Set<string>,
   projectsFileLoaded: boolean,
+  stats?: LegacyImportStats,
 ): void {
+  /** An unreadable `lastSeen` falls back to "now" — a wrong timestamp, not an error.
+   *  Counting it is the difference between a known approximation and a silent lie. */
+  const seenAt = (raw: string): number => {
+    const ms = Date.parse(raw)
+    if (Number.isFinite(ms)) return ms
+    if (stats) stats.unparsedLastSeen++
+    noteReason(stats, "lastSeen unparseable")
+    return Date.now()
+  }
   const registryCwds = new Set(projects.map((p) => p.cwd))
   for (const p of projects) {
     if (p.lastSessionId !== undefined && p.lastSessionId !== "") {
-      const seenMs = Date.parse(p.lastSeen)
-      const lastSeenAt = Number.isFinite(seenMs) ? seenMs : Date.now()
+      const lastSeenAt = seenAt(p.lastSeen)
       db.prepare(
         `INSERT INTO sessions (
           cliKind, acpSessionId, agentId, cwd,
@@ -171,11 +206,10 @@ function importProjects(
             ELSE sessions.lastAttachedAt END`,
       ).run(p.kind, p.lastSessionId, "legacy-import", p.cwd, lastSeenAt, lastSeenAt, lastSeenAt)
     } else {
-      const seenMs = Date.parse(p.lastSeen)
       insertLegacyFolder(db, {
         cwd: p.cwd,
         cliKind: p.kind,
-        lastSeenAt: Number.isFinite(seenMs) ? seenMs : Date.now(),
+        lastSeenAt: seenAt(p.lastSeen),
         payload: JSON.stringify(p),
       })
     }
@@ -198,6 +232,10 @@ export type LegacyImportResult = "imported" | "skipped" | "no_sources"
 export function runLegacyImport(opts: {
   db: SqliteDb
   legacySources: LegacySources
+  /** Optional out-param. `LegacyImportResult` stays a plain string on purpose —
+   *  checkParallelImport in sqlite-dual-runtime-gate asserts the pair
+   *  "imported,skipped", so widening the return type would break that gate. */
+  stats?: LegacyImportStats
 }): LegacyImportResult {
   if (migrationDone(opts.db)) return "skipped"
 
@@ -209,15 +247,15 @@ export function runLegacyImport(opts: {
   opts.db.transaction(() => {
     if (migrationDone(opts.db)) return
 
-    const usage = loadUsageRecords(opts.legacySources.usageJsonPath)
+    const usage = loadUsageRecords(opts.legacySources.usageJsonPath, opts.stats)
     const projectsFileLoaded = opts.legacySources.projectsJsonPath !== undefined
-    const projects = loadProjects(opts.legacySources.projectsJsonPath)
+    const projects = loadProjects(opts.legacySources.projectsJsonPath, opts.stats)
     const cwds = new Set(usage.map((r) => r.cwd))
 
     for (const rec of usage) {
       importUsageRecord(opts.db, rec)
     }
-    importProjects(opts.db, projects, cwds, projectsFileLoaded)
+    importProjects(opts.db, projects, cwds, projectsFileLoaded, opts.stats)
 
     opts.db
       .prepare("INSERT INTO history_migrations (migrationId, completedAt) VALUES (?, ?)")

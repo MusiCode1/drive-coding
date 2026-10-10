@@ -3,6 +3,7 @@
  * Lives in boot/ to avoid adapter ↔ busy-retry import cycles.
  */
 
+import type { LegacyImportStats } from "../history/legacy-record-schema.js"
 import type { LegacySources } from "../history/session-history-migration.js"
 import { runLegacyImport } from "../history/session-history-migration.js"
 import { applySessionHistorySchema } from "../history/session-history-schema.js"
@@ -17,17 +18,11 @@ export function bootDeadlineFromNow(ms: number = BOOT_DB_BUDGET_MS): number {
   return Date.now() + ms
 }
 
-export async function openSqliteDbWithRetry(
-  file: string,
-  deadlineAt: number,
-): Promise<SqliteDb> {
+export async function openSqliteDbWithRetry(file: string, deadlineAt: number): Promise<SqliteDb> {
   return withSqliteBusyRetryUntil(() => openSqliteDb(file), deadlineAt)
 }
 
-export async function openSqliteDbWithSchema(
-  file: string,
-  deadlineAt: number,
-): Promise<SqliteDb> {
+export async function openSqliteDbWithSchema(file: string, deadlineAt: number): Promise<SqliteDb> {
   return withSqliteBusyRetryUntil(() => {
     const db = openSqliteDb(file)
     try {
@@ -44,6 +39,7 @@ export async function runLegacyImportWithRetry(
   dbFile: string,
   legacySources: LegacySources,
   deadlineAt: number,
+  stats?: LegacyImportStats,
 ): Promise<ReturnType<typeof runLegacyImport>> {
   let db: SqliteDb | undefined
   try {
@@ -52,7 +48,7 @@ export async function runLegacyImportWithRetry(
       applySessionHistorySchema(db as SqliteDb)
     }, deadlineAt)
     return await withSqliteBusyRetryUntil(
-      () => runLegacyImport({ db: db as SqliteDb, legacySources }),
+      () => runLegacyImport({ db: db as SqliteDb, legacySources, stats }),
       deadlineAt,
     )
   } finally {

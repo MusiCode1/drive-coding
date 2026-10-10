@@ -4,6 +4,7 @@
 
 import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
 import { createLogger } from "@drive-coding/core/log"
+import { emptyLegacyImportStats } from "../history/legacy-record-schema.js"
 import {
   discoverLegacyJsonSources,
   type LegacySources,
@@ -44,6 +45,19 @@ export async function runBootLegacyImport(
     return
   }
 
-  const result = await runLegacyImportWithRetry(dbFile, legacySources, deadlineAt)
-  log.info({ result, dbFile }, "legacy session history import finished")
+  const stats = emptyLegacyImportStats()
+  const result = await runLegacyImportWithRetry(dbFile, legacySources, deadlineAt, stats)
+  // 🔴 The counters are the point: a skipped record is data the user had and no longer
+  // has. Without them the loss is indistinguishable from "there was nothing to import".
+  log.info({ result, dbFile, ...stats }, "legacy session history import finished")
+  if (stats.usageSkipped > 0 || stats.projectsSkipped > 0) {
+    log.warn(
+      {
+        usageSkipped: stats.usageSkipped,
+        projectsSkipped: stats.projectsSkipped,
+        reasons: stats.reasons,
+      },
+      "legacy records skipped — malformed source data",
+    )
+  }
 }
