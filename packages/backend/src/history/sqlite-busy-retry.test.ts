@@ -30,29 +30,44 @@ describe("withSqliteBusyRetryUntil", () => {
     expect(getLastRetryAttemptCount()).toBeGreaterThan(1)
   })
 
-  it("heartbeat: timer ticks, resolves after lock release, attempts > 1", async () => {
+  it("heartbeat: timer delay, resolves after lock release, attempts > 1", async () => {
     const dir = mkdtempSync(join(tmpdir(), "dc-retry-heartbeat-"))
     const path = join(dir, "h.sqlite")
     const db1 = openSqliteDb(path)
     const db2 = openSqliteDb(path)
-    db1.exec("BEGIN EXCLUSIVE")
-    resetRetryAttemptCountForTests()
-    const t0 = Date.now()
-    let fired = false
-    const timer = setTimeout(() => {
-      fired = true
-    }, 10)
-    const work = withSqliteBusyRetryUntil(() => db2.transaction(() => 1), Date.now() + 400)
-    await sleepMs(20)
-    expect(fired).toBe(true)
-    expect(Date.now() - t0).toBeLessThan(150)
-    db1.exec("ROLLBACK")
-    await expect(work).resolves.toBe(1)
-    expect(getLastRetryAttemptCount()).toBeGreaterThan(1)
-    db1.close()
-    db2.close()
-    rmSync(dir, { recursive: true, force: true })
-    clearTimeout(timer)
+    const timerDelayMs = 10
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      db1.exec("BEGIN EXCLUSIVE")
+      resetRetryAttemptCountForTests()
+      const t0 = Date.now()
+      const targetAt = t0 + timerDelayMs
+      let firedAt: number | undefined
+      timer = setTimeout(() => {
+        firedAt = Date.now()
+      }, timerDelayMs)
+      const work = withSqliteBusyRetryUntil(() => db2.transaction(() => 1), Date.now() + 400)
+      await sleepMs(20)
+      expect(firedAt).toBeDefined()
+      expect(firedAt! - targetAt).toBeLessThanOrEqual(150)
+      try {
+        db1.exec("ROLLBACK")
+      } catch {
+        // best-effort unlock before assertions complete
+      }
+      await expect(work).resolves.toBe(1)
+      expect(getLastRetryAttemptCount()).toBeGreaterThan(1)
+    } finally {
+      try {
+        db1.exec("ROLLBACK")
+      } catch {
+        // ignore — lock may already be released
+      }
+      db1.close()
+      db2.close()
+      rmSync(dir, { recursive: true, force: true })
+      if (timer !== undefined) clearTimeout(timer)
+    }
   })
 
   it("throws SqliteDeadlineError with zero fn calls when deadline already passed", async () => {
