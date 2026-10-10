@@ -722,10 +722,10 @@
       "codeLines": 144
     },
     "packages/frontend/src/lib/components/layout/SessionOptionsPanel.svelte": {
-      "metric": 280,
+      "metric": 237,
       "impurity": 8,
       "class": "mixed",
-      "codeLines": 497
+      "codeLines": 356
     },
     "packages/frontend/src/lib/components/layout/Sidebar.svelte": {
       "metric": 51,
