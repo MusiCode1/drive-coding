@@ -3,7 +3,12 @@
  */
 
 import { createLogger } from "@drive-coding/core/log"
-import { isSqliteBusyCause, SqliteBusyError, SqliteOpenError } from "./sqlite-adapter.js"
+import {
+  isSqliteBusyCause,
+  SqliteBusyError,
+  SqliteIoError,
+  SqliteOpenError,
+} from "./sqlite-adapter.js"
 import { WRITE_DB_BUDGET_MS } from "../boot/sqlite-bootstrap.js"
 import { withSqliteBusyRetryUntil } from "./sqlite-busy-retry.js"
 
@@ -12,6 +17,10 @@ const log = createLogger("backend.history.store")
 function logHistoryWriteFailure(label: string, e: unknown): void {
   if (e instanceof SqliteBusyError || isSqliteBusyCause(e)) {
     log.warn({ err: e, label }, "history write skipped: database locked")
+    return
+  }
+  if (e instanceof SqliteIoError) {
+    log.warn({ err: e, label }, "history write skipped: database I/O error")
     return
   }
   if (e instanceof SqliteOpenError) {

@@ -9,9 +9,11 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   classifySqliteHealthError,
   isSqliteBusyCause,
+  isSqliteIoCause,
   openSqliteDb,
   SqliteBusyError,
   SqliteDeadlineError,
+  SqliteIoError,
   SqliteOpenError,
 } from "./sqlite-adapter.js"
 
@@ -132,6 +134,24 @@ describe("openSqliteDb", () => {
       const nodeBusy = { code: "ERR_SQLITE_ERROR", errcode: 5, message: "database is locked" }
       expect(isSqliteBusyCause(nodeBusy)).toBe(true)
       expect(classifySqliteHealthError(nodeBusy, "/tmp/x.sqlite")).toBeInstanceOf(SqliteBusyError)
+    })
+
+    it("Node extended READONLY_DIRECTORY (errcode 1544) ⇒ I/O not busy or SQLITE_OPEN", () => {
+      const io = { code: "ERR_SQLITE_ERROR", errcode: 1544, message: "readonly dir" }
+      expect(isSqliteBusyCause(io)).toBe(false)
+      expect(isSqliteIoCause(io)).toBe(true)
+      expect(classifySqliteHealthError(io, "/tmp/x.sqlite")).toBeInstanceOf(SqliteIoError)
+    })
+
+    it("Bun SQLITE_READONLY_DIRECTORY ⇒ I/O via code family", () => {
+      const io = { code: "SQLITE_READONLY_DIRECTORY", errno: 1544, message: "readonly dir" }
+      expect(isSqliteIoCause(io)).toBe(true)
+      expect(classifySqliteHealthError(io, "/tmp/x.sqlite")).toBeInstanceOf(SqliteIoError)
+    })
+
+    it("fs EACCES in chain ⇒ I/O (negative errno)", () => {
+      const io = { code: "EACCES", errno: -13, message: "permission denied" }
+      expect(isSqliteIoCause(io)).toBe(true)
     })
 
     it("real EXCLUSIVE lock ⇒ SqliteBusyError via product classifiers", () => {

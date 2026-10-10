@@ -2,12 +2,19 @@ import type { Context, Hono } from "hono"
 import {
   classifySqliteHealthError,
   SqliteBusyError,
+  SqliteIoError,
   SqliteOpenError,
 } from "../history/sqlite-adapter.js"
 import type { SessionHistoryStore } from "../history/session-history-store.js"
 
 /** Maps hideFolder failures to HTTP status (503 busy · 500 I/O/open · 500 generic). */
 export function hideFolderHttpErrorResponse(c: Context, e: unknown): Response {
+  if (e instanceof SqliteBusyError) {
+    return c.json({ error: "database_locked", code: "SQLITE_BUSY" }, 503)
+  }
+  if (e instanceof SqliteIoError) {
+    return c.json({ error: "history_write_failed", code: "HISTORY_WRITE" }, 500)
+  }
   if (e instanceof SqliteOpenError) {
     return c.json({ error: "database_unavailable", code: "SQLITE_OPEN" }, 500)
   }
@@ -15,10 +22,10 @@ export function hideFolderHttpErrorResponse(c: Context, e: unknown): Response {
   if (classified instanceof SqliteBusyError) {
     return c.json({ error: "database_locked", code: "SQLITE_BUSY" }, 503)
   }
-  if (classified instanceof SqliteOpenError) {
-    return c.json({ error: "database_unavailable", code: "SQLITE_OPEN" }, 500)
+  if (classified instanceof SqliteIoError) {
+    return c.json({ error: "history_write_failed", code: "HISTORY_WRITE" }, 500)
   }
-  return c.json({ error: "history_write_failed", code: "HISTORY_WRITE" }, 500)
+  return c.json({ error: "database_unavailable", code: "SQLITE_OPEN" }, 500)
 }
 
 export function registerProjectDeleteRoute(app: Hono, store: SessionHistoryStore): void {

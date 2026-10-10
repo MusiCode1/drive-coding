@@ -47,6 +47,15 @@ export class SqliteDeadlineError extends SqliteBusyError {
   }
 }
 
+/** Permission, space, or path I/O failure — distinct from corruption/open fallback. */
+export class SqliteIoError extends Error {
+  override readonly name = "SqliteIoError"
+  constructor(message: string, cause?: unknown) {
+    super(message)
+    if (cause !== undefined) this.cause = cause
+  }
+}
+
 /** Native spin-wait inside the driver — short sync block only (fix4). */
 export const SQLITE_BUSY_TIMEOUT_MS = 50
 
@@ -64,8 +73,64 @@ function errorChain(e: unknown): unknown[] {
   return chain
 }
 
+const SQLITE_IO_PRIMARY = new Set([8, 10, 13, 14, 23])
+
+const BUN_SQLITE_IO_FAMILIES = [
+  "SQLITE_READONLY",
+  "SQLITE_IOERR",
+  "SQLITE_CANTOPEN",
+  "SQLITE_FULL",
+  "SQLITE_PERM",
+] as const
+
+const FS_IO_ERRCODES = new Set(["EACCES", "EROFS", "ENOSPC", "EPERM", "EIO"])
+
+function sqliteCodeMatchesFamily(code: string, family: string): boolean {
+  return code === family || code.startsWith(`${family}_`)
+}
+
 function isNodeSqliteBusyRecord(rec: Record<string, unknown>): boolean {
-  return rec.code === "ERR_SQLITE_ERROR" && rec.errcode === 5
+  return (
+    rec.code === "ERR_SQLITE_ERROR" &&
+    typeof rec.errcode === "number" &&
+    (rec.errcode & 0xff) === 5
+  )
+}
+
+function isBunSqliteIoRecord(rec: Record<string, unknown>): boolean {
+  const code = rec.code
+  if (typeof code !== "string") return false
+  return BUN_SQLITE_IO_FAMILIES.some((family) => sqliteCodeMatchesFamily(code, family))
+}
+
+function isNodeSqliteIoRecord(rec: Record<string, unknown>): boolean {
+  return (
+    rec.code === "ERR_SQLITE_ERROR" &&
+    typeof rec.errcode === "number" &&
+    SQLITE_IO_PRIMARY.has(rec.errcode & 0xff)
+  )
+}
+
+function isFsIoRecord(rec: Record<string, unknown>): boolean {
+  return (
+    typeof rec.errno === "number" &&
+    rec.errno < 0 &&
+    typeof rec.code === "string" &&
+    FS_IO_ERRCODES.has(rec.code)
+  )
+}
+
+/** Driver or fs-chain I/O — not BUSY, not generic corruption fallback. */
+export function isSqliteIoCause(e: unknown): boolean {
+  if (e instanceof SqliteIoError) return true
+  for (const x of errorChain(e)) {
+    if (typeof x !== "object" || x === null) continue
+    const rec = x as Record<string, unknown>
+    if (isFsIoRecord(rec)) return true
+    if (isBunSqliteIoRecord(rec)) return true
+    if (isNodeSqliteIoRecord(rec)) return true
+  }
+  return false
 }
 
 /** Driver BUSY only — Bun `SQLITE_BUSY`, Node `ERR_SQLITE_ERROR` + errcode 5 (not bare errno). */
@@ -84,16 +149,34 @@ export function isSqliteBusyCause(e: unknown): boolean {
 export function classifySqliteHealthError(
   e: unknown,
   file: string,
-): SqliteOpenError | SqliteBusyError {
-  if (e instanceof SqliteOpenError || e instanceof SqliteBusyError) return e
+): SqliteOpenError | SqliteBusyError | SqliteIoError {
+  if (e instanceof SqliteOpenError || e instanceof SqliteBusyError || e instanceof SqliteIoError) {
+    return e
+  }
   if (isSqliteBusyCause(e)) {
     return new SqliteBusyError(`Database at ${file} is locked`, e)
+  }
+  if (isSqliteIoCause(e)) {
+    return new SqliteIoError(`Database I/O error at ${file}`, e)
   }
   return new SqliteOpenError(`Database at ${file} is not a valid SQLite file`, e)
 }
 
 function rethrowAssertHealthyError(e: unknown, file: string): never {
+  if (e instanceof SqliteOpenError || e instanceof SqliteBusyError || e instanceof SqliteIoError) {
+    throw e
+  }
   throw classifySqliteHealthError(e, file)
+}
+
+function rethrowOpenFailure(e: unknown, file: string): never {
+  if (isSqliteBusyCause(e)) {
+    throw new SqliteBusyError(`Failed to open SQLite database at ${file}`, e)
+  }
+  if (isSqliteIoCause(e)) {
+    throw new SqliteIoError(`Failed to open SQLite database at ${file}`, e)
+  }
+  throw new SqliteOpenError(`Failed to open SQLite database at ${file}`, e)
 }
 
 function normalizeParam(p: SqlParam): string | number | null {
@@ -130,7 +213,7 @@ function loadRawDb(file: string): RawDb {
     const DatabaseSync = (sqliteDriver as typeof import("node:sqlite")).DatabaseSync
     return new DatabaseSync(file) as RawDb
   } catch (e) {
-    throw new SqliteOpenError(`Failed to open SQLite database at ${file}`, e)
+    rethrowOpenFailure(e, file)
   }
 }
 
