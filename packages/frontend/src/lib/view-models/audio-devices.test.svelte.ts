@@ -99,17 +99,14 @@ describe("AudioDevicesVM", () => {
   })
 
   test("devicechange callback triggers refresh", async () => {
-    let cb: (() => void) | null = null
-    onDeviceChange.mockImplementation((fn: () => void) => {
-      cb = fn
-      return () => {}
-    })
     enumerateAudioInputs.mockResolvedValue([device("a")])
-    const { vm } = mountHarness()
-    await vm.refresh()
+    mountHarness()
+    await tick()
     expect(enumerateAudioInputs).toHaveBeenCalledTimes(1)
+    const trigger = onDeviceChange.mock.calls[0]?.[0] as (() => void) | undefined
+    expect(typeof trigger).toBe("function")
     enumerateAudioInputs.mockResolvedValue([device("a"), device("b")])
-    if (cb) cb()
+    trigger?.()
     await tick()
     await vi.waitFor(() => expect(enumerateAudioInputs.mock.calls.length).toBeGreaterThan(1))
   })

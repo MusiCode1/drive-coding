@@ -30,7 +30,7 @@ describe("Recorder input device (mic-device-selection)", () => {
   beforeEach(() => {
     openAudioStream.mockReset()
     openAudioStream.mockResolvedValue({
-      stream: { getTracks: () => [] } as MediaStream,
+      stream: { getTracks: () => [] } as unknown as MediaStream,
       deviceId: "x",
       fellBack: false,
     })
