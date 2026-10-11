@@ -22,6 +22,9 @@ export class AudioDevicesVM {
       })
       return unsub
     })
+
+    // Cold load: enumerate only (no getUserMedia) so effectiveInputId works on `/`.
+    void this.refresh()
   }
 
   /** Preference when listed; otherwise null (system default). */

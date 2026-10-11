@@ -28,10 +28,10 @@ type HarnessExports = { vm: import("./audio-devices.svelte").AudioDevicesVM; set
 let target: HTMLDivElement | null = null
 let app: HarnessExports | null = null
 
-function mountHarness(): HarnessExports {
+function mountHarness(opts?: { prefId?: string; prefLabel?: string }): HarnessExports {
   target = document.createElement("div")
   document.body.appendChild(target)
-  app = mount(Harness, { target }) as HarnessExports
+  app = mount(Harness, { target, props: opts ?? {} }) as HarnessExports
   return app
 }
 
@@ -70,6 +70,14 @@ describe("AudioDevicesVM", () => {
     expect(vm.needsPermissionForLabels).toBe(true)
   })
 
+  test("cold load: saved preference yields effectiveInputId after init refresh", async () => {
+    enumerateAudioInputs.mockResolvedValue([device("phone", "Phone Mic")])
+    const { vm } = mountHarness({ prefId: "phone", prefLabel: "Phone Mic" })
+    await vi.waitFor(() => expect(vm.effectiveInputId).toBe("phone"))
+    expect(enumerateAudioInputs).toHaveBeenCalled()
+    expect(openAudioStream).not.toHaveBeenCalled()
+  })
+
   test("preference listed yields effectiveInputId", async () => {
     enumerateAudioInputs.mockResolvedValue([device("pick", "P")])
     const { vm, settings } = mountHarness()
@@ -101,8 +109,7 @@ describe("AudioDevicesVM", () => {
   test("devicechange callback triggers refresh", async () => {
     enumerateAudioInputs.mockResolvedValue([device("a")])
     mountHarness()
-    await tick()
-    expect(enumerateAudioInputs).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(enumerateAudioInputs).toHaveBeenCalledTimes(1))
     const trigger = onDeviceChange.mock.calls[0]?.[0] as (() => void) | undefined
     expect(typeof trigger).toBe("function")
     enumerateAudioInputs.mockResolvedValue([device("a"), device("b")])
@@ -133,7 +140,7 @@ describe("AudioDevicesVM", () => {
       .mockResolvedValueOnce([device("a", "")])
       .mockResolvedValueOnce([device("a", "Named mic")])
     const { vm } = mountHarness()
-    await vm.refresh()
+    await vi.waitFor(() => expect(vm.inputs).toHaveLength(1))
     await vm.primeLabels()
     expect(openAudioStream).toHaveBeenCalledTimes(1)
     expect(stop).toHaveBeenCalled()

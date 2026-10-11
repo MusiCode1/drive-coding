@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte"
   import Select from "$lib/components/ui/Select.svelte"
   import { getAudioDevices, getI18n, getSettings } from "$lib/context"
   import SettingsCard from "./SettingsCard.svelte"
@@ -16,10 +15,6 @@
       audioDevices.effectiveInputId === null &&
       !audioDevices.loading,
   )
-
-  onMount(() => {
-    void audioDevices.refresh()
-  })
 
   function deviceLabel(d: MediaDeviceInfo): string {
     const name = d.label.trim()
