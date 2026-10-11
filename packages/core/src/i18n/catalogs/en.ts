@@ -555,4 +555,11 @@ export const en: Catalog = {
   "usage.clis.col.compactions": "Compactions",
   "usage.clis.col.cost": "Cost",
   "usage.clis.col.activity": "Activity",
+  // ─── deep-link ─── (slice deep-link-new-session)
+  "deepLink.new.starting": "Opening a new session…",
+  "deepLink.error.title": "Could not open the session",
+  "deepLink.error.unknownCli": "The CLI in the link is unknown to the server.",
+  "deepLink.error.homeDir":
+    "Cannot resolve a relative path — the server returned no home directory. Try a link with an absolute path.",
+  "deepLink.error.back": "Back to home",
 }

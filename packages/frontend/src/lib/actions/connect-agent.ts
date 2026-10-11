@@ -28,6 +28,7 @@ export async function connectAgent(params: {
   cwd: string
   session: AgentSession
   settings: Settings
+  navigate?: "push" | "replace"
 }): Promise<void> {
   params.settings.setCliKind(params.cliKind)
   params.settings.setLastCwd(params.cwd)
@@ -66,9 +67,12 @@ export async function connectAgent(params: {
         sid !== null
           ? `${sessionPath(params.cliKind, sid)}?sessionTransport=http`
           : "/chat?sessionTransport=http",
+        { replaceState: params.navigate === "replace" },
       )
     } else {
-      await goto(sid !== null ? sessionPath(params.cliKind, sid) : "/chat")
+      await goto(sid !== null ? sessionPath(params.cliKind, sid) : "/chat", {
+        replaceState: params.navigate === "replace",
+      })
     }
   }
   // Guard throws (e.g. cannot attach) land in catch above — stay on / with session.error set.
