@@ -1075,12 +1075,6 @@
       "class": "mixed",
       "codeLines": 12
     },
-    "packages/frontend/src/lib/view-models/settings.svelte.ts": {
-      "metric": 540,
-      "impurity": 2,
-      "class": "mixed",
-      "codeLines": 349
-    },
     "packages/frontend/src/lib/view-models/speaker.svelte.ts": {
       "metric": 790,
       "impurity": 4,

@@ -17,11 +17,11 @@ import type { Locale } from "@drive-coding/core/i18n"
 import type { SpeechPace, SpeechTone } from "@drive-coding/core/voice/tts-types"
 import type { SessionTransport } from "$lib/session/session-transport"
 import type { ElevenLabsTtsModelId, GeminiTtsModelId } from "../adapters/voice/tts-resolve"
-import { listVoices, type Voice } from "../adapters/voice/voices"
+import type { Voice } from "../adapters/voice/voices"
 import { setBeUrlBase } from "../util/be-url"
 import { clampSidebarWidth } from "../util/sidebar-width"
-import { ttsCapabilities } from "./capabilities.svelte"
 import { DEFAULTS, loadSettings, saveSettings } from "./settings-persistence"
+import { SettingsVoices } from "./settings-voices.svelte"
 import { coerceInputMode, type InputMode } from "./ui-shell.svelte"
 
 export class Settings {
@@ -31,14 +31,19 @@ export class Settings {
 
   // ─── קול ───
   voiceId = $state<string>(DEFAULTS.voiceId)
-  /** נטען אסינכרונית מ-ElevenLabs דרך `loadVoices()`. ריק עד אז. */
-  availableVoices = $state<Voice[]>([])
-  voicesLoading = $state<boolean>(false)
-  voicesError = $state<string | null>(null)
-  /** מונה נסיונות כושלים רצופים — מזין את ה-backoff. מתאפס בהצלחה / force. */
-  #voicesRetries = 0
-  /** ה-timer של הנסיון החוזר המתוזמן (null = אין retry ממתין). */
-  #voicesRetryTimer: ReturnType<typeof setTimeout> | null = null
+  readonly #voices = new SettingsVoices()
+
+  get availableVoices(): Voice[] {
+    return this.#voices.availableVoices
+  }
+
+  get voicesLoading(): boolean {
+    return this.#voices.voicesLoading
+  }
+
+  get voicesError(): string | null {
+    return this.#voices.voicesError
+  }
 
   // ─── שרת ───
   beUrl = $state<string>(DEFAULTS.beUrl)
@@ -119,6 +124,10 @@ export class Settings {
   sessionsCurrentCwdOnly = $state<boolean>(DEFAULTS.sessionsCurrentCwdOnly)
   inputMode = $state<InputMode>(DEFAULTS.inputMode)
 
+  // ─── input device ─── (slice mic-device-selection)
+  inputDeviceId = $state<string | null>(DEFAULTS.inputDeviceId)
+  inputDeviceLabel = $state<string>(DEFAULTS.inputDeviceLabel)
+
   constructor() {
     const loaded = loadSettings()
     this.cliKind = loaded.cliKind
@@ -158,6 +167,8 @@ export class Settings {
     this.notifications = loaded.notifications
     this.sessionsCurrentCwdOnly = loaded.sessionsCurrentCwdOnly
     this.inputMode = coerceInputMode(loaded.inputMode)
+    this.inputDeviceId = loaded.inputDeviceId
+    this.inputDeviceLabel = loaded.inputDeviceLabel
   }
 
   // ─── טופס חיבור ───
@@ -179,79 +190,7 @@ export class Settings {
     this.#persist()
   }
 
-  /**
-   * מביא את קטלוג הקולות מ-ElevenLabs (דרך פרוקסי BE + רכיב OneCLI).
-   *
-   * retry עם exponential backoff: בכשל מתזמן נסיון חוזר (2s,4s,8s,16s,cap 30s)
-   * עד #VOICES_MAX_RETRIES, ואז עוצר. הצלחה / `force=true` מאפסים backoff ו-timer.
-   *
-   * חשוב: ה-retry מתוזמן כאן (setTimeout), **לא** מ-$effect של הקורא — אחרת
-   * הכתיבה ל-voicesError הייתה מפעילה את ה-$effect מחדש בקצב event-loop (DDoS).
-   * הקורא (VoicePicker) מפעיל פעם אחת ב-mount עטוף ב-untrack. שגיאות → voicesError.
-   */
-  loadVoices = async (force = false): Promise<void> => {
-    // Commit 3 capability-gate (הגנה שנייה, סינכרונית — לקוראים אחרים מחוץ ל-VoicePicker).
-    // undefined caps → optimistic → לא חוסם (test-7 ממשיך לעבוד בלי שינוי).
-    // available===false → 0 בקשות ל-ElevenLabs.
-    // אין await כאן — Guard הסינכרוני (voicesLoading) בשורה הבאה נשאר שלם.
-    if (!ttsCapabilities.isAvailable("elevenlabs")) {
-      this.#clearVoicesRetry()
-      return
-    }
-    if (this.voicesLoading) return
-    // טעינה מוצלחת קיימת — אל תטען שוב.
-    if (this.availableVoices.length > 0 && this.voicesError === null) return
-
-    if (force) {
-      // רענון מפורש (כפתור / beUrl השתנה) — בטל retry ממתין ואפס backoff.
-      this.#clearVoicesRetry()
-      this.#voicesRetries = 0
-    } else if (this.#voicesRetryTimer !== null) {
-      // כבר יש retry מתוזמן — אל תכפיל קריאות.
-      return
-    }
-
-    this.voicesLoading = true
-    this.voicesError = null
-    try {
-      const voices = await listVoices()
-      this.availableVoices = voices
-      this.#voicesRetries = 0
-    } catch (e) {
-      this.voicesError = e instanceof Error ? e.message : String(e)
-      this.#scheduleVoicesRetry()
-    } finally {
-      this.voicesLoading = false
-    }
-  }
-
-  static #VOICES_MAX_RETRIES = 6
-  static #VOICES_BASE_DELAY_MS = 2000
-  static #VOICES_MAX_DELAY_MS = 30_000
-
-  /** מתזמן נסיון חוזר עם exponential backoff, עד תקרת הנסיונות. */
-  #scheduleVoicesRetry(): void {
-    // Commit 3: אל תתזמן retry אם ElevenLabs לא-זמין (מניעת retry-loop על מפתח שרוף).
-    if (!ttsCapabilities.isAvailable("elevenlabs")) return
-    if (this.#voicesRetries >= Settings.#VOICES_MAX_RETRIES) return
-    const delay = Math.min(
-      Settings.#VOICES_BASE_DELAY_MS * 2 ** this.#voicesRetries,
-      Settings.#VOICES_MAX_DELAY_MS,
-    )
-    this.#voicesRetries += 1
-    this.#clearVoicesRetry()
-    this.#voicesRetryTimer = setTimeout(() => {
-      this.#voicesRetryTimer = null
-      void this.loadVoices()
-    }, delay)
-  }
-
-  #clearVoicesRetry(): void {
-    if (this.#voicesRetryTimer !== null) {
-      clearTimeout(this.#voicesRetryTimer)
-      this.#voicesRetryTimer = null
-    }
-  }
+  loadVoices = (force = false): Promise<void> => this.#voices.loadVoices(force)
 
   // ─── שרת ───
 
@@ -496,6 +435,13 @@ export class Settings {
     this.#persist()
   }
 
+  /** label is display-only — not used to match devices. */
+  setInputDevice = (id: string | null, label: string): void => {
+    this.inputDeviceId = id
+    this.inputDeviceLabel = label
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
@@ -535,6 +481,8 @@ export class Settings {
       notifications: this.notifications,
       sessionsCurrentCwdOnly: this.sessionsCurrentCwdOnly,
       inputMode: this.inputMode,
+      inputDeviceId: this.inputDeviceId,
+      inputDeviceLabel: this.inputDeviceLabel,
     })
   }
 }
