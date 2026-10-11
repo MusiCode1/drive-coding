@@ -10,7 +10,7 @@ tags: [ui]
 surface: [ui]
 stability: transitional
 routes: []
-docs_version: 1.4.0
+docs_version: 1.5.0
 updated: 2026-10-11
 ---
 
@@ -157,6 +157,24 @@ or inspecting token/TTS status for the backend.
     it shows a human-readable voice name, e.g. a name plus a short style description).
   - Switches: **Speak model thoughts**, **Narrate tool actions**, **Translate thoughts to
     Hebrew** (observed on). **Car mode (Play on Bluetooth = record)** may appear **disabled**.
+- **Microphone** — picker for the **input device** used for recording. Default option
+  **System default**. **Refresh list** re-enumerates.
+  - **The choice applies to every voice path**: push-to-talk recording, dictation, Live,
+    and wake-word listening. There is no separate per-feature microphone.
+  - **An explicit choice is sticky.** Plugging in a headset does **not** take over the
+    microphone the user picked — that is the point of the setting. A newly connected
+    device only becomes active if the user selects it.
+  - If the selected device is unplugged the app falls back to the system default and
+    shows **Selected device is not connected — using system default**. The preference is
+    **kept**, so reconnecting the device restores it without the user re-picking.
+  - A change takes effect on the **next** recording, not in the middle of one. Wake-word
+    listening is continuous, so it restarts to apply the change.
+  - Device **names** require microphone permission. Until then the picker shows
+    **Allow access to see device names** and entries may be unnamed — the setting still
+    works, only the labels are hidden.
+  - When the platform exposes a single input (common on phones) the hint reads **Only one
+    input source is exposed; routing is controlled by the OS** — there is nothing to pick,
+    and routing is an OS-level choice.
 - **TTS Status** — a **Refresh** button (it reads **Loading…** while fetching), **ElevenLabs quota**,
   **Usage (total since startup)** with **ElevenLabs** / **Gemini** rows (may show **—** while
   loading).
@@ -170,7 +188,8 @@ or inspecting token/TTS status for the backend.
 - **Backend URL** — text field with helper **Leave empty in dev mode. In production
   (Cloudflare) enter the full BE URL.**
 - **Session transport** — picker (observed **HTTP**).
-- Footer **Version: v0.40.1 (b550ac6a)** (semver + build id shown in-app).
+- Footer **Version: v<semver> (<build id>)** — the running version, shown in-app.
+  ⚠️ Read it off the screen; do not quote a version from this page.
 - **Reset** and **Save & Open**.
 
 **Side panel on `/settings` and `/usage`:** the same session sidebar chrome as Chat may

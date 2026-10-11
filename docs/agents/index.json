@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.4.0",
+  "docsVersion": "1.5.0",
   "docs": [
     {
       "id": "orientation",
@@ -191,7 +191,7 @@
       "tags": ["ui"],
       "surface": ["ui"],
       "stability": "transitional",
-      "docs_version": "1.4.0",
+      "docs_version": "1.5.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/46-ui-reference.md",
