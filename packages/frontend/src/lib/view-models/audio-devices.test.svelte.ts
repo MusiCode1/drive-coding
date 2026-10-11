@@ -109,7 +109,7 @@ describe("AudioDevicesVM", () => {
     await vm.refresh()
     expect(enumerateAudioInputs).toHaveBeenCalledTimes(1)
     enumerateAudioInputs.mockResolvedValue([device("a"), device("b")])
-    cb?.()
+    if (cb) cb()
     await tick()
     await vi.waitFor(() => expect(enumerateAudioInputs.mock.calls.length).toBeGreaterThan(1))
   })
