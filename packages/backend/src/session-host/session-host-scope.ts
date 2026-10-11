@@ -14,6 +14,11 @@ import {
   type Patch,
   type SessionState,
 } from "@drive-coding/core/session"
+import {
+  formatScopePromptTitle,
+  SCOPE_PROMPT_META_KEY,
+  type ScopePromptDetail,
+} from "@drive-coding/core/types/scope-prompt"
 import type { createPendingRequests } from "./pending-requests.js"
 
 type PermPending = ReturnType<typeof createPendingRequests<RequestPermissionResponse>>
@@ -23,6 +28,7 @@ export type ScopePermissionHost = {
     callerId: string
     targetId: string
     verb: string
+    detail?: ScopePromptDetail
   }): Promise<"allow" | "deny" | "allow_always">
   isScopeRequest(requestId: number): boolean
 }
@@ -73,7 +79,10 @@ export function createRequestScopePermission(deps: {
     if (deps.isDisposed()) return Promise.resolve("deny" as const)
     if (deps.getState().pending.permission !== null) return Promise.resolve("deny" as const)
 
-    const title = `Agent ${opts.callerId} requests ${opts.verb} on ${opts.targetId}`
+    const detail = opts.detail
+    const title = detail
+      ? formatScopePromptTitle(detail)
+      : `Agent ${opts.callerId} requests ${opts.verb} on ${opts.targetId}`
     const options = [
       { optionId: "scope-allow-once", name: "Allow once", kind: "allow_once" as const },
       { optionId: "scope-allow-always", name: "Allow always", kind: "allow_always" as const },
@@ -83,7 +92,11 @@ export function createRequestScopePermission(deps: {
     deps.markScopeRequest(requestId)
     const params: RequestPermissionRequest = {
       sessionId: deps.getState().sessionId ?? "",
-      toolCall: { toolCallId: `scope-${requestId}`, title },
+      toolCall: {
+        toolCallId: `scope-${requestId}`,
+        title,
+        ...(detail ? { _meta: { [SCOPE_PROMPT_META_KEY]: detail } } : {}),
+      },
       options,
     }
     const applied = applyPendingRequest(deps.getState(), {

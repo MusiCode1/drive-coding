@@ -23,6 +23,8 @@ import {
 import type { AgentOrchestrator } from "../src/app/agent-orchestrator.js"
 import { registerAgentsHttp } from "../src/delivery/http-agents.js"
 import { registerMcpHttp } from "../src/delivery/http-mcp.js"
+import { createInitialSessionState, patchToSessionUpdates } from "@drive-coding/core/session"
+import { SCOPE_PROMPT_META_KEY } from "@drive-coding/core/types/scope-prompt"
 import { SCOPE_DENIED_BODY } from "../src/scope-write.js"
 import { setSelfApproveGuardForTests } from "../src/session-host/http/reply.js"
 import { bindScopeEnforcement } from "../src/bind-scope-enforcement.js"
@@ -448,5 +450,120 @@ describe("agent-scopes §6 gates", () => {
     }
     expect(parsed.agents.map((x) => x.id).sort()).toEqual([a.id, b.id].sort())
     await client.close()
+  })
+})
+
+describe("scope escalation prompt detail (slice scope-prompt-detail C1)", () => {
+  const uuidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+
+  async function startEscalation(app: Hono, registry: Awaited<ReturnType<typeof makeScopeGateApp>>["registry"], agentSessionRegistry: Awaited<ReturnType<typeof makeScopeGateApp>>["agentSessionRegistry"], opts?: { targetTitle?: string }) {
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a", roleLabel: "caller-role" })
+    const b = await registry.create({
+      cliKind: "claude",
+      cwd: "/home/user/my-proj",
+    })
+    if (opts?.targetTitle) {
+      await registry.update(b.id, { title: opts.targetTitle })
+    }
+    const tokenA = issueToken(a.id)
+
+    await agentSessionRegistry.getOrCreateHost(a.id)
+    const hostA = agentSessionRegistry.getHost(a.id)
+    expect(hostA).toBeDefined()
+
+    const delPromise = app.request(`/api/agents/${b.id}`, {
+      method: "DELETE",
+      headers: { [SCOPE_HEADER]: tokenA, [AGENT_ID_HEADER]: a.id },
+    })
+
+    await vi.waitFor(() => {
+      expect(hostA!.state.pending.permission).not.toBeNull()
+    })
+
+    return { a, b, hostA: hostA!, delPromise, tokenA }
+  }
+
+  it("embeds target title in scope _meta when agent has title", async () => {
+    const { app, registry, agentSessionRegistry } = await makeScopeGateApp()
+    const { hostA, delPromise } = await startEscalation(app, registry, agentSessionRegistry, {
+      targetTitle: "Escalation target title",
+    })
+    const pending = hostA.state.pending.permission!
+    const meta = pending.params.toolCall._meta as Record<string, unknown> | undefined
+    const detail = meta?.[SCOPE_PROMPT_META_KEY] as { target?: string } | undefined
+    expect(detail?.target).toBe("Escalation target title")
+    void delPromise
+  })
+
+  it("target label uses cliKind and cwd basename when title is absent", async () => {
+    const { app, registry, agentSessionRegistry } = await makeScopeGateApp()
+    const { hostA, delPromise } = await startEscalation(app, registry, agentSessionRegistry)
+    const pending = hostA.state.pending.permission!
+    const meta = pending.params.toolCall._meta as Record<string, unknown> | undefined
+    const detail = meta?.[SCOPE_PROMPT_META_KEY] as { target?: string } | undefined
+    expect(detail?.target).toContain("my-proj")
+    void delPromise
+  })
+
+  it("toolCall.title does not contain full caller or target UUIDs", async () => {
+    const { app, registry, agentSessionRegistry } = await makeScopeGateApp()
+    const { a, b, hostA, delPromise } = await startEscalation(app, registry, agentSessionRegistry)
+    const title = hostA.state.pending.permission!.params.toolCall.title ?? ""
+    expect(title).not.toMatch(uuidRe)
+    expect(title).not.toContain(a.id)
+    expect(title).not.toContain(b.id)
+    void delPromise
+  })
+
+  it("keeps scope- toolCallId prefix for stripScopePendingFromState", async () => {
+    const { app, registry, agentSessionRegistry } = await makeScopeGateApp()
+    const { hostA, delPromise } = await startEscalation(app, registry, agentSessionRegistry)
+    const toolCallId = hostA.state.pending.permission!.params.toolCall.toolCallId
+    expect(toolCallId.startsWith("scope-")).toBe(true)
+    void delPromise
+  })
+
+  it("survives GET /history wire path inside pending.permission params", async () => {
+    const { app, registry, agentSessionRegistry } = await makeScopeGateApp()
+    const { a, hostA, delPromise } = await startEscalation(app, registry, agentSessionRegistry, {
+      targetTitle: "History wire probe",
+    })
+    void delPromise
+
+    const hist = await app.request(`/api/agents/${a.id}/history`)
+    expect(hist.status).toBe(200)
+    const body = (await hist.json()) as {
+      updates: { sessionUpdate: string; changes?: Record<string, unknown> }[]
+    }
+    const pendingUpdates = body.updates.filter((u) => u.sessionUpdate === "_drive/session_update")
+    expect(pendingUpdates.length).toBeGreaterThan(0)
+    const withPerm = pendingUpdates.find((u) => {
+      const pending = u.changes?.pending as { permission?: { params?: { toolCall?: { _meta?: Record<string, unknown> } } } } | undefined
+      return pending?.permission?.params?.toolCall?._meta?.[SCOPE_PROMPT_META_KEY] != null
+    })
+    expect(withPerm).toBeDefined()
+    const detail = (
+      withPerm!.changes!.pending as {
+        permission: { params: { toolCall: { _meta: Record<string, unknown> } } }
+      }
+    ).permission.params.toolCall._meta[SCOPE_PROMPT_META_KEY] as { target: string }
+    expect(detail.target).toBe("History wire probe")
+  })
+
+  it("changesToUpdates drops display fields placed beside pending", () => {
+    const state = createInitialSessionState({ sessionId: "s1" })
+    const updates = patchToSessionUpdates(state, {
+      op: "update-session",
+      changes: {
+        pending: { permission: null, elicitation: null },
+        scopePromptDetailJunk: { caller: "x" },
+      },
+    })
+    for (const u of updates) {
+      if (u.sessionUpdate === "_drive/session_update") {
+        expect(u.changes).not.toHaveProperty("scopePromptDetailJunk")
+        expect(u.changes).toHaveProperty("pending")
+      }
+    }
   })
 })
