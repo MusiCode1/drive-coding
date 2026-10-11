@@ -95,6 +95,65 @@ and all three had been silently useless for days.
 five of its nine cases assert `exit 0 + empty stdout` — no agent id, backend down,
 non-2xx, wrong content-type, empty body. The happy path was never the risk.
 
+### 🔴 ‏ואדום-בבסיס אינו שלך — ‏חמישה שערים אדומים לפני שנגעת
+
+‏**‏לפני שאתה מסיק ששברת משהו, ‏קרא את זה.** ‏נמדד על `edge @ 968c56ce`
+‏ע"י שלושה סוכנים בלתי-תלויים, ‏ואומת שוב ב-11/10/2026:
+
+| ‏השער | ‏מה הוא מחזיר על בסיס **‏נקי** |
+|---|---|
+| `bun run typecheck` | ‏🔴 ‏`rc=1` ‏— ‏**‏29 ‏שגיאות ב-10 ‏קבצים** |
+| ‏סוויטת-הטסטים של ה-FE | ‏🔴 ‏**‏3 ‏סוויטות נופלות** (‏שורש: ‏`vi.mock` ‏של `tts-resolve` ‏מול `settings-persistence.ts` ‏⇒ ‏שרשרת-היבוא קורסת לפני שרץ טסט) |
+| `npx tsc --build` | ‏`rc=0` ‏— ‏אבל ‏🛑 ‏**‏עיוור ל-`packages/frontend`**: ‏ה-`tsconfig.json` ‏בשורש מפנה ל-4 ‏חבילות בלי FE |
+| `bunx biome check …/session-host-scope.ts` | ‏🔴 ‏`Found 2 errors` |
+| `lint-file-size.mjs` ‏אחרי חילוץ **‏מוצלח** | ‏🔴 ‏`rc=1` ‏— ‏חסר `--update-baseline` |
+
+‏⇒ ‏**‏כל DoD ‏מול שער כזה הוא דלתא, ‏לא מוחלט.** ‏ושער-טיפוסים הוא **‏שתי
+‏שכבות, ‏ושתיהן חובה**: ‏`npx tsc --build` ‏(`rc=0` ‏מוחלט) ‏**‏+**
+‏`bun run typecheck:fe` ‏(‏סך ≤29 ‏*‏וגם*‏ ‏אפס בקבצים שנגעת — ‏ספירה לבדה אינה שער).
+
+### 🛑 ‏וחמישה מנגנונים שמייצרים **‏"ירוק שמשמעותו לא-נבדק"**
+
+| ‏המנגנון | ‏מה קורה |
+|---|---|
+| `cmd-a && cmd-b` | ‏`cmd-a` ‏נכשל ‏⇒ ‏**‏`cmd-b` ‏לא רץ** ‏והשער נעלם בשקט |
+| `cmd \| tail` | ‏**‏הצינור בולע את ה-rc.** ‏נמדד: ‏`biome check <f>` ‏⇒ ‏`1`; ‏עם `\| tail -1` ‏⇒ ‏**‏`0`** |
+| `tsc --build` ‏על FE | ‏אין פרויקט לבדוק ‏⇒ ‏ירוק חסר-משמעות |
+| `lint:size` ‏בלי staging | ‏**‏אינרטי** ‏— ‏`rc=0` ‏ושקט. ‏`rc=2` ‏נגיש **‏רק** ‏כשקובץ-המקור ב-index (`:855`) |
+| `vitest` ‏שלא עלה | ‏**‏`rc=1` ‏שמשמעותו "‏לא רץ"**, ‏לא "‏נכשל". ‏הסימן המבדיל: ‏שורת `Tests  N passed` ‏קיימת רק כשהריצה התרחשה |
+
+‏🔑 ‏**‏ולכן, ‏בכל חילוץ:**
+
+```bash
+git add -- <קובצי-המקור> size-baseline.json   # 🛑 ‏שניהם באותו add, ‏נתיבים מפורשים
+node scripts/lint-file-size.mjs               # ‏קרא את `fails`, ‏לא את ה-rc ‏כשלעצמו
+node scripts/lint-file-size.mjs --update-baseline
+node scripts/lint-file-size.mjs
+```
+
+‏⚠️ ‏`stale` ‏נבדק על `metric` ‏ו-must-shrink על `codeLines`. ‏ב-`.svelte`
+‏ה-`metric` ‏הוא `scriptLines`, ‏ולכן **‏חילוץ markup ‏מחזיר `rc=0` ‏ישר** ‏ואין
+‏`stale` ‏כלל. ‏**‏אל תקבע "‏צפוי rc=1" ‏— ‏קבע את התנאי.**
+
+### ‏🔴 ‏ומה שאין לו שער בכלל: ‏**‏ערכי קטלוגי ה-i18n**
+
+‏`lint:i18n` ‏בודק עברית **‏קשיחה בקוד** ‏ו**‏מחריג את `catalogs/`**
+(`scripts/lint-no-hebrew-in-code.mjs:37`); ‏`typecheck` ‏בודק **‏מפתחות** ‏בלבד;
+‏אין קובץ-טסט תחת `i18n/`. ‏⇒ ‏**‏כ-560 ‏ערכים בלי שום הגנה.**
+
+‏נמצא בפועל 11/10: ‏`settings.inputDevice.label` ‏נכתב `מיקרофон` ‏עם
+‏**‏U+043E ‏ו-U+0444 ‏קיריליים** ‏— ‏ומכיוון שקירילית היא LTR ‏בתוך מחרוזת RTL,
+‏גם הכיווניות נשברה. ‏**‏מי שתפס: ‏המשתמש, ‏בעין, ‏על הפריוויו.**
+
+🛑 **‏שרשרת-הגרסאות של משטח-הסוכן היא *‏חמישה*‏ ‏חפצים:** ‏front-matter ‏·
+‏`DOCS_VERSION` ‏· ‏`index.json` ‏· ‏`llms.txt` ‏(‏שניהם ‏← ‏`bun run docs:index`) ‏·
+‏ו-**‏`openapi.json`** ‏← ‏**‏`bun run docs:openapi`, ‏סקריפט נפרד.**
+
+> **‏הגוף המלא** ‏— ‏כל המדידות, ‏הפקודות, ‏שש צורות ה-`gate-cannot-fail`
+> ‏(‏14 ‏מתוך 14 ‏החוסמים בסבב ארבעת-הסלייסים היו מהמחלקה הזאת), ‏ומה שעדיין
+> ‏**‏אינו מוסבר** ‏(‏`vite build` ‏נהרג ב-SIGTERM ‏ולא ב-OOM-kill) ‏—
+> ‏`docs-for-llm/investigations/2026-10-11-gates-that-cannot-fail.md`.
+
 ## 🔴 `agent-session.svelte.ts` — ‏מהקובץ הזה **רק מסירים**
 
 ```json
