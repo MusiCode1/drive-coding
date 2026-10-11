@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.3.0",
+  "docsVersion": "1.4.0",
   "docs": [
     {
       "id": "orientation",
@@ -191,13 +191,14 @@
       "tags": ["ui"],
       "surface": ["ui"],
       "stability": "transitional",
-      "docs_version": "1.2.0",
+      "docs_version": "1.4.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/46-ui-reference.md",
       "headings": [
         "UI reference",
         "Connect (`/`)",
+        "Deep link — new session (`/chat/<cliKind>/new?cwd=<path>`)",
         "Chat (`/chat/<cliKind>/<sessionId>`)",
         "Settings (`/settings`)",
         "Usage (`/usage`)",
