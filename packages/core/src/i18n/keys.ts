@@ -559,6 +559,16 @@ export type MessageKey =
   | "usage.clis.col.compactions"
   | "usage.clis.col.cost"
   | "usage.clis.col.activity"
+  // ─── scope-prompt ─── (slice scope-prompt-detail)
+  | "scopePrompt.title"
+  | "scopePrompt.caller"
+  | "scopePrompt.target"
+  | "scopePrompt.action"
+  | "scopePrompt.verb.close"
+  | "scopePrompt.verb.patch"
+  | "scopePrompt.verb.reply"
+  | "scopePrompt.verb.send"
+  | "scopePrompt.verb.unknown"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

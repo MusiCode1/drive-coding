@@ -555,4 +555,14 @@ export const en: Catalog = {
   "usage.clis.col.compactions": "Compactions",
   "usage.clis.col.cost": "Cost",
   "usage.clis.col.activity": "Activity",
+  // ─── scope-prompt ─── (slice scope-prompt-detail)
+  "scopePrompt.title": "Write request to another session",
+  "scopePrompt.caller": "Requester",
+  "scopePrompt.target": "Target session",
+  "scopePrompt.action": "Action",
+  "scopePrompt.verb.close": "Close session",
+  "scopePrompt.verb.patch": "Update session details",
+  "scopePrompt.verb.reply": "Reply to permission request",
+  "scopePrompt.verb.send": "Send message",
+  "scopePrompt.verb.unknown": "Other action",
 }
