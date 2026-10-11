@@ -59,7 +59,13 @@ async function resolveNew(kind: string, raw: string | null) {
     await session.leaveRunning()
   }
 
-  await connectAgent({ cliKind: kind, cwd, session, settings })
+  await connectAgent({
+    cliKind: kind,
+    cwd,
+    session,
+    settings,
+    navigate: "replace",
+  })
 
   if (session.error !== null) {
     phase = "spawn-failed"
