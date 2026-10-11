@@ -28,6 +28,7 @@ export const CreateAgentInputFull = type({
   "notifyOnDone?": "string.uuid",
   "includeLastAssistantText?": "boolean",
   "roleLabel?": "string",
+  "detachedFromParent?": "boolean",
 })
 export type CreateAgentInputFull = typeof CreateAgentInputFull.infer
 
@@ -93,6 +94,9 @@ export function parseCreateAgentBody(
   }
   if (parsed.roleLabel !== undefined && parsed.roleLabel !== "") {
     input.roleLabel = parsed.roleLabel
+  }
+  if (parsed.detachedFromParent === true) {
+    input.detachedFromParent = true
   }
   return { ok: true, value: input }
 }

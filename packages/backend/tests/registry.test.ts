@@ -1,5 +1,6 @@
 import type { AgentRegistry } from "@drive-coding/core"
 import { beforeEach, describe, expect, it } from "vitest"
+import { stripRuntimeFields } from "../src/agents/agents-store.js"
 import { createInMemoryAgentRegistry } from "../src/agents/registry"
 
 describe("InMemoryAgentRegistry", () => {
@@ -108,5 +109,32 @@ describe("InMemoryAgentRegistry", () => {
   it("omits roleLabel when not provided", async () => {
     const agent = await registry.create({ cliKind: "cursor", cwd: "/x" })
     expect(agent).not.toHaveProperty("roleLabel")
+  })
+
+  it("stores detachedFromParent when true (slice detached-agent-flag C1)", async () => {
+    const agent = await registry.create({
+      cliKind: "cursor",
+      cwd: "/x",
+      detachedFromParent: true,
+    })
+    expect(agent.detachedFromParent).toBe(true)
+    const fetched = await registry.get(agent.id)
+    expect(fetched?.detachedFromParent).toBe(true)
+  })
+
+  it("omits detachedFromParent when not provided", async () => {
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/x" })
+    expect(agent).not.toHaveProperty("detachedFromParent")
+  })
+
+  it("stripRuntimeFields keeps detachedFromParent (slice detached-agent-flag C1)", async () => {
+    const agent = await registry.create({
+      cliKind: "cursor",
+      cwd: "/x",
+      detachedFromParent: true,
+    })
+    expect(stripRuntimeFields({ ...agent, detachedFromParent: true }).detachedFromParent).toBe(
+      true,
+    )
   })
 })

@@ -290,6 +290,7 @@ function createSessionBusMcpServer(
         modes: host?.state.modes,
         configOptions: host?.state.configOptions,
         hint: MCP_CONFIGURE_HINT,
+        ...(input.detachedFromParent === true ? { detachedFromParent: true } : {}),
       })
     },
   )

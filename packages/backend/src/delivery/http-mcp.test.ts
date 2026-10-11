@@ -465,6 +465,32 @@ describe("session_open / session_close (slice session-bus-mcp C1)", () => {
     )
   })
 
+  it("session_open with detachedFromParent returns flag and session_list exposes it", async () => {
+    const { app, registry } = makeApp()
+    const client = await connectClient(app)
+    const opened = JSON.parse(
+      toolText(
+        await client.callTool({
+          name: "session_open",
+          arguments: {
+            cli: "cursor",
+            cwd: "/tmp/mcp-detached",
+            detachedFromParent: true,
+          },
+        }),
+      ),
+    ) as { agent: string; detachedFromParent?: boolean }
+    expect(opened.detachedFromParent).toBe(true)
+    const listed = JSON.parse(
+      toolText(await client.callTool({ name: "session_list", arguments: {} })),
+    ) as { agents: Array<{ id: string; detachedFromParent?: boolean }> }
+    const row = listed.agents.find((a) => a.id === opened.agent)
+    expect(row?.detachedFromParent).toBe(true)
+    const stored = await registry.get(opened.agent)
+    expect(stored?.detachedFromParent).toBe(true)
+    await client.close()
+  })
+
   it("session_close on idle deletes the agent", async () => {
     const { app, registry } = makeApp()
     const client = await connectClient(app)
@@ -674,6 +700,43 @@ describe("agent-identity-mcp (C2/C3)", () => {
     expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
       expect.objectContaining({ parentAgentId: parent.id }),
     )
+  })
+
+  it("detached child keeps parentAgentId and session_whoami reports both (slice detached-agent-flag C1)", async () => {
+    const { app, registry } = makeApp()
+    const parent = await registry.create({ cliKind: "cursor", cwd: "/tmp/det-parent" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: parent.id })
+    const opened = JSON.parse(
+      toolText(
+        await client.callTool({
+          name: "session_open",
+          arguments: {
+            cli: "cursor",
+            cwd: "/tmp/det-child",
+            detachedFromParent: true,
+            publicUrl: "http://127.0.0.1:4055",
+          },
+        }),
+      ),
+    ) as { agent: string; detachedFromParent?: boolean }
+    expect(opened.detachedFromParent).toBe(true)
+    const stored = await registry.get(opened.agent)
+    expect(stored?.parentAgentId).toBe(parent.id)
+    expect(stored?.detachedFromParent).toBe(true)
+
+    const childClient = await connectClient(app, { [AGENT_ID_HEADER]: opened.agent })
+    const whoami = JSON.parse(
+      toolText(await childClient.callTool({ name: "session_whoami", arguments: {} })),
+    ) as {
+      hasParent: boolean
+      parentAgentId?: string
+      detachedFromParent?: boolean
+    }
+    await childClient.close()
+    await client.close()
+    expect(whoami.hasParent).toBe(true)
+    expect(whoami.parentAgentId).toBe(parent.id)
+    expect(whoami.detachedFromParent).toBe(true)
   })
 
   it("session_open rejects conflicting header parent and explicit parent", async () => {

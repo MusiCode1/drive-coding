@@ -43,3 +43,33 @@ describe("parseCreateAgentBody — roleLabel (slice agent-role-label C1)", () =>
     expect(result.value).not.toHaveProperty("roleLabel")
   })
 })
+
+describe("parseCreateAgentBody — detachedFromParent (slice detached-agent-flag C1)", () => {
+  it("copies detachedFromParent when true", () => {
+    const result = parseCreateAgentBody(
+      {
+        cliKind: "cursor",
+        cwd: "/tmp",
+        detachedFromParent: true,
+      },
+      {},
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.detachedFromParent).toBe(true)
+  })
+
+  it("omits detachedFromParent when false", () => {
+    const result = parseCreateAgentBody(
+      {
+        cliKind: "cursor",
+        cwd: "/tmp",
+        detachedFromParent: false,
+      },
+      {},
+    )
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value).not.toHaveProperty("detachedFromParent")
+  })
+})

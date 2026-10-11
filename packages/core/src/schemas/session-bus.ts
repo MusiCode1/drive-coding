@@ -62,6 +62,9 @@ export const AgentOpenInput = type({
   "roleLabel?": optStr(
     "Optional display label for the agent tree (e.g. planner, executor) — metadata only, not sent to the model.",
   ),
+  "detachedFromParent?": optBool(
+    "When true, the parent is recorded for attribution but does not own this agent's lifecycle: it is not grouped under the parent in the UI tree. Default false (owned sub-agent).",
+  ),
 })
 export type AgentOpenInput = typeof AgentOpenInput.infer
 

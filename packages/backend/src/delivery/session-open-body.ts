@@ -11,4 +11,5 @@ export function applySessionOpenCreateFields(
   if (input.closeOnTurnEnd === true) body.closeOnTurnEnd = true
   if (input.systemPrompt !== undefined) body.systemPrompt = input.systemPrompt
   if (input.roleLabel !== undefined && input.roleLabel !== "") body.roleLabel = input.roleLabel
+  if (input.detachedFromParent === true) body.detachedFromParent = true
 }

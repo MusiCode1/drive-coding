@@ -140,6 +140,9 @@ export function registerSessionWhoamiMcpTool(
       if (callerRecord.openedByEmail !== undefined) {
         result.openedByEmail = callerRecord.openedByEmail
       }
+      if (callerRecord.detachedFromParent !== undefined) {
+        result.detachedFromParent = callerRecord.detachedFromParent
+      }
       if (callerRecord.userNotes !== undefined) {
         result.userNotes = callerRecord.userNotes
       }
