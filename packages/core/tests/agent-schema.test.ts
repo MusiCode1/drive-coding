@@ -5,6 +5,8 @@ import {
   CLI_KINDS,
   CLI_SPECS,
   CreateAgentInput,
+  isOwnedChildOf,
+  ownedChildren,
   toAgentPublic,
 } from "../src"
 
@@ -495,5 +497,139 @@ describe("toAgentPublic — userNotes/sessionFields (slice session-memory C0)", 
     const pub = toAgentPublic(agent)
     expect(pub).not.toHaveProperty("userNotes")
     expect(pub).not.toHaveProperty("sessionFields")
+  })
+})
+
+describe("AgentPublic — detachedFromParent field (slice detached-agent-flag C0)", () => {
+  it("accepts detachedFromParent as boolean", () => {
+    const result = AgentPublic({
+      id: "550e8400-e29b-41d4-a716-446655440031",
+      cliKind: "cursor",
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready",
+      createdAt: "2026-05-16T05:00:00.000Z",
+      detachedFromParent: true,
+    })
+    expect(result).not.toHaveProperty("summary")
+  })
+
+  it("accepts agent without detachedFromParent (optional)", () => {
+    const result = AgentPublic({
+      id: "550e8400-e29b-41d4-a716-446655440032",
+      cliKind: "cursor",
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready",
+      createdAt: "2026-05-16T05:00:00.000Z",
+    })
+    expect(result).not.toHaveProperty("summary")
+  })
+})
+
+describe("CreateAgentInput — detachedFromParent field (slice detached-agent-flag C0)", () => {
+  it("accepts detachedFromParent", () => {
+    const result = CreateAgentInput({
+      cliKind: "cursor",
+      cwd: "/x",
+      detachedFromParent: true,
+    })
+    expect(result).toMatchObject({ detachedFromParent: true })
+  })
+})
+
+describe("toAgentPublic — detachedFromParent field (slice detached-agent-flag C0)", () => {
+  it("copies detachedFromParent from agent to pub", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440033",
+      cliKind: "cursor" as const,
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T05:00:00.000Z",
+      detachedFromParent: true,
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub.detachedFromParent).toBe(true)
+  })
+
+  it("omits detachedFromParent from pub when not set on agent", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440034",
+      cliKind: "cursor" as const,
+      cwd: "/project",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T10:00:00.000Z",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub).not.toHaveProperty("detachedFromParent")
+  })
+})
+
+describe("isOwnedChildOf (slice detached-agent-flag C0)", () => {
+  it("returns false when agent is its own parent (row 6 priority)", () => {
+    expect(
+      isOwnedChildOf({ id: "a", parentAgentId: "a" }, "a"),
+    ).toBe(false)
+  })
+
+  it("returns true for owned child when detached absent and id differs", () => {
+    expect(
+      isOwnedChildOf({ id: "c", parentAgentId: "p" }, "p"),
+    ).toBe(true)
+  })
+
+  it("returns true when detachedFromParent is false", () => {
+    expect(
+      isOwnedChildOf(
+        { id: "c", parentAgentId: "p", detachedFromParent: false },
+        "p",
+      ),
+    ).toBe(true)
+  })
+
+  it("returns false when detachedFromParent is true", () => {
+    expect(
+      isOwnedChildOf(
+        { id: "c", parentAgentId: "p", detachedFromParent: true },
+        "p",
+      ),
+    ).toBe(false)
+  })
+
+  it("returns false when parentAgentId is missing", () => {
+    expect(isOwnedChildOf({ id: "c" }, "p")).toBe(false)
+  })
+
+  it("returns false when parentAgentId does not match parentId", () => {
+    expect(
+      isOwnedChildOf({ id: "c", parentAgentId: "other" }, "p"),
+    ).toBe(false)
+  })
+})
+
+describe("ownedChildren (slice detached-agent-flag C0)", () => {
+  const agents = [
+    { id: "p" },
+    { id: "owned", parentAgentId: "p" },
+    { id: "det", parentAgentId: "p", detachedFromParent: true },
+    { id: "other", parentAgentId: "x" },
+  ]
+
+  it("returns regular owned children", () => {
+    expect(ownedChildren(agents, "p").map((a) => a.id)).toEqual(["owned"])
+  })
+
+  it("skips detached children", () => {
+    expect(ownedChildren(agents, "p").some((a) => a.id === "det")).toBe(false)
+  })
+
+  it("returns empty when parent has no owned children", () => {
+    expect(ownedChildren([{ id: "p" }], "p")).toEqual([])
+  })
+
+  it("does not include the parent itself", () => {
+    expect(ownedChildren([{ id: "p", parentAgentId: "p" }], "p")).toEqual([])
   })
 })

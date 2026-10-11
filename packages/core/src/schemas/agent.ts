@@ -173,6 +173,18 @@ export const Agent = type({
   "notifyOnDone?": "string.uuid",
   // slice agent-role-label: free-form display label (e.g. planner / executor).
   "roleLabel?": "string",
+  // slice detached-agent-flag: opt-in — the parent is RECORDED but does not OWN this
+  // agent's lifecycle. Absent/false = today's behaviour (owned child).
+  //
+  // ⚠️ Deliberately NOT honoured by authorizeWrite / subtreeIds (agent-scope.ts) —
+  // user decision. agent-scope is a guard rail against ACCIDENTS, not a boundary, and
+  // whoever intentionally spawned a helper must still be able to close it. The flag is
+  // about LIFECYCLE and DISPLAY, not permission. Reviewing this code? That gap is
+  // intentional — do not file it as a finding.
+  //
+  // ⚠️ Not the same "detached" as plans/detached-agents-survive-restart.md, which is
+  // about the OS process not being a child of the backend. Different axis.
+  "detachedFromParent?": "boolean",
   // slice session-attribution-core: CF Access email at creation (attribution, not auth).
   "openedByEmail?": "string",
   // slice session-title-manual: user-set title must survive ACP session_info_update + BE restart.
@@ -227,6 +239,7 @@ export const AgentPublic = type({
   "parentAgentId?": "string",
   // slice agent-role-label: free-form display label (e.g. planner / executor).
   "roleLabel?": "string",
+  "detachedFromParent?": "boolean",
   // slice session-attribution-core: CF Access email at creation (attribution, not auth).
   "openedByEmail?": "string",
   // slice session-title-manual: user-set title must survive ACP session_info_update + BE restart.
@@ -266,6 +279,7 @@ export const CreateAgentInput = type({
   "includeLastAssistantText?": "boolean",
   // slice agent-role-label: free-form display label (e.g. planner / executor).
   "roleLabel?": "string",
+  "detachedFromParent?": "boolean",
   // slice session-attribution-core: set server-side from CF Access header on POST /api/agents.
   "openedByEmail?": "string",
 })
@@ -305,6 +319,9 @@ export function toAgentPublic(agent: Agent): AgentPublic {
   if (agent.roleLabel !== undefined) {
     pub.roleLabel = agent.roleLabel
   }
+  if (agent.detachedFromParent !== undefined) {
+    pub.detachedFromParent = agent.detachedFromParent
+  }
   if (agent.openedByEmail !== undefined) {
     pub.openedByEmail = agent.openedByEmail
   }
@@ -318,4 +335,31 @@ export function toAgentPublic(agent: Agent): AgentPublic {
     pub.sessionFields = agent.sessionFields
   }
   return pub
+}
+
+/** Minimal shape the rule needs — Agent, AgentPublic and raw rows all satisfy it. */
+export type OwnershipFacts = {
+  id: string
+  parentAgentId?: string
+  detachedFromParent?: boolean
+}
+
+/**
+ * The single rule separating attribution from ownership.
+ * `parentAgentId` records WHO CREATED the agent; this answers WHO OWNS ITS LIFECYCLE.
+ */
+export function isOwnedChildOf(agent: OwnershipFacts, parentId: string): boolean {
+  if (agent.id === parentId) return false
+  if (agent.parentAgentId === undefined) return false
+  if (agent.parentAgentId !== parentId) return false
+  if (agent.detachedFromParent === true) return false
+  return true
+}
+
+/** Agents whose lifecycle `parentId` owns. Excludes detached children and self-parents. */
+export function ownedChildren<T extends OwnershipFacts>(
+  agents: readonly T[],
+  parentId: string,
+): T[] {
+  return agents.filter((a) => isOwnedChildOf(a, parentId))
 }
