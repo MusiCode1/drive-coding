@@ -547,4 +547,11 @@ export const he: Catalog = {
   "usage.clis.col.compactions": "דחיסות",
   "usage.clis.col.cost": "עלות",
   "usage.clis.col.activity": "פעילות",
+  // ─── deep-link ─── (slice deep-link-new-session)
+  "deepLink.new.starting": "פותח סשן חדש…",
+  "deepLink.error.title": "לא ניתן לפתוח את הסשן",
+  "deepLink.error.unknownCli": "ה-CLI שבכתובת אינו מוכר לשרת.",
+  "deepLink.error.homeDir":
+    "לא ניתן לפתור נתיב יחסי — השרת לא החזיר תיקיית-בית. נסה כתובת עם נתיב מוחלט.",
+  "deepLink.error.back": "חזרה לדף הבית",
 }

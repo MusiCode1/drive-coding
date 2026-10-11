@@ -559,6 +559,12 @@ export type MessageKey =
   | "usage.clis.col.compactions"
   | "usage.clis.col.cost"
   | "usage.clis.col.activity"
+  // ─── deep-link ─── (slice deep-link-new-session)
+  | "deepLink.new.starting"
+  | "deepLink.error.title"
+  | "deepLink.error.unknownCli"
+  | "deepLink.error.homeDir"
+  | "deepLink.error.back"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
