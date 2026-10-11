@@ -555,4 +555,10 @@ export const en: Catalog = {
   "usage.clis.col.compactions": "Compactions",
   "usage.clis.col.cost": "Cost",
   "usage.clis.col.activity": "Activity",
+  "settings.inputDevice.label": "Microphone",
+  "settings.inputDevice.default": "System default",
+  "settings.inputDevice.grantLabels": "Allow access to see device names",
+  "settings.inputDevice.missing": "Selected device is not connected — using system default",
+  "settings.inputDevice.single": "Only one input source is exposed; routing is controlled by the OS",
+  "settings.inputDevice.refresh": "Refresh list",
 }

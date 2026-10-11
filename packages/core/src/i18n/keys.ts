@@ -559,6 +559,12 @@ export type MessageKey =
   | "usage.clis.col.compactions"
   | "usage.clis.col.cost"
   | "usage.clis.col.activity"
+  | "settings.inputDevice.label"
+  | "settings.inputDevice.default"
+  | "settings.inputDevice.grantLabels"
+  | "settings.inputDevice.missing"
+  | "settings.inputDevice.single"
+  | "settings.inputDevice.refresh"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

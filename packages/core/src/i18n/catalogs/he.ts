@@ -547,4 +547,10 @@ export const he: Catalog = {
   "usage.clis.col.compactions": "דחיסות",
   "usage.clis.col.cost": "עלות",
   "usage.clis.col.activity": "פעילות",
+  "settings.inputDevice.label": "מיקרофון",
+  "settings.inputDevice.default": "ברירת מחדל של המערכת",
+  "settings.inputDevice.grantLabels": "אפשר גישה כדי לראות שמות מכשירים",
+  "settings.inputDevice.missing": "המכשיר שנבחר אינו מחובר — בשימוש ברירת המחדל",
+  "settings.inputDevice.single": "המערכת חושפת מקור קלט אחד; הניתוב נקבע במערכת ההפעלה",
+  "settings.inputDevice.refresh": "רענן רשימה",
 }
