@@ -12,6 +12,7 @@ import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import {
   setActiveAgents,
+  setAudioDevices,
   setAudioPlaylist,
   setBubblePlayer,
   setChatScroll,
@@ -43,7 +44,7 @@ import { createConfigChangeRefresher } from "$lib/engines/config-change-socket"
 import { ttsStatus } from "$lib/view-models/tts-status.svelte"
 import { CuesEngine } from "$lib/engines/cues"
 import { createPendingCaptureWiring } from "$lib/engines/pending-capture-wiring"
-import { MediaSessionPlaylistBridge } from "$lib/engines/media-session-playlist.js"
+import MediaSessionPlaylistSync from "$lib/components/layout/MediaSessionPlaylistSync.svelte"
 import { PlayableSink } from "$lib/engines/playable-sink"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { NotifyEngine } from "$lib/engines/notify.svelte"
@@ -66,6 +67,7 @@ import { Live } from "$lib/view-models/live.svelte"
 import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
 import { SessionMemoVM } from "$lib/view-models/session-memo.svelte"
 import { Dictate } from "$lib/view-models/dictate.svelte"
+import { AudioDevicesVM } from "$lib/view-models/audio-devices.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
 import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
@@ -100,9 +102,17 @@ const sharedAudioStream = new PlayableSink()
 const sharedOrderAlloc = new OrderAllocator()
 const audioPlaylist = new AudioPlaylist(sharedAudioStream)
 
+// ─── audio-devices ─── (slice mic-device-selection)
+const audioDevices = new AudioDevicesVM({ settings })
+
 // ─── mic ─── (slice 3; voice-pending-persistence recovery)
 const { micRecovery, dictateRecovery } = createPendingCaptureWiring()
-const mic = new Mic({ session, cues, recovery: micRecovery })
+const mic = new Mic({
+  session,
+  cues,
+  recovery: micRecovery,
+  getInputDeviceId: () => audioDevices.effectiveInputId,
+})
 
 // ─── composer-draft ─── (slice dictate-to-input)
 const composerDraft = new ComposerDraft()
@@ -112,7 +122,12 @@ const composerDraft = new ComposerDraft()
 const sessionMemo = new SessionMemoVM(session)
 
 // ─── dictate ─── (slice dictate-to-input — תלוי ב-composerDraft + mic)
-const dictate = new Dictate({ draft: composerDraft, mic, recovery: dictateRecovery })
+const dictate = new Dictate({
+  draft: composerDraft,
+  mic,
+  recovery: dictateRecovery,
+  getInputDeviceId: () => audioDevices.effectiveInputId,
+})
 
 // ─── theme ─── (redesign-1) — declared before Live getter; instance assigned below Live block
 let theme!: ThemeVM
@@ -125,6 +140,7 @@ const live = new Live({
   getVoiceName: () => settings.liveVoice,
   getSettings: () => settings,
   getTheme: () => theme,
+  getInputDeviceId: () => audioDevices.effectiveInputId,
 })
 
 // ─── speaker ─── (§4.3: live ref — TTS off while Live open)
@@ -152,62 +168,6 @@ const bubblePlayer = new BubblePlayer({
   playlist: audioPlaylist,
   orderAlloc: sharedOrderAlloc,
 })
-
-function titleForCurrentPlaylistSegment(): string | undefined {
-  const item = audioPlaylist.items[audioPlaylist.cursor]
-  if (!item) return undefined
-  const bubble = session.renderBubbles.find((b) => b.id === item.bubbleId)
-  if (!bubble || (bubble.kind !== "message" && bubble.kind !== "thought")) return undefined
-  const text = bubble.segments.map((s) => s.text).join("")
-  return text.slice(0, 80) || undefined
-}
-
-// ─── bt-chat-playback-nav: Media Session ↔ playlist (car mode, no keepalive) ───
-const mediaSessionBridge = new MediaSessionPlaylistBridge({
-  controls: {
-    next: () => audioPlaylist.next(),
-    prev: () => audioPlaylist.prev(),
-    pause: () => audioPlaylist.pause(),
-    resume: () => audioPlaylist.resume(),
-  },
-  onStop: () => bubblePlayer.stop(),
-  getState: () => audioPlaylist.state,
-  getTransport: () => audioPlaylist.transport,
-  getCursor: () => audioPlaylist.cursor,
-  getItemCount: () => audioPlaylist.items.length,
-  getTitle: () => titleForCurrentPlaylistSegment(),
-})
-
-$effect(() => {
-  const hasMediaSession = typeof navigator !== "undefined" && "mediaSession" in navigator
-  if (!hasMediaSession) {
-    mediaSessionBridge.detach()
-    return
-  }
-  const transport = audioPlaylist.transport
-  if (transport !== "stopped") {
-    mediaSessionBridge.attach()
-  } else {
-    mediaSessionBridge.detach()
-  }
-})
-
-$effect(() => {
-  const hasMediaSession = typeof navigator !== "undefined" && "mediaSession" in navigator
-  if (!hasMediaSession) return
-
-  // reactive deps for sync()
-  void audioPlaylist.transport
-  void audioPlaylist.state
-  void audioPlaylist.cursor
-  void audioPlaylist.items.length
-
-  if (audioPlaylist.transport !== "stopped") {
-    mediaSessionBridge.sync()
-  }
-})
-
-onDestroy(() => mediaSessionBridge.detach())
 
 // ─── car-mode ─── (slice 7)
 
@@ -351,6 +311,7 @@ setNotify(notify)
 setComposerDraft(composerDraft)
 setSessionMemo(sessionMemo)
 setDictate(dictate)
+setAudioDevices(audioDevices)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
 const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })
@@ -394,6 +355,12 @@ onDestroy(() => configSocket.stop())
 </svelte:head>
 
 {@render children?.()}
+
+<MediaSessionPlaylistSync
+  {audioPlaylist}
+  {session}
+  onStop={() => bubblePlayer.stop()}
+/>
 
 <!-- ─── slice playback-observability ───
      ⚠️ אחרי ה-children, מחוץ לכל מכל — `position: fixed` בתוך מכל עם

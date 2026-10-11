@@ -38,6 +38,10 @@ const sessionSend = vi.fn()
 let providerOnEvent: ((event: LiveEvent) => void) | undefined
 const providerSend = vi.fn()
 
+const { mockMicFramesStart } = vi.hoisted(() => ({
+  mockMicFramesStart: vi.fn(async () => {}),
+}))
+
 vi.mock("../adapters/voice/live/gemini", () => ({
   geminiLive: {
     id: "gemini",
@@ -54,7 +58,7 @@ vi.mock("../adapters/voice/live/gemini", () => ({
 vi.mock("../engines/mic-frames", () => ({
   MicFrames: class {
     sampleRate = 16_000
-    start = vi.fn(async () => {})
+    start = mockMicFramesStart
     stop = vi.fn(async () => {})
     on(_event: "frame", h: (f: Float32Array) => void) {
       micFrameHandler = h
@@ -146,6 +150,7 @@ function createLive(opts: {
   getVoiceName?: () => string
   getSettings?: () => Settings
   getTheme?: () => ThemeVM
+  getInputDeviceId?: () => string | null
 }): {
   live: Live
   dispose: () => void
@@ -160,6 +165,7 @@ function createLive(opts: {
       getVoiceName: opts.getVoiceName,
       getSettings: opts.getSettings ?? (() => settings),
       getTheme: opts.getTheme ?? (() => theme),
+      getInputDeviceId: opts.getInputDeviceId,
     })
   })
   return { live, dispose, settings, theme } as {
@@ -1347,5 +1353,22 @@ describe("Live pause/resume (live-silence-cost)", () => {
     await vi.waitFor(() => {
       expect(live.state).toBe("closed")
     })
+  })
+})
+
+describe("Live input device (mic-device-selection)", () => {
+  it("MicFrames.start receives getInputDeviceId", async () => {
+    mockMicFramesStart.mockClear()
+    const session = mockSession()
+    const { live, dispose } = createLive({
+      session,
+      getInputDeviceId: () => "dev-live",
+    })
+    try {
+      await live.toggle()
+      expect(mockMicFramesStart).toHaveBeenCalledWith("dev-live")
+    } finally {
+      dispose()
+    }
   })
 })

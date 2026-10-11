@@ -848,10 +848,10 @@
       "codeLines": 130
     },
     "packages/frontend/src/lib/engines/mic-frames.ts": {
-      "metric": 153,
-      "impurity": 4,
+      "metric": 152,
+      "impurity": 3,
       "class": "mixed",
-      "codeLines": 101
+      "codeLines": 100
     },
     "packages/frontend/src/lib/engines/notify.svelte.ts": {
       "metric": 131,
@@ -867,9 +867,9 @@
     },
     "packages/frontend/src/lib/engines/recorder.ts": {
       "metric": 58,
-      "impurity": 2,
+      "impurity": 1,
       "class": "mixed",
-      "codeLines": 45
+      "codeLines": 44
     },
     "packages/frontend/src/lib/engines/segments/mp3-segment.ts": {
       "metric": 129,
@@ -902,10 +902,10 @@
       "codeLines": 32
     },
     "packages/frontend/src/lib/engines/wake-word/wake-word-engine.ts": {
-      "metric": 284,
-      "impurity": 11,
+      "metric": 298,
+      "impurity": 10,
       "class": "mixed",
-      "codeLines": 212
+      "codeLines": 224
     },
     "packages/frontend/src/lib/log.ts": {
       "metric": 38,
@@ -1046,10 +1046,10 @@
       "codeLines": 59
     },
     "packages/frontend/src/lib/view-models/live.svelte.ts": {
-      "metric": 767,
+      "metric": 622,
       "impurity": 7,
       "class": "mixed",
-      "codeLines": 690
+      "codeLines": 563
     },
     "packages/frontend/src/lib/view-models/mic.svelte.ts": {
       "metric": 194,
@@ -1100,10 +1100,10 @@
       "codeLines": 164
     },
     "packages/frontend/src/routes/+layout.svelte": {
-      "metric": 403,
-      "impurity": 24,
+      "metric": 370,
+      "impurity": 18,
       "class": "mixed",
-      "codeLines": 271
+      "codeLines": 241
     },
     "packages/frontend/src/routes/+page.svelte": {
       "metric": 405,

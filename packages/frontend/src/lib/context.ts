@@ -37,6 +37,7 @@ import type { NotifyEngine } from "./engines/notify.svelte"
 import type { ComposerDraft } from "./view-models/composer-draft.svelte"
 import type { SessionMemoVM } from "./view-models/session-memo.svelte"
 import type { Dictate } from "./view-models/dictate.svelte"
+import type { AudioDevicesVM } from "./view-models/audio-devices.svelte"
 
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
@@ -114,3 +115,6 @@ export const [getSessionMemo, setSessionMemo] = createContext<SessionMemoVM>()
 
 // ─── dictate ─── (slice dictate-to-input)
 export const [getDictate, setDictate] = createContext<Dictate>()
+
+// ─── audio-devices ─── (slice mic-device-selection)
+export const [getAudioDevices, setAudioDevices] = createContext<AudioDevicesVM>()
