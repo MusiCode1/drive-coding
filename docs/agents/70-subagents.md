@@ -15,8 +15,8 @@ routes:
 mcp_tools:
   - session_open
   - notify_parent
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.4.0
+updated: 2026-10-11
 ---
 
 # Subagents
@@ -68,3 +68,21 @@ HTTP alternative for event delivery: **`POST /api/agents/:id/subscribe`** (docum
 | `DELETE /api/agents/:id` | `404` when no agent with that id exists in the registry | `http-agents.ts:150-151` |
 
 Do not describe recursive or cascade deletion; it is not implemented in `deleteAndKill`.
+
+## Detached from parent (`detachedFromParent`)
+
+MCP **session_open** (and **POST /api/agents** with the same create body) accepts optional **`detachedFromParent: true`**.
+
+**What it does today:**
+
+- The opener is still **recorded** — `parentAgentId` is stored when you open from a parent context (for example the **`X-Drive-Coding-Agent`** header). **session_list**, **session_open** (response when you passed the flag), and **session_whoami** expose the flag on the agent record.
+- The child is **not grouped under the parent** in the drive-coding UI agent tree. It appears as its own root row, not nested under the parent.
+
+**What it does *not* do:**
+
+- **Permissions are unchanged.** The parent can still **`session_close`** and **`session_send`** to a detached child without an extra scope prompt — same as any child opened by that parent.
+- **There is no cascade close today.** Closing a parent still does **not** close children (see above). **`detachedFromParent` does not add cascade protection** because cascade deletion is not implemented. Do not tell users the flag “prevents cascade close.”
+
+**Default:** omit the flag or pass `false` — behavior matches a normal owned sub-agent (nested under the parent in the UI).
+
+**If you implement parent/child cascade close later:** when collecting children to close, filter with **`ownedChildren(await registry.list(), parentId)`** from `@drive-coding/core` — not raw `parentAgentId` equality alone — so detached agents stay open when a parent is deleted.
