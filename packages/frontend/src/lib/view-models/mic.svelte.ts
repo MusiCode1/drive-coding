@@ -59,12 +59,19 @@ export class Mic {
   readonly #recorder: Recorder
   readonly #cues?: CuesEngine
   readonly #recovery: MicPendingRecovery
+  readonly #getInputDeviceId?: () => string | null
 
-  constructor(opts: { session: AgentSession; cues?: CuesEngine; recovery: MicPendingRecovery }) {
+  constructor(opts: {
+    session: AgentSession
+    cues?: CuesEngine
+    recovery: MicPendingRecovery
+    getInputDeviceId?: () => string | null
+  }) {
     this.#session = opts.session
     this.#recorder = new Recorder()
     this.#cues = opts.cues
     this.#recovery = opts.recovery
+    this.#getInputDeviceId = opts.getInputDeviceId
     void this.refreshPermissionHint()
   }
 
@@ -92,7 +99,7 @@ export class Mic {
         this.permissionHint = perm === "prompt" ? "mic.hint.needsAllow" : null
       })
       try {
-        await this.#recorder.start()
+        await this.#recorder.start(this.#getInputDeviceId?.() ?? null)
       } catch (e: unknown) {
         this.state = "idle"
         this.awaitingPermissionDialog = false

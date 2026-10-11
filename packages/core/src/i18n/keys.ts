@@ -565,6 +565,13 @@ export type MessageKey =
   | "deepLink.error.unknownCli"
   | "deepLink.error.homeDir"
   | "deepLink.error.back"
+  // ─── mic device ─── (slice mic-device-selection)
+  | "settings.inputDevice.label"
+  | "settings.inputDevice.default"
+  | "settings.inputDevice.grantLabels"
+  | "settings.inputDevice.missing"
+  | "settings.inputDevice.single"
+  | "settings.inputDevice.refresh"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

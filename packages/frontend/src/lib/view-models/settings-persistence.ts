@@ -59,6 +59,8 @@ export type PersistedSettings = {
   inputMode: InputMode
   elevenLabsModelId: ElevenLabsTtsModelId
   geminiModelId: GeminiTtsModelId
+  inputDeviceId: string | null
+  inputDeviceLabel: string
 }
 
 export const DEFAULTS: PersistedSettings = {
@@ -97,6 +99,8 @@ export const DEFAULTS: PersistedSettings = {
   inputMode: "record",
   elevenLabsModelId: DEFAULT_ELEVENLABS_TTS_MODEL,
   geminiModelId: DEFAULT_GEMINI_TTS_MODEL,
+  inputDeviceId: null,
+  inputDeviceLabel: "",
 }
 
 /** Legacy values for fields flipped in slice fe-defaults. */

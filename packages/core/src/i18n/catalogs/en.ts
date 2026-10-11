@@ -562,4 +562,11 @@ export const en: Catalog = {
   "deepLink.error.homeDir":
     "Cannot resolve a relative path — the server returned no home directory. Try a link with an absolute path.",
   "deepLink.error.back": "Back to home",
+  // ─── mic device ─── (slice mic-device-selection)
+  "settings.inputDevice.label": "Microphone",
+  "settings.inputDevice.default": "System default",
+  "settings.inputDevice.grantLabels": "Allow access to see device names",
+  "settings.inputDevice.missing": "Selected device is not connected — using system default",
+  "settings.inputDevice.single": "Only one input source is exposed; routing is controlled by the OS",
+  "settings.inputDevice.refresh": "Refresh list",
 }

@@ -1,3 +1,5 @@
+import { openAudioStream } from "../adapters/audio-devices"
+
 /**
  * Recorder — עוטף את ה-MediaRecorder עבור פונקציונליות push-to-talk.
  * מחזיר API נקי של `{ start(), stop(): Promise<{ blob, mimeType }> }`.
@@ -11,11 +13,10 @@ export class Recorder {
   private mr: MediaRecorder | null = null
   private chunks: Blob[] = []
 
-  async start(): Promise<void> {
-    console.info("[recorder] start")
+  async start(deviceId?: string | null): Promise<void> {
     let stream: MediaStream
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream = (await openAudioStream(deviceId ?? null)).stream
     } catch (e: unknown) {
       console.warn("[recorder] mic permission denied", String(e))
       throw e
@@ -41,7 +42,6 @@ export class Recorder {
       const mimeType = this.mr.mimeType || "audio/webm"
       this.mr.onstop = () => {
         const blob = new Blob(this.chunks, { type: mimeType })
-        console.info("[recorder] stop", { bytes: blob.size, mimeType })
         this.mr?.stream.getTracks().forEach((t) => {
           t.stop()
         })

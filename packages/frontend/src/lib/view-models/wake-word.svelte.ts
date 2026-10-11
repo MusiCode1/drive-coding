@@ -8,6 +8,7 @@
  * כי הוא route standalone שאינו חלק מה-app shell. חריג מכוון מחוק זהב #1.
  */
 
+import { getSettings } from "$lib/context"
 import { WakeWordEngine } from "../engines/wake-word/wake-word-engine.js"
 import { WakeWordCapture } from "../engines/wake-word/capture.js"
 import type { WakeWordConfig } from "../engines/wake-word/types.js"
@@ -46,6 +47,15 @@ export class WakeWordVM {
   constructor(config: WakeWordConfig) {
     this.#engine = new WakeWordEngine(config)
     this.#capture = new WakeWordCapture()
+    if (config.deviceId !== undefined) {
+      this.selectedDeviceId = config.deviceId
+    } else {
+      try {
+        this.selectedDeviceId = getSettings().inputDeviceId
+      } catch {
+        // no Settings context (unit tests)
+      }
+    }
     this.#setupListeners()
 
     // $effect: mode + selectedDeviceId → engine.start/stop (חוק זהב #4)
@@ -111,6 +121,15 @@ export class WakeWordVM {
       this.mode = "off"
     }
     this.selectedDeviceId = id
+    const label =
+      id === null
+        ? ""
+        : (this.devices.find((d) => d.deviceId === id)?.label?.trim() || id.slice(0, 8))
+    try {
+      getSettings().setInputDevice(id, label)
+    } catch {
+      // isolated tests without context
+    }
     if (wasActive) {
       // microtask — נותן ל-$effect להגיב ל-mode="off" לפני שמחזירים
       queueMicrotask(() => {

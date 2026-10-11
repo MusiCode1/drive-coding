@@ -8,6 +8,7 @@
  * אין $state כאן — זה engine, לא VM.
  */
 
+import { openAudioStream } from "../../adapters/audio-devices"
 import * as ort from "onnxruntime-web"
 import type { WakeWordConfig, WakeWordEventMap } from "./types.js"
 import { MODEL_FILE_MAP, DETECT_THRESHOLD, VAD_THRESHOLD } from "./types.js"
@@ -204,9 +205,7 @@ export class WakeWordEngine {
     setGain(v: number): void
     stop(): Promise<void>
   }> {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: deviceId ? { deviceId: { exact: deviceId } } : true,
-    })
+    const { stream } = await openAudioStream(deviceId ?? null)
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE })
     const source = ctx.createMediaStreamSource(stream)
     const gainNode = ctx.createGain()

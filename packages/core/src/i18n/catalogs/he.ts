@@ -554,4 +554,11 @@ export const he: Catalog = {
   "deepLink.error.homeDir":
     "לא ניתן לפתור נתיב יחסי — השרת לא החזיר תיקיית-בית. נסה כתובת עם נתיב מוחלט.",
   "deepLink.error.back": "חזרה לדף הבית",
+  // ─── mic device ─── (slice mic-device-selection)
+  "settings.inputDevice.label": "מיקרופון",
+  "settings.inputDevice.default": "ברירת מחדל של המערכת",
+  "settings.inputDevice.grantLabels": "אפשר גישה כדי לראות שמות מכשירים",
+  "settings.inputDevice.missing": "המכשיר שנבחר אינו מחובר — בשימוש ברירת המחדל",
+  "settings.inputDevice.single": "המערכת חושפת מקור קלט אחד; הניתוב נקבע במערכת ההפעלה",
+  "settings.inputDevice.refresh": "רענן רשימה",
 }
