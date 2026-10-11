@@ -6,7 +6,7 @@
  *
  * slice: active-agents-widget
  */
-import type { AgentPublic } from "@drive-coding/core"
+import { isOwnedChildOf, type AgentPublic } from "@drive-coding/core"
 import { listAgents, deleteAgent, setAgentPersistent } from "$lib/adapters/agents-api"
 
 export type AgentGroup = { root: AgentPublic; children: AgentPublic[] }
@@ -46,7 +46,7 @@ export class ActiveAgents {
     const childrenByParent = new Map<string, AgentPublic[]>()
     for (const agent of agents) {
       const parentId = agent.parentAgentId
-      if (parentId !== undefined && parentId !== agent.id) {
+      if (parentId !== undefined && isOwnedChildOf(agent, parentId)) {
         const siblings = childrenByParent.get(parentId) ?? []
         siblings.push(agent)
         childrenByParent.set(parentId, siblings)
@@ -58,7 +58,7 @@ export class ActiveAgents {
       const parentId = agent.parentAgentId
       if (
         parentId === undefined ||
-        parentId === agent.id ||
+        !isOwnedChildOf(agent, parentId) ||
         !agentIds.has(parentId)
       ) {
         roots.push(agent)

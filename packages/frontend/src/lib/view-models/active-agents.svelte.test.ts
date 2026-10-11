@@ -219,4 +219,74 @@ describe("ActiveAgents.grouped", () => {
     expect(vm.grouped[1]?.root.id).toBe("g")
     expect(vm.grouped[1]?.children).toEqual([])
   })
+
+  it("detached child is its own root and not listed under parent (slice detached-agent-flag C2)", () => {
+    const vm = new ActiveAgents()
+    const parent = makeAgent({ id: "p" })
+    const detached = makeAgent({
+      id: "c",
+      parentAgentId: "p",
+      detachedFromParent: true,
+    })
+    vm.agents = [parent, detached]
+
+    expect(vm.grouped).toHaveLength(2)
+    expect(vm.grouped[0]?.root.id).toBe("p")
+    expect(vm.grouped[0]?.children).toEqual([])
+    expect(vm.grouped[1]?.root.id).toBe("c")
+    expect(vm.grouped[1]?.children).toEqual([])
+  })
+
+  it("parent with owned and detached children (slice detached-agent-flag C2)", () => {
+    const vm = new ActiveAgents()
+    const parent = makeAgent({ id: "p" })
+    const owned = makeAgent({ id: "owned", parentAgentId: "p" })
+    const detached = makeAgent({
+      id: "det",
+      parentAgentId: "p",
+      detachedFromParent: true,
+    })
+    vm.agents = [parent, owned, detached]
+
+    expect(vm.grouped).toHaveLength(2)
+    expect(vm.grouped[0]?.root.id).toBe("p")
+    expect(vm.grouped[0]?.children.map((a) => a.id)).toEqual(["owned"])
+    expect(vm.grouped[1]?.root.id).toBe("det")
+  })
+
+  it("detachedFromParent false behaves like an owned child (slice detached-agent-flag C2)", () => {
+    const vm = new ActiveAgents()
+    const parent = makeAgent({ id: "p" })
+    const child = makeAgent({
+      id: "c",
+      parentAgentId: "p",
+      detachedFromParent: false,
+    })
+    vm.agents = [parent, child]
+
+    expect(vm.grouped).toHaveLength(1)
+    expect(vm.grouped[0]?.children.map((a) => a.id)).toEqual(["c"])
+  })
+
+  it("regression: no agent missing or duplicated when detached present (slice detached-agent-flag C2)", () => {
+    const vm = new ActiveAgents()
+    vm.agents = [
+      makeAgent({ id: "p" }),
+      makeAgent({ id: "owned", parentAgentId: "p" }),
+      makeAgent({ id: "det", parentAgentId: "p", detachedFromParent: true }),
+    ]
+    const flat = flatAgents(vm)
+    expect(flat).toHaveLength(vm.agents.length)
+    expect(new Set(flat.map((a) => a.id)).size).toBe(vm.agents.length)
+    expect(flat.map((a) => a.id).sort()).toEqual(vm.agents.map((a) => a.id).sort())
+  })
+
+  it("regression: detached child keeps agents order, not pushed to bottom (slice detached-agent-flag C2)", () => {
+    const vm = new ActiveAgents()
+    vm.agents = [
+      makeAgent({ id: "c", parentAgentId: "p", detachedFromParent: true }),
+      makeAgent({ id: "p" }),
+    ]
+    expect(vm.grouped.map((g) => g.root.id)).toEqual(["c", "p"])
+  })
 })
