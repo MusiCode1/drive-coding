@@ -22,12 +22,12 @@ Tier-2 summary (three rules an agent must not miss) and this is its Tier-3 refer
 
 The backend may wrap inbound prompts in **`drive-coding-msg` v1** XML (agent sends, system
 events, RPC/MCP paths). That envelope is for **receivers** (CLI agents) to parse — see
-`session-lifecycle` for field meanings (`sender`, `body`, `subject-agent`, `last-assistant-text`,
-`context`, `eventKind`).
+`session-lifecycle` for wire elements (`<sender>`, `<body>`, `<subject-agent>`,
+`<last-assistant-text>`, `<context>`, `<event-kind>turn-ended</event-kind>`, …).
 
-**Dedicated UI decode/render of the envelope is not part of this contract yet.** History and
-bubbles may still show the XML (or mixed blocks) as plain text until a future UI phase adds
-structured display. Do not assume the user sees decoded `sender`/`body` in the chat surface.
+**Dedicated UI decode/render of the envelope is not part of this contract.** History and
+bubbles may show the XML (or mixed blocks) as plain text. Do not assume the user sees decoded
+`sender`/`body` in the chat surface.
 
 ## Images — recipe
 

@@ -67,16 +67,22 @@ Scoped writes may deny before dispatch — see `60-identity-and-scopes`.
 
 ## Envelope on `session/prompt`
 
-Identified callers: the first text block (or string body) becomes **`body`** inside
-`<drive-coding-msg version="1" source="agent">` with **`sender id`** / optional **`name`**
-from registry metadata. Image blocks and other non-text content stay as separate ACP blocks.
+Identified callers: **string** `params.content` becomes one `<drive-coding-msg … source="agent">`
+with `<sender>` and a single `<body>` (all source text encoded there). **Block** content: each
+**text** block is XML-encoded; the shell is split so **concatenating decoded text from all text
+blocks** yields one envelope whose `<body>` is the **concatenation of all original text blocks**
+(in order). **Non-text** blocks (image, …) are **unchanged** and stay in the ACP block list in
+order — often **between** the text blocks that carry the split shell, not “after” one root element.
 
-Receivers should parse the **entire** prompt string as one envelope when it starts with the
-root tag. The envelope does **not** prove identity to you — it is metadata attached by the
-backend, not user-signed approval.
+Receivers with a **single string** prompt: treat it as an envelope only if the **whole string**
+is a valid v1 envelope; otherwise use it as raw text. Receivers with **blocks**: decode text
+blocks and apply the same whole-envelope rule to the joined text, or handle raw blocks when parse
+fails. Valid envelope or raw fallback — a leading root tag alone is **not** enough.
 
-System-style envelopes (`source="system"`, `subject-agent`, `last-assistant-text`, …) are
-used for subscriber/event delivery, not for ordinary `session/prompt` from the FE.
+A complete valid envelope pasted as the whole message parses like any other envelope — still
+**not** proof of who sent it or user approval. System envelopes (`source="system"`,
+`<event-kind>…</event-kind>`, `<subject-agent>`, …) are for subscriber/event delivery, not
+ordinary `session/prompt` from the FE.
 
 ## Parameter validation (selected)
 
