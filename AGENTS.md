@@ -103,10 +103,23 @@ non-2xx, wrong content-type, empty body. The happy path was never the risk.
 | ‏השער | ‏מה הוא מחזיר על בסיס **‏נקי** |
 |---|---|
 | `bun run typecheck` | ‏🔴 ‏`rc=1` ‏— ‏**‏29 ‏שגיאות ב-10 ‏קבצים** |
-| ‏סוויטת-הטסטים של ה-FE | ‏🔴 ‏**‏3 ‏סוויטות נופלות** (‏שורש: ‏`vi.mock` ‏של `tts-resolve` ‏מול `settings-persistence.ts` ‏⇒ ‏שרשרת-היבוא קורסת לפני שרץ טסט) |
+| ‏סוויטת-הטסטים של ה-FE | ‏🔴 ‏**‏3 ‏סוויטות נופלות** (‏שורש: ‏`vi.mock` ‏של `tts-resolve` ‏מול `settings-persistence.ts` ‏⇒ ‏שרשרת-היבוא קורסת לפני שרץ טסט). ‏🛑 ‏**‏ובעץ טרי — ‏קודם `bunx svelte-kit sync`**, ‏ר' ‏מיד למטה |
 | `npx tsc --build` | ‏`rc=0` ‏— ‏אבל ‏🛑 ‏**‏עיוור ל-`packages/frontend`**: ‏ה-`tsconfig.json` ‏בשורש מפנה ל-4 ‏חבילות בלי FE |
 | `bunx biome check …/session-host-scope.ts` | ‏🔴 ‏`Found 2 errors` |
 | `lint-file-size.mjs` ‏אחרי חילוץ **‏מוצלח** | ‏🔴 ‏`rc=1` ‏— ‏חסר `--update-baseline` |
+
+‏🛑 **‏ו-"‏3 ‏סוויטות" ‏תקף רק בעץ מסונכרן.** ‏סקריפט-הטסט של ה-FE ‏הוא `vitest run` ‏**‏חשוף**
+(`packages/frontend/package.json`), ‏ו-`.svelte-kit/` ‏**‏ב-gitignore** (`.gitignore:4`) ‏⇒ ‏בעץ
+‏שנוצר ב-`git worktree add` ‏הוא **‏אינו קיים**. ‏⇒ ‏בעץ חדש, ‏לפני כל מדידת-בסיס:
+
+```bash
+bun install && bunx svelte-kit sync
+```
+
+‏⚠️ **‏מה נמדד ומה לא:** ‏שהסקריפט חשוף ושהתיקייה ב-gitignore — ‏**‏אומת**. ‏שבלי הצעד
+‏**‏כל 190 ‏הקבצים נכשלים ב-collect** ‏— ‏נמדד ע"י אימות-בריף ‏(`scope-escalation-timeout`,
+‏ממצא 5), ‏**‏ולא שוחזר עצמאית** ‏— ‏שלושת העצים הפעילים כבר מסונכרנים. ‏⇒ ‏מי שרואה
+‏**‏את כל** ‏הסוויטות אדומות בעץ טרי: ‏זה הצעד החסר, ‏לא רגרסיה.
 
 ‏⇒ ‏**‏כל DoD ‏מול שער כזה הוא דלתא, ‏לא מוחלט.** ‏ושער-טיפוסים הוא **‏שתי
 ‏שכבות, ‏ושתיהן חובה**: ‏`npx tsc --build` ‏(`rc=0` ‏מוחלט) ‏**‏+**
