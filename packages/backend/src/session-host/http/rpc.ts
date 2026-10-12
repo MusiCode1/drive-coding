@@ -53,19 +53,14 @@ import type { AgentRegistry } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import { canonicalRpcMethod, RPC_METHODS } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
-import { AGENT_ID_HEADER } from "../../agent-identity.js"
 import { type } from "arktype"
 import type { Hono } from "hono"
+import { AGENT_ID_HEADER } from "../../agent-identity.js"
 import type { AgentSessionRegistry } from "../registry.js"
-import { guardRpcRoute } from "./rpc-scope.js"
 import { dispatchRpcPrompt, PromptParams, resolveCallerSenderForPrompt } from "./rpc-prompt.js"
-import {
-  DeleteSessionParams,
-  LoadSessionParams,
-  NewSessionParams,
-  tryDispatchBlockingSessionRpc,
-} from "./rpc-session-mgmt.js"
 import { respondRpcWait } from "./rpc-respond-wait.js"
+import { guardRpcRoute } from "./rpc-scope.js"
+import { tryDispatchBlockingSessionRpc } from "./rpc-session-mgmt.js"
 import { parseWaitMs } from "./rpc-wait.js"
 
 const log = createLogger("backend.session-host.rpc")
@@ -95,7 +90,11 @@ export { DeleteSessionParams, LoadSessionParams, NewSessionParams } from "./rpc-
 /**
  * registerRpcRoute — registers POST /api/agents/:id/rpc on the Hono app.
  */
-export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry, agentRegistry: AgentRegistry): void {
+export function registerRpcRoute(
+  app: Hono,
+  registry: AgentSessionRegistry,
+  agentRegistry: AgentRegistry,
+): void {
   app.post("/api/agents/:id/rpc", async (c) => {
     const agentId = c.req.param("id")
     const result = await registry.getOrCreateHost(agentId)
@@ -129,114 +128,114 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry, agen
     const waitMs = waitParsed === "invalid" ? null : waitParsed
 
     return guardRpcRoute(c, agentId, method, agentRegistry, registry, async () => {
-    switch (method) {
-      case RPC_METHODS.prompt: {
-        const p = PromptParams(params)
-        if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-        const callerSender = await resolveCallerSenderForPrompt(
-          agentRegistry,
-          c.req.header(AGENT_ID_HEADER),
-        )
-        const outcome = await dispatchRpcPrompt(
-          host,
-          p.sessionId,
-          p.content as string | PromptBlocks,
-          p.meta,
-          waitMs,
-          callerSender,
-        )
-        if (outcome.kind === "accepted") break
-        return c.json(outcome.body, outcome.status)
-      }
-      case RPC_METHODS.cancel: {
-        const p = CancelParams(params)
-        if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-        if (waitMs === null) {
-          void host.cancel(p.sessionId).catch((e) => log.warn({ err: e }, "cancel failed"))
+      switch (method) {
+        case RPC_METHODS.prompt: {
+          const p = PromptParams(params)
+          if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
+          const callerSender = await resolveCallerSenderForPrompt(
+            agentRegistry,
+            c.req.header(AGENT_ID_HEADER),
+          )
+          const outcome = await dispatchRpcPrompt(
+            host,
+            p.sessionId,
+            p.content as string | PromptBlocks,
+            p.meta,
+            waitMs,
+            callerSender,
+          )
+          if (outcome.kind === "accepted") break
+          return c.json(outcome.body, outcome.status)
+        }
+        case RPC_METHODS.cancel: {
+          const p = CancelParams(params)
+          if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
+          if (waitMs === null) {
+            void host.cancel(p.sessionId).catch((e) => log.warn({ err: e }, "cancel failed"))
+            break
+          }
+          const waited = await respondRpcWait(host, host.cancel(p.sessionId), waitMs, (e) =>
+            log.warn({ err: e }, "cancel failed"),
+          )
+          return c.json(waited.body, waited.status)
+        }
+        case RPC_METHODS.setMode: {
+          const modeId = params.modeId as string
+          if (waitMs === null) {
+            await host.setMode(modeId)
+            break
+          }
+          const waited = await respondRpcWait(host, host.setMode(modeId), waitMs, (e) =>
+            log.warn({ err: e }, "setMode failed"),
+          )
+          return c.json(waited.body, waited.status)
+        }
+        case RPC_METHODS.setConfigOption: {
+          const configId = params.configId as string
+          const value = params.value as string | boolean
+          if (waitMs === null) {
+            await host.setConfigOption(configId, value)
+            break
+          }
+          const waited = await respondRpcWait(
+            host,
+            host.setConfigOption(configId, value),
+            waitMs,
+            (e) => log.warn({ err: e }, "setConfigOption failed"),
+          )
+          return c.json(waited.body, waited.status)
+        }
+        case RPC_METHODS.extMethod: {
+          const extMethodName = params.method as string
+          const extParams = (params.params ?? {}) as Record<string, unknown>
+          if (waitMs === null) {
+            await host.extMethod(extMethodName, extParams)
+            break
+          }
+          const waited = await respondRpcWait(
+            host,
+            host.extMethod(extMethodName, extParams),
+            waitMs,
+            (e) => log.warn({ err: e }, "extMethod failed"),
+            (result) => ({ result }),
+          )
+          return c.json(waited.body, waited.status)
+        }
+        case RPC_METHODS.setSessionModel: {
+          const model = params.model as string
+          if (waitMs === null) {
+            await host.setSessionModel(model)
+            break
+          }
+          const waited = await respondRpcWait(host, host.setSessionModel(model), waitMs, (e) =>
+            log.warn({ err: e }, "setSessionModel failed"),
+          )
+          return c.json(waited.body, waited.status)
+        }
+        case RPC_METHODS.listSessions:
+        case RPC_METHODS.loadSession:
+        case RPC_METHODS.newSession:
+        case RPC_METHODS.deleteSession: {
+          const blocking = await tryDispatchBlockingSessionRpc(
+            c,
+            method,
+            params,
+            host,
+            registry,
+            agentId,
+          )
+          if (blocking) return blocking
           break
         }
-        const waited = await respondRpcWait(host, host.cancel(p.sessionId), waitMs, (e) =>
-          log.warn({ err: e }, "cancel failed"),
-        )
-        return c.json(waited.body, waited.status)
-      }
-      case RPC_METHODS.setMode: {
-        const modeId = params.modeId as string
-        if (waitMs === null) {
-          await host.setMode(modeId)
-          break
+        default: {
+          // ⚠️ מדווחים את השם ש**נשלח**, לא את התוצאה המנורמלת (שהיא undefined
+          // בדיוק במקרה הזה) — אחרת ההודעה היא "Unknown method: undefined"
+          // וזורקת את הפרט היחיד שמאפשר לאבחן.
+          return c.json({ error: `Unknown method: ${String(rawMethod)}` }, 400)
         }
-        const waited = await respondRpcWait(host, host.setMode(modeId), waitMs, (e) =>
-          log.warn({ err: e }, "setMode failed"),
-        )
-        return c.json(waited.body, waited.status)
       }
-      case RPC_METHODS.setConfigOption: {
-        const configId = params.configId as string
-        const value = params.value as string | boolean
-        if (waitMs === null) {
-          await host.setConfigOption(configId, value)
-          break
-        }
-        const waited = await respondRpcWait(
-          host,
-          host.setConfigOption(configId, value),
-          waitMs,
-          (e) => log.warn({ err: e }, "setConfigOption failed"),
-        )
-        return c.json(waited.body, waited.status)
-      }
-      case RPC_METHODS.extMethod: {
-        const extMethodName = params.method as string
-        const extParams = (params.params ?? {}) as Record<string, unknown>
-        if (waitMs === null) {
-          await host.extMethod(extMethodName, extParams)
-          break
-        }
-        const waited = await respondRpcWait(
-          host,
-          host.extMethod(extMethodName, extParams),
-          waitMs,
-          (e) => log.warn({ err: e }, "extMethod failed"),
-          (result) => ({ result }),
-        )
-        return c.json(waited.body, waited.status)
-      }
-      case RPC_METHODS.setSessionModel: {
-        const model = params.model as string
-        if (waitMs === null) {
-          await host.setSessionModel(model)
-          break
-        }
-        const waited = await respondRpcWait(host, host.setSessionModel(model), waitMs, (e) =>
-          log.warn({ err: e }, "setSessionModel failed"),
-        )
-        return c.json(waited.body, waited.status)
-      }
-      case RPC_METHODS.listSessions:
-      case RPC_METHODS.loadSession:
-      case RPC_METHODS.newSession:
-      case RPC_METHODS.deleteSession: {
-        const blocking = await tryDispatchBlockingSessionRpc(
-          c,
-          method,
-          params,
-          host,
-          registry,
-          agentId,
-        )
-        if (blocking) return blocking
-        break
-      }
-      default: {
-        // ⚠️ מדווחים את השם ש**נשלח**, לא את התוצאה המנורמלת (שהיא undefined
-        // בדיוק במקרה הזה) — אחרת ההודעה היא "Unknown method: undefined"
-        // וזורקת את הפרט היחיד שמאפשר לאבחן.
-        return c.json({ error: `Unknown method: ${String(rawMethod)}` }, 400)
-      }
-    }
 
-    return c.json({ version: host.state.version }, 202) // fire-and-forget; version for client sync
+      return c.json({ version: host.state.version }, 202) // fire-and-forget; version for client sync
     })
   })
 }

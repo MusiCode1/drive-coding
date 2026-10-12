@@ -57,14 +57,20 @@ export function wrapAgentBlocks(sender: ResolvedSender, blocks: PromptBlocks): P
     return [{ type: "text", text: prefix }, ...encoded, { type: "text", text: suffix }]
   }
   if (textIndices.length === 1) {
-    const i = textIndices[0]!
+    const i = textIndices.at(0)
+    if (i === undefined) {
+      return [{ type: "text", text: prefix }, ...encoded, { type: "text", text: suffix }]
+    }
     const block = encoded[i] as { type: "text"; text: string }
     const out = [...encoded]
     out[i] = { ...block, text: prefix + block.text + suffix }
     return out as PromptBlocks
   }
-  const first = textIndices[0]!
-  const last = textIndices[textIndices.length - 1]!
+  const first = textIndices.at(0)
+  const last = textIndices.at(-1)
+  if (first === undefined || last === undefined) {
+    return [{ type: "text", text: prefix }, ...encoded, { type: "text", text: suffix }]
+  }
   const out = [...encoded]
   const fb = out[first] as { type: "text"; text: string }
   out[first] = { ...fb, text: prefix + fb.text }

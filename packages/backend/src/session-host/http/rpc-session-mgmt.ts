@@ -8,8 +8,8 @@ import { type } from "arktype"
 import type { Context } from "hono"
 import { getSelfBaseUrl } from "../../instances.js"
 import type { AgentSessionRegistry } from "../registry.js"
-import { buildSessionInitBase } from "../session-meta.js"
 import type { ExtendedSessionHost } from "../session-host.js"
+import { buildSessionInitBase } from "../session-meta.js"
 import { codeOf, messageOf } from "./rpc-respond-wait.js"
 
 const log = createLogger("backend.session-host.rpc")

@@ -350,10 +350,10 @@
       "codeLines": 44
     },
     "packages/backend/src/session-host/http/rpc.ts": {
-      "metric": 242,
+      "metric": 241,
       "impurity": 14,
       "class": "mixed",
-      "codeLines": 169
+      "codeLines": 168
     },
     "packages/backend/src/session-host/patches-broadcaster.ts": {
       "metric": 166,
