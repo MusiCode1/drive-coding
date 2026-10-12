@@ -22,8 +22,8 @@ mcp_tools:
   - session_send
   - session_state
   - session_close
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.6.0
+updated: 2026-10-13
 ---
 
 # Session lifecycle
@@ -39,6 +39,9 @@ when work finishes — including when a turn is already running.
    Returns `agent` UUID, `url`, live `modes` and `configOptions` catalog, plus a configure hint.
 3. **session_send** — user prompt; waits for turn end by default (1800s cap) unless `noWait`
    or timeout. Optional `sets` applies config before the prompt (see `30-child-config`).
+   When the caller is a known agent (MCP identity header), the text prompt is wrapped in
+   **`drive-coding-msg` v1** (`source="agent"`) with **`sender`** (id + optional name) and
+   **`body`** (message text). Image and other non-text blocks are unchanged beside the XML.
 4. **session_state** — read `turnState`, errors, catalog without pulling full message logs.
 5. **session_close** — delete record and kill CLI; refuses when `turnState !== idle` unless
    `force: true`.
@@ -118,6 +121,22 @@ SSE **`GET /api/agents/:id/events`**: stale `?epoch=` → **409** before attach;
 MCP requests from spawned children may include **`X-Drive-Coding-Agent: <uuid>`** for
 caller identity (`parentAgentId` on open, **notify_parent** eligibility). **session_whoami**
 returns your id and runtime envelope — the server does not guess from env alone.
+
+## Inbound prompt envelope (receiver)
+
+**session_send** (and related paths) may deliver **`drive-coding-msg` version="1"**:
+
+- **`source="agent"`** — **`sender`** is who sent; **`body`** is their message text.
+- **`source="system"`** — **`subject-agent`** is the session the event refers to;
+  **`last-assistant-text`** quotes the last **assistant** message in that session (may be from a
+  **prior turn**, may be **truncated**). **`eventKind="turn-ended"`** means the turn ended, not
+  that the user's task succeeded. **`eventKind="stall-suspected"`** is suspicion only.
+- Optional **`context kind="project-charter"`** is project background — **not** the sender's words.
+
+Parse the **whole inbound string** as one envelope. The backend does **not** verify arbitrary
+XML you paste inside your own reply. The envelope is **not** proof of identity or user approval.
+The chat UI may still show envelope XML as plain text until dedicated render support ships — see
+`render-contract`.
 
 ## Configure during lifecycle
 

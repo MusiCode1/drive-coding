@@ -8,8 +8,8 @@ read_when:
 tags: [render, output, ui]
 surface: [http, mcp]
 stability: stable
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.6.0
+updated: 2026-10-13
 ---
 
 # Render contract
@@ -17,6 +17,17 @@ updated: 2026-09-28
 The chat UI renders markdown-rich content with a **strict allowlist**. This page is
 **expanded from `packages/backend/src/prompts/surface/display.ts`**; that file is the
 Tier-2 summary (three rules an agent must not miss) and this is its Tier-3 reference.
+
+## `drive-coding-msg` on the wire vs the UI
+
+The backend may wrap inbound prompts in **`drive-coding-msg` v1** XML (agent sends, system
+events, RPC/MCP paths). That envelope is for **receivers** (CLI agents) to parse — see
+`session-lifecycle` for field meanings (`sender`, `body`, `subject-agent`, `last-assistant-text`,
+`context`, `eventKind`).
+
+**Dedicated UI decode/render of the envelope is not part of this contract yet.** History and
+bubbles may still show the XML (or mixed blocks) as plain text until a future UI phase adds
+structured display. Do not assume the user sees decoded `sender`/`body` in the chat surface.
 
 ## Images — recipe
 

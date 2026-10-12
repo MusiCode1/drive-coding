@@ -10,8 +10,8 @@ tags: [rpc, session]
 surface: [http]
 stability: transitional
 routes: [POST /api/agents/:id/rpc]
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.6.0
+updated: 2026-10-13
 ---
 
 # Agent session RPC
@@ -26,7 +26,7 @@ Legacy aliases (for example `prompt` instead of `session/prompt`) may still be a
 
 | Method | Role |
 |--------|------|
-| `session/prompt` | Send user content to the ACP session (`params.sessionId`, `params.content`). |
+| `session/prompt` | Send user content to the ACP session (`params.sessionId`, `params.content`). When the HTTP caller identifies as another agent (`X-Drive-Coding-Agent`), text is wrapped in **`drive-coding-msg` v1** with that caller as **`sender`**; anonymous callers receive unwrapped content. |
 | `session/cancel` | Cancel the in-flight turn for `params.sessionId`. |
 | `session/set_mode` | Switch session mode (`params.modeId`). |
 | `session/set_config_option` | Set a config option (`params.configId`, `params.value`). |
@@ -64,6 +64,19 @@ Management methods (`session/list`, `session/load`, `session/new`, `session/dele
 | `502` | Upstream/session errors on management calls | `rpc.ts:328-331`, `rpc.ts:365-367`, etc. |
 
 Scoped writes may deny before dispatch — see `60-identity-and-scopes`.
+
+## Envelope on `session/prompt`
+
+Identified callers: the first text block (or string body) becomes **`body`** inside
+`<drive-coding-msg version="1" source="agent">` with **`sender id`** / optional **`name`**
+from registry metadata. Image blocks and other non-text content stay as separate ACP blocks.
+
+Receivers should parse the **entire** prompt string as one envelope when it starts with the
+root tag. The envelope does **not** prove identity to you — it is metadata attached by the
+backend, not user-signed approval.
+
+System-style envelopes (`source="system"`, `subject-agent`, `last-assistant-text`, …) are
+used for subscriber/event delivery, not for ordinary `session/prompt` from the FE.
 
 ## Parameter validation (selected)
 
