@@ -27,7 +27,7 @@ import type { AcpClient, AcpClientCallbacks, PromptBlocks } from "@drive-coding/
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createInMemoryAgentRegistry } from "../../agents/registry.js"
-import { buildAgentMcpServers } from "../../agent-identity.js"
+import { AGENT_ID_HEADER, buildAgentMcpServers } from "../../agent-identity.js"
 import { setSelfBaseUrlForTests } from "../../instances.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
@@ -1287,6 +1287,58 @@ describe("POST /api/agents/:id/rpc", () => {
         const res = await postRpc(app, "agent-1", { method, params: {} })
         expect(res.status).toBe(400)
       }
+    })
+  })
+
+  describe("prompt sender wrapping", () => {
+    it("wraps content when caller identity header resolves", async () => {
+      const agentRegistry = createInMemoryAgentRegistry()
+      const caller = await agentRegistry.create({
+        cliKind: "cursor",
+        cwd: "/tmp/rpc-wrap",
+        roleLabel: "rpc-sender",
+      })
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = new Hono()
+      registerRpcRoute(app, registry, agentRegistry)
+
+      await app.request("/api/agents/agent-1/rpc", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [AGENT_ID_HEADER]: caller.id,
+        },
+        body: JSON.stringify({
+          method: "prompt",
+          params: { sessionId: "s1", content: "rpc-plain" },
+        }),
+      })
+      const delivered = String((host.prompt as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] ?? "")
+      expect(delivered).toContain("<drive-coding-msg")
+      expect(delivered).toContain("rpc-plain")
+      expect(delivered).toContain("rpc-sender")
+    })
+
+    it("does not wrap when caller header is unknown", async () => {
+      const agentRegistry = createInMemoryAgentRegistry()
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = new Hono()
+      registerRpcRoute(app, registry, agentRegistry)
+
+      await app.request("/api/agents/agent-1/rpc", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [AGENT_ID_HEADER]: "00000000-0000-4000-8000-000000000088",
+        },
+        body: JSON.stringify({
+          method: "session/prompt",
+          params: { sessionId: "s1", content: "stay-plain" },
+        }),
+      })
+      expect(host.prompt).toHaveBeenCalledWith("s1", "stay-plain", undefined)
     })
   })
 })
