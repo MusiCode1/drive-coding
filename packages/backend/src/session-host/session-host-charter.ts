@@ -5,6 +5,10 @@
  * consumeCharter runs once per agent; subsequent turns pass content through unchanged.
  */
 
+import {
+  insertEnvelopeContext,
+  parseDriveMessage,
+} from "@drive-coding/core/acp/drive-message-envelope"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/connection"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
@@ -24,9 +28,8 @@ export function applyCharterAtConnect(
   if (text == null || text === "") {
     return {}
   }
-  ;(
-    conn.capabilities as { systemPrompt: "native" | "prepended" | "unsupported" }
-  ).systemPrompt = "prepended"
+  ;(conn.capabilities as { systemPrompt: "native" | "prepended" | "unsupported" }).systemPrompt =
+    "prepended"
   return { charter: text }
 }
 
@@ -50,6 +53,57 @@ export function prependCharterToContent(
   return [{ type: "text", text: charter }, ...blocks]
 }
 
+function joinTextBlocks(
+  blocks: PromptBlocks,
+): { joined: string; firstTextIdx: number; firstLen: number } | null {
+  const firstTextIdx = blocks.findIndex((b) => b.type === "text")
+  if (firstTextIdx < 0) return null
+  let joined = ""
+  for (const block of blocks) {
+    if (block.type === "text") joined += block.text
+  }
+  const first = blocks[firstTextIdx]
+  if (first?.type !== "text") return null
+  return { joined, firstTextIdx, firstLen: first.text.length }
+}
+
+function tryInsertCharterInEnvelope(
+  joined: string,
+  charter: string,
+): { offset: number; insertedText: string } | null {
+  if (parseDriveMessage(joined).isErr()) return null
+  const inserted = insertEnvelopeContext(joined, { kind: "project-charter", text: charter })
+  if (inserted.isErr()) return null
+  return { offset: inserted.value.offset, insertedText: inserted.value.insertedText }
+}
+
+/** Charter inside a full envelope when possible; otherwise legacy prepend. */
+export function applyCharterToContent(
+  content: string | PromptBlocks,
+  charter: string,
+): string | PromptBlocks {
+  if (typeof content === "string") {
+    const ins = tryInsertCharterInEnvelope(content, charter)
+    if (ins === null) return prependCharterToContent(content, charter)
+    return content.slice(0, ins.offset) + ins.insertedText + content.slice(ins.offset)
+  }
+
+  const meta = joinTextBlocks(content)
+  if (meta === null) return prependCharterToContent(content, charter)
+  const { joined, firstTextIdx, firstLen } = meta
+  const ins = tryInsertCharterInEnvelope(joined, charter)
+  if (ins === null || ins.offset > firstLen) return prependCharterToContent(content, charter)
+
+  const first = content[firstTextIdx]
+  if (first?.type !== "text") return prependCharterToContent(content, charter)
+  const out = [...content]
+  out[firstTextIdx] = {
+    type: "text",
+    text: first.text.slice(0, ins.offset) + ins.insertedText + first.text.slice(ins.offset),
+  }
+  return out
+}
+
 /** Hook for session-host prompt(): consume stored charter once, prepend for ACP only. */
 export function makePromptCharterHook(
   registry: Pick<ConnectionRegistry, "consumeCharter">,
@@ -58,6 +112,6 @@ export function makePromptCharterHook(
   return (content) => {
     const charter = registry.consumeCharter(agentId)
     if (charter === undefined) return content
-    return prependCharterToContent(content, charter)
+    return applyCharterToContent(content, charter)
   }
 }
