@@ -2,11 +2,13 @@
  * rpc-prompt.ts — session/prompt dispatch for POST /api/agents/:id/rpc (extracted from rpc.ts).
  */
 
+import type { AgentRegistry } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
 import {
   type ResolvedSender,
+  senderFromRecord,
   wrapPromptContent,
 } from "../../delivery/drive-message-source.js"
 import type { ExtendedSessionHost } from "../session-host.js"
@@ -36,6 +38,17 @@ export const PromptParams = type({
 export type RpcPromptOutcome =
   | { kind: "accepted" }
   | { kind: "json"; status: 200; body: Record<string, unknown> }
+
+/** Resolve caller identity only for session/prompt (after params validation). */
+export async function resolveCallerSenderForPrompt(
+  agentRegistry: AgentRegistry,
+  callerHeader: string | undefined,
+): Promise<ResolvedSender | undefined> {
+  const rawCaller = callerHeader?.trim()
+  if (!rawCaller) return undefined
+  const rec = await agentRegistry.get(rawCaller)
+  return rec ? senderFromRecord(rec) : undefined
+}
 
 /** Wrap after validation; honor waitMs on the same wrapped content. */
 export async function dispatchRpcPrompt(

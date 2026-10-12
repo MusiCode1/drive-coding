@@ -54,12 +54,11 @@ import { createLogger } from "@drive-coding/core/log"
 import { canonicalRpcMethod, RPC_METHODS } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { AGENT_ID_HEADER } from "../../agent-identity.js"
-import { senderFromRecord } from "../../delivery/drive-message-source.js"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import type { AgentSessionRegistry } from "../registry.js"
 import { guardRpcRoute } from "./rpc-scope.js"
-import { dispatchRpcPrompt, PromptParams } from "./rpc-prompt.js"
+import { dispatchRpcPrompt, PromptParams, resolveCallerSenderForPrompt } from "./rpc-prompt.js"
 import {
   DeleteSessionParams,
   LoadSessionParams,
@@ -129,20 +128,15 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry, agen
     }
     const waitMs = waitParsed === "invalid" ? null : waitParsed
 
-    const rawCaller = c.req.header(AGENT_ID_HEADER)?.trim()
-    let callerSender: ReturnType<typeof senderFromRecord>
-    if (rawCaller) {
-      const rec = await agentRegistry.get(rawCaller)
-      callerSender = rec ? senderFromRecord(rec) : undefined
-    } else {
-      callerSender = undefined
-    }
-
     return guardRpcRoute(c, agentId, method, agentRegistry, registry, async () => {
     switch (method) {
       case RPC_METHODS.prompt: {
         const p = PromptParams(params)
         if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
+        const callerSender = await resolveCallerSenderForPrompt(
+          agentRegistry,
+          c.req.header(AGENT_ID_HEADER),
+        )
         const outcome = await dispatchRpcPrompt(
           host,
           p.sessionId,

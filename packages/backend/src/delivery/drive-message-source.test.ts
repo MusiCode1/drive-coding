@@ -117,6 +117,77 @@ describe("wrapAgentBlocks", () => {
     }
   })
 
+  it("preserves annotations and _meta on a single text block", () => {
+    const input = {
+      type: "text" as const,
+      text: "hello",
+      annotations: { priority: 2 },
+      _meta: { traceId: "t-1" },
+    }
+    const out = wrapAgentBlocks(sender, [input])
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({
+      type: "text",
+      annotations: input.annotations,
+      _meta: input._meta,
+    })
+    if (out[0]?.type === "text") {
+      expect(out[0].text).toContain("hello")
+      expect(out[0].text.startsWith("<drive-coding-msg")).toBe(true)
+    }
+  })
+
+  it("preserves annotations on first and last text blocks in interleaved layout", () => {
+    const image = {
+      type: "image" as const,
+      mimeType: "image/png",
+      data: "abc123",
+      annotations: { priority: 1 },
+    }
+    const first = {
+      type: "text" as const,
+      text: "pre",
+      annotations: { priority: 1 },
+      _meta: { slot: "first" },
+    }
+    const last = {
+      type: "text" as const,
+      text: "post",
+      annotations: { priority: 2 },
+      _meta: { slot: "last" },
+    }
+    const out = wrapAgentBlocks(sender, [first, image, last])
+    expect(out).toHaveLength(3)
+    expect(out[0]).toMatchObject({
+      type: "text",
+      annotations: first.annotations,
+      _meta: first._meta,
+    })
+    expect(out[1]).toEqual(image)
+    expect(out[2]).toMatchObject({
+      type: "text",
+      annotations: last.annotations,
+      _meta: last._meta,
+    })
+    if (out[0]?.type === "text" && out[2]?.type === "text") {
+      expect(out[0].text).toContain("pre")
+      expect(out[2].text).toContain("post")
+    }
+  })
+
+  it("does not mutate input block objects", () => {
+    const first = {
+      type: "text" as const,
+      text: "a",
+      annotations: { priority: 1 },
+    }
+    const image = { type: "image" as const, mimeType: "image/png", data: "d" }
+    const before = structuredClone([first, image])
+    wrapAgentBlocks(sender, [first, image])
+    expect(first).toEqual(before[0])
+    expect(image).toEqual(before[1])
+  })
+
   it("encodes entities in each text block once", () => {
     const out = wrapAgentBlocks(sender, [{ type: "text", text: "a & b" }])
     const block = out[0]
