@@ -33,6 +33,7 @@ import type { Hono } from "hono"
 import { z } from "zod"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
+import { senderFromRecord } from "./drive-message-source.js"
 import { readScopeToken, stripScopePendingFromState } from "../scope-write.js"
 import { registerMcpWriteTools } from "./mcp-write-tools.js"
 import { resolveAppVersion } from "../app-version.js"
@@ -294,6 +295,8 @@ function createSessionBusMcpServer(
     },
   )
 
+  const callerSender =
+    callerAgentId && callerRecord ? senderFromRecord(callerRecord) : undefined
   registerMcpWriteTools(
     server,
     registerArkTool,
@@ -302,6 +305,7 @@ function createSessionBusMcpServer(
     scopeDeps,
     jsonResult,
     jsonError,
+    callerSender,
   )
 
   registerArkTool(

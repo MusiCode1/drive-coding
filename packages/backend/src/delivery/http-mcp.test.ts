@@ -766,7 +766,57 @@ describe("agent-identity-mcp (C2/C3)", () => {
     await childClient.close()
     expect(isToolError(notified)).toBe(false)
     const parentHost = agentSessionRegistry.hosts.get(parent.id)
-    expect(parentHost?.prompt).toHaveBeenCalledWith(`sess-${parent.id}`, "hello parent")
+    expect(parentHost?.prompt).toHaveBeenCalledOnce()
+    const delivered = String(parentHost?.prompt.mock.calls[0]?.[1] ?? "")
+    expect(delivered).toContain("hello parent")
+    expect(delivered).toContain(child.id)
+    expect(delivered).toContain("<drive-coding-msg")
+  })
+
+  it("session_send wraps prompt when caller identity header resolves", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const caller = await registry.create({
+      cliKind: "cursor",
+      cwd: "/tmp/caller-wrap",
+      roleLabel: "caller-role",
+    })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: caller.id })
+    const openedResult = await client.callTool({
+      name: "session_open",
+      arguments: { cli: "cursor", cwd: "/tmp/target-wrap" },
+    })
+    const opened = JSON.parse(toolText(openedResult)) as { agent: string }
+    await client.callTool({
+      name: "session_send",
+      arguments: { agent: opened.agent, prompt: "payload", noWait: true },
+    })
+    await client.close()
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    expect(host?.prompt).toHaveBeenCalledOnce()
+    const delivered = String(host?.prompt.mock.calls[0]?.[1] ?? "")
+    expect(delivered).toContain("<drive-coding-msg")
+    expect(delivered).toContain(caller.id)
+    expect(delivered).toContain("caller-role")
+    expect(delivered).toContain("payload")
+  })
+
+  it("session_send leaves prompt plain without resolved caller", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app, {
+      [AGENT_ID_HEADER]: "00000000-0000-4000-8000-000000000099",
+    })
+    const openedResult = await client.callTool({
+      name: "session_open",
+      arguments: { cli: "cursor", cwd: "/tmp/anon-send" },
+    })
+    const opened = JSON.parse(toolText(openedResult)) as { agent: string }
+    await client.callTool({
+      name: "session_send",
+      arguments: { agent: opened.agent, prompt: "plain-only", noWait: true },
+    })
+    await client.close()
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    expect(host?.prompt).toHaveBeenCalledWith(`sess-${opened.agent}`, "plain-only")
   })
 })
 
