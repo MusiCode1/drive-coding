@@ -10,12 +10,14 @@ import {
   MCP_TOOL_META,
 } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
+import { RPC_METHODS } from "@drive-coding/core/session"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import type { ScopeEnforcementDeps } from "../bind-scope-enforcement.js"
+import { guardMcpWrite } from "../bind-scope-enforcement.js"
+import { scopeDeniedBody } from "../scope-write.js"
 import { raceKeepRunning } from "../session-host/http/rpc-wait.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
-import { scopeDeniedBody } from "../scope-write.js"
 import { runScopedMcpTool } from "./mcp-scope.js"
 
 const log = createLogger("backend.mcp")
@@ -97,71 +99,78 @@ export function registerMcpWriteTools(
     AgentSendInput,
     async (raw) => {
       const input = raw as typeof AgentSendInput.infer
-      return runScopedMcpTool(
-        scopeToken,
-        scopeDeps,
-        input.agent,
-        "send",
-        async () => {
-          const existing = await deps.registry.get(input.agent)
-          if (!existing) return jsonError("agent not found")
+      const onDenied = () => jsonError(JSON.stringify(scopeDeniedBody()))
+      const setKeys = input.sets ? Object.keys(input.sets) : []
+      if (setKeys.length > 0) {
+        const updateOk = await guardMcpWrite(
+          scopeToken,
+          scopeDeps,
+          input.agent,
+          RPC_METHODS.setConfigOption,
+        )
+        if (!updateOk) return onDenied()
+      }
+      const messageOk = await guardMcpWrite(scopeToken, scopeDeps, input.agent, "send")
+      if (!messageOk) return onDenied()
 
-          const hostResult = await deps.agentSessionRegistry.getOrCreateHost(input.agent)
-          if (!hostResult.ok) {
-            return jsonError(`session host did not start: ${hostResult.reason}`)
+      return (async () => {
+        const existing = await deps.registry.get(input.agent)
+        if (!existing) return jsonError("agent not found")
+
+        const hostResult = await deps.agentSessionRegistry.getOrCreateHost(input.agent)
+        if (!hostResult.ok) {
+          return jsonError(`session host did not start: ${hostResult.reason}`)
+        }
+        const { host } = hostResult.entry
+
+        const sessionId = host.state.sessionId
+        if (typeof sessionId !== "string" || sessionId.length === 0) {
+          return jsonError("no sessionId — run session_open first")
+        }
+
+        if (input.sets) {
+          for (const [configId, value] of Object.entries(input.sets)) {
+            await host.setConfigOption(configId, value)
           }
-          const { host } = hostResult.entry
+        }
 
-          const sessionId = host.state.sessionId
-          if (typeof sessionId !== "string" || sessionId.length === 0) {
-            return jsonError("no sessionId — run session_open first")
-          }
-
-          if (input.sets) {
-            for (const [configId, value] of Object.entries(input.sets)) {
-              await host.setConfigOption(configId, value)
-            }
-          }
-
-          if (input.noWait === true) {
-            const promptWork = host.prompt(sessionId, input.prompt)
-            void promptWork.catch((e) => {
-              log.warn({ err: e }, "prompt turn failed")
-            })
-            return jsonResult({ running: true })
-          }
-
-          const timeoutMs = (input.timeoutSec ?? SESSION_SEND_TIMEOUT_SEC) * 1000
-          const from = host.state.messages.length
+        if (input.noWait === true) {
           const promptWork = host.prompt(sessionId, input.prompt)
-          const raced = await raceKeepRunning(promptWork, timeoutMs, (e) => {
+          void promptWork.catch((e) => {
             log.warn({ err: e }, "prompt turn failed")
           })
-          if (raced.outcome === "timedOut") {
-            return jsonResult({ running: true })
-          }
-          const messagesSince = host.state.messages.slice(from)
-          const text = assistantTextSince(messagesSince)
-          if (raced.outcome === "rejected") {
-            const err = host.state.lastTurnError
-            return jsonResult({
-              stopReason:
-                err?.message ??
-                (raced.error instanceof Error ? raced.error.message : String(raced.error)),
-              lastTurnError: err,
-              text,
-              messagesSince,
-            })
-          }
+          return jsonResult({ running: true })
+        }
+
+        const timeoutMs = (input.timeoutSec ?? SESSION_SEND_TIMEOUT_SEC) * 1000
+        const from = host.state.messages.length
+        const promptWork = host.prompt(sessionId, input.prompt)
+        const raced = await raceKeepRunning(promptWork, timeoutMs, (e) => {
+          log.warn({ err: e }, "prompt turn failed")
+        })
+        if (raced.outcome === "timedOut") {
+          return jsonResult({ running: true })
+        }
+        const messagesSince = host.state.messages.slice(from)
+        const text = assistantTextSince(messagesSince)
+        if (raced.outcome === "rejected") {
+          const err = host.state.lastTurnError
           return jsonResult({
-            stopReason: host.state.lastTurnError?.message ?? "end_turn",
-            lastTurnError: host.state.lastTurnError,
+            stopReason:
+              err?.message ??
+              (raced.error instanceof Error ? raced.error.message : String(raced.error)),
+            lastTurnError: err,
             text,
             messagesSince,
           })
-        },
-        () => jsonError(JSON.stringify(scopeDeniedBody())),
-      )
+        }
+        return jsonResult({
+          stopReason: host.state.lastTurnError?.message ?? "end_turn",
+          lastTurnError: host.state.lastTurnError,
+          text,
+          messagesSince,
+        })
+      })()
     },
   )
 }

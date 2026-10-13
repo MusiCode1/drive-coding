@@ -5,6 +5,7 @@
  * cliSpecs and https). Derivation sites in load-config.ts loop over this table.
  */
 
+import { parseScopePolicyConfigLayer } from "../schemas/scope-policy.js"
 import { normalizePublicBaseUrl } from "./public-base-url.js"
 import type { DriveCodingConfig } from "./schema.js"
 
@@ -44,7 +45,15 @@ export type ConfigSpec = {
 }
 
 /** Keys that have a product default on CONFIG_SPECS. */
-export type ConfigDefaultKey = "port" | "host" | "rssBudgetMb" | "httpOwnerTtlMs" | "opencodeBin"
+export type ConfigDefaultKey =
+  | "port"
+  | "host"
+  | "rssBudgetMb"
+  | "httpOwnerTtlMs"
+  | "opencodeBin"
+  | "scopeMessagePolicy"
+  | "scopeUpdatePolicy"
+  | "scopeClosePolicy"
 
 export type ConfigDefaults = {
   port: number
@@ -52,6 +61,9 @@ export type ConfigDefaults = {
   rssBudgetMb: number
   httpOwnerTtlMs: number
   opencodeBin: string
+  scopeMessagePolicy: "ask" | "allow" | "deny"
+  scopeUpdatePolicy: "ask" | "allow" | "deny"
+  scopeClosePolicy: "ask" | "allow" | "deny"
 }
 
 /** Read a product default. Throws if the key has none — that is a catalog bug. */
@@ -150,6 +162,27 @@ export const CONFIG_SPECS = [
     env: "PERMISSION_TIMEOUT_MS",
     parse: parseTimeoutValue,
     serialize: (v: unknown) => String(v),
+  },
+  {
+    key: "scopeMessagePolicy",
+    env: "SCOPE_MESSAGE_POLICY",
+    parse: parseScopePolicyConfigLayer,
+    serialize: (v: unknown) => String(v),
+    default: "ask",
+  },
+  {
+    key: "scopeUpdatePolicy",
+    env: "SCOPE_UPDATE_POLICY",
+    parse: parseScopePolicyConfigLayer,
+    serialize: (v: unknown) => String(v),
+    default: "ask",
+  },
+  {
+    key: "scopeClosePolicy",
+    env: "SCOPE_CLOSE_POLICY",
+    parse: parseScopePolicyConfigLayer,
+    serialize: (v: unknown) => String(v),
+    default: "ask",
   },
   { key: "log.level", env: "LOG_LEVEL", flag: "log-level" },
   { key: "log.ns", env: "LOG_NS" },

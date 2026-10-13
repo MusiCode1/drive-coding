@@ -58,7 +58,8 @@ import type { Hono } from "hono"
 import { getSelfBaseUrl } from "../../instances.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import { buildSessionInitBase } from "../session-meta.js"
-import { guardRpcRoute } from "./rpc-scope.js"
+import { codeOf, messageOf, respondRpcWait } from "./rpc-response.js"
+import { preflightRpcScopeDenied } from "./rpc-scope.js"
 import { parseWaitMs, raceKeepRunning } from "./rpc-wait.js"
 
 const log = createLogger("backend.session-host.rpc")
@@ -104,73 +105,17 @@ export const DeleteSessionParams = type({ sessionId: "string" })
 // A JSON-RPC error is not necessarily an Error instance — the `code` sits on a
 // thrown object (same shape the VM reads, agent-session.svelte.ts). Read safely.
 
-function codeOf(e: unknown): number | undefined {
-  if (typeof e === "object" && e !== null) {
-    const code = (e as { code?: unknown }).code
-    if (typeof code === "number") return code
-  }
-  return undefined
-}
-
-function messageOf(e: unknown): string {
-  if (typeof e === "object" && e !== null) {
-    const message = (e as { message?: unknown }).message
-    if (typeof message === "string" && message.length > 0) return message
-  }
-  return String(e)
-}
-
-function rpcWaitErrorField(error: unknown): { message: string; code?: number } {
-  const code = codeOf(error)
-  const message = messageOf(error)
-  return code === undefined ? { message } : { message, code }
-}
-
-async function respondRpcWait<T>(
-  host: { state: { version: number } },
-  work: Promise<T>,
-  waitMs: number,
-  onLateSettle: (error: unknown) => void,
-  onSuccess?: (value: T) => Record<string, unknown>,
-): Promise<{ status: 200; body: Record<string, unknown> }> {
-  const raced = await raceKeepRunning(work, waitMs, onLateSettle)
-  if (raced.outcome === "timedOut") {
-    return { status: 200, body: { version: host.state.version, ok: false, timedOut: true } }
-  }
-  if (raced.outcome === "rejected") {
-    return {
-      status: 200,
-      body: {
-        version: host.state.version,
-        ok: false,
-        timedOut: false,
-        error: rpcWaitErrorField(raced.error),
-      },
-    }
-  }
-  const extra = onSuccess ? onSuccess(raced.value) : {}
-  return {
-    status: 200,
-    body: { version: host.state.version, ok: true, timedOut: false, ...extra },
-  }
-}
-
 /**
  * registerRpcRoute — registers POST /api/agents/:id/rpc on the Hono app.
  */
-export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry, agentRegistry: AgentRegistry): void {
+export function registerRpcRoute(
+  app: Hono,
+  registry: AgentSessionRegistry,
+  agentRegistry: AgentRegistry,
+): void {
   app.post("/api/agents/:id/rpc", async (c) => {
     const agentId = c.req.param("id")
-    const result = await registry.getOrCreateHost(agentId)
-    if (!result.ok) {
-      // slice host-result-reason C1: evict-timeout is transient (a stuck WS tab,
-      // not a dead agent) → 503. The other three reasons are final → 404, unchanged.
-      const status = result.reason === "evict-timeout" ? 503 : 404
-      return c.json({ error: "Agent connection not found" }, status)
-    }
-    const { host } = result.entry
 
-    // Parse request body
     let raw: unknown
     try {
       raw = await c.req.json()
@@ -178,10 +123,6 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry, agen
       return c.json({ error: "invalid json" }, 400)
     }
     const body = raw as Record<string, unknown>
-    // slice acp-method-names: שם-המתודה מנורמל לצורתו הקנונית לפני הניתוב.
-    // ⚠️ **שתי הצורות מתקבלות בכוונה.** ה-FE הוא נכס-סטטי מצונן: טאב שנפתח
-    // לפני הפריסה (או PWA שמגיש מהמטמון) ימשיך לשלוח `prompt`. בלי ההקבלה
-    // הוא היה מקבל 400 — כלומר הפרומפט פשוט לא קורה, בלי שום סימן למשתמש.
     const rawMethod = body.method as string | undefined
     const method = canonicalRpcMethod(rawMethod)
     const params = (body.params ?? {}) as Record<string, unknown>
@@ -191,238 +132,242 @@ export function registerRpcRoute(app: Hono, registry: AgentSessionRegistry, agen
     }
     const waitMs = waitParsed === "invalid" ? null : waitParsed
 
-    return guardRpcRoute(c, agentId, method, agentRegistry, registry, async () => {
-    switch (method) {
-      case RPC_METHODS.prompt: {
-        const p = PromptParams(params)
-        if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-        if (waitMs === null) {
+    const scopeDenied = await preflightRpcScopeDenied(c, agentId, method, agentRegistry, registry)
+    if (scopeDenied) return scopeDenied
+
+    const result = await registry.getOrCreateHost(agentId)
+    if (!result.ok) {
+      const status = result.reason === "evict-timeout" ? 503 : 404
+      return c.json({ error: "Agent connection not found" }, status)
+    }
+    const { host } = result.entry
+
+    return (async () => {
+      switch (method) {
+        case RPC_METHODS.prompt: {
+          const p = PromptParams(params)
+          if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
+          if (waitMs === null) {
+            const promptWork = host.prompt(p.sessionId, p.content as string | PromptBlocks, p.meta)
+            void promptWork.catch((e) => {
+              log.warn({ err: e }, "prompt turn failed") // ← state already carries lastTurnError
+            })
+            break // no await — 202 immediately, as the JSDoc above already promises
+          }
+          const from = host.state.messages.length
           const promptWork = host.prompt(p.sessionId, p.content as string | PromptBlocks, p.meta)
-          void promptWork.catch((e) => {
-            log.warn({ err: e }, "prompt turn failed") // ← state already carries lastTurnError
+          const raced = await raceKeepRunning(promptWork, waitMs, (e) => {
+            log.warn({ err: e }, "prompt turn failed")
           })
-          break // no await — 202 immediately, as the JSDoc above already promises
-        }
-        const from = host.state.messages.length
-        const promptWork = host.prompt(p.sessionId, p.content as string | PromptBlocks, p.meta)
-        const raced = await raceKeepRunning(promptWork, waitMs, (e) => {
-          log.warn({ err: e }, "prompt turn failed")
-        })
-        if (raced.outcome === "timedOut") {
-          return c.json({ version: host.state.version, ok: false, timedOut: true }, 200)
-        }
-        const messagesSince = host.state.messages.slice(from)
-        if (raced.outcome === "rejected") {
-          const code = codeOf(raced.error)
-          const message = messageOf(raced.error)
-          return c.json(
-            {
-              version: host.state.version,
-              ok: false,
-              timedOut: false,
-              error: code === undefined ? { message } : { message, code },
-              messagesSince,
-            },
-            200,
-          )
-        }
-        return c.json(
-          { version: host.state.version, ok: true, timedOut: false, messagesSince },
-          200,
-        )
-      }
-      case RPC_METHODS.cancel: {
-        const p = CancelParams(params)
-        if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-        if (waitMs === null) {
-          void host.cancel(p.sessionId).catch((e) => log.warn({ err: e }, "cancel failed"))
-          break
-        }
-        const waited = await respondRpcWait(host, host.cancel(p.sessionId), waitMs, (e) =>
-          log.warn({ err: e }, "cancel failed"),
-        )
-        return c.json(waited.body, waited.status)
-      }
-      case RPC_METHODS.setMode: {
-        const modeId = params.modeId as string
-        if (waitMs === null) {
-          await host.setMode(modeId)
-          break
-        }
-        const waited = await respondRpcWait(host, host.setMode(modeId), waitMs, (e) =>
-          log.warn({ err: e }, "setMode failed"),
-        )
-        return c.json(waited.body, waited.status)
-      }
-      case RPC_METHODS.setConfigOption: {
-        const configId = params.configId as string
-        const value = params.value as string | boolean
-        if (waitMs === null) {
-          await host.setConfigOption(configId, value)
-          break
-        }
-        const waited = await respondRpcWait(
-          host,
-          host.setConfigOption(configId, value),
-          waitMs,
-          (e) => log.warn({ err: e }, "setConfigOption failed"),
-        )
-        return c.json(waited.body, waited.status)
-      }
-      case RPC_METHODS.extMethod: {
-        const extMethodName = params.method as string
-        const extParams = (params.params ?? {}) as Record<string, unknown>
-        if (waitMs === null) {
-          await host.extMethod(extMethodName, extParams)
-          break
-        }
-        const waited = await respondRpcWait(
-          host,
-          host.extMethod(extMethodName, extParams),
-          waitMs,
-          (e) => log.warn({ err: e }, "extMethod failed"),
-          (result) => ({ result }),
-        )
-        return c.json(waited.body, waited.status)
-      }
-      case RPC_METHODS.setSessionModel: {
-        const model = params.model as string
-        if (waitMs === null) {
-          await host.setSessionModel(model)
-          break
-        }
-        const waited = await respondRpcWait(host, host.setSessionModel(model), waitMs, (e) =>
-          log.warn({ err: e }, "setSessionModel failed"),
-        )
-        return c.json(waited.body, waited.status)
-      }
-      // ─── slice remote-session-mgmt C3: BLOCKING mappings with a real result ───
-      // ⚠️ each case `return`s explicitly (200/400/502). A `break` here would fall
-      // through to the shared `return c.json({version}, 202)` below and break the
-      // contract — the FE needs the list/confirmation in the body.
-      case RPC_METHODS.listSessions: {
-        try {
-          const r = await host.listSessions()
-          const sessions = Array.isArray(r.sessions) ? r.sessions : []
-          return c.json(
-            {
-              sessions,
-              sessionCapabilities: host.agentCapabilities?.sessionCapabilities ?? null,
-            },
-            200,
-          )
-        } catch (e) {
-          // -32601 (CLI without list) → empty list, not 502.
-          // Cloudflare often replaces origin 502 with HTML, stripping `{code:-32601}`
-          // so the FE cannot degrade gently — return 200 here like deleteSession.
-          if (codeOf(e) === -32601) {
+          if (raced.outcome === "timedOut") {
+            return c.json({ version: host.state.version, ok: false, timedOut: true }, 200)
+          }
+          const messagesSince = host.state.messages.slice(from)
+          if (raced.outcome === "rejected") {
+            const code = codeOf(raced.error)
+            const message = messageOf(raced.error)
             return c.json(
               {
-                sessions: [],
-                sessionCapabilities: host.agentCapabilities?.sessionCapabilities ?? null,
+                version: host.state.version,
+                ok: false,
+                timedOut: false,
+                error: code === undefined ? { message } : { message, code },
+                messagesSince,
               },
               200,
             )
           }
-          const code = codeOf(e)
           return c.json(
-            code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
-            502,
+            { version: host.state.version, ok: true, timedOut: false, messagesSince },
+            200,
           )
         }
-      }
-      case RPC_METHODS.loadSession: {
-        const p = LoadSessionParams(params)
-        if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-        const cwd = p.cwd ?? registry.getCwd(agentId)
-        if (!cwd) return c.json({ error: "no cwd available" }, 400)
-        try {
-          const cliKind = registry.getCliKind(agentId) ?? "unknown"
-          const base = buildSessionInitBase(
-            cliKind,
-            agentId,
-            cwd,
-            host.agentCapabilities,
-            getSelfBaseUrl,
-          )
-          const r = await host.loadSession({
-            ...base,
-            sessionId: p.sessionId,
-          })
-          // The agents registry must learn the newly-attached session
-          // (status/acpSessionId — remote-warm-reconnect plumbing). catch+warn:
-          // a reporting failure must not fail the switch itself.
-          try {
-            // slice agent-patch-unify C2: מעביר את ה-cwd שכבר חושב למעלה (params
-            // או fallback) — זו החוליה שהייתה חסרה בשרשרת ה-cwd (§3).
-            await registry.notifySessionAttached(agentId, r.sessionId, cwd)
-          } catch (err) {
-            log.warn({ err, agentId }, "notifySessionAttached after loadSession failed")
+        case RPC_METHODS.cancel: {
+          const p = CancelParams(params)
+          if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
+          if (waitMs === null) {
+            void host.cancel(p.sessionId).catch((e) => log.warn({ err: e }, "cancel failed"))
+            break
           }
-          return c.json({ sessionId: r.sessionId, version: host.state.version }, 200)
-        } catch (e) {
-          const code = codeOf(e)
-          return c.json(
-            code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
-            502,
+          const waited = await respondRpcWait(host, host.cancel(p.sessionId), waitMs, (e) =>
+            log.warn({ err: e }, "cancel failed"),
           )
+          return c.json(waited.body, waited.status)
         }
-      }
-      case RPC_METHODS.newSession: {
-        const p = NewSessionParams(params)
-        if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-        const cwd = p.cwd ?? registry.getCwd(agentId)
-        if (!cwd) return c.json({ error: "no cwd available" }, 400)
-        try {
-          const cliKind = registry.getCliKind(agentId) ?? "unknown"
-          const r = await host.newSession(
-            buildSessionInitBase(
+        case RPC_METHODS.setMode: {
+          const modeId = params.modeId as string
+          if (waitMs === null) {
+            await host.setMode(modeId)
+            break
+          }
+          const waited = await respondRpcWait(host, host.setMode(modeId), waitMs, (e) =>
+            log.warn({ err: e }, "setMode failed"),
+          )
+          return c.json(waited.body, waited.status)
+        }
+        case RPC_METHODS.setConfigOption: {
+          const configId = params.configId as string
+          const value = params.value as string | boolean
+          if (waitMs === null) {
+            await host.setConfigOption(configId, value)
+            break
+          }
+          const waited = await respondRpcWait(
+            host,
+            host.setConfigOption(configId, value),
+            waitMs,
+            (e) => log.warn({ err: e }, "setConfigOption failed"),
+          )
+          return c.json(waited.body, waited.status)
+        }
+        case RPC_METHODS.extMethod: {
+          const extMethodName = params.method as string
+          const extParams = (params.params ?? {}) as Record<string, unknown>
+          if (waitMs === null) {
+            await host.extMethod(extMethodName, extParams)
+            break
+          }
+          const waited = await respondRpcWait(
+            host,
+            host.extMethod(extMethodName, extParams),
+            waitMs,
+            (e) => log.warn({ err: e }, "extMethod failed"),
+            (result) => ({ result }),
+          )
+          return c.json(waited.body, waited.status)
+        }
+        case RPC_METHODS.setSessionModel: {
+          const model = params.model as string
+          if (waitMs === null) {
+            await host.setSessionModel(model)
+            break
+          }
+          const waited = await respondRpcWait(host, host.setSessionModel(model), waitMs, (e) =>
+            log.warn({ err: e }, "setSessionModel failed"),
+          )
+          return c.json(waited.body, waited.status)
+        }
+        // ─── slice remote-session-mgmt C3: BLOCKING mappings with a real result ───
+        // ⚠️ each case `return`s explicitly (200/400/502). A `break` here would fall
+        // through to the shared `return c.json({version}, 202)` below and break the
+        // contract — the FE needs the list/confirmation in the body.
+        case RPC_METHODS.listSessions: {
+          try {
+            const r = await host.listSessions()
+            const sessions = Array.isArray(r.sessions) ? r.sessions : []
+            return c.json(
+              {
+                sessions,
+                sessionCapabilities: host.agentCapabilities?.sessionCapabilities ?? null,
+              },
+              200,
+            )
+          } catch (e) {
+            // -32601 (CLI without list) → empty list, not 502.
+            // Cloudflare often replaces origin 502 with HTML, stripping `{code:-32601}`
+            // so the FE cannot degrade gently — return 200 here like deleteSession.
+            if (codeOf(e) === -32601) {
+              return c.json(
+                {
+                  sessions: [],
+                  sessionCapabilities: host.agentCapabilities?.sessionCapabilities ?? null,
+                },
+                200,
+              )
+            }
+            const code = codeOf(e)
+            return c.json(
+              code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
+              502,
+            )
+          }
+        }
+        case RPC_METHODS.loadSession: {
+          const p = LoadSessionParams(params)
+          if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
+          const cwd = p.cwd ?? registry.getCwd(agentId)
+          if (!cwd) return c.json({ error: "no cwd available" }, 400)
+          try {
+            const cliKind = registry.getCliKind(agentId) ?? "unknown"
+            const base = buildSessionInitBase(
               cliKind,
               agentId,
               cwd,
               host.agentCapabilities,
               getSelfBaseUrl,
-            ),
-          )
-          try {
-            await registry.notifySessionAttached(agentId, r.sessionId, cwd)
-          } catch (err) {
-            log.warn({ err, agentId }, "notifySessionAttached after newSession failed")
+            )
+            const r = await host.loadSession({
+              ...base,
+              sessionId: p.sessionId,
+            })
+            // The agents registry must learn the newly-attached session
+            // (status/acpSessionId — remote-warm-reconnect plumbing). catch+warn:
+            // a reporting failure must not fail the switch itself.
+            try {
+              // slice agent-patch-unify C2: מעביר את ה-cwd שכבר חושב למעלה (params
+              // או fallback) — זו החוליה שהייתה חסרה בשרשרת ה-cwd (§3).
+              await registry.notifySessionAttached(agentId, r.sessionId, cwd)
+            } catch (err) {
+              log.warn({ err, agentId }, "notifySessionAttached after loadSession failed")
+            }
+            return c.json({ sessionId: r.sessionId, version: host.state.version }, 200)
+          } catch (e) {
+            const code = codeOf(e)
+            return c.json(
+              code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
+              502,
+            )
           }
-          return c.json({ sessionId: r.sessionId, version: host.state.version }, 200)
-        } catch (e) {
-          const code = codeOf(e)
-          return c.json(
-            code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
-            502,
-          )
+        }
+        case RPC_METHODS.newSession: {
+          const p = NewSessionParams(params)
+          if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
+          const cwd = p.cwd ?? registry.getCwd(agentId)
+          if (!cwd) return c.json({ error: "no cwd available" }, 400)
+          try {
+            const cliKind = registry.getCliKind(agentId) ?? "unknown"
+            const r = await host.newSession(
+              buildSessionInitBase(cliKind, agentId, cwd, host.agentCapabilities, getSelfBaseUrl),
+            )
+            try {
+              await registry.notifySessionAttached(agentId, r.sessionId, cwd)
+            } catch (err) {
+              log.warn({ err, agentId }, "notifySessionAttached after newSession failed")
+            }
+            return c.json({ sessionId: r.sessionId, version: host.state.version }, 200)
+          } catch (e) {
+            const code = codeOf(e)
+            return c.json(
+              code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
+              502,
+            )
+          }
+        }
+        case RPC_METHODS.deleteSession: {
+          const p = DeleteSessionParams(params)
+          if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
+          try {
+            await host.deleteSession(p.sessionId)
+            return c.json({ ok: true }, 200)
+          } catch (e) {
+            // -32601 (CLI without delete capability) → graceful, like local
+            if (codeOf(e) === -32601) return c.json({ ok: false, unsupported: true }, 200)
+            const code = codeOf(e)
+            return c.json(
+              code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
+              502,
+            )
+          }
+        }
+        default: {
+          // ⚠️ מדווחים את השם ש**נשלח**, לא את התוצאה המנורמלת (שהיא undefined
+          // בדיוק במקרה הזה) — אחרת ההודעה היא "Unknown method: undefined"
+          // וזורקת את הפרט היחיד שמאפשר לאבחן.
+          return c.json({ error: `Unknown method: ${String(rawMethod)}` }, 400)
         }
       }
-      case RPC_METHODS.deleteSession: {
-        const p = DeleteSessionParams(params)
-        if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-        try {
-          await host.deleteSession(p.sessionId)
-          return c.json({ ok: true }, 200)
-        } catch (e) {
-          // -32601 (CLI without delete capability) → graceful, like local
-          if (codeOf(e) === -32601) return c.json({ ok: false, unsupported: true }, 200)
-          const code = codeOf(e)
-          return c.json(
-            code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
-            502,
-          )
-        }
-      }
-      default: {
-        // ⚠️ מדווחים את השם ש**נשלח**, לא את התוצאה המנורמלת (שהיא undefined
-        // בדיוק במקרה הזה) — אחרת ההודעה היא "Unknown method: undefined"
-        // וזורקת את הפרט היחיד שמאפשר לאבחן.
-        return c.json({ error: `Unknown method: ${String(rawMethod)}` }, 400)
-      }
-    }
 
-    return c.json({ version: host.state.version }, 202) // fire-and-forget; version for client sync
-    })
+      return c.json({ version: host.state.version }, 202) // fire-and-forget; version for client sync
+    })()
   })
 }
