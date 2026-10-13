@@ -262,8 +262,14 @@ describe("UserBubble envelope DOM", () => {
 
     const b = envelopeHarnessControls.getBubble()
     const segBefore = b.segments[0]
+    if (segBefore === undefined) {
+      throw new Error("expected segments[0] before in-place mutation")
+    }
+    if (typeof segBefore.text !== "string") {
+      throw new Error("expected segments[0].text to be string")
+    }
     const outerBefore = root.querySelector(".user-bubble-outer")
-    b.segments[0]!.text += full.slice(mid)
+    segBefore.text += full.slice(mid)
     flushSync()
 
     expect(root.textContent).toContain("driveMessage.agent.label")
