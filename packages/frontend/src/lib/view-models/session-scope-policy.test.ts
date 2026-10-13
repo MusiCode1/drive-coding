@@ -68,4 +68,30 @@ describe("SessionScopePolicy", () => {
     await Promise.resolve()
     expect(mockFetch).toHaveBeenCalledWith("agent-2")
   })
+
+  it("noteBeUrlChanged triggers refresh after successful syncAgent", async () => {
+    mockFetch.mockResolvedValue({
+      policies: { message: "ask", update: "ask", close: "ask" },
+      sources: { message: "default", update: "default", close: "default" },
+    })
+    const vm = new SessionScopePolicy(() => "agent-1", () => "")
+    vm.syncAgent("agent-1")
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1))
+    vm.noteBeUrlChanged()
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2))
+    expect({
+      confirmed: vm.confirmed,
+      loading: vm.loading,
+      error: vm.error,
+      fetches: mockFetch.mock.calls.length,
+    }).toEqual({
+      confirmed: {
+        policies: { message: "ask", update: "ask", close: "ask" },
+        sources: { message: "default", update: "default", close: "default" },
+      },
+      loading: false,
+      error: null,
+      fetches: 2,
+    })
+  })
 })
