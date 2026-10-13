@@ -283,8 +283,6 @@ $effect(() => {
 
 <!-- machine stats from presence poller (slice machine-stats-in-session) -->
 <MachineStatsBar stats={poller.machine} />
-<SessionTitleField />
-<SessionFieldsList />
 <!-- שורת פעולות עליונה: נתק · השאר-רץ · השתק · ⚙ — בראש בכל המצבים (redesign-fix) -->
 <!-- סדר DOM ב-RTL: disconnect=ימני-קיצוני, leave-running משמאלו, audio, settings -->
 <div class="flex items-center gap-2 shrink-0">
@@ -379,6 +377,9 @@ $effect(() => {
 <!-- אזור גלילה מאוחד: תצוגה + אפשרויות סוכן + סשנים.
      שורת הפעולות מעל נשארת קבועה (shrink-0); מתגי התצוגה נגללים — במובייל הם אוכלים גובה. -->
 <div class="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto chat-scroll -mx-1 px-1">
+
+<SessionTitleField />
+<SessionFieldsList />
 
 <DisplayOptionsRow />
 
