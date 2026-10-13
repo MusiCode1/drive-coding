@@ -200,6 +200,13 @@ const headlineSuffix = $derived.by(() => {
     margin-top: 0.5rem;
     font-size: 0.75rem;
   }
+  .drive-msg-source {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .drive-msg-source[open] {
+    flex-basis: 100%;
+  }
   .drive-msg-details summary,
   .drive-msg-source summary {
     cursor: pointer;
