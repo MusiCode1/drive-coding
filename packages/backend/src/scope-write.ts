@@ -109,7 +109,7 @@ export function scopeDeniedBody(): ScopeDeniedBody {
     reason: "This write targets an agent outside your subtree and was denied.",
     hint:
       "Ask the user to approve the action in the drive-coding UI. " +
-      "If no one responds within 30 seconds, the pending scope request is rejected automatically.",
+      "If no one responds within the configured scope window, the pending scope request is rejected automatically.",
   }
 }
 

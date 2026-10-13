@@ -11,7 +11,8 @@ describe("scopeDeniedBody", () => {
     expect(body.error).toBe("scope-denied")
     expect(body.reason.length).toBeGreaterThan(10)
     expect(body.hint.toLowerCase()).toMatch(/ask the user|human/)
-    expect(body.hint).toMatch(/30 seconds/)
+    expect(body.hint).not.toMatch(/30 seconds/)
+    expect(body.hint).toMatch(/automatic/i)
   })
 
   it("SCOPE_DENIED_BODY matches scopeDeniedBody()", () => {
