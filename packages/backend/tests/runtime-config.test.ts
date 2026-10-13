@@ -253,6 +253,7 @@ describe("HOT_KEYS", () => {
       "OPENCODE_BIN",
       "ELICITATION_TIMEOUT_MS",
       "PERMISSION_TIMEOUT_MS",
+      "SCOPE_PERMISSION_TIMEOUT_MS",
     ]) {
       expect(HOT_KEYS.has(key)).toBe(true)
     }

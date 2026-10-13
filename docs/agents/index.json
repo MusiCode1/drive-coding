@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.3.0",
+  "docsVersion": "1.4.0",
   "docs": [
     {
       "id": "orientation",
@@ -370,7 +370,7 @@
       "tags": ["diagnostics"],
       "surface": ["http"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.3.0",
       "routes": [
         "GET /api/diag",
         "GET /api/usage/summary",
@@ -388,6 +388,7 @@
         "Usage",
         "POST /api/client-log",
         "POST /api/reload-config",
+        "Hot-reload timeout keys",
         "GET /api/options"
       ]
     },

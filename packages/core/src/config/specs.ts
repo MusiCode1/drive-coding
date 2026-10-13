@@ -151,6 +151,12 @@ export const CONFIG_SPECS = [
     parse: parseTimeoutValue,
     serialize: (v: unknown) => String(v),
   },
+  {
+    key: "scopePermissionTimeoutMs",
+    env: "SCOPE_PERMISSION_TIMEOUT_MS",
+    parse: parseTimeoutValue,
+    serialize: (v: unknown) => String(v),
+  },
   { key: "log.level", env: "LOG_LEVEL", flag: "log-level" },
   { key: "log.ns", env: "LOG_NS" },
   {
