@@ -6,6 +6,7 @@
 import type { RequestPermissionRequest, RequestPermissionResponse } from "@agentclientprotocol/sdk"
 import {
   applyPendingRequest,
+  applyToolMessage,
   clearPendingRequest,
   type Patch,
   type PendingPermission,
@@ -120,9 +121,11 @@ export function createRequestScopePermission(deps: {
     deps.emitPatches(applied.patches)
 
     let scopeTimer: ReturnType<typeof setTimeout> | null = null
+    let expiredByTimer = false
     const pendingPromise = deps.permPending.request(requestId)
     if (typeof timeoutMs === "number" && timeoutMs > 0) {
       scopeTimer = setTimeout(() => {
+        expiredByTimer = true
         deps.permPending.respond(requestId, { outcome: { outcome: "cancelled" } })
       }, timeoutMs)
     }
@@ -142,6 +145,18 @@ export function createRequestScopePermission(deps: {
         const cleared = clearPendingRequest(deps.getState(), "permission", requestId)
         deps.setState(cleared.state)
         deps.emitPatches(cleared.patches)
+        if (expiredByTimer && detail) {
+          const expired = applyToolMessage(deps.getState(), {
+            toolCallId: `scope-${requestId}`,
+            name: "scope-expired",
+            kind: "scope-expired",
+            args: detail,
+            status: "failed",
+            title: formatScopePromptTitle(detail),
+          })
+          deps.setState(expired.state)
+          deps.emitPatches(expired.patches)
+        }
       })
   }
 }

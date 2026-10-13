@@ -529,6 +529,41 @@ describe("scope escalation timeout (slice scope-escalation-timeout C2)", () => {
     expect(del.status).toBe(403)
     expect(await del.json()).toEqual(SCOPE_DENIED_BODY)
   })
+
+  it("wire: scope-expired tool message appears in GET /history after timeout", async () => {
+    const { app, registry, agentSessionRegistry } = await makeScopeGateApp({
+      scopePermissionTimeoutMs: 80,
+    })
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a", roleLabel: "caller" })
+    const b = await registry.create({ cliKind: "cursor", cwd: "/b" })
+    const tokenA = issueToken(a.id)
+
+    await agentSessionRegistry.getOrCreateHost(a.id)
+    const delPromise = app.request(`/api/agents/${b.id}`, {
+      method: "DELETE",
+      headers: { [SCOPE_HEADER]: tokenA, [AGENT_ID_HEADER]: a.id },
+    })
+    await delPromise
+
+    const hist = await app.request(`/api/agents/${a.id}/history`)
+    expect(hist.status).toBe(200)
+    const body = (await hist.json()) as {
+      updates: { sessionUpdate: string; changes?: Record<string, unknown> }[]
+    }
+    const expiredUpdate = body.updates.find((u) => {
+      if (u.sessionUpdate !== "tool_call_update") return false
+      const title = (u as { title?: string }).title
+      const toolCallId = (u as { toolCallId?: string }).toolCallId
+      return toolCallId?.startsWith("scope-") && title !== undefined
+    })
+    expect(expiredUpdate).toBeDefined()
+    const hostA = agentSessionRegistry.getHost(a.id)
+    expect(
+      hostA?.state.messages.some(
+        (m) => m.role === "tool" && m.toolCall.name === "scope-expired",
+      ),
+    ).toBe(true)
+  })
 })
 
 describe("scope escalation prompt detail (slice scope-prompt-detail C1)", () => {

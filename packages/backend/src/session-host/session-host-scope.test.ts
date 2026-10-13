@@ -120,3 +120,80 @@ describe("scope escalation timeout", () => {
     await promise
   })
 })
+
+const scopeDetail = {
+  caller: "A",
+  target: "B",
+  verb: "delete",
+  callerShortId: "aaaaaa",
+  targetShortId: "bbbbbb",
+}
+
+describe("scope expired bubble (C5a)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("expiry appends scope-expired tool message", async () => {
+    const { base } = makeScopeDeps(5_000)
+    const request = createRequestScopePermission({
+      ...base,
+      markScopeRequest: () => {},
+    })
+    const promise = request({
+      callerId: "a",
+      targetId: "b",
+      verb: "delete",
+      detail: scopeDetail,
+    })
+    vi.advanceTimersByTime(5_000)
+    await promise
+    const msg = base.getState().messages.at(-1)
+    expect(msg?.role).toBe("tool")
+    expect(msg && "toolCall" in msg && msg.toolCall.name).toBe("scope-expired")
+  })
+
+  it("expiry emits add-message after pending clear patch", async () => {
+    const { base, getPatches } = makeScopeDeps(5_000)
+    const request = createRequestScopePermission({
+      ...base,
+      markScopeRequest: () => {},
+    })
+    const promise = request({
+      callerId: "a",
+      targetId: "b",
+      verb: "delete",
+      detail: scopeDetail,
+    })
+    vi.advanceTimersByTime(5_000)
+    await promise
+    const ops = getPatches().map((p) => p.op)
+    const clearIdx = ops.lastIndexOf("update-session")
+    const addIdx = ops.lastIndexOf("add-message")
+    expect(addIdx).toBeGreaterThan(clearIdx)
+  })
+
+  it("user response does not append scope-expired message", async () => {
+    const { base, permPending } = makeScopeDeps(5_000)
+    const request = createRequestScopePermission({
+      ...base,
+      markScopeRequest: () => {},
+    })
+    const promise = request({
+      callerId: "a",
+      targetId: "b",
+      verb: "delete",
+      detail: scopeDetail,
+    })
+    const requestId = base.getState().pending.permission!.requestId
+    permPending.respond(requestId, {
+      outcome: { outcome: "selected", optionId: "scope-allow-once" },
+    })
+    await promise
+    expect(base.getState().messages).toHaveLength(0)
+  })
+})
