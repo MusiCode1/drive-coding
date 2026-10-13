@@ -6,34 +6,6 @@
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
-    "/api/agents/:id/state": {
-      "get": {
-        "operationId": "get_api_agents_id_state",
-        "summary": "GET /api/agents/:id/state",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/agents/:id/rpc": {
       "post": {
         "operationId": "post_api_agents_id_rpc",
@@ -167,6 +139,34 @@
         },
         "x-drive-coding-contract": "none",
         "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced."
+      }
+    },
+    "/api/agents/:id/state": {
+      "get": {
+        "operationId": "get_api_agents_id_state",
+        "summary": "GET /api/agents/:id/state",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/agents/:id/reply": {
