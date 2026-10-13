@@ -50,8 +50,9 @@ When the whole segment parses as a valid agent message:
 - **`<body>`** — rendered as **Markdown** (same allowlist as normal user bubbles),
   including images and file links per the sections below. Agent-origin links use
   **absolute-only** resolution where applicable.
-- **Show source** — collapsed `<pre>` with the **exact input string** (`textContent`);
-  copy uses that same string. Show-source does not re-parse HTML/Markdown inside the pre.
+- **Show source** — expands an XML code block with syntax highlighting and horizontal
+  scrolling. Its `<code>` keeps the **exact input string** (`textContent`); copy uses that
+  same string. Source content stays literal, including embedded HTML and Markdown.
 
 The UI renders **the text stored on the bubble**, not a separate wire snapshot. If replay
 or transport delivers a shorter string than what left the sender (for example missing

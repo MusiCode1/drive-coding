@@ -4,6 +4,7 @@
  */
 import type { DriveMessageSystem } from "@drive-coding/core/acp/drive-message-envelope"
 import { getI18n } from "$lib/context"
+import DriveMessageSource from "./DriveMessageSource.svelte"
 import type { DriveMessageParty } from "./drive-message-view"
 import type { FileLinkParams } from "./enhance-file-links"
 import MarkdownContent from "./MarkdownContent.svelte"
@@ -120,7 +121,7 @@ const headlineSuffix = $derived.by(() => {
     </details>
     <details class="drive-msg-source">
       <summary>{t("driveMessage.showSource")}</summary>
-      <pre class="drive-msg-raw">{rawSource}</pre>
+      <DriveMessageSource text={rawSource} />
     </details>
   </div>
 </div>
@@ -213,13 +214,5 @@ const headlineSuffix = $derived.by(() => {
   }
   .drive-msg-dl dt {
     color: var(--fg-dim);
-  }
-  .drive-msg-raw {
-    margin: 0.35rem 0 0;
-    max-height: 12rem;
-    overflow: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-size: 0.7rem;
   }
 </style>

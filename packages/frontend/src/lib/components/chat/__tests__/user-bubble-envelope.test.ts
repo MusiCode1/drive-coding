@@ -66,6 +66,33 @@ afterEach(() => {
 })
 
 describe("UserBubble envelope DOM", () => {
+  it.each(["agent", "system"] as const)(
+    "shows %s source as highlighted XML without changing raw text",
+    (source) => {
+      const body = '<img src="x" onerror="alert(1)"> & ```xml\nשלום'
+      const raw = serializeDriveMessage(
+        source === "agent"
+          ? { source, sender: { id: AGENT_ID }, body }
+          : {
+              source,
+              eventKind: "turn-ended",
+              subjectAgent: { id: AGENT_ID },
+              at: 1,
+              lastAssistantText: { text: body, truncated: false },
+            },
+      )
+      const root = mountEnvelope({ bubble: userBubble([{ id: "s1", text: raw }]), agents: [] })
+      const details = root.querySelector<HTMLDetailsElement>("details.drive-msg-source")
+      expect(details?.open).toBe(false)
+      if (!details) throw new Error("expected show-source details")
+      details.open = true
+      const code = details.querySelector("pre > code.language-xml")
+      expect(code?.textContent).toBe(raw)
+      expect(code?.querySelector(".hljs-name")).not.toBeNull()
+      expect(code?.querySelector("img, script")).toBeNull()
+    },
+  )
+
   it("renders agent label, name, and body", () => {
     const body = "Hello envelope body"
     const raw = serializeDriveMessage({
