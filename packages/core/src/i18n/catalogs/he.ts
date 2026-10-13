@@ -594,4 +594,17 @@ export const he: Catalog = {
   "driveMessage.system.detail.stopReason": "סיבת עצירה",
   "driveMessage.system.detail.silentMs": "משך שקט (ms)",
   "driveMessage.system.detail.error": "שגיאה",
+  // ─── scope-prompt ─── (slice scope-prompt-detail)
+  "scopePrompt.title": "בקשת כתיבה לסשן אחר",
+  "scopePrompt.caller": "מבקש",
+  "scopePrompt.target": "סשן היעד",
+  "scopePrompt.action": "פעולה",
+  "scopePrompt.verb.close": "סגירת הסשן",
+  "scopePrompt.verb.patch": "עדכון פרטי הסשן",
+  "scopePrompt.verb.reply": "מענה לבקשת-אישור",
+  "scopePrompt.verb.send": "שליחת הודעה",
+  "scopePrompt.verb.unknown": "פעולה אחרת",
+  "scopePrompt.expiresIn": "נדחה אוטומטית בעוד",
+  "scopePrompt.seconds": "שנ'",
+  "scopePrompt.expired": "נדחה אוטומטית — איש לא ענה",
 }

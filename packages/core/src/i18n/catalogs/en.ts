@@ -603,4 +603,17 @@ export const en: Catalog = {
   "driveMessage.system.detail.stopReason": "Stop reason",
   "driveMessage.system.detail.silentMs": "Silent duration (ms)",
   "driveMessage.system.detail.error": "Error",
+  // ─── scope-prompt ─── (slice scope-prompt-detail)
+  "scopePrompt.title": "Write request to another session",
+  "scopePrompt.caller": "Requester",
+  "scopePrompt.target": "Target session",
+  "scopePrompt.action": "Action",
+  "scopePrompt.verb.close": "Close session",
+  "scopePrompt.verb.patch": "Update session details",
+  "scopePrompt.verb.reply": "Reply to permission request",
+  "scopePrompt.verb.send": "Send message",
+  "scopePrompt.verb.unknown": "Other action",
+  "scopePrompt.expiresIn": "Auto-denies in",
+  "scopePrompt.seconds": "sec",
+  "scopePrompt.expired": "Automatically denied — no one responded",
 }

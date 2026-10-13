@@ -626,10 +626,10 @@
       "codeLines": 162
     },
     "packages/frontend/src/lib/components/chat/PermissionRequestBlock.svelte": {
-      "metric": 63,
+      "metric": 53,
       "impurity": 0,
       "class": "pure",
-      "codeLines": 155
+      "codeLines": 61
     },
     "packages/frontend/src/lib/components/chat/PlaybackControls.svelte": {
       "metric": 52,

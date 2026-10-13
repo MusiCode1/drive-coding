@@ -18,7 +18,7 @@ routes:
   - POST /api/client-log
   - POST /api/reload-config
   - GET /api/options
-docs_version: 1.3.1
+docs_version: 1.4.0
 updated: 2026-10-13
 ---
 
@@ -60,6 +60,16 @@ Triggers config cache invalidation; **`HOT_KEYS`** only are reapplied at runtime
 | Status | Anchor |
 |--------|--------|
 | `200` `{ ok: true }` | `http-reload-config.ts:19` |
+
+### Hot-reload timeout keys
+
+These env keys are in `HOT_KEYS` and take effect on the **next session host** created after reload (existing hosts keep the value resolved at creation time):
+
+| Config key | Env var | Meaning |
+|------------|---------|---------|
+| `permissionTimeoutMs` | `PERMISSION_TIMEOUT_MS` | ACP permission prompts. Omitted or `never`/`off`/`0` = no auto-cancel (default). |
+| `elicitationTimeoutMs` | `ELICITATION_TIMEOUT_MS` | Elicitation prompts. Same semantics as permission. |
+| `scopePermissionTimeoutMs` | `SCOPE_PERMISSION_TIMEOUT_MS` | Cross-agent scope escalation window on the **requester's** session. Default **120s** when unset; `never`/`off`/`0` = wait indefinitely. |
 
 ## GET /api/options
 

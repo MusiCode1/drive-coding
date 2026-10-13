@@ -604,6 +604,19 @@ export type MessageKey =
   | "driveMessage.system.detail.stopReason"
   | "driveMessage.system.detail.silentMs"
   | "driveMessage.system.detail.error"
+  // ─── scope-prompt ─── (slice scope-prompt-detail)
+  | "scopePrompt.title"
+  | "scopePrompt.caller"
+  | "scopePrompt.target"
+  | "scopePrompt.action"
+  | "scopePrompt.verb.close"
+  | "scopePrompt.verb.patch"
+  | "scopePrompt.verb.reply"
+  | "scopePrompt.verb.send"
+  | "scopePrompt.verb.unknown"
+  | "scopePrompt.expiresIn"
+  | "scopePrompt.seconds"
+  | "scopePrompt.expired"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

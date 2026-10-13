@@ -34,6 +34,7 @@ export const DriveCodingConfig = type({
   "scopeMessagePolicy?": "'ask'|'allow'|'deny'",
   "scopeUpdatePolicy?": "'ask'|'allow'|'deny'",
   "scopeClosePolicy?": "'ask'|'allow'|'deny'",
+  "scopePermissionTimeoutMs?": "number|'never'|'off'",
   "log?": {
     "level?": "string",
     "ns?": "string",

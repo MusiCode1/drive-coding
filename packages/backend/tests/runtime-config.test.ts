@@ -256,6 +256,7 @@ describe("HOT_KEYS", () => {
       "SCOPE_MESSAGE_POLICY",
       "SCOPE_UPDATE_POLICY",
       "SCOPE_CLOSE_POLICY",
+      "SCOPE_PERMISSION_TIMEOUT_MS",
     ]) {
       expect(HOT_KEYS.has(key)).toBe(true)
     }
