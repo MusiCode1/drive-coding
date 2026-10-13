@@ -318,6 +318,8 @@ export const he: Catalog = {
   "session.scopePolicy.loading": "טוען מדיניות לסוכן…",
   "session.scopePolicy.saving": "שומר…",
   "session.scopePolicy.error": "לא ניתן לטעון או לשמור מדיניות לסוכן.",
+  "session.scopePolicy.empty": "אין מדיניות לסוכן זה. נסה לטעון שוב.",
+  "session.scopePolicy.retry": "נסה שוב",
   "session.scopePolicy.note":
     "חל על כתיבות מחוץ לעץ הסוכן שלך. אין כאן הגנת אבטחה — רק נראות והתנהגות צפויה.",
   "session.leaveRunning": "צא — השאר רץ",
