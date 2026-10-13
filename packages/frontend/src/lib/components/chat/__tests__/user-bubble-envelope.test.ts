@@ -8,9 +8,12 @@ import type { AgentPublic } from "@drive-coding/core/schemas/agent"
 import { flushSync, mount, unmount } from "svelte"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import type { UserBubble } from "$lib/types/bubble"
+import * as clipboard from "$lib/util/clipboard"
 import EnvelopeHarness, {
+  clearViewerCalls,
   type EnvelopeHarnessState,
   envelopeHarnessControls,
+  getViewerCalls,
 } from "./user-bubble-envelope-harness.svelte"
 
 vi.mock("$env/dynamic/public", () => ({
@@ -248,7 +251,7 @@ describe("UserBubble envelope DOM", () => {
     expect(target?.textContent).toContain(full)
   })
 
-  it("entity split inside partial envelope stays literal until complete", () => {
+  it("entity split inside &amp; keeps literal mid-chunk then decodes", () => {
     const full = serializeDriveMessage({
       source: "agent",
       sender: { id: AGENT_ID, name: "Ent" },
@@ -256,24 +259,168 @@ describe("UserBubble envelope DOM", () => {
     })
     const ampIdx = full.indexOf("&amp;")
     expect(ampIdx).toBeGreaterThan(0)
-    const partA = full.slice(0, ampIdx + 5)
-    const partB = full.slice(ampIdx + 5)
+    const partA = full.slice(0, ampIdx + 2)
+    const partB = full.slice(ampIdx + 2)
 
     mountEnvelope({
       bubble: userBubble([{ id: "s1", text: partA }]),
       agents: [],
     })
     expect(target?.textContent).toContain("driveMessage.envelope.partial")
+    expect(target?.textContent).toContain("&a")
 
-    envelopeHarnessControls.setBubble({
-      ...harnessState.bubble,
-      segments: [
-        { id: "s1", text: partA },
-        { id: "s2", text: partB },
-      ],
-    })
+    envelopeHarnessControls.appendSegmentText(0, partB)
     flushSync()
     expect(target?.textContent).toContain("Ent")
     expect(target?.textContent).toContain("a & b")
+  })
+
+  it("system context is collapsed plaintext with < and markdown chars", () => {
+    const ctxText = "line1\n# not-heading\n<script>x</script>"
+    const raw = serializeDriveMessage({
+      source: "system",
+      eventKind: "turn-ended",
+      subjectAgent: { id: AGENT_ID, name: "Subj" },
+      at: 1,
+      context: { kind: "project-charter", text: ctxText },
+    })
+    const root = mountEnvelope({
+      bubble: userBubble([{ id: "s1", text: raw }]),
+      agents: [],
+    })
+    const details = root.querySelector("details.drive-msg-context")
+    expect(details?.hasAttribute("open")).toBe(false)
+    expect(root.querySelector(".drive-msg-context-text")?.textContent).toContain("# not-heading")
+    expect(root.querySelector(".drive-msg-quote .md-content strong")).toBeNull()
+  })
+
+  it("turn-ended error headline still shows subject name and optional link", () => {
+    const rawNamed = serializeDriveMessage({
+      source: "system",
+      eventKind: "turn-ended",
+      subjectAgent: { id: AGENT_ID, name: "ErrSubj" },
+      at: 1,
+      lastTurnError: { message: "boom" },
+    })
+    const named = mountEnvelope({
+      bubble: userBubble([{ id: "s1", text: rawNamed }]),
+      agents: [makeAgent({ id: AGENT_ID, cliKind: "cursor", acpSessionId: "sess-err" })],
+    })
+    expect(named.textContent).toContain("ErrSubj")
+    expect(named.textContent).toContain("driveMessage.system.turnEndedError")
+    expect(named.querySelector('a[href="/chat/cursor/sess-err"]')).not.toBeNull()
+
+    if (app !== null) unmount(app)
+    named.remove()
+    app = null
+
+    const rawId = serializeDriveMessage({
+      source: "system",
+      eventKind: "turn-ended",
+      subjectAgent: { id: AGENT_ID },
+      at: 1,
+      lastTurnError: { message: "boom" },
+    })
+    const idOnly = mountEnvelope({
+      bubble: userBubble([{ id: "s1", text: rawId }]),
+      agents: [],
+    })
+    expect(idOnly.textContent).toContain("11111111…")
+    expect(idOnly.querySelector("a[href]")).toBeNull()
+  })
+
+  it("quote renders markdown bold via MarkdownContent", () => {
+    const raw = serializeDriveMessage({
+      source: "system",
+      eventKind: "turn-ended",
+      subjectAgent: { id: AGENT_ID, name: "Subj" },
+      at: 1,
+      lastAssistantText: { text: "say **bold** word", truncated: false },
+    })
+    const root = mountEnvelope({
+      bubble: userBubble([{ id: "s1", text: raw }]),
+      agents: [],
+    })
+    const strong = root.querySelector(".drive-msg-quote .md-content strong")
+    expect(strong).not.toBeNull()
+    expect(strong?.textContent).toBe("bold")
+  })
+
+  it("fileLinks cwd updates after mount for relative path in plain bubble", async () => {
+    clearViewerCalls()
+    mountEnvelope({
+      bubble: userBubble([{ id: "s1", text: "see ./notes.md here" }]),
+      agents: [],
+    })
+    envelopeHarnessControls.setSessionCwd("/tmp/first")
+    flushSync()
+    const btn = target?.querySelector<HTMLButtonElement>(".file-link")
+    expect(btn).not.toBeNull()
+    btn?.click()
+    await Promise.resolve()
+    expect(getViewerCalls().some((c) => c.kind === "file" && c.uri?.includes("/tmp/first"))).toBe(
+      true,
+    )
+
+    clearViewerCalls()
+    envelopeHarnessControls.setSessionCwd("/tmp/second")
+    flushSync()
+    btn?.click()
+    await Promise.resolve()
+    expect(getViewerCalls().some((c) => c.kind === "file" && c.uri?.includes("/tmp/second"))).toBe(
+      true,
+    )
+  })
+
+  it("copy button writes exact raw envelope for agent, system, and invalid", async () => {
+    const copySpy = vi.spyOn(clipboard, "copyToClipboard").mockResolvedValue(true)
+
+    const agentRaw = serializeDriveMessage({
+      source: "agent",
+      sender: { id: AGENT_ID, name: "CopyAgent" },
+      body: "body",
+    })
+    mountEnvelope({ bubble: userBubble([{ id: "s1", text: agentRaw }]), agents: [] })
+    target
+      ?.querySelector('button[aria-label="bubble.copy"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await Promise.resolve()
+    expect(copySpy).toHaveBeenLastCalledWith(agentRaw)
+
+    copySpy.mockClear()
+    if (app !== null) unmount(app)
+    target?.remove()
+    app = null
+
+    const systemRaw = serializeDriveMessage({
+      source: "system",
+      eventKind: "stall-suspected",
+      subjectAgent: { id: AGENT_ID },
+      at: 9,
+    })
+    mountEnvelope({ bubble: userBubble([{ id: "s1", text: systemRaw }]), agents: [] })
+    target
+      ?.querySelector('button[aria-label="bubble.copy"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await Promise.resolve()
+    expect(copySpy).toHaveBeenLastCalledWith(systemRaw)
+
+    copySpy.mockClear()
+    if (app !== null) unmount(app)
+    target?.remove()
+    app = null
+
+    const partial = '<drive-coding-msg version="1" source="agent"><sender id="x"'
+    mountEnvelope({ bubble: userBubble([{ id: "s1", text: partial }]), agents: [] })
+    target
+      ?.querySelector('button[aria-label="bubble.copy"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await Promise.resolve()
+    expect(copySpy).toHaveBeenLastCalledWith(partial)
+
+    const sourcePre = target?.querySelector(".drive-msg-raw, .drive-envelope-raw")
+    expect(sourcePre?.textContent).toContain(partial)
+
+    copySpy.mockRestore()
   })
 })

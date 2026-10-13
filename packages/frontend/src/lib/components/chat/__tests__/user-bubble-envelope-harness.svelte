@@ -1,8 +1,27 @@
 <script lang="ts" module>
+type HarnessAgent = import("@drive-coding/core/schemas/agent").AgentPublic
+type HarnessBubble = import("$lib/types/bubble").UserBubble
+
 /** Test-only sync when harnessState is a plain object outside Svelte reactivity. */
 export const envelopeHarnessControls = {
-  setAgents: (_agents: AgentPublic[]) => {},
-  setBubble: (_bubble: UserBubbleModel) => {},
+  setAgents: (_agents: HarnessAgent[]) => {},
+  setBubble: (_bubble: HarnessBubble) => {},
+  appendSegmentText: (_segmentIndex: number, _chunk: string) => {},
+  setSessionCwd: (_cwd: string) => {},
+}
+
+const viewerCalls: { kind: string; uri?: string }[] = []
+
+export function getViewerCalls(): readonly { kind: string; uri?: string }[] {
+  return viewerCalls
+}
+
+export function clearViewerCalls(): void {
+  viewerCalls.length = 0
+}
+
+export function pushViewerCall(payload: { kind: string; uri?: string }): void {
+  viewerCalls.push(payload)
 }
 </script>
 
@@ -36,26 +55,47 @@ let { harnessState = $bindable() }: { harnessState: EnvelopeHarnessState } = $pr
 
 const fakeI18n = { t: (key: string) => key, locale: "he" } as unknown as I18nVM
 
-const fakeSession = {
-  cwd: "/tmp/envelope-test",
-  status: "connected",
-} as unknown as AgentSession
+class HarnessSession {
+  cwd = $state<string | null>("/tmp/envelope-test")
+  status = "connected" as const
+}
+const fakeSession = new HarnessSession() as unknown as AgentSession
 
 const fakeSettings = {
   sessionTransport: null,
 } as unknown as Settings
 
 const activeAgents = new ActiveAgents()
+let bubble = $state(harnessState.bubble)
 
 $effect(() => {
   activeAgents.agents = harnessState.agents
+  bubble = harnessState.bubble
 })
 
 envelopeHarnessControls.setAgents = (agents) => {
   activeAgents.agents = agents
 }
-envelopeHarnessControls.setBubble = (bubble) => {
-  harnessState = { ...harnessState, bubble }
+envelopeHarnessControls.setBubble = (next) => {
+  harnessState = { ...harnessState, bubble: next }
+  bubble = next
+}
+envelopeHarnessControls.appendSegmentText = (segmentIndex, chunk) => {
+  bubble = {
+    ...bubble,
+    segments: bubble.segments.map((seg, i) =>
+      i === segmentIndex ? { ...seg, text: seg.text + chunk } : seg,
+    ),
+  }
+}
+envelopeHarnessControls.setSessionCwd = (cwd) => {
+  ;(fakeSession as HarnessSession).cwd = cwd
+}
+
+const fakeViewer = {
+  show: (payload: { kind: string; uri?: string }) => {
+    pushViewerCall(payload)
+  },
 }
 
 setI18n(fakeI18n)
@@ -63,8 +103,8 @@ setSession(fakeSession)
 setSettings(fakeSettings)
 setSpeaker({ enabled: false } as never)
 setBubblePlayer({ playingBubbleId: null, toggle: () => {} } as never)
-setContentViewer({ show: () => {} } as never)
+setContentViewer(fakeViewer as never)
 setActiveAgents(activeAgents)
 </script>
 
-<UserBubble bubble={harnessState.bubble} />
+<UserBubble {bubble} />

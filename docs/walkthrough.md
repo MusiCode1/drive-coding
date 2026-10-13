@@ -1,23 +1,3 @@
-## 2026-10-13 — slice `agent-message-envelope-ui` C1 (אליעזר)
-
-**C1** — חילוץ `UserBubbleContent.svelte`; עלים `DriveMessageOrigin` / `DriveMessageEvent`; חיווט `UserBubble` + i18n `driveMessage.*`; harness DOM (10 טסטים); stub `$env` ב-vitest.
-
-**בדיקות:** vitest C0+C1 → 30 passed; `lint:i18n`/`lint:rtl` rc=0; `tsc --build` rc=0; אפס שגיאות svelte-check בקבצים שנגעו; `lint-file-size` אחרי staging — rc=0 (UserBubble ירד מ-233 codeLines).
-
-**דפדפן:** ראה `docs-for-llm/investigations/agent-message-envelope/ui/phase1/browser-c1.md`.
-
----
-
-## 2026-10-13 — slice `agent-message-envelope-ui` C0 (אליעזר)
-
-ענף: `slice/agent-message-envelope-ui` @ base `2a404988`. worktree: `.worktrees/agent-message-envelope-ui`.
-
-**C0** — `drive-message-view.ts` + 20 טסטים (מטריצת handoff §B): `parseDriveMessage` בלבד, `plain`/`invalid`/`agent`/`system`, שם snapshot, `href` מ-`sessionPathWithTransport` (התאמת id בלבד).
-
-**בדיקות:** `bunx vitest run --root packages/frontend src/lib/components/chat/bubbles/drive-message-view.test.ts` → 20 passed, rc=0. `bunx tsc --build` → rc=0. `biome check` על שני הקבצים → rc=0.
-
----
-
 ## 2026-09-27 — slice `usage-per-cli` (אליעזר)
 
 ענף: `slice/usage-per-cli` @ base `0f32eabf`. worktree: `.worktrees/usage-per-cli`.

@@ -46,11 +46,6 @@ const transport = readSessionTransport({
 const rawText = $derived(joinSegmentText(bubble.segments))
 const view = $derived(driveMessageView(rawText, { agents: activeAgents.agents, transport }))
 
-const fileLinks = {
-  cwd: session.cwd,
-  onOpen: (uri: string) => viewer.show({ kind: "file", uri }),
-}
-
 const isPlaying = $derived(bubblePlayer.playingBubbleId === bubble.id)
 
 let copied = $state(false)
@@ -78,7 +73,14 @@ async function handleCopy() {
       style="background:var(--bubble-user); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
     >
       {#if view.kind === "plain"}
-        <MarkdownContent text={rawText} imageCwd={session.cwd} {fileLinks} />
+        <MarkdownContent
+          text={rawText}
+          imageCwd={session.cwd}
+          fileLinks={{
+            cwd: session.cwd,
+            onOpen: (uri) => viewer.show({ kind: "file", uri }),
+          }}
+        />
       {:else if view.kind === "invalid"}
         <p class="drive-envelope-hint">{t("driveMessage.envelope.partial")}</p>
         <pre class="drive-envelope-raw">{rawText}</pre>
@@ -88,10 +90,22 @@ async function handleCopy() {
           sender={view.sender}
           rawSource={rawText}
           imageCwd={session.cwd}
-          {fileLinks}
+          fileLinks={{
+            cwd: session.cwd,
+            onOpen: (uri) => viewer.show({ kind: "file", uri }),
+          }}
         />
       {:else}
-        <DriveMessageEvent message={view.message} subject={view.subject} rawSource={rawText} />
+        <DriveMessageEvent
+          message={view.message}
+          subject={view.subject}
+          rawSource={rawText}
+          imageCwd={session.cwd}
+          fileLinks={{
+            cwd: session.cwd,
+            onOpen: (uri) => viewer.show({ kind: "file", uri }),
+          }}
+        />
       {/if}
       <span class="hidden">{bubble.segments.length}</span>
     </div>

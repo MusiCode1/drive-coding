@@ -5,15 +5,21 @@
 import type { DriveMessageSystem } from "@drive-coding/core/acp/drive-message-envelope"
 import { getI18n } from "$lib/context"
 import type { DriveMessageParty } from "./drive-message-view"
+import type { FileLinkParams } from "./enhance-file-links"
+import MarkdownContent from "./MarkdownContent.svelte"
 
 let {
   message,
   subject,
   rawSource,
+  imageCwd = null,
+  fileLinks,
 }: {
   message: DriveMessageSystem
   subject: DriveMessageParty
   rawSource: string
+  imageCwd?: string | null
+  fileLinks?: Omit<FileLinkParams, "text" | "label" | "enabled">
 } = $props()
 
 const i18n = getI18n()
@@ -44,17 +50,19 @@ const headlineSuffix = $derived.by(() => {
   <div class="drive-msg-event-head">
     <span class="drive-msg-kind">{t("driveMessage.system.alert")}</span>
     <span class="drive-msg-sep" aria-hidden="true">·</span>
-    {#if message.lastTurnError}
-      <span class="drive-msg-event-title">{headlineSuffix}</span>
+    {#if subject.href}
+      <a class="drive-msg-name" href={subject.href}>{subject.displayName}</a>
     {:else}
-      {#if subject.href}
-        <a class="drive-msg-name" href={subject.href}>{subject.displayName}</a>
-      {:else}
-        <span class="drive-msg-name">{subject.displayName}</span>
-      {/if}
-      <span class="drive-msg-event-title">{headlineSuffix}</span>
+      <span class="drive-msg-name">{subject.displayName}</span>
     {/if}
+    <span class="drive-msg-event-title">{headlineSuffix}</span>
   </div>
+  {#if message.context}
+    <details class="drive-msg-context">
+      <summary>{t("driveMessage.context.summary")}</summary>
+      <p class="drive-msg-context-text">{message.context.text}</p>
+    </details>
+  {/if}
   <time class="drive-msg-event-time" datetime={new Date(message.at).toISOString()}>{formatAt(message.at)}</time>
 
   {#if message.eventKind === "stall-suspected" && message.silentMs !== undefined}
@@ -71,7 +79,7 @@ const headlineSuffix = $derived.by(() => {
       {#if message.lastAssistantText.truncated}
         <p class="drive-msg-quote-trunc">{t("driveMessage.system.quoteTruncated")}</p>
       {/if}
-      <p class="drive-msg-quote-text">{message.lastAssistantText.text}</p>
+      <MarkdownContent text={message.lastAssistantText.text} {imageCwd} {fileLinks} />
     </section>
   {/if}
 
@@ -114,6 +122,18 @@ const headlineSuffix = $derived.by(() => {
 </div>
 
 <style>
+  .drive-msg-context {
+    margin: 0.35rem 0;
+    font-size: 0.8rem;
+  }
+  .drive-msg-context summary {
+    cursor: pointer;
+    list-style: none;
+  }
+  .drive-msg-context-text {
+    margin: 0.25rem 0 0;
+    white-space: pre-wrap;
+  }
   .drive-msg-event-head {
     display: flex;
     flex-wrap: wrap;
@@ -161,11 +181,6 @@ const headlineSuffix = $derived.by(() => {
     font-size: 0.7rem;
     color: var(--fg-dim);
     margin: 0 0 0.25rem;
-  }
-  .drive-msg-quote-text {
-    margin: 0;
-    white-space: pre-wrap;
-    font-size: 0.85rem;
   }
   .drive-msg-event-error {
     margin: 0.35rem 0 0;
