@@ -99,6 +99,18 @@ export const he: Catalog = {
   "settings.beUrl.help": "השאר ריק במצב פיתוח. בפרודקשן (Cloudflare) הזן את הכתובת המלאה של ה-BE.",
   "settings.beUrl.invalid": "כתובת לא תקינה",
   "settings.beUrl.saved": "נשמר ✓",
+  "settings.scopePolicy.title": "אישורים בין סוכנים",
+  "settings.scopePolicy.message": "שליחת הודעות",
+  "settings.scopePolicy.update": "שינוי סוכן אחר",
+  "settings.scopePolicy.close": "סגירת סוכן אחר",
+  "settings.scopePolicy.option.ask": "לשאול",
+  "settings.scopePolicy.option.allow": "לאשר אוטומטית",
+  "settings.scopePolicy.option.deny": "לדחות",
+  "settings.scopePolicy.loading": "טוען מדיניות מהשרת…",
+  "settings.scopePolicy.saving": "שומר…",
+  "settings.scopePolicy.error": "לא ניתן לטעון או לשמור מדיניות מהשרת.",
+  "settings.scopePolicy.note":
+    "נשמר בשרת עד הפעלה מחדש; חל על כל הסוכנים. אחרי restart השרת טוען מחדש את קונפיג האתחול.",
   "settings.back": "חזרה",
   // ─── recordings ─── (slice 10)
   // ─── agent-options ─── (slice 23)

@@ -104,6 +104,18 @@ export const en: Catalog = {
     "Leave empty in dev mode. In production (Cloudflare) enter the full BE URL.",
   "settings.beUrl.invalid": "Invalid URL",
   "settings.beUrl.saved": "Saved ✓",
+  "settings.scopePolicy.title": "Cross-agent approvals",
+  "settings.scopePolicy.message": "Send messages",
+  "settings.scopePolicy.update": "Change another agent",
+  "settings.scopePolicy.close": "Close another agent",
+  "settings.scopePolicy.option.ask": "Ask",
+  "settings.scopePolicy.option.allow": "Allow automatically",
+  "settings.scopePolicy.option.deny": "Deny",
+  "settings.scopePolicy.loading": "Loading policy from server…",
+  "settings.scopePolicy.saving": "Saving…",
+  "settings.scopePolicy.error": "Could not load or save server policy.",
+  "settings.scopePolicy.note":
+    "Stored on the server until restart; applies to all agents. After restart the server reloads its boot config.",
   "settings.back": "Back",
   // ─── recordings ─── (slice 10)
   // ─── agent-options ─── (slice 23)

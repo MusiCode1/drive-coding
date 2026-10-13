@@ -112,6 +112,17 @@ export type MessageKey =
   | "settings.beUrl.help"
   | "settings.beUrl.invalid"
   | "settings.beUrl.saved"
+  | "settings.scopePolicy.title"
+  | "settings.scopePolicy.message"
+  | "settings.scopePolicy.update"
+  | "settings.scopePolicy.close"
+  | "settings.scopePolicy.option.ask"
+  | "settings.scopePolicy.option.allow"
+  | "settings.scopePolicy.option.deny"
+  | "settings.scopePolicy.loading"
+  | "settings.scopePolicy.saving"
+  | "settings.scopePolicy.error"
+  | "settings.scopePolicy.note"
   | "settings.back"
   // ─── recordings ─── (slice 10)
   // ─── agent-options ─── (slice 23)

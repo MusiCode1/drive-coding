@@ -21,6 +21,7 @@ import type { Voice } from "../adapters/voice/voices"
 import { setBeUrlBase } from "../util/be-url"
 import { clampSidebarWidth } from "../util/sidebar-width"
 import { DEFAULTS, loadSettings, saveSettings } from "./settings-persistence"
+import { SettingsScopePolicy } from "./settings-scope-policy.svelte"
 import { SettingsVoices } from "./settings-voices.svelte"
 import { coerceInputMode, type InputMode } from "./ui-shell.svelte"
 
@@ -32,6 +33,11 @@ export class Settings {
   // ─── קול ───
   voiceId = $state<string>(DEFAULTS.voiceId)
   readonly #voices = new SettingsVoices()
+  readonly #scopePolicy = new SettingsScopePolicy(() => this.beUrl)
+
+  get scopePolicy(): SettingsScopePolicy {
+    return this.#scopePolicy
+  }
 
   get availableVoices(): Voice[] {
     return this.#voices.availableVoices
@@ -201,10 +207,15 @@ export class Settings {
    */
   setBeUrl = (value: string): { ok: true } | { ok: false; error: string } => {
     const trimmed = value.trim().replace(/\/$/, "")
+    const before = this.beUrl
     if (trimmed === "") {
       this.beUrl = ""
       setBeUrlBase(this.beUrl)
       this.#persist()
+      if (before !== this.beUrl) {
+        this.#scopePolicy.noteBeUrlChanged()
+        void this.#scopePolicy.refresh()
+      }
       return { ok: true }
     }
     try {
@@ -215,6 +226,10 @@ export class Settings {
       this.beUrl = trimmed
       setBeUrlBase(this.beUrl)
       this.#persist()
+      if (before !== this.beUrl) {
+        this.#scopePolicy.noteBeUrlChanged()
+        void this.#scopePolicy.refresh()
+      }
       return { ok: true }
     } catch {
       return { ok: false, error: "malformed URL" }
