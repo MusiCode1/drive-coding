@@ -6,6 +6,7 @@ read_when:
   - You need to know if the backend loop is stalling or memory is climbing
   - You want token or CLI usage summaries without parsing agent logs
   - You changed config.jsonc and need HOT_KEYS applied without restart
+  - You set scope escalation defaults in config or ENV (message / update / close groups)
 tags: [diagnostics]
 surface: [http]
 stability: stable
@@ -17,8 +18,8 @@ routes:
   - POST /api/client-log
   - POST /api/reload-config
   - GET /api/options
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.3.0
+updated: 2026-10-13
 ---
 
 # Diagnostics and operations
@@ -65,3 +66,17 @@ Triggers config cache invalidation; **`HOT_KEYS`** only are reapplied at runtime
 | Status | Body | Anchor |
 |--------|------|--------|
 | `200` | `{ homeDir }` | `http-options.ts:13` |
+
+## Scope action policy (boot config)
+
+Three **`CONFIG_SPECS`** keys set the **boot-time** escalation default per action group (cross-agent message / update / close). Values are exactly **`ask`**, **`allow`**, or **`deny`** (lowercase). Product default for each is **`ask`** (`packages/core/src/config/specs.ts`).
+
+| Config key (`config.jsonc`) | Environment variable | Group |
+|-----------------------------|----------------------|--------|
+| `scopeMessagePolicy` | `SCOPE_MESSAGE_POLICY` | send / prompt |
+| `scopeUpdatePolicy` | `SCOPE_UPDATE_POLICY` | patch / reply / RPC config |
+| `scopeClosePolicy` | `SCOPE_CLOSE_POLICY` | DELETE / session close |
+
+**Parsing:** trim only; the value must match the enum exactly (e.g. `ALLOW` is invalid and resolves to the product default on the env/config layer). **`permissionTimeoutMs`** is unrelated — it bounds permission UI wait time, not scope selectors.
+
+**Lifetime / hot reload:** these keys are **not** in **`HOT_KEYS`**. `POST /api/reload-config` reapplies only hot keys and does **not** clear or replace in-memory **`PATCH /api/scope-policy`** overrides. Overrides apply immediately for the running process and are **lost on backend restart**; after restart, effective policy is override (none) → ENV → config file → default. For live changes without restart, use **`PATCH /api/scope-policy`** (documented in `60-identity-and-scopes.md`) or set ENV before boot.

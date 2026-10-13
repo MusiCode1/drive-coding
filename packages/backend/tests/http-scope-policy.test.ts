@@ -41,6 +41,46 @@ describe("GET /api/scope-policy", () => {
 describe("PATCH /api/scope-policy", () => {
   afterEach(() => resetScopePolicyForTests())
 
+  it("rejects foreign keys and does not mutate state on 400", async () => {
+    const app = policyApp()
+    await app.request("/api/scope-policy", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ policies: { message: "allow" } }),
+    })
+    const before = getScopePolicySnapshot()
+
+    const nestedForeign = await app.request("/api/scope-policy", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ policies: { message: "ask", alien: "deny" } }),
+    })
+    expect(nestedForeign.status).toBe(400)
+    expect(getScopePolicySnapshot()).toEqual(before)
+
+    const topForeign = await app.request("/api/scope-policy", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ policies: { message: "ask" }, extra: true }),
+    })
+    expect(topForeign.status).toBe(400)
+    expect(getScopePolicySnapshot()).toEqual(before)
+  })
+
+  it("rejects mixed invalid enum without partial apply", async () => {
+    const app = policyApp()
+    setScopePolicyOverride({ update: "deny" })
+    const before = getScopePolicySnapshot()
+
+    const res = await app.request("/api/scope-policy", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ policies: { message: "allow", update: "ALLOW" } }),
+    })
+    expect(res.status).toBe(400)
+    expect(getScopePolicySnapshot()).toEqual(before)
+  })
+
   it("rejects invalid json and empty policies object", async () => {
     const app = policyApp()
     const badJson = await app.request("/api/scope-policy", {

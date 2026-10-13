@@ -32,30 +32,32 @@ export const SCOPE_POLICY_ENV_KEYS = {
 
 export const ScopePolicySourceSchema = type("'override'|'env'|'default'")
 
+const scopePolicySourcesShape = type({
+  message: ScopePolicySourceSchema,
+  update: ScopePolicySourceSchema,
+  close: ScopePolicySourceSchema,
+}).onUndeclaredKey("reject")
+
 export const ScopePoliciesSchema = type({
   message: ScopePolicy,
   update: ScopePolicy,
   close: ScopePolicy,
-})
+}).onUndeclaredKey("reject")
 
 export const ScopePolicySnapshotSchema = type({
   policies: ScopePoliciesSchema,
-  sources: type({
-    message: ScopePolicySourceSchema,
-    update: ScopePolicySourceSchema,
-    close: ScopePolicySourceSchema,
-  }),
-})
+  sources: scopePolicySourcesShape,
+}).onUndeclaredKey("reject")
 
 export const ScopePolicyPatchPoliciesSchema = type({
   "message?": ScopePolicy,
   "update?": ScopePolicy,
   "close?": ScopePolicy,
-})
+}).onUndeclaredKey("reject")
 
 export const ScopePolicyPatchBodySchema = type({
   policies: ScopePolicyPatchPoliciesSchema,
-})
+}).onUndeclaredKey("reject")
 
 /** Raw env read: trim only; exact lowercase enum or undefined (omitted). */
 export function parseScopePolicyValue(raw: string | undefined): ScopePolicy | undefined {

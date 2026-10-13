@@ -368,12 +368,13 @@
       "read_when": [
         "You need to know if the backend loop is stalling or memory is climbing",
         "You want token or CLI usage summaries without parsing agent logs",
-        "You changed config.jsonc and need HOT_KEYS applied without restart"
+        "You changed config.jsonc and need HOT_KEYS applied without restart",
+        "You set scope escalation defaults in config or ENV (message / update / close groups)"
       ],
       "tags": ["diagnostics"],
       "surface": ["http"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.3.0",
       "routes": [
         "GET /api/diag",
         "GET /api/usage/summary",
@@ -391,7 +392,8 @@
         "Usage",
         "POST /api/client-log",
         "POST /api/reload-config",
-        "GET /api/options"
+        "GET /api/options",
+        "Scope action policy (boot config)"
       ]
     },
     {

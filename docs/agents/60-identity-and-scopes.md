@@ -91,7 +91,7 @@ Unclassified RPC (e.g. `_drive/ext`) always **`ask`** on escalation even when al
 | Method | Path | Body | Response |
 |--------|------|------|----------|
 | `GET` | `/api/scope-policy` | — | `{ policies, sources }` |
-| `PATCH` | `/api/scope-policy` | `{ policies: { message?, update?, close? } }` (at least one key) | same snapshot shape |
+| `PATCH` | `/api/scope-policy` | `{ policies: { message?, update?, close? } }` — at least one declared key; **no** extra keys at top level or under `policies` (`400`) | same snapshot shape |
 
 Both responses use **`Cache-Control: no-store`**. **`sources`** values: **`override`** (live PATCH in this process), **`env`** (effective process ENV for that group), **`default`** (product default when ENV omitted/invalid). PATCH overrides are **in-memory only** — lost on backend restart; restart reloads config/ENV.
 

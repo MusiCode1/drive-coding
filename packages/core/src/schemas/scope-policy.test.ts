@@ -5,7 +5,14 @@
 import { describe, expect, it } from "vitest"
 import { configDefault } from "../config/specs.js"
 import { RPC_METHODS } from "../session/rpc-methods.js"
-import { classifyScopeAction, parseScopePolicyValue, readScopePolicyFromEnv } from "./scope-policy.js"
+import { type } from "arktype"
+import {
+  classifyScopeAction,
+  parseScopePolicyValue,
+  readScopePolicyFromEnv,
+  ScopePolicyPatchBodySchema,
+  ScopePolicySnapshotSchema,
+} from "./scope-policy.js"
 
 describe("classifyScopeAction", () => {
   it("maps message verbs", () => {
@@ -45,6 +52,45 @@ describe("parseScopePolicyValue", () => {
     expect(parseScopePolicyValue("")).toBeUndefined()
     expect(parseScopePolicyValue("  ")).toBeUndefined()
     expect(parseScopePolicyValue("maybe")).toBeUndefined()
+  })
+})
+
+describe("ScopePolicyPatchBodySchema", () => {
+  it("rejects foreign keys under policies and at top level", () => {
+    const nested = ScopePolicyPatchBodySchema({
+      policies: { message: "ask", alien: "deny" },
+    })
+    expect(nested instanceof type.errors).toBe(true)
+
+    const top = ScopePolicyPatchBodySchema({
+      policies: { message: "ask" },
+      extra: true,
+    })
+    expect(top instanceof type.errors).toBe(true)
+  })
+
+  it("rejects mixed invalid enum atomically", () => {
+    const mixed = ScopePolicyPatchBodySchema({
+      policies: { message: "allow", update: "ALLOW" },
+    })
+    expect(mixed instanceof type.errors).toBe(true)
+  })
+
+  it("accepts partial valid patch keys only", () => {
+    const ok = ScopePolicyPatchBodySchema({ policies: { close: "deny" } })
+    expect(ok instanceof type.errors).toBe(false)
+    if (ok instanceof type.errors) return
+    expect(ok.policies.close).toBe("deny")
+  })
+})
+
+describe("ScopePolicySnapshotSchema", () => {
+  it("rejects undeclared keys on snapshot shape", () => {
+    const bad = ScopePolicySnapshotSchema({
+      policies: { message: "ask", update: "ask", close: "ask", extra: "allow" },
+      sources: { message: "default", update: "default", close: "default" },
+    })
+    expect(bad instanceof type.errors).toBe(true)
   })
 })
 

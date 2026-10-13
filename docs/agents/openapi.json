@@ -1737,7 +1737,8 @@
                 "enum": ["allow", "ask", "deny"]
               }
             },
-            "required": ["close", "message", "update"]
+            "required": ["close", "message", "update"],
+            "additionalProperties": false
           },
           "sources": {
             "type": "object",
@@ -1752,10 +1753,12 @@
                 "enum": ["default", "env", "override"]
               }
             },
-            "required": ["close", "message", "update"]
+            "required": ["close", "message", "update"],
+            "additionalProperties": false
           }
         },
-        "required": ["policies", "sources"]
+        "required": ["policies", "sources"],
+        "additionalProperties": false
       },
       "ScopePolicyPatchBody": {
         "type": "object",
