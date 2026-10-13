@@ -41,7 +41,11 @@ const t = getI18n().t
       <p class="drive-msg-context-text">{message.context.text}</p>
     </details>
   {/if}
-  <MarkdownContent text={message.body} {imageCwd} {fileLinks} />
+  <MarkdownContent
+    text={message.body}
+    {imageCwd}
+    fileLinks={fileLinks ? { ...fileLinks, absoluteOnly: true } : undefined}
+  />
   <details class="drive-msg-source">
     <summary>{t("driveMessage.showSource")}</summary>
     <pre class="drive-msg-raw">{rawSource}</pre>

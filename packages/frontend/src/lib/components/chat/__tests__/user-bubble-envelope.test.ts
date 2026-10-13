@@ -220,38 +220,60 @@ describe("UserBubble envelope DOM", () => {
     expect(target?.textContent).toContain("Snap")
   })
 
-  it("streaming chunks on same bubble without remount", () => {
+  it("segments.push on same bubble updates DOM without remount", () => {
     const full = serializeDriveMessage({
       source: "agent",
       sender: { id: AGENT_ID, name: "Stream" },
       body: "done",
     })
     const mid = Math.floor(full.length / 2)
-    const partA = full.slice(0, mid)
-    const partB = full.slice(mid)
-
-    mountEnvelope({
-      bubble: userBubble([{ id: "s1", text: partA }]),
+    const root = mountEnvelope({
+      bubble: userBubble([{ id: "s1", text: full.slice(0, mid) }]),
       agents: [],
     })
-    expect(target?.textContent).toContain("driveMessage.envelope.partial")
-    expect(target?.textContent).toContain(partA)
+    expect(root.textContent).toContain("driveMessage.envelope.partial")
+    const outerBefore = root.querySelector(".user-bubble-outer")
 
-    envelopeHarnessControls.setBubble({
-      ...harnessState.bubble,
-      segments: [
-        { id: "s1", text: partA },
-        { id: "s2", text: partB },
-      ],
-    })
+    const b = envelopeHarnessControls.getBubble()
+    const idBefore = b
+    b.segments.push({ id: "s2", text: full.slice(mid) })
     flushSync()
-    expect(target?.textContent).toContain("driveMessage.agent.label")
-    expect(target?.textContent).toContain("Stream")
-    expect(target?.textContent).toContain("done")
-    expect(target?.textContent).toContain(full)
+
+    expect(root.textContent).toContain("driveMessage.agent.label")
+    expect(root.textContent).toContain("Stream")
+    expect(root.textContent).toContain("done")
+    expect(root.querySelector(".user-bubble-outer")).toBe(outerBefore)
+    expect(envelopeHarnessControls.getBubble()).toBe(idBefore)
+    expect(b.segments.length).toBe(2)
   })
 
-  it("entity split inside &amp; keeps literal mid-chunk then decodes", () => {
+  it("in-place segment.text += on same segment updates DOM", () => {
+    const full = serializeDriveMessage({
+      source: "agent",
+      sender: { id: AGENT_ID, name: "Mut" },
+      body: "tail",
+    })
+    const mid = Math.floor(full.length / 2)
+    const root = mountEnvelope({
+      bubble: userBubble([{ id: "s1", text: full.slice(0, mid) }]),
+      agents: [],
+    })
+    expect(root.textContent).toContain("driveMessage.envelope.partial")
+
+    const b = envelopeHarnessControls.getBubble()
+    const segBefore = b.segments[0]
+    const outerBefore = root.querySelector(".user-bubble-outer")
+    b.segments[0]!.text += full.slice(mid)
+    flushSync()
+
+    expect(root.textContent).toContain("driveMessage.agent.label")
+    expect(root.textContent).toContain("tail")
+    expect(b.segments[0]).toBe(segBefore)
+    expect(b.segments.length).toBe(1)
+    expect(root.querySelector(".user-bubble-outer")).toBe(outerBefore)
+  })
+
+  it("entity split inside &amp; decodes after in-place push", () => {
     const full = serializeDriveMessage({
       source: "agent",
       sender: { id: AGENT_ID, name: "Ent" },
@@ -259,20 +281,53 @@ describe("UserBubble envelope DOM", () => {
     })
     const ampIdx = full.indexOf("&amp;")
     expect(ampIdx).toBeGreaterThan(0)
-    const partA = full.slice(0, ampIdx + 2)
-    const partB = full.slice(ampIdx + 2)
-
-    mountEnvelope({
-      bubble: userBubble([{ id: "s1", text: partA }]),
+    const root = mountEnvelope({
+      bubble: userBubble([{ id: "s1", text: full.slice(0, ampIdx + 2) }]),
       agents: [],
     })
-    expect(target?.textContent).toContain("driveMessage.envelope.partial")
-    expect(target?.textContent).toContain("&a")
+    expect(root.textContent).toContain("driveMessage.envelope.partial")
+    expect(root.textContent).toContain("&a")
 
-    envelopeHarnessControls.appendSegmentText(0, partB)
+    envelopeHarnessControls.getBubble().segments.push({ id: "s2", text: full.slice(ampIdx + 2) })
     flushSync()
-    expect(target?.textContent).toContain("Ent")
-    expect(target?.textContent).toContain("a & b")
+    expect(root.textContent).toContain("Ent")
+    expect(root.textContent).toContain("a & b")
+  })
+
+  it("agent body: relative path is not linkified, absolute paths are", () => {
+    const raw = serializeDriveMessage({
+      source: "agent",
+      sender: { id: AGENT_ID, name: "Linky" },
+      body: "see ./rel.md and /tmp/abs.md and file:///etc/hosts",
+    })
+    const root = mountEnvelope({
+      bubble: userBubble([{ id: "s1", text: raw }]),
+      agents: [],
+    })
+    const links = root.querySelectorAll(".drive-msg-origin .file-link")
+    expect(links.length).toBe(2)
+    expect(root.textContent).toContain("./rel.md")
+    expect([...links].map((l) => l.textContent)).toEqual(
+      expect.arrayContaining(["/tmp/abs.md", "file:///etc/hosts"]),
+    )
+  })
+
+  it("system quote: relative not linkified, absolute linkified", () => {
+    const raw = serializeDriveMessage({
+      source: "system",
+      eventKind: "turn-ended",
+      subjectAgent: { id: AGENT_ID, name: "Subj" },
+      at: 1,
+      lastAssistantText: { text: "./q.md then /var/q.md", truncated: false },
+    })
+    const root = mountEnvelope({
+      bubble: userBubble([{ id: "s1", text: raw }]),
+      agents: [],
+    })
+    const quote = root.querySelector(".drive-msg-quote")
+    expect(quote?.querySelectorAll(".file-link").length).toBe(1)
+    expect(quote?.textContent).toContain("./q.md")
+    expect(quote?.querySelector(".file-link")?.textContent).toBe("/var/q.md")
   })
 
   it("system context is collapsed plaintext with < and markdown chars", () => {

@@ -5,8 +5,9 @@ type HarnessBubble = import("$lib/types/bubble").UserBubble
 /** Test-only sync when harnessState is a plain object outside Svelte reactivity. */
 export const envelopeHarnessControls = {
   setAgents: (_agents: HarnessAgent[]) => {},
-  setBubble: (_bubble: HarnessBubble) => {},
-  appendSegmentText: (_segmentIndex: number, _chunk: string) => {},
+  getBubble: (): HarnessBubble => {
+    throw new Error("harness not mounted")
+  },
   setSessionCwd: (_cwd: string) => {},
 }
 
@@ -66,28 +67,17 @@ const fakeSettings = {
 } as unknown as Settings
 
 const activeAgents = new ActiveAgents()
-let bubble = $state(harnessState.bubble)
+// Single $state proxy — never replace bubble or segments[] (production: apply-patch-mutable).
+const bubble = $state(harnessState.bubble)
 
 $effect(() => {
   activeAgents.agents = harnessState.agents
-  bubble = harnessState.bubble
 })
 
 envelopeHarnessControls.setAgents = (agents) => {
   activeAgents.agents = agents
 }
-envelopeHarnessControls.setBubble = (next) => {
-  harnessState = { ...harnessState, bubble: next }
-  bubble = next
-}
-envelopeHarnessControls.appendSegmentText = (segmentIndex, chunk) => {
-  bubble = {
-    ...bubble,
-    segments: bubble.segments.map((seg, i) =>
-      i === segmentIndex ? { ...seg, text: seg.text + chunk } : seg,
-    ),
-  }
-}
+envelopeHarnessControls.getBubble = () => bubble
 envelopeHarnessControls.setSessionCwd = (cwd) => {
   ;(fakeSession as HarnessSession).cwd = cwd
 }

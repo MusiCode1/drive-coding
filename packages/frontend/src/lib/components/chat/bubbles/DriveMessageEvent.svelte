@@ -79,7 +79,11 @@ const headlineSuffix = $derived.by(() => {
       {#if message.lastAssistantText.truncated}
         <p class="drive-msg-quote-trunc">{t("driveMessage.system.quoteTruncated")}</p>
       {/if}
-      <MarkdownContent text={message.lastAssistantText.text} {imageCwd} {fileLinks} />
+      <MarkdownContent
+        text={message.lastAssistantText.text}
+        {imageCwd}
+        fileLinks={fileLinks ? { ...fileLinks, absoluteOnly: true } : undefined}
+      />
     </section>
   {/if}
 
