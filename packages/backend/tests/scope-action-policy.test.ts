@@ -466,6 +466,49 @@ describe("scope action policy C1", () => {
     await client.close()
   })
 
+  it("per-caller message allow skips prompt when global ask", async () => {
+    const { app, registry, agentSessionRegistry } = await makePolicyApp()
+    setScopePolicyOverride({ message: "ask" })
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a" })
+    await registry.update(a.id, { scopePolicies: { message: "allow" } })
+    const b = await registry.create({ cliKind: "cursor", cwd: "/b" })
+    const tokenA = issueToken(a.id)
+
+    const hostResult = await agentSessionRegistry.getOrCreateHost(b.id)
+    expect(hostResult.ok).toBe(true)
+    const hostB = hostResult.entry.host
+    hostB.state.sessionId = "s1"
+    const promptSpy = vi.spyOn(hostB, "prompt").mockResolvedValue(undefined)
+
+    const client = await connectMcp(app, {
+      [SCOPE_HEADER]: tokenA,
+      [AGENT_ID_HEADER]: a.id,
+    })
+    const result = await client.callTool({
+      name: "session_send",
+      arguments: { agent: b.id, prompt: "hi", noWait: true },
+    })
+    expect(result.isError).not.toBe(true)
+    expect(promptSpy).toHaveBeenCalled()
+    await client.close()
+  })
+
+  it("per-caller close deny blocks when global close allow", async () => {
+    const { app, registry, deleted } = await makePolicyApp()
+    setScopePolicyOverride({ close: "allow" })
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a" })
+    await registry.update(a.id, { scopePolicies: { close: "deny" } })
+    const b = await registry.create({ cliKind: "cursor", cwd: "/b" })
+    const tokenA = issueToken(a.id)
+
+    const del = await app.request(`/api/agents/${b.id}`, {
+      method: "DELETE",
+      headers: { [SCOPE_HEADER]: tokenA, [AGENT_ID_HEADER]: a.id },
+    })
+    expect(del.status).toBe(403)
+    expect(deleted).not.toContain(b.id)
+  })
+
   it("RPC update deny does not create target host", async () => {
     const { app, registry, agentSessionRegistry } = await makePolicyApp()
     setScopePolicyOverride({ update: "deny" })

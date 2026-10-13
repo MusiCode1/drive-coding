@@ -13,7 +13,7 @@ export type ScopeAction = typeof ScopeAction.infer
 
 export type ScopePolicies = Record<ScopeAction, ScopePolicy>
 
-export type ScopePolicySource = "override" | "env" | "default"
+export type ScopePolicySource = "agent" | "override" | "env" | "default"
 
 export type ScopePolicySnapshot = {
   policies: ScopePolicies
@@ -30,7 +30,26 @@ export const SCOPE_POLICY_ENV_KEYS = {
   close: "SCOPE_CLOSE_POLICY",
 } as const satisfies Record<ScopeAction, string>
 
-export const ScopePolicySourceSchema = type("'override'|'env'|'default'")
+export const ScopePolicySourceSchema = type("'agent'|'override'|'env'|'default'")
+
+/** Partial per-caller overrides stored on Agent.scopePolicies. */
+export const AgentScopePoliciesSchema = type({
+  "message?": ScopePolicy,
+  "update?": ScopePolicy,
+  "close?": ScopePolicy,
+}).onUndeclaredKey("reject")
+export type AgentScopePolicies = typeof AgentScopePoliciesSchema.infer
+
+export const ScopePolicyPerAgentPatchPoliciesSchema = type({
+  "message?": ScopePolicy.or("null"),
+  "update?": ScopePolicy.or("null"),
+  "close?": ScopePolicy.or("null"),
+}).onUndeclaredKey("reject")
+
+export const ScopePolicyPerAgentPatchBodySchema = type({
+  agent: "string.uuid",
+  policies: ScopePolicyPerAgentPatchPoliciesSchema,
+}).onUndeclaredKey("reject")
 
 const scopePolicySourcesShape = type({
   message: ScopePolicySourceSchema,
@@ -73,6 +92,36 @@ export function hasScopePolicyPatchKey(
   policies: typeof ScopePolicyPatchPoliciesSchema.infer,
 ): boolean {
   return policies.message !== undefined || policies.update !== undefined || policies.close !== undefined
+}
+
+export function hasScopePolicyPerAgentPatchKey(
+  policies: typeof ScopePolicyPerAgentPatchPoliciesSchema.infer,
+): boolean {
+  return policies.message !== undefined || policies.update !== undefined || policies.close !== undefined
+}
+
+/** Pure merge for escalation steps 4–6 (deny wins; per-caller wins over global). */
+export function resolveScopePolicy(input: {
+  global: ScopePolicy
+  perCaller: ScopePolicy | undefined
+}): ScopePolicy {
+  const { global, perCaller } = input
+  if (global === "deny" || perCaller === "deny") return "deny"
+  if (perCaller !== undefined) return perCaller
+  return global
+}
+
+/** Effective source for one action when building GET ?agent= snapshots. */
+export function resolveScopePolicySource(input: {
+  global: ScopePolicy
+  globalSource: Exclude<ScopePolicySource, "agent">
+  perCaller: ScopePolicy | undefined
+}): ScopePolicySource {
+  const { global, globalSource, perCaller } = input
+  if (perCaller === "deny") return "agent"
+  if (global === "deny") return globalSource
+  if (perCaller !== undefined) return "agent"
+  return globalSource
 }
 
 export function classifyScopeAction(verb: string): ScopeAction | undefined {

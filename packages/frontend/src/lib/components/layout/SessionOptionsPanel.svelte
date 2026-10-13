@@ -23,6 +23,7 @@ import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import MachineStatsBar from "$lib/components/connect/MachineStatsBar.svelte"
 import SessionFieldsList from "$lib/components/layout/SessionFieldsList.svelte"
+import SessionScopePolicyCard from "$lib/components/layout/SessionScopePolicyCard.svelte"
 import SessionTitleField from "$lib/components/layout/SessionTitleField.svelte"
 import SessionsFilterBar from "$lib/components/layout/SessionsFilterBar.svelte"
 import SessionCard from "$lib/components/modals/SessionCard.svelte"
@@ -380,6 +381,10 @@ $effect(() => {
 
 <SessionTitleField />
 <SessionFieldsList />
+
+{#if session.agentId}
+  <SessionScopePolicyCard />
+{/if}
 
 <DisplayOptionsRow />
 

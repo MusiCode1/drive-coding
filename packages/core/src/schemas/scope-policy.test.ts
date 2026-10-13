@@ -10,8 +10,12 @@ import {
   classifyScopeAction,
   parseScopePolicyValue,
   readScopePolicyFromEnv,
+  resolveScopePolicy,
+  resolveScopePolicySource,
+  ScopePolicyPerAgentPatchBodySchema,
   ScopePolicyPatchBodySchema,
   ScopePolicySnapshotSchema,
+  type ScopePolicy,
 } from "./scope-policy.js"
 
 describe("classifyScopeAction", () => {
@@ -89,6 +93,92 @@ describe("ScopePolicySnapshotSchema", () => {
     const bad = ScopePolicySnapshotSchema({
       policies: { message: "ask", update: "ask", close: "ask", extra: "allow" },
       sources: { message: "default", update: "default", close: "default" },
+    })
+    expect(bad instanceof type.errors).toBe(true)
+  })
+})
+
+describe("resolveScopePolicy", () => {
+  const globals: ScopePolicy[] = ["ask", "allow", "deny"]
+
+  it("covers all 9 global×perCaller combinations", () => {
+    const expected: Record<string, ScopePolicy> = {
+      "ask:ask": "ask",
+      "ask:allow": "allow",
+      "ask:deny": "deny",
+      "allow:ask": "ask",
+      "allow:allow": "allow",
+      "allow:deny": "deny",
+      "deny:ask": "deny",
+      "deny:allow": "deny",
+      "deny:deny": "deny",
+    }
+    for (const global of globals) {
+      for (const perCaller of ["ask", "allow", "deny"] as const) {
+        expect(resolveScopePolicy({ global, perCaller })).toBe(expected[`${global}:${perCaller}`])
+      }
+    }
+  })
+
+  it("inherits global when perCaller is absent", () => {
+    expect(resolveScopePolicy({ global: "ask", perCaller: undefined })).toBe("ask")
+    expect(resolveScopePolicy({ global: "allow", perCaller: undefined })).toBe("allow")
+    expect(resolveScopePolicy({ global: "deny", perCaller: undefined })).toBe("deny")
+  })
+})
+
+describe("resolveScopePolicySource", () => {
+  it("uses agent source when per-caller deny or explicit override wins", () => {
+    expect(
+      resolveScopePolicySource({
+        global: "allow",
+        globalSource: "default",
+        perCaller: "deny",
+      }),
+    ).toBe("agent")
+    expect(
+      resolveScopePolicySource({
+        global: "ask",
+        globalSource: "env",
+        perCaller: "allow",
+      }),
+    ).toBe("agent")
+  })
+
+  it("keeps global source when global deny wins over per-caller allow", () => {
+    expect(
+      resolveScopePolicySource({
+        global: "deny",
+        globalSource: "override",
+        perCaller: "allow",
+      }),
+    ).toBe("override")
+  })
+
+  it("inherits global source when perCaller absent", () => {
+    expect(
+      resolveScopePolicySource({
+        global: "ask",
+        globalSource: "default",
+        perCaller: undefined,
+      }),
+    ).toBe("default")
+  })
+})
+
+describe("ScopePolicyPerAgentPatchBodySchema", () => {
+  it("accepts null to clear a per-caller key", () => {
+    const ok = ScopePolicyPerAgentPatchBodySchema({
+      agent: "550e8400-e29b-41d4-a716-446655440000",
+      policies: { message: null },
+    })
+    expect(ok instanceof type.errors).toBe(false)
+  })
+
+  it("rejects foreign keys", () => {
+    const bad = ScopePolicyPerAgentPatchBodySchema({
+      agent: "550e8400-e29b-41d4-a716-446655440000",
+      policies: { message: "ask", extra: "deny" },
     })
     expect(bad instanceof type.errors).toBe(true)
   })

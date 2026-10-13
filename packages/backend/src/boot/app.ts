@@ -72,7 +72,7 @@ export async function buildApp(
 
   registerHttp(app)
   registerHttpOptions(app)
-  registerHttpScopePolicy(app)
+  registerHttpScopePolicy(app, { registry })
   registerTtsCapabilitiesHttp(app, env)
   registerLiveTokenHttp(app, env)
   registerClientLogHttp(app)

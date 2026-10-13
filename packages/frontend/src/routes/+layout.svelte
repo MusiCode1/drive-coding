@@ -5,7 +5,6 @@
 import "$lib/log"
 import PlaybackDebugPanel from "$lib/components/debug/PlaybackDebugPanel.svelte"
 import "../app.css"
-import type { Locale } from "@drive-coding/core/i18n"
 import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { onDestroy, onMount } from "svelte"
 import { page } from "$app/state"
@@ -49,11 +48,16 @@ import { PlayableSink } from "$lib/engines/playable-sink"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { NotifyEngine } from "$lib/engines/notify.svelte"
 import { notifyTexts } from "$lib/notify-texts"
-import { normalizeSessionTransport } from "$lib/session/session-transport"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { beWsUrl } from "$lib/util/be-url"
 import { bindSessionLifecycle } from "$lib/actions/session-lifecycle"
-import { isPageHidden } from "$lib/util/page-visibility.svelte"
+import {
+  installSessionScopePolicy,
+  wireDocumentLocale,
+  wirePresencePoller,
+  wireSessionTransportOverride,
+  wireUiShellCloseOnAttach,
+} from "$lib/actions/layout-session-wiring.svelte"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { BubblePlayer } from "$lib/view-models/bubble-player.svelte"
@@ -94,6 +98,8 @@ const cues = new CuesEngine()
 // ─── סשן ───────────────────────────────────────
 // slice-restore-last-config: settings מוזרק לסשן כדי לשמור config פר-CLI
 const session = new AgentSession({ cues, settings })
+
+installSessionScopePolicy({ session, settings })
 
 // ─── audio-playlist ─── (A4 — entity משותף בין Speaker ו-BubblePlayer)
 // AudioSink נוצר כאן — Speaker מחזיק ref אליו (prepareSegment/clear).
@@ -225,17 +231,7 @@ $effect(() => notify.notifyTurn(session.turnState))
 $effect(() => notify.notifyPermissionPending(session.pendingPermission !== null))
 $effect(() => notify.notifyElicitationPending(session.pendingElicitation !== null))
 
-// ─── dir/lang sync ─── (rtl-ltr-bidi)
-// סנכרון <html dir> ו-<html lang> ל-locale — הקסם של הדו-כיווניות.
-// ה-effect קורא $state (i18n.locale) וכותב ל-DOM (לא ל-$state) → אין infinite loop.
-// <html> אינו DOM-node של component ספציפי → layout הוא המקום הנכון (composition root).
-const RTL_LOCALES: Locale[] = ["he"]
-$effect(() => {
-  const loc = i18n.locale // קריאה ריאקטיבית
-  const dir = RTL_LOCALES.includes(loc) ? "rtl" : "ltr"
-  document.documentElement.dir = dir
-  document.documentElement.lang = loc
-})
+wireDocumentLocale(i18n)
 
 // ─── document title ─── (slice app-title-build-env)
 // base מ-env (נצרב ב-build); fallback "Drive Coding" אם ה-var חסר (dev-server בלי FE_ENV).
@@ -249,42 +245,9 @@ const titleContext = $derived.by(() => {
 })
 const docTitle = $derived(titleContext ? `${baseTitle} • ${titleContext}` : baseTitle)
 
-// ─── session-transport override ─── (slice transport-polish C3)
-// עקיפה מ-URL: ?sessionTransport=ws/http → נכתב מנורמל ל-sessionStorage (חיה בטאב).
-// קריאה+נרמול+כתיבה בלבד — לא נוגע ב-attach/detach/reconnect/VM. שינוי הדגל משפיע
-// על החיבור הבא בלבד; סשן חי ממשיך בטרנספורט שלו. $effect לא רץ ב-SSR → גישה לאחסון בטוחה.
-$effect(() => {
-  const q = page.url.searchParams.get("sessionTransport")
-  const normalized = normalizeSessionTransport(q)
-  if (normalized) sessionStorage.setItem("sessionTransport", normalized)
-})
-
-// ─── presence sync ─── (slice liveness C3)
-// סבב-תיקונים liveness — שני תיקונים בבלוק הקטן הזה:
-//
-// 1. `inSession` היה `status === "connected"`. ⇒ ברגע שה-WS נפל, sync קיבל
-//    `inSession:false` → stop() → clearBanner(), והבאנר נמחק **בדיוק** ברגע
-//    שנועד להופיע. הבאנר לא יכול להיות בעל-הבית של מצב-החיבור אם הוא נהרס
-//    בניתוק. "בסשן" = connected **או** disconnected (ניתוק חולף); "error"
-//    ו-"idle" נשארים בחוץ — הראשון טרמינלי (session.error מציג אותו), השני אין בו סשן.
-// 2. `return () => stop()` רץ לפני **כל** הרצה-מחדש של ה-$effect, לא רק בפירוק —
-//    כלומר כל שינוי ב-status/agentId/hidden ניגב את הבאנר ואת מונה-הכשלים.
-//    הפירוק עבר ל-$effect נפרד בלי קריאות ריאקטיביות, שרץ פעם אחת.
-$effect(() => {
-  const status = session.status
-  const inSession = status === "connected" || status === "disconnected"
-  const agentId = session.agentId
-  const hidden = isPageHidden()
-  presencePoller.sync({ inSession, agentId, hidden })
-})
-$effect(() => () => presencePoller.dispose())
-
-// ─── ui-shell inputMode reset ─── (slice ui-shell-session-prefs)
-// Close mobile sheet on session attach/switch; inputMode hydrates at boot only.
-$effect(() => {
-  const agentId = session.agentId
-  if (agentId) uiShell.closeSheet()
-})
+wireSessionTransportOverride()
+wirePresencePoller(presencePoller, session)
+wireUiShellCloseOnAttach(uiShell, session)
 
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)

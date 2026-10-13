@@ -13,7 +13,7 @@ routes:
   - POST /api/agents/:id/reply
   - GET /api/scope-policy
   - PATCH /api/scope-policy
-docs_version: 1.6.0
+docs_version: 1.7.0
 updated: 2026-10-13
 ---
 
@@ -90,10 +90,14 @@ Unclassified RPC (e.g. `_drive/ext`) always **`ask`** on escalation even when al
 
 | Method | Path | Body | Response |
 |--------|------|------|----------|
-| `GET` | `/api/scope-policy` | — | `{ policies, sources }` |
-| `PATCH` | `/api/scope-policy` | `{ policies: { message?, update?, close? } }` — at least one declared key; **no** extra keys at top level or under `policies` (`400`) | same snapshot shape |
+| `GET` | `/api/scope-policy` | — | Global `{ policies, sources }` snapshot |
+| `GET` | `/api/scope-policy?agent=<uuid>` | — | **Effective** snapshot for that caller agent (`404` if id unknown) |
+| `PATCH` | `/api/scope-policy` | `{ policies: { message?, update?, close? } }` — at least one declared key; **no** extra keys at top level or under `policies` (`400`) | Global snapshot (override layer) |
+| `PATCH` | `/api/scope-policy` | `{ agent: "<uuid>", policies: { message?, update?, close? } }` — same key rules; **`null`** on a key **clears** the per-agent override for that group (`404` if agent unknown) | Effective snapshot for that agent |
 
-Both responses use **`Cache-Control: no-store`**. **`sources`** values: **`override`** (live PATCH in this process), **`env`** (effective process ENV for that group), **`default`** (product default when ENV omitted/invalid). PATCH overrides are **in-memory only** — lost on backend restart; restart reloads config/ENV.
+Both response shapes use **`Cache-Control: no-store`**. **`sources`** values: **`agent`** (per-agent row on `agents.json`), **`override`** (live global PATCH in this process), **`env`** (effective process ENV for that group), **`default`** (product default when ENV omitted/invalid). Global PATCH overrides are **in-memory only** — lost on backend restart; **per-agent** values persist in **`agents.json`** across restart.
+
+Per-agent policy is a **guard-rail convenience**, not a security boundary: any HTTP client may set it; visibility comes from **`sources: "agent"`** and the public stance in **`NOT_A_SECURITY_BOUNDARY`**.
 
 **`allow`** on a group permits matching cross-subtree writes **without** a UI prompt (no caller host required). **`deny`** rejects without creating a prompt. **`ask`** keeps the existing escalation + permission flow.
 

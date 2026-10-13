@@ -38,6 +38,7 @@ import type { ComposerDraft } from "./view-models/composer-draft.svelte"
 import type { SessionMemoVM } from "./view-models/session-memo.svelte"
 import type { Dictate } from "./view-models/dictate.svelte"
 import type { AudioDevicesVM } from "./view-models/audio-devices.svelte"
+import type { SessionScopePolicy } from "./view-models/session-scope-policy.svelte"
 
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
@@ -118,3 +119,6 @@ export const [getDictate, setDictate] = createContext<Dictate>()
 
 // ─── audio-devices ─── (slice mic-device-selection)
 export const [getAudioDevices, setAudioDevices] = createContext<AudioDevicesVM>()
+
+// ─── scope-policy-per-caller ───
+export const [getSessionScopePolicy, setSessionScopePolicy] = createContext<SessionScopePolicy>()
