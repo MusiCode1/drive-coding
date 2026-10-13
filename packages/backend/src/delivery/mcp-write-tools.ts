@@ -18,6 +18,7 @@ import { guardMcpWrite } from "../bind-scope-enforcement.js"
 import { scopeDeniedBody } from "../scope-write.js"
 import { raceKeepRunning } from "../session-host/http/rpc-wait.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
+import { type ResolvedSender, wrapPromptContent } from "./drive-message-source.js"
 import { runScopedMcpTool } from "./mcp-scope.js"
 
 const log = createLogger("backend.mcp")
@@ -62,6 +63,7 @@ export function registerMcpWriteTools(
   scopeDeps: ScopeEnforcementDeps,
   jsonResult: (value: unknown) => ToolResult,
   jsonError: (message: string) => ToolResult,
+  sender?: ResolvedSender,
 ): void {
   registerArkTool(
     server,
@@ -134,8 +136,10 @@ export function registerMcpWriteTools(
           }
         }
 
+        const promptContent = wrapPromptContent(sender, input.prompt)
+
         if (input.noWait === true) {
-          const promptWork = host.prompt(sessionId, input.prompt)
+          const promptWork = host.prompt(sessionId, promptContent)
           void promptWork.catch((e) => {
             log.warn({ err: e }, "prompt turn failed")
           })
@@ -144,7 +148,7 @@ export function registerMcpWriteTools(
 
         const timeoutMs = (input.timeoutSec ?? SESSION_SEND_TIMEOUT_SEC) * 1000
         const from = host.state.messages.length
-        const promptWork = host.prompt(sessionId, input.prompt)
+        const promptWork = host.prompt(sessionId, promptContent)
         const raced = await raceKeepRunning(promptWork, timeoutMs, (e) => {
           log.warn({ err: e }, "prompt turn failed")
         })

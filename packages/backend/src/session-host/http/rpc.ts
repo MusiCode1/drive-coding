@@ -55,12 +55,13 @@ import { canonicalRpcMethod, RPC_METHODS } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
 import type { Hono } from "hono"
-import { getSelfBaseUrl } from "../../instances.js"
+import { AGENT_ID_HEADER } from "../../agent-identity.js"
 import type { AgentSessionRegistry } from "../registry.js"
-import { buildSessionInitBase } from "../session-meta.js"
-import { codeOf, messageOf, respondRpcWait } from "./rpc-response.js"
+import { dispatchRpcPrompt, PromptParams, resolveCallerSenderForPrompt } from "./rpc-prompt.js"
+import { respondRpcWait } from "./rpc-respond-wait.js"
 import { preflightRpcScopeDenied } from "./rpc-scope.js"
-import { parseWaitMs, raceKeepRunning } from "./rpc-wait.js"
+import { tryDispatchBlockingSessionRpc } from "./rpc-session-mgmt.js"
+import { parseWaitMs } from "./rpc-wait.js"
 
 const log = createLogger("backend.session-host.rpc")
 
@@ -74,36 +75,17 @@ const RPC_WAIT_METHODS = new Set<string>([
   RPC_METHODS.setSessionModel,
 ])
 
-// ⚠️ "meta?": "object" מסיק object | undefined — tsc דוחה את ההעברה ל-
-// host.prompt(meta?: Record<string, unknown>). "[string]": "unknown" עוקף זאת.
-//
-// ─── slice remote-images C1: PromptBlocks ContentBlock schema ───
-// חמשת הווריאנטים לפי SDK schema/types.gen.d.ts:236. annotations/_meta לא
-// צריכים הצהרה — ArkType משמר מפתחות לא-מוצהרים (נבדק בהרצה).
-export const TextBlock = type({ type: "'text'", text: "string" })
-export const ImageBlock = type({ type: "'image'", mimeType: "string", data: "string" })
-export const AudioBlock = type({ type: "'audio'", mimeType: "string", data: "string" })
-export const ResourceLinkBlock = type({ type: "'resource_link'", name: "string", uri: "string" })
-export const ResourceBlock = type({ type: "'resource'", resource: "object" })
-const ContentBlockSchema = TextBlock.or(ImageBlock)
-  .or(AudioBlock)
-  .or(ResourceLinkBlock)
-  .or(ResourceBlock)
-const PromptContent = ContentBlockSchema.array()
+export {
+  AudioBlock,
+  ImageBlock,
+  PromptParams,
+  ResourceBlock,
+  ResourceLinkBlock,
+  TextBlock,
+} from "./rpc-prompt.js"
 
-export const PromptParams = type({
-  sessionId: "string",
-  content: type("string").or(PromptContent),
-  "meta?": { "[string]": "unknown" },
-})
 export const CancelParams = type({ sessionId: "string" })
-export const LoadSessionParams = type({ sessionId: "string", "cwd?": "string" })
-export const NewSessionParams = type({ "cwd?": "string" })
-export const DeleteSessionParams = type({ sessionId: "string" })
-
-// ─── slice remote-session-mgmt C3: JSON-RPC error mapping ───
-// A JSON-RPC error is not necessarily an Error instance — the `code` sits on a
-// thrown object (same shape the VM reads, agent-session.svelte.ts). Read safely.
+export { DeleteSessionParams, LoadSessionParams, NewSessionParams } from "./rpc-session-mgmt.js"
 
 /**
  * registerRpcRoute — registers POST /api/agents/:id/rpc on the Hono app.
@@ -115,7 +97,7 @@ export function registerRpcRoute(
 ): void {
   app.post("/api/agents/:id/rpc", async (c) => {
     const agentId = c.req.param("id")
-
+    // Parse request body
     let raw: unknown
     try {
       raw = await c.req.json()
@@ -123,6 +105,10 @@ export function registerRpcRoute(
       return c.json({ error: "invalid json" }, 400)
     }
     const body = raw as Record<string, unknown>
+    // slice acp-method-names: שם-המתודה מנורמל לצורתו הקנונית לפני הניתוב.
+    // ⚠️ **שתי הצורות מתקבלות בכוונה.** ה-FE הוא נכס-סטטי מצונן: טאב שנפתח
+    // לפני הפריסה (או PWA שמגיש מהמטמון) ימשיך לשלוח `prompt`. בלי ההקבלה
+    // הוא היה מקבל 400 — כלומר הפרומפט פשוט לא קורה, בלי שום סימן למשתמש.
     const rawMethod = body.method as string | undefined
     const method = canonicalRpcMethod(rawMethod)
     const params = (body.params ?? {}) as Record<string, unknown>
@@ -137,6 +123,8 @@ export function registerRpcRoute(
 
     const result = await registry.getOrCreateHost(agentId)
     if (!result.ok) {
+      // slice host-result-reason C1: evict-timeout is transient (a stuck WS tab,
+      // not a dead agent) → 503. The other three reasons are final → 404, unchanged.
       const status = result.reason === "evict-timeout" ? 503 : 404
       return c.json({ error: "Agent connection not found" }, status)
     }
@@ -147,40 +135,20 @@ export function registerRpcRoute(
         case RPC_METHODS.prompt: {
           const p = PromptParams(params)
           if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-          if (waitMs === null) {
-            const promptWork = host.prompt(p.sessionId, p.content as string | PromptBlocks, p.meta)
-            void promptWork.catch((e) => {
-              log.warn({ err: e }, "prompt turn failed") // ← state already carries lastTurnError
-            })
-            break // no await — 202 immediately, as the JSDoc above already promises
-          }
-          const from = host.state.messages.length
-          const promptWork = host.prompt(p.sessionId, p.content as string | PromptBlocks, p.meta)
-          const raced = await raceKeepRunning(promptWork, waitMs, (e) => {
-            log.warn({ err: e }, "prompt turn failed")
-          })
-          if (raced.outcome === "timedOut") {
-            return c.json({ version: host.state.version, ok: false, timedOut: true }, 200)
-          }
-          const messagesSince = host.state.messages.slice(from)
-          if (raced.outcome === "rejected") {
-            const code = codeOf(raced.error)
-            const message = messageOf(raced.error)
-            return c.json(
-              {
-                version: host.state.version,
-                ok: false,
-                timedOut: false,
-                error: code === undefined ? { message } : { message, code },
-                messagesSince,
-              },
-              200,
-            )
-          }
-          return c.json(
-            { version: host.state.version, ok: true, timedOut: false, messagesSince },
-            200,
+          const callerSender = await resolveCallerSenderForPrompt(
+            agentRegistry,
+            c.req.header(AGENT_ID_HEADER),
           )
+          const outcome = await dispatchRpcPrompt(
+            host,
+            p.sessionId,
+            p.content as string | PromptBlocks,
+            p.meta,
+            waitMs,
+            callerSender,
+          )
+          if (outcome.kind === "accepted") break
+          return c.json(outcome.body, outcome.status)
         }
         case RPC_METHODS.cancel: {
           const p = CancelParams(params)
@@ -247,117 +215,20 @@ export function registerRpcRoute(
           )
           return c.json(waited.body, waited.status)
         }
-        // ─── slice remote-session-mgmt C3: BLOCKING mappings with a real result ───
-        // ⚠️ each case `return`s explicitly (200/400/502). A `break` here would fall
-        // through to the shared `return c.json({version}, 202)` below and break the
-        // contract — the FE needs the list/confirmation in the body.
-        case RPC_METHODS.listSessions: {
-          try {
-            const r = await host.listSessions()
-            const sessions = Array.isArray(r.sessions) ? r.sessions : []
-            return c.json(
-              {
-                sessions,
-                sessionCapabilities: host.agentCapabilities?.sessionCapabilities ?? null,
-              },
-              200,
-            )
-          } catch (e) {
-            // -32601 (CLI without list) → empty list, not 502.
-            // Cloudflare often replaces origin 502 with HTML, stripping `{code:-32601}`
-            // so the FE cannot degrade gently — return 200 here like deleteSession.
-            if (codeOf(e) === -32601) {
-              return c.json(
-                {
-                  sessions: [],
-                  sessionCapabilities: host.agentCapabilities?.sessionCapabilities ?? null,
-                },
-                200,
-              )
-            }
-            const code = codeOf(e)
-            return c.json(
-              code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
-              502,
-            )
-          }
-        }
-        case RPC_METHODS.loadSession: {
-          const p = LoadSessionParams(params)
-          if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-          const cwd = p.cwd ?? registry.getCwd(agentId)
-          if (!cwd) return c.json({ error: "no cwd available" }, 400)
-          try {
-            const cliKind = registry.getCliKind(agentId) ?? "unknown"
-            const base = buildSessionInitBase(
-              cliKind,
-              agentId,
-              cwd,
-              host.agentCapabilities,
-              getSelfBaseUrl,
-            )
-            const r = await host.loadSession({
-              ...base,
-              sessionId: p.sessionId,
-            })
-            // The agents registry must learn the newly-attached session
-            // (status/acpSessionId — remote-warm-reconnect plumbing). catch+warn:
-            // a reporting failure must not fail the switch itself.
-            try {
-              // slice agent-patch-unify C2: מעביר את ה-cwd שכבר חושב למעלה (params
-              // או fallback) — זו החוליה שהייתה חסרה בשרשרת ה-cwd (§3).
-              await registry.notifySessionAttached(agentId, r.sessionId, cwd)
-            } catch (err) {
-              log.warn({ err, agentId }, "notifySessionAttached after loadSession failed")
-            }
-            return c.json({ sessionId: r.sessionId, version: host.state.version }, 200)
-          } catch (e) {
-            const code = codeOf(e)
-            return c.json(
-              code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
-              502,
-            )
-          }
-        }
-        case RPC_METHODS.newSession: {
-          const p = NewSessionParams(params)
-          if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-          const cwd = p.cwd ?? registry.getCwd(agentId)
-          if (!cwd) return c.json({ error: "no cwd available" }, 400)
-          try {
-            const cliKind = registry.getCliKind(agentId) ?? "unknown"
-            const r = await host.newSession(
-              buildSessionInitBase(cliKind, agentId, cwd, host.agentCapabilities, getSelfBaseUrl),
-            )
-            try {
-              await registry.notifySessionAttached(agentId, r.sessionId, cwd)
-            } catch (err) {
-              log.warn({ err, agentId }, "notifySessionAttached after newSession failed")
-            }
-            return c.json({ sessionId: r.sessionId, version: host.state.version }, 200)
-          } catch (e) {
-            const code = codeOf(e)
-            return c.json(
-              code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
-              502,
-            )
-          }
-        }
+        case RPC_METHODS.listSessions:
+        case RPC_METHODS.loadSession:
+        case RPC_METHODS.newSession:
         case RPC_METHODS.deleteSession: {
-          const p = DeleteSessionParams(params)
-          if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-          try {
-            await host.deleteSession(p.sessionId)
-            return c.json({ ok: true }, 200)
-          } catch (e) {
-            // -32601 (CLI without delete capability) → graceful, like local
-            if (codeOf(e) === -32601) return c.json({ ok: false, unsupported: true }, 200)
-            const code = codeOf(e)
-            return c.json(
-              code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },
-              502,
-            )
-          }
+          const blocking = await tryDispatchBlockingSessionRpc(
+            c,
+            method,
+            params,
+            host,
+            registry,
+            agentId,
+          )
+          if (blocking) return blocking
+          break
         }
         default: {
           // ⚠️ מדווחים את השם ש**נשלח**, לא את התוצאה המנורמלת (שהיא undefined

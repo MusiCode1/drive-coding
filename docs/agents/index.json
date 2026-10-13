@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.6.0",
+  "docsVersion": "1.7.1",
   "docs": [
     {
       "id": "orientation",
@@ -64,7 +64,7 @@
       "tags": ["session", "ownership", "turnstate"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.6.0",
       "routes": [
         "GET /api/agents",
         "POST /api/agents",
@@ -89,6 +89,7 @@
         "Close",
         "Ownership and liveness (HTTP session host)",
         "Identity header",
+        "Inbound prompt envelope (receiver)",
         "Configure during lifecycle",
         "CLI equivalents",
         "Limits (MCP)"
@@ -158,17 +159,24 @@
       "summary": "What the drive-coding UI renders from agent output, and what it will not render.",
       "read_when": [
         "You are about to emit a file link, an image or a diagram",
-        "Your output rendered as plain text and you expected something richer"
+        "Your output rendered as plain text and you expected something richer",
+        "You send or receive a drive-coding-msg envelope and need to know what the chat UI shows"
       ],
       "tags": ["render", "output", "ui"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.7.1",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/45-render-contract.md",
       "headings": [
         "Render contract",
+        "`drive-coding-msg` v1 — what the chat UI renders",
+        "When the UI treats text as an envelope",
+        "Agent envelope (`source=\"agent\"`)",
+        "System envelope (`source=\"system\"`)",
+        "Invalid or partial XML",
+        "What envelope display does **not** prove",
         "Images — recipe",
         "Local files and the file proxy",
         "Diagrams",
@@ -218,7 +226,7 @@
       "tags": ["rpc", "session"],
       "surface": ["http"],
       "stability": "transitional",
-      "docs_version": "1.2.0",
+      "docs_version": "1.6.0",
       "routes": ["POST /api/agents/:id/rpc"],
       "mcp_tools": [],
       "path": "docs/agents/50-rpc.md",
@@ -227,6 +235,7 @@
         "Methods",
         "`waitMs` and blocking",
         "HTTP status codes",
+        "Envelope on `session/prompt`",
         "Parameter validation (selected)",
         "OpenAPI"
       ]
@@ -270,7 +279,7 @@
       "tags": ["subagents", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.6.0",
       "routes": ["GET /api/agent-prompt", "DELETE /api/agents"],
       "mcp_tools": ["session_open", "notify_parent"],
       "path": "docs/agents/70-subagents.md",
@@ -434,7 +443,7 @@
       "tags": ["cli"],
       "surface": ["cli"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.6.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/96-cli.md",

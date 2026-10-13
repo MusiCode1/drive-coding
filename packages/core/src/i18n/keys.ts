@@ -583,6 +583,27 @@ export type MessageKey =
   | "settings.inputDevice.missing"
   | "settings.inputDevice.single"
   | "settings.inputDevice.refresh"
+  // ─── drive-message ─── (slice agent-message-envelope-ui)
+  | "driveMessage.agent.label"
+  | "driveMessage.envelope.partial"
+  | "driveMessage.context.summary"
+  | "driveMessage.showSource"
+  | "driveMessage.system.alert"
+  | "driveMessage.system.turnEndedSuffix"
+  | "driveMessage.system.turnEndedError"
+  | "driveMessage.system.stallSuspected"
+  | "driveMessage.system.silentPrefix"
+  | "driveMessage.system.silentSuffix"
+  | "driveMessage.system.quoteSection"
+  | "driveMessage.system.quoteTruncated"
+  | "driveMessage.system.openChat"
+  | "driveMessage.system.details"
+  | "driveMessage.system.detail.eventKind"
+  | "driveMessage.system.detail.subjectId"
+  | "driveMessage.system.detail.at"
+  | "driveMessage.system.detail.stopReason"
+  | "driveMessage.system.detail.silentMs"
+  | "driveMessage.system.detail.error"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

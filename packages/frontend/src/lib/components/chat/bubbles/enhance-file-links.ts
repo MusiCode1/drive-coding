@@ -38,7 +38,12 @@ export type FileLinkParams = {
 function isSkipped(node: Node): boolean {
   let el = node.parentElement
   while (el !== null) {
-    if (el.tagName === "PRE" || el.tagName === "A" || el.dataset["fileLink"] !== undefined || el.dataset["remoteSrc"] !== undefined) {
+    if (
+      el.tagName === "PRE" ||
+      el.tagName === "A" ||
+      el.dataset["fileLink"] !== undefined ||
+      el.dataset["remoteSrc"] !== undefined
+    ) {
       return true
     }
     el = el.parentElement
@@ -104,9 +109,10 @@ export const enhanceFileLinks: Action<HTMLElement, FileLinkParams> = (node, para
     if (!(target instanceof Element)) return
     const btn = target.closest<HTMLElement>("[data-file-link]")
     if (btn === null) return
-    const uri = btn.dataset["fileLink"]
-    if (uri === undefined) return
     ev.preventDefault()
+    const raw = btn.textContent ?? ""
+    const uri = resolveFileUri(raw, currentParams.cwd) ?? btn.dataset["fileLink"]
+    if (uri === undefined) return
     currentParams.onOpen(uri)
   }
 

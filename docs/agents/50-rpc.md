@@ -10,8 +10,8 @@ tags: [rpc, session]
 surface: [http]
 stability: transitional
 routes: [POST /api/agents/:id/rpc]
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.6.0
+updated: 2026-10-13
 ---
 
 # Agent session RPC
@@ -26,7 +26,7 @@ Legacy aliases (for example `prompt` instead of `session/prompt`) may still be a
 
 | Method | Role |
 |--------|------|
-| `session/prompt` | Send user content to the ACP session (`params.sessionId`, `params.content`). |
+| `session/prompt` | Send user content to the ACP session (`params.sessionId`, `params.content`). When the HTTP caller identifies as another agent (`X-Drive-Coding-Agent`), text is wrapped in **`drive-coding-msg` v1** with that caller as **`sender`**; anonymous callers receive unwrapped content. |
 | `session/cancel` | Cancel the in-flight turn for `params.sessionId`. |
 | `session/set_mode` | Switch session mode (`params.modeId`). |
 | `session/set_config_option` | Set a config option (`params.configId`, `params.value`). |
@@ -64,6 +64,25 @@ Management methods (`session/list`, `session/load`, `session/new`, `session/dele
 | `502` | Upstream/session errors on management calls | `rpc.ts:328-331`, `rpc.ts:365-367`, etc. |
 
 Scoped writes may deny before dispatch — see `60-identity-and-scopes`.
+
+## Envelope on `session/prompt`
+
+Identified callers: **string** `params.content` becomes one `<drive-coding-msg … source="agent">`
+with `<sender>` and a single `<body>` (all source text encoded there). **Block** content: each
+**text** block is XML-encoded; the shell is split so **concatenating decoded text from all text
+blocks** yields one envelope whose `<body>` is the **concatenation of all original text blocks**
+(in order). **Non-text** blocks (image, …) are **unchanged** and stay in the ACP block list in
+order — often **between** the text blocks that carry the split shell, not “after” one root element.
+
+Receivers with a **single string** prompt: treat it as an envelope only if the **whole string**
+is a valid v1 envelope; otherwise use it as raw text. Receivers with **blocks**: decode text
+blocks and apply the same whole-envelope rule to the joined text, or handle raw blocks when parse
+fails. Valid envelope or raw fallback — a leading root tag alone is **not** enough.
+
+A complete valid envelope pasted as the whole message parses like any other envelope — still
+**not** proof of who sent it or user approval. System envelopes (`source="system"`,
+`<event-kind>…</event-kind>`, `<subject-agent>`, …) are for subscriber/event delivery, not
+ordinary `session/prompt` from the FE.
 
 ## Parameter validation (selected)
 

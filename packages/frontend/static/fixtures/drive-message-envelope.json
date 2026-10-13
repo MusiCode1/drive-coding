@@ -1,0 +1,112 @@
+{
+  "updates": [
+    {
+      "sessionUpdate": "user_message_chunk",
+      "messageId": "b1",
+      "content": {
+        "type": "text",
+        "text": "<drive-coding-msg version=\"1\" source=\"agent\">\n  <sender id=\"11111111-1111-4111-8111-111111111111\">\n    <name>Named Agent</name>\n  </sender>\n  <body>Agent body **bold**</body>\n</drive-coding-msg>\n"
+      }
+    },
+    {
+      "sessionUpdate": "user_message_chunk",
+      "messageId": "b2",
+      "content": {
+        "type": "text",
+        "text": "<drive-coding-msg version=\"1\" source=\"agent\">\n  <sender id=\"11111111-1111-4111-8111-111111111111\">\n  </sender>\n  <body>No name in envelope</body>\n</drive-coding-msg>\n"
+      }
+    },
+    {
+      "sessionUpdate": "user_message_chunk",
+      "messageId": "b3",
+      "content": {
+        "type": "text",
+        "text": "<drive-coding-msg version=\"1\" source=\"agent\">\n  <context kind=\"project-charter\">charter plain</context>\n  <sender id=\"11111111-1111-4111-8111-111111111111\">\n    <name>Ctx</name>\n  </sender>\n  <body>After context</body>\n</drive-coding-msg>\n"
+      }
+    },
+    {
+      "sessionUpdate": "user_message_chunk",
+      "messageId": "b4",
+      "content": {
+        "type": "text",
+        "text": "<drive-coding-msg version=\"1\" source=\"agent\">\n  <sender id=\"11111111-1111-4111-8111-1111111"
+      }
+    },
+    {
+      "sessionUpdate": "user_message_chunk",
+      "messageId": "b4",
+      "content": {
+        "type": "text",
+        "text": "11111\">\n    <name>Split</name>\n  </sender>\n  <body>split-stream</body>\n</drive-coding-msg>\n"
+      }
+    },
+    {
+      "sessionUpdate": "user_message_chunk",
+      "messageId": "b5",
+      "content": {
+        "type": "text",
+        "text": "<drive-coding-msg version=\"1\" source=\"system\">\n  <event-kind>turn-ended</event-kind>\n  <subject-agent id=\"11111111-1111-4111-8111-111111111111\">\n    <name>Q</name>\n  </subject-agent>\n  <at>1800000000000</at>\n  <last-assistant-text truncated=\"false\">quoted **x**</last-assistant-text>\n</drive-coding-msg>\n"
+      }
+    },
+    {
+      "sessionUpdate": "user_message_chunk",
+      "messageId": "b6",
+      "content": {
+        "type": "text",
+        "text": "<drive-coding-msg version=\"1\" source=\"system\">\n  <event-kind>turn-ended</event-kind>\n  <subject-agent id=\"11111111-1111-4111-8111-111111111111\">\n    <name>QT</name>\n  </subject-agent>\n  <at>1800000001000</at>\n  <last-assistant-text truncated=\"true\">short quote</last-assistant-text>\n</drive-coding-msg>\n"
+      }
+    },
+    {
+      "sessionUpdate": "user_message_chunk",
+      "messageId": "b7",
+      "content": {
+        "type": "text",
+        "text": "<drive-coding-msg version=\"1\" source=\"system\">\n  <event-kind>turn-ended</event-kind>\n  <subject-agent id=\"11111111-1111-4111-8111-111111111111\">\n    <name>Err</name>\n  </subject-agent>\n  <at>1800000002000</at>\n  <last-turn-error>\n    <message>fail line</message>\n  </last-turn-error>\n</drive-coding-msg>\n"
+      }
+    },
+    {
+      "sessionUpdate": "user_message_chunk",
+      "messageId": "b8",
+      "content": {
+        "type": "text",
+        "text": "<drive-coding-msg version=\"1\" source=\"system\">\n  <event-kind>stall-suspected</event-kind>\n  <subject-agent id=\"11111111-1111-4111-8111-111111111111\">\n    <name>Stall</name>\n  </subject-agent>\n  <at>1800000003000</at>\n  <silent-ms>960000</silent-ms>\n</drive-coding-msg>\n"
+      }
+    },
+    {
+      "sessionUpdate": "user_message_chunk",
+      "messageId": "b9",
+      "content": {
+        "type": "text",
+        "text": "<drive-coding-msg version=\"9\" source=\"agent\"><body>bad ver</body></drive-coding-msg>"
+      }
+    },
+    {
+      "sessionUpdate": "user_message_chunk",
+      "messageId": "b10",
+      "content": {
+        "type": "text",
+        "text": "Plain user text without envelope"
+      }
+    },
+    {
+      "sessionUpdate": "user_message_chunk",
+      "messageId": "b11",
+      "content": {
+        "type": "text",
+        "text": "User with attachment"
+      }
+    },
+    {
+      "sessionUpdate": "user_message_chunk",
+      "messageId": "b11",
+      "content": {
+        "type": "image",
+        "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==",
+        "mimeType": "image/png"
+      }
+    }
+  ],
+  "loadResult": {
+    "sessionId": "fixture-drive-message-envelope"
+  }
+}
