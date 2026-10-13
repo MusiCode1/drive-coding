@@ -466,6 +466,51 @@ describe("scope escalation timeout (slice scope-escalation-timeout C2)", () => {
     vi.unstubAllEnvs()
   })
 
+  it("wire: expiresAtMs survives GET /history inside scope _meta", async () => {
+    const { app, registry, agentSessionRegistry } = await makeScopeGateApp({
+      scopePermissionTimeoutMs: 60_000,
+    })
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a" })
+    const b = await registry.create({ cliKind: "cursor", cwd: "/b" })
+    const tokenA = issueToken(a.id)
+
+    await agentSessionRegistry.getOrCreateHost(a.id)
+    const hostA = agentSessionRegistry.getHost(a.id)
+    expect(hostA).toBeDefined()
+
+    const delPromise = app.request(`/api/agents/${b.id}`, {
+      method: "DELETE",
+      headers: { [SCOPE_HEADER]: tokenA, [AGENT_ID_HEADER]: a.id },
+    })
+
+    await vi.waitFor(() => {
+      expect(hostA!.state.pending.permission).not.toBeNull()
+    })
+
+    const hist = await app.request(`/api/agents/${a.id}/history`)
+    expect(hist.status).toBe(200)
+    const body = (await hist.json()) as {
+      updates: { sessionUpdate: string; changes?: Record<string, unknown> }[]
+    }
+    const withPerm = body.updates
+      .filter((u) => u.sessionUpdate === "_drive/session_update")
+      .find((u) => {
+        const pending = u.changes?.pending as
+          | { permission?: { params?: { toolCall?: { _meta?: Record<string, unknown> } } } }
+          | undefined
+        return pending?.permission?.params?.toolCall?._meta?.[SCOPE_PROMPT_META_KEY] != null
+      })
+    expect(withPerm).toBeDefined()
+    const detail = (
+      withPerm!.changes!.pending as {
+        permission: { params: { toolCall: { _meta: Record<string, unknown> } } }
+      }
+    ).permission.params.toolCall._meta[SCOPE_PROMPT_META_KEY] as { expiresAtMs?: number }
+    expect(typeof detail.expiresAtMs).toBe("number")
+    expect(detail.expiresAtMs).toBeGreaterThan(Date.now())
+    void delPromise
+  })
+
   it("wire: scope escalation auto-denies with 403 after timeout", async () => {
     const { app, registry, agentSessionRegistry } = await makeScopeGateApp({
       scopePermissionTimeoutMs: 80,

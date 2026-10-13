@@ -35,7 +35,9 @@ const VERB_KEYS: Record<string, MessageKey> = {
   send: "scopePrompt.verb.send",
 }
 
-export type ScopeDetailRow = { label: string; value: string }
+export type ScopeDetailRow =
+  | { label: string; kind?: undefined; value: string }
+  | { label: string; kind: "countdown"; expiresAtMs: number }
 
 export function scopeDetailRows(
   detail: ScopePromptDetail,
@@ -43,7 +45,7 @@ export function scopeDetailRows(
 ): ScopeDetailRow[] {
   const verbKey = VERB_KEYS[detail.verb]
   const verbLabel = verbKey ? t(verbKey) : detail.verb
-  return [
+  const rows: ScopeDetailRow[] = [
     {
       label: t("scopePrompt.caller"),
       value: `${detail.caller} (${detail.callerShortId})`,
@@ -54,4 +56,12 @@ export function scopeDetailRows(
     },
     { label: t("scopePrompt.action"), value: verbLabel },
   ]
+  if (detail.expiresAtMs !== undefined) {
+    rows.push({
+      label: t("scopePrompt.expiresIn"),
+      kind: "countdown",
+      expiresAtMs: detail.expiresAtMs,
+    })
+  }
+  return rows
 }

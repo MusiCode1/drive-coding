@@ -23,6 +23,8 @@ export type ScopePromptDetail = {
   verb: string
   callerShortId: string
   targetShortId: string
+  /** epoch-ms of automatic rejection. undefined = no timeout shown. */
+  expiresAtMs?: number
 }
 
 /** First 6 chars of id; shorter ids returned as-is. */

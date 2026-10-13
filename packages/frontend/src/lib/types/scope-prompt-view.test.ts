@@ -61,6 +61,25 @@ describe("scopeDetailRows", () => {
   it("falls back to raw verb when not in map", () => {
     const rows = scopeDetailRows({ ...detail, verb: "session/prompt" }, t)
     const action = rows.find((r) => r.label === "scopePrompt.action")
-    expect(action?.value).toBe("session/prompt")
+    expect(action?.kind !== "countdown" && action?.value).toBe("session/prompt")
+  })
+
+  it("adds countdown row when expiresAtMs is set", () => {
+    const rows = scopeDetailRows({ ...detail, expiresAtMs: 1_700_000_000_000 }, t)
+    expect(rows).toHaveLength(4)
+    expect(rows[3]).toEqual({
+      label: "scopePrompt.expiresIn",
+      kind: "countdown",
+      expiresAtMs: 1_700_000_000_000,
+    })
+  })
+
+  it("keeps three rows without expiresAtMs", () => {
+    expect(scopeDetailRows(detail, t)).toHaveLength(3)
+  })
+
+  it("still adds countdown when expiresAtMs is in the past", () => {
+    const rows = scopeDetailRows({ ...detail, expiresAtMs: 1 }, t)
+    expect(rows[3]?.kind).toBe("countdown")
   })
 })

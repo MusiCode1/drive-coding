@@ -569,6 +569,9 @@ export type MessageKey =
   | "scopePrompt.verb.reply"
   | "scopePrompt.verb.send"
   | "scopePrompt.verb.unknown"
+  | "scopePrompt.expiresIn"
+  | "scopePrompt.seconds"
+  | "scopePrompt.expired"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

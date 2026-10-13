@@ -1,14 +1,19 @@
 <script lang="ts">
-  import type { ScopeDetailRow } from "$lib/types/scope-prompt-view"
+import PermissionCountdown from "$lib/components/chat/PermissionCountdown.svelte"
+import type { ScopeDetailRow } from "$lib/types/scope-prompt-view"
 
-  let { rows }: { rows: ScopeDetailRow[] } = $props()
+let { rows }: { rows: ScopeDetailRow[] } = $props()
 </script>
 
 <div class="detail-rows">
   {#each rows as row (row.label)}
     <div class="detail-row">
       <span class="detail-label">{row.label}</span>
-      <span class="detail-value" dir="auto">{row.value}</span>
+      {#if row.kind === "countdown"}
+        <PermissionCountdown expiresAtMs={row.expiresAtMs} />
+      {:else}
+        <span class="detail-value" dir="auto">{row.value}</span>
+      {/if}
     </div>
   {/each}
 </div>

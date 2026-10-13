@@ -557,4 +557,7 @@ export const he: Catalog = {
   "scopePrompt.verb.reply": "מענה לבקשת-אישור",
   "scopePrompt.verb.send": "שליחת הודעה",
   "scopePrompt.verb.unknown": "פעולה אחרת",
+  "scopePrompt.expiresIn": "נדחה אוטומטית בעוד",
+  "scopePrompt.seconds": "שנ'",
+  "scopePrompt.expired": "נדחה אוטומטית — איש לא ענה",
 }

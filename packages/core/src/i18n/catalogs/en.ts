@@ -565,4 +565,7 @@ export const en: Catalog = {
   "scopePrompt.verb.reply": "Reply to permission request",
   "scopePrompt.verb.send": "Send message",
   "scopePrompt.verb.unknown": "Other action",
+  "scopePrompt.expiresIn": "Auto-denies in",
+  "scopePrompt.seconds": "sec",
+  "scopePrompt.expired": "Automatically denied — no one responded",
 }

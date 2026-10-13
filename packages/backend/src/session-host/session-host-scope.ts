@@ -3,15 +3,12 @@
  */
 // Guard rail, not a lock - see NOT_A_SECURITY_BOUNDARY in ../agent-scope.ts
 
-import type {
-  RequestPermissionRequest,
-  RequestPermissionResponse,
-} from "@agentclientprotocol/sdk"
+import type { RequestPermissionRequest, RequestPermissionResponse } from "@agentclientprotocol/sdk"
 import {
   applyPendingRequest,
   clearPendingRequest,
-  type PendingPermission,
   type Patch,
+  type PendingPermission,
   type SessionState,
 } from "@drive-coding/core/session"
 import {
@@ -34,13 +31,14 @@ export type ScopePermissionHost = {
   isScopeRequest(requestId: number): boolean
 }
 
-export function createScopeRequestTracker(): Pick<
-  ScopePermissionHost,
-  "isScopeRequest"
-> & { markScopeRequest: (requestId: number) => void } {
+export function createScopeRequestTracker(): Pick<ScopePermissionHost, "isScopeRequest"> & {
+  markScopeRequest: (requestId: number) => void
+} {
   const scopeRequestIds = new Set<number>()
   return {
-    markScopeRequest: (id) => { scopeRequestIds.add(id) },
+    markScopeRequest: (id) => {
+      scopeRequestIds.add(id)
+    },
     isScopeRequest: (id) => scopeRequestIds.has(id),
   }
 }
@@ -89,7 +87,12 @@ export function createRequestScopePermission(deps: {
     if (deps.isDisposed()) return Promise.resolve("deny" as const)
     if (deps.getState().pending.permission !== null) return Promise.resolve("deny" as const)
 
-    const detail = opts.detail
+    const timeoutMs = deps.scopeTimeoutMs
+    const detailBase = opts.detail
+    const detail =
+      detailBase && typeof timeoutMs === "number" && timeoutMs > 0
+        ? { ...detailBase, expiresAtMs: Date.now() + timeoutMs }
+        : detailBase
     const title = detail
       ? formatScopePromptTitle(detail)
       : `Agent ${opts.callerId} requests ${opts.verb} on ${opts.targetId}`
@@ -117,7 +120,6 @@ export function createRequestScopePermission(deps: {
     deps.emitPatches(applied.patches)
 
     let scopeTimer: ReturnType<typeof setTimeout> | null = null
-    const timeoutMs = deps.scopeTimeoutMs
     const pendingPromise = deps.permPending.request(requestId)
     if (typeof timeoutMs === "number" && timeoutMs > 0) {
       scopeTimer = setTimeout(() => {
