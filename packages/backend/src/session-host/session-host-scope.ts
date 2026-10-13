@@ -20,6 +20,7 @@ import {
   type ScopePromptDetail,
 } from "@drive-coding/core/types/scope-prompt"
 import type { createPendingRequests } from "./pending-requests.js"
+import { defaultRequestTimeouts } from "./request-timeout.js"
 
 type PermPending = ReturnType<typeof createPendingRequests<RequestPermissionResponse>>
 
@@ -51,15 +52,22 @@ type ScopePermissionDeps = {
   emitPatches: (patches: Patch[]) => void
   nextRequestId: () => number
   permPending: PermPending
+  /** ms until auto-deny. `null` = no timeout. `undefined` = defaultRequestTimeouts().scopePermission */
+  scopeTimeoutMs?: number | null
 }
 
 export function attachScopePermission(
   deps: ScopePermissionDeps,
 ): Pick<ScopePermissionHost, "requestScopePermission" | "isScopeRequest"> {
+  const scopeTimeoutMs =
+    deps.scopeTimeoutMs === undefined
+      ? defaultRequestTimeouts().scopePermission
+      : deps.scopeTimeoutMs
   const tracker = createScopeRequestTracker()
   return {
     requestScopePermission: createRequestScopePermission({
       ...deps,
+      scopeTimeoutMs,
       markScopeRequest: tracker.markScopeRequest,
     }),
     isScopeRequest: tracker.isScopeRequest,
@@ -74,6 +82,8 @@ export function createRequestScopePermission(deps: {
   nextRequestId: () => number
   permPending: PermPending
   markScopeRequest: (requestId: number) => void
+  /** Normalized from attachScopePermission. null/undefined = no scope timer. */
+  scopeTimeoutMs?: number | null
 }): ScopePermissionHost["requestScopePermission"] {
   return (opts) => {
     if (deps.isDisposed()) return Promise.resolve("deny" as const)
@@ -106,8 +116,16 @@ export function createRequestScopePermission(deps: {
     deps.setState(applied.state)
     deps.emitPatches(applied.patches)
 
-    return deps.permPending
-      .request(requestId)
+    let scopeTimer: ReturnType<typeof setTimeout> | null = null
+    const timeoutMs = deps.scopeTimeoutMs
+    const pendingPromise = deps.permPending.request(requestId)
+    if (typeof timeoutMs === "number" && timeoutMs > 0) {
+      scopeTimer = setTimeout(() => {
+        deps.permPending.respond(requestId, { outcome: { outcome: "cancelled" } })
+      }, timeoutMs)
+    }
+
+    return pendingPromise
       .then((response) => {
         const outcome = response.outcome
         if (outcome.outcome === "cancelled") return "deny" as const
@@ -118,6 +136,7 @@ export function createRequestScopePermission(deps: {
         return "allow" as const
       })
       .finally(() => {
+        if (scopeTimer !== null) clearTimeout(scopeTimer)
         const cleared = clearPendingRequest(deps.getState(), "permission", requestId)
         deps.setState(cleared.state)
         deps.emitPatches(cleared.patches)

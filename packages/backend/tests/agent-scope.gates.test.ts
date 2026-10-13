@@ -44,7 +44,14 @@ function makeMockConn(agentId: string): ProviderConnection {
   } as unknown as ProviderConnection
 }
 
-async function makeScopeGateApp() {
+async function makeScopeGateApp(opts?: { scopePermissionTimeoutMs?: number | null }) {
+  if (opts?.scopePermissionTimeoutMs !== undefined) {
+    if (opts.scopePermissionTimeoutMs === null) {
+      vi.stubEnv("SCOPE_PERMISSION_TIMEOUT_MS", "never")
+    } else {
+      vi.stubEnv("SCOPE_PERMISSION_TIMEOUT_MS", String(opts.scopePermissionTimeoutMs))
+    }
+  }
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
   const deleted: string[] = []
@@ -162,6 +169,7 @@ async function connectMcp(
 
 describe("agent-scopes §6 gates", () => {
   afterEach(() => {
+    vi.unstubAllEnvs()
     setScopeEnforcementForTests(true)
     setSelfApproveGuardForTests(true)
     resetAllowAlwaysGrantsForTests()
@@ -453,7 +461,36 @@ describe("agent-scopes §6 gates", () => {
   })
 })
 
+describe("scope escalation timeout (slice scope-escalation-timeout C2)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
+  it("wire: scope escalation auto-denies with 403 after timeout", async () => {
+    const { app, registry, agentSessionRegistry } = await makeScopeGateApp({
+      scopePermissionTimeoutMs: 80,
+    })
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a" })
+    const b = await registry.create({ cliKind: "cursor", cwd: "/b" })
+    const tokenA = issueToken(a.id)
+
+    await agentSessionRegistry.getOrCreateHost(a.id)
+    const delPromise = app.request(`/api/agents/${b.id}`, {
+      method: "DELETE",
+      headers: { [SCOPE_HEADER]: tokenA, [AGENT_ID_HEADER]: a.id },
+    })
+
+    const del = await delPromise
+    expect(del.status).toBe(403)
+    expect(await del.json()).toEqual(SCOPE_DENIED_BODY)
+  })
+})
+
 describe("scope escalation prompt detail (slice scope-prompt-detail C1)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   const uuidRe = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
 
   async function startEscalation(app: Hono, registry: Awaited<ReturnType<typeof makeScopeGateApp>>["registry"], agentSessionRegistry: Awaited<ReturnType<typeof makeScopeGateApp>>["agentSessionRegistry"], opts?: { targetTitle?: string }) {
