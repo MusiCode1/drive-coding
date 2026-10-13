@@ -374,7 +374,7 @@
       "tags": ["diagnostics"],
       "surface": ["http"],
       "stability": "stable",
-      "docs_version": "1.3.0",
+      "docs_version": "1.3.1",
       "routes": [
         "GET /api/diag",
         "GET /api/usage/summary",

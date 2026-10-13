@@ -18,7 +18,7 @@ routes:
   - POST /api/client-log
   - POST /api/reload-config
   - GET /api/options
-docs_version: 1.3.0
+docs_version: 1.3.1
 updated: 2026-10-13
 ---
 
@@ -69,7 +69,7 @@ Triggers config cache invalidation; **`HOT_KEYS`** only are reapplied at runtime
 
 ## Scope action policy (boot config)
 
-Three **`CONFIG_SPECS`** keys set the **boot-time** escalation default per action group (cross-agent message / update / close). Values are exactly **`ask`**, **`allow`**, or **`deny`** (lowercase). Product default for each is **`ask`** (`packages/core/src/config/specs.ts`).
+Three **`CONFIG_SPECS`** keys set the escalation default per action group (cross-agent message / update / close). Values are exactly **`ask`**, **`allow`**, or **`deny`** (lowercase). Product default for each is **`ask`** (`packages/core/src/config/specs.ts`).
 
 | Config key (`config.jsonc`) | Environment variable | Group |
 |-----------------------------|----------------------|--------|
@@ -77,6 +77,6 @@ Three **`CONFIG_SPECS`** keys set the **boot-time** escalation default per actio
 | `scopeUpdatePolicy` | `SCOPE_UPDATE_POLICY` | patch / reply / RPC config |
 | `scopeClosePolicy` | `SCOPE_CLOSE_POLICY` | DELETE / session close |
 
-**Parsing:** trim only; the value must match the enum exactly (e.g. `ALLOW` is invalid and resolves to the product default on the env/config layer). **`permissionTimeoutMs`** is unrelated — it bounds permission UI wait time, not scope selectors.
+**Parsing:** config-file / reload path uses **`CONFIG_SPECS[].parse`**: trim; empty → omitted; non-empty must be exact lowercase enum via **`parseScopePolicyValue`** — otherwise the spec parser falls back to **`configDefault`** (`ask`). Raw ENV reads (escalation, no override) use **`parseScopePolicyValue` only** — invalid values (e.g. `ALLOW`) are treated as unset and the resolver falls through to default. **`permissionTimeoutMs`** is unrelated — it bounds permission UI wait time, not scope selectors.
 
-**Lifetime / hot reload:** these keys are **not** in **`HOT_KEYS`**. `POST /api/reload-config` reapplies only hot keys and does **not** clear or replace in-memory **`PATCH /api/scope-policy`** overrides. Overrides apply immediately for the running process and are **lost on backend restart**; after restart, effective policy is override (none) → ENV → config file → default. For live changes without restart, use **`PATCH /api/scope-policy`** (documented in `60-identity-and-scopes.md`) or set ENV before boot.
+**Lifetime / hot reload:** the three ENV names are in **`HOT_KEYS`** (`packages/backend/src/config/runtime-config.ts`). **`POST /api/reload-config`** reapplies effective config → **`process.env`** for them (same as other hot keys). Snapshot resolution order is unchanged: in-memory **`PATCH /api/scope-policy`** override wins when set (`sources.override`); reload **does not** clear overrides. Without override, escalation re-reads ENV per use. **Backend restart** drops PATCH overrides; effective policy is then override (none) → ENV → config file → default. For immediate UI/API changes without editing config files, use **`PATCH /api/scope-policy`** (`60-identity-and-scopes.md`).
