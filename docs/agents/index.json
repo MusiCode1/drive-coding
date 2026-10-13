@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.8.0",
+  "docsVersion": "1.9.0",
   "docs": [
     {
       "id": "orientation",
@@ -252,7 +252,7 @@
       "tags": ["identity"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.6.0",
+      "docs_version": "1.7.0",
       "routes": ["POST /api/agents/:id/reply", "GET /api/scope-policy", "PATCH /api/scope-policy"],
       "mcp_tools": [],
       "path": "docs/agents/60-identity-and-scopes.md",

@@ -14,7 +14,7 @@ describe("HTTP agent docs", () => {
       routeCount: number
       docs: unknown[]
     }
-    expect(body.docsVersion).toBe("1.8.0")
+    expect(body.docsVersion).toBe("1.9.0")
     expect(body.docs).toHaveLength(18)
     expect(body.routeCount).toBeGreaterThanOrEqual(39)
   })
@@ -23,7 +23,7 @@ describe("HTTP agent docs", () => {
     const res = await app.request("/api/docs/render-contract")
     expect(res.status).toBe(200)
     expect(res.headers.get("content-type")).toContain("text/markdown")
-    expect(res.headers.get("X-Drive-Coding-Docs-Version")).toBe("1.8.0")
+    expect(res.headers.get("X-Drive-Coding-Docs-Version")).toBe("1.9.0")
     const text = await res.text()
     expect(text).toContain("render-contract")
   })
