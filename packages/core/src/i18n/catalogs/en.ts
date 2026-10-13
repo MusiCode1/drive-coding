@@ -323,6 +323,8 @@ export const en: Catalog = {
   "session.scopePolicy.loading": "Loading policy for this agent…",
   "session.scopePolicy.saving": "Saving…",
   "session.scopePolicy.error": "Could not load or save policy for this agent.",
+  "session.scopePolicy.empty": "No policy loaded for this agent. Try loading again.",
+  "session.scopePolicy.retry": "Try again",
   "session.scopePolicy.note":
     "Applies to writes outside your agent subtree. Not a security boundary — visibility and predictable behavior.",
   "session.leaveRunning": "Leave — keep running",

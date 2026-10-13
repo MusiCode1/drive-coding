@@ -72,5 +72,17 @@ function onSelect(action: ScopeAction, value: string): void {
     {#if vm.saving}
       <p class="text-[12px] m-0" style="color:var(--fg-muted)">{t("session.scopePolicy.saving")}</p>
     {/if}
+  {:else if !vm.error}
+    <p class="text-sm m-0" style="color:var(--fg-dim)">{t("session.scopePolicy.empty")}</p>
+  {/if}
+  {#if !vm.confirmed && !vm.loading}
+    <button
+      type="button"
+      class="text-sm font-medium self-start"
+      style="color:var(--accent)"
+      onclick={() => void vm.refresh()}
+    >
+      {t("session.scopePolicy.retry")}
+    </button>
   {/if}
 </div>

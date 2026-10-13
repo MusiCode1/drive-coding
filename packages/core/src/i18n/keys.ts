@@ -338,6 +338,8 @@ export type MessageKey =
   | "session.scopePolicy.loading"
   | "session.scopePolicy.saving"
   | "session.scopePolicy.error"
+  | "session.scopePolicy.empty"
+  | "session.scopePolicy.retry"
   | "session.scopePolicy.note"
   | "session.leaveRunning" // תווית כפתור "צא — השאר רץ" (חדש)
   | "session.closeSession" // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning

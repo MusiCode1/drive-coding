@@ -51,6 +51,7 @@ export class SessionScopePolicy {
     this.confirmed = null
     this.error = null
     this.readbackEpoch += 1
+    if (this.#agentId) void this.refresh()
   }
 
   selectValue(action: ScopeAction): ScopePolicySelectValue {
