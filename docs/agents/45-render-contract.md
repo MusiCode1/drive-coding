@@ -5,10 +5,11 @@ summary: What the drive-coding UI renders from agent output, and what it will no
 read_when:
   - You are about to emit a file link, an image or a diagram
   - Your output rendered as plain text and you expected something richer
+  - You send or receive a drive-coding-msg envelope and need to know what the chat UI shows
 tags: [render, output, ui]
 surface: [http, mcp]
 stability: stable
-docs_version: 1.6.0
+docs_version: 1.7.0
 updated: 2026-10-13
 ---
 
@@ -18,16 +19,78 @@ The chat UI renders markdown-rich content with a **strict allowlist**. This page
 **expanded from `packages/backend/src/prompts/surface/display.ts`**; that file is the
 Tier-2 summary (three rules an agent must not miss) and this is its Tier-3 reference.
 
-## `drive-coding-msg` on the wire vs the UI
+## `drive-coding-msg` v1 — what the chat UI renders
 
-The backend may wrap inbound prompts in **`drive-coding-msg` v1** XML (agent sends, system
-events, RPC/MCP paths). That envelope is for **receivers** (CLI agents) to parse — see
-`session-lifecycle` for wire elements (`<sender>`, `<body>`, `<subject-agent>`,
-`<last-assistant-text>`, `<context>`, `<event-kind>turn-ended</event-kind>`, …).
+The backend may wrap inbound user prompts in **`drive-coding-msg` v1** XML (agent sends,
+system events, RPC/MCP/CLI paths). Wire shape and parsing rules for **receivers** (CLI
+agents) are in `session-lifecycle`. This section is the **display contract**: what the
+drive-coding chat surface shows from the **text it receives** for a user bubble.
 
-**Dedicated UI decode/render of the envelope is not part of this contract.** History and
-bubbles may show the XML (or mixed blocks) as plain text. Do not assume the user sees decoded
-`sender`/`body` in the chat surface.
+### When the UI treats text as an envelope
+
+- Only a **whole** envelope counts: the user-visible segment must be a single
+  `<drive-coding-msg …>…</drive-coding-msg>` document (optional trailing whitespace).
+  Prose before/after, or XML inside a markdown code fence, stays **plain** — no badge,
+  no sender decode.
+- **Manual paste** of a full envelope is rendered like any other user input. There is
+  **no** “verified sender” badge and **no** guarantee the named agent actually sent it;
+  display follows the XML text only.
+
+### Agent envelope (`source="agent"`)
+
+When the whole segment parses as a valid agent message:
+
+- **Header** — localized “message from agent” label, then **sender display name**
+  (from `<name>` when present, else session metadata). Name is a **link** only when the
+  live agent registry has a matching id with an open session host; empty registry or
+  closed agent ⇒ plain text name, **no** link invented from XML alone.
+- **`<context>`** — when present, shown in a **collapsed** `<details>` block, **plain
+  text** (not Markdown). It is separate from the body; `#`, `<`, `**` in context stay
+  literal characters.
+- **`<body>`** — rendered as **Markdown** (same allowlist as normal user bubbles),
+  including images and file links per the sections below. Agent-origin links use
+  **absolute-only** resolution where applicable.
+- **Show source** — collapsed `<pre>` with the **exact input string** (`textContent`);
+  copy uses that same string. Show-source does not re-parse HTML/Markdown inside the pre.
+
+The UI renders **the text stored on the bubble**, not a separate wire snapshot. If replay
+or transport delivers a shorter string than what left the sender (for example missing
+`<context>`), the bubble reflects **that** string — do not assume charter or context
+blocks match between wire and on-screen history.
+
+### System envelope (`source="system"`)
+
+When the whole segment parses as a valid system event:
+
+- **Event title** and **timestamp** when encoded.
+- **Structured fields** (`stopReason`, `silentMs`, nested errors, …) as **plain text**,
+  not Markdown.
+- **`<last-assistant-text>`** — when present, rendered as **Markdown** in a quoted
+  subsection attributed to the agent’s last message; `truncated="true"` adds a visible
+  truncation label, `false` or absent does not.
+- **`<context>`** — same collapsed plain-text block as agent messages when present.
+- **Show source** — same raw preservation as agent envelopes.
+
+Event kinds are shown by meaning (for example turn ended vs stall suspected vs turn
+error), not as generic success/failure.
+
+### Invalid or partial XML
+
+If the segment looks like an envelope candidate but **does not parse** (unknown version,
+wrong root, mixed agent/system fields, unclosed tags, …):
+
+- The UI keeps the **full original text** visible (neutral hint such as incomplete or
+  unsupported envelope when applicable).
+- **No** body Markdown pass that would hide tags; user copy equals the raw segment.
+
+Streaming may update the **same** bubble in place; partial prefixes use this neutral
+fallback until a full envelope arrives or the turn ends.
+
+### What envelope display does **not** prove
+
+- Rendered sender name/id is **declarative XML**, not cryptographic proof of who sent
+  unless your deployment adds separate auth (out of scope here).
+- Plain user text, attachments, and non-envelope chunks behave as before this contract.
 
 ## Images — recipe
 
