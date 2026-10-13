@@ -27,7 +27,7 @@ export class SettingsScopePolicy {
   /** Bump when BE URL changes so stale responses and in-flight PATCH are ignored. */
   noteBeUrlChanged(): void {
     this.#beUrlGeneration += 1
-    this.#readGeneration += 1
+    this.#invalidateInFlightReads()
     this.#saveGeneration += 1
     this.saving = false
     this.loading = false
@@ -70,7 +70,7 @@ export class SettingsScopePolicy {
       if (beGen !== this.#beUrlGeneration || saveGen !== this.#saveGeneration) return
       this.confirmed = snap
       this.readbackEpoch += 1
-      this.#readGeneration += 1
+      this.#invalidateInFlightReads()
     } catch (e) {
       if (beGen !== this.#beUrlGeneration || saveGen !== this.#saveGeneration) return
       this.confirmed = previous
@@ -81,6 +81,12 @@ export class SettingsScopePolicy {
         this.saving = false
       }
     }
+  }
+
+  /** Invalidate stale GETs; drop loading owned by a read superseded by PATCH / URL change. */
+  #invalidateInFlightReads(): void {
+    this.#readGeneration += 1
+    this.loading = false
   }
 
   #readStillValid(readGen: number, beGen: number, urlAtStart: string): boolean {

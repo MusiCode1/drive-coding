@@ -138,6 +138,44 @@ describe("SettingsScopePolicy", () => {
     expect(vm.loading).toBe(false)
   })
 
+  it("PATCH success clears loading when invalidating in-flight GET on re-entry", async () => {
+    const allowSnap = {
+      ...snap,
+      policies: { ...snap.policies, message: "allow" as const },
+    }
+    let resolvePatch: (v: typeof allowSnap) => void
+    const patchP = new Promise<typeof allowSnap>((r) => {
+      resolvePatch = r
+    })
+    let resolveGet: (v: ScopePolicySnapshot) => void
+    const getP = new Promise<ScopePolicySnapshot>((r) => {
+      resolveGet = r
+    })
+
+    mockFetch.mockResolvedValueOnce(snap).mockImplementationOnce(() => getP)
+    mockPatch.mockImplementationOnce(() => patchP)
+
+    const vm = new SettingsScopePolicy(() => "http://localhost:4000")
+    await vm.refresh()
+
+    const patchPromise = vm.setPolicy("message", "allow")
+    expect(vm.saving).toBe(true)
+
+    const reentryGet = vm.refresh()
+    expect(vm.loading).toBe(true)
+
+    resolvePatch!(allowSnap)
+    await patchPromise
+    expect(vm.loading).toBe(false)
+    expect(vm.confirmed?.policies.message).toBe("allow")
+    expect(vm.saving).toBe(false)
+
+    resolveGet!(snap)
+    await reentryGet
+    expect(vm.loading).toBe(false)
+    expect(vm.confirmed?.policies.message).toBe("allow")
+  })
+
   it("PATCH failure restores previous confirmed and bumps readbackEpoch", async () => {
     mockFetch.mockResolvedValue(snap)
     mockPatch.mockRejectedValue(new Error("500"))
