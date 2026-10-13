@@ -27,9 +27,9 @@
  * to other tests.
  */
 
-import { defineConfig } from "vitest/config"
-import { svelte } from "@sveltejs/vite-plugin-svelte"
 import path from "node:path"
+import { svelte } from "@sveltejs/vite-plugin-svelte"
+import { defineConfig } from "vitest/config"
 
 export default defineConfig({
   plugins: [svelte({ hot: false })],
@@ -39,6 +39,7 @@ export default defineConfig({
     // up automatically in `dev`/`build`; here we mirror it for tests.
     alias: {
       $lib: path.resolve(__dirname, "src/lib"),
+      "$env/dynamic/public": path.resolve(__dirname, "src/test-stubs/env-dynamic-public.ts"),
     },
   },
   test: {
