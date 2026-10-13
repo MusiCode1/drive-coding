@@ -17,14 +17,16 @@
  * ─── slice/bubble-alignment-rail (Commit 2) — BubbleRow wraps entire switch ───
  */
 import type { Bubble } from "$lib/types/bubble"
+import { isScopeExpiredToolCall } from "$lib/types/scope-prompt-view"
+import BubbleRow from "./bubbles/BubbleRow.svelte"
 import { isSubagentTask } from "./bubbles/bubble-rendering"
 import { bubbleAvatarKind, bubbleSide } from "./bubbles/bubble-row"
-import BubbleRow from "./bubbles/BubbleRow.svelte"
-import UserBubble from "./bubbles/UserBubble.svelte"
 import MessageBubble from "./bubbles/MessageBubble.svelte"
+import ScopeExpiredNotice from "./bubbles/ScopeExpiredNotice.svelte"
+import SubagentBubble from "./bubbles/SubagentBubble.svelte"
 import ThoughtBubble from "./bubbles/ThoughtBubble.svelte"
 import ToolBubble from "./bubbles/ToolBubble.svelte"
-import SubagentBubble from "./bubbles/SubagentBubble.svelte"
+import UserBubble from "./bubbles/UserBubble.svelte"
 
 const MAX_NEST_DEPTH = 1
 
@@ -38,6 +40,8 @@ let { bubble, depth = 0 }: { bubble: Bubble; depth?: number } = $props()
     <MessageBubble {bubble} />
   {:else if bubble.kind === "thought"}
     <ThoughtBubble {bubble} />
+  {:else if bubble.kind === "tool" && isScopeExpiredToolCall(bubble.toolCall)}
+    <ScopeExpiredNotice {bubble} />
   {:else if bubble.kind === "tool"}
     {#if isSubagentTask(bubble) && depth < MAX_NEST_DEPTH}
       <SubagentBubble {bubble} {depth} />

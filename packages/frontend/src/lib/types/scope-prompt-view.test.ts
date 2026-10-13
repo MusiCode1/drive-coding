@@ -4,7 +4,12 @@
 
 import { describe, expect, it } from "vitest"
 import type { PermissionParams } from "$lib/types/permission"
-import { readScopePromptDetail, scopeDetailRows } from "./scope-prompt-view.js"
+import {
+  isScopeExpiredToolCall,
+  readScopePromptDetail,
+  scopeDetailRows,
+  scopeExpiredRows,
+} from "./scope-prompt-view.js"
 
 const detail = {
   caller: "A",
@@ -81,5 +86,24 @@ describe("scopeDetailRows", () => {
   it("still adds countdown when expiresAtMs is in the past", () => {
     const rows = scopeDetailRows({ ...detail, expiresAtMs: 1 }, t)
     expect(rows[3]?.kind).toBe("countdown")
+  })
+})
+
+describe("isScopeExpiredToolCall", () => {
+  it("matches scope-expired and rejects ordinary tools", () => {
+    expect(isScopeExpiredToolCall({ name: "scope-expired", toolCallId: "scope-1" })).toBe(true)
+    expect(isScopeExpiredToolCall({ name: "read", toolCallId: "t1" })).toBe(false)
+  })
+})
+
+describe("scopeExpiredRows", () => {
+  const t = (key: string) => key
+
+  it("maps valid args to detail rows without countdown", () => {
+    expect(scopeExpiredRows(detail, t)).toHaveLength(3)
+  })
+
+  it("returns empty list for malformed args", () => {
+    expect(scopeExpiredRows({ caller: 1 }, t)).toEqual([])
   })
 })

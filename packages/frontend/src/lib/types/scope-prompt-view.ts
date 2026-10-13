@@ -65,3 +65,18 @@ export function scopeDetailRows(
   }
   return rows
 }
+
+export function isScopeExpiredToolCall(tc: {
+  name?: string
+  toolCallId?: string
+}): boolean {
+  return tc.name === "scope-expired"
+}
+
+export function scopeExpiredRows(
+  args: unknown,
+  t: (key: MessageKey) => string,
+): ScopeDetailRow[] {
+  if (!isScopePromptDetail(args)) return []
+  return scopeDetailRows(args, t).filter((row) => row.kind !== "countdown")
+}
