@@ -9,12 +9,15 @@ import {
   classifyScopeAction,
   readScopePolicyFromEnv,
   resolveScopePolicy,
+  resolveScopePolicySource,
   SCOPE_ACTIONS,
+  type AgentScopePolicies,
   type ScopeAction,
   type ScopePolicies,
   type ScopePolicy,
   type ScopePolicySnapshot,
   type ScopePolicySource,
+  type ScopePolicyPerAgentPatchPoliciesSchema,
 } from "@drive-coding/core/schemas/scope-policy"
 import { NOT_A_SECURITY_BOUNDARY } from "./agent-scope.js"
 
@@ -86,6 +89,37 @@ export function escalationPolicyForVerb(
 }
 
 /** Global + optional per-caller row; unclassified verbs stay ask before any policy read. */
+export function mergeAgentScopePolicyPatch(
+  current: AgentScopePolicies | undefined,
+  patch: typeof ScopePolicyPerAgentPatchPoliciesSchema.infer,
+): AgentScopePolicies | undefined {
+  const next: AgentScopePolicies = { ...(current ?? {}) }
+  for (const action of SCOPE_ACTIONS) {
+    const value = patch[action]
+    if (value === undefined) continue
+    if (value === null) delete next[action]
+    else next[action] = value
+  }
+  return Object.keys(next).length > 0 ? next : undefined
+}
+
+export function getEffectiveScopePolicyForAgent(
+  caller: Pick<Agent, "scopePolicies"> | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): ScopePolicySnapshot {
+  const globalSnap = getScopePolicySnapshot(env)
+  const policies = {} as ScopePolicies
+  const sources = {} as Record<ScopeAction, ScopePolicySource>
+  for (const action of SCOPE_ACTIONS) {
+    const global = globalSnap.policies[action]
+    const globalSource = globalSnap.sources[action] as Exclude<ScopePolicySource, "agent">
+    const perCaller = caller?.scopePolicies?.[action]
+    policies[action] = resolveScopePolicy({ global, perCaller })
+    sources[action] = resolveScopePolicySource({ global, globalSource, perCaller })
+  }
+  return { policies, sources }
+}
+
 export function escalationPolicyForCaller(
   verb: string,
   caller: Pick<Agent, "scopePolicies"> | undefined,
