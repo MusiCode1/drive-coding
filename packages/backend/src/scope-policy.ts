@@ -4,9 +4,11 @@
 // Guard rail, not a lock - see NOT_A_SECURITY_BOUNDARY in ./agent-scope.ts
 
 import { configDefault } from "@drive-coding/core/config/specs"
+import type { Agent } from "@drive-coding/core"
 import {
   classifyScopeAction,
   readScopePolicyFromEnv,
+  resolveScopePolicy,
   SCOPE_ACTIONS,
   type ScopeAction,
   type ScopePolicies,
@@ -80,7 +82,18 @@ export function escalationPolicyForVerb(
   verb: string,
   env: NodeJS.ProcessEnv = process.env,
 ): ScopePolicy {
+  return escalationPolicyForCaller(verb, undefined, env)
+}
+
+/** Global + optional per-caller row; unclassified verbs stay ask before any policy read. */
+export function escalationPolicyForCaller(
+  verb: string,
+  caller: Pick<Agent, "scopePolicies"> | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): ScopePolicy {
   const action = classifyScopeAction(verb)
   if (action === undefined) return "ask"
-  return getScopePolicySnapshot(env).policies[action]
+  const global = getScopePolicySnapshot(env).policies[action]
+  const perCaller = caller?.scopePolicies?.[action]
+  return resolveScopePolicy({ global, perCaller })
 }

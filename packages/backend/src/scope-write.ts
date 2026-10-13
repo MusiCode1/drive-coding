@@ -13,7 +13,7 @@ import {
   SCOPE_HEADER,
   verifyToken,
 } from "./agent-scope.js"
-import { escalationPolicyForVerb } from "./scope-policy.js"
+import { escalationPolicyForCaller } from "./scope-policy.js"
 import type { AgentSessionRegistry } from "./session-host/registry.js"
 
 const log = createLogger("backend.scope")
@@ -73,7 +73,8 @@ async function escalateScopePermission(
   const verified = verifyToken(token)
   if (!verified) return "deny"
 
-  const policy = escalationPolicyForVerb(verb)
+  const caller = agents.find((a) => a.id === verified.agentId)
+  const policy = escalationPolicyForCaller(verb, caller)
   if (policy === "allow") return "allow"
   if (policy === "deny") return "deny"
 

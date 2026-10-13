@@ -3,7 +3,9 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest"
+import type { Agent } from "@drive-coding/core"
 import {
+  escalationPolicyForCaller,
   escalationPolicyForVerb,
   getScopePolicySnapshot,
   resetScopePolicyForTests,
@@ -58,5 +60,35 @@ describe("escalationPolicyForVerb", () => {
     setScopePolicyOverride({ message: "allow", update: "allow", close: "allow" })
     expect(escalationPolicyForVerb("totally-unknown")).toBe("ask")
     expect(escalationPolicyForVerb("_drive/ext")).toBe("ask")
+  })
+})
+
+describe("escalationPolicyForCaller", () => {
+  afterEach(() => resetScopePolicyForTests())
+
+  const caller = (scopePolicies: Agent["scopePolicies"]): Agent =>
+    ({
+      id: "550e8400-e29b-41d4-a716-446655440000",
+      cliKind: "cursor",
+      cwd: "/tmp",
+      modelOverride: null,
+      status: "ready",
+      createdAt: new Date().toISOString(),
+      scopePolicies,
+    }) as Agent
+
+  it("per-caller allow overrides global ask for classified verbs", () => {
+    setScopePolicyOverride({ message: "ask" })
+    expect(escalationPolicyForCaller("send", caller({ message: "allow" }))).toBe("allow")
+  })
+
+  it("per-caller deny overrides global allow", () => {
+    setScopePolicyOverride({ close: "allow" })
+    expect(escalationPolicyForCaller("close", caller({ close: "deny" }))).toBe("deny")
+  })
+
+  it("unclassified verb stays ask even when per-caller message is allow", () => {
+    setScopePolicyOverride({ message: "ask", update: "ask", close: "ask" })
+    expect(escalationPolicyForCaller("_drive/ext", caller({ message: "allow" }))).toBe("ask")
   })
 })
