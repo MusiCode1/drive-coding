@@ -9,7 +9,7 @@ read_when:
 tags: [render, output, ui]
 surface: [http, mcp]
 stability: stable
-docs_version: 1.7.0
+docs_version: 1.7.1
 updated: 2026-10-13
 ---
 

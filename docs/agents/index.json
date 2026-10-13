@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.7.0",
+  "docsVersion": "1.7.1",
   "docs": [
     {
       "id": "orientation",
@@ -165,7 +165,7 @@
       "tags": ["render", "output", "ui"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.7.0",
+      "docs_version": "1.7.1",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/45-render-contract.md",
