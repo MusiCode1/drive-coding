@@ -2,7 +2,6 @@
  * scope-action-policy.test.ts — C1 integration: policy matrix + shared gates.
  */
 
-import * as scopePolicyCore from "@drive-coding/core/schemas/scope-policy"
 import { RPC_METHODS } from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
@@ -329,6 +328,39 @@ describe("scope action policy C1", () => {
     void rpcPromise
   })
 
+  it("mixed MCP send+sets skips side effects when message deny and update allow", async () => {
+    const { app, registry, agentSessionRegistry } = await makePolicyApp()
+    setScopePolicyOverride({ message: "deny", update: "allow" })
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a" })
+    const b = await registry.create({ cliKind: "cursor", cwd: "/b" })
+    const tokenA = issueToken(a.id)
+
+    const hostResult = await agentSessionRegistry.getOrCreateHost(b.id)
+    expect(hostResult.ok).toBe(true)
+    const hostB = hostResult.entry.host
+    hostB.state.sessionId = "s1"
+    const setSpy = vi.spyOn(hostB, "setConfigOption")
+    const promptSpy = vi.spyOn(hostB, "prompt")
+
+    const client = await connectMcp(app, {
+      [SCOPE_HEADER]: tokenA,
+      [AGENT_ID_HEADER]: a.id,
+    })
+    const result = await client.callTool({
+      name: "session_send",
+      arguments: {
+        agent: b.id,
+        prompt: "hi",
+        sets: { model: "fast" },
+        noWait: true,
+      },
+    })
+    expect(result.isError).toBe(true)
+    expect(setSpy).not.toHaveBeenCalled()
+    expect(promptSpy).not.toHaveBeenCalled()
+    await client.close()
+  })
+
   it("mixed MCP send+sets skips side effects when update deny", async () => {
     const { app, registry, agentSessionRegistry } = await makePolicyApp()
     setScopePolicyOverride({ message: "allow", update: "deny" })
@@ -362,6 +394,78 @@ describe("scope action policy C1", () => {
     await client.close()
   })
 
+  it("empty sets runs message-only gate and allows prompt when message allow", async () => {
+    const { app, registry, agentSessionRegistry } = await makePolicyApp()
+    setScopePolicyOverride({ message: "allow", update: "ask" })
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a" })
+    const b = await registry.create({ cliKind: "cursor", cwd: "/b" })
+    const tokenA = issueToken(a.id)
+
+    const hostResult = await agentSessionRegistry.getOrCreateHost(b.id)
+    expect(hostResult.ok).toBe(true)
+    const hostB = hostResult.entry.host
+    hostB.state.sessionId = "s1"
+    const setSpy = vi.spyOn(hostB, "setConfigOption")
+    const promptSpy = vi.spyOn(hostB, "prompt").mockResolvedValue(undefined)
+
+    const client = await connectMcp(app, {
+      [SCOPE_HEADER]: tokenA,
+      [AGENT_ID_HEADER]: a.id,
+    })
+    const result = await client.callTool({
+      name: "session_send",
+      arguments: {
+        agent: b.id,
+        prompt: "hi",
+        sets: {},
+        noWait: true,
+      },
+    })
+    expect(result.isError).not.toBe(true)
+    expect(setSpy).not.toHaveBeenCalled()
+    expect(promptSpy).toHaveBeenCalled()
+    await client.close()
+  })
+
+  it("mixed MCP send+sets with both ask escalates update before any side effect", async () => {
+    const { app, registry, agentSessionRegistry } = await makePolicyApp()
+    setScopePolicyOverride({ message: "ask", update: "ask" })
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a" })
+    const b = await registry.create({ cliKind: "cursor", cwd: "/b" })
+    const tokenA = issueToken(a.id)
+    await agentSessionRegistry.getOrCreateHost(a.id)
+    const hostA = agentSessionRegistry.getHost(a.id)
+    expect(hostA).toBeDefined()
+    if (!hostA) return
+    vi.spyOn(hostA, "requestScopePermission").mockResolvedValue("deny")
+
+    const hostResult = await agentSessionRegistry.getOrCreateHost(b.id)
+    expect(hostResult.ok).toBe(true)
+    const hostB = hostResult.entry.host
+    hostB.state.sessionId = "s1"
+    const setSpy = vi.spyOn(hostB, "setConfigOption")
+    const promptSpy = vi.spyOn(hostB, "prompt")
+
+    const client = await connectMcp(app, {
+      [SCOPE_HEADER]: tokenA,
+      [AGENT_ID_HEADER]: a.id,
+    })
+    const result = await client.callTool({
+      name: "session_send",
+      arguments: {
+        agent: b.id,
+        prompt: "hi",
+        sets: { model: "fast" },
+        noWait: true,
+      },
+    })
+    expect(result.isError).toBe(true)
+    expect(hostA.requestScopePermission).toHaveBeenCalled()
+    expect(setSpy).not.toHaveBeenCalled()
+    expect(promptSpy).not.toHaveBeenCalled()
+    await client.close()
+  })
+
   it("RPC update deny does not create target host", async () => {
     const { app, registry, agentSessionRegistry } = await makePolicyApp()
     setScopePolicyOverride({ update: "deny" })
@@ -387,15 +491,4 @@ describe("scope action policy C1", () => {
     expect(createSpy).not.toHaveBeenCalled()
   })
 
-  it("negative control: misclassified update would bypass update deny", () => {
-    const real = scopePolicyCore.classifyScopeAction(RPC_METHODS.setConfigOption)
-    expect(real).toBe("update")
-    const wrong = scopePolicyCore.classifyScopeAction(RPC_METHODS.setConfigOption) === "message"
-    setScopePolicyOverride({ message: "allow", update: "deny" })
-    if (wrong) {
-      expect(scopePolicyCore.classifyScopeAction(RPC_METHODS.setConfigOption)).toBe("message")
-    } else {
-      expect(scopePolicyCore.classifyScopeAction(RPC_METHODS.setConfigOption)).toBe("update")
-    }
-  })
 })

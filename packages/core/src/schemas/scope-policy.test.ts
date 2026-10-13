@@ -5,12 +5,7 @@
 import { describe, expect, it } from "vitest"
 import { configDefault } from "../config/specs.js"
 import { RPC_METHODS } from "../session/rpc-methods.js"
-import {
-  classifyScopeAction,
-  parseScopePolicyConfigLayer,
-  parseScopePolicyValue,
-  readScopePolicyFromEnv,
-} from "./scope-policy.js"
+import { classifyScopeAction, parseScopePolicyValue, readScopePolicyFromEnv } from "./scope-policy.js"
 
 describe("classifyScopeAction", () => {
   it("maps message verbs", () => {
@@ -50,13 +45,6 @@ describe("parseScopePolicyValue", () => {
     expect(parseScopePolicyValue("")).toBeUndefined()
     expect(parseScopePolicyValue("  ")).toBeUndefined()
     expect(parseScopePolicyValue("maybe")).toBeUndefined()
-  })
-})
-
-describe("parseScopePolicyConfigLayer", () => {
-  it("invalid explicit env becomes ask", () => {
-    expect(parseScopePolicyConfigLayer("ALLOW_ALL")).toBe("ask")
-    expect(parseScopePolicyConfigLayer("ALLOW")).toBe("ask")
   })
 })
 

@@ -5,7 +5,7 @@
  * cliSpecs and https). Derivation sites in load-config.ts loop over this table.
  */
 
-import { parseScopePolicyConfigLayer } from "../schemas/scope-policy.js"
+import { parseScopePolicyValue } from "../schemas/scope-policy.js"
 import { normalizePublicBaseUrl } from "./public-base-url.js"
 import type { DriveCodingConfig } from "./schema.js"
 
@@ -166,21 +166,33 @@ export const CONFIG_SPECS = [
   {
     key: "scopeMessagePolicy",
     env: "SCOPE_MESSAGE_POLICY",
-    parse: parseScopePolicyConfigLayer,
+    parse: (raw: string) => {
+      const trimmed = raw.trim()
+      if (trimmed === "") return undefined
+      return parseScopePolicyValue(trimmed) ?? configDefault("scopeMessagePolicy")
+    },
     serialize: (v: unknown) => String(v),
     default: "ask",
   },
   {
     key: "scopeUpdatePolicy",
     env: "SCOPE_UPDATE_POLICY",
-    parse: parseScopePolicyConfigLayer,
+    parse: (raw: string) => {
+      const trimmed = raw.trim()
+      if (trimmed === "") return undefined
+      return parseScopePolicyValue(trimmed) ?? configDefault("scopeUpdatePolicy")
+    },
     serialize: (v: unknown) => String(v),
     default: "ask",
   },
   {
     key: "scopeClosePolicy",
     env: "SCOPE_CLOSE_POLICY",
-    parse: parseScopePolicyConfigLayer,
+    parse: (raw: string) => {
+      const trimmed = raw.trim()
+      if (trimmed === "") return undefined
+      return parseScopePolicyValue(trimmed) ?? configDefault("scopeClosePolicy")
+    },
     serialize: (v: unknown) => String(v),
     default: "ask",
   },

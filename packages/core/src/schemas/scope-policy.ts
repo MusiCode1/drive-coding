@@ -30,10 +30,31 @@ export const SCOPE_POLICY_ENV_KEYS = {
   close: "SCOPE_CLOSE_POLICY",
 } as const satisfies Record<ScopeAction, string>
 
+export const ScopePolicySourceSchema = type("'override'|'env'|'default'")
+
 export const ScopePoliciesSchema = type({
   message: ScopePolicy,
   update: ScopePolicy,
   close: ScopePolicy,
+})
+
+export const ScopePolicySnapshotSchema = type({
+  policies: ScopePoliciesSchema,
+  sources: type({
+    message: ScopePolicySourceSchema,
+    update: ScopePolicySourceSchema,
+    close: ScopePolicySourceSchema,
+  }),
+})
+
+export const ScopePolicyPatchPoliciesSchema = type({
+  "message?": ScopePolicy,
+  "update?": ScopePolicy,
+  "close?": ScopePolicy,
+})
+
+export const ScopePolicyPatchBodySchema = type({
+  policies: ScopePolicyPatchPoliciesSchema,
 })
 
 /** Raw env read: trim only; exact lowercase enum or undefined (omitted). */
@@ -46,11 +67,10 @@ export function parseScopePolicyValue(raw: string | undefined): ScopePolicy | un
   return result
 }
 
-/** Config env-layer parse: invalid non-empty explicit value → ask (beats file allow). */
-export function parseScopePolicyConfigLayer(raw: string): ScopePolicy | undefined {
-  const trimmed = raw.trim()
-  if (trimmed === "") return undefined
-  return parseScopePolicyValue(trimmed) ?? "ask"
+export function hasScopePolicyPatchKey(
+  policies: typeof ScopePolicyPatchPoliciesSchema.infer,
+): boolean {
+  return policies.message !== undefined || policies.update !== undefined || policies.close !== undefined
 }
 
 export function classifyScopeAction(verb: string): ScopeAction | undefined {

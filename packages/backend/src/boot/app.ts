@@ -29,6 +29,7 @@ import { agentDocFiles } from "../agent-docs-runtime.js"
 import { bootAgentEvents } from "../delivery/agent-events-boot.js"
 import { registerMcpHttp } from "../delivery/http-mcp.js"
 import { registerHttpOptions } from "../delivery/http-options.js"
+import { registerHttpScopePolicy } from "../delivery/http-scope-policy.js"
 import { registerProxyHttp } from "../delivery/http-proxy.js"
 import { registerReloadConfigHttp } from "../delivery/http-reload-config.js"
 import { registerTtsCapabilitiesHttp } from "../delivery/http-tts-capabilities.js"
@@ -71,6 +72,7 @@ export async function buildApp(
 
   registerHttp(app)
   registerHttpOptions(app)
+  registerHttpScopePolicy(app)
   registerTtsCapabilitiesHttp(app, env)
   registerLiveTokenHttp(app, env)
   registerClientLogHttp(app)

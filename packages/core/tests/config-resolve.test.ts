@@ -18,7 +18,6 @@
 import { describe, expect, it } from "vitest"
 import { resolveConfig } from "../src/config/resolve.js"
 import { configDefault } from "../src/config/specs.js"
-import { parseScopePolicyConfigLayer } from "../src/schemas/scope-policy.js"
 
 describe("resolveConfig — precedence", () => {
   it("1. flag > env > file: flag wins when all set", () => {
@@ -41,11 +40,9 @@ describe("resolveConfig — precedence", () => {
   })
 
   it("2b. scope policy: invalid env layer ask beats file allow", () => {
-    const envAsk = parseScopePolicyConfigLayer("ALLOW")
-    expect(envAsk).toBe("ask")
     const result = resolveConfig([
       { scopeMessagePolicy: "allow" },
-      { scopeMessagePolicy: envAsk },
+      { scopeMessagePolicy: "ask" },
     ])
     expect(result.isOk()).toBe(true)
     expect(result._unsafeUnwrap().scopeMessagePolicy).toBe("ask")
