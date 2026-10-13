@@ -350,10 +350,10 @@
       "codeLines": 44
     },
     "packages/backend/src/session-host/http/rpc.ts": {
-      "metric": 428,
+      "metric": 373,
       "impurity": 19,
       "class": "mixed",
-      "codeLines": 328
+      "codeLines": 282
     },
     "packages/backend/src/session-host/patches-broadcaster.ts": {
       "metric": 166,
@@ -764,10 +764,10 @@
       "codeLines": 123
     },
     "packages/frontend/src/lib/components/settings/SettingsScreen.svelte": {
-      "metric": 141,
-      "impurity": 5,
+      "metric": 118,
+      "impurity": 3,
       "class": "mixed",
-      "codeLines": 260
+      "codeLines": 188
     },
     "packages/frontend/src/lib/components/settings/TtsStatusCard.svelte": {
       "metric": 62,

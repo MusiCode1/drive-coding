@@ -21,14 +21,16 @@ import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 import { getI18n, getNotify, getSettings } from "$lib/context"
 import { resolveSessionTransport, type SessionTransport } from "$lib/session/session-transport"
 import { ttsStatus } from "$lib/view-models/tts-status.svelte"
+import BackendUrlSettingsCard from "./BackendUrlSettingsCard.svelte"
+import ChatDisplaySettingsCard from "./ChatDisplaySettingsCard.svelte"
 import LanguageSelect from "./LanguageSelect.svelte"
+import MicDeviceSettingsCard from "./MicDeviceSettingsCard.svelte"
 import PalettePicker from "./PalettePicker.svelte"
+import ScopePolicySettingsCard from "./ScopePolicySettingsCard.svelte"
 import SettingsCard from "./SettingsCard.svelte"
 import SettingToggle from "./SettingToggle.svelte"
 import TokenContextUsageCard from "./TokenContextUsageCard.svelte"
 import TtsStatusCard from "./TtsStatusCard.svelte"
-import ChatDisplaySettingsCard from "./ChatDisplaySettingsCard.svelte"
-import MicDeviceSettingsCard from "./MicDeviceSettingsCard.svelte"
 import VoiceSpeechSettingsCard from "./VoiceSpeechSettingsCard.svelte"
 
 const settings = getSettings()
@@ -45,33 +47,6 @@ function onSpeakThoughtsChange(v: boolean) {
   settings.setSpeakThoughts(v)
   if (!v) settings.setTranslateThoughts(false)
 }
-
-// ─── beUrl ─── (הוחזר אחרי ה-redesign — ה-VM קיים, רק ה-UI נשמט)
-// טופס מבוקר: ערך הקלט נפרד מ-settings.beUrl, נשמר רק על blur/Enter דרך
-// setBeUrl (שמחזיר Result). beUrlStatus משקף ולידציה/שמירה להצגה בלבד.
-let beUrlInput = $state(settings.beUrl)
-let beUrlStatus = $state<{ kind: "idle" | "saved" | "error"; msg?: string }>({ kind: "idle" })
-
-function commitBeUrl() {
-  const res = settings.setBeUrl(beUrlInput)
-  if (res.ok) {
-    // מנרמל את הקלט לערך שנשמר בפועל (trim + הסרת / מסיים)
-    beUrlInput = settings.beUrl
-    beUrlStatus = { kind: "saved" }
-  } else {
-    beUrlStatus = { kind: "error", msg: res.error }
-  }
-}
-
-// F1: "נשמר ✓" נעלם אחרי 3s. דפוס מ-67694fb — $effect שמגיב ל-beUrlStatus,
-// ה-cleanup מבטל timer קודם (שמירה חוזרת) ומנקה ב-teardown (מניעת set אחרי unmount).
-$effect(() => {
-  if (beUrlStatus.kind !== "saved") return
-  const timer = setTimeout(() => {
-    beUrlStatus = { kind: "idle" }
-  }, 3000)
-  return () => clearTimeout(timer)
-})
 
 // ─── session transport ─── (slice transport-polish C4)
 // העדפה קבועה (localStorage). null = לא נבחרה → env נבחר. בחירה ידנית גוברת על env.
@@ -219,33 +194,9 @@ $effect(() => {
 
   <ChatDisplaySettingsCard />
 
-  <!-- כרטיס שרת — beUrl. נשמר על blur/Enter; ריק = same-origin / פרוקסי Vite -->
-  <SettingsCard title={t("settings.beUrl.label")}>
-    <label class="flex flex-col gap-1.5">
-      <input
-        dir="ltr"
-        bind:value={beUrlInput}
-        placeholder="https://be.example.com"
-        class="rounded-xl px-3 py-3 text-sm font-mono outline-none border"
-        style="background:var(--bg-card); border-color:var(--border); color:var(--fg)"
-        oninput={() => (beUrlStatus = { kind: "idle" })}
-        onblur={commitBeUrl}
-        onkeydown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault()
-            commitBeUrl()
-          }
-        }}
-      />
-      {#if beUrlStatus.kind === "error"}
-        <span class="text-[12px]" style="color:var(--recording)">{t("settings.beUrl.invalid")}</span>
-      {:else if beUrlStatus.kind === "saved"}
-        <span class="text-[12px]" style="color:var(--accent)">{t("settings.beUrl.saved")}</span>
-      {:else}
-        <span class="text-[12px]" style="color:var(--fg-muted)">{t("settings.beUrl.help")}</span>
-      {/if}
-    </label>
-  </SettingsCard>
+  <BackendUrlSettingsCard />
+
+  <ScopePolicySettingsCard />
 
   <!-- כרטיס מתקדם — טרנספורט סשן (slice transport-polish C4) -->
   <SettingsCard title={t("settings.sessionTransport.label")}>

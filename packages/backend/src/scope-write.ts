@@ -12,6 +12,7 @@ import {
   SCOPE_HEADER,
   verifyToken,
 } from "./agent-scope.js"
+import { escalationPolicyForVerb } from "./scope-policy.js"
 import type { AgentSessionRegistry } from "./session-host/registry.js"
 
 const log = createLogger("backend.scope")
@@ -57,6 +58,10 @@ async function escalateScopePermission(deps: ScopedWriteDeps): Promise<"allow" |
   if (!token) return "deny"
   const verified = verifyToken(token)
   if (!verified) return "deny"
+
+  const policy = escalationPolicyForVerb(verb)
+  if (policy === "allow") return "allow"
+  if (policy === "deny") return "deny"
 
   const callerHost = sessionRegistry.getHost(verified.agentId)
   if (!callerHost) return "deny"

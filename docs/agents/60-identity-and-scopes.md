@@ -11,8 +11,10 @@ surface: [http, mcp]
 stability: stable
 routes:
   - POST /api/agents/:id/reply
-docs_version: 1.2.0
-updated: 2026-09-28
+  - GET /api/scope-policy
+  - PATCH /api/scope-policy
+docs_version: 1.6.0
+updated: 2026-10-13
 ---
 
 # Agent identity and scoped writes
@@ -71,3 +73,28 @@ The canonical stance is **`NOT_A_SECURITY_BOUNDARY`** (`agent-scope.ts:26-27`):
 5. The backend has **no authentication** of any kind on this surface (`agent-scope.ts:12`, `agent-scope.ts:17-20`).
 
 Do not soften this list or suggest hardening here. The guard exists so a **confused agent pursuing an unrelated task** does not close, prompt, or reconfigure a **stranger's** session by accident (`agent-scope.ts:14-15`).
+
+## Scope action policy (message / update / close)
+
+Three independent global selectors — **`ask`**, **`allow`**, or **`deny`** — one per action group. Defaults are **`ask`** for all three. Policy applies only when a scoped token writes **outside** the caller's subtree (same gate as above); missing token, master key, in-subtree targets, and existing `allow_always` grants behave unchanged.
+
+| Group | Examples |
+|-------|----------|
+| **message** | MCP `session_send`, RPC `session/prompt` |
+| **update** | HTTP `PATCH`, `POST …/reply`, RPC config/session control methods |
+| **close** | HTTP `DELETE` agent, MCP `session_close`, RPC `session/delete` |
+
+Unclassified RPC (e.g. `_drive/ext`) always **`ask`** on escalation even when all selectors are **`allow`**.
+
+### HTTP API
+
+| Method | Path | Body | Response |
+|--------|------|------|----------|
+| `GET` | `/api/scope-policy` | — | `{ policies, sources }` |
+| `PATCH` | `/api/scope-policy` | `{ policies: { message?, update?, close? } }` — at least one declared key; **no** extra keys at top level or under `policies` (`400`) | same snapshot shape |
+
+Both responses use **`Cache-Control: no-store`**. **`sources`** values: **`override`** (live PATCH in this process), **`env`** (effective process ENV for that group), **`default`** (product default when ENV omitted/invalid). PATCH overrides are **in-memory only** — lost on backend restart; restart reloads config/ENV.
+
+**`allow`** on a group permits matching cross-subtree writes **without** a UI prompt (no caller host required). **`deny`** rejects without creating a prompt. **`ask`** keeps the existing escalation + permission flow.
+
+MCP **`session_send`** with non-empty **`sets`**: the backend checks **update** (`session/set_config_option`) then **message** (`send`); if either group denies, the whole call fails with scope-denied and **no** config/prompt side effects.

@@ -31,6 +31,9 @@ export const DriveCodingConfig = type({
   // would then silently erase the other from the config file.
   "elicitationTimeoutMs?": "number|'never'|'off'",
   "permissionTimeoutMs?": "number|'never'|'off'",
+  "scopeMessagePolicy?": "'ask'|'allow'|'deny'",
+  "scopeUpdatePolicy?": "'ask'|'allow'|'deny'",
+  "scopeClosePolicy?": "'ask'|'allow'|'deny'",
   "log?": {
     "level?": "string",
     "ns?": "string",

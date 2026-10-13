@@ -39,6 +39,15 @@ describe("resolveConfig — precedence", () => {
     expect(result._unsafeUnwrap().port).toBe(4200)
   })
 
+  it("2b. scope policy: invalid env layer ask beats file allow", () => {
+    const result = resolveConfig([
+      { scopeMessagePolicy: "allow" },
+      { scopeMessagePolicy: "ask" },
+    ])
+    expect(result.isOk()).toBe(true)
+    expect(result._unsafeUnwrap().scopeMessagePolicy).toBe("ask")
+  })
+
   it("3. file layer used when no higher layer", () => {
     const result = resolveConfig([{ port: 4100 }])
     expect(result.isOk()).toBe(true)

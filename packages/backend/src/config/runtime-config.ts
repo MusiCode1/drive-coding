@@ -112,6 +112,10 @@ export const HOT_KEYS = new Set([
   // this runs: loadCliSpecsOverride checks that memo BEFORE it looks at env,
   // so without the reset this value would be ignored entirely.
   "CLI_SPECS_JSON",
+  // scope-policy getters re-read ENV per escalation (scope-policy.ts).
+  "SCOPE_MESSAGE_POLICY",
+  "SCOPE_UPDATE_POLICY",
+  "SCOPE_CLOSE_POLICY",
 ])
 
 export type ReloadOutcome = {
