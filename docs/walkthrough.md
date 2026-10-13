@@ -1,3 +1,13 @@
+## 2026-10-13 — slice `agent-message-envelope-ui` C0 (אליעזר)
+
+ענף: `slice/agent-message-envelope-ui` @ base `2a404988`. worktree: `.worktrees/agent-message-envelope-ui`.
+
+**C0** — `drive-message-view.ts` + 20 טסטים (מטריצת handoff §B): `parseDriveMessage` בלבד, `plain`/`invalid`/`agent`/`system`, שם snapshot, `href` מ-`sessionPathWithTransport` (התאמת id בלבד).
+
+**בדיקות:** `bunx vitest run --root packages/frontend src/lib/components/chat/bubbles/drive-message-view.test.ts` → 20 passed, rc=0. `bunx tsc --build` → rc=0. `biome check` על שני הקבצים → rc=0.
+
+---
+
 ## 2026-09-27 — slice `usage-per-cli` (אליעזר)
 
 ענף: `slice/usage-per-cli` @ base `0f32eabf`. worktree: `.worktrees/usage-per-cli`.
