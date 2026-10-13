@@ -9,6 +9,7 @@ vi.mock("../adapters/scope-policy-api.js", () => ({
   patchScopePolicy: vi.fn(),
 }))
 
+import type { ScopePolicySnapshot } from "@drive-coding/core/schemas/scope-policy"
 import { fetchScopePolicy, patchScopePolicy } from "../adapters/scope-policy-api.js"
 import { SettingsScopePolicy } from "./settings-scope-policy.svelte.js"
 
@@ -77,6 +78,64 @@ describe("SettingsScopePolicy", () => {
     expect(vm.saving).toBe(false)
     await patchP
     expect(vm.confirmed).toBeNull()
+  })
+
+  it("older GET does not overwrite newer GET then successful PATCH", async () => {
+    const askSnap = { ...snap, policies: { ...snap.policies, message: "ask" as const } }
+    const allowSnap = {
+      ...snap,
+      policies: { ...snap.policies, message: "allow" as const },
+      sources: { ...snap.sources, message: "runtime" as const },
+    }
+    let resolveSlow: (v: typeof askSnap) => void
+    const slowP = new Promise<typeof askSnap>((r) => {
+      resolveSlow = r
+    })
+    mockFetch
+      .mockImplementationOnce(() => slowP)
+      .mockImplementationOnce(async () => askSnap)
+    mockPatch.mockResolvedValue(allowSnap)
+
+    const vm = new SettingsScopePolicy(() => "http://localhost:4000")
+    const first = vm.refresh()
+    await vm.refresh()
+    expect(vm.confirmed?.policies.message).toBe("ask")
+    expect(vm.loading).toBe(false)
+
+    await vm.setPolicy("message", "allow")
+    expect(vm.confirmed?.policies.message).toBe("allow")
+
+    resolveSlow!(askSnap)
+    await first
+    expect(vm.confirmed?.policies.message).toBe("allow")
+    expect(vm.loading).toBe(false)
+  })
+
+  it("older GET does not overwrite newer GET on same URL", async () => {
+    let resolveSlow: (v: ScopePolicySnapshot) => void
+    const slowP = new Promise<ScopePolicySnapshot>((r) => {
+      resolveSlow = r
+    })
+    mockFetch
+      .mockImplementationOnce(() => slowP)
+      .mockImplementationOnce(async () => ({
+        ...snap,
+        policies: { ...snap.policies, message: "deny" as const },
+      }))
+
+    const vm = new SettingsScopePolicy(() => "http://localhost:4000")
+    const slow = vm.refresh()
+    await vm.refresh()
+    expect(vm.confirmed?.policies.message).toBe("deny")
+    expect(vm.loading).toBe(false)
+
+    resolveSlow!({
+      ...snap,
+      policies: { ...snap.policies, message: "allow" as const },
+    })
+    await slow
+    expect(vm.confirmed?.policies.message).toBe("deny")
+    expect(vm.loading).toBe(false)
   })
 
   it("PATCH failure restores previous confirmed and bumps readbackEpoch", async () => {

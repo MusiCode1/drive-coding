@@ -1,4 +1,5 @@
 <script lang="ts">
+import type { MessageKey } from "@drive-coding/core/i18n"
 import type { ScopeAction, ScopePolicy } from "@drive-coding/core/schemas/scope-policy"
 import { onMount } from "svelte"
 import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
@@ -11,17 +12,17 @@ const t = getI18n().t
 
 const actions: ScopeAction[] = ["message", "update", "close"]
 
+const actionLabelKeys: Record<ScopeAction, MessageKey> = {
+  message: "settings.scopePolicy.message",
+  update: "settings.scopePolicy.update",
+  close: "settings.scopePolicy.close",
+}
+
 const policyOptions = $derived<SelectOption[]>([
   { value: "ask", label: t("settings.scopePolicy.option.ask") },
   { value: "allow", label: t("settings.scopePolicy.option.allow") },
   { value: "deny", label: t("settings.scopePolicy.option.deny") },
 ])
-
-function labelKey(action: ScopeAction): string {
-  if (action === "message") return "settings.scopePolicy.message"
-  if (action === "update") return "settings.scopePolicy.update"
-  return "settings.scopePolicy.close"
-}
 
 function currentValue(action: ScopeAction): ScopePolicy | "" {
   return vm.confirmed?.policies[action] ?? ""
@@ -42,13 +43,13 @@ onMount(() => {
   {:else if vm.confirmed}
     {#each actions as action (action)}
       <label class="flex flex-col gap-1.5 mb-3">
-        <span class="text-[13px]" style="color:var(--fg-dim)">{t(labelKey(action))}</span>
+        <span class="text-[13px]" style="color:var(--fg-dim)">{t(actionLabelKeys[action])}</span>
         {#key `${vm.readbackEpoch}-${action}`}
           <Select
             options={policyOptions}
             value={currentValue(action)}
             disabled={vm.loading || vm.saving}
-            title={t(labelKey(action))}
+            title={t(actionLabelKeys[action])}
             onchange={(v) => void vm.setPolicy(action, v as ScopePolicy)}
           />
         {/key}

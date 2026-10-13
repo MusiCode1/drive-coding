@@ -18,6 +18,8 @@ export class SettingsScopePolicy {
   readbackEpoch = $state(0)
 
   #beUrlGeneration = 0
+  /** Monotonic read token: each refresh claims ++; PATCH success / URL change bump invalidates in-flight GETs. */
+  #readGeneration = 0
   #saveGeneration = 0
 
   constructor(private readonly getBeUrl: () => string) {}
@@ -25,6 +27,7 @@ export class SettingsScopePolicy {
   /** Bump when BE URL changes so stale responses and in-flight PATCH are ignored. */
   noteBeUrlChanged(): void {
     this.#beUrlGeneration += 1
+    this.#readGeneration += 1
     this.#saveGeneration += 1
     this.saving = false
     this.loading = false
@@ -34,23 +37,22 @@ export class SettingsScopePolicy {
   }
 
   refresh = async (): Promise<void> => {
-    const gen = this.#beUrlGeneration
+    const beGen = this.#beUrlGeneration
     const urlAtStart = this.getBeUrl()
+    const readGen = ++this.#readGeneration
     this.loading = true
     this.error = null
     try {
       const snap = await fetchScopePolicy()
-      if (gen !== this.#beUrlGeneration) return
-      if (this.getBeUrl() !== urlAtStart) return
+      if (!this.#readStillValid(readGen, beGen, urlAtStart)) return
       this.confirmed = snap
       this.readbackEpoch += 1
     } catch (e) {
-      if (gen !== this.#beUrlGeneration) return
-      if (this.getBeUrl() !== urlAtStart) return
+      if (!this.#readStillValid(readGen, beGen, urlAtStart)) return
       this.confirmed = null
       this.error = e instanceof Error ? e.message : String(e)
     } finally {
-      if (gen === this.#beUrlGeneration && this.getBeUrl() === urlAtStart) {
+      if (this.#readStillValid(readGen, beGen, urlAtStart)) {
         this.loading = false
       }
     }
@@ -58,25 +60,34 @@ export class SettingsScopePolicy {
 
   setPolicy = async (action: ScopeAction, value: ScopePolicy): Promise<void> => {
     if (this.saving) return
-    const gen = this.#beUrlGeneration
+    const beGen = this.#beUrlGeneration
     const saveGen = ++this.#saveGeneration
     const previous = this.confirmed
     this.saving = true
     this.error = null
     try {
       const snap = await patchScopePolicy({ policies: { [action]: value } })
-      if (gen !== this.#beUrlGeneration || saveGen !== this.#saveGeneration) return
+      if (beGen !== this.#beUrlGeneration || saveGen !== this.#saveGeneration) return
       this.confirmed = snap
       this.readbackEpoch += 1
+      this.#readGeneration += 1
     } catch (e) {
-      if (gen !== this.#beUrlGeneration || saveGen !== this.#saveGeneration) return
+      if (beGen !== this.#beUrlGeneration || saveGen !== this.#saveGeneration) return
       this.confirmed = previous
       this.readbackEpoch += 1
       this.error = e instanceof Error ? e.message : String(e)
     } finally {
-      if (gen === this.#beUrlGeneration && saveGen === this.#saveGeneration) {
+      if (beGen === this.#beUrlGeneration && saveGen === this.#saveGeneration) {
         this.saving = false
       }
     }
+  }
+
+  #readStillValid(readGen: number, beGen: number, urlAtStart: string): boolean {
+    return (
+      readGen === this.#readGeneration &&
+      beGen === this.#beUrlGeneration &&
+      urlAtStart === this.getBeUrl()
+    )
   }
 }
