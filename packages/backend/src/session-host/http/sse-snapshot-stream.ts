@@ -2,11 +2,7 @@
  * sse-snapshot-stream.ts — write chunked frame-zero to an SSE wire sink.
  */
 
-import {
-  type SessionState,
-  serializeFrame,
-  snapshotFrames,
-} from "@drive-coding/core/session"
+import { type SessionState, serializeFrame, snapshotFrames } from "@drive-coding/core/session"
 
 export type WriteSnapshotChunkFramesOpts = {
   maxBytes?: number
