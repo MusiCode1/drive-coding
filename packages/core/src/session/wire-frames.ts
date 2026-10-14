@@ -49,11 +49,16 @@ function notification(sessionId: string | null, update: WireSessionUpdate): unkn
  * ⚠️ ‏`snapshotFrame` **אינו** מקבל `opts` — ה-SSE frame-zero הוא תמיד מלא.
  * זו הכרעת-scope ולא השמטה: ר' §2א בבריף.
  */
+/** תקציב-בתים לנתח. ‏נבחר ולא נגזר — ‏ר' §9 ש1. */
+export const SNAPSHOT_CHUNK_MAX_BYTES = 2_000_000
+
 export type SnapshotPayload = {
   sessionId: string | null
   version: number
   epoch?: number
   updates: WireSessionUpdate[]
+  /** נוכח רק בפריימי snapshot מרובי-נתחים. ‏נעדר ⇒ ‏נתח יחיד וסופי. */
+  chunk?: { i: number; more: boolean }
 }
 
 export function snapshotPayload(
@@ -81,6 +86,96 @@ export function snapshotFrame(state: SessionState, epoch?: number): SseFrame {
     id: String(state.version),
     data: JSON.stringify(snapshotPayload(state, epoch)),
   }
+}
+
+const snapshotBytesEncoder = new TextEncoder()
+
+function wireUpdateUtf8Bytes(u: WireSessionUpdate): number {
+  return snapshotBytesEncoder.encode(JSON.stringify(u)).length
+}
+
+function snapshotChunkPayload(
+  state: SessionState,
+  updates: WireSessionUpdate[],
+  chunk: { i: number; more: boolean } | undefined,
+  epoch?: number,
+): SnapshotPayload {
+  return {
+    sessionId: state.sessionId,
+    version: state.version,
+    ...(epoch !== undefined ? { epoch } : {}),
+    updates,
+    ...(chunk !== undefined ? { chunk } : {}),
+  }
+}
+
+function snapshotChunkFrame(
+  state: SessionState,
+  updates: WireSessionUpdate[],
+  chunk: { i: number; more: boolean } | undefined,
+  epoch?: number,
+): SseFrame {
+  return {
+    event: "snapshot",
+    id: String(state.version),
+    data: JSON.stringify(snapshotChunkPayload(state, updates, chunk, epoch)),
+  }
+}
+
+/**
+ * ‏`state` → ‏רשימת פריימי `snapshot`, חתוכה לפי תקציב-בתים.
+ * ‏תמיד מחזיר **לפחות פריים אחד**, גם על state ריק.
+ * ‏האחרון תמיד נושא `chunk.more === false` (או `chunk` נעדר — נתח יחיד סופי).
+ */
+export function snapshotFrames(
+  state: SessionState,
+  epoch?: number,
+  opts?: { maxBytes?: number },
+): SseFrame[] {
+  const maxBytes = opts?.maxBytes ?? SNAPSHOT_CHUNK_MAX_BYTES
+  const allUpdates = snapshotPayload(state).updates
+
+  if (allUpdates.length === 0) {
+    return [snapshotChunkFrame(state, [], { i: 0, more: false }, epoch)]
+  }
+
+  const chunks: WireSessionUpdate[][] = []
+  let current: WireSessionUpdate[] = []
+  let currentBytes = 0
+
+  for (const u of allUpdates) {
+    const uBytes = wireUpdateUtf8Bytes(u)
+    if (current.length > 0 && currentBytes + uBytes > maxBytes) {
+      chunks.push(current)
+      current = []
+      currentBytes = 0
+    }
+    current.push(u)
+    currentBytes += uBytes
+    if (uBytes > maxBytes) {
+      chunks.push(current)
+      current = []
+      currentBytes = 0
+    }
+  }
+  if (current.length > 0) {
+    chunks.push(current)
+  }
+
+  if (chunks.length === 1) {
+    const chunkMeta =
+      state.messages.length === 0 ? ({ i: 0, more: false } as const) : undefined
+    return [snapshotChunkFrame(state, chunks[0]!, chunkMeta, epoch)]
+  }
+
+  return chunks.map((updates, i) =>
+    snapshotChunkFrame(
+      state,
+      updates,
+      { i, more: i < chunks.length - 1 },
+      i === 0 ? epoch : undefined,
+    ),
+  )
 }
 
 /**

@@ -79,6 +79,8 @@ export type RegisterEventsRouteOptions = {
   _setInterval?: typeof setInterval
   /** @internal For testing — override the keepalive timer's cancel. */
   _clearInterval?: typeof clearInterval
+  /** @internal For testing — override the snapshot chunk budget. */
+  _snapshotMaxBytes?: number
 }
 
 /**

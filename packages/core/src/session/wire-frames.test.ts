@@ -13,10 +13,16 @@
  */
 
 import { describe, expect, it } from "vitest"
+import { applyPatch } from "./apply-patch"
 import { recordCarried } from "./carried"
 import type { SessionState } from "./types"
 import { createInitialSessionState } from "./types"
-import { snapshotFrame, snapshotPayload } from "./wire-frames"
+import {
+  SNAPSHOT_CHUNK_MAX_BYTES,
+  snapshotFrame,
+  snapshotFrames,
+  snapshotPayload,
+} from "./wire-frames"
 
 function stateWithMessage(): SessionState {
   const base = createInitialSessionState({ sessionId: "sess-1" })
@@ -76,5 +82,86 @@ describe("snapshotFrame — המסגור לא השתנה", () => {
     const frame = snapshotFrame(state, 3)
     expect(frame.event).toBe("snapshot")
     expect(frame.id).toBe(String(state.version))
+  })
+})
+
+function stateWithLongAssistantText(charCount: number): SessionState {
+  let state = createInitialSessionState({ sessionId: "chunk-test" })
+  state = applyPatch(state, {
+    version: 1,
+    op: "add-message",
+    message: {
+      id: "m_0",
+      role: "assistant",
+      messageId: "msg-0",
+      segments: [{ id: "s_0", text: "x".repeat(charCount) }],
+      timestamp: "2026-09-22T10:00:00.000Z",
+    },
+  })
+  return state
+}
+
+function mergedUpdatesFromFrames(frames: ReturnType<typeof snapshotFrames>): unknown[] {
+  const out: unknown[] = []
+  for (const f of frames) {
+    const payload = JSON.parse(f.data) as { updates: unknown[] }
+    out.push(...payload.updates)
+  }
+  return out
+}
+
+describe("snapshotFrames", () => {
+  it("‏state ריק ⇒ פריים אחד עם chunk.more === false", () => {
+    const state = createInitialSessionState({ sessionId: null })
+    const frames = snapshotFrames(state)
+    expect(frames).toHaveLength(1)
+    const payload = JSON.parse(frames[0]!.data) as { chunk?: { more: boolean } }
+    expect(payload.chunk).toEqual({ i: 0, more: false })
+  })
+
+  it("‏state מתחת לתקציב ⇒ פריים אחד בלי שדה chunk", () => {
+    const state = stateWithMessage()
+    const frames = snapshotFrames(state, 9, { maxBytes: SNAPSHOT_CHUNK_MAX_BYTES })
+    expect(frames).toHaveLength(1)
+    const payload = JSON.parse(frames[0]!.data) as { chunk?: unknown }
+    expect("chunk" in payload).toBe(false)
+  })
+
+  it("‏state מעל התקציב ⇒ ≥2 פריימים; איחוד updates ≡ snapshotPayload", () => {
+    const state = stateWithLongAssistantText(80_000)
+    const maxBytes = 4_000
+    const frames = snapshotFrames(state, 5, { maxBytes })
+    expect(frames.length).toBeGreaterThanOrEqual(2)
+    expect(mergedUpdatesFromFrames(frames)).toEqual(snapshotPayload(state).updates)
+    for (let i = 0; i < frames.length; i++) {
+      const payload = JSON.parse(frames[i]!.data) as {
+        chunk: { i: number; more: boolean }
+        epoch?: number
+      }
+      expect(payload.chunk.i).toBe(i)
+      expect(payload.chunk.more).toBe(i < frames.length - 1)
+      if (i === 0) expect(payload.epoch).toBe(5)
+      else expect("epoch" in payload).toBe(false)
+    }
+    expect(frames.every((f) => f.id === String(state.version))).toBe(true)
+  })
+
+  it("‏update בודד > maxBytes ⇒ נתח משלו, לא נחתך", () => {
+    let state = createInitialSessionState({ sessionId: "big-one" })
+    state = recordCarried(state, {
+      sessionUpdate: "plan",
+      entries: [{ content: "z".repeat(10_000), priority: "high", status: "pending" }],
+    })
+    const fullPlan = snapshotPayload(state).updates.find((u) => u.sessionUpdate === "plan")
+    expect(fullPlan).toBeDefined()
+    const frames = snapshotFrames(state, undefined, { maxBytes: 500 })
+    expect(mergedUpdatesFromFrames(frames)).toEqual(snapshotPayload(state).updates)
+    const planChunk = frames.find((f) => {
+      const payload = JSON.parse(f.data) as { updates: unknown[] }
+      return payload.updates.some((u) => (u as { sessionUpdate: string }).sessionUpdate === "plan")
+    })
+    expect(planChunk).toBeDefined()
+    const planPayload = JSON.parse(planChunk!.data) as { updates: unknown[] }
+    expect(planPayload.updates).toEqual([fullPlan])
   })
 })
