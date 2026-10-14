@@ -25,6 +25,7 @@ export class SessionScopePolicy {
 
   #agentId: string | null = null
   #beUrlGeneration = 0
+  #epoch = 0
   #readGeneration = 0
   #saveGeneration = 0
 
@@ -50,7 +51,7 @@ export class SessionScopePolicy {
     this.loading = false
     this.confirmed = null
     this.error = null
-    this.readbackEpoch += 1
+    this.readbackEpoch = ++this.#epoch
     if (this.#agentId) void this.refresh()
   }
 
@@ -76,7 +77,7 @@ export class SessionScopePolicy {
       const snap = await fetchScopePolicyForAgent(agentId)
       if (!this.#readStillValid(readGen, beGen, urlAtStart, agentId)) return
       this.confirmed = snap
-      this.readbackEpoch += 1
+      this.readbackEpoch = ++this.#epoch
     } catch (e) {
       if (!this.#readStillValid(readGen, beGen, urlAtStart, agentId)) return
       this.confirmed = null
@@ -104,12 +105,12 @@ export class SessionScopePolicy {
       const snap = await patchScopePolicyForAgent({ agent: agentId, policies })
       if (beGen !== this.#beUrlGeneration || saveGen !== this.#saveGeneration) return
       this.confirmed = snap
-      this.readbackEpoch += 1
+      this.readbackEpoch = ++this.#epoch
       this.#invalidateInFlightReads()
     } catch (e) {
       if (beGen !== this.#beUrlGeneration || saveGen !== this.#saveGeneration) return
       this.confirmed = previous
-      this.readbackEpoch += 1
+      this.readbackEpoch = ++this.#epoch
       this.error = e instanceof Error ? e.message : String(e)
     } finally {
       if (beGen === this.#beUrlGeneration && saveGen === this.#saveGeneration) {
