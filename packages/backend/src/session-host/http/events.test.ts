@@ -15,10 +15,12 @@
 
 import type { Patch, SessionState } from "@drive-coding/core/session"
 import {
+  applyPatch,
   createInitialSessionState,
   STREAM_ALIVE_INTERVAL_MS,
   StreamAliveNotification,
 } from "@drive-coding/core/session"
+import { createGunzip } from "node:zlib"
 import { addSink, type LogEntry } from "@drive-coding/core/log"
 import { type } from "arktype"
 import { Hono } from "hono"
@@ -34,6 +36,26 @@ import { type RegisterEventsRouteOptions, registerEventsRoute } from "./events.j
 
 function makeMockState(overrides: Partial<SessionState> = {}): SessionState {
   return { ...createInitialSessionState({ sessionId: null }), ...overrides }
+}
+
+function makeLargeMockState(): SessionState {
+  let state = createInitialSessionState({ sessionId: "s1" })
+  state = applyPatch(state, {
+    version: 1,
+    op: "add-message",
+    message: {
+      id: "m_0",
+      role: "assistant",
+      messageId: "msg-0",
+      segments: [{ id: "s_0", text: "z".repeat(80_000) }],
+      timestamp: "2026-09-22T10:00:00.000Z",
+    },
+  })
+  return state
+}
+
+function countSnapshotEvents(plain: string): number {
+  return plain.split("\n\n").filter((part) => part.trim().startsWith("event: snapshot")).length
 }
 
 function makeMockHost(state: SessionState): ExtendedSessionHost {
@@ -923,5 +945,85 @@ describe("שומר-הפער — oldestBufferedVersion מול snapshot.version (s
     await readSseEvents(res, 1, 200)
 
     expect(order.slice(0, 3)).toEqual(["read-state", "subscribe:10", "oldest"])
+  })
+})
+
+// ─── slice sse-frame-zero-chunked-gzip: gzip + Z_SYNC_FLUSH ─────────────────
+
+describe("gzip SSE (sse-frame-zero-chunked-gzip)", () => {
+  function makeOpenPatchHost(state: SessionState): {
+    host: ExtendedSessionHost
+    broadcaster: PatchesBroadcaster
+  } {
+    let ctrl!: ReadableStreamDefaultController<Patch>
+    const patchStream = new ReadableStream<Patch>({
+      start(c) {
+        ctrl = c
+      },
+    })
+    void ctrl
+    return { host: makeMockHost(state), broadcaster: makeMockBroadcaster(patchStream) }
+  }
+
+  it("sets Content-Encoding: gzip when the client sends Accept-Encoding: gzip", async () => {
+    const { host, broadcaster } = makeOpenPatchHost(makeLargeMockState())
+    const registry = makeMockRegistry({ host, broadcaster })
+    const app = makeApp(registry, { _snapshotMaxBytes: 400 })
+    const res = await app.request("/api/agents/agent-1/events", {
+      headers: { "Accept-Encoding": "gzip" },
+    })
+    expect(res.status).toBe(200)
+    expect(res.headers.get("content-encoding")).toBe("gzip")
+    expect(res.headers.get("vary")?.toLowerCase()).toContain("accept-encoding")
+    res.body?.cancel()
+  })
+
+  it("does not gzip when Accept-Encoding omits gzip", async () => {
+    const { host, broadcaster } = makeOpenPatchHost(makeLargeMockState())
+    const registry = makeMockRegistry({ host, broadcaster })
+    const app = makeApp(registry, { _snapshotMaxBytes: 400 })
+    const res = await app.request("/api/agents/agent-1/events")
+    expect(res.headers.get("content-encoding")).toBeNull()
+    res.body?.cancel()
+  })
+
+  it("delivers multiple snapshot chunks at separate times (not batched until close)", async () => {
+    const { host, broadcaster } = makeOpenPatchHost(makeLargeMockState())
+    const registry = makeMockRegistry({ host, broadcaster })
+    const app = makeApp(registry, {
+      _snapshotMaxBytes: 400,
+      _snapshotInterFrameDelayMs: 50,
+    })
+    const res = await app.request("/api/agents/agent-1/events", {
+      headers: { "Accept-Encoding": "gzip" },
+    })
+
+    const gunzip = createGunzip()
+    const decoder = new TextDecoder()
+    let plain = ""
+    let snapshotsSeen = 0
+    const arrivalTimes: number[] = []
+
+    gunzip.on("data", (buf: Buffer) => {
+      plain += decoder.decode(buf, { stream: true })
+      const count = countSnapshotEvents(plain)
+      while (snapshotsSeen < count) {
+        snapshotsSeen++
+        arrivalTimes.push(Date.now())
+      }
+    })
+
+    const reader = res.body!.getReader()
+    while (snapshotsSeen < 2) {
+      const { done, value } = await reader.read()
+      if (done) break
+      gunzip.write(Buffer.from(value))
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    reader.cancel()
+
+    expect(snapshotsSeen).toBeGreaterThanOrEqual(2)
+    expect(arrivalTimes.length).toBeGreaterThanOrEqual(2)
+    expect(arrivalTimes[1]! - arrivalTimes[0]!).toBeGreaterThanOrEqual(25)
   })
 })

@@ -163,9 +163,12 @@ export function snapshotFrames(
   }
 
   if (chunks.length === 1) {
-    const chunkMeta =
-      state.messages.length === 0 ? ({ i: 0, more: false } as const) : undefined
-    return [snapshotChunkFrame(state, chunks[0]!, chunkMeta, epoch)]
+    const only = chunks[0]
+    if (only === undefined) {
+      return [snapshotChunkFrame(state, [], { i: 0, more: false }, epoch)]
+    }
+    const chunkMeta = state.messages.length === 0 ? ({ i: 0, more: false } as const) : undefined
+    return [snapshotChunkFrame(state, only, chunkMeta, epoch)]
   }
 
   return chunks.map((updates, i) =>

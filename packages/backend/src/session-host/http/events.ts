@@ -47,6 +47,8 @@
  * ───
  */
 
+import { randomUUID } from "node:crypto"
+import { createLogger } from "@drive-coding/core/log"
 import {
   applyPatch,
   type SessionState,
@@ -54,16 +56,19 @@ import {
   STREAM_ALIVE_INTERVAL_MS,
   STREAM_ALIVE_METHOD,
   serializeFrame,
-  snapshotFrames,
   updateFrame,
 } from "@drive-coding/core/session"
-import { createLogger } from "@drive-coding/core/log"
-import { randomUUID } from "node:crypto"
 import type { Hono } from "hono"
 import { stream } from "hono/streaming"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import { CONNECTION_ID_HEADER, readConnectionId } from "./connection-id.js"
+import {
+  applySseGzipResponseHeaders,
+  clientAcceptsGzip,
+  createSseTextWriter,
+} from "./sse-gzip-writer.js"
+import { writeSnapshotChunkFrames } from "./sse-snapshot-stream.js"
 
 /**
  * slice host-result-reason C2: the keepalive `setInterval` was hardcoded inside
@@ -81,6 +86,8 @@ export type RegisterEventsRouteOptions = {
   _clearInterval?: typeof clearInterval
   /** @internal For testing — override the snapshot chunk budget. */
   _snapshotMaxBytes?: number
+  /** @internal For testing — pause between snapshot chunk writes (gzip timing tests). */
+  _snapshotInterFrameDelayMs?: number
 }
 
 /**
@@ -135,7 +142,19 @@ export function registerEventsRoute(
     c.header("Connection", "keep-alive")
     c.header(CONNECTION_ID_HEADER, connectionId)
 
+    const gzipResponse = clientAcceptsGzip(c.req.header("Accept-Encoding"))
+    applySseGzipResponseHeaders((name, value) => c.header(name, value), gzipResponse)
+
     return stream(c, async (s) => {
+      const { writeWire } = createSseTextWriter(
+        gzipResponse,
+        (text) => {
+          void s.write(text)
+        },
+        (chunk) => {
+          void s.write(chunk)
+        },
+      )
       // ── snapshot-then-filtered-subscribe ───────────────────────────────────
       // Read snapshot synchronously, then subscribe with its version so replay
       // excludes patches already reflected in frame-zero. No await between —
@@ -193,14 +212,10 @@ export function registerEventsRoute(
       // (הלקוח אינו יכול להבחין בהבדל בטקסט), אבל `#bubbleStates` עדיין סופר
       // אינדקסי-סגמנט — reconnect אחרי streaming חי יכול לבלוע תוכן.
       let view: SessionState = snapshot
-      const snapshotMaxBytes = opts._snapshotMaxBytes
-      for (const frame of snapshotFrames(
-        snapshot,
-        currentEpoch,
-        snapshotMaxBytes !== undefined ? { maxBytes: snapshotMaxBytes } : undefined,
-      )) {
-        await s.write(serializeFrame(frame))
-      }
+      await writeSnapshotChunkFrames(writeWire, snapshot, currentEpoch, {
+        maxBytes: opts._snapshotMaxBytes,
+        interFrameDelayMs: opts._snapshotInterFrameDelayMs,
+      })
 
       // slice liveness C1: keepalive keeps the connection alive through proxies.
       // NO touchOwner here — the server-side keepalive timer was a dead liveness
@@ -221,7 +236,7 @@ export function registerEventsRoute(
       // slice sse-frame-zero-chunked-gzip: timer starts AFTER snapshot chunks —
       // while chunks stream the connection is not idle; keepalive mid-chunk broke FE.
       const keepaliveTimer = doSetInterval(() => {
-        void s.write(
+        void writeWire(
           `event: ${STREAM_ALIVE_EVENT}\ndata: ${JSON.stringify({ jsonrpc: "2.0", method: STREAM_ALIVE_METHOD, params: {} })}\n\n`,
         )
       }, STREAM_ALIVE_INTERVAL_MS)
@@ -238,7 +253,7 @@ export function registerEventsRoute(
             const newEpoch = registry.getEpoch(agentId)
             if (newEpoch > currentEpoch) {
               streamEndedByTakeover = true
-              await s.write(`event: taken-over\nid: ${newEpoch}\ndata: {}\n\n`)
+              await writeWire(`event: taken-over\nid: ${newEpoch}\ndata: {}\n\n`)
             }
             break
           }
@@ -251,7 +266,7 @@ export function registerEventsRoute(
           // ממילא עושה בצד השני.
           view = applyPatch(view, patch)
           const frame = updateFrame(view, patch)
-          if (frame !== null) await s.write(serializeFrame(frame))
+          if (frame !== null) await writeWire(serializeFrame(frame))
         }
       } catch {
         // Client disconnected or stream errored — clean up below
