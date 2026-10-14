@@ -75,7 +75,7 @@ function onSelect(action: ScopeAction, value: string): void {
   {:else if !vm.error}
     <p class="text-sm m-0" style="color:var(--fg-dim)">{t("session.scopePolicy.empty")}</p>
   {/if}
-  {#if !vm.confirmed && !vm.loading}
+  {#if !vm.confirmed}
     <button
       type="button"
       class="text-sm font-medium self-start"

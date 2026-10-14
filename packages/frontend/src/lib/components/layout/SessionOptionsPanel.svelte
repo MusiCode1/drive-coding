@@ -382,10 +382,6 @@ $effect(() => {
 <SessionTitleField />
 <SessionFieldsList />
 
-{#if session.agentId}
-  <SessionScopePolicyCard />
-{/if}
-
 <DisplayOptionsRow />
 
 <!-- ─── cli-name-in-chat: שם ה-CLI מעל אפשרויות סוכן ─── -->
@@ -518,6 +514,10 @@ $effect(() => {
     <div class="text-[12px] opacity-40 px-1">{modeLabel}: —</div>
   {/if}
 </div>
+
+{#if session.agentId}
+  <SessionScopePolicyCard />
+{/if}
 
 <!-- ─── פרומפט מערכת פר-פרויקט ─── (slice project-system-prompt) -->
 {#if session.cwd}
