@@ -24,10 +24,10 @@
  * ─── slice remote-session-view C1 (TDD) ───
  */
 
-import { type SessionState, type WireSessionUpdate } from "@drive-coding/core/session"
-import { waitForSnapshotFromFrames } from "./sse-snapshot-wait.js"
+import type { SessionState, WireSessionUpdate } from "@drive-coding/core/session"
 import { SSE_WATCHDOG_THRESHOLD_MS } from "$lib/engines/liveness-thresholds"
 import { connInfo, connWarn } from "$lib/util/conn-log"
+import { waitForSnapshotFromFrames } from "./sse-snapshot-wait.js"
 
 // ─── SSE frame parsing ────────────────────────────────────────────────────────
 

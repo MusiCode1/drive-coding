@@ -264,7 +264,8 @@ function computeFinalClientState(
 
   while (i < frames.length) {
     const frame = frames[i]
-    if (!frame || frame.event !== "snapshot") break
+    if (frame?.event !== "snapshot") break
+    if (!frame) break
     const snap = frame.data as {
       sessionId: string | null
       version: number
