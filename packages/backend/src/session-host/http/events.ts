@@ -148,12 +148,8 @@ export function registerEventsRoute(
     return stream(c, async (s) => {
       const { writeWire } = createSseTextWriter(
         gzipResponse,
-        (text) => {
-          void s.write(text)
-        },
-        (chunk) => {
-          void s.write(chunk)
-        },
+        (text) => s.write(text),
+        (chunk) => s.write(chunk),
       )
       // ── snapshot-then-filtered-subscribe ───────────────────────────────────
       // Read snapshot synchronously, then subscribe with its version so replay

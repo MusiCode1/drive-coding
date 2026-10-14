@@ -7,8 +7,12 @@
 
 import { createGzip, type Gzip, constants as zlibConstants } from "node:zlib"
 
-export type SseWireWrite = (chunk: Uint8Array) => unknown
+export type SseWireWrite = (chunk: Uint8Array) => Promise<void> | void
 export type SseTextWrite = (text: string) => Promise<void> | void
+
+function awaitWriteResult(result: Promise<void> | void): Promise<void> {
+  return result === undefined ? Promise.resolve() : result
+}
 
 export function applySseGzipResponseHeaders(
   setHeader: (name: string, value: string) => void,
@@ -27,7 +31,7 @@ export function createSseTextWriter(
   if (!gzipWanted) {
     return {
       writeWire: async (text: string) => {
-        await rawWrite(text)
+        await awaitWriteResult(rawWrite(text))
       },
     }
   }
@@ -55,21 +59,39 @@ export class SyncFlushGzipWriter {
   constructor(writeOut: SseWireWrite) {
     this.#writeOut = writeOut
     this.#gz = createGzip()
-    this.#gz.on("data", (chunk: Buffer) => {
-      this.#writeOut(new Uint8Array(chunk))
-    })
   }
 
   writeText(text: string): Promise<void> {
     const bytes = this.#encoder.encode(text)
+    const outChunks: Uint8Array[] = []
+    const onData = (chunk: Buffer) => {
+      outChunks.push(new Uint8Array(chunk))
+    }
+    this.#gz.on("data", onData)
+
     return new Promise((resolve, reject) => {
       this.#gz.write(bytes, (err) => {
         if (err) {
+          this.#gz.off("data", onData)
           reject(err)
           return
         }
-        this.#gz.flush(zlibConstants.Z_SYNC_FLUSH, () => {
-          resolve()
+        this.#gz.flush(zlibConstants.Z_SYNC_FLUSH, (flushErr) => {
+          this.#gz.off("data", onData)
+          if (flushErr) {
+            reject(flushErr)
+            return
+          }
+          void (async () => {
+            try {
+              for (const chunk of outChunks) {
+                await awaitWriteResult(this.#writeOut(chunk))
+              }
+              resolve()
+            } catch (writeErr) {
+              reject(writeErr)
+            }
+          })()
         })
       })
     })
