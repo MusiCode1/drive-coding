@@ -20,10 +20,10 @@ import {
   createInitialSessionState,
   type Patch,
   type SessionState,
+  STREAM_ALIVE_EVENT,
   snapshotFrame,
   snapshotFrames,
   snapshotPayload,
-  STREAM_ALIVE_EVENT,
 } from "@drive-coding/core/session"
 import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -435,13 +435,18 @@ describe("SSEReader — patches stream", () => {
     const { updates } = await reader.connect()
 
     const results = await readNBatches(updates, 2)
+    const first = results[0]
+    const second = results[1]
+    expect(first).toBeDefined()
+    expect(second).toBeDefined()
+    if (!first || !second) throw new Error("expected two update batches")
     // ה-`version` מגיע משורת ה-`id:` של SSE, לא מגוף ההודעה — זה השינוי
     // המבני של הסלייס. התוכן הוא `session/update` קנוני.
-    expect(results[0]!.version).toBe(1)
-    expect(results[1]!.version).toBe(2)
+    expect(first.version).toBe(1)
+    expect(second.version).toBe(2)
     // ה-fixture משנה `status`, ו-`status` **אינו מצב-סשן ב-ACP** — ולכן הוא
     // נוסע תחת התחילית שמסמנת "זה שלנו". בדיוק הדוגמה שהתחילית קיימת בשבילה.
-    expect(results[0]!.updates[0]).toMatchObject({ sessionUpdate: "_drive/session_update" })
+    expect(first.updates[0]).toMatchObject({ sessionUpdate: "_drive/session_update" })
   })
 
   it("ignores non-patch, non-snapshot events", async () => {
@@ -520,7 +525,10 @@ describe("SSEReader — patches stream", () => {
     const { updates } = await reader.connect()
 
     const results = await readNBatches(updates, 1)
-    expect(results[0]!.updates[0]).toEqual(future)
+    const batch = results[0]
+    expect(batch).toBeDefined()
+    if (!batch) throw new Error("expected one update batch")
+    expect(batch.updates[0]).toEqual(future)
   })
 
   it("a batch that is not JSON-RPC shaped IS rejected — framing is still validated", async () => {
@@ -539,7 +547,10 @@ describe("SSEReader — patches stream", () => {
     const { updates } = await reader.connect()
 
     const results = await readNBatches(updates, 1)
-    expect(results[0]!.version).toBe(2)
+    const batch = results[0]
+    expect(batch).toBeDefined()
+    if (!batch) throw new Error("expected one update batch")
+    expect(batch.version).toBe(2)
   })
 })
 
@@ -1149,7 +1160,7 @@ describe("SSEReader — production timer defaults (no seam injected) — Chrome 
 
 describe("SSEReader — chunked snapshot (sse-frame-zero-chunked-gzip)", () => {
   function stateWithLongText(chars: number): SessionState {
-    let state = createInitialSessionState({ sessionId: "chunk-fe" })
+    const state = createInitialSessionState({ sessionId: "chunk-fe" })
     return applyPatch(state, {
       version: 1,
       op: "add-message",
@@ -1163,7 +1174,10 @@ describe("SSEReader — chunked snapshot (sse-frame-zero-chunked-gzip)", () => {
     })
   }
 
-  function wireFramesFromCore(state: SessionState, maxBytes?: number): Array<{ event: string; data: string }> {
+  function wireFramesFromCore(
+    state: SessionState,
+    maxBytes?: number,
+  ): Array<{ event: string; data: string }> {
     return snapshotFrames(state, 3, maxBytes !== undefined ? { maxBytes } : undefined).map((f) => ({
       event: f.event,
       data: f.data,
@@ -1204,7 +1218,10 @@ describe("SSEReader — chunked snapshot (sse-frame-zero-chunked-gzip)", () => {
       _snapshotTimeoutMs: 5,
     })
 
-    push(frames[0]!)
+    const firstChunk = frames[0]
+    expect(firstChunk).toBeDefined()
+    if (!firstChunk) throw new Error("expected at least one snapshot chunk")
+    push(firstChunk)
     await expect(reader.connect()).rejects.toThrow("timed out waiting for snapshot")
     reader.close()
     close()
@@ -1241,7 +1258,10 @@ describe("SSEReader — chunked snapshot (sse-frame-zero-chunked-gzip)", () => {
       event: STREAM_ALIVE_EVENT,
       data: JSON.stringify({ jsonrpc: "2.0", method: "_drive/streamAlive", params: {} }),
     }
-    const interleaved = [frames[0]!, alive, ...frames.slice(1)]
+    const firstChunk = frames[0]
+    expect(firstChunk).toBeDefined()
+    if (!firstChunk) throw new Error("expected at least one snapshot chunk")
+    const interleaved = [firstChunk, alive, ...frames.slice(1)]
     const mockFetch = vi.fn().mockResolvedValue(makeSSEResponse(interleaved))
     const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
     const { snapshot } = await reader.connect()
@@ -1265,7 +1285,10 @@ describe("SSEReader — chunked snapshot (sse-frame-zero-chunked-gzip)", () => {
         },
       ]),
     }
-    const broken = [frames[0]!, updateFrame, ...frames.slice(1)]
+    const firstChunk = frames[0]
+    expect(firstChunk).toBeDefined()
+    if (!firstChunk) throw new Error("expected at least one snapshot chunk")
+    const broken = [firstChunk, updateFrame, ...frames.slice(1)]
     const mockFetch = vi.fn().mockResolvedValue(makeSSEResponse(broken))
     const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
     await expect(reader.connect()).rejects.toThrow("unexpected update frame")

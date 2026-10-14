@@ -26,8 +26,8 @@ import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
-import { setSelfBaseUrlForTests } from "../../instances.js"
 import { createInMemoryAgentRegistry } from "../../agents/registry.js"
+import { setSelfBaseUrlForTests } from "../../instances.js"
 import { createPatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import {
@@ -35,12 +35,9 @@ import {
   type ExtendedSessionHost,
   type SessionHostFromConnOptions,
 } from "../session-host.js"
-import { registerSessionHostHttp } from "./index.js"
-import {
-  type RegisterEventsRouteOptions,
-  registerEventsRoute,
-} from "./events.js"
+import { type RegisterEventsRouteOptions, registerEventsRoute } from "./events.js"
 import { registerHistoryRoute } from "./history.js"
+import { registerSessionHostHttp } from "./index.js"
 import { registerPresenceRoute } from "./presence.js"
 import { registerReplyRoute } from "./reply.js"
 import { registerRpcRoute } from "./rpc.js"
@@ -167,7 +164,9 @@ async function setup(eventsOpts?: RegisterEventsRouteOptions): Promise<{
     getHost: (id) => (id === AGENT_ID ? host : undefined),
     isHeld: (id) => id === AGENT_ID,
     getOrCreateHost: async (id) =>
-      id === AGENT_ID ? { ok: true, entry: { host, broadcaster } } : { ok: false, reason: "not-found" },
+      id === AGENT_ID
+        ? { ok: true, entry: { host, broadcaster } }
+        : { ok: false, reason: "not-found" },
     getBroadcaster: (id) => (id === AGENT_ID ? broadcaster : undefined),
     unregisterHost: () => {},
     notifySessionAttached: async () => {},
@@ -206,7 +205,8 @@ async function readSseFrames(
   expectedFrames: number,
   timeoutMs = 500,
 ): Promise<Array<{ event: string; data: unknown; id: string }>> {
-  const reader = response.body!.getReader()
+  if (!response.body) throw new Error("expected SSE response body")
+  const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
   const frames: Array<{ event: string; data: unknown; id: string }> = []
@@ -262,8 +262,10 @@ function computeFinalClientState(
   let snapshotSessionId: string | null = null
   let snapshotVersion = 0
 
-  while (i < frames.length && frames[i]?.event === "snapshot") {
-    const snap = frames[i]!.data as {
+  while (i < frames.length) {
+    const frame = frames[i]
+    if (!frame || frame.event !== "snapshot") break
+    const snap = frame.data as {
       sessionId: string | null
       version: number
       updates: unknown[]
@@ -320,7 +322,9 @@ describe("session-host HTTP end-to-end (real host + real broadcaster + real rout
     resolvePrompt()
     await promptPromise
 
-    callbacks.onUpdate!({
+    const onUpdate = callbacks.onUpdate
+    if (!onUpdate) throw new Error("expected captured onUpdate callback")
+    onUpdate({
       sessionId: "s1",
       update: {
         sessionUpdate: "agent_message_chunk",
@@ -349,7 +353,9 @@ describe("session-host HTTP end-to-end (real host + real broadcaster + real rout
 
     // A permission request arrives before any client is connected — this is the
     // "pending request that predates the subscriber" scenario from the brief.
-    const responsePromise = callbacks.onRequestPermission!({
+    const onRequestPermission = callbacks.onRequestPermission
+    if (!onRequestPermission) throw new Error("expected captured onRequestPermission callback")
+    const responsePromise = onRequestPermission({
       sessionId: "s1",
       toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
       options: [],
@@ -376,7 +382,9 @@ describe("session-host HTTP end-to-end (real host + real broadcaster + real rout
   it("POST /reply closes the loop: respond* resolves the promise and every subscriber gets the cleanup patch with the same requestId", async () => {
     const { app, callbacks } = await setup()
 
-    const responsePromise = callbacks.onRequestPermission!({
+    const onRequestPermission = callbacks.onRequestPermission
+    if (!onRequestPermission) throw new Error("expected captured onRequestPermission callback")
+    const responsePromise = onRequestPermission({
       sessionId: "s1",
       toolCall: { toolCallId: "tc1", name: "run_bash", status: "pending" },
       options: [],

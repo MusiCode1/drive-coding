@@ -8,11 +8,17 @@ import {
   snapshotFrames,
 } from "@drive-coding/core/session"
 
+export type WriteSnapshotChunkFramesOpts = {
+  maxBytes?: number
+  /** @internal For testing — artificial gap between chunk writes (gzip arrival timing). Production leaves unset. */
+  interFrameDelayMs?: number
+}
+
 export async function writeSnapshotChunkFrames(
   writeWire: (text: string) => Promise<void>,
   snapshot: SessionState,
   epoch: number,
-  opts?: { maxBytes?: number; interFrameDelayMs?: number },
+  opts?: WriteSnapshotChunkFramesOpts,
 ): Promise<void> {
   const frames = snapshotFrames(
     snapshot,

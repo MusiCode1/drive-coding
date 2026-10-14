@@ -8,8 +8,8 @@
 import {
   createInitialSessionState,
   reduce,
-  STREAM_ALIVE_EVENT,
   type SessionState,
+  STREAM_ALIVE_EVENT,
   type WireSessionUpdate,
 } from "@drive-coding/core/session"
 

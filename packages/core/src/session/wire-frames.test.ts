@@ -115,7 +115,10 @@ describe("snapshotFrames", () => {
     const state = createInitialSessionState({ sessionId: null })
     const frames = snapshotFrames(state)
     expect(frames).toHaveLength(1)
-    const payload = JSON.parse(frames[0]!.data) as { chunk?: { more: boolean } }
+    const frame = frames[0]
+    expect(frame).toBeDefined()
+    if (!frame) throw new Error("expected one snapshot frame")
+    const payload = JSON.parse(frame.data) as { chunk?: { more: boolean } }
     expect(payload.chunk).toEqual({ i: 0, more: false })
   })
 
@@ -123,7 +126,10 @@ describe("snapshotFrames", () => {
     const state = stateWithMessage()
     const frames = snapshotFrames(state, 9, { maxBytes: SNAPSHOT_CHUNK_MAX_BYTES })
     expect(frames).toHaveLength(1)
-    const payload = JSON.parse(frames[0]!.data) as { chunk?: unknown }
+    const frame = frames[0]
+    expect(frame).toBeDefined()
+    if (!frame) throw new Error("expected one snapshot frame")
+    const payload = JSON.parse(frame.data) as { chunk?: unknown }
     expect("chunk" in payload).toBe(false)
   })
 
@@ -134,7 +140,10 @@ describe("snapshotFrames", () => {
     expect(frames.length).toBeGreaterThanOrEqual(2)
     expect(mergedUpdatesFromFrames(frames)).toEqual(snapshotPayload(state).updates)
     for (let i = 0; i < frames.length; i++) {
-      const payload = JSON.parse(frames[i]!.data) as {
+      const frame = frames[i]
+      expect(frame).toBeDefined()
+      if (!frame) throw new Error(`expected snapshot frame at index ${i}`)
+      const payload = JSON.parse(frame.data) as {
         chunk: { i: number; more: boolean }
         epoch?: number
       }
@@ -161,7 +170,8 @@ describe("snapshotFrames", () => {
       return payload.updates.some((u) => (u as { sessionUpdate: string }).sessionUpdate === "plan")
     })
     expect(planChunk).toBeDefined()
-    const planPayload = JSON.parse(planChunk!.data) as { updates: unknown[] }
+    if (!planChunk) throw new Error("expected a chunk carrying the plan update")
+    const planPayload = JSON.parse(planChunk.data) as { updates: unknown[] }
     expect(planPayload.updates).toEqual([fullPlan])
   })
 })
