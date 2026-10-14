@@ -25,8 +25,11 @@ export function installSessionScopePolicy(deps: {
     () => deps.settings.beUrl,
   )
   setSessionScopePolicy(vm)
+  let lastBeUrl = deps.settings.beUrl
   $effect(() => {
-    deps.settings.beUrl
+    const url = deps.settings.beUrl
+    if (url === lastBeUrl) return
+    lastBeUrl = url
     vm.noteBeUrlChanged()
   })
   $effect(() => {
