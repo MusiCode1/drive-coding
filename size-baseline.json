@@ -944,10 +944,10 @@
       "codeLines": 16
     },
     "packages/frontend/src/lib/session/sse-reader.ts": {
-      "metric": 648,
-      "impurity": 18,
-      "class": "scattered",
-      "codeLines": 293
+      "metric": 587,
+      "impurity": 13,
+      "class": "mixed",
+      "codeLines": 256
     },
     "packages/frontend/src/lib/util/clipboard.ts": {
       "metric": 19,

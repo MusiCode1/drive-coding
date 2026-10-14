@@ -16,9 +16,14 @@
  */
 
 import {
+  applyPatch,
   createInitialSessionState,
   type Patch,
   type SessionState,
+  snapshotFrame,
+  snapshotFrames,
+  snapshotPayload,
+  STREAM_ALIVE_EVENT,
 } from "@drive-coding/core/session"
 import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -1141,6 +1146,131 @@ describe("SSEReader — production timer defaults (no seam injected) — Chrome 
 })
 
 // ── slice sse-liveness Commit 4: snapshot-wait timeout (מקרה-קצה) ──────────
+
+describe("SSEReader — chunked snapshot (sse-frame-zero-chunked-gzip)", () => {
+  function stateWithLongText(chars: number): SessionState {
+    let state = createInitialSessionState({ sessionId: "chunk-fe" })
+    return applyPatch(state, {
+      version: 1,
+      op: "add-message",
+      message: {
+        id: "m_0",
+        role: "assistant",
+        messageId: "msg-0",
+        segments: [{ id: "s_0", text: "t".repeat(chars) }],
+        timestamp: "2026-09-22T10:00:00.000Z",
+      },
+    })
+  }
+
+  function wireFramesFromCore(state: SessionState, maxBytes?: number): Array<{ event: string; data: string }> {
+    return snapshotFrames(state, 3, maxBytes !== undefined ? { maxBytes } : undefined).map((f) => ({
+      event: f.event,
+      data: f.data,
+    }))
+  }
+
+  it("3 chunks fold to the same state as a single snapshot frame", async () => {
+    const state = stateWithLongText(80_000)
+    const chunked = wireFramesFromCore(state, 400)
+    expect(chunked.length).toBeGreaterThanOrEqual(3)
+
+    const single = [{ event: "snapshot", data: snapshotFrame(state, 3).data }]
+
+    const mockChunked = vi.fn().mockResolvedValue(makeSSEResponse(chunked))
+    const mockSingle = vi.fn().mockResolvedValue(makeSSEResponse(single))
+
+    const readerChunked = newReader("/api/events", { _fetch: mockChunked, _sleep: noSleep })
+    const { snapshot: foldedChunked } = await readerChunked.connect()
+
+    const readerSingle = newReader("/api/events", { _fetch: mockSingle, _sleep: noSleep })
+    const { snapshot: foldedSingle } = await readerSingle.connect()
+
+    expect(foldedChunked.version).toBe(foldedSingle.version)
+    expect(foldedChunked.messages).toEqual(foldedSingle.messages)
+    expect(foldedChunked.title).toBe(foldedSingle.title)
+  })
+
+  it("throws when a trailing chunk arrives after the per-chunk timeout", async () => {
+    const state = stateWithLongText(80_000)
+    const frames = wireFramesFromCore(state, 400)
+    expect(frames.length).toBeGreaterThanOrEqual(2)
+
+    const { body, push, close } = makeControllableSSEBody()
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, body } as Response)
+    const reader = newReader("/api/events", {
+      _fetch: mockFetch,
+      _sleep: noSleep,
+      _snapshotTimeoutMs: 5,
+    })
+
+    push(frames[0]!)
+    await expect(reader.connect()).rejects.toThrow("timed out waiting for snapshot")
+    reader.close()
+    close()
+  })
+
+  it("succeeds when chunks are slow in sum but each arrives within the bound", async () => {
+    const state = stateWithLongText(80_000)
+    const frames = wireFramesFromCore(state, 400)
+    expect(frames.length).toBeGreaterThanOrEqual(2)
+
+    const { body, push, close } = makeControllableSSEBody()
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, body } as Response)
+    const reader = newReader("/api/events", {
+      _fetch: mockFetch,
+      _sleep: noSleep,
+      _snapshotTimeoutMs: 80,
+    })
+
+    const connectPromise = reader.connect()
+    for (const frame of frames) {
+      push(frame)
+      await new Promise((r) => setTimeout(r, 50))
+    }
+    const { snapshot } = await connectPromise
+    expect(snapshot.messages).toEqual(stateWithLongText(80_000).messages)
+    close()
+  })
+
+  it("skips stream-alive between chunks and still folds successfully", async () => {
+    const state = stateWithLongText(80_000)
+    const frames = wireFramesFromCore(state, 400)
+    expect(frames.length).toBeGreaterThanOrEqual(2)
+    const alive = {
+      event: STREAM_ALIVE_EVENT,
+      data: JSON.stringify({ jsonrpc: "2.0", method: "_drive/streamAlive", params: {} }),
+    }
+    const interleaved = [frames[0]!, alive, ...frames.slice(1)]
+    const mockFetch = vi.fn().mockResolvedValue(makeSSEResponse(interleaved))
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    const { snapshot } = await reader.connect()
+    expect(snapshot.messages.length).toBe(state.messages.length)
+    expect(snapshotPayload(snapshot).updates.length).toBeGreaterThan(0)
+  })
+
+  it("throws on an update frame in the middle of a snapshot chunk sequence", async () => {
+    const state = stateWithLongText(80_000)
+    const frames = wireFramesFromCore(state, 400)
+    const updateFrame = {
+      event: "update",
+      data: JSON.stringify([
+        {
+          jsonrpc: "2.0",
+          method: "session/update",
+          params: {
+            sessionId: "chunk-fe",
+            update: { sessionUpdate: "_drive/session_update", status: "connected" },
+          },
+        },
+      ]),
+    }
+    const broken = [frames[0]!, updateFrame, ...frames.slice(1)]
+    const mockFetch = vi.fn().mockResolvedValue(makeSSEResponse(broken))
+    const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+    await expect(reader.connect()).rejects.toThrow("unexpected update frame")
+  })
+})
 
 describe("SSEReader — snapshot-wait timeout (Commit 4)", () => {
   it("a connection that opens but never sends snapshot times out within the bound instead of hanging forever — connect() rejects, not a silent death", async () => {

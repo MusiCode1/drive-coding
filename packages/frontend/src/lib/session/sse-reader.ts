@@ -24,12 +24,8 @@
  * ─── slice remote-session-view C1 (TDD) ───
  */
 
-import {
-  createInitialSessionState,
-  reduce,
-  type SessionState,
-  type WireSessionUpdate,
-} from "@drive-coding/core/session"
+import { type SessionState, type WireSessionUpdate } from "@drive-coding/core/session"
+import { waitForSnapshotFromFrames } from "./sse-snapshot-wait.js"
 import { SSE_WATCHDOG_THRESHOLD_MS } from "$lib/engines/liveness-thresholds"
 import { connInfo, connWarn } from "$lib/util/conn-log"
 
@@ -45,13 +41,6 @@ import { connInfo, connWarn } from "$lib/util/conn-log"
  * ⇒ הפריים הוא היחידה האטומית; ה-`version` שלו מגיע משורת ה-`id:`.
  */
 export type WireUpdateBatch = { version: number; updates: WireSessionUpdate[] }
-
-/** גוף ה-snapshot (frame-zero). */
-type WireSnapshot = {
-  sessionId: string | null
-  version: number
-  updates: WireSessionUpdate[]
-}
 
 /**
  * מחלץ את ה-updates מ-batch של JSON-RPC.
@@ -77,16 +66,6 @@ function extractUpdates(raw: unknown): WireSessionUpdate[] | null {
     out.push(update as WireSessionUpdate)
   }
   return out
-}
-
-/** מקפל את ה-snapshot למצב. ה-`version` נלקח מהשרת, לא מספירת ה-updates. */
-function foldSnapshot(snap: WireSnapshot): SessionState {
-  let state = createInitialSessionState({ sessionId: snap.sessionId ?? "" })
-  for (const u of snap.updates) state = reduce(state, u).state
-  // ⚠️ **דריסה מכוונת.** `reduce` מעלה מונה מקומי לכל update, אבל ה-`version`
-  // הוא מונה של **השרת** — הוא מה שסימון-החפיפה של הלקוח נמדד מולו. ספירה
-  // מקומית הייתה מייצרת בדיוק את רגרסיית-הגרסה שבאג #41 נבנה סביבה.
-  return { ...state, sessionId: snap.sessionId, version: snap.version }
 }
 
 type SSEFrame = { event: string; data: string; id: string }
@@ -354,55 +333,15 @@ export class SSEReader {
   }
 
   /**
-   * waitForSnapshot — advances past any non-snapshot frames to find the
-   * required snapshot frame-zero, bounded by `SNAPSHOT_TIMEOUT_MS` (see its
-   * doc comment for why: a connection that never sends `snapshot` used to
-   * hang here forever, invisible to both the watchdog and — on the initial
-   * connection — the reconnect loop).
+   * waitForSnapshot — chunked frame-zero, bounded per frame by
+   * `SNAPSHOT_TIMEOUT_MS` (see module doc on `sse-snapshot-wait.ts`).
    *
-   * ⚠️ Deliberately uses the RAW global `setTimeout`/`clearTimeout`, not the
-   * `#sleep` seam: `#sleep` is mocked as an INSTANT no-op in almost every
-   * test in this file (it represents backoff delay, which tests skip) — if
-   * this raced against `this.#sleep(SNAPSHOT_TIMEOUT_MS)`, the timeout branch
-   * would win EVERY race immediately, breaking every existing test. The raw
-   * timer is safe here because `advance` below always resolves within a few
-   * microtasks in every test that isn't specifically testing this timeout
-   * (which uses `vi.useFakeTimers()` to fast-forward it) — the real 15s timer
-   * never actually fires, and is always cleared once the race settles.
+   * ⚠️ Deliberately uses the RAW global `setTimeout`/`clearTimeout` via
+   * `awaitFrameBounded`, not the `#sleep` seam — `#sleep` is mocked as an
+   * INSTANT no-op in almost every test in this file.
    */
   async #waitForSnapshot(frames: AsyncGenerator<SSEFrame>): Promise<SessionState> {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined
-    const timeout = (async (): Promise<never> => {
-      await new Promise<void>((resolve) => {
-        timeoutId = setTimeout(resolve, this.#snapshotTimeoutMs)
-      })
-      throw new Error("SSEReader: timed out waiting for snapshot frame")
-    })()
-    const advance = (async (): Promise<SessionState> => {
-      let next = await frames.next()
-      while (!next.done && next.value.event !== "snapshot") {
-        next = await frames.next()
-      }
-      if (next.done || next.value.event !== "snapshot") {
-        throw new Error("SSEReader: no snapshot frame received")
-      }
-      return foldSnapshot(JSON.parse(next.value.data) as WireSnapshot)
-    })()
-    // Both sides get a no-op `.catch` attached IMMEDIATELY (same tick, before
-    // racing) — whichever one LOSES the race may still reject later on its
-    // own (e.g. `advance` rejecting after `close()` aborts, post-timeout;
-    // or — in principle — `timeout` firing after `advance` already won).
-    // `Promise.race` never attaches a handler to the losing side, so without
-    // this a later rejection is "unhandled" even though nothing is meant to
-    // observe it anymore. `Promise.race([advance, timeout])` below still
-    // independently determines the actual return value.
-    advance.catch(() => {})
-    timeout.catch(() => {})
-    try {
-      return await Promise.race([advance, timeout])
-    } finally {
-      clearTimeout(timeoutId)
-    }
+    return waitForSnapshotFromFrames(frames, this.#snapshotTimeoutMs)
   }
 
   /**

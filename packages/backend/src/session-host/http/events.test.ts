@@ -668,10 +668,11 @@ describe("keepalive timer (slice host-result-reason C2 — no real-time wait)", 
     const registry = makeMockRegistry({ host, broadcaster })
 
     let tick: (() => void) | undefined
-    const _setInterval = vi.fn((fn: () => void) => {
+    const setIntervalMock = vi.fn((fn: () => void) => {
       tick = fn
       return 0 as unknown as ReturnType<typeof setInterval>
-    }) as unknown as typeof setInterval
+    })
+    const _setInterval = setIntervalMock as unknown as typeof setInterval
     const _clearInterval = vi.fn() as unknown as typeof clearInterval
 
     const app = makeApp(registry, { _setInterval, _clearInterval })
@@ -682,8 +683,12 @@ describe("keepalive timer (slice host-result-reason C2 — no real-time wait)", 
     // registerEventsRoute's doSetInterval(...) call (registered AFTER snapshot
     // chunks finish), so `tick` is captured by the time we check it.
     await sse.readUntil((buf) => buf.includes("event: snapshot"))
-    expect(_setInterval).toHaveBeenCalledTimes(1)
-    expect(_setInterval).toHaveBeenCalledWith(expect.any(Function), STREAM_ALIVE_INTERVAL_MS)
+    const intervalDeadline = Date.now() + 500
+    while (setIntervalMock.mock.calls.length < 1 && Date.now() < intervalDeadline) {
+      await sse.readUntil((buf) => buf.length > 0, 50)
+    }
+    expect(setIntervalMock).toHaveBeenCalledTimes(1)
+    expect(setIntervalMock).toHaveBeenCalledWith(expect.any(Function), STREAM_ALIVE_INTERVAL_MS)
     expect(tick).toBeDefined()
 
     // Fire 3 ticks SYNCHRONOUSLY — no real setTimeout/setInterval elapses.
