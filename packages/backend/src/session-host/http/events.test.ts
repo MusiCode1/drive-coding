@@ -679,8 +679,8 @@ describe("keepalive timer (slice host-result-reason C2 — no real-time wait)", 
     const sse = makeRawSseReader(res)
 
     // Read past the snapshot — proves the stream callback has already run
-    // registerEventsRoute's doSetInterval(...) call (registered BEFORE the
-    // snapshot write), so `tick` is captured by the time we check it.
+    // registerEventsRoute's doSetInterval(...) call (registered AFTER snapshot
+    // chunks finish), so `tick` is captured by the time we check it.
     await sse.readUntil((buf) => buf.includes("event: snapshot"))
     expect(_setInterval).toHaveBeenCalledTimes(1)
     expect(_setInterval).toHaveBeenCalledWith(expect.any(Function), STREAM_ALIVE_INTERVAL_MS)

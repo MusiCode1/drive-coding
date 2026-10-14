@@ -19,7 +19,7 @@
  */
 
 import type { SessionState } from "@drive-coding/core/session"
-import { createInitialSessionState, reduce } from "@drive-coding/core/session"
+import { createInitialSessionState, reduce, snapshotPayload } from "@drive-coding/core/session"
 import type { AcpClient } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
@@ -36,6 +36,15 @@ import {
   type SessionHostFromConnOptions,
 } from "../session-host.js"
 import { registerSessionHostHttp } from "./index.js"
+import {
+  type RegisterEventsRouteOptions,
+  registerEventsRoute,
+} from "./events.js"
+import { registerHistoryRoute } from "./history.js"
+import { registerPresenceRoute } from "./presence.js"
+import { registerReplyRoute } from "./reply.js"
+import { registerRpcRoute } from "./rpc.js"
+import { registerStateRoute } from "./state.js"
 
 /**
  * calev-heavy L10 (rpc.test.ts precedent): `app.request()` (Hono) declares its
@@ -110,7 +119,7 @@ const AGENT_ID = "agent-1"
  * single-agent AgentSessionRegistry, then registers all 4 real HTTP routes
  * (events/rpc/reply/state) via registerSessionHostHttp on a real Hono app.
  */
-async function setup(): Promise<{
+async function setup(eventsOpts?: RegisterEventsRouteOptions): Promise<{
   app: Hono
   host: ExtendedSessionHost
   mockClient: AcpClient
@@ -172,11 +181,21 @@ async function setup(): Promise<{
   }
 
   const app = new Hono()
-  registerSessionHostHttp(app, {
-    agentSessionRegistry: registry,
-    connectionRegistry,
-    agentRegistry: createInMemoryAgentRegistry(),
-  })
+  const agentRegistry = createInMemoryAgentRegistry()
+  if (eventsOpts) {
+    registerEventsRoute(app, registry, connectionRegistry, eventsOpts)
+    registerRpcRoute(app, registry, agentRegistry)
+    registerReplyRoute(app, registry)
+    registerStateRoute(app, registry)
+    registerPresenceRoute(app, registry)
+    registerHistoryRoute(app, registry)
+  } else {
+    registerSessionHostHttp(app, {
+      agentSessionRegistry: registry,
+      connectionRegistry,
+      agentRegistry,
+    })
+  }
 
   return { app, host, mockClient, callbacks: capturedCallbacks }
 }
@@ -238,8 +257,24 @@ async function readSseFrames(
 function computeFinalClientState(
   frames: Array<{ event: string; data: unknown; id: string }>,
 ): SessionState {
-  const first = frames[0]
-  if (!first || first.event !== "snapshot") {
+  let i = 0
+  const snapshotUpdates: unknown[] = []
+  let snapshotSessionId: string | null = null
+  let snapshotVersion = 0
+
+  while (i < frames.length && frames[i]?.event === "snapshot") {
+    const snap = frames[i]!.data as {
+      sessionId: string | null
+      version: number
+      updates: unknown[]
+    }
+    snapshotSessionId = snap.sessionId
+    snapshotVersion = snap.version
+    snapshotUpdates.push(...snap.updates)
+    i++
+  }
+
+  if (i === 0) {
     throw new Error("expected the first SSE frame to be a snapshot")
   }
   // ─── slice acp-wire-session-update ───
@@ -247,13 +282,11 @@ function computeFinalClientState(
   // ומקפל אותו ב-`reduce` — אותו reducer שמסלול ה-WS משתמש בו. החיקוי כאן
   // עודכן לאותה צורה, ולכן הטסט מוכיח עכשיו את השרשרת המלאה:
   // ‏host אמיתי → broadcaster אמיתי → route אמיתית → הקיפול של הלקוח.
-  const snap = first.data as { sessionId: string | null; version: number; updates: unknown[] }
-  let state = createInitialSessionState({ sessionId: snap.sessionId ?? "" })
-  for (const u of snap.updates) state = reduce(state, u).state
-  state = { ...state, sessionId: snap.sessionId, version: snap.version }
+  let state = createInitialSessionState({ sessionId: snapshotSessionId ?? "" })
+  for (const u of snapshotUpdates) state = reduce(state, u).state
+  state = { ...state, sessionId: snapshotSessionId, version: snapshotVersion }
 
-  const snapshotVersion = snap.version
-  for (const frame of frames.slice(1)) {
+  for (const frame of frames.slice(i)) {
     if (frame.event !== "update") continue
     // ה-drop-guard, בדיוק כמו ב-remote-session-view: ה-ring-buffer של
     // ה-broadcaster משחזר patches ישנים למנוי חדש, והם כבר בתוך ה-snapshot.
@@ -275,6 +308,42 @@ async function req(app: Hono, path: string, init?: RequestInit): Promise<MockRes
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 describe("session-host HTTP end-to-end (real host + real broadcaster + real routes)", () => {
+  it("GET /events emits multiple snapshot chunks for large state; merged updates match snapshotPayload", async () => {
+    const { app, host, callbacks, mockClient } = await setup({ _snapshotMaxBytes: 4_000 })
+    let resolvePrompt!: () => void
+    ;(mockClient.prompt as ReturnType<typeof vi.fn>).mockImplementation(
+      () => new Promise<void>((resolve) => (resolvePrompt = resolve)),
+    )
+
+    const promptPromise = host.prompt("s1", "seed")
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    resolvePrompt()
+    await promptPromise
+
+    callbacks.onUpdate!({
+      sessionId: "s1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "x".repeat(80_000) },
+      },
+    } as Parameters<NonNullable<typeof callbacks.onUpdate>>[0])
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    const res = await req(app, `/api/agents/${AGENT_ID}/events`)
+    expect(res.status).toBe(200)
+
+    const frames = await readSseFrames(res, 20, 800)
+    const snapshotFrames = frames.filter((f) => f.event === "snapshot")
+    expect(snapshotFrames.length).toBeGreaterThan(1)
+
+    const mergedUpdates: unknown[] = []
+    for (const f of snapshotFrames) {
+      mergedUpdates.push(...(f.data as { updates: unknown[] }).updates)
+    }
+    expect(mergedUpdates).toEqual(snapshotPayload(host.state).updates)
+    expect(computeFinalClientState(frames).messages.length).toBe(host.state.messages.length)
+  })
+
   it("a client connecting mid-pending-permission-request ends up, after replay, with pending.permission set correctly", async () => {
     const { app, host, callbacks } = await setup()
 

@@ -54,7 +54,7 @@ import {
   STREAM_ALIVE_INTERVAL_MS,
   STREAM_ALIVE_METHOD,
   serializeFrame,
-  snapshotFrame,
+  snapshotFrames,
   updateFrame,
 } from "@drive-coding/core/session"
 import { createLogger } from "@drive-coding/core/log"
@@ -180,6 +180,28 @@ export function registerEventsRoute(
       // Epoch after this viewer row is registered — taken-over only when a *later* owner bumps it.
       const currentEpoch = registry.getEpoch(agentId)
 
+      // ── frame-zero ────────────────────────────────────────────────────────
+      // 🟢 **הכיווץ יוצא טבעית ואינו מנגנון.** ה-CLI הזרים 71 chunks; ה-state
+      // מחזיק הודעה אחת; ולכן ה-snapshot הוא הודעה אחת. הלקוח אינו יכול
+      // להבחין בהבדל, ולכן אין צורך בשום קוד-כיווץ נפרד.
+      //
+      // ⚠️ ה-`id:` הוא ה-**version** ולא ה-epoch. ה-epoch עבר לגוף ההודעה: הוא
+      // מזהה **מי מחזיק בזרם**, וה-version מזהה **איפה אנחנו ברצף** — שני
+      // מונים שונים לגמרי, ורק השני הוא מה ש-`Last-Event-ID` יצטרך.
+      //
+      // ⚠️ **טקסט מכווץ ≠ מונה סגמנטים.** ה-snapshot מכווץ chunks לבלוק-טקסט
+      // (הלקוח אינו יכול להבחין בהבדל בטקסט), אבל `#bubbleStates` עדיין סופר
+      // אינדקסי-סגמנט — reconnect אחרי streaming חי יכול לבלוע תוכן.
+      let view: SessionState = snapshot
+      const snapshotMaxBytes = opts._snapshotMaxBytes
+      for (const frame of snapshotFrames(
+        snapshot,
+        currentEpoch,
+        snapshotMaxBytes !== undefined ? { maxBytes: snapshotMaxBytes } : undefined,
+      )) {
+        await s.write(serializeFrame(frame))
+      }
+
       // slice liveness C1: keepalive keeps the connection alive through proxies.
       // NO touchOwner here — the server-side keepalive timer was a dead liveness
       // signal: hono's stream write() never rejects (it swallows errors), so the
@@ -195,26 +217,14 @@ export function registerEventsRoute(
       // and it's what survives unchanged to WS/v2). No `id:` — an `id` here would
       // make a future `Last-Event-ID` reconnect skip patches that were never
       // actually received (id=version is reserved for `patch`/`snapshot` frames).
+      //
+      // slice sse-frame-zero-chunked-gzip: timer starts AFTER snapshot chunks —
+      // while chunks stream the connection is not idle; keepalive mid-chunk broke FE.
       const keepaliveTimer = doSetInterval(() => {
         void s.write(
           `event: ${STREAM_ALIVE_EVENT}\ndata: ${JSON.stringify({ jsonrpc: "2.0", method: STREAM_ALIVE_METHOD, params: {} })}\n\n`,
         )
       }, STREAM_ALIVE_INTERVAL_MS)
-
-      // ── frame-zero ────────────────────────────────────────────────────────
-      // 🟢 **הכיווץ יוצא טבעית ואינו מנגנון.** ה-CLI הזרים 71 chunks; ה-state
-      // מחזיק הודעה אחת; ולכן ה-snapshot הוא הודעה אחת. הלקוח אינו יכול
-      // להבחין בהבדל, ולכן אין צורך בשום קוד-כיווץ נפרד.
-      //
-      // ⚠️ ה-`id:` הוא ה-**version** ולא ה-epoch. ה-epoch עבר לגוף ההודעה: הוא
-      // מזהה **מי מחזיק בזרם**, וה-version מזהה **איפה אנחנו ברצף** — שני
-      // מונים שונים לגמרי, ורק השני הוא מה ש-`Last-Event-ID` יצטרך.
-      //
-      // ⚠️ **טקסט מכווץ ≠ מונה סגמנטים.** ה-snapshot מכווץ chunks לבלוק-טקסט
-      // (הלקוח אינו יכול להבחין בהבדל בטקסט), אבל `#bubbleStates` עדיין סופר
-      // אינדקסי-סגמנט — reconnect אחרי streaming חי יכול לבלוע תוכן.
-      let view: SessionState = snapshot
-      await s.write(serializeFrame(snapshotFrame(snapshot, currentEpoch)))
 
       // Stream patches from broadcaster
       const reader = patchStream.getReader()
