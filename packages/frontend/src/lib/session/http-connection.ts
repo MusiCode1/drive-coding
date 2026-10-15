@@ -20,6 +20,12 @@ export type HttpConnectionDeps = {
 export class HttpConnection implements Connection {
   constructor(private readonly deps: HttpConnectionDeps) {}
 
+  reconnect(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  cancelReconnect(): void {}
+
   async open(agent: AgentInput): Promise<void> {
     if (agent.kind === "existing-ws") throw new Error("HttpConnection requires an HTTP agent")
     const isNew = agent.kind === "new"

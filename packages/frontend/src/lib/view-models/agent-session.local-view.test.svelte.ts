@@ -229,11 +229,6 @@ function lastView(): CapturedViewLike {
 function getViews(): CapturedViewLike[] {
   return LocalSessionViewCaptured.instances
 }
-function setup(session: AgentSession): void {
-  ;(
-    session as unknown as { _mockFindReusableAgentForTest: (v: string | null) => void }
-  )._mockFindReusableAgentForTest(null)
-}
 function sendReplayChunk(text: string, messageId: string): void {
   vh.state.teedCallbacks?.onUpdate?.({
     update: {
@@ -329,8 +324,7 @@ describe("DoD 9 — המסלולים ששקטו עובדים עם view מאומ�
   it("#coldReconnect: לא return שקט — loadSession רץ, view חדש מאומץ", async () => {
     const session = new AgentSession()
     await session.attach({ cwd: "/tmp", cliKind: "opencode" })
-    setup(session)
-    await (session as unknown as { _doReconnectForTest: () => Promise<void> })._doReconnectForTest()
+    await session.reconnect()
 
     expect(session.status).toBe("connected")
     expect(vh.state.createCount.acp).toBe(2) // attach + cold-loadSession
@@ -414,8 +408,7 @@ describe("DoD 12 — הניקוז (קורא-ריק על view.patches) מסתיי
     const view0 = lastView()
     expect(view0.drainEnded).toBe(false)
 
-    setup(session)
-    await (session as unknown as { _doReconnectForTest: () => Promise<void> })._doReconnectForTest()
+    await session.reconnect()
 
     await vi.waitFor(() => expect(view0.drainEnded).toBe(true))
     expect(getViews().length).toBeGreaterThanOrEqual(2)
