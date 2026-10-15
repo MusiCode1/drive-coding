@@ -187,7 +187,7 @@ export class WsReconnectController {
       generation,
       () => this.#current(generation),
     )
-    if (found.kind === "cancelled") return "cancelled"
+    if (found.kind === "cancelled" || !this.#current(generation)) return "cancelled"
     const reusable = found.value.find(
       (agent) =>
         agent.acpSessionId === context.sessionId &&

@@ -1161,7 +1161,7 @@ export class AgentSession {
   // ─── מחזור חיי חיבור (connection lifecycle) ─────────────────────────
 
   #newWsConnection(): WsConnection {
-    const connection = new WsConnection({
+    const connection: WsConnection = new WsConnection({
       prepareNew: () => {
         this.#setStatus("connecting")
         this.error = null
@@ -1224,7 +1224,7 @@ export class AgentSession {
             cliKind: this.#cliKind,
             agentId: this.agentId,
             hidden: this.#visibility.hidden,
-            detached: this.#detached,
+            detached: this.#detached || this.#connection !== connection,
             tearingDown: this.#tearingDown,
             remote: this.#isRemote,
             terminalError: this.#errorSurfaced && this.error !== null,
