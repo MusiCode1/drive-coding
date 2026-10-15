@@ -17,6 +17,7 @@
  * ─── slice view-switch C3 (integration) ───
  */
 
+import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 import {
   applyPendingRequest,
   applyTurnEnd,
@@ -27,9 +28,13 @@ import {
 import { toWireText } from "@drive-coding/core/session/testing"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
+import {
+  createAgent,
+  deleteAgent,
+  listAgents,
+  notifySessionAttached,
+} from "$lib/adapters/agents-api"
 import { HttpConnection } from "$lib/session/http-connection"
-import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── Module-level mocks (חייבים להיות לפני import AgentSession — נדרש לרגרסיית ה-local) ───
@@ -68,6 +73,7 @@ let localClientMock: AcpClient
 
 import { MockSessionView } from "./__fixtures__/mock-session-view.svelte"
 import { AgentSession } from "./agent-session.svelte"
+import { ErrorScope } from "./error-scope.svelte"
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -377,6 +383,53 @@ describe("AgentSession + remote view — lastTurnError", () => {
 
     // "reply failed" לא מקורו ב-lastTurnError sync — שורד
     expect(agent.error).toBe("reply failed")
+  })
+
+  it("re-shows turn error after dismiss when the same snapshot arrives again (no dedup)", async () => {
+    const view = new MockSessionView()
+    view.connect("remote-sess-dismiss-repeat")
+    const agent = new AgentSession({ view })
+    agent._setStatusForTest("connected")
+
+    const ended = applyTurnEnd(view.state, { message: "tool crashed", at: Date.now() })
+    view.applyAndEmit(ended.patches[0]!)
+    await delay()
+    expect(agent.error).toContain("tool crashed")
+
+    agent.error = null
+
+    const started = applyTurnStart(ended.state)
+    view.applyAndEmit(started.patches[0]!)
+    await delay()
+    const endedAgain = applyTurnEnd(started.state, { message: "tool crashed", at: Date.now() })
+    view.applyAndEmit(endedAgain.patches[0]!)
+    await delay()
+
+    expect(agent.error).toContain("tool crashed")
+  })
+
+  it("wires view lastTurnError through ErrorScope.syncTurnError on the live VM path", async () => {
+    const spy = vi.spyOn(ErrorScope.prototype, "syncTurnError")
+    const view = new MockSessionView()
+    view.connect("remote-sess-sync-wire")
+    const agent = new AgentSession({ view })
+    agent._setStatusForTest("connected")
+
+    const ended = applyTurnEnd(view.state, { message: "wired", at: Date.now() })
+    view.applyAndEmit(ended.patches[0]!)
+    await delay()
+
+    expect(spy).toHaveBeenCalled()
+    expect(agent.error).toContain("wired")
+    spy.mockRestore()
+  })
+
+  it("public error facade getter/setter delegates to ErrorScope.message only", () => {
+    const agent = new AgentSession()
+    agent.error = "facade-banner"
+    expect(agent.error).toBe("facade-banner")
+    agent.error = null
+    expect(agent.error).toBeNull()
   })
 })
 

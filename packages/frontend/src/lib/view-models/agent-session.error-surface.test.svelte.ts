@@ -45,19 +45,23 @@ beforeEach(() => {
 })
 
 describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit 1 + calev-heavy §10.2 Commit 4)", () => {
-  test("gate: שגיאה טרמינלית קיימת (#errorSurfaced=true, error=X) שורדת onClose(1005)", () => {
+  test("gate: שגיאה טרמינלית קיימת (#errorSurfaced=true, error=X) שורדת onClose(1005)", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-gate",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setStatusForTest("error")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setErrorSurfacedForTest(true) // מדמה attach/loadSession catch טרמינלי
     session.error = "Cannot find module '@anthropic-ai/claude-agent-sdk'"
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._handleUnexpectedCloseForTest(1005, "no reason")
+    await session._handleUnexpectedCloseForTest(1005, "no reason")
 
     expect(session.error).toBe("Cannot find module '@anthropic-ai/claude-agent-sdk'")
-    // anti-clobber מחזיר מוקדם — status לא משתנה ל-disconnected
+    // anti-clobber ב-controller — status לא משתנה ל-disconnected
     expect(session.status).toBe("error")
   })
 
