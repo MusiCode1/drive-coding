@@ -28,6 +28,8 @@ import { toWireText } from "@drive-coding/core/session/testing"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
+import { HttpConnection } from "$lib/session/http-connection"
+import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── Module-level mocks (חייבים להיות לפני import AgentSession — נדרש לרגרסיית ה-local) ───
@@ -375,6 +377,37 @@ describe("AgentSession + remote view — lastTurnError", () => {
 
     // "reply failed" לא מקורו ב-lastTurnError sync — שורד
     expect(agent.error).toBe("reply failed")
+  })
+})
+
+// ── attachRemote — HttpConnection wiring ─────────────────────────────────────
+
+describe("AgentSession — attachRemote HttpConnection wiring", () => {
+  it("calls HttpConnection.open and never constructs WsAcpTransport", async () => {
+    const encoder = new TextEncoder()
+    const snapshot = createInitialSessionState({ sessionId: "http-wiring-session" })
+    const sseText = toWireText([{ event: "snapshot", data: JSON.stringify(snapshot) }])
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/events")) {
+          const body = new ReadableStream<Uint8Array>({
+            start(ctrl) {
+              ctrl.enqueue(encoder.encode(sseText))
+            },
+          })
+          return { ok: true, status: 200, body } as unknown as Response
+        }
+        return { ok: true, status: 200, json: async () => ({ ok: true }) } as unknown as Response
+      }),
+    )
+    const openSpy = vi.spyOn(HttpConnection.prototype, "open")
+    const agent = new AgentSession()
+    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
+    expect(openSpy).toHaveBeenCalledOnce()
+    expect(vi.mocked(WsAcpTransport)).not.toHaveBeenCalled()
+    openSpy.mockRestore()
+    agent.detach()
   })
 })
 
