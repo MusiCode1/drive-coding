@@ -438,6 +438,13 @@ describe("AgentSession — attachRemote HttpConnection wiring", () => {
     await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
     expect(openSpy).toHaveBeenCalledOnce()
     expect(vi.mocked(WsAcpTransport)).not.toHaveBeenCalled()
+
+    const owner = agent._getConnectionForTest()
+    expect(owner).toBeInstanceOf(HttpConnection)
+    await agent._handleUnexpectedCloseForTest(1006, "abnormal")
+    expect(agent.status).toBe("connected")
+    expect(agent.reconnectAttempt).toBe(0)
+
     openSpy.mockRestore()
     agent.detach()
   })

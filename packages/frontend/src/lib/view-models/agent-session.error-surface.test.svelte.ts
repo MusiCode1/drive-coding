@@ -134,14 +134,6 @@ describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit
     expect(session.reconnectAttempt).toBe(0)
   })
 
-  test("HTTP owner: unexpected close without WsConnection does not start reconnect", async () => {
-    const session = new AgentSession()
-    session._setStatusForTest("disconnected")
-    await session._handleUnexpectedCloseForTest(1006, "abnormal")
-    expect(session.reconnectAttempt).toBe(0)
-    expect(session.status).toBe("disconnected")
-  })
-
   test("terminal surfaced with empty message still blocks controller overwrite", async () => {
     const session = new AgentSession()
     session._setSessionContextForTest({
