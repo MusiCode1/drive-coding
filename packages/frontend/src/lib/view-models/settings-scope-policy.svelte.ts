@@ -33,6 +33,7 @@ export class SettingsScopePolicy {
     this.loading = false
     this.confirmed = null
     this.error = null
+    // Safe: noteBeUrlChanged runs from Settings event handlers, not from $effect.
     this.readbackEpoch += 1
   }
 

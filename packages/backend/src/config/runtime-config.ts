@@ -104,6 +104,7 @@ export const HOT_KEYS = new Set([
   // Read per host, in createSessionHostFromConnection().
   "ELICITATION_TIMEOUT_MS",
   "PERMISSION_TIMEOUT_MS",
+  "SCOPE_PERMISSION_TIMEOUT_MS",
   // Hot only because the reloader re-runs initLogger() below.
   "LOG_LEVEL",
   "LOG_NS",

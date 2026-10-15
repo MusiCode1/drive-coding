@@ -626,10 +626,10 @@
       "codeLines": 162
     },
     "packages/frontend/src/lib/components/chat/PermissionRequestBlock.svelte": {
-      "metric": 63,
+      "metric": 53,
       "impurity": 0,
       "class": "pure",
-      "codeLines": 155
+      "codeLines": 61
     },
     "packages/frontend/src/lib/components/chat/PlaybackControls.svelte": {
       "metric": 52,
@@ -1100,10 +1100,10 @@
       "codeLines": 164
     },
     "packages/frontend/src/routes/+layout.svelte": {
-      "metric": 370,
-      "impurity": 18,
+      "metric": 333,
+      "impurity": 10,
       "class": "mixed",
-      "codeLines": 241
+      "codeLines": 226
     },
     "packages/frontend/src/routes/+page.svelte": {
       "metric": 405,

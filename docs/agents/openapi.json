@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.7.1",
+    "version": "1.9.0",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
@@ -1744,13 +1744,13 @@
             "type": "object",
             "properties": {
               "close": {
-                "enum": ["default", "env", "override"]
+                "enum": ["agent", "default", "env", "override"]
               },
               "message": {
-                "enum": ["default", "env", "override"]
+                "enum": ["agent", "default", "env", "override"]
               },
               "update": {
-                "enum": ["default", "env", "override"]
+                "enum": ["agent", "default", "env", "override"]
               }
             },
             "required": ["close", "message", "update"],

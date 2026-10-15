@@ -23,6 +23,7 @@ import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import MachineStatsBar from "$lib/components/connect/MachineStatsBar.svelte"
 import SessionFieldsList from "$lib/components/layout/SessionFieldsList.svelte"
+import SessionScopePolicyCard from "$lib/components/layout/SessionScopePolicyCard.svelte"
 import SessionTitleField from "$lib/components/layout/SessionTitleField.svelte"
 import SessionsFilterBar from "$lib/components/layout/SessionsFilterBar.svelte"
 import SessionCard from "$lib/components/modals/SessionCard.svelte"
@@ -513,6 +514,10 @@ $effect(() => {
     <div class="text-[12px] opacity-40 px-1">{modeLabel}: —</div>
   {/if}
 </div>
+
+{#if session.agentId}
+  <SessionScopePolicyCard />
+{/if}
 
 <!-- ─── פרומפט מערכת פר-פרויקט ─── (slice project-system-prompt) -->
 {#if session.cwd}

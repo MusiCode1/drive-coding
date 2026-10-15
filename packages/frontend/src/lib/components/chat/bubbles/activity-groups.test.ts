@@ -35,6 +35,28 @@ function makeTool(toolCallId: string, id = "auto-tool"): ToolBubble {
   }
 }
 
+function makeScopeExpired(id = "scope-expired-bubble"): ToolBubble {
+  return {
+    id,
+    messageId: null,
+    createdAt: 0,
+    kind: "tool",
+    segments: [],
+    toolCall: {
+      toolCallId: "scope-9",
+      name: "scope-expired",
+      args: {
+        caller: "A",
+        target: "B",
+        verb: "close",
+        callerShortId: "aa",
+        targetShortId: "bb",
+      },
+      status: "failed",
+    },
+  }
+}
+
 describe("isActivityBubble", () => {
   it("returns true for thought and tool", () => {
     expect(isActivityBubble(makeThought("x"))).toBe(true)
@@ -44,6 +66,29 @@ describe("isActivityBubble", () => {
   it("returns false for user and message", () => {
     expect(isActivityBubble(makeUser(null))).toBe(false)
     expect(isActivityBubble(makeMessage("x"))).toBe(false)
+  })
+
+  it("returns false for scope-expired notice", () => {
+    expect(isActivityBubble(makeScopeExpired())).toBe(false)
+  })
+
+  it("still returns true for ordinary tool bubbles", () => {
+    expect(isActivityBubble(makeTool("call-1"))).toBe(true)
+  })
+})
+
+describe("groupActivityRuns scope-expired exclusion", () => {
+  it("splits [tool, scope-expired, tool] into three singles when compact", () => {
+    const bubbles: Bubble[] = [
+      makeTool("call-1", "tool1"),
+      makeScopeExpired("exp1"),
+      makeTool("call-2", "tool2"),
+    ]
+    const items = groupActivityRuns(bubbles, true)
+    expect(items).toHaveLength(3)
+    expect(items[1]?.kind).toBe("single")
+    expect(items[1]?.kind === "single" && items[1].bubble.kind).toBe("tool")
+    expect(items.filter((it) => it.kind === "activity-group")).toHaveLength(2)
   })
 })
 

@@ -1,4 +1,5 @@
 import { type } from "arktype"
+import { AgentScopePoliciesSchema } from "./scope-policy.js"
 
 export const PermissionPolicy = type.enumerated("allow_once", "allow_always", "reject_once", "ask")
 export type PermissionPolicy = typeof PermissionPolicy.infer
@@ -181,6 +182,9 @@ export const Agent = type({
   "userNotes?": "string",
   // slice session-memory: agent-written key→value map (MCP only; read-only in UI).
   "sessionFields?": { "[string]": "string" },
+  // slice scope-policy-per-caller: per-caller override above the global policy.
+  // Absent key = inherit. Rides agents.json ⇒ survives restart.
+  "scopePolicies?": AgentScopePoliciesSchema,
   // slice charter-in-hook: the charter text is kept on the record so the surface
   // endpoint can serve it to provider hooks. Deliberately NOT on AgentPublic —
   // it is content, not display metadata, and can be long.

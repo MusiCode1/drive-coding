@@ -40,6 +40,7 @@ export default defineConfig({
     alias: {
       $lib: path.resolve(__dirname, "src/lib"),
       "$env/dynamic/public": path.resolve(__dirname, "src/test-stubs/env-dynamic-public.ts"),
+      "$app/state": path.resolve(__dirname, "src/test-stubs/app-state.ts"),
     },
   },
   test: {

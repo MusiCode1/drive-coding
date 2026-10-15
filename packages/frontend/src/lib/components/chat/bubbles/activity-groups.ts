@@ -1,4 +1,5 @@
 import type { Bubble } from "$lib/types/bubble"
+import { isScopeExpiredToolCall } from "$lib/types/scope-prompt-view"
 import { stableBubbleKey } from "$lib/util/bubble-key"
 
 /** פריט-תצוגה אחד ברשימה שנכנסת ל-Virtualizer. */
@@ -8,6 +9,7 @@ export type DisplayItem =
 
 /** האם הבועה היא "רעש" שנדחס — thought או tool. */
 export function isActivityBubble(b: Bubble): boolean {
+  if (b.kind === "tool" && isScopeExpiredToolCall(b.toolCall)) return false
   return b.kind === "thought" || b.kind === "tool"
 }
 
@@ -21,10 +23,7 @@ export function isActivityBubble(b: Bubble): boolean {
  *   single         → stableBubbleKey(bubble, bubbles)
  *   activity-group → `grp:${stableBubbleKey(run[0], bubbles)}`
  */
-export function groupActivityRuns(
-  bubbles: readonly Bubble[],
-  enabled: boolean,
-): DisplayItem[] {
+export function groupActivityRuns(bubbles: readonly Bubble[], enabled: boolean): DisplayItem[] {
   if (!enabled) {
     return bubbles.map((bubble) => ({
       kind: "single" as const,

@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.7.1",
+  "docsVersion": "1.9.0",
   "docs": [
     {
       "id": "orientation",
@@ -252,7 +252,7 @@
       "tags": ["identity"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.6.0",
+      "docs_version": "1.7.0",
       "routes": ["POST /api/agents/:id/reply", "GET /api/scope-policy", "PATCH /api/scope-policy"],
       "mcp_tools": [],
       "path": "docs/agents/60-identity-and-scopes.md",
@@ -383,7 +383,7 @@
       "tags": ["diagnostics"],
       "surface": ["http"],
       "stability": "stable",
-      "docs_version": "1.3.1",
+      "docs_version": "1.4.0",
       "routes": [
         "GET /api/diag",
         "GET /api/usage/summary",
@@ -401,6 +401,7 @@
         "Usage",
         "POST /api/client-log",
         "POST /api/reload-config",
+        "Hot-reload timeout keys",
         "GET /api/options",
         "Scope action policy (boot config)"
       ]

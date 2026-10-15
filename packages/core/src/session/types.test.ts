@@ -8,6 +8,7 @@ import {
   applyPendingRequest,
   applyTurnEnd,
   applyTurnStart,
+  applyToolMessage,
   applyUserMessage,
   clearPendingRequest,
   createInitialSessionState,
@@ -484,5 +485,22 @@ describe("applyTurnEnd", () => {
     const s0 = { ...createInitialSessionState({ sessionId: null }), turnState: "waiting" as const }
     const { state, patches } = applyTurnEnd(s0, { message: "boom", at: 1 })
     expect(applyPatch(s0, patches[0]!)).toEqual(state)
+  })
+})
+
+describe("applyToolMessage", () => {
+  it("appends tool role message with add-message patch", () => {
+    const s0 = createInitialSessionState({ sessionId: "s1" })
+    const toolCall: SessionToolCall = {
+      toolCallId: "scope-1",
+      name: "scope-expired",
+      kind: "scope-expired",
+      args: { verb: "delete" },
+      status: "failed",
+    }
+    const { state, patches } = applyToolMessage(s0, toolCall)
+    expect(state.messages).toHaveLength(1)
+    expect(state.messages[0]?.role).toBe("tool")
+    expect(patches[0]?.op).toBe("add-message")
   })
 })

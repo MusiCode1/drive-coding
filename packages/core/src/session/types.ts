@@ -389,6 +389,20 @@ export function synthesizeUserMessage(
  * מחזיר { state: SessionState; patches: Patch[] } — אותה צורה כמו reduce.
  * נועד ל-S3 (meta passthrough): synthesizeUserMessage → applyUserMessage → LocalSessionView.prompt().
  */
+/** Builds a tool message and applies it via applyUserMessage (single code path). */
+export function applyToolMessage(
+  state: SessionState,
+  toolCall: SessionToolCall,
+): { state: SessionState; patches: Patch[] } {
+  const msg: SessionMessage = {
+    id: `m_${state.nextMessageSeq}`,
+    role: "tool",
+    messageId: null,
+    toolCall,
+  }
+  return applyUserMessage(state, msg)
+}
+
 export function applyUserMessage(
   state: SessionState,
   msg: SessionMessage,

@@ -324,6 +324,23 @@ export type MessageKey =
   | "session.titleLabel" // slice session-title-manual: editable session title in options panel
   | "session.fieldsLabel" // slice session-memory: read-only agent fields in options panel
   | "session.fieldsEmpty"
+  // ─── scope-policy-per-caller ───
+  | "session.scopePolicy.title"
+  | "session.scopePolicy.message"
+  | "session.scopePolicy.update"
+  | "session.scopePolicy.close"
+  | "session.scopePolicy.option.inherit"
+  | "session.scopePolicy.sourceLabel"
+  | "session.scopePolicy.source.agent"
+  | "session.scopePolicy.source.override"
+  | "session.scopePolicy.source.env"
+  | "session.scopePolicy.source.default"
+  | "session.scopePolicy.loading"
+  | "session.scopePolicy.saving"
+  | "session.scopePolicy.error"
+  | "session.scopePolicy.empty"
+  | "session.scopePolicy.retry"
+  | "session.scopePolicy.note"
   | "session.leaveRunning" // תווית כפתור "צא — השאר רץ" (חדש)
   | "session.closeSession" // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
   | "session.leaveWarning.title"
@@ -604,6 +621,19 @@ export type MessageKey =
   | "driveMessage.system.detail.stopReason"
   | "driveMessage.system.detail.silentMs"
   | "driveMessage.system.detail.error"
+  // ─── scope-prompt ─── (slice scope-prompt-detail)
+  | "scopePrompt.title"
+  | "scopePrompt.caller"
+  | "scopePrompt.target"
+  | "scopePrompt.action"
+  | "scopePrompt.verb.close"
+  | "scopePrompt.verb.patch"
+  | "scopePrompt.verb.reply"
+  | "scopePrompt.verb.send"
+  | "scopePrompt.verb.unknown"
+  | "scopePrompt.expiresIn"
+  | "scopePrompt.seconds"
+  | "scopePrompt.expired"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
