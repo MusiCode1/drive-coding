@@ -42,12 +42,16 @@ vi.mock("$lib/adapters/sessions", () => ({
   normalizeSessionInfo: vi.fn((x: unknown) => x),
 }))
 
+const waitForOpenBehaviors = vi.hoisted(() => [] as Array<() => Promise<void>>)
+
 vi.mock("@drive-coding/acp-wire/browser", () => ({
   // eslint-disable-next-line prefer-arrow-callback
   WsAcpTransport: vi.fn().mockImplementation(function MockTransport() {
     return {
       onClose: vi.fn(),
-      waitForOpen: vi.fn().mockResolvedValue(undefined),
+      waitForOpen: vi.fn(async () => {
+        await waitForOpenBehaviors.shift()?.()
+      }),
       close: vi.fn(),
       closeAndWait: vi.fn().mockResolvedValue(undefined),
       sendRaw: vi.fn(),
@@ -83,11 +87,14 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
 vi.stubGlobal("location", { protocol: "http:", host: "localhost:5173", search: "" })
 vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("test-uuid") })
 
-import { createAgent, deleteAgent, getAgent } from "$lib/adapters/agents-api"
+import { createInitialSessionState, reduce } from "@drive-coding/core/session"
+import { createAcpClient, createAttachedAcpClient } from "@drive-coding/provider/client"
+import { createAgent, deleteAgent, getAgent, listAgents } from "$lib/adapters/agents-api"
 import { AgentSession } from "./agent-session.svelte"
 
 beforeEach(() => {
   vi.clearAllMocks()
+  waitForOpenBehaviors.length = 0
   vi.mocked(createAgent).mockResolvedValue({ agentId: "agent-1", status: "running" })
   vi.mocked(deleteAgent).mockResolvedValue(undefined)
   // getAgent נקרא מ-#handleUnexpectedClose דרך `.catch(() => null)` — לא נדרש כאן, ה-reject
@@ -125,13 +132,11 @@ describe("AgentSession — preserveContextOnError (slice reconnect-recovery, Com
     expect(session.cliKind).toBe("opencode")
     expect(session.status).toBe("disconnected")
 
-    // reconnect() לא עושה early-return: מגיע עד #doReconnect שמנסה warm/cold
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockFindReusableAgentForTest(null)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockColdReconnectForTest(new Error("cold-reached-proves-no-early-return"))
-
-    await expect(session.reconnect()).rejects.toThrow("cold-reached-proves-no-early-return")
+    // The public reconnect reaches the connection owner after the failed cold load.
+    vi.mocked(listAgents).mockResolvedValueOnce([])
+    vi.mocked(createAgent).mockRejectedValueOnce(new Error("cold retry reached"))
+    await session.reconnect()
+    expect(createAgent).toHaveBeenCalledTimes(2)
   })
 
   test("2. teardown מלא בנתיב-השימור: pending permission/elicitation נפתרו, context נשמר, deleteAgent של #cleanup לא נקרא", async () => {
@@ -179,7 +184,7 @@ describe("AgentSession — preserveContextOnError (slice reconnect-recovery, Com
     // context נשמר — total-outage: agentId שמור → #coldReconnect:749 no-op (prevAgentId===agentId)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect((session as any)._getSessionIdForTest()).toBe("sess-existing")
-    expect(session.agentId).toBe("agent-1") // createAgent (בתוך loadSession) הצליח לפני שה-client.loadSession נכשל
+    expect(session.agentId).toBe("agent-old") // failed replay does not replace the preserved owner identity
 
     // deleteAgent של #cleanup עצמו לא נקרא (keepContext מדלג עליו)
     expect(deleteAgent).not.toHaveBeenCalled()
@@ -262,12 +267,10 @@ describe("AgentSession — regressions (§4 Commit 0, DoD#5/#6)", () => {
     ;(session as any)._setErrorSurfacedForTest(true)
     session.error = "old terminal error"
 
-    // warm אמיתי (לא מוקד) — reuse agent-1 קיים, WsAcpTransport+createAttachedAcpClient מוקים להצליח
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockFindReusableAgentForTest("agent-1")
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (session as any)._doReconnectForTest()
+    vi.mocked(listAgents).mockResolvedValueOnce([
+      { id: "agent-1", acpSessionId: "sess-existing", cwd: "/tmp", status: "ready" },
+    ] as Awaited<ReturnType<typeof listAgents>>)
+    await session.reconnect()
 
     expect(session.status).toBe("connected")
 
@@ -283,5 +286,239 @@ describe("AgentSession — regressions (§4 Commit 0, DoD#5/#6)", () => {
     await (session as any)._handleUnexpectedCloseForTest(1006, "dropped again")
     expect(session.error).toBeNull() // ניתוק חולף — אין מחרוזת גולמית למשתמש
     expect(session.error).not.toBe("old terminal error")
+  })
+})
+
+describe("AgentSession — cold reconnect through the Connection owner", () => {
+  test("warm replay of an unlabelled chunk restores the visible bubble", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-existing",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+    session.agentId = "agent-old"
+    const chunk = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "FIXTURE-REPLY" },
+    } as const
+    session.sessionState = reduce(
+      createInitialSessionState({ sessionId: "sess-existing" }),
+      chunk,
+    ).state
+    session.bubbles = [
+      {
+        id: "m_0",
+        kind: "message",
+        messageId: null,
+        createdAt: 0,
+        segments: [{ id: "s_0", text: "FIXTURE-REPLY" }],
+      },
+    ]
+    vi.mocked(listAgents).mockResolvedValueOnce([
+      { id: "agent-old", acpSessionId: "sess-existing", cwd: "/tmp", status: "ready" },
+    ] as Awaited<ReturnType<typeof listAgents>>)
+    vi.mocked(createAttachedAcpClient).mockImplementationOnce((_transport, callbacks) => {
+      mockAttachedClient.loadSession.mockImplementationOnce(async () => {
+        const notification = { sessionId: "sess-existing", update: chunk }
+        if (typeof callbacks === "function") callbacks(notification)
+        else callbacks.onUpdate?.(notification)
+        return { sessionId: "sess-existing" }
+      })
+      return mockAttachedClient as unknown as ReturnType<typeof createAttachedAcpClient>
+    })
+
+    await session.reconnect()
+    expect(session.status).toBe("connected")
+    expect(
+      session.renderBubbles.map((bubble) => bubble.segments.map((segment) => segment.text)),
+    ).toEqual([["FIXTURE-REPLY"]])
+  })
+
+  test("cold replay of an unlabelled chunk restores the visible bubble", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-existing",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+    session.agentId = "agent-old"
+    const chunk = {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "FIXTURE-REPLY" },
+    } as const
+    session.sessionState = reduce(
+      createInitialSessionState({ sessionId: "sess-existing" }),
+      chunk,
+    ).state
+    session.bubbles = [
+      {
+        id: "m_0",
+        kind: "message",
+        messageId: null,
+        createdAt: 0,
+        segments: [{ id: "s_0", text: "FIXTURE-REPLY" }],
+      },
+    ]
+    vi.mocked(createAcpClient).mockImplementationOnce(async (_transport, callbacks) => {
+      mockColdClient.loadSession.mockImplementationOnce(async () => {
+        const notification = { sessionId: "sess-existing", update: chunk }
+        if (typeof callbacks === "function") callbacks(notification)
+        else callbacks.onUpdate?.(notification)
+        return { sessionId: "sess-existing" }
+      })
+      return mockColdClient as unknown as Awaited<ReturnType<typeof createAcpClient>>
+    })
+
+    await session.reconnect()
+    expect(session.status).toBe("connected")
+    expect(
+      session.renderBubbles.map((bubble) => bubble.segments.map((segment) => segment.text)),
+    ).toEqual([["FIXTURE-REPLY"]])
+  })
+
+  test("failed cold and successful replay preserve the history mark and finish with an idle turn", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-existing",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+    session.agentId = "agent-old"
+    session.historyEpoch = 7
+    const mark = session.historyMark
+    mark.segmentCounts.set("bubble-before-reconnect", 2)
+    mark.toolCallIds.push("tool-before-reconnect")
+    session.turnState = "responding"
+    vi.mocked(createAgent)
+      .mockResolvedValueOnce({ agentId: "agent-failed", status: "running" })
+      .mockResolvedValueOnce({ agentId: "agent-good", status: "running" })
+    mockColdClient.loadSession
+      .mockRejectedValueOnce(new Error("replay failed"))
+      .mockImplementationOnce(async () => {
+        session.turnState = "responding"
+        return { sessionId: "sess-existing" }
+      })
+
+    await session.reconnect()
+    expect(session.status).toBe("disconnected")
+    expect(session.agentId).toBe("agent-old")
+    expect(session.historyEpoch).toBe(7)
+    expect(session.historyMark).toBe(mark)
+    expect([...session.historyMark.segmentCounts]).toEqual([["bubble-before-reconnect", 2]])
+    expect(session.historyMark.toolCallIds).toEqual(["tool-before-reconnect"])
+
+    await session.reconnect()
+    expect(session.status).toBe("connected")
+    expect(session.agentId).toBe("agent-good")
+    expect(session.historyEpoch).toBe(7)
+    expect(session.historyMark).toBe(mark)
+    expect([...session.historyMark.segmentCounts]).toEqual([["bubble-before-reconnect", 2]])
+    expect(session.historyMark.toolCallIds).toEqual(["tool-before-reconnect"])
+    expect(session.turnState).toBe("idle")
+  })
+
+  test("failed replay preserves the old agent and owner; manual retry deletes old only after success", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-existing",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+    session.agentId = "agent-old"
+    session.historyEpoch = 7
+    const owner = session._getConnectionForTest()
+    vi.mocked(createAgent)
+      .mockResolvedValueOnce({ agentId: "agent-failed", status: "running" })
+      .mockResolvedValueOnce({ agentId: "agent-good", status: "running" })
+    mockColdClient.loadSession
+      .mockRejectedValueOnce(new Error("replay failed"))
+      .mockResolvedValueOnce({ sessionId: "sess-existing" })
+
+    await session.reconnect()
+    expect(session.status).toBe("disconnected")
+    expect(session.agentId).toBe("agent-old")
+    expect(session.historyEpoch).toBe(7)
+    expect(session._getConnectionForTest()).toBe(owner)
+    expect(deleteAgent).toHaveBeenCalledWith("agent-failed")
+    expect(deleteAgent).not.toHaveBeenCalledWith("agent-old")
+
+    await session.reconnect()
+    expect(session.status).toBe("connected")
+    expect(session.agentId).toBe("agent-good")
+    expect(session._getConnectionForTest()).toBe(owner)
+    expect(deleteAgent).toHaveBeenCalledWith("agent-old")
+  })
+
+  test("cold transport is adopted before waitForOpen settles", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-existing",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+    const owner = session._getConnectionForTest()
+    let releaseOpen!: () => void
+    waitForOpenBehaviors.push(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseOpen = resolve
+        }),
+    )
+    mockColdClient.loadSession.mockResolvedValueOnce({ sessionId: "sess-existing" })
+    const pending = session.reconnect()
+    await vi.waitFor(() => expect(releaseOpen).toBeTypeOf("function"))
+    expect(owner).toBe(session._getConnectionForTest())
+    expect((owner as import("$lib/session/ws-connection").WsConnection).transport).not.toBeNull()
+    releaseOpen()
+    await pending
+    expect(session.status).toBe("connected")
+  })
+
+  test("detach during pending listAgents cancels the consumer without a later agent", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-existing",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+    let releaseAgents!: (agents: Awaited<ReturnType<typeof listAgents>>) => void
+    vi.mocked(listAgents).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseAgents = resolve
+        }),
+    )
+    const pending = session.reconnect()
+    await vi.waitFor(() => expect(listAgents).toHaveBeenCalledOnce())
+    session.detach()
+    releaseAgents([])
+    await pending
+    expect(createAgent).not.toHaveBeenCalled()
+    expect(session.status).toBe("idle")
+  })
+
+  test("detach during cold waitForOpen closes the late WS and does not restore status", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-existing",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+    let releaseOpen!: () => void
+    waitForOpenBehaviors.push(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseOpen = resolve
+        }),
+    )
+    const pending = session.reconnect()
+    await vi.waitFor(() => expect(releaseOpen).toBeTypeOf("function"))
+    session.detach()
+    releaseOpen()
+    await pending
+    await vi.waitFor(() => expect(deleteAgent).toHaveBeenCalledWith("agent-1"))
+    expect(session.status).toBe("idle")
+    expect(session._getConnectionForTest()).toBeNull()
   })
 })

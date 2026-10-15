@@ -14,10 +14,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 vi.mock("../adapters/agents-api", () => ({
-  createAgent: vi.fn(),
+  createAgent: vi.fn().mockRejectedValue(new Error("offline")),
   deleteAgent: vi.fn(),
   notifySessionAttached: vi.fn(),
-  listAgents: vi.fn(),
+  listAgents: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock("../adapters/sessions", () => ({
@@ -55,6 +55,7 @@ function disconnectedInBackground(): {
 } {
   const { fire } = stubDocument()
   const session = new AgentSession()
+  session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
   session._setStatusForTest("disconnected")
   session.error = null
   fire(true) // הטאב עבר לרקע

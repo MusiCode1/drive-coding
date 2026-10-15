@@ -22,22 +22,75 @@
 
 import { beforeEach, describe, expect, test, vi } from "vitest"
 
+const { events, warmClient } = vi.hoisted(() => ({
+  events: [] as string[],
+  warmClient: {
+    loadSession: vi.fn(),
+    close: vi.fn(),
+    extMethod: vi.fn().mockResolvedValue({ ok: true }),
+  },
+}))
+
 // mock adapters שנדרשים ע"י AgentSession (נייבא מ-import עמוק)
 vi.mock("../adapters/agents-api", () => ({
   createAgent: vi.fn(),
   deleteAgent: vi.fn(),
   notifySessionAttached: vi.fn(),
-  listAgents: vi.fn(),
+  listAgents: vi.fn(() => {
+    events.push("listAgents")
+    return Promise.resolve([])
+  }),
+  getAgent: vi.fn(),
+}))
+
+vi.mock("@drive-coding/acp-wire/browser", () => ({
+  WsAcpTransport: class {
+    constructor() {
+      events.push("WsAcpTransport")
+    }
+    onClose = vi.fn()
+    waitForOpen = vi.fn(async () => {})
+    close = vi.fn()
+    closeAndWait = vi.fn(async () => {})
+  },
+}))
+
+vi.mock("@drive-coding/provider/client", async (importActual) => ({
+  ...(await importActual<typeof import("@drive-coding/provider/client")>()),
+  createAttachedAcpClient: vi.fn(() => warmClient),
+}))
+
+vi.mock("$lib/session/create-session-view", () => ({
+  createRemoteView: vi.fn(),
 }))
 
 vi.mock("../adapters/sessions", () => ({
   normalizeSessionInfo: vi.fn((x: unknown) => x),
 }))
 
+import { createInitialSessionState } from "@drive-coding/core/session"
+import { createAttachedAcpClient } from "@drive-coding/provider/client"
+import { createAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
+import { createRemoteView } from "$lib/session/create-session-view"
+import { WsConnection } from "$lib/session/ws-connection"
 import { AgentSession } from "./agent-session.svelte"
+
+vi.stubGlobal("location", { protocol: "http:", host: "localhost:5173", search: "" })
+vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("test-uuid") })
 
 beforeEach(() => {
   vi.unstubAllGlobals()
+  vi.stubGlobal("location", { protocol: "http:", host: "localhost:5173", search: "" })
+  vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("test-uuid") })
+  vi.clearAllMocks()
+  events.length = 0
+  warmClient.loadSession.mockReset().mockResolvedValue({ sessionId: "sess-1" })
+  vi.mocked(listAgents).mockImplementation(async () => {
+    events.push("listAgents")
+    return []
+  })
+  vi.mocked(createAgent).mockResolvedValue({ agentId: "new-agent", status: "running" })
+  vi.mocked(notifySessionAttached).mockResolvedValue(undefined)
 })
 
 describe("AgentSession — reconnect state infrastructure (Commit 0)", () => {
@@ -177,230 +230,171 @@ describe("AgentSession — reconnect state infrastructure (Commit 0)", () => {
   })
 })
 
-describe("AgentSession — attachToLiveAgent (slice-reconnect-warm-attach Commit 0)", () => {
-  /**
-   * TDD Red tests — נכשלים לפני הוספת attachToLiveAgent ל-AgentSession.
-   *
-   * 1. הצלחה: warm מצליח → status=connected, error=null
-   * 2. כשל warm: warm מחזיר false → status=error, error מאוכלס (לא cold)
-   * 3. ניקוי error קודם: this.error=null בשורה ראשונה (אביגיל 🔴)
-   * 4. הזרקת state: #sessionId/cwd/#cliKind מוגדרים לפני קריאת warmReconnect
-   * 5. סגירת transport קיים (דפנסיבי): closeAndWait נקרא אם יש #transport
-   */
-
-  test("attachToLiveAgent exists as public method", () => {
+describe("AgentSession — Connection consumer", () => {
+  test("attachToLiveAgent uses owner warm replay and clears old error", async () => {
     const session = new AgentSession()
-    expect(typeof session.attachToLiveAgent).toBe("function")
-  })
-
-  test("attachToLiveAgent: warm success → status=connected, error=null", async () => {
-    const session = new AgentSession()
-
-    // mock #warmReconnect → true (הצלחה)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockWarmReconnectForTest(true)
-
+    session.error = "previous error"
     await session.attachToLiveAgent({
       agentId: "agent-1",
       sessionId: "sess-1",
-      cwd: "/tmp/test",
-      cliKind: "opencode",
+      cwd: "/repo",
+      cliKind: "claude",
     })
-
     expect(session.status).toBe("connected")
     expect(session.error).toBeNull()
+    expect(createAttachedAcpClient).toHaveBeenCalledOnce()
+    expect(createAgent).not.toHaveBeenCalled()
   })
 
-  test("attachToLiveAgent: warm failure → status=error, error non-null (no cold fallback)", async () => {
+  test("attachToLiveAgent reports a failed warm replay without cold spawn", async () => {
     const session = new AgentSession()
-
-    // mock #warmReconnect → false (כשל)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockWarmReconnectForTest(false)
-
+    warmClient.loadSession.mockRejectedValueOnce(new Error("replay failed"))
     await session.attachToLiveAgent({
       agentId: "agent-1",
       sessionId: "sess-1",
-      cwd: "/tmp/test",
-      cliKind: "opencode",
+      cwd: "/repo",
+      cliKind: "claude",
     })
-
     expect(session.status).toBe("error")
     expect(session.error).toBeTruthy()
-    // מוודא שהשגיאה לא כוללת "cold" (לא נפל ל-cold-spawn)
-    expect(session.error).not.toContain("cold-blocked")
+    expect(createAgent).not.toHaveBeenCalled()
   })
 
-  test("attachToLiveAgent: clears previous error at start (required by design)", async () => {
+  test("attachToLiveAgent applies manual title before warm client creation", async () => {
     const session = new AgentSession()
-
-    // הגדר error קודם
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setStatusForTest("error")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any).error = "previous error"
-
-    // warm מצליח
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockWarmReconnectForTest(true)
-
+    let capturedSession: string | null = null
+    let capturedCwd: string | null = null
+    vi.mocked(createAttachedAcpClient).mockImplementationOnce(() => {
+      capturedSession = session._getSessionIdForTest()
+      capturedCwd = session.cwd
+      return warmClient as unknown as ReturnType<typeof createAttachedAcpClient>
+    })
     await session.attachToLiveAgent({
       agentId: "agent-1",
       sessionId: "sess-1",
-      cwd: "/tmp/test",
-      cliKind: "opencode",
-    })
-
-    // error נוקה אפילו לפני warm (ה-mock של warmReconnect רואה אותו נוקה)
-    expect(session.error).toBeNull()
-    expect(session.status).toBe("connected")
-  })
-
-  test("attachToLiveAgent: titleManual loads title before warm reconnect", async () => {
-    const session = new AgentSession()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockWarmReconnectForTest(true)
-
-    await session.attachToLiveAgent({
-      agentId: "agent-1",
-      sessionId: "sess-abc",
-      cwd: "/home/user/project",
+      cwd: "/repo",
       cliKind: "claude",
-      titleManual: true,
       title: "kept",
+      titleManual: true,
     })
-
+    expect(capturedSession).toBe("sess-1")
+    expect(capturedCwd).toBe("/repo")
     expect(session.sessionTitle).toBe("kept")
     expect(session.titleManual).toBe(true)
   })
 
-  test("attachToLiveAgent: injects sessionId/cwd/cliKind before warm call", async () => {
+  test("attachToLiveAgent closes an owned WS before constructing the warm WS", async () => {
     const session = new AgentSession()
-
-    let capturedSessionId: string | null = null
-    let capturedCwd: string | null = null
-
-    // mock warmReconnect שמצלם את ה-state בזמן הקריאה
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockWarmReconnectCapturingStateForTest((s: AgentSession) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      capturedSessionId = (s as any)._getSessionIdForTest()
-      capturedCwd = s.cwd
-      return true
+    session._setTransportForTest({
+      closeAndWait: vi.fn(async () => {
+        events.push("oldCloseDone")
+      }),
     })
-
-    await session.attachToLiveAgent({
-      agentId: "agent-1",
-      sessionId: "sess-abc",
-      cwd: "/home/user/project",
-      cliKind: "claude",
-    })
-
-    expect(capturedSessionId).toBe("sess-abc")
-    expect(capturedCwd).toBe("/home/user/project")
-  })
-
-  test("attachToLiveAgent: calls closeAndWait if existing transport (defensive)", async () => {
-    const session = new AgentSession()
-
-    const closeAndWaitSpy = vi.fn().mockResolvedValue(undefined)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setTransportForTest({ closeAndWait: closeAndWaitSpy })
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockWarmReconnectForTest(true)
-
     await session.attachToLiveAgent({
       agentId: "agent-1",
       sessionId: "sess-1",
-      cwd: "/tmp",
-      cliKind: "opencode",
+      cwd: "/repo",
+      cliKind: "claude",
     })
-
-    expect(closeAndWaitSpy).toHaveBeenCalledOnce()
-  })
-})
-
-describe("AgentSession — NBug2 root fix: #doReconnect closes live WS before warm", () => {
-  /**
-   * DoD#4: #doReconnect קורא closeAndWait כשיש #transport חי.
-   *
-   * גישה: test helper _setTransportForTest מזריק transport stub עם closeAndWait spy.
-   * #doReconnect (דרך reconnect()) חייב לקרוא closeAndWait לפני שמחפש agent.
-   *
-   * מוגדר כ-predicate טהור: _wasCloseAndWaitCalledOnReconnect —
-   * מריץ רק את שלב ה-closeAndWait (בלי WS אמיתי / createAcpClient / network).
-   */
-  test("reconnect() calls closeAndWait when #transport is set", async () => {
-    const session = new AgentSession()
-
-    // מזריק transport stub עם closeAndWait spy
-    const closeAndWaitSpy = vi.fn().mockResolvedValue(undefined)
-    const transportStub = { closeAndWait: closeAndWaitSpy }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setTransportForTest(transportStub)
-
-    // מגדיר sessionId + cwd + cliKind כדי ש-reconnect() לא יחזור מוקדם
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setSessionContextForTest({ sessionId: "test-id", cwd: "/tmp", cliKind: "opencode" })
-
-    // mock findReusableAgent → null (כדי ש-doReconnect ילך ל-cold)
-    // ו-coldReconnect יזרוק (להפסיק בנקודה מוקדמת — לא צריך WS אמיתי)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockFindReusableAgentForTest(null)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockColdReconnectForTest(new Error("cold-blocked"))
-
-    await session.reconnect().catch(() => {})
-
-    // הוכחה: closeAndWait נקרא פעם אחת לפני כל שאר ה-reconnect flow
-    expect(closeAndWaitSpy).toHaveBeenCalledOnce()
+    expect(events.indexOf("oldCloseDone")).toBeLessThan(events.indexOf("WsAcpTransport"))
   })
 
-  test("reconnect() does not throw and skips closeAndWait when #transport is null", async () => {
+  test("public reconnect closes an owned WS before looking up agents", async () => {
     const session = new AgentSession()
-
-    // אין transport stub — #transport = null (ברירת מחדל)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setSessionContextForTest({ sessionId: "test-id", cwd: "/tmp", cliKind: "opencode" })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockFindReusableAgentForTest(null)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockColdReconnectForTest(new Error("cold-blocked"))
-
-    // לא זורק — גם בלי transport
-    await expect(session.reconnect()).rejects.toThrow("cold-blocked")
-  })
-})
-
-describe("AgentSession — #doReconnect guard against null sessionId (fix-phone-reconnect-pwa)", () => {
-  test("#doReconnect bails when #sessionId is null — no cold loadSession, status disconnected", async () => {
-    const session = new AgentSession()
-    // #sessionId === null (ברירת מחדל) — מדמה WS שנפל לפני שנקבע sessionId (טלפון: סגירה 1006).
-    // אם ה-guard נכשל, #doReconnect ימשיך ל-warm(false)→cold שיזרוק:
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockFindReusableAgentForTest("agent-x")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockWarmReconnectForTest(false)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockColdReconnectForTest(new Error("cold-should-not-run"))
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await expect((session as any)._doReconnectForTest()).resolves.toBeUndefined()
-    expect(session.status).toBe("disconnected")
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
+    session._setTransportForTest({
+      closeAndWait: vi.fn(async () => {
+        events.push("oldCloseDone")
+      }),
+    })
+    vi.mocked(createAgent).mockRejectedValueOnce(new Error("offline"))
+    await session.reconnect()
+    expect(events.indexOf("oldCloseDone")).toBeLessThan(events.indexOf("listAgents"))
   })
 
-  test("#doReconnect proceeds past guard when session context is set (no over-block)", async () => {
+  test("public reconnect with no owned WS still reaches the cold attempt", async () => {
     const session = new AgentSession()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._setSessionContextForTest({ sessionId: "sess-1", cwd: "/tmp", cliKind: "opencode" })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockFindReusableAgentForTest("agent-1")
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockWarmReconnectForTest(true) // warm מצליח → status connected
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
+    vi.mocked(createAgent).mockRejectedValueOnce(new Error("offline"))
+    await session.reconnect()
+    expect(listAgents).toHaveBeenCalledOnce()
+    expect(createAgent).toHaveBeenCalledOnce()
+  })
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (session as any)._doReconnectForTest()
+  test("public reconnect with no session context does not open a WS or agent", async () => {
+    const session = new AgentSession()
+    await session.reconnect()
+    expect(listAgents).not.toHaveBeenCalled()
+    expect(createAgent).not.toHaveBeenCalled()
+    expect(events).not.toContain("WsAcpTransport")
+  })
+
+  test("public reconnect selects a reusable agent and completes warm replay", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
+    vi.mocked(listAgents).mockResolvedValueOnce([
+      { id: "agent-1", acpSessionId: "sess-1", cwd: "/repo", status: "ready" },
+    ] as Awaited<ReturnType<typeof listAgents>>)
+    await session.reconnect()
     expect(session.status).toBe("connected")
+    expect(session.agentId).toBe("agent-1")
+    expect(createAttachedAcpClient).toHaveBeenCalledOnce()
+    expect(createAgent).not.toHaveBeenCalled()
+  })
+
+  test("public reconnect invokes the Connection policy rather than a VM fallback", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
+    const reconnect = vi
+      .spyOn(WsConnection.prototype, "reconnect")
+      .mockRejectedValueOnce(new Error("owner policy reached"))
+    try {
+      await expect(session.reconnect()).rejects.toThrow("owner policy reached")
+      expect(reconnect).toHaveBeenCalledOnce()
+      expect(listAgents).not.toHaveBeenCalled()
+    } finally {
+      reconnect.mockRestore()
+    }
+  })
+
+  test("failed warm replay can be retried through the public consumer", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
+    vi.mocked(listAgents).mockResolvedValue([
+      { id: "agent-1", acpSessionId: "sess-1", cwd: "/repo", status: "ready" },
+    ] as Awaited<ReturnType<typeof listAgents>>)
+    warmClient.loadSession.mockRejectedValueOnce(new Error("offline"))
+    vi.mocked(createAgent).mockRejectedValueOnce(new Error("offline"))
+    await session.reconnect()
+    expect(session.status).toBe("disconnected")
+    await session.reconnect()
+    expect(session.status).toBe("connected")
+  })
+
+  test("manual reconnect resets an existing attempt indicator", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
+    session._setReconnectAttemptForTest(3)
+    vi.mocked(createAgent).mockRejectedValueOnce(new Error("offline"))
+    await session.reconnect()
+    expect(session.reconnectAttempt).toBe(0)
+  })
+
+  test("an active HTTP session reconnects without constructing a WS", async () => {
+    const session = new AgentSession()
+    vi.mocked(createRemoteView).mockResolvedValueOnce({
+      state: createInitialSessionState({ sessionId: "remote-1" }),
+      patches: new ReadableStream({ start: (controller) => controller.close() }),
+      close: vi.fn(async () => {}),
+    } as unknown as Awaited<ReturnType<typeof createRemoteView>>)
+    await session.attachRemoteToLiveAgent({
+      agentId: "remote-agent",
+      cwd: "/repo",
+      cliKind: "claude",
+    })
+    expect(session.status).toBe("connected")
+    await session.reconnect()
+    expect(events).not.toContain("WsAcpTransport")
+    expect(createAgent).not.toHaveBeenCalled()
   })
 })
