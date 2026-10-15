@@ -44,6 +44,19 @@ vi.mock("$lib/adapters/sessions", () => ({
 
 const waitForOpenBehaviors = vi.hoisted(() => [] as Array<() => Promise<void>>)
 
+const onCloseCaptures = vi.hoisted(() => [] as Array<(code: number, reason: string) => void>)
+
+vi.mock("$lib/session/ws-connection", async (importActual) => {
+  const actual = await importActual<typeof import("$lib/session/ws-connection")>()
+  class CapturingWsConnection extends actual.WsConnection {
+    constructor(deps: ConstructorParameters<typeof actual.WsConnection>[0]) {
+      onCloseCaptures.push(deps.onClose)
+      super(deps)
+    }
+  }
+  return { ...actual, WsConnection: CapturingWsConnection }
+})
+
 vi.mock("@drive-coding/acp-wire/browser", () => ({
   // eslint-disable-next-line prefer-arrow-callback
   WsAcpTransport: vi.fn().mockImplementation(function MockTransport() {
@@ -64,6 +77,7 @@ vi.mock("@drive-coding/acp-wire/browser", () => ({
 // vi.hoisted: vi.mock מרים את הגוף שלו מעל imports — צריך למנוע ReferenceError (TDZ)
 const { mockColdClient, mockAttachedClient } = vi.hoisted(() => ({
   mockColdClient: {
+    newSession: vi.fn().mockResolvedValue({ sessionId: "sess-m06" }),
     loadSession: vi.fn(),
     close: vi.fn(),
     extMethod: vi.fn().mockResolvedValue({ ok: true }),
@@ -95,11 +109,13 @@ import { AgentSession } from "./agent-session.svelte"
 beforeEach(() => {
   vi.clearAllMocks()
   waitForOpenBehaviors.length = 0
+  onCloseCaptures.length = 0
   vi.mocked(createAgent).mockResolvedValue({ agentId: "agent-1", status: "running" })
   vi.mocked(deleteAgent).mockResolvedValue(undefined)
   // getAgent נקרא מ-#handleUnexpectedClose דרך `.catch(() => null)` — לא נדרש כאן, ה-reject
   // ממופה ל-null ע"י ה-catch (getAgent עצמו אף פעם לא resolve-ל-null בטיפוס האמיתי שלו).
   vi.mocked(getAgent).mockRejectedValue(new Error("not relevant to these tests"))
+  mockColdClient.newSession.mockReset().mockResolvedValue({ sessionId: "sess-m06" })
   mockColdClient.loadSession.mockReset()
   mockAttachedClient.loadSession.mockReset().mockResolvedValue({ sessionId: "sess-1" })
   // pageHidden=true (כמו agent-session.error-surface.test.svelte.ts) — עוקף את
@@ -520,5 +536,50 @@ describe("AgentSession — cold reconnect through the Connection owner", () => {
     await vi.waitFor(() => expect(deleteAgent).toHaveBeenCalledWith("agent-1"))
     expect(session.status).toBe("idle")
     expect(session._getConnectionForTest()).toBeNull()
+  })
+})
+
+describe("AgentSession — M06 stale owner onClose (slice reconnect-recovery)", () => {
+  test("M06: after #connection swap, stale owner onClose does not change live status/error/bubbles", async () => {
+    const session = new AgentSession()
+
+    await session.attach({ cwd: "/tmp/m06", cliKind: "opencode" })
+    expect(session.status).toBe("connected")
+    const staleOnClose = onCloseCaptures[0]
+    expect(staleOnClose).toBeTypeOf("function")
+    const ownerBefore = session._getConnectionForTest()
+
+    session.detach()
+    expect(session.status).toBe("idle")
+
+    await session.attach({ cwd: "/tmp/m06-b", cliKind: "opencode" })
+    expect(session.status).toBe("connected")
+    const ownerAfter = session._getConnectionForTest()
+    expect(ownerAfter).not.toBe(ownerBefore)
+
+    session.bubbles = [
+      {
+        id: "m_m06",
+        kind: "message",
+        messageId: null,
+        createdAt: 0,
+        segments: [{ id: "s_m06", text: "M06-LIVE-BUBBLE" }],
+      },
+    ]
+    session.error = null
+    const liveStatus = session.status
+    const liveError = session.error
+    const liveBubbles = session.bubbles
+
+    staleOnClose!(1006, "stale-m06")
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(session.status).toBe(liveStatus)
+    expect(session.error).toBe(liveError)
+    expect(session.bubbles).toBe(liveBubbles)
+    expect(
+      session.renderBubbles.map((bubble) => bubble.segments.map((segment) => segment.text)),
+    ).toEqual([["M06-LIVE-BUBBLE"]])
   })
 })
