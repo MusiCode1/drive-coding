@@ -19,4 +19,6 @@ export type AgentInput =
 
 export interface Connection {
   open(agent: AgentInput): Promise<void>
+  reconnect(): Promise<void>
+  cancelReconnect(): void
 }
