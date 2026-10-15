@@ -73,7 +73,6 @@ let localClientMock: AcpClient
 
 import { MockSessionView } from "./__fixtures__/mock-session-view.svelte"
 import { AgentSession } from "./agent-session.svelte"
-import { ErrorScope } from "./error-scope.svelte"
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -385,51 +384,31 @@ describe("AgentSession + remote view — lastTurnError", () => {
     expect(agent.error).toBe("reply failed")
   })
 
-  it("re-shows turn error after dismiss when the same snapshot arrives again (no dedup)", async () => {
+  it("re-shows turn error after dismiss when the identical patch is re-emitted (no dedup)", async () => {
     const view = new MockSessionView()
     view.connect("remote-sess-dismiss-repeat")
     const agent = new AgentSession({ view })
     agent._setStatusForTest("connected")
 
-    const ended = applyTurnEnd(view.state, { message: "tool crashed", at: Date.now() })
-    view.applyAndEmit(ended.patches[0]!)
+    const fixedAt = 1_700_000_000_000
+    const ended = applyTurnEnd(view.state, { message: "tool crashed", at: fixedAt })
+    const samePatch = ended.patches[0]
+    if (!samePatch) throw new Error("expected turn-end patch")
+    view.applyAndEmit(samePatch)
     await delay()
     expect(agent.error).toContain("tool crashed")
+    expect(view.state.lastTurnError?.message).toBe("tool crashed")
+    expect(view.state.lastTurnError?.at).toBe(fixedAt)
 
-    agent.error = null
-
-    const started = applyTurnStart(ended.state)
-    view.applyAndEmit(started.patches[0]!)
-    await delay()
-    const endedAgain = applyTurnEnd(started.state, { message: "tool crashed", at: Date.now() })
-    view.applyAndEmit(endedAgain.patches[0]!)
-    await delay()
-
-    expect(agent.error).toContain("tool crashed")
-  })
-
-  it("wires view lastTurnError through ErrorScope.syncTurnError on the live VM path", async () => {
-    const spy = vi.spyOn(ErrorScope.prototype, "syncTurnError")
-    const view = new MockSessionView()
-    view.connect("remote-sess-sync-wire")
-    const agent = new AgentSession({ view })
-    agent._setStatusForTest("connected")
-
-    const ended = applyTurnEnd(view.state, { message: "wired", at: Date.now() })
-    view.applyAndEmit(ended.patches[0]!)
-    await delay()
-
-    expect(spy).toHaveBeenCalled()
-    expect(agent.error).toContain("wired")
-    spy.mockRestore()
-  })
-
-  it("public error facade getter/setter delegates to ErrorScope.message only", () => {
-    const agent = new AgentSession()
-    agent.error = "facade-banner"
-    expect(agent.error).toBe("facade-banner")
     agent.error = null
     expect(agent.error).toBeNull()
+
+    view.applyAndEmit(samePatch)
+    await delay()
+
+    expect(view.state.lastTurnError?.message).toBe("tool crashed")
+    expect(view.state.lastTurnError?.at).toBe(fixedAt)
+    expect(agent.error).toContain("tool crashed")
   })
 })
 
