@@ -40,6 +40,11 @@ beforeEach(() => {
 describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3)", () => {
   test("agentId מוגדר + getAgent מחזיר status=crashed+crashReason → מוצג crashReason", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-crash-1",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any).agentId = "agent-1"
     getAgentMock.mockResolvedValue({
@@ -55,6 +60,11 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
 
   test("agentId מוגדר + getAgent מחזיר status רגיל (לא crashed) → נופל ל-WS closed", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-crash-2",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any).agentId = "agent-2"
     getAgentMock.mockResolvedValue({ agent: { cwd: "/tmp", status: "ready" } })
@@ -70,6 +80,11 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
 
   test("agentId מוגדר + getAgent זורק (404/רשת) → best-effort נכשל, נופל ל-WS closed", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-crash-3",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any).agentId = "agent-3"
     getAgentMock.mockRejectedValue(new Error("getAgent failed: 404"))
@@ -85,6 +100,11 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
 
   test("אין agentId (null) → getAgent לא נקרא כלל, נופל מיד ל-WS closed", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-crash-4",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
     expect(session.agentId).toBeNull()
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,6 +119,11 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
 
   test("anti-clobber (Commit 1, flag ב-Commit 4/calev-heavy §10.2) שורד גם עם המסלול ה-async: getAgent לא נקרא אם כבר יש שגיאה טרמינלית", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-crash-5",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any).agentId = "agent-4"
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -116,6 +141,11 @@ describe("AgentSession — crash-path ב-#handleUnexpectedClose (DoD#4, Commit 3
 
   test("crashed אבל בלי crashReason (שדה אופציונלי חסר) → נופל ל-WS closed", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-crash-6",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any).agentId = "agent-5"
     getAgentMock.mockResolvedValue({ agent: { cwd: "/tmp", status: "crashed" } })
