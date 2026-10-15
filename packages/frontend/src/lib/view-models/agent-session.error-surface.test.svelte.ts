@@ -1,4 +1,5 @@
 /**
+ * @vitest-environment jsdom
  * agent-session.error-surface.test.svelte.ts — TDD (Commit 1, slice surface-real-error).
  * עודכן ב-Commit 4 (calev-heavy §10.2): ה-guard עבר מ-`status==="error"` ל-flag ייעודי
  * `#errorSurfaced` — ר' agent-session.reconnect-after-transient-error.test.svelte.ts
@@ -22,6 +23,7 @@
  * בפועל ב-manual verification (§4 Commit 1) כי ה-catch-ים דורשים mock מלא ל-createAgent.
  */
 
+import { flushSync } from "svelte"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 
 vi.mock("../adapters/agents-api", () => ({
@@ -45,19 +47,23 @@ beforeEach(() => {
 })
 
 describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit 1 + calev-heavy §10.2 Commit 4)", () => {
-  test("gate: שגיאה טרמינלית קיימת (#errorSurfaced=true, error=X) שורדת onClose(1005)", () => {
+  test("gate: שגיאה טרמינלית קיימת (#errorSurfaced=true, error=X) שורדת onClose(1005)", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-gate",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setStatusForTest("error")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setErrorSurfacedForTest(true) // מדמה attach/loadSession catch טרמינלי
     session.error = "Cannot find module '@anthropic-ai/claude-agent-sdk'"
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._handleUnexpectedCloseForTest(1005, "no reason")
+    await session._handleUnexpectedCloseForTest(1005, "no reason")
 
     expect(session.error).toBe("Cannot find module '@anthropic-ai/claude-agent-sdk'")
-    // anti-clobber מחזיר מוקדם — status לא משתנה ל-disconnected
+    // anti-clobber ב-controller — status לא משתנה ל-disconnected
     expect(session.status).toBe("error")
   })
 
@@ -119,5 +125,52 @@ describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit
     // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
     // ההבחנה שהטסט בודק נשמרת: "נחסם" ⇒ ההודעה הישנה שורדת; "לא נחסם" ⇒ null.
     expect(session.error).toBeNull()
+  })
+
+  test("null owner: no WsConnection context → unexpected close is a no-op", async () => {
+    const session = new AgentSession()
+    await session._handleUnexpectedCloseForTest(1006, "abnormal")
+    expect(session.status).toBe("idle")
+    expect(session.reconnectAttempt).toBe(0)
+  })
+
+  test("terminal surfaced with empty message still blocks controller overwrite", async () => {
+    const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-empty-msg",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._setStatusForTest("error")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(session as any)._setErrorSurfacedForTest(true)
+    session.error = ""
+
+    await session._handleUnexpectedCloseForTest(1006, "abnormal")
+
+    expect(session.error).toBe("")
+    expect(session.status).toBe("error")
+  })
+})
+
+describe("AgentSession — error facade reactivity (ErrorScope owner)", () => {
+  test("$effect tracks session.error across set and clear", () => {
+    const session = new AgentSession()
+    const seen: Array<string | null> = []
+    const stop = $effect.root(() => {
+      $effect(() => {
+        seen.push(session.error)
+      })
+    })
+    flushSync()
+
+    session.error = "facade-banner"
+    flushSync()
+    session.error = null
+    flushSync()
+    stop()
+
+    expect(seen).toEqual([null, "facade-banner", null])
   })
 })

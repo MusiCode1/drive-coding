@@ -24,8 +24,11 @@ vi.mock("../adapters/sessions", () => ({
   normalizeSessionInfo: vi.fn((x: unknown) => x),
 }))
 
+import { createI18n, detectLocale } from "@drive-coding/core/i18n"
 import { AgentSession } from "./agent-session.svelte"
 import { watchPageVisibility } from "./page-visibility"
+
+const expectedTakeoverMessage = createI18n({ locale: detectLocale() }).t("session.openedElsewhere")
 
 /** stub של document שמחזיק את ה-listener כדי לזמן visibilitychange ידנית. */
 function stubDocument(): { fire: (hidden: boolean) => void } {
@@ -95,6 +98,23 @@ describe("AgentSession — auto-reconnect on returning to the foreground", () =>
 
     await vi.advanceTimersByTimeAsync(5000)
     expect(session.reconnectAttempt).toBe(0)
+  })
+
+  test("after dismissing takeover banner, visibility re-arms reconnect like a plain background drop", async () => {
+    const { fire } = stubDocument()
+    const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
+
+    await session._handleUnexpectedCloseForTest(4409, "taken over by new connection")
+    expect(session.error).toBe(expectedTakeoverMessage)
+    expect(session.reconnectAttempt).toBe(0)
+
+    session.error = null
+    fire(true)
+    fire(false)
+
+    expect(session.reconnectAttempt).toBe(1)
+    session.detach()
   })
 
   test("1008 session-host-active stays parked: error is set, so no reconnect", async () => {
