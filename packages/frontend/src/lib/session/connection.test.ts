@@ -548,7 +548,7 @@ describe("Connection reconnect policy", () => {
       remote: false,
       terminalError: false,
     }
-    vi.mocked(deps.reconnect.context).mockReturnValue(context)
+    vi.mocked(deps.reconnect.context).mockImplementation(() => ({ ...context }))
     let releaseAgent!: (value: Awaited<ReturnType<typeof getAgent>>) => void
     vi.mocked(getAgent).mockImplementationOnce(
       () =>
@@ -582,7 +582,7 @@ describe("Connection reconnect policy", () => {
       remote: false,
       terminalError: false,
     }
-    vi.mocked(deps.reconnect.context).mockReturnValue(context)
+    vi.mocked(deps.reconnect.context).mockImplementation(() => ({ ...context }))
     let releaseAgent!: (value: Awaited<ReturnType<typeof getAgent>>) => void
     vi.mocked(getAgent).mockImplementationOnce(
       () =>
