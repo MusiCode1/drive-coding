@@ -101,10 +101,63 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
 vi.stubGlobal("location", { protocol: "http:", host: "localhost:5173", search: "" })
 vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("test-uuid") })
 
+import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 import { createInitialSessionState, reduce } from "@drive-coding/core/session"
 import { createAcpClient, createAttachedAcpClient } from "@drive-coding/provider/client"
 import { createAgent, deleteAgent, getAgent, listAgents } from "$lib/adapters/agents-api"
 import { AgentSession } from "./agent-session.svelte"
+
+function markSentinel(session: AgentSession): void {
+  session.error = "sentinel-error"
+  session.bubbles = [
+    {
+      id: "keep-me",
+      kind: "message",
+      messageId: null,
+      createdAt: 0,
+      segments: [{ id: "s", text: "SENTINEL" }],
+    },
+  ]
+}
+
+type LiveSessionMark = {
+  sessionId: string | null
+  agentId: string | null
+  createAgentCalls: number
+  transportConstructors: number
+  loadSessionCalls: number
+}
+
+function captureLiveMark(session: AgentSession): LiveSessionMark {
+  return {
+    sessionId: session._getSessionIdForTest(),
+    agentId: session.agentId,
+    createAgentCalls: vi.mocked(createAgent).mock.calls.length,
+    transportConstructors: vi.mocked(WsAcpTransport).mock.calls.length,
+    loadSessionCalls: mockColdClient.loadSession.mock.calls.length,
+  }
+}
+
+function expectLiveSessionHeld(session: AgentSession, marked: LiveSessionMark): void {
+  expect(session.status).toBe("connected")
+  expect(session.error).toBe("sentinel-error")
+  expect(session._getSessionIdForTest()).toBe(marked.sessionId)
+  expect(session.agentId).toBe(marked.agentId)
+  expect(
+    session.bubbles.flatMap((bubble) => bubble.segments.map((segment) => segment.text)),
+  ).toEqual(["SENTINEL"])
+  expect(vi.mocked(createAgent).mock.calls.length).toBe(marked.createAgentCalls)
+  expect(vi.mocked(WsAcpTransport).mock.calls.length).toBe(marked.transportConstructors)
+  expect(mockColdClient.loadSession.mock.calls.length).toBe(marked.loadSessionCalls)
+}
+
+async function dropAttachedSessionToDisconnected(session: AgentSession): Promise<void> {
+  const onClose = onCloseCaptures[0]
+  expect(onClose).toBeTypeOf("function")
+  onClose?.(1006, "drop")
+  await vi.waitFor(() => expect(session.status).toBe("disconnected"))
+  await Promise.resolve()
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -581,5 +634,86 @@ describe("AgentSession — M06 stale owner onClose (slice reconnect-recovery)", 
     expect(
       session.renderBubbles.map((bubble) => bubble.segments.map((segment) => segment.text)),
     ).toEqual([["M06-LIVE-BUBBLE"]])
+  })
+
+  test("M06: attach during pending listAgents on the previous owner does not adopt the stale empty result", async () => {
+    mockColdClient.newSession
+      .mockReset()
+      .mockResolvedValueOnce({ sessionId: "sess-1" })
+      .mockResolvedValueOnce({ sessionId: "sess-2" })
+    vi.mocked(createAgent)
+      .mockResolvedValueOnce({ agentId: "agent-1", status: "running" })
+      .mockResolvedValueOnce({ agentId: "agent-2", status: "running" })
+    const session = new AgentSession()
+    await session.attach({ cwd: "/tmp/first", cliKind: "opencode" })
+    const ownerBefore = session._getConnectionForTest()
+    await dropAttachedSessionToDisconnected(session)
+
+    let releaseAgents!: (agents: Awaited<ReturnType<typeof listAgents>>) => void
+    vi.mocked(listAgents).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseAgents = resolve
+        }),
+    )
+    const pending = session.reconnect()
+    await vi.waitFor(() => expect(listAgents).toHaveBeenCalledOnce())
+
+    await session.attach({ cwd: "/tmp/second", cliKind: "opencode" })
+    await vi.waitFor(() => expect(session.status).toBe("connected"))
+    const ownerAfter = session._getConnectionForTest()
+    expect(ownerAfter).not.toBe(ownerBefore)
+    expect(session._getSessionIdForTest()).toBe("sess-2")
+    markSentinel(session)
+    const marked = captureLiveMark(session)
+
+    releaseAgents([])
+    await pending
+    await Promise.resolve()
+
+    expectLiveSessionHeld(session, marked)
+  })
+
+  test("M06: attach during pending listAgents ignores a reusable agent from the previous conversation", async () => {
+    mockColdClient.newSession
+      .mockReset()
+      .mockResolvedValueOnce({ sessionId: "sess-1" })
+      .mockResolvedValueOnce({ sessionId: "sess-2" })
+    vi.mocked(createAgent)
+      .mockResolvedValueOnce({ agentId: "agent-1", status: "running" })
+      .mockResolvedValueOnce({ agentId: "agent-2", status: "running" })
+    const session = new AgentSession()
+    await session.attach({ cwd: "/tmp/first", cliKind: "opencode" })
+    const firstSessionId = session._getSessionIdForTest()
+    await dropAttachedSessionToDisconnected(session)
+
+    let releaseAgents!: (agents: Awaited<ReturnType<typeof listAgents>>) => void
+    vi.mocked(listAgents).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseAgents = resolve
+        }),
+    )
+    const pending = session.reconnect()
+    await vi.waitFor(() => expect(listAgents).toHaveBeenCalledOnce())
+
+    await session.attach({ cwd: "/tmp/second", cliKind: "opencode" })
+    await vi.waitFor(() => expect(session.status).toBe("connected"))
+    expect(session._getSessionIdForTest()).toBe("sess-2")
+    markSentinel(session)
+    const marked = captureLiveMark(session)
+
+    releaseAgents([
+      {
+        id: "agent-reusable",
+        acpSessionId: firstSessionId ?? "sess-1",
+        cwd: "/tmp/first",
+        status: "ready",
+      },
+    ] as Awaited<ReturnType<typeof listAgents>>)
+    await pending
+    await Promise.resolve()
+
+    expectLiveSessionHeld(session, marked)
   })
 })

@@ -61,11 +61,16 @@ describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit
     expect(session.status).toBe("error")
   })
 
-  test("control: אין error קודם → onClose(1005) מציג WS closed כרגיל", () => {
+  test("control: אין error קודם → onClose(1005) מציג WS closed כרגיל", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-ctrl",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._handleUnexpectedCloseForTest(1005, "")
+    await (session as any)._handleUnexpectedCloseForTest(1005, "")
 
     // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
     // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
@@ -74,8 +79,13 @@ describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit
     expect(session.status).toBe("disconnected")
   })
 
-  test("control: status=error אך error=null (קצה) → לא נחסם, מוצג WS closed", () => {
+  test("control: status=error אך error=null (קצה) → לא נחסם, מוצג WS closed", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-ctrl-null",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setStatusForTest("error")
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -83,7 +93,7 @@ describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit
     session.error = null
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._handleUnexpectedCloseForTest(1006, "abnormal")
+    await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal")
 
     // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
     // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.
@@ -91,14 +101,19 @@ describe("AgentSession — anti-clobber ב-#handleUnexpectedClose (DoD#5, Commit
     expect(session.error).toBeNull()
   })
 
-  test("control: status=error אך #errorSurfaced=false (switchSession/newSession fail) → לא נחסם", () => {
+  test("control: status=error אך #errorSurfaced=false (switchSession/newSession fail) → לא נחסם", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({
+      sessionId: "sess-switch-fail",
+      cwd: "/tmp",
+      cliKind: "opencode",
+    })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setStatusForTest("error")
     session.error = "switchSession failed: boom" // כמו switchSession catch — לא מדליק את הדגל
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._handleUnexpectedCloseForTest(1006, "abnormal")
+    await (session as any)._handleUnexpectedCloseForTest(1006, "abnormal")
 
     // סבב-תיקונים liveness: ניתוק חולף כבר **אינו** כותב מחרוזת גולמית — הבאנר
     // (DisconnectBanner) הוא בעל-הבית של מצב-החיבור, ו-this.error מתנקה.

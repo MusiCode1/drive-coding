@@ -94,6 +94,7 @@ vi.stubGlobal("location", { protocol: "http:", host: "localhost:5173", search: "
 vi.stubGlobal("crypto", { randomUUID: () => "test-uuid" })
 
 // ─── Import after mocks ───────────────────────────────────────────────────────
+import { createAgent, listAgents } from "$lib/adapters/agents-api"
 import { AgentSession } from "./agent-session.svelte"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -202,20 +203,17 @@ describe("AgentSession — elicitation round-trip (slice-elicitation-ui Commit 2
     await expect(resultPromise).resolves.toEqual({ action: "cancel" })
   })
 
-  it("9. #doReconnect עם #transport חי → pending נפתר cancel לפני warm/cold", async () => {
+  it("9. reconnect עם transport חי → pending נפתר cancel לפני warm/cold", async () => {
     const resultPromise = capturedOnCreateElicitation?.(elicitationParams())
     expect(session.pendingElicitation).not.toBeNull()
 
     const closeAndWaitSpy = vi.fn().mockResolvedValue(undefined)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setTransportForTest({ closeAndWait: closeAndWaitSpy })
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockFindReusableAgentForTest(null)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any)._mockColdReconnectForTest(new Error("cold-blocked-for-test"))
+    vi.mocked(listAgents).mockResolvedValueOnce([])
+    vi.mocked(createAgent).mockRejectedValueOnce(new Error("cold-blocked-for-test"))
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (session as any)._doReconnectForTest().catch(() => {})
+    await session.reconnect()
 
     expect(closeAndWaitSpy).toHaveBeenCalledOnce()
     expect(session.pendingElicitation).toBeNull()
