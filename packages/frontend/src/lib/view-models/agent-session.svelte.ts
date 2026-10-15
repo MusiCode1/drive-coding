@@ -815,7 +815,7 @@ export class AgentSession {
 
         // 3. all raw wire updates → #onSessionUpdate (WS tee parity)
         for (const update of emission.updates) {
-          this.#onSessionUpdate({ update })
+          this.#onSessionUpdate({ update } as unknown as SessionNotification)
         }
 
         this.#syncFromViewState(view.state)
