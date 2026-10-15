@@ -141,7 +141,8 @@ export class WsReconnectController {
     }
     if (!this.#current(generation)) return
     this.reconnect.setStatus("disconnected")
-    if (context.hidden || this.#loop) return
+    const liveContext = this.reconnect.context()
+    if (!liveContext || liveContext.hidden || this.#loop) return
     this.cancel()
     const loopGeneration = this.attempt.generation
     this.#loop = this.#runLoop(loopGeneration).finally(() => {

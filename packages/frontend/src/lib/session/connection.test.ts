@@ -535,6 +535,73 @@ describe("Connection reconnect policy", () => {
     },
   )
 
+  it("does not arm backoff when the tab becomes hidden during getAgent", async () => {
+    const deps = reconnectDeps()
+    const context = {
+      sessionId: "session-1",
+      cwd: "/repo",
+      cliKind: "claude",
+      agentId: "old-agent",
+      hidden: false,
+      detached: false,
+      tearingDown: false,
+      remote: false,
+      terminalError: false,
+    }
+    vi.mocked(deps.reconnect.context).mockReturnValue(context)
+    let releaseAgent!: (value: Awaited<ReturnType<typeof getAgent>>) => void
+    vi.mocked(getAgent).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseAgent = resolve
+        }),
+    )
+    const pending = new WsConnection(deps).onUnexpectedClose(1006, "")
+    await vi.waitFor(() => expect(getAgent).toHaveBeenCalledOnce())
+    context.hidden = true
+    releaseAgent({
+      agent: { status: "ready", cwd: "/repo" },
+    } as Awaited<ReturnType<typeof getAgent>>)
+    await pending
+    expect(deps.reconnect.setStatus).toHaveBeenCalledWith("disconnected")
+    expect(deps.reconnect.setAttempt).not.toHaveBeenCalled()
+    expect(listAgents).not.toHaveBeenCalled()
+  })
+
+  it("arms reconnect when the tab becomes focused during getAgent", async () => {
+    vi.useFakeTimers()
+    const deps = reconnectDeps()
+    const context = {
+      sessionId: "session-1",
+      cwd: "/repo",
+      cliKind: "claude",
+      agentId: "old-agent",
+      hidden: true,
+      detached: false,
+      tearingDown: false,
+      remote: false,
+      terminalError: false,
+    }
+    vi.mocked(deps.reconnect.context).mockReturnValue(context)
+    let releaseAgent!: (value: Awaited<ReturnType<typeof getAgent>>) => void
+    vi.mocked(getAgent).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseAgent = resolve
+        }),
+    )
+    const pending = new WsConnection(deps).onUnexpectedClose(1006, "")
+    await vi.waitFor(() => expect(getAgent).toHaveBeenCalledOnce())
+    context.hidden = false
+    releaseAgent({
+      agent: { status: "ready", cwd: "/repo" },
+    } as Awaited<ReturnType<typeof getAgent>>)
+    await pending
+    await vi.runAllTimersAsync()
+    expect(deps.reconnect.setAttempt).toHaveBeenCalledWith(1)
+    expect(listAgents).toHaveBeenCalled()
+  })
+
   it.each(["detached", "tearingDown"] as const)(
     "does not set disconnected after context becomes %s during getAgent",
     async (state) => {
