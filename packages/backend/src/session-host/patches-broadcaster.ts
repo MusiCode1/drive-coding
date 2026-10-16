@@ -17,6 +17,7 @@ import type { Patch } from "@drive-coding/core/session"
 const BUFFER_SIZE = 64
 
 export type PatchesBroadcaster = {
+  readonly hostIncarnation: string
   /**
    * subscribe — returns a new ReadableStream<Patch> for this client.
    * @param sinceVersion — when set, replay only patches with version > sinceVersion;
@@ -73,7 +74,10 @@ export type PatchesBroadcaster = {
  *
  * @param source — host.patches (ReadableStream<Patch>)
  */
-export function createPatchesBroadcaster(source: ReadableStream<Patch>): PatchesBroadcaster {
+export function createPatchesBroadcaster(
+  source: ReadableStream<Patch>,
+  hostIncarnation: string,
+): PatchesBroadcaster {
   // Ring buffer of the last N patches
   const buffer: Patch[] = []
 
@@ -133,6 +137,7 @@ export function createPatchesBroadcaster(source: ReadableStream<Patch>): Patches
   void drain()
 
   return {
+    hostIncarnation,
     subscribe(sinceVersion?: number): ReadableStream<Patch> {
       let ctrl!: ReadableStreamDefaultController<Patch>
       const stream = new ReadableStream<Patch>({
@@ -151,9 +156,7 @@ export function createPatchesBroadcaster(source: ReadableStream<Patch>): Patches
 
       // Replay buffered patches to the new subscriber
       const replay =
-        sinceVersion === undefined
-          ? buffer
-          : buffer.filter((p) => p.version > sinceVersion)
+        sinceVersion === undefined ? buffer : buffer.filter((p) => p.version > sinceVersion)
       for (const patch of replay) {
         try {
           ctrl.enqueue(patch)

@@ -96,7 +96,7 @@ describe("PatchesBroadcaster", () => {
   describe("subscribe — fan-out", () => {
     it("returns a ReadableStream per subscriber", () => {
       const { stream } = makeControlledStream()
-      const broadcaster = createPatchesBroadcaster(stream)
+      const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
 
       const s1 = broadcaster.subscribe()
       const s2 = broadcaster.subscribe()
@@ -108,7 +108,7 @@ describe("PatchesBroadcaster", () => {
 
     it("each subscriber gets each patch emitted after subscribing", async () => {
       const { stream, push } = makeControlledStream()
-      const broadcaster = createPatchesBroadcaster(stream)
+      const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
 
       const s1 = broadcaster.subscribe()
       const s2 = broadcaster.subscribe()
@@ -131,7 +131,7 @@ describe("PatchesBroadcaster", () => {
   describe("unsubscribe", () => {
     it("removed subscriber does not receive further patches", async () => {
       const { stream, push } = makeControlledStream()
-      const broadcaster = createPatchesBroadcaster(stream)
+      const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
 
       const s1 = broadcaster.subscribe()
       const s2 = broadcaster.subscribe()
@@ -152,7 +152,7 @@ describe("PatchesBroadcaster", () => {
 
     it("unsubscribe is a no-op for an unknown stream", () => {
       const { stream } = makeControlledStream()
-      const broadcaster = createPatchesBroadcaster(stream)
+      const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
       const unknownStream = new ReadableStream<Patch>()
       // Should not throw
       expect(() => broadcaster.unsubscribe(unknownStream)).not.toThrow()
@@ -162,7 +162,7 @@ describe("PatchesBroadcaster", () => {
   describe("buffering — late subscriber (filtered replay)", () => {
     it("sinceVersion at buffer head → zero replay", async () => {
       const { stream, push } = makeControlledStream()
-      const broadcaster = createPatchesBroadcaster(stream)
+      const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
 
       const s1 = broadcaster.subscribe()
       await new Promise<void>((r) => setTimeout(r, 0))
@@ -177,7 +177,7 @@ describe("PatchesBroadcaster", () => {
 
     it("sinceVersion in the middle → tail only", async () => {
       const { stream, push } = makeControlledStream()
-      const broadcaster = createPatchesBroadcaster(stream)
+      const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
 
       broadcaster.subscribe()
       await new Promise<void>((r) => setTimeout(r, 0))
@@ -193,7 +193,7 @@ describe("PatchesBroadcaster", () => {
 
     it("without sinceVersion → full buffer (regression)", async () => {
       const { stream, push } = makeControlledStream()
-      const broadcaster = createPatchesBroadcaster(stream)
+      const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
 
       broadcaster.subscribe()
       await new Promise<void>((r) => setTimeout(r, 0))
@@ -208,7 +208,7 @@ describe("PatchesBroadcaster", () => {
 
     it("patch after subscribe arrives for filtered and unfiltered subscribers", async () => {
       const { stream, push } = makeControlledStream()
-      const broadcaster = createPatchesBroadcaster(stream)
+      const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
 
       const filtered = broadcaster.subscribe(5)
       const full = broadcaster.subscribe()
@@ -222,7 +222,7 @@ describe("PatchesBroadcaster", () => {
 
     it("late subscriber receives recent patches from buffer when unfiltered", async () => {
       const { stream, push } = makeControlledStream()
-      const broadcaster = createPatchesBroadcaster(stream)
+      const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
 
       // Subscriber 1 subscribes early — just to start the drain loop
       const s1 = broadcaster.subscribe()
@@ -246,7 +246,7 @@ describe("PatchesBroadcaster", () => {
   describe("constructor", () => {
     it("accepts a ReadableStream<Patch> — no throw on construction", () => {
       const { stream } = makeControlledStream()
-      expect(() => createPatchesBroadcaster(stream)).not.toThrow()
+      expect(() => createPatchesBroadcaster(stream, "fixture-host")).not.toThrow()
     })
   })
 
@@ -254,7 +254,7 @@ describe("PatchesBroadcaster", () => {
   describe("close", () => {
     it("closes every current subscriber's stream SYNCHRONOUSLY — before any further await", async () => {
       const { stream } = makeControlledStream()
-      const broadcaster = createPatchesBroadcaster(stream)
+      const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
 
       const s1 = broadcaster.subscribe()
       const s2 = broadcaster.subscribe()
@@ -272,7 +272,7 @@ describe("PatchesBroadcaster", () => {
 
     it("does NOT touch the source stream — close() is independent of whether the source ever ends", () => {
       const { stream } = makeControlledStream()
-      const broadcaster = createPatchesBroadcaster(stream)
+      const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
       broadcaster.subscribe()
 
       // The source (host.patches) is never closed here — close() must not
@@ -284,7 +284,7 @@ describe("PatchesBroadcaster", () => {
 
     it("is idempotent — calling close() twice does not throw", () => {
       const { stream } = makeControlledStream()
-      const broadcaster = createPatchesBroadcaster(stream)
+      const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
       broadcaster.subscribe()
 
       broadcaster.close()
@@ -293,7 +293,7 @@ describe("PatchesBroadcaster", () => {
 
     it("a subscriber added AFTER close() still gets a stream, but it closes immediately (empty subscribers map)", async () => {
       const { stream } = makeControlledStream()
-      const broadcaster = createPatchesBroadcaster(stream)
+      const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
       broadcaster.subscribe()
       broadcaster.close()
 
@@ -317,14 +317,14 @@ describe("oldestBufferedVersion (slice history-cursor C2)", () => {
 
   it("‏חוצץ ריק ⇒ undefined", () => {
     const { stream } = makeControlledStream()
-    const broadcaster = createPatchesBroadcaster(stream)
+    const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
 
     expect(broadcaster.oldestBufferedVersion()).toBeUndefined()
   })
 
   it("‏3 patches ⇒ ה-version של הראשון", async () => {
     const { stream, push } = makeControlledStream()
-    const broadcaster = createPatchesBroadcaster(stream)
+    const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
 
     push(makePatch(5))
     push(makePatch(6))
@@ -336,7 +336,7 @@ describe("oldestBufferedVersion (slice history-cursor C2)", () => {
 
   it("🔴 ‏מעל BUFFER_SIZE ⇒ עולה יחד עם ה-shift — זה הפער שאיש אינו רואה היום", async () => {
     const { stream, push } = makeControlledStream()
-    const broadcaster = createPatchesBroadcaster(stream)
+    const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
 
     // 64 = BUFFER_SIZE. דוחפים 70 ⇒ ששת הראשונים מפונים.
     for (let v = 1; v <= 70; v++) push(makePatch(v))
@@ -347,11 +347,36 @@ describe("oldestBufferedVersion (slice history-cursor C2)", () => {
 
   it("‏החוצץ המלא בדיוק (BUFFER_SIZE) עדיין מתחיל בראשון", async () => {
     const { stream, push } = makeControlledStream()
-    const broadcaster = createPatchesBroadcaster(stream)
+    const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
 
     for (let v = 1; v <= 64; v++) push(makePatch(v))
     await settle()
 
     expect(broadcaster.oldestBufferedVersion()).toBe(1)
   })
+})
+
+it("host incarnation is opaque and stable across subscribers, zero viewers and new subscribe", () => {
+  const source = makeControlledStream(),
+    otherSource = makeControlledStream()
+  const broadcaster = createPatchesBroadcaster(source.stream, "fixture-host")
+  const other = createPatchesBroadcaster(otherSource.stream, "other-fixture-host")
+  try {
+    const identity = broadcaster.hostIncarnation
+    expect(identity).toBe("fixture-host")
+    expect(other.hostIncarnation).not.toBe(identity)
+    const a = broadcaster.subscribe(),
+      b = broadcaster.subscribe()
+    expect(broadcaster.hostIncarnation).toBe(identity)
+    broadcaster.unsubscribe(a)
+    broadcaster.unsubscribe(b)
+    const c = broadcaster.subscribe()
+    expect(broadcaster.hostIncarnation).toBe(identity)
+    broadcaster.unsubscribe(c)
+  } finally {
+    broadcaster.close()
+    other.close()
+    source.close()
+    otherSource.close()
+  }
 })

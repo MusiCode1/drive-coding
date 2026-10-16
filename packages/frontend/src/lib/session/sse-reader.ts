@@ -19,17 +19,27 @@
  *   event: taken-over\nid: <new-epoch>\ndata: {}\n\n            ← terminal: stop reconnecting
  *
  * Reconnect: exponential backoff (1s, 2s, 4s, ..., max 30s).
- * On reconnect: calls onReconnected(newSnapshot) before resuming patches.
+ * Reconnect snapshots, updates and terminal facts share one ordered delivery queue.
  *
  * ─── slice remote-session-view C1 (TDD) ───
  */
 
+import type { WireSessionUpdate } from "@drive-coding/core/session"
+import type {
+  RemoteSnapshot,
+  RemoteSource,
+  RemoteStreamEvent,
+  RemoteTerminal,
+} from "./remote-stream-events"
 import {
-  createInitialSessionState,
-  reduce,
-  type SessionState,
-  type WireSessionUpdate,
-} from "@drive-coding/core/session"
+  openSseAttempt,
+  type SSEFrame,
+  SseProtocolError,
+  SseTakenOverError,
+} from "./sse-open-attempt"
+
+export type { WireUpdateBatch } from "./remote-stream-events"
+
 import { SSE_WATCHDOG_THRESHOLD_MS } from "$lib/engines/liveness-thresholds"
 import { connInfo, connWarn } from "$lib/util/conn-log"
 
@@ -44,15 +54,6 @@ import { connInfo, connWarn } from "$lib/util/conn-log"
  * סינון-החפיפה (`version <= lastVersion`) שהיה מוחק את השני והשלישי.
  * ⇒ הפריים הוא היחידה האטומית; ה-`version` שלו מגיע משורת ה-`id:`.
  */
-export type WireUpdateBatch = { version: number; updates: WireSessionUpdate[] }
-
-/** גוף ה-snapshot (frame-zero). */
-type WireSnapshot = {
-  sessionId: string | null
-  version: number
-  updates: WireSessionUpdate[]
-}
-
 /**
  * מחלץ את ה-updates מ-batch של JSON-RPC.
  *
@@ -77,72 +78,6 @@ function extractUpdates(raw: unknown): WireSessionUpdate[] | null {
     out.push(update as WireSessionUpdate)
   }
   return out
-}
-
-/** מקפל את ה-snapshot למצב. ה-`version` נלקח מהשרת, לא מספירת ה-updates. */
-function foldSnapshot(snap: WireSnapshot): SessionState {
-  let state = createInitialSessionState({ sessionId: snap.sessionId ?? "" })
-  for (const u of snap.updates) state = reduce(state, u).state
-  // ⚠️ **דריסה מכוונת.** `reduce` מעלה מונה מקומי לכל update, אבל ה-`version`
-  // הוא מונה של **השרת** — הוא מה שסימון-החפיפה של הלקוח נמדד מולו. ספירה
-  // מקומית הייתה מייצרת בדיוק את רגרסיית-הגרסה שבאג #41 נבנה סביבה.
-  return { ...state, sessionId: snap.sessionId, version: snap.version }
-}
-
-type SSEFrame = { event: string; data: string; id: string }
-
-/**
- * readSSEFrames — async generator that yields parsed SSE frames from a body stream.
- * Handles CRLF and LF line endings. Releases reader lock on completion/error.
- */
-async function* readSSEFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<SSEFrame> {
-  const reader = body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ""
-  let currentEvent = ""
-  let currentData = ""
-  // slice acp-wire-session-update: ה-`id:` נקרא עכשיו, כי הוא נושא את
-  // ה-`version` — שירד מגוף ה-patch אל שורת-המסגור. עד כה הוא פשוט נזרק.
-  let currentId = ""
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-
-      // Split on LF; keep the last incomplete line in the buffer
-      const lines = buffer.split("\n")
-      buffer = lines.pop() ?? ""
-
-      for (const rawLine of lines) {
-        // Strip trailing CR (CRLF → LF normalisation)
-        const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine
-
-        if (line.startsWith("event:")) {
-          currentEvent = line.slice(6).trim()
-        } else if (line.startsWith("data:")) {
-          currentData += line.slice(5).trim()
-        } else if (line.startsWith("id:")) {
-          currentId = line.slice(3).trim()
-        } else if (line === "") {
-          // Empty line → dispatch event
-          if (currentEvent && currentData) {
-            yield { event: currentEvent, data: currentData, id: currentId }
-          }
-          currentEvent = ""
-          currentData = ""
-          currentId = ""
-        }
-      }
-    }
-  } finally {
-    try {
-      reader.releaseLock()
-    } catch {
-      // Already released
-    }
-  }
 }
 
 // ─── SSEReader ────────────────────────────────────────────────────────────────
@@ -231,16 +166,15 @@ const STABLE_CONNECTION_MS = 10_000
  *   reader.close()  // when done
  */
 export class SSEReader {
-  /**
-   * Called after each successful reconnect, with the new snapshot.
-   * Set before calling connect().
-   */
-  onReconnected?: (snapshot: SessionState) => void
-  /**
-   * slice ownership-handoff C3: called when the server sends taken-over event.
-   * After this, #closed is set to true and no reconnect is attempted.
-   */
-  onTakenOver?: () => void
+  #run = 0
+  #attempt: object | undefined
+  #terminalFact: RemoteTerminal | undefined
+  get terminalFact(): RemoteTerminal | undefined {
+    return this.#terminalFact
+  }
+  #current(run: number, token = this.#attempt): boolean {
+    return !this.#closed && this.#run === run && this.#attempt === token
+  }
 
   readonly #url: string
   readonly #headers: Record<string, string>
@@ -281,34 +215,23 @@ export class SSEReader {
    * Returns the initial snapshot and a long-lived patches stream.
    * The patches stream survives reconnects (automatic exponential backoff).
    */
-  async connect(): Promise<{ snapshot: SessionState; updates: ReadableStream<WireUpdateBatch> }> {
+  async connect(): Promise<{ initial: RemoteSnapshot; events: ReadableStream<RemoteStreamEvent> }> {
     this.#closed = false
-
-    // Initial connection — must receive snapshot as first frame
-    const { snapshot, frames } = await this.#connectOnce()
-    // slice sse-liveness Commit 4: the watchdog only ever ticks AFTER a
-    // snapshot was received — never during the snapshot wait itself (bounded
-    // separately, above) and never during backoff (below, §runLoop).
+    this.#terminalFact = undefined
+    const run = ++this.#run
+    const { initial, frames } = await this.#connectOnce(run)
+    if (!this.#current(run, initial.source.token))
+      throw new Error("SSEReader: closed during connect")
     this.#startWatchdog()
-
-    // Long-lived patches stream — drained by background loop
-    let patchCtrl!: ReadableStreamDefaultController<WireUpdateBatch>
-    const updates = new ReadableStream<WireUpdateBatch>({
+    let controller!: ReadableStreamDefaultController<RemoteStreamEvent>
+    const events = new ReadableStream<RemoteStreamEvent>({
       start: (ctrl) => {
-        patchCtrl = ctrl
+        controller = ctrl
       },
-      cancel: () => {
-        // slice sse-liveness Commit 4: routed through #setClosed — one of the
-        // (now five) sites that set #closed=true; the watchdog must stop here
-        // too, not just in close(), or it keeps ticking on a cancelled reader.
-        this.#setClosed()
-      },
+      cancel: () => this.close(),
     })
-
-    // Background loop: drain initial frames, then reconnect-loop
-    void this.#runLoop(frames, patchCtrl)
-
-    return { snapshot, updates }
+    void this.#runLoop(frames, controller, initial.source, run)
+    return { initial, events }
   }
 
   /** Stop reconnect attempts, abort any in-flight request, and close the patches stream. */
@@ -319,89 +242,38 @@ export class SSEReader {
 
   // ── internals ──────────────────────────────────────────────────────────────
 
-  /**
-   * connectOnce — opens one SSE connection, reads until snapshot frame, returns
-   * the snapshot and the remaining frame generator (for subsequent patch frames).
-   */
-  async #connectOnce(): Promise<{
-    snapshot: SessionState
-    frames: AsyncGenerator<SSEFrame>
-  }> {
-    this.#abortController = new AbortController()
-    const res = await this.#doFetch(this.#url, {
-      headers: this.#headers,
-      signal: this.#abortController.signal,
-    })
-    if (!res.ok) {
-      // slice sse-liveness Commit 3ג: carries `status` as a real field (not just
-      // baked into the message string) so #runLoop's catch can branch on it —
-      // 404 is a FINAL state (the agent is gone), 500/503 are not. The message
-      // text is left unchanged (still contains "404" etc.) — an existing test
-      // (`rejects.toThrow("404")` on the initial connection) asserts on it.
-      const err = new Error(`SSEReader: fetch failed with status ${res.status}`) as Error & {
-        status: number
-      }
-      err.status = res.status
-      throw err
+  async #connectOnce(run: number) {
+    const token = {}
+    this.#attempt = token
+    const controller = new AbortController()
+    this.#abortController = controller
+    try {
+      return await openSseAttempt({
+        url: this.#url,
+        headers: this.#headers,
+        fetch: this.#doFetch,
+        signal: controller.signal,
+        token,
+        current: () => this.#current(run, token),
+        snapshotTimeoutMs: this.#snapshotTimeoutMs,
+      })
+    } catch (error) {
+      controller.abort()
+      throw error
     }
-    if (!res.body) {
-      throw new Error("SSEReader: response has no body")
-    }
-
-    const frames = readSSEFrames(res.body)
-    const snapshot = await this.#waitForSnapshot(frames)
-    return { snapshot, frames }
   }
 
-  /**
-   * waitForSnapshot — advances past any non-snapshot frames to find the
-   * required snapshot frame-zero, bounded by `SNAPSHOT_TIMEOUT_MS` (see its
-   * doc comment for why: a connection that never sends `snapshot` used to
-   * hang here forever, invisible to both the watchdog and — on the initial
-   * connection — the reconnect loop).
-   *
-   * ⚠️ Deliberately uses the RAW global `setTimeout`/`clearTimeout`, not the
-   * `#sleep` seam: `#sleep` is mocked as an INSTANT no-op in almost every
-   * test in this file (it represents backoff delay, which tests skip) — if
-   * this raced against `this.#sleep(SNAPSHOT_TIMEOUT_MS)`, the timeout branch
-   * would win EVERY race immediately, breaking every existing test. The raw
-   * timer is safe here because `advance` below always resolves within a few
-   * microtasks in every test that isn't specifically testing this timeout
-   * (which uses `vi.useFakeTimers()` to fast-forward it) — the real 15s timer
-   * never actually fires, and is always cleared once the race settles.
-   */
-  async #waitForSnapshot(frames: AsyncGenerator<SSEFrame>): Promise<SessionState> {
-    let timeoutId: ReturnType<typeof setTimeout> | undefined
-    const timeout = (async (): Promise<never> => {
-      await new Promise<void>((resolve) => {
-        timeoutId = setTimeout(resolve, this.#snapshotTimeoutMs)
-      })
-      throw new Error("SSEReader: timed out waiting for snapshot frame")
-    })()
-    const advance = (async (): Promise<SessionState> => {
-      let next = await frames.next()
-      while (!next.done && next.value.event !== "snapshot") {
-        next = await frames.next()
-      }
-      if (next.done || next.value.event !== "snapshot") {
-        throw new Error("SSEReader: no snapshot frame received")
-      }
-      return foldSnapshot(JSON.parse(next.value.data) as WireSnapshot)
-    })()
-    // Both sides get a no-op `.catch` attached IMMEDIATELY (same tick, before
-    // racing) — whichever one LOSES the race may still reject later on its
-    // own (e.g. `advance` rejecting after `close()` aborts, post-timeout;
-    // or — in principle — `timeout` firing after `advance` already won).
-    // `Promise.race` never attaches a handler to the losing side, so without
-    // this a later rejection is "unhandled" even though nothing is meant to
-    // observe it anymore. `Promise.race([advance, timeout])` below still
-    // independently determines the actual return value.
-    advance.catch(() => {})
-    timeout.catch(() => {})
+  #terminal(
+    ctrl: ReadableStreamDefaultController<RemoteStreamEvent>,
+    source: RemoteSource,
+    reason: RemoteTerminal["reason"],
+  ): void {
+    const fact: RemoteTerminal = { kind: "terminal", source, reason }
+    this.#terminalFact = fact
     try {
-      return await Promise.race([advance, timeout])
+      ctrl.enqueue(fact)
     } finally {
-      clearTimeout(timeoutId)
+      this.close()
     }
   }
 
@@ -411,16 +283,18 @@ export class SSEReader {
    */
   async #runLoop(
     frames: AsyncGenerator<SSEFrame>,
-    ctrl: ReadableStreamDefaultController<WireUpdateBatch>,
+    ctrl: ReadableStreamDefaultController<RemoteStreamEvent>,
+    source: RemoteSource,
+    run: number,
   ): Promise<void> {
     // Drain initial connection patches
-    await this.#drainFrames(frames, ctrl)
+    await this.#drainFrames(frames, ctrl, source, run)
     // slice sse-liveness Commit 4: the connection just ended (drainFrames
     // always returns normally, never throws — see its doc comment) — no
     // watchdog while there's no open connection to watch.
     this.#stopWatchdog()
 
-    if (this.#closed) {
+    if (!this.#current(run)) {
       this.#closeCtrl(ctrl)
       return
     }
@@ -433,28 +307,29 @@ export class SSEReader {
     // הניתוק בנתיב ה-HTTP, אז כאן מקומו.
     connWarn("sse-lost", { url: this.#url })
 
-    while (!this.#closed) {
+    while (this.#current(run)) {
       await this.#sleep(delay)
-      if (this.#closed) break
+      if (!this.#current(run)) break
 
       // Double delay for next attempt (before the attempt so failure doubles)
       delay = Math.min(delay * 2, MAX_BACKOFF_MS)
 
       try {
-        const { snapshot, frames: newFrames } = await this.#connectOnce()
-        if (this.#closed) break
+        const { initial, frames: newFrames } = await this.#connectOnce(run)
+        if (!this.#current(run)) break
         // slice sse-liveness Commit 4: snapshot received — watchdog resumes.
         // Symmetric with the "no watchdog during backoff" stop above.
         this.#startWatchdog()
 
         const openedAt = this.#now()
-        connInfo("sse-reconnected", { url: this.#url, version: snapshot.version })
+        connInfo("sse-reconnected", { url: this.#url, version: initial.state.version })
 
         // Notify about the new snapshot
-        this.onReconnected?.(snapshot)
+        source = initial.source
+        ctrl.enqueue(initial)
 
         // Drain patches from the reconnected connection
-        await this.#drainFrames(newFrames, ctrl)
+        await this.#drainFrames(newFrames, ctrl, source, run)
         this.#stopWatchdog() // connection ended — see the symmetric call above
 
         // ⚠️ איפוס ה-backoff רק לחיבור ש**שרד**, לא לכל אחד שנפתח. חיבור
@@ -475,13 +350,22 @@ export class SSEReader {
         // here, never the message text (unlike the guard in the initial
         // #connectOnce() rejection, this branch never surfaces to a test via
         // `.toThrow()`).
+        if (!this.#current(run)) break
+        if (err instanceof SseTakenOverError) {
+          this.#terminal(ctrl, source, "taken-over")
+          break
+        }
+        if (err instanceof SseProtocolError) {
+          this.#terminal(ctrl, source, "protocol-error")
+          break
+        }
         const status =
           err instanceof Error ? (err as Error & { status?: number }).status : undefined
         if (status === 404) {
           // slice sse-liveness Commit 4: routed through #setClosed (harmless
           // no-op on the watchdog here — it was never started for a failed
           // #connectOnce — but keeps all five #closed=true sites consistent).
-          this.#setClosed()
+          this.#terminal(ctrl, source, "unavailable")
           connWarn("sse-gone", { url: this.#url })
           break
         }
@@ -515,11 +399,13 @@ export class SSEReader {
    */
   async #drainFrames(
     frames: AsyncGenerator<SSEFrame>,
-    ctrl: ReadableStreamDefaultController<WireUpdateBatch>,
+    ctrl: ReadableStreamDefaultController<RemoteStreamEvent>,
+    source: RemoteSource,
+    run: number,
   ): Promise<void> {
     try {
       for await (const frame of frames) {
-        if (this.#closed) return
+        if (!this.#current(run)) return
         // slice sse-liveness Commit 4: EVERY frame counts as traffic — heartbeat
         // (stream-alive) AND patch alike (§Commit 4 of the brief: "תעבורה היא
         // תעבורה"). Touched before the event-kind branching below so an
@@ -527,8 +413,7 @@ export class SSEReader {
         this.#touchWatchdog()
         // slice ownership-handoff C3: taken-over signals a terminal end — stop reconnecting
         if (frame.event === "taken-over") {
-          this.#setClosed() // slice sse-liveness Commit 4: was a bare #closed=true
-          this.onTakenOver?.()
+          this.#terminal(ctrl, source, "taken-over")
           return
         }
         if (frame.event !== "update") continue
@@ -556,7 +441,8 @@ export class SSEReader {
         }
 
         try {
-          ctrl.enqueue({ version, updates })
+          if (!this.#current(run, source.token)) return
+          ctrl.enqueue({ kind: "update", source, batch: { version, updates } })
         } catch {
           // Controller closed by consumer — stop. slice sse-liveness Commit 4:
           // routed through #setClosed (was a bare #closed=true).
@@ -569,7 +455,7 @@ export class SSEReader {
     }
   }
 
-  #closeCtrl(ctrl: ReadableStreamDefaultController<WireUpdateBatch>): void {
+  #closeCtrl(ctrl: ReadableStreamDefaultController<RemoteStreamEvent>): void {
     try {
       ctrl.close()
     } catch {

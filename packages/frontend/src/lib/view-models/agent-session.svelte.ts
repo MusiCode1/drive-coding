@@ -92,7 +92,7 @@ import {
   setManualTitleOnAgent,
   syncTitleFromViewState,
 } from "$lib/view-models/agent-session-manual-title"
-import { createAgentSessionHttpConnection } from "$lib/view-models/agent-session-new-http-connection"
+import { createAgentSessionHttpBinding } from "$lib/view-models/agent-session-new-http-connection"
 import {
   createSessionOperations,
   type NewSessionInput,
@@ -102,6 +102,7 @@ import {
 } from "$lib/view-models/agent-session-operations"
 import {
   cancelPendingDialogs,
+  clearRemotePendingUi,
   onCreateElicitation as onCreateElicitationExtracted,
   onRequestPermission as onRequestPermissionExtracted,
   type PendingRequestDeps,
@@ -838,6 +839,11 @@ export class AgentSession {
         if (remote) this.#syncFromViewState(state)
       },
       current: () => this.#view === view,
+      onHostRecreated: () => {
+        this.#operations.invalidate()
+        this.isLoadingHistory = false
+        clearRemotePendingUi(this, this.#answeredRequests)
+      },
     })
     view.bindProjection(sink)
     if (bootstrap) {
@@ -977,12 +983,6 @@ export class AgentSession {
     void this.#leaveSession("navigate", true).catch((e) => {
       this.error = formatAcpError(e)
     })
-  }
-
-  // slice http-live-side-effects: onSseReconnected אינו אופציונלי יותר — הגוף מספק אותו תמיד.
-  #remoteViewOpts(): { headers: Record<string, string>; onSseReconnected: () => void } {
-    const headers = { "Acp-Connection-Id": this.#connectionId }
-    return { headers, onSseReconnected: () => this._onSseReconnectedForTest() }
   }
 
   /**
@@ -1277,48 +1277,31 @@ export class AgentSession {
   }
 
   #newHttpConnection(): HttpConnection {
-    return createAgentSessionHttpConnection({
+    return createAgentSessionHttpBinding({
+      state: this,
       connectionId: this.#connectionId,
       getBoundConnection: () => this.#connection,
-      prepare: (agent) => {
-        this.#operations.invalidate()
-        this.#errorScope.reset()
-        this.authMethods = []
-        this.#transcript.replace([])
+      view: () => this.#view,
+      operations: this.#operations,
+      errors: this.#errorScope,
+      transcript: this.#transcript,
+      answered: this.#answeredRequests,
+      prepareIdentity: (agent) => {
         this.#detached = false
-        this.#answeredRequests.permissionId = null
-        this.#answeredRequests.elicitationId = null
-        this.#setStatus("connecting")
-        this.cwd = agent.cwd
         this.#cliKind = agent.cliKind
       },
-      setAgentId: (agentId) => {
-        this.agentId = agentId
-      },
-      viewOptions: () => this.#remoteViewOpts(),
-      enterSession: (sessionId) => this.#enterSession(sessionId),
       bindView: (view) => {
-        if (this.#view !== view) {
-          this.#operations.invalidate()
-          this.isLoadingHistory = false
-        }
         this.#view = view
         this.#isRemote = true
         this.#bindProjection(view, true)
       },
-      applyTitle: (agent) => applyManualTitleFromAttach(this, agent, false),
-      onConnected: () => this.#setStatus("connected"),
-      rememberedConfig: () => this.#applyRememberedConfig(),
-      failed: (error, keepAgent) => {
-        this.#cleanup(keepAgent ? { keepAgent: true } : undefined)
-        this.#errorScope.surface(formatAcpError(error))
-        this.#setStatus("error")
-      },
-      missingSessionId: (keepAgent) => {
-        this.#cleanup(keepAgent ? { keepAgent: true } : undefined)
-        this.#errorScope.surface("remote mode: backend did not provide a sessionId")
-        this.#setStatus("error")
-      },
+      enterSession: this.#enterSession.bind(this),
+      rememberedConfig: this.#applyRememberedConfig.bind(this),
+      onSseReconnected: this._onSseReconnectedForTest.bind(this),
+      cleanup: (keepAgent) => this.#cleanup(keepAgent ? { keepAgent: true } : undefined),
+      status: this.#setStatus.bind(this),
+      endScope: () => this.#endSessionScope("remote-terminal"),
+      turnIdle: () => this.#setTurnState("idle"),
     })
   }
 

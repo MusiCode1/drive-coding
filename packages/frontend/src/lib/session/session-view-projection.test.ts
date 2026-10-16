@@ -193,7 +193,7 @@ describe("replacement owner terminal obligations", () => {
         throw Error("producer fault")
       },
     })
-    expect(() => owner.projectSnapshot(bad, false)).toThrow("producer fault")
+    expect(() => owner.prepareSnapshot(bad, false)).toThrow("producer fault")
     expect(owner.capture()).toBe(capture)
   })
 })

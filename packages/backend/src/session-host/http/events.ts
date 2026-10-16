@@ -47,6 +47,8 @@
  * ───
  */
 
+import { randomUUID } from "node:crypto"
+import { createLogger } from "@drive-coding/core/log"
 import {
   applyPatch,
   type SessionState,
@@ -57,8 +59,6 @@ import {
   snapshotFrame,
   updateFrame,
 } from "@drive-coding/core/session"
-import { createLogger } from "@drive-coding/core/log"
-import { randomUUID } from "node:crypto"
 import type { Hono } from "hono"
 import { stream } from "hono/streaming"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
@@ -212,7 +212,11 @@ export function registerEventsRoute(
       // (הלקוח אינו יכול להבחין בהבדל בטקסט), אבל `#bubbleStates` עדיין סופר
       // אינדקסי-סגמנט — reconnect אחרי streaming חי יכול לבלוע תוכן.
       let view: SessionState = snapshot
-      await s.write(serializeFrame(snapshotFrame(snapshot, currentEpoch)))
+      await s.write(
+        serializeFrame(
+          snapshotFrame(snapshot, currentEpoch, { hostIncarnation: broadcaster.hostIncarnation }),
+        ),
+      )
 
       // Stream patches from broadcaster
       const reader = patchStream.getReader()

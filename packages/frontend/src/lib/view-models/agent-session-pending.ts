@@ -43,14 +43,21 @@ export function syncPendingPermission(
   )
     return
   const id = incoming.requestId
+  const host = view.hostIncarnation
   deps.state.pendingPermission = {
     requestId: id,
     params: incoming.params as unknown as PermissionParams,
     resolve: (response) => {
+      if (deps.tearingDown() || deps.view() !== view || view.hostIncarnation !== host) return
       try {
         deps.answered.permissionId = id
         void view.respond(id, response).catch(() => {
-          if (deps.tearingDown() || deps.view() !== view || deps.answered.permissionId !== id)
+          if (
+            deps.tearingDown() ||
+            deps.view() !== view ||
+            view.hostIncarnation !== host ||
+            deps.answered.permissionId !== id
+          )
             return
           deps.answered.permissionId = null
           deps.state.error = "reply failed"
@@ -77,14 +84,21 @@ export function syncPendingElicitation(
   )
     return
   const id = incoming.requestId
+  const host = view.hostIncarnation
   deps.state.pendingElicitation = {
     requestId: id,
     params: incoming.params as unknown as ElicitationParams,
     resolve: (response) => {
+      if (deps.tearingDown() || deps.view() !== view || view.hostIncarnation !== host) return
       try {
         deps.answered.elicitationId = id
         void view.respond(id, response).catch(() => {
-          if (deps.tearingDown() || deps.view() !== view || deps.answered.elicitationId !== id)
+          if (
+            deps.tearingDown() ||
+            deps.view() !== view ||
+            view.hostIncarnation !== host ||
+            deps.answered.elicitationId !== id
+          )
             return
           deps.answered.elicitationId = null
           deps.state.error = "reply failed"
@@ -151,4 +165,14 @@ export function onCreateElicitation(
     if (deps.state.pendingElicitation) resolvePendingElicitation(deps, { action: "cancel" })
     deps.state.pendingElicitation = { params, resolve }
   })
+}
+
+export function clearRemotePendingUi(
+  state: PendingRequestState,
+  answered: PendingRequestDeps["answered"],
+): void {
+  state.pendingPermission = null
+  state.pendingElicitation = null
+  answered.permissionId = null
+  answered.elicitationId = null
 }

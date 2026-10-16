@@ -45,6 +45,7 @@ export type AgentSessionProjectionDeps = {
   beforeUpdate(update: unknown): void
   endBatch(state: SessionState): void
   current(): boolean
+  onHostRecreated?(): void
 }
 
 export function createAgentSessionProjection(d: AgentSessionProjectionDeps): ProjectionSink {
@@ -57,10 +58,15 @@ export function createAgentSessionProjection(d: AgentSessionProjectionDeps): Pro
     applyFrame(frame, publish) {
       if (!d.current()) return
       if (frame.reset) {
+        if (frame.boundary === "host-recreated") d.onHostRecreated?.()
+        if (!d.current()) return
         publish()
         d.transcript.applyPatches(frame.patches, frame.resetOrigin)
         d.setSessionState(frame.state)
-        if (attachWindow && frame.patches.some((p) => p.op === "reset")) {
+        if (
+          (attachWindow || frame.boundary === "host-recreated") &&
+          frame.patches.some((p) => p.op === "reset")
+        ) {
           attachWindow = false
           d.setHistory(historyMarkFromReset(frame.state.messages))
         }

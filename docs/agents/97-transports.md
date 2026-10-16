@@ -15,8 +15,8 @@ routes:
   - DELETE /api/mcp
   - POST /api/agents/:id/subscribe
   - DELETE /api/agents/:id/connection
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.9.1
+updated: 2026-10-16
 ---
 
 # Transports
@@ -30,6 +30,21 @@ Plain request/response is the default agent surface. There is **no server→clie
 ## SSE — turn and session events
 
 **`GET /api/agents/:id/events`** is documented in `40-reading-output` (Server-Sent Events). Do not duplicate that stream format here.
+
+The HTTP session stream includes a non-empty, opaque `hostIncarnation` in its initial
+snapshot. It is stable across viewers and reconnects to one host and changes when
+that host is recreated. Snapshot and update versions are comparable only within
+that incarnation, even when `sessionId` stays the same. Generic history payloads do
+not identify a live stream. Frontend and backend versions using this contract must
+be deployed together; missing or invalid stream identity is a setup/protocol error.
+
+A recreated host replaces the local transcript and pending UI without answering
+requests from the old host. After a successful connection, HTTP `404` means the
+view is unavailable; it does not prove the agent was deleted. An explicit
+`taken-over` SSE event or HTTP `409` with `{ "error": "taken-over" }` ends the view
+with a separate reason. Other `409` responses, EOF and temporary network failures
+remain retryable. Terminal views retain transcript content, end the local turn and
+clear pending UI without sending reply, cancel, release or delete commands.
 
 ## HTTP subscribe (agent events bus)
 

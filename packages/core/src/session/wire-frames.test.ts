@@ -78,3 +78,10 @@ describe("snapshotFrame — המסגור לא השתנה", () => {
     expect(frame.id).toBe(String(state.version))
   })
 })
+
+it("stream host context is optional metadata and never leaks into generic history payload", () => {
+  const state = createInitialSessionState({ sessionId: "same" })
+  const frame = snapshotFrame(state, 3, { hostIncarnation: "opaque-host" })
+  expect(JSON.parse(frame.data)).toMatchObject({ hostIncarnation: "opaque-host", epoch: 3 })
+  expect(JSON.parse(snapshotFrame(state).data)).not.toHaveProperty("hostIncarnation")
+})

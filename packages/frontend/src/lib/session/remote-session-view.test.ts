@@ -1346,7 +1346,10 @@ describe("RemoteSessionView — reconnect mid-turn", () => {
 
   it("M6: refreshes sessionId and accepts a lower version after a BE restart (new session)", async () => {
     const snapshotBeforeRestart = makeSnapshot({ sessionId: "sess-100-1", version: 50 })
-    const snapshotAfterRestart = makeSnapshot({ sessionId: "sess-200-1", version: 2 })
+    const snapshotAfterRestart = {
+      ...makeSnapshot({ sessionId: "sess-200-1", version: 2 }),
+      hostIncarnation: "recreated-host",
+    }
 
     let call = 0
     const mockFetch = vi.fn().mockImplementation((url: string) => {

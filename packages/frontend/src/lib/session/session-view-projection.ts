@@ -13,6 +13,7 @@ export const EMPTY_TOOL_CONTEXT: ToolContext = {
   childAlreadyTopLevel: false,
 }
 export type FrameData = {
+  boundary?: "host-recreated" | "remote-terminal"
   state: SessionState
   patches: Patch[]
   rawUpdate?: unknown
@@ -82,4 +83,20 @@ export function projectSessionSnapshot(
       ]
     : []
   return { state, patches, actions: [], toolDisposition: "none", reset: true, resetOrigin }
+}
+
+export function projectRemoteTerminal(state: SessionState): FrameData {
+  return {
+    state: {
+      ...state,
+      status: "disconnected",
+      turnState: "idle",
+      pending: { permission: null, elicitation: null },
+    },
+    patches: [],
+    actions: [],
+    toolDisposition: "none",
+    reset: false,
+    boundary: "remote-terminal",
+  }
 }

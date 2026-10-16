@@ -426,7 +426,13 @@ it("historical mark A before first effect does not mute replacement B", async ()
         status: 200,
         body: new ReadableStream<Uint8Array>({
           start(c) {
-            c.enqueue(new TextEncoder().encode(serializeFrame(snapshotFrame(state))))
+            c.enqueue(
+              new TextEncoder().encode(
+                serializeFrame(
+                  snapshotFrame(state, undefined, { hostIncarnation: "fixture-host" }),
+                ),
+              ),
+            )
           },
         }),
       }) as Response,

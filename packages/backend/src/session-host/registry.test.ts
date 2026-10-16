@@ -12,13 +12,13 @@
  *   - lifecycle: creates broadcaster alongside host (one per host)
  */
 
-import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { AcpClient } from "@drive-coding/provider/client"
+import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { Hono } from "hono"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
-import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import { buildAgentMcpServers } from "../agent-identity.js"
+import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
 import { registerRpcRoute } from "./http/rpc.js"
 import type { PatchesBroadcaster } from "./patches-broadcaster.js"
@@ -134,12 +134,14 @@ function makeStatefulConnReg(conn: ProviderConnection) {
     { via: "ws" | "http"; lastSeenAt: number; stream?: ReadableStream }
   >()
   let epoch = 0
-  const addConnection = vi.fn((_id: string, cid: string, via: "ws" | "http", stream?: ReadableStream) => {
-    const hadHttp = [...rows.values()].some((r) => r.via === "http")
-    rows.set(cid, { via, lastSeenAt: Date.now(), ...(stream !== undefined ? { stream } : {}) })
-    if (via === "http" && !hadHttp) epoch++
-    if (via === "ws") epoch++
-  })
+  const addConnection = vi.fn(
+    (_id: string, cid: string, via: "ws" | "http", stream?: ReadableStream) => {
+      const hadHttp = [...rows.values()].some((r) => r.via === "http")
+      rows.set(cid, { via, lastSeenAt: Date.now(), ...(stream !== undefined ? { stream } : {}) })
+      if (via === "http" && !hadHttp) epoch++
+      if (via === "ws") epoch++
+    },
+  )
   const removeConnection = vi.fn((_id: string, cid: string) => {
     rows.delete(cid)
   })
@@ -204,6 +206,7 @@ function makeMockHost(sessionId: string | null = null): ExtendedSessionHost {
 
 function makeMockBroadcaster(): PatchesBroadcaster {
   return {
+    hostIncarnation: "fixture-host",
     subscribe: vi.fn().mockReturnValue(new ReadableStream()),
     unsubscribe: vi.fn(),
     close: vi.fn(),
@@ -787,7 +790,7 @@ describe("AgentSessionRegistry", () => {
 
       await registry.getOrCreateHost("agent-1")
 
-      expect(createBroadcasterFn).toHaveBeenCalledWith(mockHost.patches)
+      expect(createBroadcasterFn).toHaveBeenCalledWith(mockHost.patches, expect.any(String))
     })
 
     it("returns existing {host, broadcaster} on second call (no re-creation)", async () => {
@@ -946,9 +949,7 @@ describe("AgentSessionRegistry", () => {
         const call = (mockHost.newSession as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as {
           mcpServers?: unknown[]
         }
-        expect(call.mcpServers?.some((s) => JSON.stringify(s).includes("drive-coding"))).toBe(
-          false,
-        )
+        expect(call.mcpServers?.some((s) => JSON.stringify(s).includes("drive-coding"))).toBe(false)
       } finally {
         fs.unlinkSync(filePath)
         delete process.env.CLI_SPECS_FILE

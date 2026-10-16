@@ -73,13 +73,17 @@ function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
   const result: HostResult = host
     ? {
         ok: true,
-        entry: { host, broadcaster: {
-          subscribe: vi.fn(),
-          unsubscribe: vi.fn(),
-          close: vi.fn(),
-          // slice history-cursor C2: חבר חדש בחוזה PatchesBroadcaster.
-          oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
-        } },
+        entry: {
+          host,
+          broadcaster: {
+            hostIncarnation: "fixture-host",
+            subscribe: vi.fn(),
+            unsubscribe: vi.fn(),
+            close: vi.fn(),
+            // slice history-cursor C2: חבר חדש בחוזה PatchesBroadcaster.
+            oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
+          },
+        },
       }
     : { ok: false, reason: "not-found" }
   return {
@@ -305,7 +309,12 @@ describe("‏C1 — ‏GET history?fromMessage= : חיתוך מהודעה ואי
       title: "כותרת",
       messages: [
         { id: "m_0", role: "user", messageId: "u-0", segments: [{ id: "s_0", text: "אחת" }] },
-        { id: "m_1", role: "assistant", messageId: "a-1", segments: [{ id: "s_1", text: "שתיים" }] },
+        {
+          id: "m_1",
+          role: "assistant",
+          messageId: "a-1",
+          segments: [{ id: "s_1", text: "שתיים" }],
+        },
         { id: "m_2", role: "user", messageId: "u-2", segments: [{ id: "s_2", text: "שלוש" }] },
       ],
       nextMessageSeq: 3,

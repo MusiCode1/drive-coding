@@ -159,7 +159,7 @@ async function createRemoteHarness(): Promise<ContractHarness> {
   const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.includes("/events")) {
       // frame-zero חייב להיות snapshot (brief §C1 harness pitfall #5 — שם event מדויק).
-      sse.pushRaw(snapshotFrame(shadowState))
+      sse.pushRaw(snapshotFrame(shadowState, undefined, { hostIncarnation: "fixture-host" }))
       return { ok: true, status: 200, body: sse.body } as unknown as Response
     }
     if (url.includes("/rpc")) {

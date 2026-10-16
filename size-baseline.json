@@ -368,10 +368,10 @@
       "codeLines": 58
     },
     "packages/backend/src/session-host/registry.ts": {
-      "metric": 521,
-      "impurity": 10,
+      "metric": 379,
+      "impurity": 6,
       "class": "mixed",
-      "codeLines": 261
+      "codeLines": 187
     },
     "packages/backend/src/session-host/session-host.ts": {
       "metric": 1039,
@@ -932,10 +932,10 @@
       "codeLines": 221
     },
     "packages/frontend/src/lib/session/remote-session-view.ts": {
-      "metric": 588,
-      "impurity": 18,
+      "metric": 513,
+      "impurity": 17,
       "class": "scattered",
-      "codeLines": 328
+      "codeLines": 310
     },
     "packages/frontend/src/lib/session/session-transport-read.ts": {
       "metric": 41,
@@ -944,10 +944,10 @@
       "codeLines": 16
     },
     "packages/frontend/src/lib/session/sse-reader.ts": {
-      "metric": 648,
-      "impurity": 18,
-      "class": "scattered",
-      "codeLines": 293
+      "metric": 534,
+      "impurity": 11,
+      "class": "mixed",
+      "codeLines": 257
     },
     "packages/frontend/src/lib/util/clipboard.ts": {
       "metric": 19,
@@ -1016,10 +1016,10 @@
       "codeLines": 68
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 2147,
+      "metric": 2130,
       "impurity": 33,
       "class": "scattered",
-      "codeLines": 1433
+      "codeLines": 1418
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
       "metric": 328,
