@@ -72,6 +72,8 @@ import {
   type ApplyConfigOptionDeps,
   type ApplyConfigToClientDeps,
   applyConfigOption as applyConfigOptionExtracted,
+  bindConfigDeps,
+  restoreRememberedConfig,
 } from "$lib/view-models/agent-session-apply-config"
 import {
   appendAgentPlaceholder,
@@ -82,7 +84,6 @@ import {
   type CaptureSessionConfigDeps,
   captureSessionConfig,
 } from "$lib/view-models/agent-session-capture-config"
-import { isValidChoice } from "$lib/view-models/agent-session-config-choice"
 import {
   type DeleteSessionDeps,
   deleteSession as deleteSessionExtracted,
@@ -102,6 +103,13 @@ import {
   syncTitleFromViewState,
 } from "$lib/view-models/agent-session-manual-title"
 import { createAgentSessionHttpConnection } from "$lib/view-models/agent-session-new-http-connection"
+import {
+  createSessionOperations,
+  type NewSessionInput,
+  type SessionOperationsDeps,
+  type SessionWriteTarget,
+  type SwitchSessionInput,
+} from "$lib/view-models/agent-session-operations"
 import {
   cancelPendingDialogs,
   onCreateElicitation as onCreateElicitationExtracted,
@@ -205,6 +213,7 @@ export class AgentSession {
   #view: SessionView | null = null
   /** Selected transport owner for the current entry; closing moves here in B4. */
   #connection: Connection | null = null
+  #operations = createSessionOperations(this.#operationsDeps())
   /**
    * slice local-view-wiring C3: ה-view המקומי, מטופס. `#view` מחזיק **את אותו אובייקט**
    * (בשביל `#cleanup`), אבל רק דרך השדה הזה קוראים ל-dispose/adopt/observerCallbacks —
@@ -614,7 +623,55 @@ export class AgentSession {
     }
   }
 
-  #applyConfigToClientDeps(): ApplyConfigToClientDeps {
+  #operationsDeps(): SessionOperationsDeps {
+    return {
+      read: () => ({
+        status: this.status,
+        cwd: this.cwd,
+        loading: this.isLoadingHistory,
+        agentId: this.agentId,
+        client: this.#client,
+        view: this.#view,
+        remoteView: this.#remoteView(),
+        connection: this.#connection,
+        detached: this.#detached,
+        tearingDown: this.#tearingDown,
+      }),
+      scope: () => this.#session,
+      sessionId: () => this.#sessionId,
+      attach: (input) => this.attach(input),
+      load: (input) => this.loadSession(input),
+      end: (reason) => this.#endSessionScope(reason),
+      status: (status) => this.#setStatus(status),
+      resetError: () => this.#errorScope.reset(),
+      error: (message) => {
+        this.error = message
+      },
+      loading: (value) => {
+        this.isLoadingHistory = value
+      },
+      idle: () => this.#setTurnState("idle"),
+      resetTurn: () => this.#resetTurnTracking(),
+      clearTranscript: () => this.#transcript.replace([]),
+      title: (value) => {
+        this.sessionTitle = value
+      },
+      cwd: (value) => {
+        this.cwd = value
+      },
+      enter: (id) => this.#enterSession(id),
+      adoptLocal: (client, id) => this.#adoptLocalView(client, id),
+      captureConfig: (result) => this.#captureSessionConfig(result),
+      applyTitle: (input) => this.#applyTitleFromSessionInput(input),
+      meta: () => this.#sessionMeta(),
+      notify: (agentId, id, cwd) => notifySessionAttached(agentId, id, { replace: true, cwd }),
+      restore: (target: SessionWriteTarget) =>
+        restoreRememberedConfig(this.#boundConfigDeps(target)),
+      isMock: (id) => import.meta.env.MODE !== "production" && id.startsWith("mock:"),
+    }
+  }
+
+  #applyConfigToClientDeps(): Omit<ApplyConfigToClientDeps, "isCurrent"> {
     return {
       configOptions: () => this.configOptions,
       setConfigOptions: (v) => {
@@ -633,7 +690,7 @@ export class AgentSession {
     }
   }
 
-  #applyConfigOptionDeps(): ApplyConfigOptionDeps {
+  #applyConfigOptionDeps(): Omit<ApplyConfigOptionDeps, "isCurrent"> {
     return {
       ...this.#applyConfigToClientDeps(),
       status: () => this.status,
@@ -832,6 +889,8 @@ export class AgentSession {
       cwd: this.cwd ?? "",
       cliKind: this.#cliKind ?? "",
     })
+    this.#operations.invalidate()
+    this.isLoadingHistory = false
     this.#localView = view
     this.#view = view
     void this.#drainViewPatches(view)
@@ -1080,6 +1139,7 @@ export class AgentSession {
       connectionId: this.#connectionId,
       isBound: () => this.#connection === connection,
       prepareNew: () => {
+        this.#operations.invalidate()
         this.#setStatus("connecting")
         this.#errorScope.reset()
         this.authMethods = []
@@ -1121,6 +1181,7 @@ export class AgentSession {
         this.#cleanup()
       },
       prepareExisting: (agent) => {
+        this.#operations.invalidate()
         this.#errorScope.reset()
         this.#detached = false
         this.#enterSession(agent.sessionId)
@@ -1179,6 +1240,7 @@ export class AgentSession {
           this.#cancelPendingDialogs()
         },
         prepareWarm: () => {
+          this.#operations.invalidate()
           this.#detached = false
           this.#errorScope.surfaced = false
           this.#client = null
@@ -1245,6 +1307,7 @@ export class AgentSession {
       connectionId: this.#connectionId,
       getBoundConnection: () => this.#connection,
       prepare: (agent) => {
+        this.#operations.invalidate()
         this.#errorScope.reset()
         this.authMethods = []
         this.#transcript.replace([])
@@ -1261,6 +1324,10 @@ export class AgentSession {
       viewOptions: () => this.#remoteViewOpts(),
       enterSession: (sessionId) => this.#enterSession(sessionId),
       bindView: (view) => {
+        if (this.#view !== view) {
+          this.#operations.invalidate()
+          this.isLoadingHistory = false
+        }
         this.#view = view
         this.#isRemote = true
         void this.#consumeViewPatches(view)
@@ -1522,6 +1589,7 @@ export class AgentSession {
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot loadSession in status ${this.status}`)
     }
+    this.#operations.invalidate()
     if (!opts?.preserveContextOnError) {
       this.#endSessionScope("load")
     }
@@ -1636,200 +1704,9 @@ export class AgentSession {
    * + spawn מיותר. כאן משתמשים בחיבור הקיים — מיידי, ללא race.
    * (אומת: opencode session/load עובד cross-cwd על אותו bridge.)
    */
-  switchSession = async (input: {
-    sessionId: string
-    cwd: string
-    cliKind: string
-    title?: string // ← slice session-title: תוספתי
-    titleManual?: boolean
-  }): Promise<void> => {
-    // ─── slice remote-session-mgmt C5: remote switch through the SessionHost ───
-    // (replaces the blanket view-switch C3-ה block — the WS-opening paths stay
-    // blocked; the switch itself now goes through view.loadSession → rpc).
-    const remoteView = this.#remoteView()
-    if (remoteView) {
-      // serial guard on entry — the local path blocks on status !== connected;
-      // without this guard overlapping switches would interleave steps on the host.
-      if (this.status !== "connected" || this.isLoadingHistory) {
-        throw new Error(`cannot switchSession in status ${this.status}`)
-      }
-      this.#endSessionScope("switch")
-      this.error = null // parity with the local path — a stale error must not survive
-      this.isLoadingHistory = true // silences TTS during the replay (like local)
-      try {
-        await remoteView.loadSession(input.sessionId, input.cwd)
-        // Direct assignment — #syncFromViewState does NOT sync sessionId; cannot rely on it.
-        this.#enterSession(input.sessionId)
-        // Parity with the local success path: cwd + title (the BE reset preserves
-        // the old title — without this assignment session A's title would stay)
-        // + push to the server.
-        this.cwd = input.cwd
-        this.#applyTitleFromSessionInput(input)
-      } catch (e) {
-        this.error = `switchSession failed: ${formatAcpError(e)}`
-      } finally {
-        this.isLoadingHistory = false
-      }
-      return
-    }
-    // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
-    if (this.#client === null) {
-      return this.loadSession(input)
-    }
-    // לא להחליף באמצע thinking/connecting
-    if (this.status !== "connected") {
-      throw new Error(`cannot switchSession in status ${this.status}`)
-    }
-    // DEV mock: עדיין דרך הנתיב הכבד (mock לא רץ על #client חי)
-    if (import.meta.env.MODE !== "production" && input.sessionId.startsWith("mock:")) {
-      return this.loadSession(input)
-    }
-
-    this.#resetTurnTracking() // NBug3: תור קודם השאיר #turnEnded=true + timer יתום
-    this.#endSessionScope("switch")
-    this.#setStatus("connecting")
-    this.#errorScope.reset()
-    this.#transcript.replace([])
-
-    // slice local-view-wiring C3 — נקודת-אימוץ 4: **אותו לקוח**, בלי dispose ובלי
-    // בנייה מחדש (ה-tee קפוא על ה-view שנוצר ביצירת הלקוח — §4.3). adopt לפני ה-replay:
-    // ההיסטוריה מגיעה תוך כדי loadSession, ואימוץ אחריו מוחק אותה (§4.4).
-    this.#adoptLocalView(this.#client, input.sessionId)
-
-    try {
-      this.isLoadingHistory = true
-      try {
-        const m = this.#sessionMeta()
-        const loadResult = await this.#client.loadSession({
-          sessionId: input.sessionId,
-          cwd: input.cwd,
-          mcpServers: [],
-          ...(m && { _meta: m }),
-        })
-        this.#captureSessionConfig(loadResult)
-      } finally {
-        this.isLoadingHistory = false
-        this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState
-      }
-      this.#enterSession(input.sessionId)
-      this.cwd = input.cwd
-      this.#applyTitleFromSessionInput(input)
-
-      // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים)
-      // replace:true — warm switch מכוון, מאפשר דריסת sessionId קיים (עוקף guard MED-9)
-      // cwd — §3.5 D6: switchSession מחזיק מקור-אמת ל-cwd (מרשימת-הסשנים) ומשנה תיקייה;
-      // בלי זה registry/projectsRegistry נשארים על ה-cwd הישן אחרי F5 (DoD 9/10).
-      if (this.agentId) {
-        await notifySessionAttached(this.agentId, input.sessionId, {
-          replace: true,
-          cwd: input.cwd,
-        }).catch(() => {})
-      }
-
-      this.#setStatus("connected")
-    } catch (e) {
-      this.error = `switchSession failed: ${formatAcpError(e)}`
-      this.#setTurnState("idle") // NBug3: throw מוקדם — ה-finally הפנימי אולי לא רץ
-      this.#setStatus("error")
-      // לא #cleanup — החיבור עדיין תקין; רק הטעינה נכשלה. השאר את ה-#client חי.
-      // calev-heavy §10.2: לא מדליק #errorSurfaced — ה-WS נשאר חי; drop מאוחר יותר
-      // צריך כן להצית reconnect (במקום להיתקע על ההודעה הישנה).
-    }
-  }
-
-  // ─── slice new-session-warm: פתיחת סשן חדש warm ─── (תוספתי)
-
-  /**
-   * פתיחת סשן ACP חדש **על החיבור הקיים** — warm new-session.
-   * דורש #client פעיל. קורא ל-newSession של ACP על אותו WS/bridge (ללא createAgent/WS חדש).
-   * אם אין #client — נופל ל-attach הכבד (יצירת agent חדש) עם ה-cwd/cliKind שהועברו.
-   *
-   * שונה מ-switchSession: זה newSession (סשן ריק) ולא loadSession (היסטוריה קיימת).
-   * אותה לוגיקת warm: אותו #client, אותו agentId, ללא detach/respawn.
-   * למה לא detach+attach: detach הורג bridge + גורם ל-race "WS closed (1005)" + spawn מיותר.
-   */
-  newSession = async (input: { cwd?: string; cliKind: string }): Promise<void> => {
-    // Warm new-session on the existing HTTP host (rpc session/new) — parity with
-    // remote switchSession. Bubbles clear via SSE reset from the host.
-    const remoteView = this.#remoteView()
-    if (remoteView) {
-      if (this.status !== "connected" || this.isLoadingHistory) {
-        throw new Error(`cannot newSession in status ${this.status}`)
-      }
-      const cwd = input.cwd ?? this.cwd
-      if (!cwd) throw new Error("newSession: no cwd")
-      this.#errorScope.reset()
-      this.sessionTitle = ""
-      this.isLoadingHistory = true
-      try {
-        await remoteView.newSession(cwd)
-        const newId = remoteView.state.sessionId
-        if (!newId) throw new Error("newSession returned no sessionId")
-        this.#enterSession(newId)
-        this.cwd = cwd
-        // Empty title: skip #pushTitleToServer (it no-ops on !title) — host already
-        // cleared title via update-session; agent list stays blank until a real title.
-        await this.#applyRememberedConfig()
-      } catch (e) {
-        this.error = `newSession failed: ${formatAcpError(e)}`
-      } finally {
-        this.isLoadingHistory = false
-      }
-      return
-    }
-    const cwd = input.cwd ?? this.cwd
-    // אין חיבור פעיל → נתיב כבד (דפנסיבי; ה-panel מוצג רק עם חיבור)
-    if (this.#client === null) {
-      if (!cwd) throw new Error("newSession: no cwd available for fallback attach")
-      this.#endSessionScope("new")
-      return this.attach({ cwd, cliKind: input.cliKind })
-    }
-    // לא לפתוח סשן חדש באמצע thinking/connecting
-    if (this.status !== "connected") {
-      throw new Error(`cannot newSession in status ${this.status}`)
-    }
-    if (!cwd) throw new Error("newSession: no cwd")
-
-    this.#endSessionScope("new")
-    this.#setStatus("connecting")
-    this.#errorScope.reset()
-    this.#transcript.replace([])
-    this.sessionTitle = "" // slice session-title: סשן חדש = אין כותרת
-
-    try {
-      const m = this.#sessionMeta()
-      const result = await this.#client.newSession({
-        cwd,
-        mcpServers: [],
-        ...(m && { _meta: m }),
-      })
-      const newId = (result as { sessionId?: string }).sessionId ?? null
-      if (!newId) throw new Error("newSession returned no sessionId")
-      this.#enterSession(newId)
-      this.cwd = cwd
-      // slice local-view-wiring C3 — נקודת-אימוץ 5: **אותו לקוח**, בלי rebuild; אחרי
-      // newSession (sessionId מהתשובה; סשן חדש = אין היסטוריה לאבד — §4.4).
-      this.#adoptLocalView(this.#client, newId)
-      this.#captureSessionConfig(result)
-
-      // הודע ל-BE על הסשן החדש (best-effort, אותו agentId הקיים).
-      // replace:true — מעבר מכוון לסשן אחר על אותו agent, עוקף guard MED-9.
-      // cwd — §3.5 D6: newSession החם מחזיק מקור-אמת ל-cwd (מפורש/נגזר מ-input.cwd ?? this.cwd).
-      if (this.agentId) {
-        await notifySessionAttached(this.agentId, newId, { replace: true, cwd }).catch(() => {})
-      }
-
-      this.#setStatus("connected")
-      // ─── slice-restore-last-config: החל בחירות אחרונות (אחרי connected — חובה) ───
-      await this.#applyRememberedConfig()
-    } catch (e) {
-      this.error = `newSession failed: ${formatAcpError(e)}`
-      this.#setStatus("error")
-      // לא #cleanup — החיבור עדיין תקין; רק יצירת הסשן נכשלה. השאר את ה-#client חי.
-      // calev-heavy §10.2: לא מדליק #errorSurfaced — ה-WS נשאר חי; drop מאוחר יותר
-      // צריך כן להצית reconnect (במקום להיתקע על ההודעה הישנה).
-    }
-  }
+  switchSession = (input: SwitchSessionInput): Promise<void> =>
+    this.#operations.switchSession(input)
+  newSession = (input: NewSessionInput): Promise<void> => this.#operations.newSession(input)
 
   // ─── slice 4: עזרי הקשר לקריינות ─── (תוספתי)
 
@@ -1861,7 +1738,7 @@ export class AgentSession {
    * persist נקרא רק אם applied===true — כיסוי כל 5 מסלולי-ההצלחה.
    */
   applyConfigOption = async (configId: string, value: string | boolean): Promise<void> => {
-    await applyConfigOptionExtracted(this.#applyConfigOptionDeps(), configId, value)
+    await applyConfigOptionExtracted(this.#boundConfigDeps(), configId, value)
   }
 
   // ─── slice FEAT-thinking-live: setThinkingTokens ─── (תוספתי)
@@ -1937,40 +1814,12 @@ export class AgentSession {
     await doRefreshQuota(this.#quotaRefreshDeps(), sessionId)
   }
 
-  // ─── slice-restore-last-config: apply remembered config ─── (תוספתי)
-
-  /**
-   * האם value עדיין תקף מול ה-options שה-CLI מחזיר כרגע?
-   * בודק ערך (לא רק קיום option) — ערך stale שה-CLI הסיר נדלג בשקט.
-   *
-   * מבנים מאומתים מול dev:
-   *   modes.availableModes[].id
-   *   models.availableModels[].modelId (לא .id!)
-   *   SessionConfigOption = discriminated union { type:"select"|"boolean" }
-   */
-  #isValidChoice(key: string, value: string | boolean): boolean {
-    return isValidChoice(this, key, value)
+  // Bound config snapshots share the controller lifetime token.
+  #boundConfigDeps(target = this.#operations.captureTarget()): ApplyConfigOptionDeps {
+    return bindConfigDeps(this.#applyConfigOptionDeps(), () => target.isCurrent())
   }
-
-  /**
-   * מחיל את הבחירות האחרונות של המשתמשת (מ-#settings.lastConfig) על הסשן החדש.
-   *
-   * ⚠️ חובה לקרוא **אחרי** this.#setStatus("connected") —
-   * applyConfigOption חוסם כש-status≠connected (no-op שקט אחרת).
-   *
-   * ⚠️ applyConfigOption קורא ל-setLastConfig (persist) — idempotent (כותב את אותו ערך).
-   *
-   * נקרא רק מ-attach ו-newSession (סשן חדש). loadSession/switchSession (resume) — לא.
-   */
   async #applyRememberedConfig(): Promise<void> {
-    const cli = this.#cliKind
-    const remembered = cli ? this.#settings?.lastConfig[cli] : undefined
-    if (!remembered) return
-    for (const [key, value] of Object.entries(remembered)) {
-      if (this.#isValidChoice(key, value)) {
-        await this.applyConfigOption(key, value)
-      }
-    }
+    await restoreRememberedConfig(this.#boundConfigDeps())
   }
 
   // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
@@ -2180,6 +2029,7 @@ export class AgentSession {
   }
 
   #cleanup(opts?: { keepAgent?: boolean; keepContext?: boolean }): void {
+    this.#operations.invalidate()
     const owner = this.#connection
     if (!opts?.keepContext) {
       owner?.cancelReconnect()

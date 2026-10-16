@@ -2,6 +2,7 @@ import type { SessionConfigOption } from "@agentclientprotocol/sdk"
 import type { AcpClient } from "@drive-coding/provider/client"
 import type { SessionView } from "$lib/session/session-view"
 import type { Settings } from "$lib/view-models/settings.svelte"
+import { isValidChoice } from "./agent-session-config-choice"
 
 type SessionModelState = {
   currentModelId: string
@@ -14,6 +15,7 @@ type SessionModeState = {
 }
 
 export type ApplyConfigToClientDeps = {
+  isCurrent: () => boolean
   configOptions: () => SessionConfigOption[]
   setConfigOptions: (v: SessionConfigOption[]) => void
   client: () => AcpClient | null
@@ -33,6 +35,7 @@ export async function applyConfigToClient(
   configId: string,
   value: string | boolean,
 ): Promise<boolean> {
+  if (!d.isCurrent()) return false
   // מסלול 1: option קיים ב-configOptions לפי id
   const optById = d.configOptions().find((o) => o.id === configId)
   if (optById) {
@@ -41,6 +44,7 @@ export async function applyConfigToClient(
       configId,
       value,
     })
+    if (!d.isCurrent()) return false
     d.setConfigOptions(res.configOptions)
     return true
   }
@@ -54,11 +58,13 @@ export async function applyConfigToClient(
         configId: byCat.id,
         value,
       })
+      if (!d.isCurrent()) return false
       d.setConfigOptions(res.configOptions)
       return true
     }
     // fallback — setSessionModel ישיר; עדכן models ידנית למניעת UI desync
     await d.client()!.setSessionModel({ sessionId: d.sessionId()!, modelId: value })
+    if (!d.isCurrent()) return false
     const models = d.models()
     if (models) d.setModels({ ...models, currentModelId: value })
     return true
@@ -71,11 +77,13 @@ export async function applyConfigToClient(
         configId: byCat.id,
         value,
       })
+      if (!d.isCurrent()) return false
       d.setConfigOptions(res.configOptions)
       return true
     }
     // fallback — setSessionMode ישיר; עדכן modes ידנית
     await d.client()!.setSessionMode({ sessionId: d.sessionId()!, modeId: value })
+    if (!d.isCurrent()) return false
     const modes = d.modes()
     if (modes) d.setModes({ ...modes, currentModeId: value })
     return true
@@ -110,7 +118,19 @@ export async function applyConfigOption(
   configId: string,
   value: string | boolean,
 ): Promise<void> {
-  if (d.status() !== "connected") return
+  try {
+    await applyCurrentConfigOption(d, configId, value)
+  } catch (error) {
+    if (d.isCurrent()) throw error
+  }
+}
+
+async function applyCurrentConfigOption(
+  d: ApplyConfigOptionDeps,
+  configId: string,
+  value: string | boolean,
+): Promise<void> {
+  if (!d.isCurrent() || d.status() !== "connected") return
   // ─── slice view-switch C3-ד: guard view-aware — אחרת כל נתיב ה-config ב-remote no-op שקט ───
   if (!d.remoteView() && (!d.client() || !d.sessionId())) return
   let applied: boolean
@@ -144,8 +164,55 @@ export async function applyConfigOption(
   } else {
     applied = await applyConfigToClient(d, configId, value)
   }
+  if (!d.isCurrent()) return
   const cli = d.cliKind()
   if (applied && d.settings() && cli) {
     d.settings()!.setLastConfig(cli, configId, value)
+  }
+}
+
+/** Bind immutable RPC destinations; metadata remains fresh while that target is current. */
+export function bindConfigDeps(
+  d: Omit<ApplyConfigOptionDeps, "isCurrent">,
+  isCurrent: () => boolean,
+): ApplyConfigOptionDeps {
+  const client = d.client()
+  const sessionId = d.sessionId()
+  const remoteView = d.remoteView()
+  const cliKind = d.cliKind()
+  const settings = d.settings()
+  return {
+    isCurrent,
+    configOptions: () => (isCurrent() ? d.configOptions() : []),
+    setConfigOptions: (value) => {
+      if (isCurrent()) d.setConfigOptions(value)
+    },
+    client: () => client,
+    sessionId: () => sessionId,
+    models: () => (isCurrent() ? d.models() : null),
+    setModels: (value) => {
+      if (isCurrent()) d.setModels(value)
+    },
+    modes: () => (isCurrent() ? d.modes() : null),
+    setModes: (value) => {
+      if (isCurrent()) d.setModes(value)
+    },
+    remoteView: () => remoteView,
+    cliKind: () => cliKind,
+    settings: () => settings,
+    status: () => (isCurrent() ? d.status() : "idle"),
+  }
+}
+
+/** One target and remembered-key snapshot for the complete restoration loop. */
+export async function restoreRememberedConfig(d: ApplyConfigOptionDeps): Promise<void> {
+  const cli = d.cliKind()
+  const remembered = cli ? d.settings()?.lastConfig[cli] : undefined
+  if (!remembered) return
+  const entries = Object.entries(remembered)
+  for (const [key, value] of entries) {
+    if (!d.isCurrent()) return
+    const choice = { configOptions: d.configOptions(), models: d.models(), modes: d.modes() }
+    if (isValidChoice(choice, key, value)) await applyConfigOption(d, key, value)
   }
 }
