@@ -62,7 +62,7 @@ export async function runWarmReconnect(
     })
     try {
       const view = owner.bindLocalView()
-      const client = createAttachedAcpClient(transport, deps.callbacks(view), {
+      const client = createAttachedAcpClient(transport, owner.callbacks(view, isCurrent), {
         capabilities: {} as AcpClient["capabilities"],
       })
       owner.setClient(client)
@@ -87,7 +87,7 @@ export async function runWarmReconnect(
         }
         deps.captureSessionConfig(replay.value)
       } finally {
-        reconnect.finishReplay()
+        if (isCurrent()) reconnect.finishReplay()
       }
       const notified = await attemptState.awaitCurrent(
         notifySessionAttached(agentId, context.sessionId, { replace: true }).catch(() => {}),
@@ -103,6 +103,7 @@ export async function runWarmReconnect(
       owner.finishWarmTransport(transport)
       return "connected"
     } catch {
+      if (!isCurrent()) return "terminal"
       reconnect.disposeFailedWarm()
       owner.discardTransport(transport)
       return "cold-eligible"

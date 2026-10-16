@@ -38,6 +38,7 @@ const mockClient: AcpClient = {
   authMethods: [],
 } as unknown as AcpClient
 
+let waitForOpenEntered = deferred<void>()
 let waitForOpenDeferred = deferred<void>()
 let createAcpDeferred = deferred<AcpClient>()
 let newSessionDeferred = deferred<{ sessionId: string }>()
@@ -54,7 +55,10 @@ vi.mock("@drive-coding/acp-wire/browser", () => ({
   WsAcpTransport: vi.fn(function mockWsTransport() {
     return {
       onClose: vi.fn(),
-      waitForOpen: vi.fn(() => waitForOpenDeferred.promise),
+      waitForOpen: vi.fn(() => {
+        waitForOpenEntered.resolve()
+        return waitForOpenDeferred.promise
+      }),
       close: vi.fn(),
       closeAndWait: vi.fn().mockResolvedValue(undefined),
       sendRaw: vi.fn(),
@@ -92,6 +96,7 @@ async function remoteViewStub(connectId: string): Promise<RemoteSessionView> {
 
 describe("AgentSession late setup (deferred I/O)", () => {
   beforeEach(() => {
+    waitForOpenEntered = deferred<void>()
     waitForOpenDeferred = deferred<void>()
     createAcpDeferred = deferred<AcpClient>()
     newSessionDeferred = deferred<{ sessionId: string }>()
@@ -131,6 +136,7 @@ describe("AgentSession late setup (deferred I/O)", () => {
     vi.mocked(createRemoteView).mockImplementation(() => remoteViewStub("remote-after-ws"))
     const session = new AgentSession()
     const first = session.attach({ cwd: "/tmp", cliKind: "claude" })
+    await waitForOpenEntered.promise
     session.detach()
     await session.attachRemote({ cwd: "/other", cliKind: "claude" })
     waitForOpenDeferred.resolve()
@@ -149,6 +155,7 @@ describe("AgentSession late setup (deferred I/O)", () => {
     vi.mocked(createRemoteView).mockImplementation(() => remoteViewStub("remote-win"))
     const session = new AgentSession()
     const wsPending = session.attach({ cwd: "/tmp", cliKind: "claude" })
+    await waitForOpenEntered.promise
     session.detach()
     await session.attachRemote({ cwd: "/remote", cliKind: "claude" })
     waitForOpenDeferred.resolve()

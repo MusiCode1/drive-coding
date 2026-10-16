@@ -18,7 +18,7 @@ import type {
   SessionNotification,
   UsageUpdate,
 } from "@agentclientprotocol/sdk"
-import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
+import type { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 // ─── slice reconnect-ws-takeover: תרגום נקודתי להודעת "נפתח במקום אחר" ───
 // ה-VM לרוב לא מייבא t() (i18n שייך לשכבת-הרכיב — ר' #appendUserPlaceholder), אבל
 // `error` הוא string גולמי שמוצג as-is (routes/+page.svelte:191, לא עובר t() ברכיב) —
@@ -26,14 +26,13 @@ import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 // בקוד — lint:i18n אוכף), ולא להשתמש ב-I18nVM (לא מוזרק ל-VM הזה).
 import { DEFAULT_CLAUDE_SESSION_META } from "@drive-coding/core"
 import { createI18n, detectLocale } from "@drive-coding/core/i18n"
-import {
-  type AcpClient,
+import type {
+  AcpClient,
   createAcpClient,
   // ─── slice-image-paste Commit 4a/4b: טיפוס blocks לשליחה מולטימודלית ───
-  type PromptBlocks,
+  PromptBlocks,
 } from "@drive-coding/provider/client"
 import {
-  createAgent,
   deleteAgent,
   notifySessionAttached,
   patchAgent,
@@ -1100,6 +1099,7 @@ export class AgentSession {
   #newWsConnection(): WsConnection {
     const connection: WsConnection = new WsConnection({
       connectionId: this.#connectionId,
+      isBound: () => this.#connection === connection,
       prepareNew: () => {
         this.#setStatus("connecting")
         this.#errorScope.reset()
@@ -1572,118 +1572,46 @@ export class AgentSession {
         ? this.#connection
         : this.#newWsConnection()
     this.#connection = owner
-    let createdAgentId: string | undefined
-    let createdTransport: WsAcpTransport | undefined
-    let createdClient: AcpClient | undefined
-    const current = () => opts?.isCurrent?.() ?? true
-    const cancelled = () => {
-      if (createdTransport) owner.discardTransport(createdTransport)
-      if (createdAgentId) owner.discardCreatedAgent(createdAgentId)
-      if (createdClient && this.#client === createdClient) this.#client = null
-    }
-
-    try {
-      // 1. צור סוכן בצד השרת (זהה ל-attach)
-      const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
-      createdAgentId = agentId
-      opts?.onCreatedAgent?.(agentId)
-      if (!current()) {
-        cancelled()
-        return
-      }
-      if (!opts?.preserveContextOnError) this.agentId = agentId
-      this.cwd = input.cwd
-      this.#cliKind = input.cliKind // slice ws-reconnect-infra: שמור ל-cold reconnect
-
-      // 2. פתח תעבורת WS + הוסף מאזין onClose (זהה ל-attach)
-      const transport = new WsAcpTransport(this.#agentWsUrl(agentId))
-      createdTransport = transport
-      owner.adoptTransport(transport)
-      transport.onClose((code, reason) => {
-        if (owner.transport !== transport) return
-        if (this.#detached) return
-        if (this.#tearingDown) return // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
-        if (code !== 1000 && code !== 1001) {
-          void this.#handleUnexpectedClose(code, reason)
-        }
-      })
-      await transport.waitForOpen()
-      if (!current()) {
-        cancelled()
-        return
-      }
-
-      // 3. לחיצת יד של ACP (זהה ל-attach)
-      // slice local-view-wiring C3: bind+tee לפני יצירת הלקוח; adopt **לפני** loadSession —
-      // ההיסטוריה המשוחזרת מגיעה תוך כדי ה-await, ואימוץ אחריו מוחק אותה (§2.6/§4.4).
-      const localView = owner.bindLocalView()
-      const client = await createAcpClient(transport, this.#callbacksForLocalView(localView))
-      createdClient = client
-      if (!current()) {
-        cancelled()
-        return
-      }
-      owner.setClient(client)
-      this.authMethods = client.authMethods // slice auth-guidance: ללכידה בכשל loadSession/prompt מאוחר יותר
-      // slice local-view-wiring C3 — נקודת-אימוץ 2: sessionId ידוע (input.sessionId),
-      // מיד אחרי יצירת הלקוח ולפני ה-try של ה-replay.
-      owner.adoptLocalView(client, input.sessionId)
-
-      // ── קריאה ל-loadSession במקום ל-newSession ──
-      // השתק את ה-TTS של ה-Speaker במהלך ניגון מחדש של ההיסטוריה (slice 4: replay-quiet).
-      this.isLoadingHistory = true
-      try {
-        const m = this.#sessionMeta()
-        const loadResult = await client.loadSession({
-          sessionId: input.sessionId,
-          cwd: input.cwd,
-          mcpServers: [],
-          ...(m && { _meta: m }),
-        })
-        if (!current()) {
-          cancelled()
-          return
-        }
-        this.#captureSessionConfig(loadResult) // slice 23: לכוד config (sessionId מ-input, לא מ-response)
-      } finally {
-        if (current()) {
-          this.isLoadingHistory = false
-          this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState (replay אינו תור)
-        }
-      }
-      this.#enterSession(input.sessionId)
-      this.#applyTitleFromSessionInput(input)
-
-      // 4. הודע ל-BE (זהה ל-attach, מאמץ מיטבי)
-      await notifySessionAttached(agentId, input.sessionId).catch(() => {})
-      if (!current()) {
-        cancelled()
-        return
-      }
-
-      this.agentId = agentId
-      this.#setStatus("connected")
-    } catch (e) {
-      if (!current()) {
-        cancelled()
-        return
-      }
-      this.error = `loadSession failed: ${formatAcpError(e)}`
-      this.#errorScope.surfaced = true // calev-heavy §10.2 + reconnect-recovery anti-clobber
-      this.#setTurnState("idle") // NBug3: throw מוקדם (createAgent/waitForOpen) — ה-finally הפנימי לא רץ
-      // slice reconnect-recovery: נתיב-השימור (cold-reconnect שנכשל) — לא #cleanup() מלא
-      // (שהיה מוחק #sessionId/agentId ותוקע את reconnect() ב-early-return). שומר את
-      // הקשר-הסשן כדי שלחיצת reconnect הבאה תמצא #sessionId ותנסה שוב (§3 diagram).
-      if (opts?.preserveContextOnError) {
-        // מאפס #tearingDown=false → surfaced guard ב-controller הוא מה שמונע clobber+
-        // auto-reconnect על ה-async close (אביגיל r3 🔴).
-        this.#cleanup({ keepContext: true }) // teardown מלא; אותו owner נשמר לניסיון הבא
-        this.#setStatus("disconnected") // מציג כפתור reconnect; reconnect() לא-early-return (context נשמר)
-      } else {
-        this.#setStatus("error")
-        this.#cleanup()
-      }
-    }
+    await owner.loadSession(
+      input,
+      {
+        published: (agentId) => {
+          if (!opts?.preserveContextOnError) this.agentId = agentId
+          this.cwd = input.cwd
+          this.#cliKind = input.cliKind
+        },
+        replaying: (loading) => {
+          this.isLoadingHistory = loading
+          if (!loading) this.#setTurnState("idle")
+        },
+        loaded: () => {
+          this.#enterSession(input.sessionId)
+          this.#applyTitleFromSessionInput(input)
+        },
+        connected: (agentId) => {
+          this.agentId = agentId
+          this.#setStatus("connected")
+        },
+        failed: (e) => {
+          this.error = `loadSession failed: ${formatAcpError(e)}`
+          this.#errorScope.surfaced = true // calev-heavy §10.2 + reconnect-recovery anti-clobber
+          this.#setTurnState("idle") // NBug3: throw מוקדם (createAgent/waitForOpen) — ה-finally הפנימי לא רץ
+          // slice reconnect-recovery: נתיב-השימור (cold-reconnect שנכשל) — לא #cleanup() מלא
+          // (שהיה מוחק #sessionId/agentId ותוקע את reconnect() ב-early-return). שומר את
+          // הקשר-הסשן כדי שלחיצת reconnect הבאה תמצא #sessionId ותנסה שוב (§3 diagram).
+          if (opts?.preserveContextOnError) {
+            // מאפס #tearingDown=false → surfaced guard ב-controller הוא מה שמונע clobber+
+            // auto-reconnect על ה-async close (אביגיל r3 🔴).
+            this.#cleanup({ keepContext: true }) // teardown מלא; אותו owner נשמר לניסיון הבא
+            this.#setStatus("disconnected") // מציג כפתור reconnect; reconnect() לא-early-return (context נשמר)
+          } else {
+            this.#setStatus("error")
+            this.#cleanup()
+          }
+        },
+      },
+      opts,
+    )
   }
 
   // ─── slice ws-reconnect-infra: reconnect ציבורי ─── (תוספתי)
@@ -2345,7 +2273,10 @@ export class AgentSession {
     // ─── slice leave-running-background: keepAgent=true → לא הורג (ה-child שורד) ───
     // slice reconnect-recovery: keepContext גם מונע deleteAgent — ה-agent אמור לשרוד
     // ל-reattach (בעל החיבור מטפל במחיקת ה-agent הישן בנפרד, אחרי הצלחה).
-    if (!opts?.keepAgent && !opts?.keepContext && agentId) void deleteAgent(agentId).catch(() => {})
+    if (!opts?.keepAgent && !opts?.keepContext && agentId) {
+      if (owner) owner.deleteAgentOnce(agentId)
+      else void deleteAgent(agentId).catch(() => {})
+    }
   }
 
   #loadMockSessionDeps(): LoadMockSessionDeps {

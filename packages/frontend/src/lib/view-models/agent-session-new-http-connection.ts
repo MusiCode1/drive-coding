@@ -44,6 +44,7 @@ export function createAgentSessionHttpConnection(wire: AgentSessionHttpWire): Ht
   let connection!: HttpConnection
   const stale = () => wire.getBoundConnection() !== connection
   connection = newHttpConnection(wire.connectionId, {
+    isBound: () => !stale(),
     prepare: wire.prepare,
     setAgentId: (agentId) => {
       if (stale()) return

@@ -27,6 +27,7 @@ export interface Connection {
   /** Synchronous entry; closes captured resources fire-and-forget. Idempotent per bundle. */
   close(mode: CloseMode): void
   /** Releases ownership using agentId+connectionId captured at adoption (not live VM refs). */
+  deleteAgentOnce(agentId: string): void
   release(): void
   /** Updates captured release agent after warm/cold host swap. */
   updateReleaseAgent?(agentId: string): void

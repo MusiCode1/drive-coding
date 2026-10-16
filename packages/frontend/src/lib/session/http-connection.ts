@@ -1,11 +1,13 @@
 import { createAgent, releaseConnection } from "$lib/adapters/agents-api"
 import type { AgentInput, CloseMode, Connection } from "./connection"
+import { ConnectionAllocation } from "./connection-allocation"
 import { isSetupLive, nextSetupEpoch, type SetupEpoch } from "./connection-owner-lifecycle"
 import { createRemoteView } from "./create-session-view"
 import type { RemoteSessionViewOptions } from "./remote-session-view"
 import type { SessionView } from "./session-view"
 
 export type HttpConnectionDeps = {
+  isBound?: () => boolean
   prepare: (agent: AgentInput) => void
   setAgent: (agentId: string) => void
   viewOptions: () => Pick<RemoteSessionViewOptions, "headers" | "onSseReconnected">
@@ -19,30 +21,50 @@ export type HttpConnectionDeps = {
   discardCreatedAgent?: (agentId: string) => void
 }
 
+type HttpAttempt = {
+  current: () => boolean
+  view?: SessionView
+  closed: WeakSet<SessionView>
+  agentId?: string
+  created: boolean
+}
+
 export class HttpConnection implements Connection {
-  #view: SessionView | null = null
-  #pendingView: SessionView | null = null
+  #attempt: HttpAttempt | undefined
   #setupEpoch: SetupEpoch = 0
-  #teardownDone = false
+  #allocation = new ConnectionAllocation()
   #releaseAgentId: string | null = null
   #releaseConnectionId: string | null = null
-  #releaseDone = false
 
   constructor(private readonly deps: HttpConnectionDeps) {}
 
   captureReleaseIdentity(agentId: string, connectionId: string): void {
     this.#releaseAgentId = agentId
     this.#releaseConnectionId = connectionId
-    this.#releaseDone = false
   }
 
   updateReleaseAgent(agentId: string): void {
     this.#releaseAgentId = agentId
-    this.#releaseDone = false
+  }
+
+  deleteAgentOnce(agentId: string): void {
+    this.#allocation.deleteOnce(agentId, this.deps.discardCreatedAgent)
+  }
+
+  #beginAttempt(created: boolean): HttpAttempt {
+    const epoch = nextSetupEpoch(this.#setupEpoch)
+    this.#setupEpoch = epoch
+    const attempt: HttpAttempt = {
+      current: () => isSetupLive(epoch, this.#setupEpoch) && (this.deps.isBound?.() ?? true),
+      closed: new WeakSet(),
+      created,
+    }
+    this.#attempt = attempt
+    return attempt
   }
 
   adoptExistingView(view: SessionView): void {
-    this.#view = view
+    this.#beginAttempt(false).view = view
   }
 
   reconnect(): Promise<void> {
@@ -52,47 +74,35 @@ export class HttpConnection implements Connection {
   cancelReconnect(): void {}
 
   release(): void {
-    if (this.#releaseDone) return
     const agentId = this.#releaseAgentId
     const connectionId = this.#releaseConnectionId
-    if (!agentId || !connectionId) return
-    this.#releaseDone = true
-    void releaseConnection(agentId, connectionId)
+    if (agentId && connectionId && this.#allocation.releaseOnce(agentId))
+      void releaseConnection(agentId, connectionId)
   }
 
-  #bumpSetupEpoch(): SetupEpoch {
-    this.#setupEpoch = nextSetupEpoch(this.#setupEpoch)
-    return this.#setupEpoch
+  #closeView(attempt: HttpAttempt, view = attempt.view): Promise<void> {
+    if (!view || attempt.closed.has(view)) return Promise.resolve()
+    attempt.closed.add(view)
+    return view.close().catch(() => {})
   }
 
-  #isLive(epoch: SetupEpoch): boolean {
-    return isSetupLive(epoch, this.#setupEpoch)
-  }
-
-  #clearViewRef(view: SessionView | null | undefined): void {
-    if (!view) return
-    if (this.#view === view) this.#view = null
-    if (this.#pendingView === view) this.#pendingView = null
+  #discardLate(attempt: HttpAttempt): boolean {
+    if (attempt.current()) return false
+    void this.#closeView(attempt)
+    if (attempt.created && attempt.agentId) this.deleteAgentOnce(attempt.agentId)
+    return true
   }
 
   close(_mode: CloseMode): void {
-    this.#bumpSetupEpoch()
-    if (this.#teardownDone) return
-    const view = this.#view ?? this.#pendingView
-    this.#clearViewRef(view)
-    if (view) void view.close().catch(() => {})
-    this.#teardownDone = true
+    this.#setupEpoch = nextSetupEpoch(this.#setupEpoch)
+    if (this.#attempt) void this.#closeView(this.#attempt)
   }
 
   async open(agent: AgentInput): Promise<void> {
     if (agent.kind === "existing-ws") throw new Error("HttpConnection requires an HTTP agent")
     const isNew = agent.kind === "new"
-    const epoch = this.#bumpSetupEpoch()
-    this.#teardownDone = false
+    const attempt = this.#beginAttempt(isNew)
     this.deps.prepare(agent)
-    let attached = false
-    let createdAgentId: string | undefined
-    let openPending: SessionView | null = null
     try {
       const agentId = isNew
         ? (
@@ -103,70 +113,43 @@ export class HttpConnection implements Connection {
             })
           ).agentId
         : agent.agentId
-      createdAgentId = isNew ? agentId : undefined
-      if (!this.#isLive(epoch)) {
-        if (createdAgentId) this.deps.discardCreatedAgent?.(createdAgentId)
-        return
-      }
-
+      attempt.agentId = agentId
+      if (this.#discardLate(attempt)) return
       this.deps.setAgent(agentId)
       const view = await createRemoteView(
         { agentId, ...this.deps.viewOptions() },
         {
           onCreated: (created) => {
-            if (this.#isLive(epoch)) {
-              openPending = created
-              this.#pendingView = created
-            } else void created.close().catch(() => {})
+            attempt.view = created
+            this.#discardLate(attempt)
           },
         },
       )
-      if (!this.#isLive(epoch)) {
-        void view.close().catch(() => {})
-        if (createdAgentId) this.deps.discardCreatedAgent?.(createdAgentId)
-        return
-      }
-      if (this.#pendingView === view) this.#pendingView = null
-      openPending = null
-      this.#view = view
+      attempt.view = view
+      if (this.#discardLate(attempt)) return
       const sessionId = view.state.sessionId
       if (sessionId == null) {
-        const staleView = view
-        await staleView.close()
-        this.#clearViewRef(staleView)
-        if (this.#isLive(epoch)) this.deps.missingSessionId(!isNew)
-        return
-      }
-      if (!this.#isLive(epoch)) {
-        void view.close().catch(() => {})
-        if (createdAgentId) this.deps.discardCreatedAgent?.(createdAgentId)
+        await this.#closeView(attempt)
+        if (!this.#discardLate(attempt)) this.deps.missingSessionId(!isNew)
         return
       }
       this.deps.enterSession(sessionId)
       if (!isNew) this.deps.applyTitle(agent)
       this.deps.bindView(view)
       await this.deps.connected(isNew)
-      if (!this.#isLive(epoch)) {
-        void view.close().catch(() => {})
-        if (createdAgentId) this.deps.discardCreatedAgent?.(createdAgentId)
-        return
+      if (this.#discardLate(attempt)) return
+      if (isNew) {
+        try {
+          await this.deps.rememberedConfig()
+        } catch {
+          // Optional configuration cannot tear down a live host.
+        }
       }
-      attached = true
     } catch (error) {
-      const orphan = openPending
-      this.#clearViewRef(orphan)
-      if (orphan != null) void (orphan as SessionView).close().catch(() => {})
-      if (this.#isLive(epoch)) {
-        if (createdAgentId) this.deps.discardCreatedAgent?.(createdAgentId)
-        this.deps.failed(error, !isNew)
-      }
-    }
-    if (attached && isNew && this.#isLive(epoch)) {
-      try {
-        await this.deps.rememberedConfig()
-      } catch {
-        // Configuration restoration is optional; it cannot tear down a live host.
-      }
+      void this.#closeView(attempt)
+      if (this.#discardLate(attempt)) return
+      if (attempt.created && attempt.agentId) this.deleteAgentOnce(attempt.agentId)
+      this.deps.failed(error, !isNew)
     }
   }
 }
