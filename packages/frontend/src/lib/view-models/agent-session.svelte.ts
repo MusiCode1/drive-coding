@@ -156,15 +156,9 @@ import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 import { createExtClient, type ExtClient } from "$lib/adapters/ext"
 // ─── slice session-state-reducer C4: FE patch applicator + mappers ─── (additive)
-import { applyPatchMutable } from "$lib/session/apply-patch-mutable"
-import { mapLocations, mapToolContent } from "$lib/session/map-tool-content"
+import { TranscriptScope } from "$lib/view-models/transcript-scope.svelte"
 // ─── slice subagent-transcript-data-v2: פרסר+reducer טהורים (additive) ───
-import {
-  type ClaudeSubagentEvent,
-  createSubagentIndex,
-  parseClaudeSdkMessage,
-  reduceSubagent,
-} from "./claude-subagent-parse"
+import { parseClaudeSdkMessage } from "./claude-subagent-parse"
 import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
 import { watchPageVisibility } from "./page-visibility.js"
 
@@ -276,12 +270,15 @@ export class AgentSession {
   // ─── slice auth-guidance: authMethods שנלכדו מ-initialize (client.authMethods) ───
   /** [] = אין כשל-auth ידוע / warm-reattach (מדלג initialize) / CLI לא מפרסם authMethods. */
   authMethods = $state<ReadonlyArray<AuthMethod>>([])
-  bubbles = $state<Bubble[]>([])
+  #transcript = new TranscriptScope()
+  get bubbles(): Bubble[] {
+    return this.#transcript.bubbles
+  }
+  set bubbles(next: Bubble[]) {
+    this.#transcript.replace(next)
+  }
   // ─── slice session-state-reducer C4: מצב SessionState פנימי (base ל-reduce) ─── (additive)
   sessionState = $state<SessionState>(createInitialSessionState({ sessionId: null }))
-  // ─── slice reconnect-bubble-merge: frozen display בזמן warm-reconnect replay ───
-  /** לא-null רק בזמן replay של חיבור מחדש — מקפיא את התצוגה על הרשימה הישנה. */
-  #displaySnapshot = $state<Bubble[] | null>(null)
   agentId = $state<string | null>(null)
   cwd = $state<string | null>(null)
   // ─── slice ws-reconnect-infra: reconnect state ─── (INVASIVE — מאושר)
@@ -407,12 +404,12 @@ export class AgentSession {
   // ─── slice reconnect-bubble-merge: render-consumers (additive) ───
   /** רשימת התצוגה. בזמן warm-reconnect replay מוקפאת ל-snapshot; אחרת = live bubbles. */
   get renderBubbles(): Bubble[] {
-    return this.#displaySnapshot ?? this.bubbles
+    return this.#transcript.renderBubbles
   }
 
   /** true רק בזמן warm-reconnect replay (התצוגה קפואה). לא נדלק בטעינה ראשונית/switchSession. */
   get isReconnectReplay(): boolean {
-    return this.#displaySnapshot !== null
+    return this.#transcript.isReconnectReplay
   }
 
   // ─── image-attach: capability gating ─── (slice-image-paste, additive)
@@ -571,12 +568,6 @@ export class AgentSession {
   #quotaFetchInFlight: Promise<void> | null = null
   /** Counter פנימי ל-spike raw SDK. לא נרנדר ב-UI. */
   #claudeRawSdkMessageCount = 0
-  // ─── slice subagent-transcript-data-v2: תעתיק תת-סוכן (additive) ───
-  /** taskId→toolUseId, נבנה מ-task_started (Q3). */
-  #subagentIndex = createSubagentIndex()
-  /** אירועים שהגיעו לפני שה-Task ToolBubble נוצר ב-bubbles (bounded — §7 Risks). */
-  #pendingByParent: { parentId: string; event: ClaudeSubagentEvent }[] = []
-  static readonly #SUBAGENT_PENDING_CAP = 50
   /** slice connection-set C2: one id per VM lifetime — SSE header, presence, WS query, DELETE. */
   readonly #connectionId = safeUUID()
   #pageHideReleaseBound = false
@@ -593,7 +584,11 @@ export class AgentSession {
 
   #subagentToolNestingDeps(): SubagentToolNestingDeps {
     return {
-      bubbles: () => this.bubbles,
+      hasTool: (parentId) => this.#transcript.hasTool(parentId),
+      hasNestedTool: (parentId, childId) => this.#transcript.hasNestedTool(parentId, childId),
+      appendNestedTool: (parentId, child) => this.#transcript.appendNestedTool(parentId, child),
+      updateNestedTool: (parentId, childId, patch) =>
+        this.#transcript.updateNestedTool(parentId, childId, patch),
       parents: () => this.#session.subagentToolCallParents,
       turnEnded: () => this.#turnEnded,
       applyToolCall: (update) => this.#applyToolCall(update),
@@ -786,7 +781,7 @@ export class AgentSession {
           (p): p is Extract<Patch, { op: "reset" }> => p.op === "reset",
         )
         if (resetPatches.length > 0) {
-          applyPatchMutable(this.bubbles, resetPatches, { mapToolContent, mapLocations })
+          this.#transcript.applyPatches(resetPatches)
           for (const patch of resetPatches) {
             const next = applyPatch(this.sessionState, patch)
             if (next) this.sessionState = next
@@ -1088,7 +1083,7 @@ export class AgentSession {
         this.#setStatus("connecting")
         this.#errorScope.reset()
         this.authMethods = []
-        this.bubbles = []
+        this.#transcript.replace([])
         this.#detached = false
       },
       setAgent: (agentId, cwd, cliKind) => {
@@ -1154,7 +1149,7 @@ export class AgentSession {
           }
         },
         snapshot: () => {
-          if (this.#displaySnapshot === null) this.#displaySnapshot = this.bubbles
+          this.#transcript.freezeDisplay()
         },
         setStatus: (status) => this.#setStatus(status),
         setAttempt: (attempt) => {
@@ -1198,7 +1193,7 @@ export class AgentSession {
           this.#ext = createExtClient(client)
         },
         startReplay: () => {
-          this.bubbles = []
+          this.#transcript.replace([])
           this.sessionState = createInitialSessionState({ sessionId: this.#sessionId })
           this.isLoadingHistory = true
         },
@@ -1252,7 +1247,7 @@ export class AgentSession {
       prepare: (agent) => {
         this.#errorScope.reset()
         this.authMethods = []
-        this.bubbles = []
+        this.#transcript.replace([])
         this.#detached = false
         this.#answeredRequests.permissionId = null
         this.#answeredRequests.elicitationId = null
@@ -1344,7 +1339,7 @@ export class AgentSession {
     this.#cleanup(keepAgent ? { keepAgent: true } : undefined)
     this.#setStatus("idle")
     this.error = null
-    this.bubbles = []
+    this.#transcript.replace([])
     this.sessionsCache.reset()
   }
 
@@ -1460,7 +1455,7 @@ export class AgentSession {
           ? { attachments: atts.map((a) => ({ mimeType: a.mimeType, dataBase64: a.dataBase64 })) }
           : {}),
       }
-      this.bubbles.push(userBubble)
+      this.#transcript.append(userBubble)
     }
     this.#setTurnState("waiting")
     this.#resetTurnTracking() // תחילת תור — #turnEnded=false + נקה טיימר יתום
@@ -1533,7 +1528,7 @@ export class AgentSession {
     this.#setStatus("connecting")
     this.#errorScope.reset()
     this.authMethods = [] // slice auth-guidance: נקה לפני חיבור חדש — נלכד מחדש אחרי createAcpClient
-    this.bubbles = []
+    this.#transcript.replace([])
     this.sessionState = createInitialSessionState({ sessionId: input.sessionId })
     this.#detached = false
 
@@ -1694,7 +1689,7 @@ export class AgentSession {
     this.#endSessionScope("switch")
     this.#setStatus("connecting")
     this.#errorScope.reset()
-    this.bubbles = []
+    this.#transcript.replace([])
 
     // slice local-view-wiring C3 — נקודת-אימוץ 4: **אותו לקוח**, בלי dispose ובלי
     // בנייה מחדש (ה-tee קפוא על ה-view שנוצר ביצירת הלקוח — §4.3). adopt לפני ה-replay:
@@ -1798,7 +1793,7 @@ export class AgentSession {
     this.#endSessionScope("new")
     this.#setStatus("connecting")
     this.#errorScope.reset()
-    this.bubbles = []
+    this.#transcript.replace([])
     this.sessionTitle = "" // slice session-title: סשן חדש = אין כותרת
 
     try {
@@ -2101,7 +2096,7 @@ export class AgentSession {
     if (next === prev) return
     this.status = next
     if (next === "error") this.#cues?.play("error")
-    if (next === "connected") this.#displaySnapshot = null
+    if (next === "connected") this.#transcript.releaseDisplay()
   }
 
   // ─── msr-v2: setter ל-turnState ───
@@ -2240,8 +2235,7 @@ export class AgentSession {
     this.#quotaFetchInFlight = null
     this.#claudeRawSdkMessageCount = 0
     // slice subagent-transcript-data-v2: נקה state תעתיק תת-סוכן (חיבור חדש = index/pending חדשים)
-    this.#subagentIndex = createSubagentIndex()
-    this.#pendingByParent = []
+    this.#transcript.resetSubagentProjection()
     // slice subagent-tool-nesting: נקה מיפוי-קינון (חיבור חדש = מיפוי חדש)
     this.#session.subagentToolCallParents = new Map()
     // slice reconnect-recovery: keepContext משמר #sessionId/agentId כדי ש-reconnect()
@@ -2305,51 +2299,13 @@ export class AgentSession {
       this.#claudeRawSdkMessageCount += 1
       const ev = parseClaudeSdkMessage(params)
       if (ev.kind === "ignored") return
-      const parentId = this.#subagentIndex.resolve(ev)
-      if (parentId === undefined) return // task_updated לפני task_started — לא צפוי (§7), drop
-      const idx = this.bubbles.findIndex(
-        (b) => b.kind === "tool" && b.toolCall.toolCallId === parentId,
-      )
-      if (idx === -1) {
-        this.#pushPendingSubagentEvent(parentId, ev)
-        return
-      }
-      const task = this.bubbles[idx]
-      // finding #3: this.bubbles[idx] הוא Bubble|undefined תחת noUncheckedIndexedAccess.
-      if (!task || task.kind !== "tool") return
-      this.bubbles[idx] = reduceSubagent(task, ev)
+      this.#transcript.onSubagentEvent(ev)
       return
     }
     // finding #2: ענף _drive/capabilities (וכל ענף עתידי) — ללא שינוי.
     if (method === "_drive/capabilities") {
       this.#capabilities = params as unknown as NormalizedCapabilities
     }
-  }
-
-  /** דוחף אירוע-תת-סוכן שממתין ל-Task ToolBubble שטרם נוצר. bounded (drop-oldest) — §7 Risks. */
-  #pushPendingSubagentEvent(parentId: string, event: ClaudeSubagentEvent): void {
-    this.#pendingByParent.push({ parentId, event })
-    if (this.#pendingByParent.length > AgentSession.#SUBAGENT_PENDING_CAP) {
-      this.#pendingByParent.shift()
-    }
-  }
-
-  /** מפעיל אירועי-תת-סוכן שהמתינו ל-Task ToolBubble הזה (נקרא מ-#applyToolCall). */
-  #flushPendingSubagentEvents(toolCallId: string): void {
-    if (this.#pendingByParent.length === 0) return
-    const matching = this.#pendingByParent.filter((p) => p.parentId === toolCallId)
-    if (matching.length === 0) return
-    this.#pendingByParent = this.#pendingByParent.filter((p) => p.parentId !== toolCallId)
-    const idx = this.bubbles.findIndex(
-      (b) => b.kind === "tool" && b.toolCall.toolCallId === toolCallId,
-    )
-    if (idx === -1) return
-    let task = this.bubbles[idx]
-    if (!task || task.kind !== "tool") return
-    for (const { event } of matching) {
-      task = reduceSubagent(task, event)
-    }
-    this.bubbles[idx] = task
   }
 
   #onSessionUpdate = (notification: SessionNotification): void => {
@@ -2374,19 +2330,7 @@ export class AgentSession {
         action.kind === "user-audio" ||
         action.kind === "user-placeholder"
       ) {
-        if (action.messageId !== null) {
-          for (let i = this.bubbles.length - 1; i >= 0; i--) {
-            const b = this.bubbles[i]
-            if (
-              b !== undefined &&
-              b.kind === "user" &&
-              (b.messageId === action.messageId || b.messageId === null)
-            ) {
-              if (b.messageId === null) b.messageId = action.messageId
-              break
-            }
-          }
-        }
+        this.#transcript.adoptUserMessageId(action.messageId)
       }
       switch (action.kind) {
         case "observed":
@@ -2429,7 +2373,7 @@ export class AgentSession {
               }
               const { state, patches } = reduce(this.sessionState, action.update)
               this.sessionState = state
-              applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+              this.#transcript.applyPatches(patches)
             }
           }
           break
@@ -2473,18 +2417,18 @@ export class AgentSession {
         case "user-text": {
           const { state, patches } = reduce(this.sessionState, action.update)
           this.sessionState = state
-          applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+          this.#transcript.applyPatches(patches)
           break
         }
         case "user-image":
-          this.#appendUserImage(action.messageId, {
+          appendUserImage(this.#transcript, action.messageId, {
             mimeType: content.mimeType as string,
             data: content.data as string,
           })
           break
         case "user-link": {
           const label = content.name ?? content.uri
-          this.#appendUserPlaceholder(action.messageId, {
+          appendUserPlaceholder(this.#transcript, action.messageId, {
             kind: "resource_link",
             label: label as string | undefined,
             uri: content.uri as string | undefined,
@@ -2492,10 +2436,10 @@ export class AgentSession {
           break
         }
         case "user-audio":
-          this.#appendUserPlaceholder(action.messageId, { kind: "audio" })
+          appendUserPlaceholder(this.#transcript, action.messageId, { kind: "audio" })
           break
         case "user-placeholder":
-          this.#appendUserPlaceholder(action.messageId, { kind: "resource" })
+          appendUserPlaceholder(this.#transcript, action.messageId, { kind: "resource" })
           break
         case "agent-text":
           this.#setTurnState("responding")
@@ -2503,7 +2447,7 @@ export class AgentSession {
           {
             const { state, patches } = reduce(this.sessionState, action.update)
             this.sessionState = state
-            applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+            this.#transcript.applyPatches(patches)
           }
           break
         case "agent-content": {
@@ -2516,13 +2460,13 @@ export class AgentSession {
             uri?: string
           }
           if (agentContent.type === "resource_link") {
-            this.#appendAgentPlaceholder(action.messageId, {
+            appendAgentPlaceholder(this.#transcript, action.messageId, {
               kind: "resource_link",
               label: (agentContent.name ?? agentContent.uri ?? "") as string,
               uri: agentContent.uri as string | undefined,
             })
           } else {
-            this.#appendAgentPlaceholder(action.messageId, {
+            appendAgentPlaceholder(this.#transcript, action.messageId, {
               kind:
                 agentContent.type === "image"
                   ? "image"
@@ -2539,13 +2483,13 @@ export class AgentSession {
           {
             const { state, patches } = reduce(this.sessionState, action.update)
             this.sessionState = state
-            applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+            this.#transcript.applyPatches(patches)
           }
           break
         case "default": {
           const { state, patches } = reduce(this.sessionState, action.update)
           this.sessionState = state
-          applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+          this.#transcript.applyPatches(patches)
           break
         }
       }
@@ -2565,54 +2509,13 @@ export class AgentSession {
       sessionUpdate: "tool_call",
     })
     this.sessionState = nextState
-    applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
+    this.#transcript.applyPatches(patches)
     // flush pending subagent events for this toolCallId (slice subagent-transcript-data-v2)
     if (typeof update.toolCallId === "string") {
-      this.#flushPendingSubagentEvents(update.toolCallId)
+      this.#transcript.flushPendingSubagentEvents(update.toolCallId)
     }
     // turnState תמיד calling-tool ללא תנאי (create, לא update)
     this.#setTurnState("calling-tool")
     if (this.#turnEnded) this.#scheduleIdle()
-  }
-
-  /**
-   * §11: מצרף image-attachment לבועת-user — קיבוץ לפי messageId כמו #appendChunk.
-   *
-   * הערה על reactivity: #appendChunk משתמש ב-segments.push() — עובד כי segments[]
-   * הוא deep $state proxy ב-Svelte 5. attachments מתחיל undefined (optional ב-UserBubble),
-   * לכן .push() על undefined יקרוס. לכן כאן **השמה** (`[..., a]`) — פותרת גם את
-   * ה-undefined-init וגם מבטיחה reactivity על מערך שנוסף מאפס.
-   */
-  #appendUserImage(messageId: string | null, img: { mimeType: string; data: string }): void {
-    appendUserImage(this, messageId, img)
-  }
-
-  /**
-   * §11.3א: מצרף placeholder מבני לבועת-user עבור ContentBlocks לא-טקסטואליים (resource_link / audio / resource).
-   *
-   * אותה לוגיקת קיבוץ כמו #appendUserImage — grouping לפי messageId.
-   * contentPlaceholders מתחיל undefined → **השמה** (לא push), כמו attachments.
-   * ה-VM לא מייבא t ולא כותב שום מחרוזת-תצוגה או מפתח i18n — i18n שייך לשכבת-הרכיב.
-   */
-  #appendUserPlaceholder(
-    messageId: string | null,
-    ph: { kind: "resource_link" | "audio" | "resource"; label?: string; uri?: string },
-  ): void {
-    appendUserPlaceholder(this, messageId, ph)
-  }
-
-  /**
-   * tool-render-fidelity: placeholder for non-text agent_message_chunk (§11.3א pattern).
-   * i18n belongs to MessageBubble — VM stores structural marker only.
-   */
-  #appendAgentPlaceholder(
-    messageId: string | null,
-    ph: {
-      kind: "resource_link" | "audio" | "resource" | "image"
-      label?: string
-      uri?: string
-    },
-  ): void {
-    appendAgentPlaceholder(this, messageId, ph)
   }
 }

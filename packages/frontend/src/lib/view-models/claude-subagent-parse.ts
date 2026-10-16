@@ -333,12 +333,12 @@ function applyToolResult(taskBubble: ToolBubble, event: ToolResultEvent, now: nu
 
 /**
  * reducer טהור: (ToolBubble, ClaudeSubagentEvent) → ToolBubble (immutable, object-replacement).
- * `now` ניתן להזרקה (ברירת-מחדל Date.now() — לא נקרא בטסטים שמעבירים ערך מפורש; finding #5).
+ * `now` is supplied explicitly by the shell after locating the parent Task.
  */
 export function reduceSubagent(
   taskBubble: ToolBubble,
   event: ClaudeSubagentEvent,
-  now: number = Date.now(),
+  now: number,
 ): ToolBubble {
   if (event.kind === "ignored") return taskBubble
   if (event.kind === "task") return applyTaskEvent(taskBubble, event)
