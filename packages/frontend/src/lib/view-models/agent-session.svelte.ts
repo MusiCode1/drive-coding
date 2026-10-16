@@ -18,7 +18,7 @@ import type {
   SessionNotification,
   UsageUpdate,
 } from "@agentclientprotocol/sdk"
-import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
+import type { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 // ─── slice reconnect-ws-takeover: תרגום נקודתי להודעת "נפתח במקום אחר" ───
 // ה-VM לרוב לא מייבא t() (i18n שייך לשכבת-הרכיב — ר' #appendUserPlaceholder), אבל
 // `error` הוא string גולמי שמוצג as-is (routes/+page.svelte:191, לא עובר t() ברכיב) —
@@ -26,14 +26,13 @@ import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 // בקוד — lint:i18n אוכף), ולא להשתמש ב-I18nVM (לא מוזרק ל-VM הזה).
 import { DEFAULT_CLAUDE_SESSION_META } from "@drive-coding/core"
 import { createI18n, detectLocale } from "@drive-coding/core/i18n"
-import {
-  type AcpClient,
+import type {
+  AcpClient,
   createAcpClient,
   // ─── slice-image-paste Commit 4a/4b: טיפוס blocks לשליחה מולטימודלית ───
-  type PromptBlocks,
+  PromptBlocks,
 } from "@drive-coding/provider/client"
 import {
-  createAgent,
   deleteAgent,
   notifySessionAttached,
   patchAgent,
@@ -51,8 +50,8 @@ import {
   onTurnStarted,
   type TurnActivityState,
 } from "$lib/engines/turn-watchdog"
-import type { AgentInput, Connection } from "$lib/session/connection"
-import { HttpConnection } from "$lib/session/http-connection"
+import type { AgentInput, CloseMode, Connection } from "$lib/session/connection"
+import type { HttpConnection } from "$lib/session/http-connection"
 // ─── slice local-view-wiring: LocalSessionView + tee ───
 import { LocalSessionView } from "$lib/session/local-session-view"
 // ─── slice session-view-port C3: SessionView DI ───
@@ -87,10 +86,7 @@ import {
   type DeleteSessionDeps,
   deleteSession as deleteSessionExtracted,
 } from "$lib/view-models/agent-session-delete"
-import {
-  sendDetachFrame,
-  type TransportTestStub,
-} from "$lib/view-models/agent-session-detach-frame"
+import type { TransportTestStub } from "$lib/view-models/agent-session-detach-frame"
 import {
   type DrainViewPatchesDeps,
   drainViewPatches,
@@ -104,11 +100,18 @@ import {
   setManualTitleOnAgent,
   syncTitleFromViewState,
 } from "$lib/view-models/agent-session-manual-title"
-import { doRefreshQuota, type QuotaRefreshDeps } from "$lib/view-models/agent-session-quota-refresh"
+import { createAgentSessionHttpConnection } from "$lib/view-models/agent-session-new-http-connection"
 import {
+  cancelPendingDialogs,
+  onCreateElicitation as onCreateElicitationExtracted,
   onRequestPermission as onRequestPermissionExtracted,
-  type RequestPermissionDeps,
-} from "$lib/view-models/agent-session-request-permission"
+  type PendingRequestDeps,
+  resolvePendingElicitation as resolvePendingElicitationExtracted,
+  resolvePendingPermission as resolvePendingPermissionExtracted,
+  syncPendingElicitation as syncPendingElicitationExtracted,
+  syncPendingPermission as syncPendingPermissionExtracted,
+} from "$lib/view-models/agent-session-pending"
+import { doRefreshQuota, type QuotaRefreshDeps } from "$lib/view-models/agent-session-quota-refresh"
 import {
   endSessionScope,
   registerSessionEndListener,
@@ -263,6 +266,9 @@ export class AgentSession {
       this.#view = opts.view
       this.#isRemote = true // slice local-view-wiring C1: DI של view == remote (כל 5 הקונסטרוקציות)
       void this.#consumeViewPatches(opts.view)
+      const connection = this.#newHttpConnection()
+      connection.adoptExistingView(opts.view)
+      this.#connection = connection
     }
     // ─── slice ws-reconnect-infra: visibility tracking (עבר ל-#visibility) ───
     if (typeof document !== "undefined") {
@@ -620,14 +626,12 @@ export class AgentSession {
     return { sessionEndListeners: () => this.#sessionEndListeners }
   }
 
-  #requestPermissionDeps(): RequestPermissionDeps {
+  #pendingDeps(): PendingRequestDeps {
     return {
-      pendingPermission: () => this.pendingPermission,
-      setPendingPermission: (v) => {
-        this.pendingPermission = v
-      },
-      bypassActive: () => this.bypassActive,
-      resolvePendingPermission: (response) => this.#resolvePendingPermission(response),
+      state: this,
+      answered: this.#answeredRequests,
+      view: () => this.#view,
+      tearingDown: () => this.#tearingDown,
     }
   }
 
@@ -743,8 +747,10 @@ export class AgentSession {
    * פתוח כרגע" נקרא מהמקור היחיד (pendingPermission?.requestId), לא ממצב-מראה שני.
    * ⚠️ requestId הוא פר-host ומתחיל מ-0 בכל agent חדש — מאופס ב-attachRemote וב-#cleanup.
    */
-  #answeredPermissionId: number | null = null
-  #answeredElicitationId: number | null = null
+  #answeredRequests: { permissionId: number | null; elicitationId: number | null } = {
+    permissionId: null,
+    elicitationId: null,
+  }
 
   // ─── slice ws-reconnect-infra: reconnect internals ───
   /** ה-cliKind של ה-attach/loadSession האחרון — נדרש ל-cold reconnect.
@@ -858,16 +864,15 @@ export class AgentSession {
       {
         onUpdate: this.#onSessionUpdate,
         onExtNotification: this.#onExtNotification,
-        onRequestPermission: this.#onRequestPermission,
-        onCreateElicitation: this.#onCreateElicitation,
+        onRequestPermission: (params) => onRequestPermissionExtracted(this.#pendingDeps(), params),
+        onCreateElicitation: (params) => onCreateElicitationExtracted(this.#pendingDeps(), params),
       },
       view.observerCallbacks,
     )
   }
 
   #cancelPendingDialogs(): void {
-    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
-    this.#resolvePendingElicitation({ action: "cancel" })
+    cancelPendingDialogs(this.#pendingDeps())
   }
 
   /**
@@ -919,77 +924,11 @@ export class AgentSession {
     }
 
     // ─── slice view-switch C3-ו.1: pending (permission + elicitation) — guard-זהות ───
-    this.#syncPendingPermission(viewState.pending.permission, view)
-    this.#syncPendingElicitation(viewState.pending.elicitation, view)
+    syncPendingPermissionExtracted(this.#pendingDeps(), viewState.pending.permission, view)
+    syncPendingElicitationExtracted(this.#pendingDeps(), viewState.pending.elicitation, view)
 
     // ─── slice view-switch C3-ו.2: lastTurnError → session.error (דו-כיווני, ממוקד) ───
     this.#errorScope.syncTurnError(viewState.lastTurnError)
-  }
-
-  /**
-   * מסנכן pending.permission — ארבעה מצבים, בסדר הזה (slice view-switch C3-ו.1):
-   *   null                                → pendingPermission = null
-   *   requestId === #answeredPermissionId → patch מעופש, דלג
-   *   requestId === pendingPermission?.requestId → כבר פתוח, אל תבנה מחדש
-   *   אחרת                                 → בנה { requestId, params, resolve }
-   */
-  #syncPendingPermission(incoming: SessionState["pending"]["permission"], view: SessionView): void {
-    if (incoming === null) {
-      this.pendingPermission = null
-      return
-    }
-    if (incoming.requestId === this.#answeredPermissionId) return
-    if (incoming.requestId === this.pendingPermission?.requestId) return
-    const id = incoming.requestId
-    this.pendingPermission = {
-      requestId: id,
-      params: incoming.params as unknown as PermissionParams,
-      resolve: (r: PermissionResponse) => {
-        try {
-          this.#answeredPermissionId = id // אופטימי — חוסם patch מעופש
-          void view.respond(id, r).catch(() => {
-            // ⚠️ מכומת בזהות ובזמן: #cleanup קורא pending.resolve(...) ואז מוחק את
-            // ה-agent באותו tick ⇒ ה-respond מובטח להידחות. בלי הכימות, זה היה כותב
-            // #answeredPermissionId/error לתוך הסשן שיהיה נוכחי כשזה נפתר (רפאים).
-            if (this.#tearingDown || this.#view !== view) return
-            this.#answeredPermissionId = null // ביטול הסימון — יוכל להיפתח שוב
-            this.error = "reply failed"
-          })
-        } catch {
-          // ה-shim לעולם לא זורק — #cleanup קורא לו בלי try/catch מסביב
-        }
-      },
-    }
-  }
-
-  /** מקביל ל-#syncPendingPermission — אותם ארבעה מצבים, אותו נימוק, לסוג elicitation. */
-  #syncPendingElicitation(
-    incoming: SessionState["pending"]["elicitation"],
-    view: SessionView,
-  ): void {
-    if (incoming === null) {
-      this.pendingElicitation = null
-      return
-    }
-    if (incoming.requestId === this.#answeredElicitationId) return
-    if (incoming.requestId === this.pendingElicitation?.requestId) return
-    const id = incoming.requestId
-    this.pendingElicitation = {
-      requestId: id,
-      params: incoming.params as unknown as ElicitationParams,
-      resolve: (r: ElicitationResponse) => {
-        try {
-          this.#answeredElicitationId = id
-          void view.respond(id, r).catch(() => {
-            if (this.#tearingDown || this.#view !== view) return
-            this.#answeredElicitationId = null
-            this.error = "reply failed"
-          })
-        } catch {
-          // ה-shim לעולם לא זורק
-        }
-      },
-    }
   }
 
   // ─── DEV-only test helpers (tree-shaken from prod) ───
@@ -1054,6 +993,10 @@ export class AgentSession {
   }
 
   releaseConnection(): void {
+    if (this.#connection) {
+      this.#connection.release()
+      return
+    }
     const agentId = this.agentId
     if (!agentId) return
     void releaseConnection(agentId, this.#connectionId)
@@ -1121,7 +1064,8 @@ export class AgentSession {
     this.#enterSession(ctx.sessionId)
     this.cwd = ctx.cwd
     this.#cliKind = ctx.cliKind
-    if (!(this.#connection instanceof WsConnection)) this.#connection = this.#newWsConnection()
+    if (!this.#isRemote && !(this.#connection instanceof WsConnection))
+      this.#connection = this.#newWsConnection()
   }
   /**
    * @internal חושף #sessionId לטסטים (לבדיקת הזרקת state).
@@ -1154,6 +1098,8 @@ export class AgentSession {
 
   #newWsConnection(): WsConnection {
     const connection: WsConnection = new WsConnection({
+      connectionId: this.#connectionId,
+      isBound: () => this.#connection === connection,
       prepareNew: () => {
         this.#setStatus("connecting")
         this.#errorScope.reset()
@@ -1162,6 +1108,7 @@ export class AgentSession {
         this.#detached = false
       },
       setAgent: (agentId, cwd, cliKind) => {
+        if (this.#connection !== connection) return
         this.agentId = agentId
         this.cwd = cwd
         this.#cliKind = cliKind
@@ -1174,6 +1121,7 @@ export class AgentSession {
       bindLocalView: () => this.#bindLocalView(),
       callbacks: (view) => this.#callbacksForLocalView(view),
       setClient: (client) => {
+        if (this.#connection !== connection) return
         this.#client = client
         this.authMethods = client.authMethods
         this.#ext = createExtClient(client)
@@ -1183,10 +1131,12 @@ export class AgentSession {
       adoptLocalView: (client, sessionId) => this.#adoptLocalView(client, sessionId),
       captureSessionConfig: (result) => this.#captureSessionConfig(result),
       connected: async () => {
+        if (this.#connection !== connection) return
         this.#setStatus("connected")
         await this.#applyRememberedConfig()
       },
       failed: (error) => {
+        if (this.#connection !== connection) return
         this.#errorScope.surface(formatAcpError(error))
         this.#setStatus("error")
         this.#cleanup()
@@ -1257,6 +1207,7 @@ export class AgentSession {
         },
         setWarmAgent: (agentId) => {
           this.agentId = agentId
+          connection.updateReleaseAgent(agentId)
         },
         setAttachedClient: (client) => {
           this.#client = client
@@ -1275,7 +1226,7 @@ export class AgentSession {
           this.#client = null
           this.#ext = null
           this.#cancelPendingDialogs()
-          this.#localView?.dispose()
+          connection.disposeFailedWarmView()
           this.#localView = null
           this.#view = null
         },
@@ -1285,11 +1236,7 @@ export class AgentSession {
             isCurrent,
             {
               prepare: () => {
-                try {
-                  this.#client?.close()
-                } catch {
-                  // Already closed.
-                }
+                connection.closeClientForCold()
                 this.#client = null
                 this.#ext = null
                 this.#cancelPendingDialogs()
@@ -1315,19 +1262,21 @@ export class AgentSession {
   }
 
   #newHttpConnection(): HttpConnection {
-    return new HttpConnection({
+    return createAgentSessionHttpConnection({
+      connectionId: this.#connectionId,
+      getBoundConnection: () => this.#connection,
       prepare: (agent) => {
         this.#errorScope.reset()
         this.authMethods = []
         this.bubbles = []
         this.#detached = false
-        this.#answeredPermissionId = null
-        this.#answeredElicitationId = null
+        this.#answeredRequests.permissionId = null
+        this.#answeredRequests.elicitationId = null
         this.#setStatus("connecting")
         this.cwd = agent.cwd
         this.#cliKind = agent.cliKind
       },
-      setAgent: (agentId) => {
+      setAgentId: (agentId) => {
         this.agentId = agentId
       },
       viewOptions: () => this.#remoteViewOpts(),
@@ -1338,7 +1287,7 @@ export class AgentSession {
         void this.#consumeViewPatches(view)
       },
       applyTitle: (agent) => applyManualTitleFromAttach(this, agent, false),
-      connected: async () => this.#setStatus("connected"),
+      onConnected: () => this.#setStatus("connected"),
       rememberedConfig: () => this.#applyRememberedConfig(),
       failed: (error, keepAgent) => {
         this.#cleanup(keepAgent ? { keepAgent: true } : undefined)
@@ -1457,79 +1406,29 @@ export class AgentSession {
   // תשתית גנרית ניתנת-לשכפול (callback + Promise round-trip) — slice B (elicitation)
   // ישכפל את הדפוס הזה ל-onCreateElicitation.
 
-  /**
-   * callback שמוזרק ל-createClientImpl.onRequestPermission (בשלושת ה-call-sites: attach,
-   * loadSession, replay של חיבור מחדש). מוחזר Promise שנפתר כש-resolvePermission/cancelPermission
-   * נקראים, או כש-#client מתאפס (כל נקודות ה-teardown — ר' #resolvePendingPermission).
-   */
-  #onRequestPermission = (params: PermissionParams): Promise<PermissionResponse> => {
-    return onRequestPermissionExtracted(this.#requestPermissionDeps(), params)
-  }
-
   /** המשתמש בחר אפשרות — פותר את ה-Promise הממתין עם ה-optionId שנבחר. */
   resolvePermission = (optionId: string): void => {
-    this.#resolvePendingPermission({ outcome: { outcome: "selected", optionId } })
+    resolvePendingPermissionExtracted(this.#pendingDeps(), {
+      outcome: { outcome: "selected", optionId },
+    })
   }
 
   /** המשתמש ביטל/דחה בלי לבחור אפשרות ספציפית — פותר כ-cancelled. */
   cancelPermission = (): void => {
-    this.#resolvePendingPermission({ outcome: { outcome: "cancelled" } })
-  }
-
-  /**
-   * helper מרוכז — נקודת-פתרון יחידה ל-pendingPermission. idempotent (no-op אם null).
-   * ⚠️ **חובה** לקרוא מכל נקודה ש-#client מתאפס/הסשן נסגר, אחרת Promise דולף + turn תקוע
-   * (הסיכון #1 של הסלייס): #cleanup (מכסה detach+leaveRunning), cancelTurn,
-   * נתיבי reconnect דרך בעל החיבור.
-   */
-  #resolvePendingPermission(response: PermissionResponse): void {
-    const pending = this.pendingPermission
-    if (!pending) return
-    pending.resolve(response)
-    this.pendingPermission = null
+    resolvePendingPermissionExtracted(this.#pendingDeps(), { outcome: { outcome: "cancelled" } })
   }
 
   // ─── slice-elicitation-ui: שאלה מובנת חיה ──────────────────────────────
   // מחקה 1:1 את בלוק בקשת ההרשאה שמעלה (client.ts השאיר עוגן מפורש לשכפול).
 
-  /**
-   * callback שמוזרק ל-createClientImpl.onCreateElicitation (בשלושת ה-call-sites: attach,
-   * loadSession, replay של חיבור מחדש). מוחזר Promise שנפתר כש-resolveElicitation/cancelElicitation
-   * נקראים, או כש-#client מתאפס (כל נקודות ה-teardown — ר' #resolvePendingElicitation).
-   * בניגוד ל-#onRequestPermission — אין כאן bypass auto-allow (לא רלוונטי לשאלות מובנות;
-   * לא בסקופ הבריף).
-   */
-  #onCreateElicitation = (params: ElicitationParams): Promise<ElicitationResponse> => {
-    return new Promise<ElicitationResponse>((resolve) => {
-      // pending יחיד — בקשה שנייה סוגרת את הקודמת כ-cancel (מחקה את דפוס ה-permission).
-      if (this.pendingElicitation) {
-        this.#resolvePendingElicitation({ action: "cancel" })
-      }
-      this.pendingElicitation = { params, resolve }
-    })
-  }
-
   /** המשתמש מילא את הטופס ואישר — פותר את ה-Promise הממתין עם ה-content שהוזן. */
   resolveElicitation = (content: Record<string, string | number | boolean | string[]>): void => {
-    this.#resolvePendingElicitation({ action: "accept", content })
+    resolvePendingElicitationExtracted(this.#pendingDeps(), { action: "accept", content })
   }
 
   /** המשתמש ביטל/דחה — פותר עם action (decline|cancel). */
   cancelElicitation = (action: "decline" | "cancel"): void => {
-    this.#resolvePendingElicitation({ action })
-  }
-
-  /**
-   * helper מרוכז — נקודת-פתרון יחידה ל-pendingElicitation. idempotent (no-op אם null).
-   * ⚠️ **חובה** לקרוא מכל נקודה ש-#client מתאפס/הסשן נסגר, אחרת Promise דולף + turn תקוע
-   * (הסיכון #1, יורש מ-A1): #cleanup (מכסה detach+leaveRunning), cancelTurn,
-   * נתיבי reconnect דרך בעל החיבור.
-   */
-  #resolvePendingElicitation(response: ElicitationResponse): void {
-    const pending = this.pendingElicitation
-    if (!pending) return
-    pending.resolve(response)
-    this.pendingElicitation = null
+    resolvePendingElicitationExtracted(this.#pendingDeps(), { action })
   }
 
   // ─── פרומפטים (prompting) ────────────────────────────────────
@@ -1673,119 +1572,46 @@ export class AgentSession {
         ? this.#connection
         : this.#newWsConnection()
     this.#connection = owner
-    let createdAgentId: string | undefined
-    let createdTransport: WsAcpTransport | undefined
-    let createdClient: AcpClient | undefined
-    const current = () => opts?.isCurrent?.() ?? true
-    const cancelled = () => {
-      if (createdTransport) owner.discardTransport(createdTransport)
-      if (createdAgentId) void deleteAgent(createdAgentId).catch(() => {})
-      if (createdClient && this.#client === createdClient) this.#client = null
-    }
-
-    try {
-      // 1. צור סוכן בצד השרת (זהה ל-attach)
-      const { agentId } = await createAgent({ cwd: input.cwd, cliKind: input.cliKind })
-      createdAgentId = agentId
-      opts?.onCreatedAgent?.(agentId)
-      if (!current()) {
-        cancelled()
-        return
-      }
-      if (!opts?.preserveContextOnError) this.agentId = agentId
-      this.cwd = input.cwd
-      this.#cliKind = input.cliKind // slice ws-reconnect-infra: שמור ל-cold reconnect
-
-      // 2. פתח תעבורת WS + הוסף מאזין onClose (זהה ל-attach)
-      const transport = new WsAcpTransport(this.#agentWsUrl(agentId))
-      createdTransport = transport
-      owner.adoptTransport(transport)
-      transport.onClose((code, reason) => {
-        if (owner.transport !== transport) return
-        if (this.#detached) return
-        if (this.#tearingDown) return // NBug2: סגירה מכוונת ב-cold — אל תצית reconnect
-        if (code !== 1000 && code !== 1001) {
-          void this.#handleUnexpectedClose(code, reason)
-        }
-      })
-      await transport.waitForOpen()
-      if (!current()) {
-        cancelled()
-        return
-      }
-
-      // 3. לחיצת יד של ACP (זהה ל-attach)
-      // slice local-view-wiring C3: bind+tee לפני יצירת הלקוח; adopt **לפני** loadSession —
-      // ההיסטוריה המשוחזרת מגיעה תוך כדי ה-await, ואימוץ אחריו מוחק אותה (§2.6/§4.4).
-      const localView = this.#bindLocalView()
-      const client = await createAcpClient(transport, this.#callbacksForLocalView(localView))
-      createdClient = client
-      if (!current()) {
-        cancelled()
-        return
-      }
-      this.#client = client
-      this.authMethods = client.authMethods // slice auth-guidance: ללכידה בכשל loadSession/prompt מאוחר יותר
-      this.#ext = createExtClient(client)
-      // slice local-view-wiring C3 — נקודת-אימוץ 2: sessionId ידוע (input.sessionId),
-      // מיד אחרי יצירת הלקוח ולפני ה-try של ה-replay.
-      this.#adoptLocalView(client, input.sessionId)
-
-      // ── קריאה ל-loadSession במקום ל-newSession ──
-      // השתק את ה-TTS של ה-Speaker במהלך ניגון מחדש של ההיסטוריה (slice 4: replay-quiet).
-      this.isLoadingHistory = true
-      try {
-        const m = this.#sessionMeta()
-        const loadResult = await client.loadSession({
-          sessionId: input.sessionId,
-          cwd: input.cwd,
-          mcpServers: [],
-          ...(m && { _meta: m }),
-        })
-        if (!current()) {
-          cancelled()
-          return
-        }
-        this.#captureSessionConfig(loadResult) // slice 23: לכוד config (sessionId מ-input, לא מ-response)
-      } finally {
-        if (current()) {
-          this.isLoadingHistory = false
-          this.#setTurnState("idle") // NBug3: replay מסתיים — reset turnState (replay אינו תור)
-        }
-      }
-      this.#enterSession(input.sessionId)
-      this.#applyTitleFromSessionInput(input)
-
-      // 4. הודע ל-BE (זהה ל-attach, מאמץ מיטבי)
-      await notifySessionAttached(agentId, input.sessionId).catch(() => {})
-      if (!current()) {
-        cancelled()
-        return
-      }
-
-      this.agentId = agentId
-      this.#setStatus("connected")
-    } catch (e) {
-      if (!current()) {
-        cancelled()
-        return
-      }
-      this.error = `loadSession failed: ${formatAcpError(e)}`
-      this.#errorScope.surfaced = true // calev-heavy §10.2 + reconnect-recovery anti-clobber
-      this.#setTurnState("idle") // NBug3: throw מוקדם (createAgent/waitForOpen) — ה-finally הפנימי לא רץ
-      // slice reconnect-recovery: נתיב-השימור (cold-reconnect שנכשל) — לא #cleanup() מלא
-      // (שהיה מוחק #sessionId/agentId ותוקע את reconnect() ב-early-return). שומר את
-      // הקשר-הסשן כדי שלחיצת reconnect הבאה תמצא #sessionId ותנסה שוב (§3 diagram).
-      if (opts?.preserveContextOnError) {
-        // מאפס #tearingDown=false → surfaced guard ב-controller הוא מה שמונע clobber+
-        // auto-reconnect על ה-async close (אביגיל r3 🔴).
-        this.#cleanup({ keepContext: true }) // teardown מלא; אותו owner נשמר לניסיון הבא
-        this.#setStatus("disconnected") // מציג כפתור reconnect; reconnect() לא-early-return (context נשמר)
-      } else {
-        this.#setStatus("error")
-        this.#cleanup()
-      }
-    }
+    await owner.loadSession(
+      input,
+      {
+        published: (agentId) => {
+          if (!opts?.preserveContextOnError) this.agentId = agentId
+          this.cwd = input.cwd
+          this.#cliKind = input.cliKind
+        },
+        replaying: (loading) => {
+          this.isLoadingHistory = loading
+          if (!loading) this.#setTurnState("idle")
+        },
+        loaded: () => {
+          this.#enterSession(input.sessionId)
+          this.#applyTitleFromSessionInput(input)
+        },
+        connected: (agentId) => {
+          this.agentId = agentId
+          this.#setStatus("connected")
+        },
+        failed: (e) => {
+          this.error = `loadSession failed: ${formatAcpError(e)}`
+          this.#errorScope.surfaced = true // calev-heavy §10.2 + reconnect-recovery anti-clobber
+          this.#setTurnState("idle") // NBug3: throw מוקדם (createAgent/waitForOpen) — ה-finally הפנימי לא רץ
+          // slice reconnect-recovery: נתיב-השימור (cold-reconnect שנכשל) — לא #cleanup() מלא
+          // (שהיה מוחק #sessionId/agentId ותוקע את reconnect() ב-early-return). שומר את
+          // הקשר-הסשן כדי שלחיצת reconnect הבאה תמצא #sessionId ותנסה שוב (§3 diagram).
+          if (opts?.preserveContextOnError) {
+            // מאפס #tearingDown=false → surfaced guard ב-controller הוא מה שמונע clobber+
+            // auto-reconnect על ה-async close (אביגיל r3 🔴).
+            this.#cleanup({ keepContext: true }) // teardown מלא; אותו owner נשמר לניסיון הבא
+            this.#setStatus("disconnected") // מציג כפתור reconnect; reconnect() לא-early-return (context נשמר)
+          } else {
+            this.#setStatus("error")
+            this.#cleanup()
+          }
+        },
+      },
+      opts,
+    )
   }
 
   // ─── slice ws-reconnect-infra: reconnect ציבורי ─── (תוספתי)
@@ -2375,9 +2201,9 @@ export class AgentSession {
   }
 
   #cleanup(opts?: { keepAgent?: boolean; keepContext?: boolean }): void {
-    const transport = this.#connection instanceof WsConnection ? this.#connection.transport : null
+    const owner = this.#connection
     if (!opts?.keepContext) {
-      this.#connection?.cancelReconnect()
+      owner?.cancelReconnect()
       this.#connection = null
     }
     // לכוד את ה-agentId לפני האיפוס — צריך אותו ל-deleteAgent.
@@ -2400,29 +2226,27 @@ export class AgentSession {
     // וממתין לתשובה; leaveRunning גם ממתין ל-flush (setTimeout 0) לפני שמגיע לכאן. מכסה
     // detach() (agent נהרג ממילא) + attach/loadSession כשל.
     this.#cancelPendingDialogs()
-    if (opts?.keepAgent && transport) {
-      sendDetachFrame(transport)
-    } else if (opts?.keepAgent && this.#isRemote) {
-      this.releaseConnection()
+    if (opts?.keepAgent && this.#isRemote && owner) {
+      owner.release()
     }
-    try {
-      this.#client?.close()
-    } catch {
-      // כבר סגור
+    const closeMode: CloseMode = opts?.keepAgent
+      ? { kind: "preserve-agent" }
+      : opts?.keepContext
+        ? { kind: "recover" }
+        : { kind: "end-view" }
+    if (owner) {
+      owner.close(closeMode)
+    } else if (this.#view) {
+      void this.#view.close().catch(() => {})
     }
     this.#client = null
-    // ─── slice view-switch C3-ח: teardown ה-view (remote) — נקודת-הפירוק היחידה ───
-    // close() אינו זול (ממתין לשני round-trips של POST /reply לביטול pending) —
-    // void חובה (אחרת #cleanup הסינכרונית הייתה צריכה להפוך ל-async). ה-.catch הוא
-    // חגורת-ביטחון בלבד — close() תופס בפנים את שתי קריאות ה-respond.
-    void this.#view?.close().catch(() => {})
     this.#view = null
     this.#localView = null // slice local-view-wiring C3: איפוס כפול לצד #view (§4.3)
     this.#isRemote = false // slice local-view-wiring C1: איפוס מתג-המצב לצד איפוס ה-view
     // ─── slice view-switch C3-ו: מרחב-ה-ids של pending הוא פר-host, לא פר-VM ───
     // בלי איפוס — הדיאלוג הראשון של הסשן המרוחק הבא באותו טאב מדוכא בשקט (id 0 "כבר נענה").
-    this.#answeredPermissionId = null
-    this.#answeredElicitationId = null
+    this.#answeredRequests.permissionId = null
+    this.#answeredRequests.elicitationId = null
     this.#ext = null // slice FE-normalization: נקה facade
     this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
     this.contextUsage = null // slice session-budget-meter: נקה context-usage (חיבור חדש = caps חדשים)
@@ -2449,7 +2273,10 @@ export class AgentSession {
     // ─── slice leave-running-background: keepAgent=true → לא הורג (ה-child שורד) ───
     // slice reconnect-recovery: keepContext גם מונע deleteAgent — ה-agent אמור לשרוד
     // ל-reattach (בעל החיבור מטפל במחיקת ה-agent הישן בנפרד, אחרי הצלחה).
-    if (!opts?.keepAgent && !opts?.keepContext && agentId) void deleteAgent(agentId).catch(() => {})
+    if (!opts?.keepAgent && !opts?.keepContext && agentId) {
+      if (owner) owner.deleteAgentOnce(agentId)
+      else void deleteAgent(agentId).catch(() => {})
+    }
   }
 
   #loadMockSessionDeps(): LoadMockSessionDeps {

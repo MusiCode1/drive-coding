@@ -5,8 +5,8 @@
  * G2/G4 local switch/new/delete paths require attach() — agent-session.local-view harness.
  */
 
-import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import type { OrderKey } from "@drive-coding/core/voice/tts-queue"
+import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
@@ -18,13 +18,17 @@ import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
 import { bindSessionScope } from "./session-scope"
 
-vi.mock("$lib/adapters/voice/tts-resolve", () => ({
-  resolveTts: vi.fn(() => ({
-    provider: { format: "pcm" as const, synthesize: vi.fn() },
-    voiceId: "v",
-    modelId: "m",
-  })),
-}))
+vi.mock("$lib/adapters/voice/tts-resolve", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/adapters/voice/tts-resolve")>()
+  return {
+    ...actual,
+    resolveTts: vi.fn(() => ({
+      provider: { format: "pcm" as const, synthesize: vi.fn() },
+      voiceId: "v",
+      modelId: "m",
+    })),
+  }
+})
 vi.mock("$lib/adapters/voice/translate", () => ({ translate: vi.fn() }))
 vi.mock("$lib/adapters/voice/narrate", () => ({ narrate: vi.fn() }))
 
@@ -95,7 +99,11 @@ const lv = vi.hoisted(() => {
   const state = {
     client,
     teedCallbacks: null as (AcpClientCallbacks & { onUpdate: TransportFn }) | null,
-    transports: [] as Array<{ close: TransportFn; closeAndWait: TransportFn; waitForOpen: TransportFn }>,
+    transports: [] as Array<{
+      close: TransportFn
+      closeAndWait: TransportFn
+      waitForOpen: TransportFn
+    }>,
     queue: [] as Array<{ mode: "open" }>,
   }
   return { state }
@@ -122,7 +130,10 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
       lv.state.teedCallbacks = callbacks as (typeof lv.state)["teedCallbacks"]
       return Promise.resolve(lv.state.client)
     }),
-    createAttachedAcpClient: vi.fn(function mockAttachedClient(_transport: unknown, callbacks: unknown) {
+    createAttachedAcpClient: vi.fn(function mockAttachedClient(
+      _transport: unknown,
+      callbacks: unknown,
+    ) {
       lv.state.teedCallbacks = callbacks as (typeof lv.state)["teedCallbacks"]
       return lv.state.client
     }),

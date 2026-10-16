@@ -13,13 +13,17 @@ import { Speaker } from "$lib/view-models/speaker.svelte"
 import { bindSessionScope } from "./session-scope"
 import { onSessionRouteChange } from "./session-scope-nav"
 
-vi.mock("$lib/adapters/voice/tts-resolve", () => ({
-  resolveTts: vi.fn(() => ({
-    provider: { format: "pcm" as const, synthesize: vi.fn() },
-    voiceId: "v",
-    modelId: "m",
-  })),
-}))
+vi.mock("$lib/adapters/voice/tts-resolve", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/adapters/voice/tts-resolve")>()
+  return {
+    ...actual,
+    resolveTts: vi.fn(() => ({
+      provider: { format: "pcm" as const, synthesize: vi.fn() },
+      voiceId: "v",
+      modelId: "m",
+    })),
+  }
+})
 vi.mock("$lib/adapters/voice/translate", () => ({ translate: vi.fn() }))
 vi.mock("$lib/adapters/voice/narrate", () => ({ narrate: vi.fn() }))
 

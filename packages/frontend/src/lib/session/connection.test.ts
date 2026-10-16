@@ -1,13 +1,79 @@
 import type { AcpClient, createAcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { createAgent, deleteAgent, getAgent, listAgents } from "$lib/adapters/agents-api"
+import {
+  createAgent,
+  deleteAgent,
+  getAgent,
+  listAgents,
+  releaseConnection,
+} from "$lib/adapters/agents-api"
 import { createRemoteView } from "./create-session-view"
 import { HttpConnection, type HttpConnectionDeps } from "./http-connection"
-import type { LocalSessionView } from "./local-session-view"
+import { LocalSessionView } from "./local-session-view"
 import type { SessionView } from "./session-view"
 import { WsConnection, type WsConnectionDeps, type WsReconnectDeps } from "./ws-connection"
 
 const events: string[] = []
+
+describe("WsConnection owner reader cleanup", () => {
+  it("disposes the captured reader after client.close throws without closing its replacement", async () => {
+    const oldClose = vi.fn(() => {
+      throw new Error("wire already closed")
+    })
+    const oldClient = { ...client, close: oldClose }
+    const newClient = {
+      ...client,
+      close: vi.fn(),
+      extMethod: vi.fn(async () => ({ owner: "new-view" })),
+    }
+    const oldView = new LocalSessionView({ cwd: "/workspace", cliKind: "claude" })
+    const newView = new LocalSessionView({ cwd: "/workspace", cliKind: "claude" })
+    oldView.adopt({ client: oldClient, sessionId: "old-session" })
+    newView.adopt({ client: newClient, sessionId: "new-session" })
+    const oldDispose = vi.spyOn(oldView, "dispose")
+    const newDispose = vi.spyOn(newView, "dispose")
+    const oldReader = oldView.patches.getReader()
+    let oldDone = false
+    const oldRead = oldReader.read().then((value) => {
+      oldDone = value.done === true
+      return value
+    })
+    const deps = wsDeps()
+    vi.mocked(deps.bindLocalView).mockReturnValueOnce(oldView).mockReturnValueOnce(newView)
+    const owner = new WsConnection(deps)
+    owner.bindLocalView()
+    owner.setClient(oldClient)
+
+    owner.close({ kind: "end-view" })
+    // Owner references are cleared before the rejected close settles.
+    const closeAttempts = oldClose.mock.calls.length
+    owner.closeClientForCold()
+    owner.close({ kind: "end-view" })
+    expect(oldClose).toHaveBeenCalledTimes(closeAttempts)
+    owner.bindLocalView()
+    owner.setClient(newClient)
+
+    await vi.waitFor(() => expect(oldDone).toBe(true))
+    await expect(oldRead).resolves.toEqual({ done: true, value: undefined })
+    oldReader.releaseLock()
+    expect(oldView.patches.locked).toBe(false)
+    expect(oldDispose).toHaveBeenCalledOnce()
+    await expect(oldView.extMethod("probe", {})).rejects.toThrow("not connected")
+    expect(newDispose).not.toHaveBeenCalled()
+    expect(newClient.close).not.toHaveBeenCalled()
+    await expect(newView.extMethod("probe", {})).resolves.toEqual({ owner: "new-view" })
+    const newReader = newView.patches.getReader()
+    let newDone = false
+    const newRead = newReader.read().then((value) => {
+      newDone = value.done === true
+    })
+    await Promise.resolve()
+    expect(newDone).toBe(false)
+    newView.dispose()
+    await newRead
+    newReader.releaseLock()
+  })
+})
 const waitBehaviors: Array<(close: (code: number, reason: string) => void) => Promise<void>> = []
 const closeWaitBehaviors: Array<() => Promise<void>> = []
 const client = {
@@ -72,6 +138,9 @@ vi.mock("$lib/adapters/agents-api", () => ({
   deleteAgent: vi.fn(async () => {
     events.push("deleteAgent")
   }),
+  releaseConnection: vi.fn(async () => {
+    events.push("releaseConnection")
+  }),
 }))
 vi.mock("./create-session-view", () => ({
   createRemoteView: vi.fn(),
@@ -79,6 +148,7 @@ vi.mock("./create-session-view", () => ({
 
 function wsDeps(): WsConnectionDeps {
   return {
+    connectionId: "test-conn",
     prepareNew: vi.fn(),
     setAgent: vi.fn(() => {
       events.push("setAgent")
@@ -258,6 +328,14 @@ describe("Connection transport ownership", () => {
     await new HttpConnection(deps).open({ kind: "new", cwd: "/repo", cliKind: "claude" })
     expect(deps.failed).toHaveBeenCalledWith(error, false)
     expect(events).not.toContain("WsAcpTransport")
+  })
+
+  it("HTTP release is idempotent per captured identity", () => {
+    const http = new HttpConnection(httpDeps())
+    http.captureReleaseIdentity("agent-a", "conn-1")
+    http.release()
+    http.release()
+    expect(releaseConnection).toHaveBeenCalledTimes(1)
   })
 })
 

@@ -16,7 +16,7 @@ const SESSION_SCOPED = new Set([
   "quotaLoading",
 ])
 
-const AGENT_SCOPED = new Set(["turnStalled"])
+const AGENT_SCOPED = new Set(["turnStalled", "#errorScope"])
 
 const CONNECTION_SCOPED = new Set(["sessions", "loading", "error"])
 
@@ -24,8 +24,7 @@ function extractStateFields(path: string): string[] {
   const text = readFileSync(path, "utf8")
   const re = /^\s*(#?[a-zA-Z][a-zA-Z0-9_]*)\s*=\s*\$state/gm
   const names: string[] = []
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text)) !== null) {
+  for (const m of text.matchAll(re)) {
     if (m[1] !== undefined) names.push(m[1])
   }
   return names
@@ -55,7 +54,6 @@ describe("agent-session $state classification gate", () => {
         "bubbles",
         "configOptions",
         "cwd",
-        "error",
         "historyEpoch",
         "isLoadingHistory",
         "lastUserMessage",

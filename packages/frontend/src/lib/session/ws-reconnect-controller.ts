@@ -1,5 +1,5 @@
 import type { AcpClient } from "@drive-coding/provider/client"
-import { deleteAgent, getAgent, listAgents } from "$lib/adapters/agents-api"
+import { getAgent, listAgents } from "$lib/adapters/agents-api"
 import type { WsConnection, WsConnectionDeps } from "./ws-connection"
 import { WsReconnectAttempt } from "./ws-reconnect-attempt"
 import { runWarmReconnect } from "./ws-warm-reconnect"
@@ -224,14 +224,15 @@ export class WsReconnectController {
     const cold = coldResult.value
     if (!this.#current(generation)) return "cancelled"
     if (cold.kind === "connected") {
+      this.owner.updateReleaseAgent(cold.agentId)
       if (context.agentId && context.agentId !== cold.agentId)
-        void deleteAgent(context.agentId).catch(() => {})
+        this.owner.deleteAgentOnce(context.agentId)
       this.reconnect.setAttempt(0)
       this.reconnect.connected()
       return "connected"
     }
     if (cold.failedAgentId && cold.failedAgentId !== context.agentId)
-      void deleteAgent(cold.failedAgentId).catch(() => {})
+      this.owner.deleteAgentOnce(cold.failedAgentId)
     return "failed"
   }
 }

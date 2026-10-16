@@ -25,10 +25,12 @@ import {
 
 export async function createRemoteView(
   opts: { agentId: string; baseUrl?: string } & Partial<RemoteSessionViewOptions>,
+  hooks?: { onCreated?: (view: RemoteSessionView) => void },
 ): Promise<RemoteSessionView> {
   const { agentId, baseUrl, ...rest } = opts
   const resolvedBaseUrl = (baseUrl ?? beUrl("")).replace(/\/$/, "")
   const view = createRemoteSessionView(agentId, resolvedBaseUrl, rest)
+  hooks?.onCreated?.(view)
   await view.connect()
   return view
 }
