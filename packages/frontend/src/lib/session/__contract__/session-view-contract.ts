@@ -14,7 +14,7 @@
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import { type Patch, RPC_METHODS } from "@drive-coding/core/session"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import type { SessionView, ViewEmission } from "../session-view.js"
+import type { SessionView } from "../session-view.js"
 
 // ─── PatchBuffer: reader יחיד + תור-FIFO פנימי ─────────────────────────────────
 //
@@ -23,69 +23,6 @@ import type { SessionView, ViewEmission } from "../session-view.js"
 // waitForTotalAtLeast(n) ממתין עד ש-n batches נצפו (totalPushed) — **בלי לצרוך** מה-buffer.
 // ⇒ settle()/emitUpdate()/emitPermission() קוראים ל-waitForTotalAtLeast (לא ל-nextPatches),
 //   כדי שה-batch שהם חיכו לו יישאר זמין ל-nextPatches() הבא שהאסרציה בטסט קוראת.
-export class PatchBuffer {
-  readonly #reader: ReadableStreamDefaultReader<ViewEmission>
-  readonly #buffer: Patch[][] = []
-  #totalPushed = 0
-  #waiters: Array<() => void> = []
-  #pumpDone: Promise<void>
-
-  constructor(stream: ReadableStream<ViewEmission>) {
-    this.#reader = stream.getReader()
-    this.#pumpDone = this.#pump()
-  }
-
-  get totalPushed(): number {
-    return this.#totalPushed
-  }
-
-  async #pump(): Promise<void> {
-    try {
-      while (true) {
-        const { done, value } = await this.#reader.read()
-        if (done) break
-        if (value !== undefined) {
-          this.#buffer.push(value.patches)
-          this.#totalPushed++
-          this.#drainWaiters()
-        }
-      }
-    } catch {
-      // stream נסגר/בוטל — תקין (dispose())
-    }
-  }
-
-  #drainWaiters(): void {
-    const waiters = this.#waiters
-    this.#waiters = []
-    for (const w of waiters) w()
-  }
-
-  #wait(): Promise<void> {
-    return new Promise((resolve) => this.#waiters.push(resolve))
-  }
-
-  /** צורך n batches מה-buffer (ממתין אם חסר). */
-  async nextPatches(n: number): Promise<Patch[][]> {
-    while (this.#buffer.length < n) await this.#wait()
-    return this.#buffer.splice(0, n)
-  }
-
-  /** ממתין עד ש-totalPushed >= target — **בלי לצרוך** מה-buffer. */
-  async waitForTotalAtLeast(target: number): Promise<void> {
-    while (this.#totalPushed < target) await this.#wait()
-  }
-
-  async dispose(): Promise<void> {
-    try {
-      await this.#reader.cancel()
-    } catch {
-      // כבר סגור
-    }
-    await this.#pumpDone.catch(() => {})
-  }
-}
-
 // ─── Contract types (brief §C1) ────────────────────────────────────────────────
 
 export type ContractHarness = {

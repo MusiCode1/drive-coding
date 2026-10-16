@@ -11,6 +11,7 @@ import { createRemoteView } from "./create-session-view"
 import { HttpConnection, type HttpConnectionDeps } from "./http-connection"
 import { LocalSessionView } from "./local-session-view"
 import type { SessionView } from "./session-view"
+import { createProjectionRecorder } from "./session-view-delivery"
 import { WsConnection, type WsConnectionDeps, type WsReconnectDeps } from "./ws-connection"
 
 const events: string[] = []
@@ -32,12 +33,12 @@ describe("WsConnection owner reader cleanup", () => {
     newView.adopt({ client: newClient, sessionId: "new-session" })
     const oldDispose = vi.spyOn(oldView, "dispose")
     const newDispose = vi.spyOn(newView, "dispose")
-    const oldReader = oldView.patches.getReader()
-    let oldDone = false
-    const oldRead = oldReader.read().then((value) => {
-      oldDone = value.done === true
-      return value
-    })
+    const oldFrames = vi.fn()
+    const newFrames = vi.fn()
+    oldView.bindProjection(createProjectionRecorder(oldFrames))
+    newView.bindProjection(createProjectionRecorder(newFrames))
+    const oldCallbacks = { onUpdate: (n: { update: unknown }) => oldView.ingestUpdate(n.update) }
+    const newCallbacks = { onUpdate: (n: { update: unknown }) => newView.ingestUpdate(n.update) }
     const deps = wsDeps()
     vi.mocked(deps.bindLocalView).mockReturnValueOnce(oldView).mockReturnValueOnce(newView)
     const owner = new WsConnection(deps)
@@ -53,25 +54,28 @@ describe("WsConnection owner reader cleanup", () => {
     owner.bindLocalView()
     owner.setClient(newClient)
 
-    await vi.waitFor(() => expect(oldDone).toBe(true))
-    await expect(oldRead).resolves.toEqual({ done: true, value: undefined })
-    oldReader.releaseLock()
-    expect(oldView.patches.locked).toBe(false)
+    await vi.waitFor(() => expect(oldDispose).toHaveBeenCalledOnce())
+    oldCallbacks.onUpdate?.({
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "late" } },
+    } as never)
+    expect(oldFrames).not.toHaveBeenCalled()
     expect(oldDispose).toHaveBeenCalledOnce()
     await expect(oldView.extMethod("probe", {})).rejects.toThrow("not connected")
     expect(newDispose).not.toHaveBeenCalled()
     expect(newClient.close).not.toHaveBeenCalled()
     await expect(newView.extMethod("probe", {})).resolves.toEqual({ owner: "new-view" })
-    const newReader = newView.patches.getReader()
-    let newDone = false
-    const newRead = newReader.read().then((value) => {
-      newDone = value.done === true
-    })
-    await Promise.resolve()
-    expect(newDone).toBe(false)
+    newCallbacks.onUpdate?.({
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "replacement" },
+      },
+    } as never)
+    expect(newFrames).toHaveBeenCalledOnce()
     newView.dispose()
-    await newRead
-    newReader.releaseLock()
+    newCallbacks.onUpdate?.({
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "late new" } },
+    } as never)
+    expect(newFrames).toHaveBeenCalledOnce()
   })
 })
 const waitBehaviors: Array<(close: (code: number, reason: string) => void) => Promise<void>> = []
@@ -287,11 +291,14 @@ describe("Connection transport ownership", () => {
   })
 
   it("HTTP new creates an agent before opening SSE and never constructs WS", async () => {
-    vi.mocked(createRemoteView).mockImplementationOnce(async () => {
+    vi.mocked(createRemoteView).mockImplementationOnce(async (_opts, hooks) => {
       events.push("createRemoteView")
-      return { state: { sessionId: "from-snapshot" } } as SessionView as Awaited<
+      const view = { state: { sessionId: "from-snapshot" } } as SessionView as Awaited<
         ReturnType<typeof createRemoteView>
       >
+      hooks?.onCreated?.(view)
+      hooks?.onReady?.(view)
+      return view
     })
     const deps = httpDeps()
     await new HttpConnection(deps).open({ kind: "new", cwd: "/repo", cliKind: "claude" })
@@ -303,10 +310,14 @@ describe("Connection transport ownership", () => {
 
   it("HTTP existing preserves the live agent on missing snapshot sessionId", async () => {
     const close = vi.fn(async () => {})
-    vi.mocked(createRemoteView).mockResolvedValueOnce({
-      state: { sessionId: null },
-      close,
-    } as unknown as Awaited<ReturnType<typeof createRemoteView>>)
+    vi.mocked(createRemoteView).mockImplementationOnce(async (_opts, hooks) => {
+      const view = { state: { sessionId: null }, close } as unknown as Awaited<
+        ReturnType<typeof createRemoteView>
+      >
+      hooks?.onCreated?.(view)
+      hooks?.onReady?.(view)
+      return view
+    })
     const deps = httpDeps()
     await new HttpConnection(deps).open({
       kind: "existing-http",

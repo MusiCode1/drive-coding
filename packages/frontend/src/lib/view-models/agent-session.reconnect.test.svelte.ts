@@ -73,6 +73,7 @@ import { createAttachedAcpClient } from "@drive-coding/provider/client"
 import { createAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
 import { createRemoteView } from "$lib/session/create-session-view"
 import { WsConnection } from "$lib/session/ws-connection"
+import { MockSessionView } from "./__fixtures__/mock-session-view.svelte"
 import { AgentSession } from "./agent-session.svelte"
 
 vi.stubGlobal("location", { protocol: "http:", host: "localhost:5173", search: "" })
@@ -382,11 +383,13 @@ describe("AgentSession — Connection consumer", () => {
 
   test("an active HTTP session reconnects without constructing a WS", async () => {
     const session = new AgentSession()
-    vi.mocked(createRemoteView).mockResolvedValueOnce({
-      state: createInitialSessionState({ sessionId: "remote-1" }),
-      patches: new ReadableStream({ start: (controller) => controller.close() }),
-      close: vi.fn(async () => {}),
-    } as unknown as Awaited<ReturnType<typeof createRemoteView>>)
+    vi.mocked(createRemoteView).mockImplementationOnce(async (_opts, hooks) => {
+      const view = new MockSessionView()
+      view.connect("remote-1")
+      hooks?.onCreated?.(view as never)
+      hooks?.onReady?.(view as never)
+      return view as never
+    })
     await session.attachRemoteToLiveAgent({
       agentId: "remote-agent",
       cwd: "/repo",

@@ -47,6 +47,7 @@ export type SessionOperationsDeps = {
   idle(): void
   resetTurn(): void
   clearTranscript(): void
+  beginProjection(sessionId: string | null): void
   title(value: string): void
   cwd(value: string): void
   enter(sessionId: string): void
@@ -143,6 +144,7 @@ export function createSessionOperations(d: SessionOperationsDeps) {
     d.status("connecting")
     d.resetError()
     d.clearTranscript()
+    d.beginProjection(input.sessionId)
     d.adoptLocal(state.client, input.sessionId)
     let target: SessionWriteTarget | undefined
     try {
@@ -222,6 +224,7 @@ export function createSessionOperations(d: SessionOperationsDeps) {
     d.status("connecting")
     d.resetError()
     d.clearTranscript()
+    d.beginProjection(null)
     d.title("")
     let target: SessionWriteTarget | undefined
     try {

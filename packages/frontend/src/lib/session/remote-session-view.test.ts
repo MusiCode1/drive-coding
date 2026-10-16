@@ -31,12 +31,13 @@ import {
 } from "@drive-coding/core/session"
 import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { ProjectionRecorder } from "./__contract__/projection-recorder"
 import {
   createRemoteSessionView,
   RemoteSessionView,
   type RemoteSessionViewOptions,
 } from "./remote-session-view.js"
-import type { ViewEmission } from "./session-view.js"
+import { createProjectionRecorder } from "./session-view-delivery"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -45,12 +46,14 @@ const encoder = new TextEncoder()
 /** Tracks every RemoteSessionView created via `newView()` so `afterEach` can close it. */
 const activeViews: RemoteSessionView[] = []
 
+const recorders = new WeakMap<RemoteSessionView, ProjectionRecorder>()
 function newView(
   agentId: string,
   baseUrl: string,
   opts: RemoteSessionViewOptions = {},
 ): RemoteSessionView {
   const view = new RemoteSessionView(agentId, baseUrl, opts)
+  recorders.set(view, new ProjectionRecorder(view))
   activeViews.push(view)
   return view
 }
@@ -140,23 +143,8 @@ function makeMockFetch(opts: {
   })
 }
 
-/** Read exactly n patch-arrays from the wrapped patches stream. */
-async function readNPatchArrays(
-  patches: ReadableStream<ViewEmission>,
-  n: number,
-): Promise<Patch[][]> {
-  const reader = patches.getReader()
-  const results: Patch[][] = []
-  try {
-    for (let i = 0; i < n; i++) {
-      const { value, done } = await reader.read()
-      if (done) break
-      if (value !== undefined) results.push(value.patches)
-    }
-  } finally {
-    reader.releaseLock()
-  }
-  return results
+async function readNPatchArrays(view: RemoteSessionView, n: number): Promise<Patch[][]> {
+  return recorders.get(view)!.nextPatches(n)
 }
 
 // ── connect() + state ────────────────────────────────────────────────────────
@@ -167,7 +155,11 @@ describe("RemoteSessionView — connect()", () => {
     const mockFetch = makeMockFetch({
       events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
 
     await view.connect()
 
@@ -187,10 +179,14 @@ describe("RemoteSessionView — connect()", () => {
         { event: "patch", data: JSON.stringify(patch) },
       ],
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
 
     await view.connect()
-    const results = await readNPatchArrays(view.patches, 1)
+    const results = await readNPatchArrays(view, 1)
 
     expect(results[0]).toEqual([patch])
     expect(view.state.title).toBe("hello")
@@ -217,11 +213,15 @@ describe("RemoteSessionView — connect()", () => {
         { event: "patch", data: JSON.stringify(patch) },
       ],
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
 
     // two concurrent connect() calls — must not open two SSE connections / drain loops
     await Promise.all([view.connect(), view.connect()])
-    await readNPatchArrays(view.patches, 1)
+    await readNPatchArrays(view, 1)
 
     const calls = (mockFetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
     const eventsCalls = calls.filter(([url]) => typeof url === "string" && url.includes("/events"))
@@ -244,7 +244,11 @@ describe("RemoteSessionView — connect()", () => {
         { event: "patch", data: JSON.stringify(goodPatch) },
       ],
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     // round 3 root-cause fix: SSEReader now validates patches at the wire
@@ -252,7 +256,7 @@ describe("RemoteSessionView — connect()", () => {
     // never reaches RemoteSessionView at all, so only the good patch arrives.
     // (Defense-in-depth in applyPatch/#applyIncoming/#drainPatches from round 2
     // still stands for any patch that somehow slips past validation.)
-    const results = await readNPatchArrays(view.patches, 1)
+    const results = await readNPatchArrays(view, 1)
 
     expect(view.state).not.toBeUndefined()
     expect(view.state.title).toBe("after")
@@ -273,7 +277,11 @@ describe("RemoteSessionView — connect()", () => {
         keepOpen: true,
       })
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
 
     await expect(view.connect()).rejects.toThrow("503")
     // retry must make a real HTTP request, not replay the same rejection
@@ -287,6 +295,7 @@ describe("RemoteSessionView — connect()", () => {
   it("round 2 #3: connect() after close() throws explicitly instead of silently no-op-ing", async () => {
     const mockFetch = makeMockFetch({ keepOpen: true })
     const view = new RemoteSessionView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: mockFetch,
       _sleep: noSleep,
     })
@@ -305,20 +314,9 @@ describe("RemoteSessionView — connect()", () => {
 
 describe("RemoteSessionView — hydration on first connect (slice remote-warm-reconnect C3)", () => {
   /** מוודא שאין עוד פליטות בערוץ — כשל-כפילות: reset שני היה מכפיל את ההיסטוריה ב-VM. */
-  async function expectNoMoreEmissions(
-    patches: ReadableStream<ViewEmission>,
-    ms = 50,
-  ): Promise<void> {
-    const reader = patches.getReader()
-    try {
-      const result = await Promise.race([
-        reader.read(),
-        new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), ms)),
-      ])
-      expect(result).toBe("timeout")
-    } finally {
-      reader.releaseLock()
-    }
+  async function expectNoMoreEmissions(view: RemoteSessionView, ms = 50): Promise<void> {
+    await new Promise((r) => setTimeout(r, ms))
+    expect(recorders.get(view)!.batches).toHaveLength(0)
   }
 
   it("snapshot with history → emits exactly one synthetic reset patch (no duplication)", async () => {
@@ -336,10 +334,14 @@ describe("RemoteSessionView — hydration on first connect (slice remote-warm-re
       keepOpen: true,
       events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
 
     await view.connect()
-    const results = await readNPatchArrays(view.patches, 1)
+    const results = await readNPatchArrays(view, 1)
 
     expect(results).toHaveLength(1)
     expect(results[0]?.[0]).toMatchObject({
@@ -354,7 +356,7 @@ describe("RemoteSessionView — hydration on first connect (slice remote-warm-re
     )
     expect(emitted && emitted.op === "reset" ? emitted.messages : []).toEqual(expectedMessages)
     // פעם אחת בלבד — אין reset שני בערוץ (רגרסיית כפילות)
-    await expectNoMoreEmissions(view.patches)
+    await expectNoMoreEmissions(view)
     // state עצמו נשאר ה-snapshot (הפליטה לא משנה state)
     expect(view.state.sessionId).toBe("sess-1")
     expect(view.state.messages).toHaveLength(2)
@@ -366,11 +368,15 @@ describe("RemoteSessionView — hydration on first connect (slice remote-warm-re
       keepOpen: true,
       events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
 
     await view.connect()
 
-    await expectNoMoreEmissions(view.patches)
+    await expectNoMoreEmissions(view)
   })
 
   it("reset patch precedes live patches (deterministic order in the VM channel)", async () => {
@@ -390,10 +396,14 @@ describe("RemoteSessionView — hydration on first connect (slice remote-warm-re
         { event: "patch", data: JSON.stringify(livePatch) },
       ],
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
 
     await view.connect()
-    const results = await readNPatchArrays(view.patches, 2)
+    const results = await readNPatchArrays(view, 2)
 
     expect(results[0]?.[0]?.op).toBe("reset") // hydration קודם — נפלט לפני drainPatches
     expect(results[1]?.[0]).toMatchObject({ op: "append-segment", version: 4 })
@@ -406,7 +416,11 @@ describe("RemoteSessionView — RPC methods", () => {
   it("prompt() POSTs /rpc with sessionId + content + meta", async () => {
     let captured: unknown
     const mockFetch = makeMockFetch({ onRpc: (b) => (captured = b) })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await view.prompt("hi there", { source: "voice" })
@@ -420,7 +434,11 @@ describe("RemoteSessionView — RPC methods", () => {
   it("cancel() POSTs /rpc cancel with sessionId", async () => {
     let captured: unknown
     const mockFetch = makeMockFetch({ onRpc: (b) => (captured = b) })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await view.cancel()
@@ -431,7 +449,11 @@ describe("RemoteSessionView — RPC methods", () => {
   it("setMode() POSTs /rpc setMode with sessionId + modeId", async () => {
     let captured: unknown
     const mockFetch = makeMockFetch({ onRpc: (b) => (captured = b) })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await view.setMode("compact")
@@ -445,7 +467,11 @@ describe("RemoteSessionView — RPC methods", () => {
   it("setConfigOption() POSTs /rpc setConfigOption with sessionId + configId + value", async () => {
     let captured: unknown
     const mockFetch = makeMockFetch({ onRpc: (b) => (captured = b) })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await view.setConfigOption("verbosity", "high")
@@ -459,7 +485,11 @@ describe("RemoteSessionView — RPC methods", () => {
   it("setSessionModel() POSTs /rpc setSessionModel with sessionId + model", async () => {
     let captured: unknown
     const mockFetch = makeMockFetch({ onRpc: (b) => (captured = b) })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await view.setSessionModel("claude-opus")
@@ -473,7 +503,11 @@ describe("RemoteSessionView — RPC methods", () => {
   it("extMethod() for a fire-and-forget method POSTs /rpc and returns ack", async () => {
     let captured: unknown
     const mockFetch = makeMockFetch({ onRpc: (b) => (captured = b) })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     const result = await view.extMethod("_drive/setThinkingTokens", { n: 100 })
@@ -487,7 +521,11 @@ describe("RemoteSessionView — RPC methods", () => {
 
   it("extMethod() for a return-value method (_drive/getQuota) throws", async () => {
     const mockFetch = makeMockFetch({})
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await expect(view.extMethod("_drive/getQuota", { sessionId: "sess-1" })).rejects.toThrow(
@@ -503,7 +541,11 @@ describe("RemoteSessionView — RPC methods", () => {
         capturedParams = params
       },
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     const blocks = [{ type: "image", mimeType: "image/png", data: "abc" }]
@@ -531,7 +573,11 @@ describe("RemoteSessionView — RPC methods", () => {
       }
       throw new Error(`unexpected fetch: ${url}`)
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await expect(view.setMode("compact")).rejects.toThrow("500")
@@ -551,7 +597,11 @@ describe("RemoteSessionView — RPC methods", () => {
       }
       throw new Error(`unexpected fetch: ${url}`)
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await expect(view.prompt("hi")).rejects.toThrow("404")
@@ -573,7 +623,11 @@ describe("RemoteSessionView — respond()", () => {
       events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
       onReply: (b) => (captured = b),
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await view.respond(7, { outcome: { outcome: "selected", optionId: "allow" } })
@@ -593,7 +647,11 @@ describe("RemoteSessionView — respond()", () => {
       events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
       onReply: (b) => (captured = b),
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await view.respond(3, { action: "accept" })
@@ -621,7 +679,11 @@ describe("RemoteSessionView — respond()", () => {
       events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
       onReply: (b) => (captured = b),
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await view.respond(6, {})
@@ -639,7 +701,11 @@ describe("RemoteSessionView — respond()", () => {
     const mockFetch = makeMockFetch({
       events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     const callsBefore = (mockFetch as ReturnType<typeof vi.fn>).mock.calls.length
@@ -655,6 +721,7 @@ describe("RemoteSessionView — newSession over rpc", () => {
   it("newSession() posts session/new and updates sessionId from the response", async () => {
     const seen: unknown[] = []
     const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
         if (url.includes("/events")) {
           return sseResponse([{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }], {
@@ -683,6 +750,7 @@ describe("RemoteSessionView — newSession over rpc", () => {
   it("newSession() without cwd omits cwd from params", async () => {
     const seen: unknown[] = []
     const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
         if (url.includes("/events")) {
           return sseResponse([{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }], {
@@ -748,6 +816,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
   it("listSessions: sends method + normalizes sessions + stores sessionCapabilities", async () => {
     const seen: unknown[] = []
     const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: rpcFetchFor({
         listSessionsBody: {
           sessions: [
@@ -774,6 +843,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
 
   it("supportsSessionDelete is false before any listSessions answer", async () => {
     const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: rpcFetchFor({}),
       _sleep: noSleep,
     })
@@ -783,6 +853,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
 
   it("supportsSessionDelete is false when capabilities lack delete", async () => {
     const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: rpcFetchFor({
         listSessionsBody: { sessions: [], sessionCapabilities: { list: {} } },
       }),
@@ -795,6 +866,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
 
   it("listSessions: a 502 carrying code -32601 rejects with the code on the error", async () => {
     const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: rpcFetchFor({
         listSessionsStatus: 502,
         listSessionsBody: { error: "Method not found", code: -32601 },
@@ -815,6 +887,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
   it("loadSession: updates #sessionId and state.sessionId from the answer; sends cwd when provided", async () => {
     const seen: unknown[] = []
     const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: rpcFetchFor({
         loadSessionBody: { sessionId: "sess-42", version: 7 },
         onRpc: (b) => seen.push(b),
@@ -836,6 +909,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
   it("loadSession: omits cwd from params when not provided", async () => {
     const seen: unknown[] = []
     const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: rpcFetchFor({
         loadSessionBody: { sessionId: "sess-42", version: 7 },
         onRpc: (b) => seen.push(b),
@@ -854,6 +928,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
   it("deleteSession: resolves on {ok:true}", async () => {
     const seen: unknown[] = []
     const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: rpcFetchFor({ onRpc: (b) => seen.push(b) }),
       _sleep: noSleep,
     })
@@ -868,6 +943,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
 
   it("deleteSession: {unsupported:true} rejects with code -32601 (VM handles gracefully like local)", async () => {
     const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: rpcFetchFor({ deleteSessionBody: { ok: false, unsupported: true } }),
       _sleep: noSleep,
     })
@@ -890,7 +966,11 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
       }
       throw new Error(`unexpected fetch: ${url}`)
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: fetchMock, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: fetchMock,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     const err = await view.deleteSession("sess-x").then(
@@ -907,6 +987,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
 describe("RemoteSessionView — close()", () => {
   it("closes without throwing, even before connect()", async () => {
     const view = new RemoteSessionView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: makeMockFetch({}),
       _sleep: noSleep,
     })
@@ -922,7 +1003,11 @@ describe("RemoteSessionView — close()", () => {
       events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
       onReply: (b) => (captured = b),
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await view.close()
@@ -943,7 +1028,11 @@ describe("RemoteSessionView — close()", () => {
       events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
       onReply: (b) => (captured = b),
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await view.close()
@@ -958,7 +1047,11 @@ describe("RemoteSessionView — close()", () => {
   it("does not POST /reply on close() when nothing is pending", async () => {
     let replyCalled = false
     const mockFetch = makeMockFetch({ onReply: () => (replyCalled = true) })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     await view.close()
@@ -986,9 +1079,13 @@ describe("RemoteSessionView — Speaker water-mark", () => {
         { event: "patch", data: JSON.stringify(patch) },
       ],
     })
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
-    await readNPatchArrays(view.patches, 1)
+    await readNPatchArrays(view, 1)
 
     expect(view.lastReadMessageId).toBe("m_0")
     expect(view.lastReadSegmentIndex).toBe(0)
@@ -1055,13 +1152,17 @@ describe("RemoteSessionView — reconnect mid-turn", () => {
       )
     })
 
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     // drain (slice remote-warm-reconnect C3 hydration): ה-snapshot של החיבור הראשון
     // נושא message אחד ⇒ reset הידרציה (v1), אחריו ה-append-segment (v2), ואז
     // ה-reset הסינתטי של ה-reconnect (v5).
-    const results = await readNPatchArrays(view.patches, 3)
+    const results = await readNPatchArrays(view, 3)
 
     expect(results[0]?.[0]).toMatchObject({ op: "reset", version: 1 }) // hydration
     expect(results[1]?.[0]).toMatchObject({ op: "append-segment", version: 2 })
@@ -1095,10 +1196,14 @@ describe("RemoteSessionView — reconnect mid-turn", () => {
       )
     })
 
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
-    const results = await readNPatchArrays(view.patches, 1)
+    const results = await readNPatchArrays(view, 1)
 
     // no synthetic reset patch was injected — only the real update-session patch
     expect(results[0]?.[0]).toMatchObject({ op: "update-session", version: 4 })
@@ -1178,12 +1283,16 @@ describe("RemoteSessionView — reconnect mid-turn", () => {
       )
     })
 
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
 
     // 3 genuine patches from connection 1, then the 3 replayed duplicates must be
     // silently skipped — the 4th read must be the fresh v4 patch, not a repeat of v1.
-    const results = await readNPatchArrays(view.patches, 4)
+    const results = await readNPatchArrays(view, 4)
 
     expect(results).toHaveLength(4)
     expect(results[3]?.[0]).toMatchObject({ version: 4, op: "update-session" })
@@ -1223,9 +1332,13 @@ describe("RemoteSessionView — reconnect mid-turn", () => {
       )
     })
 
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
-    await readNPatchArrays(view.patches, 1) // the synthetic reset patch from reconnect
+    await readNPatchArrays(view, 1) // the synthetic reset patch from reconnect
 
     expect(view.state.pending.permission).toMatchObject({ requestId: 9 })
     expect(view.state.title).toBe("Restored Title")
@@ -1252,9 +1365,13 @@ describe("RemoteSessionView — reconnect mid-turn", () => {
       )
     })
 
-    const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
     await view.connect()
-    await readNPatchArrays(view.patches, 1) // the synthetic reset patch from reconnect
+    await readNPatchArrays(view, 1) // the synthetic reset patch from reconnect
 
     expect(view.state.sessionId).toBe("sess-200-1")
     expect(view.state.version).toBe(2)
@@ -1267,6 +1384,7 @@ describe("createRemoteSessionView()", () => {
   it("returns a RemoteSessionView instance that connects and works end-to-end", async () => {
     const mockFetch = makeMockFetch({})
     const view = createRemoteSessionView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: mockFetch,
       _sleep: noSleep,
     })

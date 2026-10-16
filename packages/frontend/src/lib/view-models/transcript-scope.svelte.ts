@@ -7,13 +7,18 @@ import {
   createSubagentIndex,
   reduceSubagent,
 } from "./claude-subagent-parse"
+import type {
+  AnnotationTarget,
+  ThoughtSource,
+  TranscriptProcessingTarget,
+} from "./speaker-transcript-port"
 import {
   type AppendContent,
   type AppendCreation,
   reduceTranscriptAppend,
 } from "./transcript-append"
 
-/** Svelte adapter for transcript construction; Speaker annotations remain legacy writes until S3. */
+/** Svelte adapter for transcript construction; annotation writes validate the captured content identity. */
 export class TranscriptScope {
   #subagentIndex = createSubagentIndex()
   #pendingByParent: { parentId: string; event: ClaudeSubagentEvent }[] = []
@@ -46,6 +51,79 @@ export class TranscriptScope {
   }
 
   #content = $state<{ bubbles: Bubble[] }>({ bubbles: [] })
+  #processingTarget = $state.raw<TranscriptProcessingTarget>({} as TranscriptProcessingTarget)
+  #annotationTargets = new WeakMap<object, AnnotationTarget>()
+  #annotationContents = new WeakMap<AnnotationTarget, object>()
+
+  captureProcessingTarget(): TranscriptProcessingTarget {
+    return this.#processingTarget
+  }
+  captureAnnotationTarget(): AnnotationTarget {
+    let target = this.#annotationTargets.get(this.#content)
+    if (!target) {
+      target = {} as AnnotationTarget
+      this.#annotationTargets.set(this.#content, target)
+      this.#annotationContents.set(target, this.#content)
+    }
+    return target
+  }
+  isAnnotationTargetCurrent(target: AnnotationTarget): boolean {
+    return this.#annotationContents.get(target) === this.#content
+  }
+  writeToolNarration(
+    target: AnnotationTarget,
+    bubbleId: string,
+    toolCallId: string,
+    toolKind: string | undefined,
+    text: string,
+  ): boolean {
+    if (!this.isAnnotationTargetCurrent(target)) return false
+    const index = this.bubbles.findIndex((bubble) => bubble.id === bubbleId)
+    const bubble = this.bubbles[index]
+    if (
+      bubble?.kind !== "tool" ||
+      bubble.toolCall.toolCallId !== toolCallId ||
+      bubble.toolCall.kind !== toolKind
+    )
+      return false
+    this.#replaceAt(index, { ...bubble, toolCall: { ...bubble.toolCall, narration: text } })
+    return true
+  }
+  writeThoughtTranslation(
+    target: AnnotationTarget,
+    bubbleId: string,
+    segmentIndex: number,
+    source: ThoughtSource,
+    original: string,
+    translated: string,
+  ): boolean {
+    if (!this.isAnnotationTargetCurrent(target)) return false
+    const index = this.bubbles.findIndex((bubble) => bubble.id === bubbleId)
+    const bubble = this.bubbles[index]
+    if (bubble?.kind !== "thought") return false
+    const segment = bubble.segments[segmentIndex]
+    if (
+      !segment ||
+      segment.id !== source.id ||
+      (segment.originalText ?? segment.text) !== source.originalText
+    )
+      return false
+    const segments = bubble.segments.map((value, i) =>
+      i === segmentIndex ? { ...value, text: translated, originalText: original } : value,
+    )
+    this.#replaceAt(index, { ...bubble, segments })
+    return true
+  }
+  recentAssistantMessages(n: number = 3): string[] {
+    const result: string[] = []
+    for (let i = this.bubbles.length - 1; i >= 0 && result.length < n; i--) {
+      const b = this.bubbles[i]
+      if (b?.kind === "message") {
+        result.unshift(b.segments.map((s) => s.text).join(""))
+      }
+    }
+    return result
+  }
   #displaySnapshot = $state<Bubble[] | null>(null)
   get bubbles(): Bubble[] {
     return this.#content.bubbles
@@ -59,6 +137,7 @@ export class TranscriptScope {
 
   replace(next: Bubble[]): void {
     this.#content = { bubbles: next }
+    this.#processingTarget = {} as TranscriptProcessingTarget
   }
   freezeDisplay(): void {
     this.#displaySnapshot ??= this.bubbles
@@ -89,10 +168,15 @@ export class TranscriptScope {
   #replaceAt(index: number, bubble: Bubble): void {
     this.bubbles[index] = bubble
   }
-  applyPatches(patches: Patch[]): void {
+  applyPatches(patches: Patch[], resetOrigin?: "same-session-reconnect"): void {
     // A reset changes content identity while preserving the adapter's original array mutation.
     for (const patch of patches) {
-      if (patch.op === "reset") this.#content = { bubbles: this.bubbles }
+      if (patch.op === "reset") {
+        this.#content = { bubbles: this.bubbles }
+        if (resetOrigin !== "same-session-reconnect") {
+          this.#processingTarget = {} as TranscriptProcessingTarget
+        }
+      }
       applyPatchMutable(this.bubbles, [patch], { mapToolContent, mapLocations })
     }
   }

@@ -7,33 +7,66 @@
  *
  * ─── slice session-view-port C2 (TDD) ───
  */
-import { describe, it, expect } from "vitest"
-import type { SessionView, ViewEmission } from "./session-view"
+
 import { createInitialSessionState, type Patch } from "@drive-coding/core/session"
-import type { SessionInfo } from "$lib/adapters/sessions"
 import type { PromptBlocks } from "@drive-coding/provider/client"
+import { describe, expect, it } from "vitest"
+import type { SessionInfo } from "$lib/adapters/sessions"
+import type { SessionView } from "./session-view"
+import {
+  createProjectionRecorder,
+  type ProjectionSink,
+  SessionViewDelivery,
+} from "./session-view-delivery"
 
 // ─── Minimal mock implementation to verify the interface ───
 
 class MockSessionView implements SessionView {
-  readonly state = createInitialSessionState({ sessionId: null })
-  readonly patches: ReadableStream<ViewEmission> = new ReadableStream<ViewEmission>()
+  #delivery = new SessionViewDelivery()
+  get state() {
+    return this.#delivery.state
+  }
+  bindProjection(sink: ProjectionSink): void {
+    this.#delivery.bind(sink)
+  }
   readonly supportsSessionDelete = false
 
   prompt(_content: string | PromptBlocks, _meta?: Record<string, unknown>): Promise<void> {
     return Promise.resolve()
   }
-  cancel(): Promise<void> { return Promise.resolve() }
-  respond(_requestId: number, _result: unknown): Promise<void> { return Promise.resolve() }
-  setMode(_mode: string): Promise<void> { return Promise.resolve() }
-  setConfigOption(_key: string, _value: unknown): Promise<void> { return Promise.resolve() }
-  extMethod(_method: string, _params: unknown): Promise<unknown> { return Promise.resolve(null) }
-  newSession(_cwd?: string): Promise<void> { return Promise.resolve() }
-  loadSession(_sessionId: string, _cwd?: string): Promise<void> { return Promise.resolve() }
-  listSessions(): Promise<SessionInfo[]> { return Promise.resolve([]) }
-  deleteSession(_sessionId: string): Promise<void> { return Promise.resolve() }
-  setSessionModel(_model: string): Promise<void> { return Promise.resolve() }
-  close(): Promise<void> { return Promise.resolve() }
+  cancel(): Promise<void> {
+    return Promise.resolve()
+  }
+  respond(_requestId: number, _result: unknown): Promise<void> {
+    return Promise.resolve()
+  }
+  setMode(_mode: string): Promise<void> {
+    return Promise.resolve()
+  }
+  setConfigOption(_key: string, _value: unknown): Promise<void> {
+    return Promise.resolve()
+  }
+  extMethod(_method: string, _params: unknown): Promise<unknown> {
+    return Promise.resolve(null)
+  }
+  newSession(_cwd?: string): Promise<void> {
+    return Promise.resolve()
+  }
+  loadSession(_sessionId: string, _cwd?: string): Promise<void> {
+    return Promise.resolve()
+  }
+  listSessions(): Promise<SessionInfo[]> {
+    return Promise.resolve([])
+  }
+  deleteSession(_sessionId: string): Promise<void> {
+    return Promise.resolve()
+  }
+  setSessionModel(_model: string): Promise<void> {
+    return Promise.resolve()
+  }
+  close(): Promise<void> {
+    return Promise.resolve()
+  }
 }
 
 // ─── Tests ───
@@ -54,7 +87,7 @@ describe("SessionView interface contract", () => {
 
   it("patches is a ReadableStream", () => {
     const view = new MockSessionView()
-    expect(view.patches).toBeInstanceOf(ReadableStream)
+    expect(() => view.bindProjection(createProjectionRecorder(() => {}))).not.toThrow()
   })
 
   it("all methods are callable and return Promises", async () => {

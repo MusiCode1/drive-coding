@@ -28,9 +28,6 @@
  */
 
 import { createI18n, detectLocale } from "@drive-coding/core/i18n"
-import { DEFAULT_VOICE_CONFIG } from "@drive-coding/core/voice/capabilities"
-import type { NarrateContext, ToolCallForNarrate } from "@drive-coding/core/voice/narration-prompt"
-import { select } from "@drive-coding/core/voice/select"
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
 import {
   type SpeakableLabels,
@@ -40,22 +37,21 @@ import {
 import type { OrderAllocator, OrderKey } from "@drive-coding/core/voice/tts-queue"
 import { untrack } from "svelte"
 import { registerSpeaker, type SpeakerDebugInfo } from "$lib/debug/playback-registry"
-import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
 import { safeUUID } from "$lib/util/uuid"
-import { narrate } from "../adapters/voice/narrate"
 import type { AudioPlaylist, SegmentOwner } from "../engines/audio-playlist.svelte"
 import type { AudioSink } from "../engines/audio-sink"
 import type { CuesEngine } from "../engines/cues"
-import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
-import { ttsCapabilities } from "./capabilities.svelte"
+import type { AgentSessionStatus, TurnState } from "./agent-session.svelte"
 import type { Live } from "./live.svelte"
 import type { Settings } from "./settings.svelte"
+import { type AnnotationJobCapture, SpeakerAnnotationJobs } from "./speaker-annotation-jobs"
 import { executeSpeakerFetchJob } from "./speaker-fetch-job"
 import {
   createMessageThoughtJob,
   createToolJob,
   recordEnqueueObservability,
 } from "./speaker-job-enqueue"
+import type { SpeakerTranscriptPort, TranscriptProcessingTarget } from "./speaker-transcript-port"
 
 const MIN_CHARS = 20
 const MAX_CHARS = 200
@@ -72,6 +68,7 @@ export type FetchOutcome =
   | { kind: "error"; reason: "narration-null" | "provider-unavailable" | "synthesize-failed" }
 
 export type TtsJob = {
+  annotation?: AnnotationJobCapture
   segmentId: string
   kind: "message" | "thought" | "tool" // slice 22: הוסף "tool"
   messageId: string | null
@@ -98,7 +95,8 @@ export class Speaker implements SegmentOwner {
   // ui-polish-batch C8: מאותחל מ-settings.muted (false = מופעל, true = מושתק)
   enabled: boolean = $state(true)
 
-  readonly #session: AgentSession
+  readonly #session: SpeakerTranscriptPort
+  readonly #annotations: SpeakerAnnotationJobs
   readonly #settings: Settings
   readonly #audioStream: AudioSink
   readonly #player: AudioPlaylist
@@ -117,6 +115,7 @@ export class Speaker implements SegmentOwner {
     return this.#player.state === "playing" ? "speaking" : "idle"
   }
 
+  #processingTarget: TranscriptProcessingTarget | null = null
   #bubbleStates: Map<string, BubbleState> = new Map()
   #jobs: TtsJob[] = []
   #activeFetches = 0
@@ -136,8 +135,6 @@ export class Speaker implements SegmentOwner {
 
   #prevStatus: AgentSessionStatus = "idle"
   #prevTurnState: TurnState = "idle"
-  /** Slice 4: עוקב כמה מקטעים של כל ThoughtBubble תורגמו. */
-  #translatedSegByBubble: Map<string, number> = new Map()
   // slice 22: #narratingCallIds הוסר — #processedNarrationCallIds הוא ה-guard
   /** קריאות tool שכבר סוּפרו או דולגו בכוונה (השמעה חוזרת של היסטוריה / כשל narrate). */
   #processedNarrationCallIds: Set<string> = new Set()
@@ -149,7 +146,7 @@ export class Speaker implements SegmentOwner {
   #disposeEffect: (() => void) | null = null
 
   constructor(opts: {
-    session: AgentSession
+    session: SpeakerTranscriptPort
     settings: Settings
     cues?: CuesEngine
     /**
@@ -165,6 +162,7 @@ export class Speaker implements SegmentOwner {
     this.#orderAlloc = opts.orderAlloc
     this.#live = opts.live
     this.#session = opts.session
+    this.#annotations = new SpeakerAnnotationJobs(opts.session)
     this.#settings = opts.settings
     this.#cues = opts.cues
     // ui-polish-batch C8: אתחל enabled מ-settings.muted + סנכרן cues
@@ -198,11 +196,13 @@ export class Speaker implements SegmentOwner {
         // עוברים על bubbles → קוראים bubble.kind, bubble.id, bubble.messageId,
         // bubble.segments (ודרך שומר ספירת המקטעים, bubble.segments.length)
         const bubbles = this.#session.bubbles
+        const processingTarget = this.#session.processingTarget
         // נועל ריאקטיביות על segments.length של כל בועה כדי ש-`push` ל-
         // segments יפעיל את ה-effect (gotcha §6 #2).
-        const _segCounts = bubbles
-          .filter((b) => b.kind === "message" || b.kind === "thought")
-          .map((b) => (b as { segments: { id: string }[] }).segments.length)
+        const _segCounts = bubbles.map((b) => {
+          if (b.kind !== "message" && b.kind !== "thought") return 0
+          return b.segments.length
+        })
         void _segCounts
         // Slice 4: נעקב כדי ש-$effect ירוץ מחדש כאשר loadSession() מסיים
         // ומנקה את הדגל — מאפשר למקטעים חיים חדשים לזרום ל-TTS.
@@ -210,16 +210,16 @@ export class Speaker implements SegmentOwner {
         const historyEpoch = this.#session.historyEpoch ?? 0
         // Slice 4: נועל ריאקטיביות על סטטוס בועת tool + narration כדי להבחין
         // כאשר קריאת tool מושלמת או narration נכתב חזרה.
-        const _toolStatus = bubbles
-          .filter((b) => b.kind === "tool")
-          .map((b) => {
-            const tc = (b as ToolBubble).toolCall
-            return `${tc.toolCallId}:${tc.status}:${tc.narration ?? ""}`
-          })
+        const _toolStatus = bubbles.map((b) => {
+          if (b.kind !== "tool") return ""
+          const tc = b.toolCall
+          return `${tc.toolCallId}:${tc.status}:${tc.narration ?? ""}`
+        })
         void _toolStatus
 
         // ── כתיבות (לא-נעקבות) ─────────────────────────────────────────
         untrack(() => {
+          this.#useProcessing(processingTarget)
           if (liveOpen) {
             this.#stopAndClear()
             return
@@ -270,11 +270,18 @@ export class Speaker implements SegmentOwner {
   // פנימיות
   // ──────────────────────────────────────────────────────────────────────
 
+  #useProcessing(target: TranscriptProcessingTarget): void {
+    if (this.#processingTarget === target) return
+    this.#processingTarget = target
+    this.#bubbleStates = new Map()
+    this.#processedNarrationCallIds = new Set()
+  }
+
   #applyHistoryMark(epoch: number): void {
     if (epoch === this.#seenHistoryEpoch) return
     this.#seenHistoryEpoch = epoch
-    const mark = this.#session.historyMark
-    if (!mark) return
+    const { mark, processingTarget } = this.#session.historyMark
+    if (processingTarget === null || processingTarget !== this.#processingTarget) return
     for (const [bubbleId, count] of mark.segmentCounts) {
       const state = this.#bubbleStates.get(bubbleId) ?? {
         processedSegments: 0,
@@ -291,7 +298,7 @@ export class Speaker implements SegmentOwner {
   }
 
   #processBubbles(
-    bubbles: AgentSession["bubbles"],
+    bubbles: SpeakerTranscriptPort["bubbles"],
     enabled: boolean,
     isLoadingHistory: boolean,
     speakThoughts: boolean,
@@ -466,6 +473,7 @@ export class Speaker implements SegmentOwner {
     if (text.length === 0) return
     const orderKey = this.#orderAlloc.next(bubbleId ?? messageId ?? safeUUID())
     const { job, bid } = createMessageThoughtJob(kind, messageId, text, bubbleId, orderKey)
+    this.#annotations.capture(job)
     this.#jobs.push(job)
     this.#player.reserve(job.segmentId, orderKey, bid, this)
     this.#pendingCount += 1
@@ -576,12 +584,20 @@ export class Speaker implements SegmentOwner {
       if (job === undefined) break
       job.status = "fetching"
       this.#activeFetches += 1
-      void this.#fetchJob(job)
+      const attempt = job.abort
+      const capture = job.annotation
+      const reservationQueue = this.#jobs
+      void this.#fetchJob(job, attempt, capture)
         .then((outcome) => {
-          this.#applyFetchOutcome(job.segmentId, outcome)
+          if (job.abort !== attempt || !this.#annotations.isCurrent(capture)) return
+          this.#applyFetchOutcome(
+            job.segmentId,
+            attempt.signal.aborted ? { kind: "abandoned" } : outcome,
+          )
         })
         .finally(() => {
           this.#activeFetches -= 1
+          if (this.#jobs === reservationQueue && this.#pendingCount > 0) this.#pendingCount -= 1
           this.#pumpFetchLoop()
         })
     }
@@ -601,18 +617,20 @@ export class Speaker implements SegmentOwner {
     }
   }
 
-  async #fetchJob(job: TtsJob): Promise<FetchOutcome> {
-    try {
-      return await executeSpeakerFetchJob(job, {
-        settings: this.#settings,
-        narrateForJob: (j) => this.#narrateForJob(j),
-        persistThoughtTranslation: (b, o, t) => this.#persistThoughtTranslation(b, o, t),
-        prepareSegment: (sid, stream, abort, meta) =>
-          this.#audioStream.prepareSegment(sid, stream, abort, meta),
-      })
-    } finally {
-      if (this.#pendingCount > 0) this.#pendingCount -= 1
-    }
+  #fetchJob(
+    job: TtsJob,
+    attempt: AbortController,
+    capture: AnnotationJobCapture | undefined,
+  ): Promise<FetchOutcome> {
+    return executeSpeakerFetchJob(job, attempt, capture, {
+      settings: this.#settings,
+      narrateForJob: (j, a, c) => this.#annotations.narrateToolCall(j, a, c),
+      persistThoughtTranslation: (j, a, c, o, t) =>
+        this.#annotations.thoughtTranslation(j, a, c, o, t),
+      isCurrent: (c) => this.#annotations.isCurrent(c),
+      prepareSegment: (sid, stream, abort, meta) =>
+        this.#audioStream.prepareSegment(sid, stream, abort, meta),
+    })
   }
 
   /**
@@ -621,14 +639,14 @@ export class Speaker implements SegmentOwner {
    * slice 22: הסיר #narratingCallIds (היה memory leak potential). Guard: #processedNarrationCallIds.
    */
   #processToolBubbles(
-    bubbles: AgentSession["bubbles"],
+    bubbles: SpeakerTranscriptPort["bubbles"],
     enabled: boolean,
     isLoadingHistory: boolean,
     narrateTools: boolean,
   ): void {
     for (const bubble of bubbles) {
       if (bubble.kind !== "tool") continue
-      const tc = (bubble as ToolBubble).toolCall
+      const tc = bubble.toolCall
       if (isLoadingHistory) {
         this.#processedNarrationCallIds.add(tc.toolCallId)
         continue
@@ -658,6 +676,7 @@ export class Speaker implements SegmentOwner {
       const bid = bubble.id
       const orderKey = this.#orderAlloc.next(bid)
       const job = createToolJob(bid, tc.toolCallId, orderKey)
+      this.#annotations.capture(job)
       this.#jobs.push(job)
       this.#player.reserve(job.segmentId, orderKey, bid, this)
       this.#pendingCount += 1
@@ -665,82 +684,8 @@ export class Speaker implements SegmentOwner {
     }
   }
 
-  /**
-   * slice 22: קוראת narrate(), כותבת את הטקסט חזרה לבועה (לתצוגה),
-   * ומחזירה את הטקסט ל-TTS. מאחדת לוגיקה שהייתה ב-.then() הישן.
-   */
-  async #narrateForJob(job: TtsJob): Promise<string | null> {
-    if (job.toolCallId === undefined || job.bubbleId === undefined) return null
-    const idx = this.#session.bubbles.findIndex((b) => b.id === job.bubbleId)
-    if (idx === -1) return null
-    const b = this.#session.bubbles[idx]
-    if (b === undefined || b.kind !== "tool") return null
-    const tc = b.toolCall
-
-    const ctx: NarrateContext = {
-      userMessage: this.#session.lastUserMessage,
-      recentMessages: this.#session.recentAssistantMessages(3),
-    }
-    const tool: ToolCallForNarrate = {
-      toolCallId: tc.toolCallId,
-      kind: tc.kind,
-      title: tc.title ?? tc.name,
-    }
-    const text = await narrate(ctx, tool, select("narrate", DEFAULT_VOICE_CONFIG), job.abort.signal)
-    if (text === null) return null
-
-    // כתוב narration חזרה לבועה (תצוגה) — Svelte 5: החלף בועה שלמה.
-    const cur = this.#session.bubbles.findIndex((x) => x.id === job.bubbleId)
-    if (cur !== -1) {
-      const maybe = this.#session.bubbles[cur]
-      if (maybe !== undefined && maybe.kind === "tool") {
-        this.#session.bubbles[cur] = {
-          ...maybe,
-          toolCall: { ...maybe.toolCall, narration: text },
-        }
-      }
-    }
-    return text
-  }
-
-  /**
-   * Slice 4: כתיבת תוצאת תרגום חזרה למקטע של ThoughtBubble.
-   *
-   * כל TtsJob עבור בועת מחשבה תואם למשפט אחד מה-buffer המצטבר.
-   * ממפים jobs ברצף למקטעים (מונה segIdx פר-בועה). הערת דיוק: גבולות משפט
-   * אינם מתואמים בדיוק עם גבולות מקטע ACP — התרגום המוצג הוא ברמת משפט, לא
-   * ברמת מקטע. מקובל למטרות תצוגת MVP.
-   *
-   * אחרי עדכון: seg.text = עברית (בולטת), seg.originalText = אנגלית (קטנה).
-   * Svelte 5: החלף אובייקט בועה שלם כדי להפעיל ריאקטיביות.
-   */
-  #persistThoughtTranslation(
-    bubbleId: string,
-    originalEnglish: string,
-    translatedHebrew: string,
-  ): void {
-    const idx = this.#session.bubbles.findIndex((b) => b.id === bubbleId)
-    if (idx === -1) return
-    const maybeBubble = this.#session.bubbles[idx]
-    if (maybeBubble === undefined || maybeBubble.kind !== "thought") return
-    const bubble: ThoughtBubble = maybeBubble
-
-    const segIdx = this.#translatedSegByBubble.get(bubbleId) ?? 0
-    if (segIdx >= bubble.segments.length) {
-      // יותר משפטים ממקטעים — אין מקטע לעדכן.
-      return
-    }
-
-    // החלף את המקטע ב-segIdx: החלף text → עברית, originalText → אנגלית.
-    const updatedSegments: ThoughtBubble["segments"] = bubble.segments.map((seg, i) =>
-      i === segIdx ? { ...seg, text: translatedHebrew, originalText: originalEnglish } : seg,
-    )
-    // החלף בועה שלמה (ריאקטיביות Svelte 5 — השמת index מפעילה עדכון).
-    this.#session.bubbles[idx] = { ...bubble, segments: updatedSegments }
-    this.#translatedSegByBubble.set(bubbleId, segIdx + 1)
-  }
-
   #stopAndClear(): void {
+    this.#useProcessing(this.#session.processingTarget)
     // slice 6: reset משני — לcancel/toggle-off (לא רץ בסוף תור רגיל)
     this.#spokeThisTurn = false
     for (const job of this.#jobs) {

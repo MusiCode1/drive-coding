@@ -99,6 +99,7 @@ export class HttpConnection implements Connection {
     const isNew = agent.kind === "new"
     const attempt = this.#beginAttempt(isNew)
     this.deps.prepare(agent)
+    let ready = false
     try {
       const agentId = isNew
         ? (
@@ -115,6 +116,19 @@ export class HttpConnection implements Connection {
       const view = await createRemoteView(
         { agentId, ...this.deps.viewOptions() },
         {
+          onReady: (readyView) => {
+            if (this.#discardLate(attempt)) return false
+            const sessionId = readyView.state.sessionId
+            if (sessionId == null) {
+              void this.#closeView(attempt)
+              if (!this.#discardLate(attempt)) this.deps.missingSessionId(!isNew)
+              return false
+            }
+            this.deps.enterSession(sessionId)
+            if (!isNew) this.deps.applyTitle(agent)
+            this.deps.bindView(readyView)
+            ready = true
+          },
           onCreated: (created) => {
             attempt.view = created
             this.#discardLate(attempt)
@@ -123,15 +137,7 @@ export class HttpConnection implements Connection {
       )
       attempt.view = view
       if (this.#discardLate(attempt)) return
-      const sessionId = view.state.sessionId
-      if (sessionId == null) {
-        await this.#closeView(attempt)
-        if (!this.#discardLate(attempt)) this.deps.missingSessionId(!isNew)
-        return
-      }
-      this.deps.enterSession(sessionId)
-      if (!isNew) this.deps.applyTitle(agent)
-      this.deps.bindView(view)
+      if (!ready) return
       await this.deps.connected(isNew)
       if (this.#discardLate(attempt)) return
       if (isNew) {
