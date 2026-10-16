@@ -14,19 +14,18 @@ type PendingElicitation = {
   resolve: (r: ElicitationResponse) => void
 }
 
+export interface PendingRequestState {
+  pendingPermission: PendingPermission | null
+  pendingElicitation: PendingElicitation | null
+  error: string | null
+  readonly bypassActive: boolean
+}
+
 export interface PendingRequestDeps {
-  permission(): PendingPermission | null
-  setPermission(value: PendingPermission | null): void
-  elicitation(): PendingElicitation | null
-  setElicitation(value: PendingElicitation | null): void
-  answeredPermissionId(): number | null
-  setAnsweredPermissionId(value: number | null): void
-  answeredElicitationId(): number | null
-  setAnsweredElicitationId(value: number | null): void
+  state: PendingRequestState
+  answered: { permissionId: number | null; elicitationId: number | null }
   view(): SessionView | null
   tearingDown(): boolean
-  setError(value: string): void
-  bypassActive(): boolean
 }
 
 export function syncPendingPermission(
@@ -35,32 +34,32 @@ export function syncPendingPermission(
   view: SessionView,
 ): void {
   if (incoming === null) {
-    deps.setPermission(null)
+    deps.state.pendingPermission = null
     return
   }
   if (
-    incoming.requestId === deps.answeredPermissionId() ||
-    incoming.requestId === deps.permission()?.requestId
+    incoming.requestId === deps.answered.permissionId ||
+    incoming.requestId === deps.state.pendingPermission?.requestId
   )
     return
   const id = incoming.requestId
-  deps.setPermission({
+  deps.state.pendingPermission = {
     requestId: id,
     params: incoming.params as unknown as PermissionParams,
     resolve: (response) => {
       try {
-        deps.setAnsweredPermissionId(id)
+        deps.answered.permissionId = id
         void view.respond(id, response).catch(() => {
-          if (deps.tearingDown() || deps.view() !== view || deps.answeredPermissionId() !== id)
+          if (deps.tearingDown() || deps.view() !== view || deps.answered.permissionId !== id)
             return
-          deps.setAnsweredPermissionId(null)
-          deps.setError("reply failed")
+          deps.answered.permissionId = null
+          deps.state.error = "reply failed"
         })
       } catch {
         /* teardown must continue */
       }
     },
-  })
+  }
 }
 
 export function syncPendingElicitation(
@@ -69,52 +68,52 @@ export function syncPendingElicitation(
   view: SessionView,
 ): void {
   if (incoming === null) {
-    deps.setElicitation(null)
+    deps.state.pendingElicitation = null
     return
   }
   if (
-    incoming.requestId === deps.answeredElicitationId() ||
-    incoming.requestId === deps.elicitation()?.requestId
+    incoming.requestId === deps.answered.elicitationId ||
+    incoming.requestId === deps.state.pendingElicitation?.requestId
   )
     return
   const id = incoming.requestId
-  deps.setElicitation({
+  deps.state.pendingElicitation = {
     requestId: id,
     params: incoming.params as unknown as ElicitationParams,
     resolve: (response) => {
       try {
-        deps.setAnsweredElicitationId(id)
+        deps.answered.elicitationId = id
         void view.respond(id, response).catch(() => {
-          if (deps.tearingDown() || deps.view() !== view || deps.answeredElicitationId() !== id)
+          if (deps.tearingDown() || deps.view() !== view || deps.answered.elicitationId !== id)
             return
-          deps.setAnsweredElicitationId(null)
-          deps.setError("reply failed")
+          deps.answered.elicitationId = null
+          deps.state.error = "reply failed"
         })
       } catch {
         /* teardown must continue */
       }
     },
-  })
+  }
 }
 
 export function resolvePendingPermission(
   deps: PendingRequestDeps,
   response: PermissionResponse,
 ): void {
-  const pending = deps.permission()
+  const pending = deps.state.pendingPermission
   if (!pending) return
   pending.resolve(response)
-  deps.setPermission(null)
+  deps.state.pendingPermission = null
 }
 
 export function resolvePendingElicitation(
   deps: PendingRequestDeps,
   response: ElicitationResponse,
 ): void {
-  const pending = deps.elicitation()
+  const pending = deps.state.pendingElicitation
   if (!pending) return
   pending.resolve(response)
-  deps.setElicitation(null)
+  deps.state.pendingElicitation = null
 }
 
 export function cancelPendingDialogs(deps: PendingRequestDeps): void {
@@ -127,10 +126,10 @@ export function onRequestPermission(
   params: PermissionParams,
 ): Promise<PermissionResponse> {
   return new Promise<PermissionResponse>((resolve) => {
-    if (deps.permission()) {
+    if (deps.state.pendingPermission) {
       resolvePendingPermission(deps, { outcome: { outcome: "cancelled" } })
     }
-    if (deps.bypassActive()) {
+    if (deps.state.bypassActive) {
       const byKind = (k: string) => params.options.find((o) => o.kind === k)
       const chosen = byKind("allow_once") ?? byKind("allow_always") ?? params.options[0]
       resolve(
@@ -140,7 +139,7 @@ export function onRequestPermission(
       )
       return
     }
-    deps.setPermission({ params, resolve })
+    deps.state.pendingPermission = { params, resolve }
   })
 }
 
@@ -149,7 +148,7 @@ export function onCreateElicitation(
   params: ElicitationParams,
 ): Promise<ElicitationResponse> {
   return new Promise((resolve) => {
-    if (deps.elicitation()) resolvePendingElicitation(deps, { action: "cancel" })
-    deps.setElicitation({ params, resolve })
+    if (deps.state.pendingElicitation) resolvePendingElicitation(deps, { action: "cancel" })
+    deps.state.pendingElicitation = { params, resolve }
   })
 }

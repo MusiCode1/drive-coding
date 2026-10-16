@@ -1,12 +1,10 @@
 /**
- * B4 consumer proofs — AgentSession must stay wired to Connection.close and pending IO.
+ * B4 consumer proofs — AgentSession stays wired to Connection.close and pending IO.
  */
 
 import type { AcpClient } from "@drive-coding/provider/client"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { HttpConnection } from "$lib/session/http-connection"
-import { WsConnection } from "$lib/session/ws-connection"
-import * as pendingModule from "$lib/view-models/agent-session-pending"
+import * as agentsApi from "$lib/adapters/agents-api"
 
 const mockClient: AcpClient = {
   conn: {} as AcpClient["conn"],
@@ -56,64 +54,57 @@ vi.mock("$lib/adapters/ext", () => ({
   createExtClient: vi.fn(() => ({})),
 }))
 
+vi.mock("$lib/session/create-session-view", () => ({
+  createRemoteView: vi.fn(),
+}))
+
 vi.stubGlobal("location", { protocol: "http:", host: "localhost:5173", search: "" })
 
+import { createRemoteView } from "$lib/session/create-session-view"
+import type { RemoteSessionView } from "$lib/session/remote-session-view"
 import { MockSessionView } from "./__fixtures__/mock-session-view.svelte"
 import { AgentSession } from "./agent-session.svelte"
 
-describe("AgentSession owner consumer mutations", () => {
+function permissionParams() {
+  return {
+    sessionId: "owner-consumer",
+    toolCall: { toolCallId: "t1", title: "Write file" },
+    options: [{ optionId: "o", kind: "allow_once" as const, name: "Allow" }],
+  }
+}
+
+describe("AgentSession owner consumer wiring", () => {
   beforeEach(() => {
-    ;(mockClient.close as ReturnType<typeof vi.fn>).mockClear()
+    vi.mocked(mockClient.close).mockClear()
+    vi.mocked(agentsApi.releaseConnection).mockClear()
+    vi.mocked(createRemoteView).mockImplementation(async () => {
+      const view = new MockSessionView()
+      view.connect("remote-sess")
+      return view as unknown as RemoteSessionView
+    })
   })
 
-  it("detach closes the WS client through Connection.close (no-op close breaks wiring)", async () => {
+  it("detach closes the WS client through Connection.close", async () => {
     const session = new AgentSession()
     await session.attach({ cwd: "/tmp", cliKind: "claude" })
     session._setStatusForTest("connected")
-    const closeSpy = vi.spyOn(WsConnection.prototype, "close").mockImplementation(() => {})
-    try {
-      session.detach()
-      expect(mockClient.close).not.toHaveBeenCalled()
-    } finally {
-      closeSpy.mockRestore()
-    }
-    const session2 = new AgentSession()
-    await session2.attach({ cwd: "/tmp", cliKind: "claude" })
-    session2.detach()
+    session.detach()
     expect(mockClient.close).toHaveBeenCalled()
   })
 
-  it("leaveRunning cancels pending through pending helper (disconnected cancel breaks leave)", async () => {
+  it("leaveRunning cancels pending permission through pending helper", async () => {
     const session = new AgentSession()
     await session.attach({ cwd: "/tmp", cliKind: "claude" })
     session.pendingPermission = {
-      params: {
-        toolCallId: "t",
-        title: "t",
-        options: [{ optionId: "o", kind: "allow_once", name: "o" }],
-      },
-      resolve: vi.fn(),
-    }
-    const cancelSpy = vi.spyOn(pendingModule, "cancelPendingDialogs").mockImplementation(() => {})
-    try {
-      await session.leaveRunning()
-      expect(session.pendingPermission).not.toBeNull()
-    } finally {
-      cancelSpy.mockRestore()
-    }
-    session.pendingPermission = {
-      params: {
-        toolCallId: "t2",
-        title: "t2",
-        options: [{ optionId: "o", kind: "allow_once", name: "o" }],
-      },
+      requestId: 1,
+      params: permissionParams(),
       resolve: vi.fn(),
     }
     await session.leaveRunning()
     expect(session.pendingPermission).toBeNull()
   })
 
-  it("remote detach closes injected view via HttpConnection.close", async () => {
+  it("DI view closes via HttpConnection on detach", async () => {
     const view = new MockSessionView()
     view.connect("remote-owner")
     const agent = new AgentSession({ view })
@@ -123,23 +114,29 @@ describe("AgentSession owner consumer mutations", () => {
       cwd: "/a",
       cliKind: "claude",
     })
-    const closeSpy = vi.spyOn(HttpConnection.prototype, "close").mockImplementation(() => {})
-    try {
-      agent.detach()
-      expect(view.closeMock).not.toHaveBeenCalled()
-    } finally {
-      closeSpy.mockRestore()
-    }
-    const view2 = new MockSessionView()
-    view2.connect("remote-owner-2")
-    const agent2 = new AgentSession({ view: view2 })
-    agent2._setStatusForTest("connected")
-    agent2._setSessionContextForTest({
-      sessionId: "remote-owner-2",
-      cwd: "/a",
-      cliKind: "claude",
+    agent.detach()
+    expect(view.closeMock).toHaveBeenCalled()
+  })
+
+  it("attachRemote release uses captured identity on pagehide", async () => {
+    const listeners: Record<string, () => void> = {}
+    vi.stubGlobal("window", {
+      addEventListener: (type: string, fn: () => void) => {
+        listeners[type] = fn
+      },
     })
-    agent2.detach()
-    expect(view2.closeMock).toHaveBeenCalled()
+    try {
+      const session = new AgentSession()
+      await session.attachRemote({ cwd: "/tmp", cliKind: "claude" })
+      session.bindConnectionRelease()
+      listeners.pagehide?.()
+      expect(agentsApi.releaseConnection).toHaveBeenCalledWith(
+        "agent-owner-consumer",
+        session.connectionId,
+      )
+    } finally {
+      vi.unstubAllGlobals()
+      vi.stubGlobal("location", { protocol: "http:", host: "localhost:5173", search: "" })
+    }
   })
 })

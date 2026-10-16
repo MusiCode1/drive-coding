@@ -103,7 +103,6 @@ export async function runWarmReconnect(
       owner.finishWarmTransport(transport)
       return "connected"
     } catch {
-      owner.disposeFailedWarmView()
       reconnect.disposeFailedWarm()
       owner.discardTransport(transport)
       return "cold-eligible"

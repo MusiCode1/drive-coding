@@ -26,6 +26,8 @@ export interface Connection {
   cancelReconnect(): void
   /** Synchronous entry; closes captured resources fire-and-forget. Idempotent per bundle. */
   close(mode: CloseMode): void
-  /** Releases HTTP/WS ownership on the backend (pagehide / leave-running remote). */
-  release(agentId: string, connectionId: string): void
+  /** Releases ownership using agentId+connectionId captured at adoption (not live VM refs). */
+  release(): void
+  /** Updates captured release agent after warm/cold host swap. */
+  updateReleaseAgent?(agentId: string): void
 }
