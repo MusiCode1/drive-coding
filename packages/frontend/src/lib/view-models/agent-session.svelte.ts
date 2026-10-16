@@ -857,10 +857,10 @@ export class AgentSession {
 
   /**
    * שלב א' — **לפני** יצירת הלקוח (ה-callbacks קופאים ביצירתו — §2.5): משחרר את
-   * הקודם (`#localView.dispose()`, לא close — הלקוח משותף), בונה view חדש, **מציב
-   * אותו ב-#localView וב-#view מיד** (סוגר את חלון-היתום של attach/loadSession
-   * שנכשלים אחריו — §4.5), מפעיל את הניקוז (קורא-ריק — §4.5: patching כפול היה
-   * מכפיל בועות), ומחזיר אותו כדי לעטוף ב-tee.
+   * הקודם (`#localView.dispose()`, לא close — הלקוח משותף), ובונה view חדש עם
+   * state קנוני בבעלות SessionViewDelivery. מציב אותו ב-#localView וב-#view מיד
+   * (סוגר את חלון-היתום של attach/loadSession שנכשלים אחריו — §4.5), וקושר
+   * כותב פריימים סינכרוני; ה-holder ב-VM מקבל רק את state הפריים שנצרך.
    */
   #bindLocalView(): LocalSessionView {
     this.#localView?.dispose()
@@ -892,9 +892,9 @@ export class AgentSession {
 
   /**
    * שלב ב' — **אחרי** יצירת הלקוח, **לפני** כל קריאה שמזרימה היסטוריה (§4.4):
-   * מאמץ את הלקוח אל ה-view (מאפס את state ה-view לסשן החדש). נקודות 4/5
-   * (switchSession/newSession מקומיים) קוראות לו עם אותו לקוח — בלי dispose ובלי
-   * בנייה מחדש (ה-tee קפוא על ה-view שנוצר ביצירת הלקוח — §4.3).
+   * מאמץ את הלקוח וזהות הסשן אל ה-view ושומר תוכן ופריימים מוקדמים שכבר הגיעו.
+   * switchSession/newSession מקומיים משתמשים באותו לקוח ו-view בלי dispose או
+   * בנייה מחדש; ה-callbacks שנוצרו עם הלקוח ממשיכים למסור עדכונים לאותו view.
    */
   #adoptLocalView(client: AcpClient, sessionId: string): void {
     this.#localView?.adopt({ client, sessionId })
@@ -902,8 +902,8 @@ export class AgentSession {
   }
 
   /**
-   * מסנכן שדות metadata מ-SessionState (ישיר) לשדות ה-$state של ה-VM.
-   * נקרא אחרי כל batch patches מ-view.patches.
+   * מסנכרן שדות metadata מ-state הפריים שנצרך לשדות ה-$state של ה-VM.
+   * נקרא ב-endBatch של הכותב הסינכרוני במסלול HTTP.
    */
   #syncFromViewState(viewState: SessionState): void {
     // ─── slice view-switch C3-ו: view נלכד פעם אחת — משמש את ה-shim של pending למטה ───

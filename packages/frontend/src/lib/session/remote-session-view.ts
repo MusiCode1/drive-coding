@@ -11,10 +11,10 @@
  * listSessions/loadSession/deleteSession/newSession go through the BE rpc
  * (blocking mappings, real results).
  *
- * Reactivity: RemoteSessionView רק מתחזק state + מזרים patches (עוטף כל Patch בודד
- * מ-SSEReader ל-[patch] כדי להתאים ל-VM's ReadableStream<Patch[]>). ה-VM עושה את
- * ההחלה הממוקדת על Bubble[] (consumeViewPatches/applyPatchMutable, S1/S2) — לא כאן.
- * state עצמו מתעדכן דרך applyPatch (core, טהור/immutable) — לא כותבים applyPatch חדש.
+ * Reactivity: SessionViewDelivery מחזיק state קנוני יחיד; view.state הוא getter אליו.
+ * reader הרשת היחיד מזין producer טהור שמחשב FrameData, וה-delivery מוסר אותו
+ * לכותב סינכרוני שמחיל transcript ומפרסם state ב-core slot המקורי של הפריים.
+ * ה-holder ב-VM משקף רק את הפריים שנצרך; כשל UI מפסיק רק את מסירת הפריימים אליו.
  *
  * ─── slice remote-session-view C2+C3 (TDD) ───
  * ─── slice session-host-pending-surface C4: respond() — exact routing, no fallback ───
@@ -64,7 +64,7 @@ export type RemoteSessionViewOptions = {
  * Usage:
  *   const view = new RemoteSessionView("agent-1", "https://be.example.com")
  *   await view.connect()
- *   // view.state / view.patches מתעדכנים; view.prompt(...) וכו' שולחות RPC
+ *   // יש לקשור ProjectionSink לפני connect; view.state קנוני ופעולות נשלחות ב-RPC
  *   await view.close()  // כשמסיימים
  */
 export class RemoteSessionView implements SessionView {
