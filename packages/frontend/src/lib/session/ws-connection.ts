@@ -1,8 +1,9 @@
 import type { SessionConfigOption, SessionModeState } from "@agentclientprotocol/sdk"
 import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 import { type AcpClient, createAcpClient } from "@drive-coding/provider/client"
-import { createAgent, notifySessionAttached } from "$lib/adapters/agents-api"
-import type { AgentInput, Connection } from "./connection"
+import { createAgent, notifySessionAttached, releaseConnection } from "$lib/adapters/agents-api"
+import { sendDetachFrame } from "$lib/view-models/agent-session-detach-frame"
+import type { AgentInput, CloseMode, Connection } from "./connection"
 import type { LocalSessionView } from "./local-session-view"
 import { WsReconnectController, type WsReconnectDeps } from "./ws-reconnect-controller"
 
@@ -39,6 +40,8 @@ export type WsConnectionDeps = {
 /** The sole owner of a live ACP WebSocket for this session. */
 export class WsConnection implements Connection {
   #transport: WsAcpTransport | null = null
+  #client: AcpClient | null = null
+  #localView: LocalSessionView | null = null
   #connecting = false
   #controller: WsReconnectController | null
 
@@ -98,6 +101,65 @@ export class WsConnection implements Connection {
     this.#controller?.cancel()
   }
 
+  bindLocalView(): LocalSessionView {
+    const view = this.deps.bindLocalView()
+    this.#localView = view
+    return view
+  }
+
+  setClient(client: AcpClient): void {
+    this.#client = client
+    this.deps.setClient(client)
+  }
+
+  adoptLocalView(client: AcpClient, sessionId: string): void {
+    this.deps.adoptLocalView(client, sessionId)
+  }
+
+  /** Warm failure: dispose partial local view only (B3 — no client.close here). */
+  disposeFailedWarmView(): void {
+    const localView = this.#localView
+    if (this.#localView === localView) this.#localView = null
+    localView?.dispose()
+  }
+
+  /** Cold prepare: synchronous client close before pending cancel (B3). */
+  closeClientForCold(): void {
+    const client = this.#client
+    if (this.#client === client) this.#client = null
+    try {
+      client?.close()
+    } catch {
+      /* already closed */
+    }
+  }
+
+  release(agentId: string, connectionId: string): void {
+    void releaseConnection(agentId, connectionId)
+  }
+
+  close(mode: CloseMode): void {
+    const transport = this.#transport
+    const client = this.#client
+    const localView = this.#localView
+    if (this.#client === client) this.#client = null
+    if (this.#localView === localView) this.#localView = null
+    if (mode.kind !== "recover" && this.#transport === transport) {
+      this.#transport = null
+      this.#connecting = false
+    }
+    if (mode.kind === "preserve-agent" && transport) {
+      sendDetachFrame(transport)
+    }
+    try {
+      client?.close()
+    } catch {
+      /* already closed */
+    }
+    const view = localView
+    if (view) void view.close().catch(() => {})
+  }
+
   async reconnect(): Promise<void> {
     await this.#controller?.reconnectNow()
   }
@@ -130,9 +192,9 @@ export class WsConnection implements Connection {
         if (this.#transport === transport) this.deps.onClose(code, reason)
       })
       await transport.waitForOpen()
-      const localView = this.deps.bindLocalView()
+      const localView = this.bindLocalView()
       const client = await createAcpClient(transport, this.deps.callbacks(localView))
-      this.deps.setClient(client)
+      this.setClient(client)
       const meta = this.deps.sessionMeta()
       const result = await client.newSession({
         cwd: agent.cwd,
@@ -142,7 +204,7 @@ export class WsConnection implements Connection {
       const sessionId = (result as { sessionId?: string }).sessionId ?? null
       this.deps.enterSession(sessionId)
       if (!sessionId) throw new Error("newSession returned no sessionId")
-      this.deps.adoptLocalView(client, sessionId)
+      this.adoptLocalView(client, sessionId)
       this.deps.captureSessionConfig(result)
       await notifySessionAttached(agentId, sessionId).catch(() => {})
       await this.deps.connected()

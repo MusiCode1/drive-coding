@@ -17,8 +17,15 @@ export type AgentInput =
       cliKind: string
     } & ManualTitleInput)
 
+/** How Connection.close treats agent lifetime vs view/transport resources. */
+export type CloseMode = { kind: "preserve-agent" } | { kind: "end-view" } | { kind: "recover" }
+
 export interface Connection {
   open(agent: AgentInput): Promise<void>
   reconnect(): Promise<void>
   cancelReconnect(): void
+  /** Synchronous entry; closes captured resources fire-and-forget. Idempotent per bundle. */
+  close(mode: CloseMode): void
+  /** Releases HTTP/WS ownership on the backend (pagehide / leave-running remote). */
+  release(agentId: string, connectionId: string): void
 }

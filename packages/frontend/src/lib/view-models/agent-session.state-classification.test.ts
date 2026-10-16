@@ -55,7 +55,6 @@ describe("agent-session $state classification gate", () => {
         "bubbles",
         "configOptions",
         "cwd",
-        "error",
         "historyEpoch",
         "isLoadingHistory",
         "lastUserMessage",

@@ -1,5 +1,5 @@
-import { createAgent } from "$lib/adapters/agents-api"
-import type { AgentInput, Connection } from "./connection"
+import { createAgent, releaseConnection } from "$lib/adapters/agents-api"
+import type { AgentInput, CloseMode, Connection } from "./connection"
 import { createRemoteView } from "./create-session-view"
 import type { RemoteSessionViewOptions } from "./remote-session-view"
 import type { SessionView } from "./session-view"
@@ -18,13 +18,31 @@ export type HttpConnectionDeps = {
 }
 
 export class HttpConnection implements Connection {
+  #view: SessionView | null = null
+  #pendingView: SessionView | null = null
+
   constructor(private readonly deps: HttpConnectionDeps) {}
+
+  adoptExistingView(view: SessionView): void {
+    this.#view = view
+  }
 
   reconnect(): Promise<void> {
     return Promise.resolve()
   }
 
   cancelReconnect(): void {}
+
+  release(agentId: string, connectionId: string): void {
+    void releaseConnection(agentId, connectionId)
+  }
+
+  close(_mode: CloseMode): void {
+    const view = this.#view ?? this.#pendingView
+    if (this.#view === view) this.#view = null
+    if (this.#pendingView === view) this.#pendingView = null
+    if (view) void view.close().catch(() => {})
+  }
 
   async open(agent: AgentInput): Promise<void> {
     if (agent.kind === "existing-ws") throw new Error("HttpConnection requires an HTTP agent")
@@ -41,12 +59,21 @@ export class HttpConnection implements Connection {
             })
           ).agentId
         : agent.agentId
-      // A new agent must be owned by the VM before view creation, so failed SSE is cleaned.
       this.deps.setAgent(agentId)
-      const view = await createRemoteView({ agentId, ...this.deps.viewOptions() })
+      const view = await createRemoteView(
+        { agentId, ...this.deps.viewOptions() },
+        {
+          onCreated: (created) => {
+            this.#pendingView = created
+          },
+        },
+      )
+      if (this.#pendingView === view) this.#pendingView = null
+      this.#view = view
       const sessionId = view.state.sessionId
       if (sessionId == null) {
         await view.close()
+        this.#view = null
         this.deps.missingSessionId(!isNew)
         return
       }
@@ -56,6 +83,9 @@ export class HttpConnection implements Connection {
       await this.deps.connected(isNew)
       attached = true
     } catch (error) {
+      const pending = this.#pendingView
+      if (this.#pendingView === pending) this.#pendingView = null
+      if (pending) void pending.close().catch(() => {})
       this.deps.failed(error, !isNew)
     }
     if (attached && isNew) {
