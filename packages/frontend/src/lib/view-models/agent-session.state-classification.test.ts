@@ -18,6 +18,8 @@ const SESSION_SCOPED = new Set([
 
 const AGENT_SCOPED = new Set(["turnStalled", "#errorScope"])
 
+const TRANSCRIPT_SCOPED = new Set(["#content", "#displaySnapshot"])
+
 const CONNECTION_SCOPED = new Set(["sessions", "loading", "error"])
 
 function extractStateFields(path: string): string[] {
@@ -42,16 +44,15 @@ describe("agent-session $state classification gate", () => {
     ),
     ...pendingIn("session-scoped-state.svelte.ts", SESSION_SCOPED),
     ...pendingIn("sessions-cache-scope.svelte.ts", CONNECTION_SCOPED),
+    ...pendingIn("transcript-scope.svelte.ts", TRANSCRIPT_SCOPED),
   ]
 
   it("every $state field is classified", () => {
     expect(pending.sort()).toEqual(
       [
         "#cliKind",
-        "#displaySnapshot",
         "agentId",
         "authMethods",
-        "bubbles",
         "configOptions",
         "cwd",
         "historyEpoch",
@@ -75,5 +76,5 @@ describe("agent-session $state classification gate", () => {
   })
 })
 
-/** Measured after sessions-cache-scope C2 — 19 fields remain unscoped in AgentSession holders. */
-const PENDING_CAP = 19
+/** C2 transcript ownership classifies the content and display snapshot; 17 fields remain. */
+const PENDING_CAP = 17

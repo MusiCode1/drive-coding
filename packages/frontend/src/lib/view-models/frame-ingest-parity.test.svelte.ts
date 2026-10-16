@@ -88,6 +88,14 @@ class HttpReplayView implements SessionView {
     }
   }
 
+  resetTranscript(): void {
+    this.state = {
+      ...createInitialSessionState({ sessionId: this.state.sessionId }),
+      status: "connected",
+    }
+    this.#emit([{ version: 2, op: "reset", nextMessageSeq: 0, nextSegmentSeq: 0, messages: [] }])
+  }
+
   #emit(patches: Patch[], updates: unknown[] = []): void {
     try {
       this.#controller?.enqueue({ patches, updates })
@@ -536,5 +544,41 @@ it("C1 WS observes nullish update and changes turn before agent-null throws", as
   expect(() => capturedOnUpdate?.({ update } as unknown as SessionNotification)).toThrow(TypeError)
   expect(agent.turnState).toBe("responding")
   expect(observations).toContain(update)
+  agent.detach()
+})
+
+it("C2 HTTP reset/replay replaces previous transcript at the same session ID", async () => {
+  const view = new HttpReplayView()
+  view.connect("same-http-session")
+  const observed: unknown[] = []
+  const agent = new AgentSession({ view, _onUpdateObserved: (update) => observed.push(update) })
+  agent._setStatusForTest("connected")
+  view.applyIncoming({
+    version: 1,
+    updates: [
+      {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "old",
+        content: { type: "text", text: "http-old" },
+      },
+    ],
+  })
+  await vi.waitFor(() => expect(flatMessageTexts(agent.bubbles)).toEqual(["http-old"]))
+  const original = agent.bubbles
+  view.resetTranscript()
+  view.applyIncoming({
+    version: 2,
+    updates: [
+      {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "fresh",
+        content: { type: "text", text: "http-fresh" },
+      },
+    ],
+  })
+  await vi.waitFor(() => expect(flatMessageTexts(agent.bubbles)).toEqual(["http-fresh"]))
+  expect(agent.bubbles).toBe(original)
+  expect(view.state.sessionId).toBe("same-http-session")
+  expect(observed).toHaveLength(2)
   agent.detach()
 })

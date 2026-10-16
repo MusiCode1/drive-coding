@@ -629,3 +629,62 @@ describe("DoD 16 — throw ב-view.#onUpdate לא נוגע ל-VM", () => {
     expect(session.bubbles.filter((b) => b.kind === "message")).toHaveLength(1)
   })
 })
+
+// C2: exercise early input through the public lifecycle and the actual tee callbacks.
+describe("C2 early transcript frames", () => {
+  function transcriptTexts(session: AgentSession): string[] {
+    return session.bubbles.flatMap((b) => (b.kind === "tool" ? [] : b.segments.map((s) => s.text)))
+  }
+
+  it.each(["initial", "warm"] as const)(
+    "keeps exactly one early chunk across %s newSession adoption",
+    async (mode) => {
+      const session = new AgentSession()
+      if (mode === "warm") await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+      let finish!: (value: { sessionId: string }) => void
+      const barrier = new Promise<{ sessionId: string }>((resolve) => {
+        finish = resolve
+      })
+      vh.state.newSessionMock.mockImplementationOnce(() => {
+        sendReplayChunk(`early-${mode}`, `early-${mode}`)
+        return barrier
+      })
+      const pending =
+        mode === "initial"
+          ? session.attach({ cwd: "/tmp", cliKind: "opencode" })
+          : session.newSession({ cliKind: "opencode" })
+      await vi.waitFor(() => expect(transcriptTexts(session)).toEqual([`early-${mode}`]))
+      expect(JSON.stringify(lastView().state.messages)).toContain(`early-${mode}`)
+      const early = session.bubbles[0]
+      finish({ sessionId: `adopted-${mode}` })
+      await pending
+      expect(session.sessionId).toBe(`adopted-${mode}`)
+      expect(transcriptTexts(session)).toEqual([`early-${mode}`])
+      expect(session.bubbles[0]).toBe(early)
+      session.detach()
+    },
+  )
+
+  it("switch clears before replay and keeps early load content after resolution", async () => {
+    const session = new AgentSession()
+    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+    sendReplayChunk("old-content", "old")
+    let finish!: (value: Record<string, never>) => void
+    const barrier = new Promise<Record<string, never>>((resolve) => {
+      finish = resolve
+    })
+    vh.state.loadSessionMock.mockImplementationOnce(() => {
+      expect(transcriptTexts(session)).toEqual([])
+      sendReplayChunk("early-load", "early-load")
+      return barrier
+    })
+    const pending = session.switchSession({ sessionId: "loaded", cwd: "/tmp", cliKind: "opencode" })
+    await vi.waitFor(() => expect(transcriptTexts(session)).toEqual(["early-load"]))
+    const early = session.bubbles[0]
+    finish({})
+    await pending
+    expect(transcriptTexts(session)).toEqual(["early-load"])
+    expect(session.bubbles[0]).toBe(early)
+    session.detach()
+  })
+})
