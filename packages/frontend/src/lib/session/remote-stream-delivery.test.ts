@@ -252,3 +252,100 @@ it("terminal cleanup is once even when terminal observer closes reentrantly and 
   expect(h.terminal).toHaveBeenCalledTimes(1)
   expect(h.delivery.state.status).toBe("disconnected")
 })
+
+it("host lifecycle survives observer failure once, without reviving UI on ordinary or same-host frames", () => {
+  const h = harness()
+  const lifecycle = vi.fn()
+  const observer = vi.fn(() => {
+    throw new Error("observer fault")
+  })
+  const apply = vi.fn(h.sink.applyFrame)
+  h.delivery.bind({
+    ...h.sink,
+    beforeUpdate: observer,
+    applyFrame: apply,
+    onHostRecreated: lifecycle,
+  })
+  h.ingress.event({
+    kind: "update",
+    source: h.a,
+    batch: { version: 44, updates: [textUpdate("fault")] },
+  })
+  h.ingress.snapshot(snap(source(), 45))
+  expect(lifecycle).not.toHaveBeenCalled()
+  const b = source("host-B")
+  h.ingress.snapshot(snap(b, 13))
+  h.ingress.event({
+    kind: "update",
+    source: b,
+    batch: { version: 17, updates: [textUpdate("canonical")] },
+  })
+  expect(lifecycle).toHaveBeenCalledTimes(1)
+  expect(observer).toHaveBeenCalledTimes(1)
+  expect(apply).not.toHaveBeenCalled()
+  expect(h.delivery.state.version).toBe(17)
+})
+it.each(["close", "owner-swap"])(
+  "host lifecycle reentrant %s blocks old UI, fallback, commit and endBatch",
+  (kind) => {
+    const h = harness()
+    const c = source("host-C")
+    const lifecycle = vi.fn(() => {
+      if (lifecycle.mock.calls.length > 1) return
+      if (kind === "close") h.ingress.beginClose()
+      else h.ingress.snapshot(snap(c, 7))
+    })
+    h.delivery.bind({ ...h.sink, onHostRecreated: lifecycle })
+    h.ingress.snapshot(snap(source("host-B"), 13))
+    expect(h.delivery.state.version).toBe(kind === "close" ? 43 : 7)
+    expect(h.frames.map((f) => f.state.version)).toEqual(kind === "close" ? [] : [7])
+    expect(h.end).toHaveBeenCalledTimes(kind === "close" ? 0 : 1)
+  },
+)
+it("stale permit prevents lifecycle; invalidation inside it blocks UI, fallback and commit; dispose removes it", () => {
+  const h = harness()
+  let valid = false
+  const lifecycle = vi.fn(() => {
+    valid = false
+  })
+  const apply = vi.fn(h.sink.applyFrame)
+  const commit = vi.fn()
+  h.delivery.bind({ ...h.sink, onHostRecreated: lifecycle, applyFrame: apply })
+  const frame: FrameData = {
+    state: hostState(13),
+    patches: [],
+    actions: [],
+    reset: true,
+    toolDisposition: "none",
+    boundary: "host-recreated",
+  }
+  expect(h.delivery.frame(frame, true, () => valid, commit)).toBe(false)
+  expect(lifecycle).not.toHaveBeenCalled()
+  valid = true
+  expect(h.delivery.frame(frame, true, () => valid, commit)).toBe(false)
+  expect(lifecycle).toHaveBeenCalledTimes(1)
+  expect(apply).not.toHaveBeenCalled()
+  expect(commit).not.toHaveBeenCalled()
+  expect(h.delivery.state.version).toBe(43)
+  h.delivery.dispose()
+  h.delivery.frame(frame, true)
+  expect(lifecycle).toHaveBeenCalledTimes(1)
+})
+it("lifecycle failure escapes the observer boundary and does not stop a healthy UI sink", () => {
+  const h = harness()
+  const fault = new Error("lifecycle fault")
+  const apply = vi.fn(h.sink.applyFrame)
+  h.delivery.bind({
+    ...h.sink,
+    applyFrame: apply,
+    onHostRecreated: () => {
+      throw fault
+    },
+  })
+  expect(() => h.ingress.snapshot(snap(source("host-B"), 13))).toThrow(fault)
+  expect(h.delivery.state.version).toBe(43)
+  expect(apply).not.toHaveBeenCalled()
+  h.ingress.snapshot(snap(source("host-B"), 14))
+  expect(h.delivery.state.version).toBe(14)
+  expect(apply).toHaveBeenCalledTimes(1)
+})

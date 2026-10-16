@@ -141,3 +141,78 @@ it("late opening fetch from a closed run cannot inject snapshot into the new run
   old.end()
   fresh.end()
 })
+
+it.each(["snapshot-json", "snapshot-envelope", "http409-json"])(
+  "reconnect %s has the contracted terminal classification",
+  async (kind) => {
+    const first = new HttpStream(hostState(43))
+    first.end()
+    let calls = 0
+    const reader = new SSEReader("http://synthetic.invalid/events", {
+      _sleep: async () => {},
+      _fetch: async () => {
+        calls++
+        if (calls === 1) return first.response
+        if (calls === 2) {
+          if (kind === "http409-json") return new Response("{", { status: 409 })
+          return new Response(
+            `event: snapshot\ndata: ${kind === "snapshot-json" ? "{" : JSON.stringify({ sessionId: "same-sid", version: 13, updates: [] })}\n\n`,
+            { headers: { "content-type": "text/event-stream" } },
+          )
+        }
+        return new Response(null, { status: 404 })
+      },
+    })
+    readers.push(reader)
+    const { events } = await reader.connect()
+    const stream = events.getReader()
+    const received: RemoteStreamEvent[] = []
+    try {
+      while (true) {
+        const item = await stream.read()
+        if (item.done) break
+        received.push(item.value)
+      }
+    } finally {
+      stream.releaseLock()
+    }
+    expect(received).toHaveLength(1)
+    expect(received[0]).toMatchObject({
+      kind: "terminal",
+      reason: kind === "http409-json" ? "unavailable" : "protocol-error",
+    })
+    expect(calls).toBe(kind === "http409-json" ? 3 : 2)
+  },
+)
+
+it("initial malformed snapshot rejects setup without retry", async () => {
+  let calls = 0
+  const reader = make(async () => {
+    calls++
+    return new Response("event: snapshot\ndata: {\n\n")
+  })
+  await expect(reader.connect()).rejects.toThrow("invalid snapshot JSON")
+  expect(calls).toBe(1)
+})
+
+it("reconnect transport SyntaxError stays transient rather than protocol terminal", async () => {
+  const first = new HttpStream(hostState(43))
+  first.end()
+  let calls = 0
+  const reader = make(async () => {
+    calls++
+    if (calls === 1) return first.response
+    if (calls === 2)
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new SyntaxError("transport failure"))
+          },
+        }),
+      )
+    return new Response(null, { status: 404 })
+  })
+  const { events } = await reader.connect()
+  expect(await all(events)).toMatchObject([{ kind: "terminal", reason: "unavailable" }])
+  expect(calls).toBe(3)
+})

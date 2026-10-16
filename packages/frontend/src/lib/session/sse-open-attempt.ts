@@ -133,7 +133,14 @@ export async function openSseAttempt(d: {
       check()
     }
     if (next.done) throw new Error("SSEReader: no snapshot frame received")
-    const raw: unknown = JSON.parse(next.value.data)
+    let raw: unknown
+    try {
+      raw = JSON.parse(next.value.data)
+    } catch (error) {
+      if (error instanceof SyntaxError)
+        throw new SseProtocolError("SSEReader: invalid snapshot JSON")
+      throw error
+    }
     const parsed = snapshotEnvelope(raw)
     if (parsed instanceof type.errors || !Number.isFinite(parsed.version))
       throw new SseProtocolError("SSEReader: invalid snapshot envelope")

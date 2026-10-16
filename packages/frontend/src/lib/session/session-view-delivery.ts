@@ -8,6 +8,7 @@ import {
 } from "./session-view-projection"
 
 export type ProjectionSink = {
+  onHostRecreated?(): void
   beforeUpdate(update: unknown): void
   toolContext(update: unknown, actions: FrameAction[]): ToolContext
   applyFrame(frame: FrameData, publish: () => void): void
@@ -138,6 +139,8 @@ export class SessionViewDelivery {
       onCommit?.(frame)
     }
     let applied = false
+    if (!current()) return false
+    if (frame.boundary === "host-recreated") this.#sink?.onHostRecreated?.()
     if (!current()) return false
     this.#ui(remote, (sink) => {
       sink.applyFrame(frame, publish)

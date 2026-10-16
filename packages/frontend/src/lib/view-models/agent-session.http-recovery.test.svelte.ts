@@ -6,6 +6,7 @@ import {
   hostState,
   textUpdate,
 } from "$lib/session/__contract__/http-recovery-fixture"
+import { RemoteSessionView } from "$lib/session/remote-session-view"
 import { AgentSession } from "./agent-session.svelte"
 
 const sessions: AgentSession[] = []
@@ -14,6 +15,7 @@ afterEach(() => {
   for (const session of sessions.splice(0)) session.detach()
   for (const stream of streams.splice(0)) stream.end()
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
 })
 const pending = (kind: "permission" | "elicitation"): SessionState["pending"] => ({
   permission:
@@ -236,4 +238,51 @@ it("observer failure then terminal ends VM turn via lifecycle, keeps transcript 
         (r.body as { method?: string })?.method === "session/cancel",
     ),
   ).toEqual([])
+})
+
+it("host recreation invalidates RPC ownership even after the UI observer has stopped", async () => {
+  let observed = 0
+  let remote!: RemoteSessionView
+  const connect = RemoteSessionView.prototype.connect
+  vi.spyOn(RemoteSessionView.prototype, "connect").mockImplementation(function (
+    this: RemoteSessionView,
+  ) {
+    remote = this
+    return connect.call(this)
+  })
+  const h = await harness({ pending: pending("permission") }, () => {
+    observed++
+    throw new Error("controlled observer failure")
+  })
+  const oldPending = h.session.pendingPermission
+  if (!oldPending) throw new Error("Missing initial permission")
+  const completion = deferred<Response>()
+  h.rpc(() => completion.promise)
+  const old = h.session.switchSession({ sessionId: "same-sid", cwd: "/tmp", cliKind: "claude" })
+  await wait(() => expect(h.session.isLoadingHistory).toBe(true))
+  h.first.update(44, textUpdate("observer boundary"))
+  await wait(() => expect(observed).toBe(1))
+  h.first.end()
+  await wait(() => expect(remote.hostIncarnation).toBe("host-B"))
+  expect(remote.state.version).toBe(13)
+  const afterHost = { loading: h.session.isLoadingHistory, error: h.session.error }
+  const beforeReply = h.writes.filter((r) => r.url.endsWith("/reply")).length
+  oldPending.resolve({ outcome: { outcome: "selected", optionId: "allow" } })
+  expect(h.writes.filter((r) => r.url.endsWith("/reply"))).toHaveLength(beforeReply)
+  h.rpc(async () => Response.json({ sessionId: "same-sid" }))
+  const nextResult = await h.session
+    .switchSession({ sessionId: "same-sid", cwd: "/tmp", cliKind: "claude" })
+    .then(
+      () => "accepted",
+      (e) => String(e),
+    )
+  completion.resolve(Response.json({ sessionId: "obsolete-sid" }))
+  await old
+  expect.soft(afterHost.loading).toBe(false)
+  expect.soft(nextResult).toBe("accepted")
+  expect.soft(h.session.error).toBeNull()
+  expect(h.session.sessionId).toBe("same-sid")
+  expect(h.session.isLoadingHistory).toBe(false)
+  expect(h.session.pendingPermission).toBeNull()
+  expect(observed).toBe(1)
 })
