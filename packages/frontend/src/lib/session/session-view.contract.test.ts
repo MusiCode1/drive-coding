@@ -32,13 +32,14 @@ import {
 import { toWireText } from "@drive-coding/core/session/testing"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { ProjectionRecorder } from "./__contract__/projection-recorder"
 import {
   type ContractHarness,
   describeSessionViewContract,
-  PatchBuffer,
 } from "./__contract__/session-view-contract.js"
 import { LocalSessionView } from "./local-session-view.js"
 import { RemoteSessionView } from "./remote-session-view.js"
+import { createProjectionRecorder } from "./session-view-delivery"
 
 // ⚠️ `AcpClientCallbacks` אינו re-exported מ-"@drive-coding/provider/client" (פער קיים,
 // לא בהיקף ה-slice — משפיע כבר על local-session-view.ts/test.ts). נגזר structurally
@@ -89,12 +90,11 @@ async function createLocalHarness(): Promise<ContractHarness> {
       return client
     },
   })
+  const pb = new ProjectionRecorder(view)
   // ⚠️ חובה — LocalSessionView בונה את ה-client/callbacks רק כאן (brief §C1)
   await view.newSession()
   if (!cbs) throw new Error("createLocalHarness: newSession() did not invoke createClient")
   const boundCbs = cbs as CapturedCallbacks
-
-  const pb = new PatchBuffer(view.patches)
 
   return {
     view,
@@ -190,9 +190,8 @@ async function createRemoteHarness(): Promise<ContractHarness> {
     _fetch: mockFetch,
     _sleep: () => Promise.resolve(),
   })
+  const pb = new ProjectionRecorder(view)
   await view.connect()
-
-  const pb = new PatchBuffer(view.patches)
 
   /** דוחף patches (frame-per-patch — כמו production) וממתין שיוחלו, בלי לצרוך מה-buffer. */
   async function pushAndWait(patches: Patch[]): Promise<void> {
@@ -347,6 +346,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
 
   it("newSession/loadSession/listSessions/deleteSession perform real RPCs", async () => {
     const view = new RemoteSessionView("a1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: mockFetchFor({}),
       _sleep: () => Promise.resolve(),
     })
@@ -372,6 +372,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
 
   it("prompt(PromptBlocks) passes blocks to RPC without throwing (slice remote-images C1)", async () => {
     const view = new RemoteSessionView("a1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: mockFetchFor({}),
       _sleep: () => Promise.resolve(),
     })
@@ -383,6 +384,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
 
   it("an HTTP failure (5xx) on any RPC is rejected -- not silently swallowed", async () => {
     const view = new RemoteSessionView("a1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: mockFetchFor({ rpcStatus: 500 }),
       _sleep: () => Promise.resolve(),
     })
@@ -394,6 +396,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
 
   it("respond() with an unknown id is a silent no-op (like LocalSessionView)", async () => {
     const view = new RemoteSessionView("a1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
       _fetch: mockFetchFor({
         events: [
           {

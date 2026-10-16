@@ -11,28 +11,24 @@
  * listSessions/loadSession/deleteSession/newSession go through the BE rpc
  * (blocking mappings, real results).
  *
- * Reactivity: RemoteSessionView רק מתחזק state + מזרים patches (עוטף כל Patch בודד
- * מ-SSEReader ל-[patch] כדי להתאים ל-VM's ReadableStream<Patch[]>). ה-VM עושה את
- * ההחלה הממוקדת על Bubble[] (consumeViewPatches/applyPatchMutable, S1/S2) — לא כאן.
- * state עצמו מתעדכן דרך applyPatch (core, טהור/immutable) — לא כותבים applyPatch חדש.
+ * Reactivity: SessionViewDelivery מחזיק state קנוני יחיד; view.state הוא getter אליו.
+ * reader הרשת היחיד מזין producer טהור שמחשב FrameData, וה-delivery מוסר אותו
+ * לכותב סינכרוני שמחיל transcript ומפרסם state ב-core slot המקורי של הפריים.
+ * ה-holder ב-VM משקף רק את הפריים שנצרך; כשל UI מפסיק רק את מסירת הפריימים אליו.
  *
  * ─── slice remote-session-view C2+C3 (TDD) ───
  * ─── slice session-host-pending-surface C4: respond() — exact routing, no fallback ───
  */
 
-import {
-  applyPatch,
-  createInitialSessionState,
-  type Patch,
-  RPC_METHODS,
-  reduce,
-  type SessionState,
-} from "@drive-coding/core/session"
+import { type Patch, RPC_METHODS, type SessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import { registerView, unregisterView, type ViewDebugInfo } from "$lib/debug/session-registry"
 import { connWarn } from "$lib/util/conn-log"
-import type { SessionView, ViewEmission } from "./session-view.js"
+import { RemoteSessionReplacement } from "./remote-session-replacement"
+import type { SessionView } from "./session-view.js"
+import { type ProjectionSink, SessionViewDelivery } from "./session-view-delivery"
+import { projectSessionSnapshot } from "./session-view-projection"
 import type { WireUpdateBatch } from "./sse-reader"
 import { SSEReader } from "./sse-reader.js"
 
@@ -46,6 +42,8 @@ const NOT_SUPPORTED_EXT_RETURN_VALUE = "not supported in remote mode — use sta
 export type RemoteSessionViewOptions = {
   /** HTTP headers לכל בקשה (auth וכו'). */
   headers?: Record<string, string>
+  projection?: ProjectionSink
+  onReady?: (view: RemoteSessionView) => boolean | undefined
   /** slice liveness C4: hook חיצוני כשה-SSE מתחבר מחדש (ניקוי באנר presence). */
   onSseReconnected?: () => void
   /** @internal לבדיקות — override global fetch. */
@@ -66,7 +64,7 @@ export type RemoteSessionViewOptions = {
  * Usage:
  *   const view = new RemoteSessionView("agent-1", "https://be.example.com")
  *   await view.connect()
- *   // view.state / view.patches מתעדכנים; view.prompt(...) וכו' שולחות RPC
+ *   // יש לקשור ProjectionSink לפני connect; view.state קנוני ופעולות נשלחות ב-RPC
  *   await view.close()  // כשמסיימים
  */
 export class RemoteSessionView implements SessionView {
@@ -78,8 +76,8 @@ export class RemoteSessionView implements SessionView {
   readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly #reader: SSEReader
 
-  #state: SessionState
   #sessionId: string | null = null
+  readonly #replacement = new RemoteSessionReplacement()
   /**
    * slice remote-session-mgmt C4: raw sessionCapabilities from the listSessions
    * response (the BE ships them on that one round-trip). `supportsSessionDelete`
@@ -87,9 +85,8 @@ export class RemoteSessionView implements SessionView {
    */
   #sessionCapabilities: { delete?: unknown; [key: string]: unknown } | null = null
 
-  // ─── patches stream (ViewEmission: patches + raw wire updates) ───
-  #patchesCtrl: ReadableStreamDefaultController<ViewEmission> | null = null
-  readonly patches: ReadableStream<ViewEmission>
+  #delivery = new SessionViewDelivery()
+  readonly #onReady?: (view: RemoteSessionView) => boolean | undefined
 
   // ─── C3: Speaker water-mark (§8.1) — מונע הקראה כפולה אחרי reconnect ───
   #lastReadMessageId: string | null = null
@@ -111,7 +108,6 @@ export class RemoteSessionView implements SessionView {
     this.#onSseReconnected = opts.onSseReconnected
     this.#doFetch = opts._fetch ?? ((u, init) => globalThis.fetch(u, init))
     // replaced on connect() by the SSE snapshot — this is just a safe pre-connect default
-    this.#state = createInitialSessionState({ sessionId: null })
 
     this.#reader = new SSEReader(this.#eventsUrl(), {
       headers: this.#headers,
@@ -121,17 +117,18 @@ export class RemoteSessionView implements SessionView {
     })
     this.#reader.onReconnected = this.#handleReconnected.bind(this)
 
-    this.patches = new ReadableStream<ViewEmission>({
-      start: (ctrl) => {
-        this.#patchesCtrl = ctrl
-      },
-    })
+    this.#onReady = opts.onReady
+    if (opts.projection) this.#delivery.bind(opts.projection)
   }
 
   // ─── SessionView: state ───
 
+  bindProjection(sink: ProjectionSink): void {
+    this.#delivery.bind(sink)
+  }
+
   get state(): SessionState {
-    return this.#state
+    return this.#delivery.state
   }
 
   /**
@@ -144,9 +141,9 @@ export class RemoteSessionView implements SessionView {
       agentId: this.#agentId,
       sessionId: this.#sessionId,
       lastVersion: this.#lastVersion,
-      messages: this.#state.messages.length,
-      status: this.#state.status,
-      turnState: this.#state.turnState,
+      messages: this.#delivery.state.messages.length,
+      status: this.#delivery.state.status,
+      turnState: this.#delivery.state.turnState,
       closed: this.#isClosed,
     }
   }
@@ -206,26 +203,13 @@ export class RemoteSessionView implements SessionView {
 
   async #doConnect(): Promise<void> {
     const { snapshot, updates } = await this.#reader.connect()
-    this.#state = snapshot
+    this.#delivery.state = snapshot
     this.#sessionId = snapshot.sessionId
     this.#lastVersion = snapshot.version
-    // ─── slice remote-warm-reconnect C3: hydration ───
-    // חיבור ראשון יכול לשאת את כל ההיסטוריה (warm reconnect ל-host קיים; ב-attachRemote
-    // רגיל ה-snapshot ריק). פולטים patch reset סינתטי מה-snapshot כדי שה-VM יבנה
-    // bubbles — בדיוק הטכניקה של #handleReconnected למטה.
-    // ⚠️ קונקרטי: ישירות דרך #emit (לא #applyIncoming — ה-watermark היה חוסם כל
-    // גרסה), version = snapshot.version (בלי לגעת ב-#lastVersion, כבר מעודכן),
-    // **לפני** #drainPatches — סדר דטרמיניסטי בערוץ ה-VM. רגרסיה: "היסטוריה לא מוכפלת".
-    if (snapshot.messages.length > 0) {
-      const resetPatch: Patch = {
-        version: snapshot.version,
-        op: "reset",
-        messages: snapshot.messages,
-        nextMessageSeq: snapshot.nextMessageSeq,
-        nextSegmentSeq: snapshot.nextSegmentSeq,
-      }
-      this.#emit([resetPatch], [])
-    }
+    if (this.#isClosed || this.#onReady?.(this) === false) return
+    this.#delivery.requireSink()
+    this.#delivery.frame(projectSessionSnapshot(snapshot, snapshot.messages.length > 0), true)
+    this.#delivery.endBatch(snapshot)
     void this.#drainUpdates(updates)
   }
 
@@ -239,7 +223,7 @@ export class RemoteSessionView implements SessionView {
    * מחדש את אותו instance.
    */
   async close(): Promise<void> {
-    const { permission, elicitation } = this.#state.pending
+    const { permission, elicitation } = this.#delivery.state.pending
     if (permission) {
       await this.respond(permission.requestId, { outcome: { outcome: "cancelled" } }).catch(() => {
         // best-effort — ה-SSE כבר בדרך להיסגר, לא חוסמים את הסגירה על כשל reply
@@ -251,15 +235,14 @@ export class RemoteSessionView implements SessionView {
       })
     }
     // מנקה pending מקומית — הופך close() לאידמפוטנטי (קריאה חוזרת לא תשלח /reply שוב).
-    this.#state = { ...this.#state, pending: { permission: null, elicitation: null } }
+    this.#delivery.state = {
+      ...this.#delivery.state,
+      pending: { permission: null, elicitation: null },
+    }
     this.#isClosed = true
     unregisterView(this)
     this.#reader.close()
-    try {
-      this.#patchesCtrl?.close()
-    } catch {
-      // already closed
-    }
+    this.#delivery.dispose()
   }
 
   // ─── Incoming patches: apply to state (core applyPatch) + wrap + emit ───
@@ -303,33 +286,20 @@ export class RemoteSessionView implements SessionView {
     // reflected in the snapshot (frame-zero) / in whatever #lastVersion already covers.
     // Applying them again duplicates messages/segments (measured: "hello"+" world"
     // appearing twice after one server-side drop). Skip anything already applied.
-    if (batch.version <= this.#lastVersion) return
+    // A published prefix survives a later producer fault; duplicate frames must not replay it.
+    if (batch.version <= Math.max(this.#lastVersion, this.#delivery.state.version)) return
 
-    let state = this.#state
-    const produced: Patch[] = []
+    let last = this.#delivery.state
     for (const update of batch.updates) {
-      const { state: next, patches } = reduce(state, update)
-      state = next
-      produced.push(...patches)
+      const intent = this.#replacement.capture()
+      const frame = this.#delivery.update(update, true, batch.version)
+      if (frame.reset) this.#replacement.consume(intent)
+      last = frame.state
+      for (const patch of frame.patches) this.#advanceWaterMark(patch)
     }
-    // ⚠️ **ה-version נדרס לזה של השרת.** `reduce` מקדם מונה מקומי אחד לכל
-    // update, וה-batch יכול להחזיק כמה — ספירה מקומית הייתה מסיטה את המונה
-    // מזה של השרת בהדרגה, ואז כל השוואת-watermark הופכת לשקר. זו בדיוק
-    // רגרסיית-הגרסה שבאג #41 נבנה סביבה.
-    this.#state = { ...state, version: batch.version }
+    this.#delivery.state = { ...this.#delivery.state, version: batch.version }
     this.#lastVersion = batch.version
-    for (const p of produced) this.#advanceWaterMark(p)
-    if (produced.length > 0 || batch.updates.length > 0) {
-      this.#emit(produced, batch.updates)
-    }
-  }
-
-  #emit(patches: Patch[], updates: unknown[] = []): void {
-    try {
-      this.#patchesCtrl?.enqueue({ patches, updates })
-    } catch {
-      // stream cancelled by consumer — ignore
-    }
+    if (batch.updates.length > 0) this.#delivery.endBatch(last)
   }
 
   // ─── C3: Speaker water-mark ───
@@ -337,7 +307,7 @@ export class RemoteSessionView implements SessionView {
   /** כשמגיע append-segment — מקדם את ה-water-mark (מסמן להקראה). */
   #advanceWaterMark(patch: Patch): void {
     if (patch.op !== "append-segment") return
-    const msg = this.#state.messages.find((m) => m.id === patch.targetId)
+    const msg = this.#delivery.state.messages.find((m) => m.id === patch.targetId)
     if (!msg || msg.role === "tool") return
     this.#lastReadMessageId = msg.id
     this.#lastReadSegmentIndex = msg.segments.length - 1
@@ -379,19 +349,14 @@ export class RemoteSessionView implements SessionView {
       }
       return
     }
-    const resetPatch: Patch = {
-      version: snapshot.version,
-      op: "reset",
-      messages: snapshot.messages,
-      nextMessageSeq: snapshot.nextMessageSeq,
-      nextSegmentSeq: snapshot.nextSegmentSeq,
-    }
-    this.#state = snapshot
+    this.#delivery.state = snapshot
     this.#sessionId = snapshot.sessionId
     this.#lastVersion = snapshot.version
     this.#lastReadMessageId = null
     this.#lastReadSegmentIndex = 0
-    this.#emit([resetPatch], [])
+    const frame = this.#replacement.projectSnapshot(snapshot, sessionChanged)
+    this.#delivery.frame(frame, true)
+    this.#delivery.endBatch(snapshot)
     this.#onSseReconnected?.()
   }
 
@@ -402,15 +367,8 @@ export class RemoteSessionView implements SessionView {
    * cwd optional — route falls back to connection cwd (400 if neither).
    * Updates #sessionId and state.sessionId from the rpc response (same as loadSession).
    */
-  async newSession(cwd?: string): Promise<void> {
-    const res = (await this.#rpc(RPC_METHODS.newSession, {
-      ...(cwd && { cwd }),
-    })) as { sessionId?: unknown } | undefined
-    const attached =
-      typeof res?.sessionId === "string" && res.sessionId.length > 0 ? res.sessionId : null
-    if (!attached) throw new Error("RemoteSessionView: newSession returned no sessionId")
-    this.#sessionId = attached
-    this.#state = { ...this.#state, sessionId: attached }
+  newSession(cwd?: string): Promise<void> {
+    return this.#replaceSession(undefined, cwd)
   }
 
   /**
@@ -422,15 +380,25 @@ export class RemoteSessionView implements SessionView {
    * #state.sessionId (sessionId is not in update-session's fields — without the
    * state write it would stay stale across the switch).
    */
-  async loadSession(sessionId: string, cwd?: string): Promise<void> {
-    const res = (await this.#rpc(RPC_METHODS.loadSession, {
-      sessionId,
-      ...(cwd && { cwd }),
-    })) as { sessionId?: unknown } | undefined
-    const attached =
-      typeof res?.sessionId === "string" && res.sessionId.length > 0 ? res.sessionId : sessionId
-    this.#sessionId = attached
-    this.#state = { ...this.#state, sessionId: attached }
+  loadSession(sessionId: string, cwd?: string): Promise<void> {
+    return this.#replaceSession(sessionId, cwd)
+  }
+
+  #replaceSession(sessionId: string | undefined, cwd?: string): Promise<void> {
+    return this.#replacement.run(async () => {
+      const method = sessionId === undefined ? RPC_METHODS.newSession : RPC_METHODS.loadSession
+      const res = (await this.#rpc(method, {
+        ...(sessionId !== undefined && { sessionId }),
+        ...(cwd && { cwd }),
+      })) as { sessionId?: unknown } | undefined
+      const attached =
+        typeof res?.sessionId === "string" && res.sessionId.length > 0 ? res.sessionId : sessionId
+      if (attached === undefined) {
+        throw new Error("RemoteSessionView: newSession returned no sessionId")
+      }
+      this.#sessionId = attached
+      this.#delivery.state = { ...this.#delivery.state, sessionId: attached }
+    })
   }
 
   /**
@@ -526,9 +494,9 @@ export class RemoteSessionView implements SessionView {
    */
   async respond(requestId: number, result: unknown): Promise<void> {
     const kind =
-      this.#state.pending.permission?.requestId === requestId
+      this.#delivery.state.pending.permission?.requestId === requestId
         ? "permission"
-        : this.#state.pending.elicitation?.requestId === requestId
+        : this.#delivery.state.pending.elicitation?.requestId === requestId
           ? "elicitation"
           : undefined
     if (kind === undefined) return // no-op שקט — id לא תואם אף pending קיים

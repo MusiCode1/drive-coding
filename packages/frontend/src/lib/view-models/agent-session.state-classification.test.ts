@@ -18,7 +18,7 @@ const SESSION_SCOPED = new Set([
 
 const AGENT_SCOPED = new Set(["turnStalled", "#errorScope"])
 
-const TRANSCRIPT_SCOPED = new Set(["#content", "#displaySnapshot"])
+const TRANSCRIPT_SCOPED = new Set(["#content", "#displaySnapshot", "#processingTarget"])
 
 const CONNECTION_SCOPED = new Set(["sessions", "loading", "error"])
 

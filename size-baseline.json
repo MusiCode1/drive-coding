@@ -914,10 +914,10 @@
       "codeLines": 26
     },
     "packages/frontend/src/lib/session/__contract__/session-view-contract.ts": {
-      "metric": 236,
-      "impurity": 23,
+      "metric": 173,
+      "impurity": 18,
       "class": "scattered",
-      "codeLines": 177
+      "codeLines": 127
     },
     "packages/frontend/src/lib/session/create-session-view.ts": {
       "metric": 34,
@@ -926,16 +926,16 @@
       "codeLines": 15
     },
     "packages/frontend/src/lib/session/local-session-view.ts": {
-      "metric": 409,
+      "metric": 376,
       "impurity": 14,
       "class": "scattered",
-      "codeLines": 249
+      "codeLines": 221
     },
     "packages/frontend/src/lib/session/remote-session-view.ts": {
-      "metric": 620,
-      "impurity": 19,
+      "metric": 588,
+      "impurity": 18,
       "class": "scattered",
-      "codeLines": 348
+      "codeLines": 328
     },
     "packages/frontend/src/lib/session/session-transport-read.ts": {
       "metric": 41,
@@ -1016,10 +1016,10 @@
       "codeLines": 68
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 2371,
-      "impurity": 35,
+      "metric": 2147,
+      "impurity": 33,
       "class": "scattered",
-      "codeLines": 1613
+      "codeLines": 1433
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
       "metric": 328,
@@ -1076,10 +1076,10 @@
       "codeLines": 12
     },
     "packages/frontend/src/lib/view-models/speaker.svelte.ts": {
-      "metric": 790,
-      "impurity": 4,
+      "metric": 735,
+      "impurity": 2,
       "class": "mixed",
-      "codeLines": 499
+      "codeLines": 469
     },
     "packages/frontend/src/lib/view-models/theme.svelte.ts": {
       "metric": 49,

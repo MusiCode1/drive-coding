@@ -133,7 +133,12 @@ describe("AgentSession late setup (deferred I/O)", () => {
     vi.mocked(agentsApi.createAgent)
       .mockResolvedValueOnce(agentCreated("agent-first"))
       .mockResolvedValueOnce(agentCreated("agent-remote"))
-    vi.mocked(createRemoteView).mockImplementation(() => remoteViewStub("remote-after-ws"))
+    vi.mocked(createRemoteView).mockImplementation(async (_opts, hooks) => {
+      const view = await remoteViewStub("remote-after-ws")
+      hooks?.onCreated?.(view)
+      hooks?.onReady?.(view)
+      return view
+    })
     const session = new AgentSession()
     const first = session.attach({ cwd: "/tmp", cliKind: "claude" })
     await waitForOpenEntered.promise
@@ -152,7 +157,12 @@ describe("AgentSession late setup (deferred I/O)", () => {
     vi.mocked(agentsApi.createAgent)
       .mockResolvedValueOnce(agentCreated("agent-ws-stale"))
       .mockResolvedValueOnce(agentCreated("agent-remote"))
-    vi.mocked(createRemoteView).mockImplementation(() => remoteViewStub("remote-win"))
+    vi.mocked(createRemoteView).mockImplementation(async (_opts, hooks) => {
+      const view = await remoteViewStub("remote-win")
+      hooks?.onCreated?.(view)
+      hooks?.onReady?.(view)
+      return view
+    })
     const session = new AgentSession()
     const wsPending = session.attach({ cwd: "/tmp", cliKind: "claude" })
     await waitForOpenEntered.promise
@@ -170,7 +180,12 @@ describe("AgentSession late setup (deferred I/O)", () => {
   it("attachRemote deferred createRemoteView after detach closes stale view", async () => {
     const remoteDef = deferred<RemoteSessionView>()
     vi.mocked(agentsApi.createAgent).mockResolvedValueOnce(agentCreated("agent-http-late"))
-    vi.mocked(createRemoteView).mockImplementationOnce(() => remoteDef.promise)
+    vi.mocked(createRemoteView).mockImplementationOnce(async (_opts, hooks) => {
+      const view = await remoteDef.promise
+      hooks?.onCreated?.(view)
+      hooks?.onReady?.(view)
+      return view
+    })
     const session = new AgentSession()
     const pending = session.attachRemote({ cwd: "/tmp", cliKind: "claude" })
     await vi.waitFor(() => expect(vi.mocked(createRemoteView).mock.calls.length).toBeGreaterThan(0))

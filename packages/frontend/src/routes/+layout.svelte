@@ -10,27 +10,36 @@ import { onDestroy, onMount } from "svelte"
 import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import {
+  installSessionScopePolicy,
+  wireDocumentLocale,
+  wirePresencePoller,
+  wireSessionTransportOverride,
+  wireUiShellCloseOnAttach,
+} from "$lib/actions/layout-session-wiring.svelte"
+import { bindSessionLifecycle } from "$lib/actions/session-lifecycle"
+import MediaSessionPlaylistSync from "$lib/components/layout/MediaSessionPlaylistSync.svelte"
+import {
   setActiveAgents,
   setAudioDevices,
   setAudioPlaylist,
   setBubblePlayer,
   setChatScroll,
   setCliAvailability,
-  setContentViewer,
   setComposerDraft,
-  setSessionMemo,
+  setContentViewer,
   setCues,
   setDictate,
   setI18n,
   setLive,
   setMic,
   setModals,
-  setNotify,
   setModelStatus,
+  setNotify,
   setPresencePoller,
   setRecentProjects,
   setResponsive,
   setSession,
+  setSessionMemo,
   setSettings,
   setSpeaker,
   setTheme,
@@ -40,46 +49,37 @@ import {
 import { installDebugSurface } from "$lib/debug/dc"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import { createConfigChangeRefresher } from "$lib/engines/config-change-socket"
-import { ttsStatus } from "$lib/view-models/tts-status.svelte"
 import { CuesEngine } from "$lib/engines/cues"
+import { NotifyEngine } from "$lib/engines/notify.svelte"
 import { createPendingCaptureWiring } from "$lib/engines/pending-capture-wiring"
-import MediaSessionPlaylistSync from "$lib/components/layout/MediaSessionPlaylistSync.svelte"
 import { PlayableSink } from "$lib/engines/playable-sink"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
-import { NotifyEngine } from "$lib/engines/notify.svelte"
 import { notifyTexts } from "$lib/notify-texts"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { beWsUrl } from "$lib/util/be-url"
-import { bindSessionLifecycle } from "$lib/actions/session-lifecycle"
-import {
-  installSessionScopePolicy,
-  wireDocumentLocale,
-  wirePresencePoller,
-  wireSessionTransportOverride,
-  wireUiShellCloseOnAttach,
-} from "$lib/actions/layout-session-wiring.svelte"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
+import { AudioDevicesVM } from "$lib/view-models/audio-devices.svelte"
 import { BubblePlayer } from "$lib/view-models/bubble-player.svelte"
 import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
+import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
 import { ContentViewerVM } from "$lib/view-models/content-viewer.svelte"
 import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
+import { Dictate } from "$lib/view-models/dictate.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
 import { Live } from "$lib/view-models/live.svelte"
-import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
-import { SessionMemoVM } from "$lib/view-models/session-memo.svelte"
-import { Dictate } from "$lib/view-models/dictate.svelte"
-import { AudioDevicesVM } from "$lib/view-models/audio-devices.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
 import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
 import { RecentProjects } from "$lib/view-models/recent-projects.svelte"
 import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
+import { SessionMemoVM } from "$lib/view-models/session-memo.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
 import { ThemeVM } from "$lib/view-models/theme.svelte"
+import { ttsStatus } from "$lib/view-models/tts-status.svelte"
 import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
 
 let { children } = $props()
@@ -151,7 +151,7 @@ const live = new Live({
 
 // ─── speaker ─── (§4.3: live ref — TTS off while Live open)
 const speaker = new Speaker({
-  session,
+  session: session.speakerTranscript(),
   settings,
   cues,
   playlist: audioPlaylist,

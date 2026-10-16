@@ -18,7 +18,9 @@
 import type { Patch } from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { ProjectionRecorder } from "./__contract__/projection-recorder"
 import { LocalSessionView } from "./local-session-view"
+import { createProjectionRecorder } from "./session-view-delivery"
 
 // ─── Test helpers ───
 
@@ -66,6 +68,7 @@ function createView(overrideClient?: {
 } {
   const mock = overrideClient ?? createMockClient()
   const view = new LocalSessionView({
+    projection: createProjectionRecorder(() => {}),
     cwd: "/workspace",
     cliKind: "claude",
     createClient: async (cbs) => {
@@ -98,6 +101,7 @@ describe("LocalSessionView — connection", () => {
     const mock = createMockClient()
     let cbsCaptured: AcpClientCallbacks | null = null
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async (cbs) => {
@@ -117,6 +121,7 @@ describe("LocalSessionView — connection", () => {
   it("loadSession() calls client.loadSession with the sessionId", async () => {
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async () => mock.client,
@@ -141,6 +146,7 @@ describe("LocalSessionView — reduce + patches (C2)", () => {
     let capturedCbs: AcpClientCallbacks | null = null
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async (cbs) => {
@@ -165,6 +171,7 @@ describe("LocalSessionView — reduce + patches (C2)", () => {
     let capturedCbs: AcpClientCallbacks | null = null
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async (cbs) => {
@@ -174,6 +181,7 @@ describe("LocalSessionView — reduce + patches (C2)", () => {
     })
     await view.newSession()
 
+    const recorder = new ProjectionRecorder(view)
     // Fire update first (enqueues patches)
     fireUpdate(capturedCbs!, {
       sessionUpdate: "agent_message_chunk",
@@ -181,20 +189,15 @@ describe("LocalSessionView — reduce + patches (C2)", () => {
       messageId: "m-1",
     })
 
-    // Read from patches stream
-    const reader = view.patches.getReader()
-    const { value, done } = await reader.read()
-    reader.cancel()
-
-    expect(done).toBe(false)
-    expect(value).toBeDefined()
-    expect(value?.patches[0]!.op).toBe("add-message")
+    const [patches] = await recorder.nextPatches(1)
+    expect(patches?.[0]?.op).toBe("add-message")
   })
 
   it("metadata update (session_info_update) → state.title updated", async () => {
     let capturedCbs: AcpClientCallbacks | null = null
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async (cbs) => {
@@ -216,6 +219,7 @@ describe("LocalSessionView — reduce + patches (C2)", () => {
     let capturedCbs: AcpClientCallbacks | null = null
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async (cbs) => {
@@ -241,6 +245,7 @@ describe("LocalSessionView — pending permission bridging (C2)", () => {
     let capturedCbs: AcpClientCallbacks | null = null
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async (cbs) => {
@@ -268,6 +273,7 @@ describe("LocalSessionView — pending permission bridging (C2)", () => {
     let capturedCbs: AcpClientCallbacks | null = null
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async (cbs) => {
@@ -307,6 +313,7 @@ describe("LocalSessionView — pending elicitation bridging (C2)", () => {
     let capturedCbs: AcpClientCallbacks | null = null
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async (cbs) => {
@@ -336,6 +343,7 @@ describe("LocalSessionView — pending elicitation bridging (C2)", () => {
     let capturedCbs: AcpClientCallbacks | null = null
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async (cbs) => {
@@ -373,6 +381,7 @@ describe("LocalSessionView — turnState lifecycle (C2)", () => {
     let capturedCbs: AcpClientCallbacks | null = null
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async (cbs) => {
@@ -399,6 +408,7 @@ describe("LocalSessionView — turnState lifecycle (C2)", () => {
   it("cancel() sets turnState to 'idle'", async () => {
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async () => mock.client,
@@ -418,6 +428,7 @@ describe("LocalSessionView — quota refresh (C2)", () => {
   it("newSession() calls refreshQuota via ext._drive/getQuota", async () => {
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async () => mock.client,
@@ -440,6 +451,7 @@ describe("LocalSessionView — close (C2)", () => {
     let capturedCbs: AcpClientCallbacks | null = null
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async (cbs) => {
@@ -476,16 +488,21 @@ describe("LocalSessionView — close (C2)", () => {
 // ─── slice local-view-wiring C2: adopt · dispose · observerCallbacks (TDD) ───
 
 describe("LocalSessionView — adopt (C2)", () => {
-  it("adopt מאפס את ה-state ומציב sessionId/client", async () => {
+  it("adopt משלים sessionId/client ושומר early content/control", async () => {
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async () => mock.client,
     })
     // טען סשן והזרם היסטוריה — כדי שיהיה state לא-ריק
     await view.loadSession("old-session")
-    const cbs = view.observerCallbacks
+    const cbs = {
+      onUpdate: (n: { update: unknown }) => view.ingestUpdate(n.update),
+      onExtNotification: (method: string, params: Record<string, unknown>) =>
+        view.ingestUpdate({ sessionUpdate: "_drive/ext", method, params }),
+    }
     cbs.onUpdate?.({
       update: {
         sessionUpdate: "agent_message_chunk",
@@ -499,15 +516,16 @@ describe("LocalSessionView — adopt (C2)", () => {
     view.adopt({ client: mock.client, sessionId: "new-session" })
 
     expect(view.state.sessionId).toBe("new-session")
-    expect(view.state.messages).toHaveLength(0)
-    expect(view.state.status).toBe("idle")
-    expect(view.state.turnState).toBe("idle")
+    expect(view.state.messages).toHaveLength(1)
+    expect(view.state.status).toBe("connected")
+    expect(view.state.turnState).toBe("responding")
     expect(view.state.pending).toEqual({ permission: null, elicitation: null })
   })
 
   it("adopt אינו יורה getQuota על החוט (extMethod לא נקרא)", async () => {
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async () => mock.client,
@@ -528,6 +546,7 @@ describe("LocalSessionView — dispose (C2)", () => {
   it("dispose אינו קורא ל-client.close() — הלקוח משותף עם ה-VM במסלול המקומי", async () => {
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async () => mock.client,
@@ -545,6 +564,7 @@ describe("LocalSessionView — dispose (C2)", () => {
   it("dispose סוגר את ה-controller — ה-reader מסיים ב-done", async () => {
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async () => mock.client,
@@ -552,17 +572,16 @@ describe("LocalSessionView — dispose (C2)", () => {
     await view.newSession()
     view.adopt({ client: mock.client, sessionId: "s" })
 
-    const reader = view.patches.getReader()
+    const before = view.state
     view.dispose()
-
-    const { done } = await reader.read()
-    expect(done).toBe(true)
-    reader.releaseLock()
+    expect(() => view.bindProjection(createProjectionRecorder(() => {}))).toThrow("terminal")
+    expect(view.state).toBe(before)
   })
 
   it("dispose מנתק את מצביע הלקוח — קריאה ל-prompt אחריו נכשלת ב'not connected'", async () => {
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async () => mock.client,
@@ -580,12 +599,17 @@ describe("LocalSessionView — observerCallbacks (C2)", () => {
   it("חושף רק onUpdate + onExtNotification — מחזירי-הערך אינם שם", async () => {
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async () => mock.client,
     })
 
-    const cbs = view.observerCallbacks
+    const cbs = {
+      onUpdate: (n: { update: unknown }) => view.ingestUpdate(n.update),
+      onExtNotification: (method: string, params: Record<string, unknown>) =>
+        view.ingestUpdate({ sessionUpdate: "_drive/ext", method, params }),
+    }
     expect(typeof cbs.onUpdate).toBe("function")
     expect(typeof cbs.onExtNotification).toBe("function")
     // אין כאן שני עונים לבקשות-חוזרות-ערך
@@ -596,6 +620,7 @@ describe("LocalSessionView — observerCallbacks (C2)", () => {
   it("update דרך observerCallbacks מעדכן את state של ה-view", async () => {
     const mock = createMockClient()
     const view = new LocalSessionView({
+      projection: createProjectionRecorder(() => {}),
       cwd: "/workspace",
       cliKind: "claude",
       createClient: async () => mock.client,
@@ -603,12 +628,10 @@ describe("LocalSessionView — observerCallbacks (C2)", () => {
     await view.newSession()
     view.adopt({ client: mock.client, sessionId: "s" })
 
-    view.observerCallbacks.onUpdate?.({
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text: "observed" },
-        messageId: "m-1",
-      },
+    view.ingestUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "observed" },
+      messageId: "m-1",
     } as never)
 
     expect(view.state.messages).toHaveLength(1)

@@ -116,10 +116,13 @@ beforeEach(() => {
   h.views = []
   vi.stubGlobal("location", { protocol: "http:", host: "localhost" })
   vi.mocked(api.notifySessionAttached).mockResolvedValue(undefined)
-  vi.mocked(createRemoteView).mockImplementation(async () => {
+  vi.mocked(createRemoteView).mockImplementation(async (_opts, hooks) => {
     const v = new MockSessionView()
     v.connect("same")
     h.views.push(v)
+    hooks?.onCreated?.(v as never)
+    hooks?.onReady?.(v as never)
+    v.hydrate()
     return v as never
   })
 })
@@ -341,7 +344,7 @@ describe("bound config consumers", () => {
         const entered = deferred<void>()
         c.newSession.mockResolvedValue({ sessionId: "same", configOptions: [option()] } as never)
         if (remote)
-          vi.mocked(createRemoteView).mockImplementationOnce(async () => {
+          vi.mocked(createRemoteView).mockImplementationOnce(async (_opts, hooks) => {
             const v = new MockSessionView()
             v.connect("same")
             v.state = { ...v.state, configOptions: [option()] as never }
@@ -350,6 +353,9 @@ describe("bound config consumers", () => {
               return gate.promise
             })
             h.views.push(v)
+            hooks?.onCreated?.(v as never)
+            hooks?.onReady?.(v as never)
+            v.hydrate()
             return v as never
           })
         else
@@ -424,7 +430,7 @@ describe("bound config consumers", () => {
       const entered = deferred<void>()
       c.newSession.mockResolvedValue({ sessionId: "same", configOptions: [option()] } as never)
       if (remote)
-        vi.mocked(createRemoteView).mockImplementationOnce(async () => {
+        vi.mocked(createRemoteView).mockImplementationOnce(async (_opts, hooks) => {
           const v = new MockSessionView()
           v.connect("same")
           v.state = { ...v.state, configOptions: [option()] as never }
@@ -433,6 +439,9 @@ describe("bound config consumers", () => {
             return gate.promise
           })
           h.views.push(v)
+          hooks?.onCreated?.(v as never)
+          hooks?.onReady?.(v as never)
+          v.hydrate()
           return v as never
         })
       else

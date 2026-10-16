@@ -23,7 +23,9 @@ import {
 } from "@drive-coding/core/session"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { SessionView, ViewEmission } from "$lib/session/session-view"
+import type { SessionView } from "$lib/session/session-view"
+import { type ProjectionSink, SessionViewDelivery } from "$lib/session/session-view-delivery"
+import { projectSessionSnapshot } from "$lib/session/session-view-projection"
 import type { WireUpdateBatch } from "$lib/session/sse-reader"
 import type { Bubble } from "$lib/types/bubble"
 
@@ -53,20 +55,18 @@ function rawUpdate(entry: FixtureEntry): unknown {
 // ─── HTTP replay view (mirrors RemoteSessionView.#applyIncoming) ────────────
 
 class HttpReplayView implements SessionView {
-  state: SessionState = $state(createInitialSessionState({ sessionId: null }))
-
-  #controller: ReadableStreamDefaultController<ViewEmission> | null = null
-  readonly patches: ReadableStream<ViewEmission>
-  #lastVersion = 0
-  supportsSessionDelete = false
-
-  constructor() {
-    this.patches = new ReadableStream<ViewEmission>({
-      start: (controller) => {
-        this.#controller = controller
-      },
-    })
+  #delivery = new SessionViewDelivery()
+  get state(): SessionState {
+    return this.#delivery.state
   }
+  set state(state: SessionState) {
+    this.#delivery.state = state
+  }
+  bindProjection(sink: ProjectionSink): void {
+    this.#delivery.bind(sink)
+  }
+  supportsSessionDelete = false
+  #lastVersion = 0
 
   connect(sessionId: string): void {
     this.state = { ...this.state, sessionId, status: "connected" }
@@ -74,34 +74,16 @@ class HttpReplayView implements SessionView {
 
   applyIncoming(batch: WireUpdateBatch): void {
     if (batch.version <= this.#lastVersion) return
-    let state = this.state
-    const produced: Patch[] = []
-    for (const update of batch.updates) {
-      const { state: next, patches } = reduce(state, update)
-      state = next
-      produced.push(...patches)
-    }
-    this.state = { ...state, version: batch.version }
+    for (const update of batch.updates) this.#delivery.update(update, true, batch.version)
     this.#lastVersion = batch.version
-    if (produced.length > 0 || batch.updates.length > 0) {
-      this.#emit(produced, batch.updates)
-    }
+    this.#delivery.endBatch(this.state)
   }
-
   resetTranscript(): void {
-    this.state = {
+    const state = {
       ...createInitialSessionState({ sessionId: this.state.sessionId }),
-      status: "connected",
+      status: "connected" as const,
     }
-    this.#emit([{ version: 2, op: "reset", nextMessageSeq: 0, nextSegmentSeq: 0, messages: [] }])
-  }
-
-  #emit(patches: Patch[], updates: unknown[] = []): void {
-    try {
-      this.#controller?.enqueue({ patches, updates })
-    } catch {
-      // stream closed
-    }
+    this.#delivery.frame(projectSessionSnapshot(state, true), true)
   }
 
   prompt = vi.fn().mockResolvedValue(undefined)
@@ -115,7 +97,9 @@ class HttpReplayView implements SessionView {
   listSessions = vi.fn().mockResolvedValue([])
   deleteSession = vi.fn().mockResolvedValue(undefined)
   setSessionModel = vi.fn().mockResolvedValue(undefined)
-  close = vi.fn().mockResolvedValue(undefined)
+  close = vi.fn(async () => {
+    this.#delivery.dispose()
+  })
 }
 
 // ─── wire synthesis (BE path: reduce → Patch → patchToSessionUpdates + ext wrapper) ─

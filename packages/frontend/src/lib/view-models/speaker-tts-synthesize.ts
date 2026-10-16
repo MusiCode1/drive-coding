@@ -19,6 +19,7 @@ export type SpeakerTtsSynthInput = {
   text: string
   messageId: string | null
   signal: AbortSignal
+  liveAttempt: () => boolean
 }
 
 export type SpeakerTtsSynthResult =
@@ -44,6 +45,7 @@ export async function synthesizeSpeakerSegment(
     return { ok: false, reason: "provider-unavailable" }
   }
   const textHash = await cacheKeyFor(input.text, voiceId, modelId)
+  if (!input.liveAttempt()) throw new DOMException("Stale Speaker TTS attempt", "AbortError")
   const stream = await provider.synthesize({
     text: input.text,
     voiceId,

@@ -68,9 +68,12 @@ import { AgentSession } from "./agent-session.svelte"
 describe("AgentSession exit release timeline", () => {
   beforeEach(() => {
     vi.mocked(agentsApi.releaseConnection).mockClear()
-    vi.mocked(createRemoteView).mockImplementation(async () => {
+    vi.mocked(createRemoteView).mockImplementation(async (_opts, hooks) => {
       const view = new MockSessionView()
       view.connect("remote-exit")
+      hooks?.onCreated?.(view as unknown as RemoteSessionView)
+      hooks?.onReady?.(view as unknown as RemoteSessionView)
+      view.hydrate()
       return view as unknown as RemoteSessionView
     })
   })

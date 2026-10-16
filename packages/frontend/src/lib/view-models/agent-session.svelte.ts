@@ -51,13 +51,12 @@ import {
   type TurnActivityState,
 } from "$lib/engines/turn-watchdog"
 import type { AgentInput, CloseMode, Connection } from "$lib/session/connection"
-// ─── slice session-view-port C3: SessionView DI ───
-import { classifySessionUpdate } from "$lib/session/frame-router"
 import type { HttpConnection } from "$lib/session/http-connection"
 // ─── slice local-view-wiring: LocalSessionView + tee ───
 import { LocalSessionView } from "$lib/session/local-session-view"
 import type { SessionView } from "$lib/session/session-view"
-import { teeAcpCallbacks } from "$lib/session/tee-acp-callbacks"
+// ─── slice session-view-port C3: SessionView DI ───
+import { projectSessionSnapshot } from "$lib/session/session-view-projection"
 import { WsConnection } from "$lib/session/ws-connection"
 import { runColdReconnect } from "$lib/session/ws-reconnect-controller"
 import type { Bubble, UserBubble } from "$lib/types/bubble"
@@ -76,11 +75,6 @@ import {
   restoreRememberedConfig,
 } from "$lib/view-models/agent-session-apply-config"
 import {
-  appendAgentPlaceholder,
-  appendUserImage,
-  appendUserPlaceholder,
-} from "$lib/view-models/agent-session-bubble-append"
-import {
   type CaptureSessionConfigDeps,
   captureSessionConfig,
 } from "$lib/view-models/agent-session-capture-config"
@@ -89,10 +83,6 @@ import {
   deleteSession as deleteSessionExtracted,
 } from "$lib/view-models/agent-session-delete"
 import type { TransportTestStub } from "$lib/view-models/agent-session-detach-frame"
-import {
-  type DrainViewPatchesDeps,
-  drainViewPatches,
-} from "$lib/view-models/agent-session-drain-view-patches"
 import { type LoadMockSessionDeps, loadMockSession } from "$lib/view-models/agent-session-load-mock"
 // ─── slice surface-real-error: עדיפות data.details→data.message→message→String(e) ───
 import {
@@ -132,11 +122,7 @@ import { formatAcpError } from "$lib/view-models/format-acp-error"
 import { SessionScope } from "$lib/view-models/session-scoped-state.svelte"
 import { SessionsCacheScope } from "$lib/view-models/sessions-cache-scope.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
-import {
-  handleSubagentToolCall,
-  handleSubagentToolCallUpdate,
-  type SubagentToolNestingDeps,
-} from "$lib/view-models/subagent-tool-nesting"
+import { createAgentSessionProjection } from "./agent-session-projection"
 
 export type { SessionEndReason } from "$lib/view-models/agent-session-session-end"
 
@@ -147,15 +133,9 @@ export type { SessionEndReason } from "$lib/view-models/agent-session-session-en
 const IMAGE_INPUT_ENABLED = true
 
 // ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
-import { type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
+import type { PlanStore } from "@drive-coding/core/acp/plan"
 // ─── slice session-state-reducer C4: reduce + types ─── (additive)
-import {
-  applyPatch,
-  createInitialSessionState,
-  type Patch,
-  reduce,
-  type SessionState,
-} from "@drive-coding/core/session"
+import { createInitialSessionState, type SessionState } from "@drive-coding/core/session"
 // ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 // ─── slice FE-normalization: ייבוא ─── (additive)
@@ -167,8 +147,12 @@ import { createExtClient, type ExtClient } from "$lib/adapters/ext"
 import { TranscriptScope } from "$lib/view-models/transcript-scope.svelte"
 // ─── slice subagent-transcript-data-v2: פרסר+reducer טהורים (additive) ───
 import { parseClaudeSdkMessage } from "./claude-subagent-parse"
-import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
+import type { HistoryMark } from "./history-mark.js"
 import { watchPageVisibility } from "./page-visibility.js"
+import {
+  createSpeakerTranscriptPort,
+  type TranscriptProcessingTarget,
+} from "./speaker-transcript-port"
 
 /**
  * _meta שמוזרק ל-session/new+load של claude בלבד — מחזיר thinking summaries
@@ -252,7 +236,7 @@ export class AgentSession {
     if (opts?.view) {
       this.#view = opts.view
       this.#isRemote = true // slice local-view-wiring C1: DI של view == remote (כל 5 הקונסטרוקציות)
-      void this.#consumeViewPatches(opts.view)
+      this.#bindProjection(opts.view, true, true)
       const connection = this.#newHttpConnection()
       connection.adoptExistingView(opts.view)
       this.#connection = connection
@@ -307,6 +291,7 @@ export class AgentSession {
    * Speaker קורא אותו רק כשהמונה משתנה.
    */
   #historyMark: HistoryMark = { segmentCounts: new Map(), toolCallIds: [] }
+  #historyMarkProcessingTarget: TranscriptProcessingTarget | null = null
   get historyMark(): HistoryMark {
     return this.#historyMark
   }
@@ -591,25 +576,6 @@ export class AgentSession {
     this.#sessionId = id
   }
 
-  #subagentToolNestingDeps(): SubagentToolNestingDeps {
-    return {
-      hasTool: (parentId) => this.#transcript.hasTool(parentId),
-      hasNestedTool: (parentId, childId) => this.#transcript.hasNestedTool(parentId, childId),
-      appendNestedTool: (parentId, child) => this.#transcript.appendNestedTool(parentId, child),
-      updateNestedTool: (parentId, childId, patch) =>
-        this.#transcript.updateNestedTool(parentId, childId, patch),
-      parents: () => this.#session.subagentToolCallParents,
-      turnEnded: () => this.#turnEnded,
-      applyToolCall: (update) => this.#applyToolCall(update),
-      setTurnState: (next) => this.#setTurnState(next),
-      scheduleIdle: () => this.#scheduleIdle(),
-    }
-  }
-
-  #drainViewPatchesDeps(): DrainViewPatchesDeps {
-    return { view: () => this.#view }
-  }
-
   #sessionEndScopeDeps(): SessionEndScopeDeps {
     return { sessionEndListeners: () => this.#sessionEndListeners }
   }
@@ -653,6 +619,7 @@ export class AgentSession {
       idle: () => this.#setTurnState("idle"),
       resetTurn: () => this.#resetTurnTracking(),
       clearTranscript: () => this.#transcript.replace([]),
+      beginProjection: (id) => this.#beginLocalProjection(id, true),
       title: (value) => {
         this.sessionTitle = value
       },
@@ -801,87 +768,99 @@ export class AgentSession {
     }
   })
 
-  // ─── slice session-view-port C3: SessionView patch consumer ───
-
-  /**
-   * קורא מ-view.patches ומעדכן bubbles + metadata ב-VM.
-   * רץ ברקע (אסינכרוני) ב-loop אינסופיני עד שה-stream נסגר.
-   * כל batch patches: עדכון bubbles ביעד (applyPatchMutable) + סינכון metadata.
-   */
-  async #consumeViewPatches(view: SessionView): Promise<void> {
-    const reader = view.patches.getReader()
-    // ─── slice empty-session-sync ───
-    // סנכרון ראשוני מה-snapshot, **לפני** הלולאה.
-    // הסנכרון שבתוך הלולאה מותנה ב-patches, וסשן **חדש** הוא ריק: אין הודעות,
-    // ולכן אין reset patch, ולכן `continue` — ו-#syncFromViewState לא נקרא לעולם.
-    // התוצאה למשתמשת: אין מוד, אין מודל (configOptions), ואין כפתור תמונה
-    // (capabilities) — עד שנטענת היסטוריה שמייצרת patches.
-    // ⚠️ זה חייב לרוץ גם כש-view.state ריק — הוא נושא את המטא-דאטה בלי קשר
-    // למספר ההודעות.
-    this.#syncFromViewState(view.state)
-    let attachWindow = true
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        // ─── slice view-switch C3-א.6: כמת בזהות, לא בנוכחות ───
-        // אחרי attachRemote חדש (שקורא #cleanup על ה-view הישן), לולאת ה-drain של ה-view
-        // הישן עדיין יכולה למסור batch — guard שבודק רק this.#view !== null היה מעביר
-        // אותו אל ה-VM החדש. אותו כלל בדיוק כמו ב-shim (#syncPendingPermission/Elicitation).
-        if (this.#view !== view) break
-        const emission = value ?? { patches: [], updates: [] }
-        if (emission.patches.length === 0 && emission.updates.length === 0) continue
-        const patches = emission.patches
-
-        // 1. structural reset → bubbles (hydration / SSE-reconnect)
-        const resetPatches = patches.filter(
-          (p): p is Extract<Patch, { op: "reset" }> => p.op === "reset",
-        )
-        if (resetPatches.length > 0) {
-          this.#transcript.applyPatches(resetPatches)
-          for (const patch of resetPatches) {
-            const next = applyPatch(this.sessionState, patch)
-            if (next) this.sessionState = next
-          }
-          if (attachWindow) {
-            attachWindow = false
-            const reset = resetPatches[0]
-            if (reset) {
-              this.#historyMark = historyMarkFromReset(reset.messages)
-              this.historyEpoch++
-            }
-          }
-        }
-
-        // 2. other patches → view state only (void for bubbles — same as #drainViewPatches)
-        // RemoteSessionView already applied them to view.state in #applyIncoming.
-
-        // 3. all raw wire updates → #onSessionUpdate (WS tee parity)
-        for (const update of emission.updates) {
-          this.#onSessionUpdate({ update } as unknown as SessionNotification)
-        }
-
-        this.#syncFromViewState(view.state)
-      }
-    } catch {
-      // stream נסגר או בוטל — תקין
-    } finally {
-      try {
-        reader.releaseLock()
-      } catch {
-        /* */
-      }
+  #bindProjection(view: SessionView, remote: boolean, bootstrap = false): void {
+    const vm = this
+    const sink = createAgentSessionProjection({
+      ui: {
+        get modes() {
+          return vm.modes
+        },
+        set modes(v) {
+          vm.modes = v
+        },
+        get configOptions() {
+          return vm.configOptions
+        },
+        set configOptions(v) {
+          vm.configOptions = v
+        },
+        get availableCommands() {
+          return vm.availableCommands
+        },
+        set availableCommands(v) {
+          vm.availableCommands = v
+        },
+        get planStore() {
+          return vm.planStore
+        },
+        set planStore(v) {
+          vm.planStore = v
+        },
+        get contextUsage() {
+          return vm.contextUsage
+        },
+        set contextUsage(v) {
+          vm.contextUsage = v
+        },
+        get titleManual() {
+          return vm.titleManual
+        },
+        set titleManual(v) {
+          vm.titleManual = v
+        },
+        get sessionTitle() {
+          return vm.sessionTitle
+        },
+        set sessionTitle(v) {
+          vm.sessionTitle = v
+        },
+      },
+      transcript: this.#transcript,
+      parents: () => this.#session.subagentToolCallParents,
+      turnEnded: () => this.#turnEnded,
+      setTurnState: (next) => this.#setTurnState(next),
+      scheduleIdle: () => this.#scheduleIdle(),
+      onExtNotification: this.#onExtNotification,
+      pushTitle: (title) => this.#pushTitleToServer(title),
+      setSessionState: (state) => {
+        this.sessionState = state
+      },
+      setHistory: (mark) => {
+        this.#historyMark = mark
+        this.#historyMarkProcessingTarget = this.#transcript.captureProcessingTarget()
+        this.historyEpoch++
+      },
+      beforeUpdate: (update) => {
+        this.#onUpdateObserved?.(update)
+        this.#noteAgentActivity()
+      },
+      endBatch: (state) => {
+        if (remote) this.#syncFromViewState(state)
+      },
+      current: () => this.#view === view,
+    })
+    view.bindProjection(sink)
+    if (bootstrap) {
+      const state = view.state
+      sink.applyFrame(projectSessionSnapshot(state, state.messages.length > 0), () => {})
+      sink.endBatch(state)
     }
+  }
+
+  #beginLocalProjection(sessionId: string | null, preserveControl = false): void {
+    const view = this.#localView ?? this.#bindLocalView()
+    view.begin(sessionId, preserveControl)
+    this.sessionState = view.state
   }
 
   // ─── slice local-view-wiring C3: קשירה ואימוץ מקומיים (brief §4.3-§4.5) ───
 
   /**
    * שלב א' — **לפני** יצירת הלקוח (ה-callbacks קופאים ביצירתו — §2.5): משחרר את
-   * הקודם (`#localView.dispose()`, לא close — הלקוח משותף), בונה view חדש, **מציב
-   * אותו ב-#localView וב-#view מיד** (סוגר את חלון-היתום של attach/loadSession
-   * שנכשלים אחריו — §4.5), מפעיל את הניקוז (קורא-ריק — §4.5: patching כפול היה
-   * מכפיל בועות), ומחזיר אותו כדי לעטוף ב-tee.
+   * הקודם (`#localView.dispose()`, לא close — הלקוח משותף), ובונה view חדש עם
+   * state קנוני בבעלות SessionViewDelivery. מציב אותו ב-#localView וב-#view מיד
+   * (סוגר את חלון-היתום של attach/loadSession שנכשלים אחריו — §4.5), וקושר
+   * כותב פריימים סינכרוני; ה-holder ב-VM מקבל רק את state הפריים שנצרך.
    */
   #bindLocalView(): LocalSessionView {
     this.#localView?.dispose()
@@ -893,20 +872,18 @@ export class AgentSession {
     this.isLoadingHistory = false
     this.#localView = view
     this.#view = view
-    void this.#drainViewPatches(view)
+    this.sessionState = view.state
+    this.#bindProjection(view, false)
     return view
   }
 
   #callbacksForLocalView(view: LocalSessionView): Parameters<typeof createAcpClient>[1] {
-    return teeAcpCallbacks(
-      {
-        onUpdate: this.#onSessionUpdate,
-        onExtNotification: this.#onExtNotification,
-        onRequestPermission: (params) => onRequestPermissionExtracted(this.#pendingDeps(), params),
-        onCreateElicitation: (params) => onCreateElicitationExtracted(this.#pendingDeps(), params),
-      },
-      view.observerCallbacks,
-    )
+    return {
+      onUpdate: (notification) => view.ingestUpdate(notification.update),
+      onExtNotification: this.#onExtNotification,
+      onRequestPermission: (params) => onRequestPermissionExtracted(this.#pendingDeps(), params),
+      onCreateElicitation: (params) => onCreateElicitationExtracted(this.#pendingDeps(), params),
+    }
   }
 
   #cancelPendingDialogs(): void {
@@ -915,21 +892,18 @@ export class AgentSession {
 
   /**
    * שלב ב' — **אחרי** יצירת הלקוח, **לפני** כל קריאה שמזרימה היסטוריה (§4.4):
-   * מאמץ את הלקוח אל ה-view (מאפס את state ה-view לסשן החדש). נקודות 4/5
-   * (switchSession/newSession מקומיים) קוראות לו עם אותו לקוח — בלי dispose ובלי
-   * בנייה מחדש (ה-tee קפוא על ה-view שנוצר ביצירת הלקוח — §4.3).
+   * מאמץ את הלקוח וזהות הסשן אל ה-view ושומר תוכן ופריימים מוקדמים שכבר הגיעו.
+   * switchSession/newSession מקומיים משתמשים באותו לקוח ו-view בלי dispose או
+   * בנייה מחדש; ה-callbacks שנוצרו עם הלקוח ממשיכים למסור עדכונים לאותו view.
    */
   #adoptLocalView(client: AcpClient, sessionId: string): void {
     this.#localView?.adopt({ client, sessionId })
-  }
-
-  async #drainViewPatches(view: SessionView): Promise<void> {
-    await drainViewPatches(this.#drainViewPatchesDeps(), view)
+    if (this.#localView) this.sessionState = this.#localView.state
   }
 
   /**
-   * מסנכן שדות metadata מ-SessionState (ישיר) לשדות ה-$state של ה-VM.
-   * נקרא אחרי כל batch patches מ-view.patches.
+   * מסנכרן שדות metadata מ-state הפריים שנצרך לשדות ה-$state של ה-VM.
+   * נקרא ב-endBatch של הכותב הסינכרוני במסלול HTTP.
    */
   #syncFromViewState(viewState: SessionState): void {
     // ─── slice view-switch C3-ו: view נלכד פעם אחת — משמש את ה-shim של pending למטה ───
@@ -1256,7 +1230,7 @@ export class AgentSession {
         },
         startReplay: () => {
           this.#transcript.replace([])
-          this.sessionState = createInitialSessionState({ sessionId: this.#sessionId })
+          this.#beginLocalProjection(this.#sessionId)
           this.isLoadingHistory = true
         },
         finishReplay: () => {
@@ -1330,7 +1304,7 @@ export class AgentSession {
         }
         this.#view = view
         this.#isRemote = true
-        void this.#consumeViewPatches(view)
+        this.#bindProjection(view, true)
       },
       applyTitle: (agent) => applyManualTitleFromAttach(this, agent, false),
       onConnected: () => this.#setStatus("connected"),
@@ -1597,7 +1571,7 @@ export class AgentSession {
     this.#errorScope.reset()
     this.authMethods = [] // slice auth-guidance: נקה לפני חיבור חדש — נלכד מחדש אחרי createAcpClient
     this.#transcript.replace([])
-    this.sessionState = createInitialSessionState({ sessionId: input.sessionId })
+    this.#beginLocalProjection(input.sessionId)
     this.#detached = false
 
     // ─── DEV-only: mock session (sessionId "mock:<name>") ───
@@ -1715,14 +1689,21 @@ export class AgentSession {
    * משמש את ה-Speaker כדי לבנות NarrateContext עבור קריינות קריאה לכלי.
    */
   recentAssistantMessages(n: number = 3): string[] {
-    const result: string[] = []
-    for (let i = this.bubbles.length - 1; i >= 0 && result.length < n; i--) {
-      const b = this.bubbles[i]
-      if (b?.kind === "message") {
-        result.unshift(b.segments.map((s) => s.text).join(""))
-      }
-    }
-    return result
+    return this.#transcript.recentAssistantMessages(n)
+  }
+
+  speakerTranscript() {
+    return createSpeakerTranscriptPort(this.#transcript, {
+      status: () => this.status,
+      turnState: () => this.turnState,
+      isLoadingHistory: () => this.isLoadingHistory,
+      historyEpoch: () => this.historyEpoch,
+      historyMark: () => ({
+        mark: this.historyMark,
+        processingTarget: this.#historyMarkProcessingTarget,
+      }),
+      lastUserMessage: () => this.lastUserMessage,
+    })
   }
 
   // ─── slice 23: session config ─── (תוספתי)
@@ -2068,6 +2049,7 @@ export class AgentSession {
     } else if (this.#view) {
       void this.#view.close().catch(() => {})
     }
+    this.#localView?.dispose()
     this.#client = null
     this.#view = null
     this.#localView = null // slice local-view-wiring C3: איפוס כפול לצד #view (§4.3)
@@ -2159,213 +2141,7 @@ export class AgentSession {
   }
 
   #onSessionUpdate = (notification: SessionNotification): void => {
-    this.#onUpdateObserved?.(notification.update)
-    this.#noteAgentActivity() // Observe activity before classification, including silent/throwing input.
-
-    for (const action of classifySessionUpdate({ update: notification.update })) {
-      const update = notification.update as unknown as Record<string, unknown> & {
-        toolCallId?: string
-      }
-      const content = ("content" in action ? action.content : undefined) as {
-        mimeType?: string
-        data?: string
-        name?: string
-        uri?: string
-      }
-      // Adopt the optimistic ID for every user content kind before append/reduce.
-      if (
-        action.kind === "user-text" ||
-        action.kind === "user-image" ||
-        action.kind === "user-link" ||
-        action.kind === "user-audio" ||
-        action.kind === "user-placeholder"
-      ) {
-        this.#transcript.adoptUserMessageId(action.messageId)
-      }
-      switch (action.kind) {
-        case "observed":
-          break
-        case "extension":
-          this.#onExtNotification(action.method, action.params as Record<string, unknown>)
-          break
-        case "tool-call":
-          if (action.parentToolUseId !== undefined) {
-            handleSubagentToolCall(this.#subagentToolNestingDeps(), update, action.parentToolUseId)
-          } else {
-            this.#applyToolCall(update)
-          }
-          break
-        // The existing parent map wins over metadata; HTTP may need metadata fallback.
-        case "tool-update":
-          if (
-            update.toolCallId !== undefined &&
-            this.#session.subagentToolCallParents.has(update.toolCallId)
-          ) {
-            handleSubagentToolCallUpdate(this.#subagentToolNestingDeps(), update)
-          } else {
-            const parentToolUseId = action.parentToolUseId
-            const parentBubbleExists =
-              parentToolUseId !== undefined &&
-              this.bubbles.some(
-                (b) => b.kind === "tool" && b.toolCall.toolCallId === parentToolUseId,
-              )
-            const childAlreadyTopLevel =
-              update.toolCallId !== undefined &&
-              this.bubbles.some(
-                (b) => b.kind === "tool" && b.toolCall.toolCallId === update.toolCallId,
-              )
-            if (parentToolUseId !== undefined && parentBubbleExists && !childAlreadyTopLevel) {
-              handleSubagentToolCall(this.#subagentToolNestingDeps(), update, parentToolUseId)
-            } else {
-              if (update.status === "pending" || update.status === "in_progress") {
-                this.#setTurnState("calling-tool")
-                if (this.#turnEnded) this.#scheduleIdle()
-              }
-              const { state, patches } = reduce(this.sessionState, action.update)
-              this.sessionState = state
-              this.#transcript.applyPatches(patches)
-            }
-          }
-          break
-        case "mode": {
-          const modeId = update.currentModeId
-          if (typeof modeId === "string")
-            this.modes = { availableModes: this.modes?.availableModes ?? [], currentModeId: modeId }
-          break
-        }
-        case "config":
-          if (Array.isArray(update.configOptions))
-            this.configOptions = update.configOptions as SessionConfigOption[]
-          break
-        case "commands":
-          this.availableCommands = Array.isArray(update.availableCommands)
-            ? (update.availableCommands as AvailableCommand[])
-            : []
-          break
-        case "plan":
-          this.planStore = reducePlan(this.planStore, update)
-          break
-        case "usage": {
-          const u = update as unknown as UsageUpdate
-          this.contextUsage = {
-            used: u.used,
-            size: u.size,
-            cost: u.cost ?? this.contextUsage?.cost,
-          }
-          break
-        }
-        case "title": {
-          if (this.titleManual) break
-          const title = update.title as string | null | undefined
-          if (title === null) this.sessionTitle = ""
-          else if (typeof title === "string") {
-            this.sessionTitle = title
-            this.#pushTitleToServer(this.sessionTitle)
-          }
-          break
-        }
-        case "user-text": {
-          const { state, patches } = reduce(this.sessionState, action.update)
-          this.sessionState = state
-          this.#transcript.applyPatches(patches)
-          break
-        }
-        case "user-image":
-          appendUserImage(this.#transcript, action.messageId, {
-            mimeType: content.mimeType as string,
-            data: content.data as string,
-          })
-          break
-        case "user-link": {
-          const label = content.name ?? content.uri
-          appendUserPlaceholder(this.#transcript, action.messageId, {
-            kind: "resource_link",
-            label: label as string | undefined,
-            uri: content.uri as string | undefined,
-          })
-          break
-        }
-        case "user-audio":
-          appendUserPlaceholder(this.#transcript, action.messageId, { kind: "audio" })
-          break
-        case "user-placeholder":
-          appendUserPlaceholder(this.#transcript, action.messageId, { kind: "resource" })
-          break
-        case "agent-text":
-          this.#setTurnState("responding")
-          if (this.#turnEnded) this.#scheduleIdle()
-          {
-            const { state, patches } = reduce(this.sessionState, action.update)
-            this.sessionState = state
-            this.#transcript.applyPatches(patches)
-          }
-          break
-        case "agent-content": {
-          this.#setTurnState("responding")
-          if (this.#turnEnded) this.#scheduleIdle()
-          // Keep the direct null access after turn-state mutation (legacy parity).
-          const agentContent = content as {
-            type?: string
-            name?: string
-            uri?: string
-          }
-          if (agentContent.type === "resource_link") {
-            appendAgentPlaceholder(this.#transcript, action.messageId, {
-              kind: "resource_link",
-              label: (agentContent.name ?? agentContent.uri ?? "") as string,
-              uri: agentContent.uri as string | undefined,
-            })
-          } else {
-            appendAgentPlaceholder(this.#transcript, action.messageId, {
-              kind:
-                agentContent.type === "image"
-                  ? "image"
-                  : agentContent.type === "audio"
-                    ? "audio"
-                    : "resource",
-            })
-          }
-          break
-        }
-        case "thought-text":
-          this.#setTurnState("thinking")
-          if (this.#turnEnded) this.#scheduleIdle()
-          {
-            const { state, patches } = reduce(this.sessionState, action.update)
-            this.sessionState = state
-            this.#transcript.applyPatches(patches)
-          }
-          break
-        case "default": {
-          const { state, patches } = reduce(this.sessionState, action.update)
-          this.sessionState = state
-          this.#transcript.applyPatches(patches)
-          break
-        }
-      }
-    }
-  }
-
-  // ─── slice session-state-reducer C4: מתודת-עזר ל-tool_call create (reduce + patches + flush + turnState) ───
-
-  /**
-   * #applyToolCall — מיישג tool_call create דרך reduce + applyPatchMutable.
-   * קרוא משני מקומות: (1) dispatch tool_call של #onSessionUpdate (non-subagent),
-   * (2) fallback של #handleSubagentToolCall (אב לא נמצא — אביגיל r4 #1).
-   */
-  #applyToolCall(update: Record<string, unknown>): void {
-    const { state: nextState, patches } = reduce(this.sessionState, {
-      ...update,
-      sessionUpdate: "tool_call",
-    })
-    this.sessionState = nextState
-    this.#transcript.applyPatches(patches)
-    // flush pending subagent events for this toolCallId (slice subagent-transcript-data-v2)
-    if (typeof update.toolCallId === "string") {
-      this.#transcript.flushPendingSubagentEvents(update.toolCallId)
-    }
-    // turnState תמיד calling-tool ללא תנאי (create, לא update)
-    this.#setTurnState("calling-tool")
-    if (this.#turnEnded) this.#scheduleIdle()
+    if (!this.#localView) throw new Error("Local projection has not begun")
+    this.#localView.ingestUpdate(notification.update)
   }
 }

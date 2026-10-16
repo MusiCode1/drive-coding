@@ -119,12 +119,21 @@ vi.mock("$lib/adapters/agents-api", () => ({
 vi.mock("$lib/adapters/ext", () => ({ createExtClient: vi.fn(() => ({})) }))
 vi.mock("$lib/session/create-session-view", () => ({
   createRemoteView: vi.fn(
-    async (opts: { agentId: string }, hooks?: { onCreated?: (view: MockSessionView) => void }) => {
+    async (
+      opts: { agentId: string },
+      hooks?: {
+        onCreated?: (view: MockSessionView) => void
+        onReady?: (view: MockSessionView) => unknown
+      },
+    ) => {
       const v = new MockSessionView()
       v.connect(`http:${opts.agentId}`)
       views.push(v)
       hooks?.onCreated?.(v)
-      return pause("httpConnect", v)
+      const connected = await pause("httpConnect", v)
+      hooks?.onReady?.(connected)
+      connected.hydrate()
+      return connected
     },
   ),
 }))
@@ -485,22 +494,22 @@ it("warm failure disposes view without closing client before exit", async () => 
 
 for (const replacement of ["new-owner", "same-owner"] as const) {
   it(`all stale ACP callbacks stop before the tee after ${replacement}`, async () => {
-    const descriptor = Object.getOwnPropertyDescriptor(
-      LocalSessionView.prototype,
-      "observerCallbacks",
-    )
-    if (!descriptor?.get) throw new Error("missing observer getter")
-    const readObserver = descriptor.get
-    const observed: Array<{ update: ReturnType<typeof vi.fn>; ext: ReturnType<typeof vi.fn> }> = []
-    const spy = vi
-      .spyOn(LocalSessionView.prototype, "observerCallbacks", "get")
-      .mockImplementation(function (this: LocalSessionView) {
-        const original = readObserver.call(this) as LocalSessionView["observerCallbacks"]
-        const update = vi.fn(original.onUpdate)
-        const ext = vi.fn(original.onExtNotification)
-        observed.push({ update, ext })
-        return { onUpdate: update, onExtNotification: ext }
-      })
+    const observed = [{ update: vi.fn<() => void>(), ext: vi.fn<() => void>() }]
+    const ingest = LocalSessionView.prototype.ingestUpdate
+    const spy = vi.spyOn(LocalSessionView.prototype, "ingestUpdate").mockImplementation(function (
+      this: LocalSessionView,
+      raw: unknown,
+    ) {
+      let counters = observed[0]
+      if (!counters) {
+        counters = { update: vi.fn<() => void>(), ext: vi.fn<() => void>() }
+        observed.push(counters)
+      }
+      if ((raw as { sessionUpdate?: string }).sessionUpdate === "_drive/ext_notification")
+        counters.ext()
+      else counters.update()
+      return ingest.call(this, raw)
+    })
     try {
       const s = session()
       await s.attach(input)

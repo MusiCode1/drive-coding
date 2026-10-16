@@ -11,7 +11,6 @@ import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/clien
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
-import type { ViewEmission } from "$lib/session/session-view"
 import { MockSessionView } from "$lib/view-models/__fixtures__/mock-session-view.svelte"
 import { AgentSession, type SessionEndReason } from "$lib/view-models/agent-session.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
@@ -57,7 +56,7 @@ function audioHarness() {
   const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
   const orderAlloc = new OrderAllocator()
   const speaker = new Speaker({
-    session,
+    session: session.speakerTranscript(),
     settings,
     playlist,
     audioStream: sink,
