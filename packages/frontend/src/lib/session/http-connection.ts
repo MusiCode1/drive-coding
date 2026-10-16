@@ -1,7 +1,8 @@
-import { createAgent, releaseConnection } from "$lib/adapters/agents-api"
+import { createAgent } from "$lib/adapters/agents-api"
 import type { AgentInput, CloseMode, Connection } from "./connection"
 import { ConnectionAllocation } from "./connection-allocation"
 import { isSetupLive, nextSetupEpoch, type SetupEpoch } from "./connection-owner-lifecycle"
+import { ConnectionRelease } from "./connection-release"
 import { createRemoteView } from "./create-session-view"
 import type { RemoteSessionViewOptions } from "./remote-session-view"
 import type { SessionView } from "./session-view"
@@ -33,18 +34,16 @@ export class HttpConnection implements Connection {
   #attempt: HttpAttempt | undefined
   #setupEpoch: SetupEpoch = 0
   #allocation = new ConnectionAllocation()
-  #releaseAgentId: string | null = null
-  #releaseConnectionId: string | null = null
+  #release = new ConnectionRelease()
 
   constructor(private readonly deps: HttpConnectionDeps) {}
 
   captureReleaseIdentity(agentId: string, connectionId: string): void {
-    this.#releaseAgentId = agentId
-    this.#releaseConnectionId = connectionId
+    this.#release.capture(agentId, connectionId, this.#setupEpoch)
   }
 
   updateReleaseAgent(agentId: string): void {
-    this.#releaseAgentId = agentId
+    this.#release.updateAgent(agentId, this.#setupEpoch)
   }
 
   deleteAgentOnce(agentId: string): void {
@@ -74,10 +73,7 @@ export class HttpConnection implements Connection {
   cancelReconnect(): void {}
 
   release(): void {
-    const agentId = this.#releaseAgentId
-    const connectionId = this.#releaseConnectionId
-    if (agentId && connectionId && this.#allocation.releaseOnce(agentId))
-      void releaseConnection(agentId, connectionId)
+    this.#release.release()
   }
 
   #closeView(attempt: HttpAttempt, view = attempt.view): Promise<void> {

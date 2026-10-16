@@ -1,11 +1,12 @@
 import type { SessionConfigOption, SessionModeState } from "@agentclientprotocol/sdk"
 import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 import { type AcpClient, createAcpClient } from "@drive-coding/provider/client"
-import { createAgent, notifySessionAttached, releaseConnection } from "$lib/adapters/agents-api"
+import { createAgent, notifySessionAttached } from "$lib/adapters/agents-api"
 import { sendDetachFrame } from "$lib/view-models/agent-session-detach-frame"
 import type { AgentInput, CloseMode, Connection } from "./connection"
 import { ConnectionAllocation } from "./connection-allocation"
 import { isSetupLive, nextSetupEpoch, type SetupEpoch } from "./connection-owner-lifecycle"
+import { ConnectionRelease } from "./connection-release"
 import { guardAcpCallbacks } from "./guard-acp-callbacks"
 import type { LocalSessionView } from "./local-session-view"
 import {
@@ -57,8 +58,7 @@ export class WsConnection implements Connection {
   #controller: WsReconnectController | null
   #setupEpoch: SetupEpoch = 0
   #allocation = new ConnectionAllocation()
-  #releaseAgentId: string | null = null
-  #releaseConnectionId: string | null = null
+  #release = new ConnectionRelease()
 
   constructor(private readonly deps: WsConnectionDeps) {
     this.#controller = deps.reconnect ? new WsReconnectController(this, deps, deps.reconnect) : null
@@ -79,9 +79,12 @@ export class WsConnection implements Connection {
     return attempt
   }
 
-  captureReleaseIdentity(agentId: string, connectionId: string): void {
-    this.#releaseAgentId = agentId
-    this.#releaseConnectionId = connectionId
+  captureReleaseIdentity(
+    agentId: string,
+    connectionId: string,
+    generation = this.#setupEpoch,
+  ): void {
+    this.#release.capture(agentId, connectionId, generation)
   }
 
   updateReleaseAgent(agentId: string): void {
@@ -188,10 +191,7 @@ export class WsConnection implements Connection {
   }
 
   release(): void {
-    const agentId = this.#releaseAgentId
-    const connectionId = this.#releaseConnectionId
-    if (agentId && connectionId && this.#allocation.releaseOnce(agentId))
-      void releaseConnection(agentId, connectionId)
+    this.#release.release()
   }
 
   discardLate(attempt: WsResourceAttempt): boolean {
@@ -228,7 +228,12 @@ export class WsConnection implements Connection {
     if (agent.kind === "existing-ws") {
       if (!agent.sessionId) throw new Error("existing WS agent requires sessionId")
       this.deps.prepareExisting(agent)
-      this.captureReleaseIdentity(agent.agentId, this.deps.connectionId)
+      // Publication belongs to the first warm attempt, allocated immediately below.
+      this.captureReleaseIdentity(
+        agent.agentId,
+        this.deps.connectionId,
+        nextSetupEpoch(this.#setupEpoch),
+      )
       if (!this.#controller) throw new Error("existing WS agent requires reconnect policy")
       await this.#controller.attachExisting(agent.agentId)
       return

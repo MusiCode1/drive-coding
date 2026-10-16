@@ -575,3 +575,52 @@ function present<T>(value: T | null | undefined): T {
   if (value == null) throw new Error("missing test fixture")
   return value
 }
+
+it("warm adoption of the same agent opens a new release generation on the same owner", async () => {
+  const s = session()
+  await s.attach(input)
+  const agentId = present(s.agentId)
+  const sessionId = present(s.sessionId)
+  s.releaseConnection()
+  s.releaseConnection()
+  expect(api.releaseConnection).toHaveBeenCalledExactlyOnceWith(agentId, s.connectionId)
+  vi.mocked(api.listAgents).mockResolvedValueOnce([
+    {
+      id: agentId,
+      acpSessionId: sessionId,
+      cwd: input.cwd,
+      cliKind: "claude",
+      modelOverride: null,
+      status: "ready",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+  ])
+  await s.reconnect()
+  expect(s.status).toBe("connected")
+  expect(s.agentId).toBe(agentId)
+  expect(s.sessionId).toBe(sessionId)
+  // A new attached client and no new allocation prove warm reuse of the same owner.
+  expect(api.createAgent).toHaveBeenCalledTimes(1)
+  expect(clients).toHaveLength(2)
+  expect(api.deleteAgent).not.toHaveBeenCalled()
+  s.releaseConnection()
+  s.releaseConnection()
+  expect(api.releaseConnection).toHaveBeenCalledTimes(2)
+  expect(api.releaseConnection).toHaveBeenNthCalledWith(2, agentId, s.connectionId)
+})
+
+it("initial existing warm publication and adoption share one release generation", async () => {
+  gate = "loadSession"
+  const s = session()
+  const attaching = s.attachToLiveAgent({ ...input, agentId: "existing0", sessionId: "saved" })
+  await entered.promise
+  s.releaseConnection()
+  s.releaseConnection()
+  expect(api.releaseConnection).toHaveBeenCalledExactlyOnceWith("existing0", s.connectionId)
+  hold.resolve(undefined)
+  await attaching
+  expect(s.status).toBe("connected")
+  s.releaseConnection()
+  s.releaseConnection()
+  expect(api.releaseConnection).toHaveBeenCalledTimes(1)
+})
