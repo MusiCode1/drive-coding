@@ -85,6 +85,10 @@ function runOne(file) {
       resolve({
         file,
         ok: code === 0,
+        // slice e2e-browser-tests: `skipped` הוא מצב שלישי ולא הצלחה. בלי זה
+        // בדיקה שיוצאת 0 בגלל שדילגה נספרה כ-PASS, והאגרגט יכול היה להכריז
+        // ירוק מלא כשאפס דפדפנים נפתחו.
+        skipped: (code === 0 && result && result.skipped) ? String(result.skipped) : null,
         exitCode: code ?? -1,
         ms: Date.now() - start,
         result,
@@ -98,17 +102,29 @@ for (const t of tests) {
   console.log(`\n--- ${t} ---`)
   const s = await runOne(t)
   summaries.push(s)
-  console.log(`  → ${s.ok ? "PASS" : "FAIL"} (${s.exitCode}) in ${s.ms}ms`)
+  const state = !s.ok ? "FAIL" : s.skipped ? `SKIP (${s.skipped})` : "PASS"
+  console.log(`  → ${state} (${s.exitCode}) in ${s.ms}ms`)
 }
 
-const ok = summaries.every((s) => s.ok)
-const passed = summaries.filter((s) => s.ok).length
+const skipped = summaries.filter((s) => s.ok && s.skipped).length
+const passed = summaries.filter((s) => s.ok && !s.skipped).length
+const failed = summaries.filter((s) => !s.ok).length
+
+// 🛑 "דבר לא רץ" אינו הצלחה. דילוג בודד מותר ורועש; דילוג גורף הוא כשל —
+// אחרת ירוק מלא אפשרי בלי שאף בדיקה בוצעה.
+const nothingRan = passed === 0 && skipped > 0
+const ok = failed === 0 && !nothingRan
 
 console.log("\n=== Summary ===")
 for (const s of summaries) {
-  console.log(`  ${s.ok ? "✓" : "✗"} ${s.file}  (${s.ms}ms)`)
+  const mark = !s.ok ? "✗" : s.skipped ? "⊘" : "✓"
+  const why = s.skipped ? `  [skipped: ${s.skipped}]` : ""
+  console.log(`  ${mark} ${s.file}  (${s.ms}ms)${why}`)
 }
-console.log(`\n${passed}/${summaries.length} passed`)
+console.log(`\n${passed} passed · ${skipped} skipped · ${failed} failed  (מתוך ${summaries.length})`)
+if (nothingRan) {
+  console.error("\n🛑 כל הבדיקות דילגו — אין כיסוי. נספר כשל, לא הצלחה.")
+}
 
 console.log(
   "RESULT: " +
@@ -116,6 +132,9 @@ console.log(
       ok,
       total: summaries.length,
       passed,
+      skipped,
+      failed,
+      nothingRan,
       tests: summaries.map((s) => ({
         file: s.file,
         ok: s.ok,

@@ -39,7 +39,8 @@
  *   npx playwright install chromium-headless-shell
  */
 
-import { chromium } from "playwright"
+// playwright מיובא דינמית אחרי השומר למטה — ייבוא סטטי היה
+// קורס לפניו כשאין node_modules, ואז הדילוג נראה ככשל.
 
 const FE_URL = process.env.FE_URL ?? "http://localhost:5173"
 const PROMPT = process.env.PROMPT ?? "שלום"
@@ -71,6 +72,25 @@ function summarize(arr, n = 3) {
 }
 
 // ─── run ───
+// 🛑 slice e2e-browser-tests: הסקריפט הזה עדיין קורא `chromium.launch()`,
+// שחסום במארח ע"י host-browser-guard, והוא גם תלוי בספק חיצוני בתשלום
+// (ElevenLabs / Gemini / turn אמיתי של LLM). ⇒ מדלג כברירת-מחדל, ורועש.
+// המסלול הנתמך הוא `tests/e2e/` עם כרום בקונטיינר; ראו tests/smoke/README.md.
+if (process.env.SMOKE_LEGACY_HOST_CHROME !== "1") {
+  console.log("skipped: legacy-host-chrome — chromium.launch() חסום במארח")
+  console.log(
+    "RESULT: " +
+      JSON.stringify({
+        ok: true,
+        skipped: "legacy-host-chrome",
+        reason: "host chromium.launch() is blocked by host-browser-guard; migrate to tests/e2e/",
+      }),
+  )
+  process.exit(0)
+}
+
+const { chromium } = await import("playwright")
+
 const browser = await chromium.launch({ headless: !HEADED })
 const page = await browser.newPage()
 

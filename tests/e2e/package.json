@@ -1,0 +1,15 @@
+{
+  "name": "drive-coding-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end browser tests. Deliberately outside the Bun workspace so `bun install` stays fast — same rationale as tests/smoke/. Browsers are NOT downloaded here: the suite connects over CDP to Chrome inside the linux-gui container, because downloading/running a browser on the host is blocked by host-browser-guard.",
+  "scripts": {
+    "test": "playwright test",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}

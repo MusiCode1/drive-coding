@@ -86,8 +86,9 @@ try {
     failures.push(`container ${CONTAINER} not running`)
   } else {
     const profile = mkdtempSync(join(tmpdir(), "pnc-chrome-"))
-    // Port-forward: host connects to container CDP via published port or docker network.
-    // Assume linux-gui publishes CDP_PORT or use docker exec curl inside.
+    // נמדד (slice e2e-browser-tests): linux-gui רץ ב-`network_mode: host`, ולכן
+    // פורטי הקונטיינר יושבים ישר על 127.0.0.1 של המארח ואין צורך בפרסום פורט.
+    // `docker port linux-gui` מחזיר ריק בגלל זה, ולא בגלל שאין מיפוי.
     launchChromeInContainer(profile)
     await new Promise((r) => setTimeout(r, 2000))
 

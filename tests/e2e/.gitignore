@@ -1,0 +1,7 @@
+# תוצרי ריצה של Playwright.
+# ⚠️ `test-results/` מוחרג גם ב-.bare/info/exclude המקומי, אבל זה exclude של
+# הקלון הזה בלבד ואינו נוסע עם הריפו — לכן הוא מופיע כאן במפורש.
+test-results/
+playwright-report/
+blob-report/
+.last-run.json

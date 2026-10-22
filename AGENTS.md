@@ -466,6 +466,21 @@ opencode → use CLI=claude), see `docs-for-llm/running-locally.md`.
 > looking at a running build. Every merge is preceded by: build → serve → user views →
 > user approves → merge.
 
+> 🧪 **‏ולפני שבונים את הפריוויו — ‏חליפת ה-E2E, ‏פעם אחת:**
+>
+> ```bash
+> cd tests/e2e && npm install && npx playwright test
+> ```
+>
+> 🛑 **‏פעם אחת, ‏סמוך לפריוויו — ‏לא פר-פאזה ולא פר-קומיט** (‏הכרעת-משתמש
+> ‏22/10/2026). ‏היא מרימה BE, ‏בונה FE ‏ופותחת כרום בקונטיינר, ‏ולכן הרצה בכל
+> ‏צעד יקרה ומיותרת. ‏**‏אין hook ואין CI שמריץ אותה** ‏— ‏זה באחריות מי שמגיש
+> ‏את הפריוויו. ‏דרישות, ‏משתני-סביבה ומה לעשות כשהיא נכשלת:
+> ‏**‏`tests/e2e/README.md`**.
+>
+> ⚠️ ‏הדפדפן רץ ב-`linux-gui`, ‏לא במארח (‏`host-browser-guard`), ‏ו-**‏CDP 9222
+> ‏אסור** ‏— ‏זה הפרופיל המחובר ששותפים לו סשנים אחרים.
+
 When an agent (calev runtime-gate, or any "look at this and confirm" moment) serves
 the FE for the **user** to inspect, follow these rules:
 

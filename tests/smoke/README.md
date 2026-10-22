@@ -1,130 +1,71 @@
-# Smoke tests
+# tests/smoke — חליפה מדור קודם
 
-End-to-end tests that exercise BE + FE + OneCLI gateway with real browser
-(Playwright headless Chromium).
+> **‏המסלול הנתמך לבדיקות דפדפן הוא `tests/e2e/`.** התיקייה הזאת נשארת כי
+> שלושה מהסקריפטים כאן מכסים מסלולים שטרם הומרו, ואין טעם למחוק כיסוי לפני
+> שיש לו מחליף.
 
-## Why a separate folder
+## מה קרה כאן (22/10/2026)
 
-Playwright includes browser binaries (~100 MB). We deliberately keep this
-outside the Bun workspace so a regular `bun install` stays fast. Install
-separately when you actually want to run smoke tests.
+החליפה נכתבה בסבב `testing-coverage` ומאז הסביבה זזה תחתיה. מה שתוקן:
 
-## Setup (one-time per machine)
+| מה | מצב |
+|---|---|
+| ‏`disconnect.mjs` | **הומר** ל-`tests/e2e/specs/disconnect.spec.ts` והוסר מכאן |
+| ‏`chat-roundtrip` · `voice-picker` · `cache-replay` | **מדלגים כברירת-מחדל.** הם קוראים `chromium.launch()` שחסום במארח, והם תלויים בספק חיצוני בתשלום |
+| ‏`playlist-nav-chrome` | נשאר מאחורי `PLAYLIST_NAV_CHROME=1`. ההערה שהניחה שהקונטיינר מפרסם פורט הוחלפה בעובדה נמדדת |
+| ‏`run-all.mjs` | ‏**‏`skipped` הוא מצב שלישי**, ודילוג גורף נספר ככשל |
+
+## 🔴 מה שהיה שבור, ולמה זה היה בלתי-נראה
+
+‏`run-all.mjs` קבע `ok: code === 0`, וסקריפט שדילג יוצא 0. ⇒ **האגרגט היה
+מדפיס "4/4 passed" ו-exit 0 כשאפס דפדפנים נפתחו.** עכשיו אותו מצב בדיוק מדפיס
+`0 passed · 4 skipped` ו-exit **1**.
+
+ואין כאן CI ואין hook שמריץ את זה, ולכן שום מנגנון לא היה אמור לתפוס את
+הריקבון — הוא נמצא רק כשניגשנו לכתוב את `tests/e2e/`.
+
+## הרצה
 
 ```bash
 cd tests/smoke
-npm install
-npx playwright install chromium-headless-shell
+npm install        # פעם אחת; playwright
+node run-all.mjs
 ```
 
-## Running
+**תנאי-קדם:** ‏BE חי. ‏⚠️ **הערך ההיסטורי `FE_URL=http://localhost:5173` שגוי** —
+פורט ה-dev של Vite מוקצה ע"י ה-OS (`packages/frontend/vite.config.ts`:
+`port: OS-assigned`). ‏`tests/e2e/` עוקף את זה לגמרי: ה-BE מגיש את ה-FE הבנוי,
+ולכן יש **כתובת אחת**.
 
-Pre-condition: BE + FE must be running locally.
+להרצת סקריפט מדור-קודם בכל זאת, במכונה שבה דפדפן מקומי כן זמין:
 
 ```bash
-# Terminal 1 — BE (REQUIRES OneCLI, see root AGENTS.md → "Backend MUST run through OneCLI")
-cd packages/backend
-onecli run --agent voice-acp -- bun --watch src/server.ts
-
-# Terminal 2 — FE
-bun run --filter @drive-coding/frontend dev
-
-# Terminal 3 — smoke
-cd tests/smoke
-node run-all.mjs           # every smoke test (the recommended entry point)
-node chat-roundtrip.mjs    # one specific test
-npm test                   # alias for run-all.mjs
+SMOKE_LEGACY_HOST_CHROME=1 node voice-picker.mjs
 ```
 
-Exit 0 = pass, exit 1 = fail (with reason).
+## קונבנציית הפלט
 
-The `run-all.mjs` runner spawns each `*.mjs` in this folder sequentially
-(BE has shared state across runs — sessions accumulate; parallelism would
-mask race bugs). It captures each test's `RESULT: {...}` line and emits a
-final aggregate `RESULT: {ok, total, passed, tests:[...]}`.
-
-## Output formats
-
-The script prints human-readable output AND a single structured line
-prefixed with `RESULT: ` for parseability:
+כל סקריפט מדפיס פלט לאדם **ובנוסף** שורה מובנית אחת:
 
 ```
-=== Bubbles ===
-  [user] Me / שלום
-  [thought] ...
-...
-✓ SMOKE PASSED
-RESULT: {"ok":true,"bubbles":[...],"proxy":{...},"console":{...}}
+RESULT: {"ok":true,"skipped":null,...}
 ```
 
-To extract just the structured result:
+‏`run-all.mjs` קורא את השורה הזאת. ‏`skipped` הוא מה שמבדיל "לא רץ" מ-"עבר" —
+בלעדיו הדילוג נראה כהצלחה.
+
 ```bash
-node chat-roundtrip.mjs 2>&1 | grep "^RESULT: " | sed 's/^RESULT: //' | jq .
+node voice-picker.mjs 2>&1 | grep '^RESULT: ' | sed 's/^RESULT: //' | jq .
 ```
 
-The `result` shape:
-```ts
-{
-  ok: boolean
-  feUrl: string
-  prompt: string
-  cli: string
-  bubbles: { kind: string; text: string }[]
-  proxy: {
-    requests: number
-    errors: number
-    errorDetails: { status: number; url: string }[]
-    cacheHits: number
-    cacheMisses: number
-    cacheOther: number
-  }
-  console: {
-    errors: number
-    warnings: number
-    errorDetails: string[]   // first 5
-    warningDetails: string[] // first 5
-  }
-  failures: string[]
-}
-```
+## הסקריפטים
 
-## Environment overrides
+| קובץ | מכסה | תלות חיצונית |
+|---|---|---|
+| `chat-roundtrip.mjs` | ‏סבב צ'אט מלא + TTS | ‏turn אמיתי של LLM + ElevenLabs |
+| `voice-picker.mjs` | בורר הקולות בטופס החיבור | ‏ElevenLabs דרך OneCLI |
+| `cache-replay.mjs` | ‏מטמון ה-proxy של ה-BE (`x-cache: hit`) | ‏Gemini + ElevenLabs |
+| `playlist-nav-chrome.mjs` | ‏harness ניווט-פלייליסט ב-Chrome | כרום בקונטיינר |
 
-| var | default | meaning |
-|-----|---------|---------|
-| `FE_URL` | `http://localhost:5173` | Where the FE is reachable |
-| `CWD` | `/home/user/projects/voice-acp/dev` | cwd to connect to |
-| `CLI` | `opencode` | Which CLI agent to spawn |
-| `PROMPT` | `שלום` | What to send |
-| `HEADED` | unset | Set to `1` to show the browser window |
-
-## Tests
-
-### `run-all.mjs`
-
-Runner. Discovers `*.mjs` (except itself), runs them sequentially, aggregates
-results. Emits `RESULT: {ok, total, passed, tests:[...]}`. Exit 0 = all passed.
-
-### `chat-roundtrip.mjs`
-
-Connect form → /chat → send prompt → wait for response → assert:
-
-- ✓ User bubble with the prompt text
-- ✓ At least one agent message bubble
-- ✓ TTS request fired (`/proxy/elevenlabs/v1/text-to-speech/.../stream`)
-- ✓ No proxy errors (4xx / 5xx — this catches OneCLI credential issues)
-- ✓ No browser console errors
-- ✓ No page errors
-
-What it does NOT verify:
-- Actual audio playback (headless Chrome blocks autoplay; not worth the
-  flag-juggling for now)
-- Mic input (slice 3)
-
-## Future tests
-
-Candidates for `tests/smoke/`:
-
-- `voice-roundtrip.mjs` — slice 3: record → STT → response → TTS
-- `replay.mjs` — slice 10: load a saved session → replay audio
-- `disconnect-reconnect.mjs` — connection lifecycle, Bug D1 regression check
+**הסדר סדרתי במכוון** — ל-BE יש state משותף (סשנים מצטברים), והרצה מקבילית
+הייתה מסתירה באגי-מקביליות במקום לחשוף אותם. אותו נימוק תקף ב-`tests/e2e/`.
