@@ -48,7 +48,19 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
 
   page: async ({ chrome, consoleErrors }, use) => {
     const context = chrome.browser.contexts()[0] ?? (await chrome.browser.newContext())
-    const page = await context.newPage()
+
+    // ⚠️ `newPage` מחזיר `Target crashed` מדי פעם אחרי בדיקות כבדות: הקונטיינר
+    // מוגבל ל-3GB עם 2GB מהם shm, והמארח עצמו תחת לחץ. זו קריסת renderer
+    // סביבתית ולא באג מוצר — ניסיון שני אחרי שהייה קצרה פותר אותה, ועדיף
+    // על retry של בדיקה שלמה (שמריץ מחדש גם חיבור לסוכן).
+    let page: Page
+    try {
+      page = await context.newPage()
+    } catch (err) {
+      if (!String(err).includes("Target crashed")) throw err
+      await new Promise((r) => setTimeout(r, 2000))
+      page = await context.newPage()
+    }
 
     page.on("console", (msg) => {
       if (msg.type() === "error") consoleErrors.push(`console.error: ${msg.text()}`)

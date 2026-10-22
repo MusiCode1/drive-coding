@@ -15,7 +15,7 @@
  *   SessionOptionsPanel.svelte:331  aria-label={t("header.settings")}        ← פתיחת הפאנל
  *   SessionOptionsPanel.svelte:444  ariaLabel={t("agentOptions.model.label")} ← הבורר
  */
-import { connect, readSelectOptions, t } from "../fixtures/connect.ts"
+import { connect, readSelectOptions } from "../fixtures/connect.ts"
 import { expect, test } from "../fixtures/index.ts"
 
 /** תווית שנראית כמו מזהה-מודל גולמי ולא כמו שם לאדם. */
@@ -26,7 +26,7 @@ test("בורר המודלים מאוכלס בשמות קריאים, בלי שג�
   app,
   consoleErrors,
 }) => {
-  await connect(page, app.baseURL, { cwd: process.cwd(), cli: /claude/i })
+  const t = await connect(page, app.baseURL, { cwd: process.cwd(), cli: /claude/i })
 
   await page.getByLabel(t("header.settings"), { exact: true }).click()
 
@@ -36,11 +36,16 @@ test("בורר המודלים מאוכלס בשמות קריאים, בלי שג�
     "בורר המודלים נעדר — ל-claude הגשר מפרסם מודלים, ולכן היעדרו הוא רגרסיה",
   ).toBeVisible()
 
-  const selected = (await trigger.innerText()).trim()
-  const labels = await readSelectOptions(page, t("agentOptions.model.label"))
+  // ⚠️ `innerText` של ה-trigger ושל כל אפשרות מכיל גם את שורת ה**תיאור**
+  // (`ui/Select.svelte:37-39`: label ואז description). משווים שם-לשם, ולכן
+  // לוקחים את השורה הראשונה בלבד — אחרת ההשוואה נכשלת על טקסט שהוא זהה בשמו.
+  const firstLine = (s: string) => s.split("\n")[0].trim()
+
+  const selected = firstLine(await trigger.innerText())
+  const labels = (await readSelectOptions(page, t("agentOptions.model.label"))).map(firstLine)
 
   console.log(`  ↳ נבחר: ${selected}`)
-  console.log(`  ↳ ${labels.length} אפשרויות: ${labels.join(" · ")}`)
+  console.log(`  ↳ ${labels.length} אפשרויות: ${JSON.stringify(labels)}`)
 
   expect(labels.length, "הרשימה אינה טריוויאלית").toBeGreaterThanOrEqual(2)
 

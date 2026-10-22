@@ -11,7 +11,7 @@
  *     (`SessionOptionsPanel.svelte:291` נושא מחלקות Tailwind בלבד).
  *   • באנר השגיאה נבדק דרך `role="alert"` (`+page.svelte:240`) ולא `[class*="error"]`.
  */
-import { connect, t } from "../fixtures/connect.ts"
+import { connect } from "../fixtures/connect.ts"
 import { expect, test } from "../fixtures/index.ts"
 
 /** שהיה אחרי הניתוק — ה-WS close המדומה נוחת בתוך ~שנייה מה-detach. */
@@ -22,7 +22,8 @@ test("ניתוק חוזר ל-/ בלי באנר שגיאה ובלי שגיאות 
   app,
   consoleErrors,
 }) => {
-  await connect(page, app.baseURL, { cwd: process.cwd() })
+  // ‏t נגזר מהשפה שהדף באמת עלה בה — ראו i18nForPage.
+  const t = await connect(page, app.baseURL, { cwd: process.cwd() })
 
   // מרגע זה והלאה — כל שגיאה חדשה היא רגרסיה.
   const errorsBefore = consoleErrors.length

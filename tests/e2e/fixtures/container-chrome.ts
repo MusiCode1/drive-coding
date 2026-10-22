@@ -23,6 +23,13 @@ import { chromium, type Browser } from "@playwright/test"
 
 const CONTAINER = process.env.LINUX_GUI_CONTAINER ?? "linux-gui"
 const PORT_BASE = Number(process.env.E2E_CDP_PORT ?? "9333")
+/**
+ * 🛑 ה-locale חייב להיות מפורש. `detectLocale()` (`core/src/i18n/index.ts:48`)
+ * נגזר מ-`navigator.language`, וכרום headless מדווח `en-US` ⇒ ה-UI עולה
+ * **באנגלית** בעוד ברירת-המחדל של המוצר היא עברית. נמדד: הבדיקה חיפשה את
+ * כפתור "חבר" מול דף שהציג "Connect to a CLI agent".
+ */
+export const LOCALE = (process.env.E2E_LOCALE ?? "he") as "he" | "en"
 const PORT_TRIES = 12
 const CDP_READY_MS = 20_000
 
@@ -116,6 +123,11 @@ export async function launchContainerChrome(): Promise<ContainerChrome> {
     `--user-data-dir=${profileDir}`,
     `--remote-debugging-port=${cdpPort}`,
     "--headless=new",
+    // ⚠️ `--lang` לבדו אינו משנה את `navigator.language` (נמדד: הדף עלה באנגלית
+    // למרות --lang=he). `--accept-lang` כן. ובכל זאת מי שקובע בבדיקה הוא
+    // `i18nForPage()`, שקורא את השפה מהדף במקום להניח אותה.
+    `--lang=${LOCALE}`,
+    `--accept-lang=${LOCALE}`,
     "--no-sandbox",
     "--disable-gpu",
     "--disable-dev-shm-usage",
