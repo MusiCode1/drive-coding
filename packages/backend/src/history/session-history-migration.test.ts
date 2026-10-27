@@ -106,6 +106,48 @@ describe("runLegacyImport", () => {
     db.close()
   })
 
+  it("keeps every registry folder when a session id is reused across folders", async () => {
+    setupFixtures()
+    writeFileSync(usagePath, "{}")
+    writeFileSync(
+      projectsPath,
+      JSON.stringify({
+        projects: [
+          {
+            cwd: "/first",
+            kind: "claude",
+            lastSeen: new Date(1000).toISOString(),
+            lastSessionId: "shared",
+          },
+          {
+            cwd: "/second",
+            kind: "claude",
+            lastSeen: new Date(2000).toISOString(),
+            lastSessionId: "shared",
+          },
+          {
+            cwd: "/third",
+            kind: "claude",
+            lastSeen: new Date(3000).toISOString(),
+            lastSessionId: "shared",
+          },
+        ],
+      }),
+    )
+
+    const db = openDb()
+    expect(runLegacyImport({ db, legacySources: { projectsJsonPath: projectsPath } })).toBe(
+      "imported",
+    )
+    db.close()
+
+    const store = await createSessionHistoryStore(dbPath)
+    const projects = store.listProjects()
+    expect(projects.map((p) => p.cwd).sort()).toEqual(["/first", "/second", "/third"])
+    expect(projects.reduce((count, p) => count + p.sessionCount, 0)).toBe(1)
+    store.close()
+  })
+
   it("hides cwd present in usage but absent from projects registry", async () => {
     setupFixtures()
     writeFileSync(projectsPath, JSON.stringify({ projects: [] }))

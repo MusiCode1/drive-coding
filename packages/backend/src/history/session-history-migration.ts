@@ -192,8 +192,16 @@ function importProjects(
   }
   const registryCwds = new Set(projects.map((p) => p.cwd))
   for (const p of projects) {
+    const lastSeenAt = seenAt(p.lastSeen)
+    // A session key can appear under several registry folders. Keep each folder
+    // even when the single sessions row is later attached to another cwd.
+    insertLegacyFolder(db, {
+      cwd: p.cwd,
+      cliKind: p.kind,
+      lastSeenAt,
+      payload: JSON.stringify(p),
+    })
     if (p.lastSessionId !== undefined && p.lastSessionId !== "") {
-      const lastSeenAt = seenAt(p.lastSeen)
       db.prepare(
         `INSERT INTO sessions (
           cliKind, acpSessionId, agentId, cwd,
@@ -205,13 +213,6 @@ function importProjects(
             WHEN excluded.lastAttachedAt > sessions.lastAttachedAt THEN excluded.lastAttachedAt
             ELSE sessions.lastAttachedAt END`,
       ).run(p.kind, p.lastSessionId, "legacy-import", p.cwd, lastSeenAt, lastSeenAt, lastSeenAt)
-    } else {
-      insertLegacyFolder(db, {
-        cwd: p.cwd,
-        cliKind: p.kind,
-        lastSeenAt: seenAt(p.lastSeen),
-        payload: JSON.stringify(p),
-      })
     }
   }
 
