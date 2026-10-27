@@ -28,6 +28,7 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, "**/dist/**"],
     env: {
       AGENTS_STORE_FILE: join(tmpdir(), `dc-test-agents-${process.pid}.json`),
+      HISTORY_DB_FILE: join(tmpdir(), `dc-test-history-${process.pid}.sqlite`),
     },
   },
 })

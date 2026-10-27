@@ -4,6 +4,10 @@
   "description": "AI-powered coding assistant — single-command server + web UI for ACP coding agents",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0",
+    "bun": ">=1.3.0"
+  },
   "bin": {
     "drive-coding": "dist/drive-coding.js"
   },

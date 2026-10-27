@@ -5,15 +5,20 @@
 import type { DriveCodingConfig } from "@drive-coding/core/config/schema"
 import { createLogger } from "@drive-coding/core/log"
 import { onConfigChange } from "@drive-coding/provider/config"
-import { applyReloadEffects, reloadRuntimeConfig } from "../config/runtime-config.js"
 import { serveStatic } from "@hono/node-server/serve-static"
 import type { Hono } from "hono"
+import { agentDocFiles } from "../agent-docs-runtime.js"
 import { isBinary } from "../binary.js"
+import { applyReloadEffects, reloadRuntimeConfig } from "../config/runtime-config.js"
+import { bootAgentEvents } from "../delivery/agent-events-boot.js"
 import { registerHttp } from "../delivery/http.js"
+import { registerAgentPromptHttp } from "../delivery/http-agent-prompt.js"
 import { registerAgentsHttp } from "../delivery/http-agents.js"
 import { registerCliAvailabilityHttp } from "../delivery/http-cli-availability.js"
 import { registerCliLogoHttp } from "../delivery/http-cli-logo.js"
+import { registerCliUsageHttp } from "../delivery/http-cli-usage.js"
 import { registerClientLogHttp } from "../delivery/http-client-log.js"
+import { registerDocsHttp } from "../delivery/http-docs.js"
 import { registerFsFileHttp } from "../delivery/http-fs-file.js"
 import { registerHealthHttp } from "../delivery/http-health.js"
 import {
@@ -23,18 +28,13 @@ import {
   registerRecordingsPostHttp,
 } from "../delivery/http-history.js"
 import { registerLiveTokenHttp } from "../delivery/http-live-token.js"
-import { registerAgentPromptHttp } from "../delivery/http-agent-prompt.js"
-import { registerDocsHttp } from "../delivery/http-docs.js"
-import { agentDocFiles } from "../agent-docs-runtime.js"
-import { bootAgentEvents } from "../delivery/agent-events-boot.js"
 import { registerMcpHttp } from "../delivery/http-mcp.js"
 import { registerHttpOptions } from "../delivery/http-options.js"
-import { registerHttpScopePolicy } from "../delivery/http-scope-policy.js"
 import { registerProxyHttp } from "../delivery/http-proxy.js"
 import { registerReloadConfigHttp } from "../delivery/http-reload-config.js"
-import { registerTtsCapabilitiesHttp } from "../delivery/http-tts-capabilities.js"
-import { registerCliUsageHttp } from "../delivery/http-cli-usage.js"
+import { registerHttpScopePolicy } from "../delivery/http-scope-policy.js"
 import { registerTokenUsageHttp } from "../delivery/http-token-usage.js"
+import { registerTtsCapabilitiesHttp } from "../delivery/http-tts-capabilities.js"
 import { registerUsageHttp } from "../delivery/http-usage.js"
 import { ensureStateSubdir } from "../paths.js"
 import type { BootDeps } from "./deps.js"
@@ -50,8 +50,8 @@ export async function buildApp(
   const {
     registry,
     connectionRegistry,
-    projectsRegistry,
     recordingsStore,
+    sessionHistoryStore,
     agentSessionRegistry,
     agentEventBus,
     orchestrator,
@@ -79,7 +79,7 @@ export async function buildApp(
   registerAgentsHttp(app, {
     registry,
     orchestrator: orchestratorWithEvents,
-    projectsRegistry,
+    sessionHistoryStore,
     bridgeManager: connectionRegistry,
     env,
   })
@@ -96,7 +96,7 @@ export async function buildApp(
   registerDocsHttp(app)
   agentDocFiles()
   registerHealthHttp(app, { registry, connectionRegistry })
-  registerProjectsHttp(app, { projectsRegistry })
+  registerProjectsHttp(app, { sessionHistoryStore })
   registerRecordingsHttp(app, { recordingsStore })
   registerRecordingsPostHttp(app, { recordingsStore })
   registerFsBrowseHttp(app, {
@@ -113,7 +113,7 @@ export async function buildApp(
 
   registerUsageHttp(app, { usageStore })
   registerTokenUsageHttp(app, { tokenUsageStore })
-  registerCliUsageHttp(app, { tokenUsageStore, projectsRegistry })
+  registerCliUsageHttp(app, { sessionHistoryStore })
   registerCliAvailabilityHttp(app, env)
 
   // Extended: the same event also re-resolves config.jsonc + secrets.json and

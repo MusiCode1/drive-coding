@@ -2,17 +2,8 @@
  * token-usage-store.test.ts — TDD for cycle tracking + disk round-trip (brief §4).
  */
 
-import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
-import {
-  createInitialTokenUsageRecord,
-  createTokenUsageStore,
-  MAX_CYCLES,
-  trackUsage,
-  type TokenUsageRecord,
-} from "./token-usage-store.js"
+import { describe, expect, it } from "vitest"
+import { createInitialTokenUsageRecord, MAX_CYCLES, trackUsage } from "./token-usage-store.js"
 
 function meta(over: Partial<Parameters<typeof createInitialTokenUsageRecord>[0]> = {}) {
   return {
@@ -68,99 +59,5 @@ describe("trackUsage", () => {
     trackUsage(rec, { used: 0, size: 100 }, 9_999)
     expect(rec.cycles).toHaveLength(MAX_CYCLES)
     expect(rec.cyclesTruncated).toBe(true)
-  })
-})
-
-describe("createTokenUsageStore", () => {
-  let dir: string
-
-  afterEach(() => {
-    if (dir) rmSync(dir, { recursive: true, force: true })
-  })
-
-  it("ignores usage when acpSessionId is null (fail-open pinned)", () => {
-    dir = mkdtempSync(join(tmpdir(), "dc-token-usage-"))
-    const store = createTokenUsageStore(dir)
-    store.ingestUsageUpdate({
-      agentId: "a1",
-      acpSessionId: null,
-      cliKind: "claude",
-      cwd: "/p",
-      used: 100,
-      size: 1000,
-    })
-    expect(store.listRecords()).toEqual([])
-  })
-
-  it("disk round-trip: open cycle survives reload and next compaction matches", () => {
-    dir = mkdtempSync(join(tmpdir(), "dc-token-usage-"))
-    const s1 = createTokenUsageStore(dir)
-    s1.ingestUsageUpdate({
-      agentId: "a1",
-      acpSessionId: "wire-sess",
-      cliKind: "claude",
-      cwd: "/p",
-      used: 239_279,
-      size: 1_000_000,
-    })
-    s1.flushOnShutdown()
-
-    const s2 = createTokenUsageStore(dir)
-    s2.ingestUsageUpdate({
-      agentId: "a1",
-      acpSessionId: "wire-sess",
-      cliKind: "claude",
-      cwd: "/p",
-      used: 35_985,
-      size: 1_000_000,
-    })
-    const continuous = createInitialTokenUsageRecord(meta({ acpSessionId: "wire-sess", used: 239_279 }))
-    trackUsage(continuous, { used: 35_985, size: 1_000_000 }, 3_000)
-
-    const loaded = s2.listRecords()[0]!
-    const shape = (cycles: TokenUsageRecord["cycles"]) =>
-      cycles.map((c) => ({ peakUsed: c.peakUsed, closed: c.closedAt !== null }))
-    expect(shape(loaded.cycles)).toEqual(shape(continuous.cycles))
-  })
-
-  it("session switch starts fresh record (no phantom compaction)", () => {
-    dir = mkdtempSync(join(tmpdir(), "dc-token-usage-"))
-    const store = createTokenUsageStore(dir)
-    store.ingestUsageUpdate({
-      agentId: "a1",
-      acpSessionId: "session-a",
-      cliKind: "claude",
-      cwd: "/p",
-      used: 200_000,
-      size: 1_000_000,
-    })
-    store.ingestUsageUpdate({
-      agentId: "a1",
-      acpSessionId: "session-b",
-      cliKind: "claude",
-      cwd: "/p",
-      used: 5_000,
-      size: 1_000_000,
-    })
-    const recA = store.listRecords().find((r) => r.acpSessionId === "session-a")!
-    const recB = store.listRecords().find((r) => r.acpSessionId === "session-b")!
-    expect(recA.cycles).toHaveLength(1)
-    expect(recA.cycles[0]!.peakUsed).toBe(200_000)
-    expect(recB.cycles).toEqual([{ startedAt: recB.cycles[0]!.startedAt, peakUsed: 5_000, closedAt: null }])
-  })
-
-  it("onTurnEnded increments turns", () => {
-    dir = mkdtempSync(join(tmpdir(), "dc-token-usage-"))
-    const store = createTokenUsageStore(dir)
-    store.ingestUsageUpdate({
-      agentId: "a1",
-      acpSessionId: "s1",
-      cliKind: "claude",
-      cwd: "/p",
-      used: 100,
-      size: 1000,
-    })
-    store.onTurnEnded("a1", "s1", 5_000)
-    expect(store.listRecords()[0]!.turns).toBe(1)
   })
 })

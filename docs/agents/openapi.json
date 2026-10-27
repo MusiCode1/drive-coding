@@ -389,6 +389,43 @@
         }
       }
     },
+    "/api/projects": {
+      "delete": {
+        "operationId": "delete_api_projects",
+        "summary": "DELETE /api/projects",
+        "responses": {
+          "204": {
+            "description": "Project history cleared"
+          },
+          "400": {
+            "description": "cwd required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_projects",
+        "summary": "GET /api/projects",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/client-log": {
       "post": {
         "operationId": "post_api_client_log",
@@ -865,43 +902,6 @@
         "responses": {
           "200": {
             "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/projects": {
-      "get": {
-        "operationId": "get_api_projects",
-        "summary": "GET /api/projects",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "delete_api_projects",
-        "summary": "DELETE /api/projects",
-        "responses": {
-          "204": {
-            "description": "Project history cleared"
-          },
-          "400": {
-            "description": "cwd required",
             "content": {
               "application/json": {
                 "schema": {

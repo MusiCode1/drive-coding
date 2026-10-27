@@ -398,6 +398,7 @@
       "headings": [
         "Diagnostics and operations",
         "Liveness vs deep diag",
+        "Session history storage",
         "Usage",
         "POST /api/client-log",
         "POST /api/reload-config",

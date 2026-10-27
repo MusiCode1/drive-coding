@@ -3,22 +3,21 @@
  */
 
 import type { AgentRegistry } from "@drive-coding/core"
-import type { AgentOrchestrator } from "./app/agent-orchestrator.js"
-import { resolveCloseOnTurnEndGraceMs } from "./session-host/close-on-turn-end.js"
-import type { AgentEventBus } from "./session-host/agent-events.js"
-import { agentEventSessionHostOpts } from "./delivery/agent-events-boot.js"
-import { createStallSuspectedEmitter } from "./session-host/agent-events-stall.js"
-import type { AgentSessionRegistry } from "./session-host/registry.js"
-import { createOnSessionAttached } from "./server-on-session-attached.js"
-import type { ProjectsRegistry } from "./app/projects-registry.js"
 import { createLogger } from "@drive-coding/core/log"
-import { createAgentSessionRegistry } from "./session-host/registry.js"
+import type { AgentOrchestrator } from "./app/agent-orchestrator.js"
+import { agentEventSessionHostOpts } from "./delivery/agent-events-boot.js"
+import type { SessionHistoryStore } from "./history/session-history-store.js"
+import { createOnSessionAttached } from "./server-on-session-attached.js"
+import type { AgentEventBus } from "./session-host/agent-events.js"
+import { createStallSuspectedEmitter } from "./session-host/agent-events-stall.js"
+import { resolveCloseOnTurnEndGraceMs } from "./session-host/close-on-turn-end.js"
+import type { AgentSessionRegistry, createAgentSessionRegistry } from "./session-host/registry.js"
 
 const log = createLogger("backend.server")
 
 export function createSessionHostRegistryOpts(deps: {
   registry: AgentRegistry
-  projectsRegistry: ProjectsRegistry
+  sessionHistoryStore: SessionHistoryStore
   acpSessionIdCache: Map<string, string>
   agentEventBus: AgentEventBus
   getOrchestrator: () => AgentOrchestrator | null
@@ -28,7 +27,7 @@ export function createSessionHostRegistryOpts(deps: {
     agentRegistry: deps.registry,
     onSessionAttached: createOnSessionAttached({
       registry: deps.registry,
-      projectsRegistry: deps.projectsRegistry,
+      sessionHistoryStore: deps.sessionHistoryStore,
       acpSessionIdCache: deps.acpSessionIdCache,
     }),
     evictionController: deps.evictionController,
@@ -44,9 +43,12 @@ export function createSessionHostRegistryOpts(deps: {
     onScheduleCloseOnTurnEnd: (agentId: string) => {
       const graceMs = resolveCloseOnTurnEndGraceMs(process.env.CLOSE_ON_TURN_END_GRACE_MS)
       setTimeout(() => {
-        void deps.getOrchestrator()?.deleteAndKill(agentId).catch((err) => {
-          log.warn({ err, agentId }, "closeOnTurnEnd: deleteAndKill failed after grace")
-        })
+        void deps
+          .getOrchestrator()
+          ?.deleteAndKill(agentId)
+          .catch((err) => {
+            log.warn({ err, agentId }, "closeOnTurnEnd: deleteAndKill failed after grace")
+          })
       }, graceMs)
     },
     ...agentEventSessionHostOpts(deps.agentEventBus),
