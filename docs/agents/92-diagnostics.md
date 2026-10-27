@@ -18,7 +18,7 @@ routes:
   - POST /api/client-log
   - POST /api/reload-config
   - GET /api/options
-docs_version: 1.4.0
+docs_version: 1.9.1
 updated: 2026-10-27
 ---
 
