@@ -13,13 +13,13 @@
  *   - client disconnect → broadcaster.unsubscribe called
  */
 
+import { addSink, type LogEntry } from "@drive-coding/core/log"
 import type { Patch, SessionState } from "@drive-coding/core/session"
 import {
   createInitialSessionState,
   STREAM_ALIVE_INTERVAL_MS,
   StreamAliveNotification,
 } from "@drive-coding/core/session"
-import { addSink, type LogEntry } from "@drive-coding/core/log"
 import { type } from "arktype"
 import { Hono } from "hono"
 import { describe, expect, it, vi } from "vitest"
@@ -70,6 +70,7 @@ function makeMockBroadcaster(patchStream?: ReadableStream<Patch>): PatchesBroadc
   const unsubscribeFn = vi.fn()
   const closeFn = vi.fn()
   return {
+    hostIncarnation: "fixture-host",
     subscribe: subscribeFn,
     unsubscribe: unsubscribeFn,
     close: closeFn,
@@ -281,6 +282,7 @@ describe("GET /api/agents/:id/events", () => {
 
       const subscribeStream = new ReadableStream<Patch>({ start() {} })
       const broadcaster: PatchesBroadcaster = {
+        hostIncarnation: "fixture-host",
         subscribe: vi.fn().mockImplementation((sinceVersion?: number) => {
           callOrder.push(`subscribe:${sinceVersion ?? "all"}`)
           return subscribeStream
@@ -598,7 +600,7 @@ describe("Commit 3ב (sse-liveness): taken-over ordering — real broadcaster, n
   it("real dispose() (awaited) → unregisterHost → SYNCHRONOUS epoch bump (no await between the last two) — taken-over arrives with the new epoch", async () => {
     const state = makeMockState()
     const host = makeDisposableHost(state)
-    const broadcaster = createPatchesBroadcaster(host.patches)
+    const broadcaster = createPatchesBroadcaster(host.patches, "fixture-host")
 
     let epoch = 1
     const registry = makeMockRegistry({ host, broadcaster })
@@ -628,7 +630,7 @@ describe("Commit 3ב (sse-liveness): taken-over ordering — real broadcaster, n
   it("🔴 מוטציה: await מלאכותי בין unregisterHost לעדכון ה-epoch שובר את הסדר — taken-over לא נשלח", async () => {
     const state = makeMockState()
     const host = makeDisposableHost(state)
-    const broadcaster = createPatchesBroadcaster(host.patches)
+    const broadcaster = createPatchesBroadcaster(host.patches, "fixture-host")
 
     let epoch = 1
     const registry = makeMockRegistry({ host, broadcaster })
@@ -826,7 +828,7 @@ describe("שומר-הפער — oldestBufferedVersion מול snapshot.version (s
       })
       return { stream: s, push: (p: Patch) => ctrl.enqueue(p) }
     })()
-    const broadcaster = createPatchesBroadcaster(stream)
+    const broadcaster = createPatchesBroadcaster(stream, "fixture-host")
     push({ version: 3, op: "update-session", changes: { title: "a" } })
     push({ version: 4, op: "update-session", changes: { title: "b" } })
     await new Promise((r) => setTimeout(r, 20))
@@ -896,6 +898,7 @@ describe("שומר-הפער — oldestBufferedVersion מול snapshot.version (s
     const base = makeMockBroadcaster()
     const broadcaster: PatchesBroadcaster = {
       ...base,
+      hostIncarnation: "fixture-host",
       subscribe: vi.fn((v?: number) => {
         order.push(`subscribe:${v}`)
         return base.subscribe(v)
@@ -919,4 +922,27 @@ describe("שומר-הפער — oldestBufferedVersion מול snapshot.version (s
 
     expect(order.slice(0, 3)).toEqual(["read-state", "subscribe:10", "oldest"])
   })
+})
+
+it("HTTP frame zero preserves broadcaster identity across viewers and reconnect with no viewers", async () => {
+  const host = makeMockHost(makeMockState({ sessionId: "same-sid", version: 43 }))
+  const broadcaster = createPatchesBroadcaster(host.patches, "fixture-host")
+  const app = new Hono()
+  registerEventsRoute(app, makeMockRegistry({ host, broadcaster }), makeMockConnectionRegistry())
+  try {
+    const identities: string[] = []
+    for (const viewer of ["viewer-A", "viewer-B", "viewer-A"]) {
+      const response = await app.request("/api/agents/agent-1/events", {
+        headers: { "Acp-Connection-Id": viewer },
+      })
+      const frames = await readSseEvents(response, 1)
+      const data = frames[0]?.split("\n").find((line) => line.startsWith("data:"))
+      expect(data).toBeDefined()
+      identities.push(JSON.parse(data!.slice(5)).hostIncarnation)
+    }
+    expect(identities).toEqual(Array(3).fill(broadcaster.hostIncarnation))
+    expect(identities[0]).toBe("fixture-host")
+  } finally {
+    broadcaster.close()
+  }
 })

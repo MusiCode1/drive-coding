@@ -77,6 +77,7 @@ function makeMockHost(state: SessionState): ExtendedSessionHost {
 
 function makeMockBroadcaster(): PatchesBroadcaster {
   return {
+    hostIncarnation: "fixture-host",
     subscribe: vi.fn().mockReturnValue(new ReadableStream()),
     unsubscribe: vi.fn(),
     close: vi.fn(),

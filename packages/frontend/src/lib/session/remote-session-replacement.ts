@@ -1,5 +1,5 @@
 import type { SessionState } from "@drive-coding/core/session"
-import { type FrameData, projectSessionSnapshot } from "./session-view-projection"
+import { projectSessionSnapshot } from "./session-view-projection"
 
 type ReplacementIntent = {
   previous: ReplacementIntent | undefined
@@ -49,14 +49,13 @@ export class RemoteSessionReplacement {
   }
 
   /** Called only for an admitted reconnect snapshot, never initial bootstrap. */
-  projectSnapshot(state: SessionState, sessionChanged: boolean): FrameData {
+  prepareSnapshot(state: SessionState, sessionChanged: boolean) {
     const intent = this.capture()
     const frame = projectSessionSnapshot(
       state,
       true,
       !sessionChanged && intent === undefined ? "same-session-reconnect" : undefined,
     )
-    this.consume(intent)
-    return frame
+    return { frame, intent }
   }
 }

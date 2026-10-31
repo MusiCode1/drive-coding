@@ -5,6 +5,7 @@ import { isSetupLive, nextSetupEpoch, type SetupEpoch } from "./connection-owner
 import { ConnectionRelease } from "./connection-release"
 import { createRemoteView } from "./create-session-view"
 import type { RemoteSessionViewOptions } from "./remote-session-view"
+import type { RemoteTerminal } from "./remote-stream-events"
 import type { SessionView } from "./session-view"
 
 export type HttpConnectionDeps = {
@@ -19,6 +20,7 @@ export type HttpConnectionDeps = {
   rememberedConfig: () => Promise<void>
   failed: (error: unknown, keepAgent: boolean) => void
   missingSessionId: (keepAgent: boolean) => void
+  terminal?: (view: SessionView, fact: RemoteTerminal) => void
   discardCreatedAgent?: (agentId: string) => void
 }
 
@@ -28,6 +30,7 @@ type HttpAttempt = {
   closed: WeakSet<SessionView>
   agentId?: string
   created: boolean
+  terminal?: RemoteTerminal
 }
 
 export class HttpConnection implements Connection {
@@ -83,6 +86,7 @@ export class HttpConnection implements Connection {
   }
 
   #discardLate(attempt: HttpAttempt): boolean {
+    if (attempt.terminal) return true
     if (attempt.current()) return false
     void this.#closeView(attempt)
     if (attempt.created && attempt.agentId) this.deleteAgentOnce(attempt.agentId)
@@ -114,7 +118,15 @@ export class HttpConnection implements Connection {
       if (this.#discardLate(attempt)) return
       this.deps.setAgent(agentId)
       const view = await createRemoteView(
-        { agentId, ...this.deps.viewOptions() },
+        {
+          agentId,
+          ...this.deps.viewOptions(),
+          onTerminal: (view, fact) => {
+            if (attempt.terminal) return
+            attempt.terminal = fact
+            if (attempt.current()) this.deps.terminal?.(view, fact)
+          },
+        },
         {
           onReady: (readyView) => {
             if (this.#discardLate(attempt)) return false

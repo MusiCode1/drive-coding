@@ -20,16 +20,15 @@
  * ─── slice session-host-pending-surface C4: respond() — exact routing, no fallback ───
  */
 
-import { type Patch, RPC_METHODS, type SessionState } from "@drive-coding/core/session"
+import { RPC_METHODS, type SessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import { registerView, unregisterView, type ViewDebugInfo } from "$lib/debug/session-registry"
-import { connWarn } from "$lib/util/conn-log"
 import { RemoteSessionReplacement } from "./remote-session-replacement"
+import { RemoteStreamDelivery } from "./remote-stream-delivery"
+import type { RemoteTerminal } from "./remote-stream-events"
 import type { SessionView } from "./session-view.js"
 import { type ProjectionSink, SessionViewDelivery } from "./session-view-delivery"
-import { projectSessionSnapshot } from "./session-view-projection"
-import type { WireUpdateBatch } from "./sse-reader"
 import { SSEReader } from "./sse-reader.js"
 
 export const ACP_CONNECTION_ID_HEADER = "Acp-Connection-Id"
@@ -46,6 +45,7 @@ export type RemoteSessionViewOptions = {
   onReady?: (view: RemoteSessionView) => boolean | undefined
   /** slice liveness C4: hook חיצוני כשה-SSE מתחבר מחדש (ניקוי באנר presence). */
   onSseReconnected?: () => void
+  onTerminal?: (view: RemoteSessionView, fact: RemoteTerminal) => void
   /** @internal לבדיקות — override global fetch. */
   _fetch?: (url: string, init?: RequestInit) => Promise<Response>
   /** @internal לבדיקות — override setTimeout-based sleep (מועבר ל-SSEReader). */
@@ -73,6 +73,7 @@ export class RemoteSessionView implements SessionView {
   readonly #headers: Record<string, string>
   readonly #connectionId: string
   readonly #onSseReconnected?: () => void
+  readonly #onTerminal?: RemoteSessionViewOptions["onTerminal"]
   readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly #reader: SSEReader
 
@@ -88,11 +89,20 @@ export class RemoteSessionView implements SessionView {
   #delivery = new SessionViewDelivery()
   readonly #onReady?: (view: RemoteSessionView) => boolean | undefined
 
-  // ─── C3: Speaker water-mark (§8.1) — מונע הקראה כפולה אחרי reconnect ───
-  #lastReadMessageId: string | null = null
-  #lastReadSegmentIndex = 0
-  /** גרסת ה-patch/snapshot האחרונה שהוחלה על state — לצורך השוואה ב-reconnect mid-turn. */
-  #lastVersion = 0
+  readonly #ingress = new RemoteStreamDelivery({
+    delivery: this.#delivery,
+    replacement: this.#replacement,
+    terminal: (fact) => this.#onTerminal?.(this, fact),
+    dispose: () => {
+      this.#reader.close()
+      this.#delivery.dispose()
+      unregisterView(this)
+    },
+    adoptSession: (sessionId) => {
+      this.#sessionId = sessionId
+    },
+    reconnected: () => this.#onSseReconnected?.(),
+  })
 
   constructor(agentId: string, baseUrl: string, opts: RemoteSessionViewOptions = {}) {
     this.#agentId = agentId
@@ -115,7 +125,7 @@ export class RemoteSessionView implements SessionView {
       _sleep: opts._sleep,
       _now: opts._now,
     })
-    this.#reader.onReconnected = this.#handleReconnected.bind(this)
+    this.#onTerminal = opts.onTerminal
 
     this.#onReady = opts.onReady
     if (opts.projection) this.#delivery.bind(opts.projection)
@@ -140,22 +150,22 @@ export class RemoteSessionView implements SessionView {
     return {
       agentId: this.#agentId,
       sessionId: this.#sessionId,
-      lastVersion: this.#lastVersion,
+      lastVersion: this.#ingress.lastVersion,
       messages: this.#delivery.state.messages.length,
       status: this.#delivery.state.status,
       turnState: this.#delivery.state.turnState,
-      closed: this.#isClosed,
+      closed: this.#ingress.closed,
     }
   }
 
   // ─── C3: water-mark getters (Speaker consumes these) ───
 
   get lastReadMessageId(): string | null {
-    return this.#lastReadMessageId
+    return this.#ingress.lastReadMessageId
   }
 
   get lastReadSegmentIndex(): number {
-    return this.#lastReadSegmentIndex
+    return this.#ingress.lastReadSegmentIndex
   }
 
   // ─── Lifecycle ───
@@ -163,7 +173,6 @@ export class RemoteSessionView implements SessionView {
   /** @internal M8 — memoizes the in-flight/completed connect() call (see below). */
   #connectPromise: Promise<void> | null = null
   /** @internal round-2 finding #3 — set by close(); connect() rejects explicitly after. */
-  #isClosed = false
 
   /**
    * מתחבר ל-SSE, מאחזר snapshot (כולל sessionId), ומתחיל להאזין ל-patches.
@@ -186,7 +195,7 @@ export class RemoteSessionView implements SessionView {
    * stream שכבר נסגר סופית).
    */
   async connect(): Promise<void> {
-    if (this.#isClosed) {
+    if (this.#ingress.closed) {
       throw new Error(
         "RemoteSessionView: connect() called after close() — construct a new instance",
       )
@@ -202,15 +211,23 @@ export class RemoteSessionView implements SessionView {
   }
 
   async #doConnect(): Promise<void> {
-    const { snapshot, updates } = await this.#reader.connect()
-    this.#delivery.state = snapshot
-    this.#sessionId = snapshot.sessionId
-    this.#lastVersion = snapshot.version
-    if (this.#isClosed || this.#onReady?.(this) === false) return
+    const { initial, events } = await this.#reader.connect()
+    if (this.#ingress.closed) return
+    this.#ingress.prime(initial)
+    const terminal = this.#reader.terminalFact
+    if (terminal) {
+      this.#ingress.terminal(terminal)
+      return
+    }
+    const accepted = this.#onReady?.(this) !== false
+    if (this.#reader.terminalFact) {
+      this.#ingress.terminal(this.#reader.terminalFact)
+      return
+    }
+    if (!accepted || this.#ingress.closed) return
     this.#delivery.requireSink()
-    this.#delivery.frame(projectSessionSnapshot(snapshot, snapshot.messages.length > 0), true)
-    this.#delivery.endBatch(snapshot)
-    void this.#drainUpdates(updates)
+    this.#ingress.snapshot(initial, true)
+    if (!this.#ingress.closed) void this.#ingress.consume(events)
   }
 
   /**
@@ -223,14 +240,15 @@ export class RemoteSessionView implements SessionView {
    * מחדש את אותו instance.
    */
   async close(): Promise<void> {
+    if (!this.#ingress.beginClose()) return
     const { permission, elicitation } = this.#delivery.state.pending
     if (permission) {
-      await this.respond(permission.requestId, { outcome: { outcome: "cancelled" } }).catch(() => {
+      await this.#respond(permission.requestId, { outcome: { outcome: "cancelled" } }).catch(() => {
         // best-effort — ה-SSE כבר בדרך להיסגר, לא חוסמים את הסגירה על כשל reply
       })
     }
     if (elicitation) {
-      await this.respond(elicitation.requestId, { action: "cancel" }).catch(() => {
+      await this.#respond(elicitation.requestId, { action: "cancel" }).catch(() => {
         // best-effort
       })
     }
@@ -239,125 +257,13 @@ export class RemoteSessionView implements SessionView {
       ...this.#delivery.state,
       pending: { permission: null, elicitation: null },
     }
-    this.#isClosed = true
     unregisterView(this)
     this.#reader.close()
     this.#delivery.dispose()
   }
 
-  // ─── Incoming patches: apply to state (core applyPatch) + wrap + emit ───
-
-  async #drainUpdates(updates: ReadableStream<WireUpdateBatch>): Promise<void> {
-    const reader = updates.getReader()
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        try {
-          this.#applyIncoming(value)
-        } catch (err) {
-          // calev-heavy round 2 finding #1: a single unexpected/malformed patch
-          // must not kill the whole drain loop — `void this.#drainPatches(...)`
-          // is fire-and-forget, so an uncaught throw here would become a silent
-          // unhandled rejection and every subsequent patch would be lost forever.
-          // Skip this one patch, keep draining. calev-heavy round 3: staying
-          // silent here was itself wrong — SSEReader now validates patches before
-          // they even reach this point (round 3 root-cause fix), so reaching this
-          // catch means something unexpected slipped through; log it so it's not
-          // invisible.
-          console.warn("RemoteSessionView: error applying patch, skipping", err)
-        }
-      }
-    } finally {
-      reader.releaseLock()
-    }
-  }
-
-  /**
-   * ─── slice acp-wire-session-update ───
-   * מקבל **batch של `session/update`** במקום `Patch` יחיד, ומקפל אותו כאן
-   * ב-`reduce` — אותו reducer בדיוק שמסלול ה-WS משתמש בו. ⇒ שתי התעבורות
-   * מתאחדות על קיפול יחיד, וה-`Patch` נשאר יחידת-ההחלה הפנימית בלבד.
-   */
-  #applyIncoming(batch: WireUpdateBatch): void {
-    // calev-heavy B1: PatchesBroadcaster.subscribe() replays up to 64 buffered patches
-    // to every new subscriber — including reconnects, and even the very first connect
-    // if patches happened before this client attached. Those patches are already
-    // reflected in the snapshot (frame-zero) / in whatever #lastVersion already covers.
-    // Applying them again duplicates messages/segments (measured: "hello"+" world"
-    // appearing twice after one server-side drop). Skip anything already applied.
-    // A published prefix survives a later producer fault; duplicate frames must not replay it.
-    if (batch.version <= Math.max(this.#lastVersion, this.#delivery.state.version)) return
-
-    let last = this.#delivery.state
-    for (const update of batch.updates) {
-      const intent = this.#replacement.capture()
-      const frame = this.#delivery.update(update, true, batch.version)
-      if (frame.reset) this.#replacement.consume(intent)
-      last = frame.state
-      for (const patch of frame.patches) this.#advanceWaterMark(patch)
-    }
-    this.#delivery.state = { ...this.#delivery.state, version: batch.version }
-    this.#lastVersion = batch.version
-    if (batch.updates.length > 0) this.#delivery.endBatch(last)
-  }
-
-  // ─── C3: Speaker water-mark ───
-
-  /** כשמגיע append-segment — מקדם את ה-water-mark (מסמן להקראה). */
-  #advanceWaterMark(patch: Patch): void {
-    if (patch.op !== "append-segment") return
-    const msg = this.#delivery.state.messages.find((m) => m.id === patch.targetId)
-    if (!msg || msg.role === "tool") return
-    this.#lastReadMessageId = msg.id
-    this.#lastReadSegmentIndex = msg.segments.length - 1
-  }
-
-  // ─── C3: reconnect mid-turn — full state replacement אם פספסנו נתונים ───
-
-  /**
-   * calev-heavy B2+M6 (מרדכי: "הפשוט ביותר הוא ש-reconnect יחליף את כל ה-state
-   * מה-snapshot, לא reset חלקי"):
-   *
-   * B2 — ה-`reset` patch op (core apply-patch.ts) נושא רק messages/nextMessageSeq/
-   * nextSegmentSeq; שאר השדות (status/turnState/pending/modes/configOptions/title/
-   * contextUsage/quota) לא נגעים. מדד: פרמישן שעלתה בזמן שהחיבור נותק אף פעם לא
-   * מוצגת (state.pending נשאר מהמצב הישן) — ה-UI תקוע עד ה-timeout. הפתרון: **מחליפים
-   * את #state כולו מה-snapshot** (לא applyPatch על reset חלקי) — עדיין פולטים reset
-   * patch דרך patches כדי שה-VM יבנה מחדש את ה-bubbles מ-snapshot.messages.
-   *
-   * M6 — version הוא מונה פר-host (מתאפס אחרי restart של ה-BE). ההשוואה
-   * `snapshot.version <= #lastVersion` לא אמינה לבד אחרי restart (version חדש
-   * יכול להיות *נמוך* מהישן). משווים גם sessionId: אם ה-snapshot מגיע מ-session
-   * אחר (BE restart יצר session חדש) — מחליפים תמיד, בלי קשר ל-version, ומרעננים
-   * את #sessionId (שלא התעדכן קודם אחרי reconnect).
-   */
-  #handleReconnected(snapshot: SessionState): void {
-    const sessionChanged = snapshot.sessionId !== this.#sessionId
-    if (!sessionChanged && snapshot.version <= this.#lastVersion) {
-      // אותו session, כבר מעודכן — לא פספסנו כלום.
-      //
-      // 🔴 …אלא אם ה-host נבנה מחדש: אז ה-snapshot מגיע עם version **נמוך**
-      // (‏replay גס יותר מ-streaming — ר' bugs/41), וכל תוכן חדש נזרק **בשקט**.
-      // הזעקה אינה מתקנת — היא הופכת כשל-שקט לכשל-נראה.
-      if (snapshot.version < this.#lastVersion) {
-        connWarn("sse-version-regression", {
-          got: snapshot.version,
-          have: this.#lastVersion,
-          sessionId: snapshot.sessionId,
-        })
-      }
-      return
-    }
-    this.#delivery.state = snapshot
-    this.#sessionId = snapshot.sessionId
-    this.#lastVersion = snapshot.version
-    this.#lastReadMessageId = null
-    this.#lastReadSegmentIndex = 0
-    const frame = this.#replacement.projectSnapshot(snapshot, sessionChanged)
-    this.#delivery.frame(frame, true)
-    this.#delivery.endBatch(snapshot)
-    this.#onSseReconnected?.()
+  get hostIncarnation(): string | undefined {
+    return this.#ingress.closed ? undefined : this.#ingress.hostIncarnation
   }
 
   // ─── Session management — slice remote-session-mgmt C4 + remote warm newSession ───
@@ -385,12 +291,14 @@ export class RemoteSessionView implements SessionView {
   }
 
   #replaceSession(sessionId: string | undefined, cwd?: string): Promise<void> {
+    const current = this.#ingress.captureContext()
     return this.#replacement.run(async () => {
       const method = sessionId === undefined ? RPC_METHODS.newSession : RPC_METHODS.loadSession
       const res = (await this.#rpc(method, {
         ...(sessionId !== undefined && { sessionId }),
         ...(cwd && { cwd }),
       })) as { sessionId?: unknown } | undefined
+      if (!current()) throw new Error("RemoteSessionView: obsolete replacement")
       const attached =
         typeof res?.sessionId === "string" && res.sessionId.length > 0 ? res.sessionId : sessionId
       if (attached === undefined) {
@@ -409,9 +317,11 @@ export class RemoteSessionView implements SessionView {
    * empty list gracefully instead of showing a generic "502".
    */
   async listSessions(): Promise<SessionInfo[]> {
+    const current = this.#ingress.captureContext()
     const res = (await this.#rpc(RPC_METHODS.listSessions, {})) as
       | { sessions?: unknown; sessionCapabilities?: unknown }
       | undefined
+    if (!current()) throw new Error("RemoteSessionView: obsolete list result")
     this.#sessionCapabilities =
       (res?.sessionCapabilities as
         | { delete?: unknown; [key: string]: unknown }
@@ -493,6 +403,10 @@ export class RemoteSessionView implements SessionView {
    * LocalSessionView.respond) — לא נשלחת שום בקשה.
    */
   async respond(requestId: number, result: unknown): Promise<void> {
+    if (this.#ingress.closed) return
+    return this.#respond(requestId, result)
+  }
+  async #respond(requestId: number, result: unknown): Promise<void> {
     const kind =
       this.#delivery.state.pending.permission?.requestId === requestId
         ? "permission"
@@ -500,7 +414,11 @@ export class RemoteSessionView implements SessionView {
           ? "elicitation"
           : undefined
     if (kind === undefined) return // no-op שקט — id לא תואם אף pending קיים
-    await this.#post(this.#replyUrl(), { kind, requestId, result })
+    await this.#post(
+      this.#replyUrl(),
+      { kind, requestId, result },
+      this.#ingress.closed && !this.#ingress.terminalFact,
+    )
   }
 
   // ─── Private: HTTP helpers ───
@@ -534,12 +452,14 @@ export class RemoteSessionView implements SessionView {
    * would show a generic "502" instead of handling unsupported methods
    * gracefully. `.code` is attached to the thrown error when numeric.
    */
-  async #post(url: string, body: unknown): Promise<unknown> {
+  async #post(url: string, body: unknown, localClose = false): Promise<unknown> {
+    const assertCurrent = this.#ingress.guardHttpResult(localClose)
     const res = await this.#doFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...this.#headers },
       body: JSON.stringify(body),
     })
+    assertCurrent()
     if (!res.ok) {
       let payload: { error?: unknown; code?: unknown } | undefined
       if (res.json) {
@@ -549,6 +469,7 @@ export class RemoteSessionView implements SessionView {
           payload = undefined
         }
       }
+      assertCurrent()
       const detail =
         payload && typeof payload.error === "string" && payload.error.length > 0
           ? ` (${payload.error})`
@@ -561,8 +482,12 @@ export class RemoteSessionView implements SessionView {
     }
     if (!res.json) return undefined
     try {
-      return await res.json()
-    } catch {
+      const value: unknown = await res.json()
+      assertCurrent()
+      return value
+    } catch (error) {
+      assertCurrent()
+      void error
       return undefined
     }
   }

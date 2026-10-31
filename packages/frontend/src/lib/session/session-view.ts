@@ -25,6 +25,7 @@ export type { FrameData, ToolContext } from "./session-view-projection"
  * ה-VM (C3) מקבל SessionView ב-DI ואינו יודע על המימוש.
  */
 export interface SessionView {
+  readonly hostIncarnation?: string
   /** מצב הסשן העכשווי — כולל כל שדות SessionState מ-C1 (status, turnState, pending, ...). */
   readonly state: SessionState
 

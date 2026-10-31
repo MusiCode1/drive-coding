@@ -35,7 +35,13 @@ export function toWireFrames(frames: IntentFrame[]): SseFrame[] {
     if (f.event === "snapshot") {
       try {
         state = JSON.parse(f.data) as SessionState
-        out.push(snapshotFrame(state))
+        out.push(
+          snapshotFrame(state, undefined, {
+            hostIncarnation:
+              (state as SessionState & { hostIncarnation?: string }).hostIncarnation ??
+              "fixture-host",
+          }),
+        )
       } catch {
         out.push({ event: "snapshot", data: f.data })
       }

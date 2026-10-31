@@ -7,6 +7,7 @@ export type SessionEndReason =
   | "load"
   | "delete"
   | "navigate"
+  | "remote-terminal"
 
 export type SessionEndScopeDeps = {
   sessionEndListeners: () => Array<(reason: SessionEndReason) => void>

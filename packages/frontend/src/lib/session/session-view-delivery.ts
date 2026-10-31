@@ -8,6 +8,7 @@ import {
 } from "./session-view-projection"
 
 export type ProjectionSink = {
+  onHostRecreated?(): void
   beforeUpdate(update: unknown): void
   toolContext(update: unknown, actions: FrameAction[]): ToolContext
   applyFrame(frame: FrameData, publish: () => void): void
@@ -62,8 +63,15 @@ export class SessionViewDelivery {
       return undefined
     }
   }
-  update(raw: unknown, remote: boolean, version?: number): FrameData {
+  update(
+    raw: unknown,
+    remote: boolean,
+    version?: number,
+    current: () => boolean = () => true,
+    onCommit?: (frame: FrameData) => void,
+  ): FrameData {
     this.requireSink()
+    if (!current()) throw new Error("Obsolete view delivery")
     // HTTP reset is a structural frame before the legacy raw-update observer.
     if (
       remote &&
@@ -72,18 +80,20 @@ export class SessionViewDelivery {
       (raw as { sessionUpdate?: unknown }).sessionUpdate === "_drive/reset"
     ) {
       const frame = this.#prepare(raw, [], EMPTY_TOOL_CONTEXT, version)
-      const applied = this.frame(frame, true)
-      const actions = applied
-        ? this.#ui(true, (sink) => {
-            sink.beforeUpdate(raw)
-            return classifySessionUpdate({ update: raw })
-          })
-        : undefined
+      const applied = this.frame(frame, true, current, onCommit)
+      const actions =
+        applied && current()
+          ? this.#ui(true, (sink) => {
+              sink.beforeUpdate(raw)
+              return classifySessionUpdate({ update: raw })
+            })
+          : undefined
       // Keep the observed marker on the returned frame without publishing twice.
       // The already-delivered structural frame intentionally has actions=[].
       return actions === undefined ? frame : { ...frame, actions }
     }
     this.#ui(remote, (sink) => sink.beforeUpdate(raw))
+    if (!current()) throw new Error("Obsolete view delivery")
     let actions: FrameAction[]
     // Classifier exceptions belonged to the old UI consumer, not the network producer.
     try {
@@ -94,8 +104,9 @@ export class SessionViewDelivery {
       actions = []
     }
     const context = this.#ui(remote, (sink) => sink.toolContext(raw, actions)) ?? EMPTY_TOOL_CONTEXT
+    if (!current()) throw new Error("Obsolete view delivery")
     const frame = this.#prepare(raw, actions, context, version)
-    this.frame(frame, remote)
+    this.frame(frame, remote, current, onCommit)
     return frame
   }
   #prepare(
@@ -114,14 +125,23 @@ export class SessionViewDelivery {
           patches: candidate.patches.map((patch) => ({ ...patch, version })),
         }
   }
-  frame(frame: FrameData, remote: boolean): boolean {
+  frame(
+    frame: FrameData,
+    remote: boolean,
+    current: () => boolean = () => true,
+    onCommit?: (frame: FrameData) => void,
+  ): boolean {
     let published = false
     const publish = () => {
-      if (published) return
+      if (published || !current()) return
       published = true
       this.state = frame.state
+      onCommit?.(frame)
     }
     let applied = false
+    if (!current()) return false
+    if (frame.boundary === "host-recreated") this.#sink?.onHostRecreated?.()
+    if (!current()) return false
     this.#ui(remote, (sink) => {
       sink.applyFrame(frame, publish)
       applied = true
@@ -129,7 +149,7 @@ export class SessionViewDelivery {
     // Local throw escapes before this line. Remote failure publishes the candidate
     // already calculated, once, and disables further UI delivery only.
     if (!published) publish()
-    return applied
+    return applied && current()
   }
   endBatch(state: SessionState): void {
     this.#ui(true, (sink) => sink.endBatch(state))

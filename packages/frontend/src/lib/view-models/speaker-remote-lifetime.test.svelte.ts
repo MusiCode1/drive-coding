@@ -130,6 +130,7 @@ async function harness(observer?: (u: unknown) => void) {
     nextMessageSeq: 1,
     nextSegmentSeq: 1,
   }
+  let hostIncarnation = "fixture-host"
   let ctrl!: ReadableStreamDefaultController<Uint8Array>,
     fetches = 0,
     reconnects = 0
@@ -144,7 +145,9 @@ async function harness(observer?: (u: unknown) => void) {
         body: new ReadableStream<Uint8Array>({
           start(c) {
             ctrl = c
-            c.enqueue(encoder.encode(serializeFrame(snapshotFrame(state))))
+            c.enqueue(
+              encoder.encode(serializeFrame(snapshotFrame(state, undefined, { hostIncarnation }))),
+            )
           },
         }),
       } as Response
@@ -283,6 +286,13 @@ async function harness(observer?: (u: unknown) => void) {
     getState: () => structuredClone(state),
     fetchImpl,
     rejectedSnapshot,
+    recreate: async (next: SessionState) => {
+      state = next
+      hostIncarnation = "recreated-host"
+      const previous = reconnects
+      ctrl.close()
+      await until(() => reconnects === previous + 1)
+    },
   }
 }
 beforeEach(() => {
@@ -761,4 +771,74 @@ it("failed raw reset producer does not consume replacement intent", async () => 
   expect(h.port.processingTarget).not.toBe(p)
   await h.tool()
   expect(mockNarrate).toHaveBeenCalledTimes(2)
+})
+
+it("recreated host replays text/thought/tool silently with new history target and then speaks live text", async () => {
+  const h = await harness()
+  await h.message(LONG_TEXT)
+  const oldProcessing = h.port.processingTarget
+  const oldAnnotation = h.port.captureTarget()
+  const before = {
+    reserve: h.reserve.mock.calls.length,
+    translate: vi.mocked(translate).mock.calls.length,
+    narrate: mockNarrate.mock.calls.length,
+    synthesize: mockSynthesize.mock.calls.length,
+  }
+  const next = h.getState()
+  next.version = 0
+  next.messages = [
+    {
+      id: "m_0",
+      role: "assistant",
+      messageId: "replayed",
+      segments: [{ id: "s_0", text: LONG_TEXT }],
+    },
+    {
+      id: "m_1",
+      role: "thought",
+      messageId: "thought",
+      segments: [{ id: "s_1", text: LONG_TEXT }],
+    },
+    {
+      id: "m_2",
+      role: "tool",
+      messageId: null,
+      toolCall: {
+        toolCallId: "history-tool",
+        name: "run",
+        kind: "other",
+        status: "completed",
+        args: {},
+      },
+    },
+  ]
+  next.nextMessageSeq = 3
+  next.nextSegmentSeq = 2
+  await h.recreate(next)
+  await settle()
+  expect(h.port.processingTarget).not.toBe(oldProcessing)
+  expect(h.port.isCurrent(oldAnnotation)).toBe(false)
+  expect(h.port.historyEpoch).toBe(2)
+  expect(h.port.historyMark.processingTarget).toBe(h.port.processingTarget)
+  expect(h.port.historyMark.mark.toolCallIds).toEqual(["history-tool"])
+  expect([...h.port.historyMark.mark.segmentCounts.values()]).toEqual([1, 1])
+  expect(h.reserve).toHaveBeenCalledTimes(before.reserve)
+  expect(translate).toHaveBeenCalledTimes(before.translate)
+  expect(mockNarrate).toHaveBeenCalledTimes(before.narrate)
+  expect(mockSynthesize).toHaveBeenCalledTimes(before.synthesize)
+  await h.raw(
+    [
+      {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "new-live",
+        content: {
+          type: "text",
+          text: "New host live sentence with enough characters to speak immediately.",
+        },
+      },
+    ],
+    1,
+  )
+  await until(() => h.reserve.mock.calls.length > before.reserve)
+  expect(JSON.stringify(mockSynthesize.mock.calls)).toContain("New host live sentence")
 })

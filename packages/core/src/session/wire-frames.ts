@@ -53,6 +53,7 @@ export type SnapshotPayload = {
   sessionId: string | null
   version: number
   epoch?: number
+  hostIncarnation?: string
   updates: WireSessionUpdate[]
 }
 
@@ -75,11 +76,15 @@ export function snapshotPayload(
  * ה-`id:` הוא ה-**version** ולא ה-epoch: ה-epoch מזהה *מי מחזיק בזרם*
  * וה-version מזהה *איפה אנחנו ברצף*. ה-epoch עבר לגוף ההודעה.
  */
-export function snapshotFrame(state: SessionState, epoch?: number): SseFrame {
+export function snapshotFrame(
+  state: SessionState,
+  epoch?: number,
+  context?: { hostIncarnation: string },
+): SseFrame {
   return {
     event: "snapshot",
     id: String(state.version),
-    data: JSON.stringify(snapshotPayload(state, epoch)),
+    data: JSON.stringify({ ...snapshotPayload(state, epoch), ...context }),
   }
 }
 

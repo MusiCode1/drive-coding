@@ -26,8 +26,8 @@ import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
-import { setSelfBaseUrlForTests } from "../../instances.js"
 import { createInMemoryAgentRegistry } from "../../agents/registry.js"
+import { setSelfBaseUrlForTests } from "../../instances.js"
 import { createPatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import {
@@ -130,7 +130,7 @@ async function setup(): Promise<{
   })
   if (!capturedCallbacks) throw new Error("_createAcpClient was never called")
 
-  const broadcaster = createPatchesBroadcaster(host.patches)
+  const broadcaster = createPatchesBroadcaster(host.patches, "fixture-host")
 
   const connectionRegistry = {
     addConnection: vi.fn(),
@@ -158,7 +158,9 @@ async function setup(): Promise<{
     getHost: (id) => (id === AGENT_ID ? host : undefined),
     isHeld: (id) => id === AGENT_ID,
     getOrCreateHost: async (id) =>
-      id === AGENT_ID ? { ok: true, entry: { host, broadcaster } } : { ok: false, reason: "not-found" },
+      id === AGENT_ID
+        ? { ok: true, entry: { host, broadcaster } }
+        : { ok: false, reason: "not-found" },
     getBroadcaster: (id) => (id === AGENT_ID ? broadcaster : undefined),
     unregisterHost: () => {},
     notifySessionAttached: async () => {},
