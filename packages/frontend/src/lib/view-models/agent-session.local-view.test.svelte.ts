@@ -14,7 +14,6 @@
 import type { Patch } from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { ViewEmission } from "$lib/session/session-view"
 
 // ─── Module-level mocks ───────────────────────────────────────────────────────
 
@@ -152,45 +151,15 @@ vi.mock("$lib/session/local-session-view", async (importActual) => {
     LocalSessionView: class CapturedLocalSessionView extends actual.LocalSessionView {
       drainEnded = false
       static instances: CapturedLocalSessionView[] = []
-      static throwOnUpdate = false
 
       constructor(opts: ConstructorParameters<typeof actual.LocalSessionView>[0]) {
         super(opts)
-        const stream = this.patches
-        const origGetReader = stream.getReader.bind(stream)
-        // ה-drain מחזיק את ה-reader היחיד; עוטפים את read() כדי לסמן done.
-        // ⚠️ patches הוא readonly-טיפוסית — השמה בזמן-ריצה בלבד (seam של טסט).
-        ;(
-          stream as unknown as { getReader: () => ReadableStreamDefaultReader<ViewEmission> }
-        ).getReader = () => {
-          const reader = origGetReader()
-          const origRead = reader.read.bind(reader)
-          ;(
-            reader as unknown as {
-              read: () => Promise<ReadableStreamReadResult<ViewEmission>>
-            }
-          ).read = async () => {
-            const res = await origRead()
-            if (res.done) this.drainEnded = true
-            return res
-          }
-          return reader
-        }
         CapturedLocalSessionView.instances.push(this)
       }
 
-      /** DoD 16: כשה-dגל דלוק — ה-observer זורק (התוספת החדשה היחידה ל-view). */
-      override get observerCallbacks(): Pick<AcpClientCallbacks, "onUpdate" | "onExtNotification"> {
-        const base = super.observerCallbacks
-        if (CapturedLocalSessionView.throwOnUpdate) {
-          return {
-            ...base,
-            onUpdate: () => {
-              throw new Error("observer exploded (DoD 16)")
-            },
-          }
-        }
-        return base
+      override dispose(): void {
+        super.dispose()
+        this.drainEnded = true
       }
     },
   }
@@ -215,7 +184,6 @@ type CapturedViewLike = {
 const LocalSessionViewCaptured = (await import("$lib/session/local-session-view"))
   .LocalSessionView as unknown as {
   instances: CapturedViewLike[]
-  throwOnUpdate: boolean
 }
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
@@ -228,11 +196,6 @@ function lastView(): CapturedViewLike {
 }
 function getViews(): CapturedViewLike[] {
   return LocalSessionViewCaptured.instances
-}
-function setup(session: AgentSession): void {
-  ;(
-    session as unknown as { _mockFindReusableAgentForTest: (v: string | null) => void }
-  )._mockFindReusableAgentForTest(null)
 }
 function sendReplayChunk(text: string, messageId: string): void {
   vh.state.teedCallbacks?.onUpdate?.({
@@ -258,7 +221,6 @@ beforeEach(() => {
   vh.state.queue = []
   vh.state.failNextCreate = false
   LocalSessionViewCaptured.instances = []
-  LocalSessionViewCaptured.throwOnUpdate = false
   vi.stubGlobal("location", { protocol: "http:", host: "localhost:4000" })
   vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("test-uuid") })
 })
@@ -329,8 +291,7 @@ describe("DoD 9 — המסלולים ששקטו עובדים עם view מאומ�
   it("#coldReconnect: לא return שקט — loadSession רץ, view חדש מאומץ", async () => {
     const session = new AgentSession()
     await session.attach({ cwd: "/tmp", cliKind: "opencode" })
-    setup(session)
-    await (session as unknown as { _doReconnectForTest: () => Promise<void> })._doReconnectForTest()
+    await session.reconnect()
 
     expect(session.status).toBe("connected")
     expect(vh.state.createCount.acp).toBe(2) // attach + cold-loadSession
@@ -414,8 +375,7 @@ describe("DoD 12 — הניקוז (קורא-ריק על view.patches) מסתיי
     const view0 = lastView()
     expect(view0.drainEnded).toBe(false)
 
-    setup(session)
-    await (session as unknown as { _doReconnectForTest: () => Promise<void> })._doReconnectForTest()
+    await session.reconnect()
 
     await vi.waitFor(() => expect(view0.drainEnded).toBe(true))
     expect(getViews().length).toBeGreaterThanOrEqual(2)
@@ -624,15 +584,116 @@ describe("DoD 15 — onRequestPermission → תגובה אחת, מה-VM", () => 
 
 // ─── DoD 16 — ה-observer מבודד ───────────────────────────────────────────────
 
-describe("DoD 16 — throw ב-view.#onUpdate לא נוגע ל-VM", () => {
-  it("ה-VM ממשיך, בועות נשמרות", async () => {
+describe("single local projection observer failure", () => {
+  it("observer throw propagates before local publication", async () => {
+    const failure = new Error("observed failure")
+    const session = new AgentSession({
+      _onUpdateObserved: () => {
+        throw failure
+      },
+    })
+    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+    expect(() => sendReplayChunk("blocked", "m-safe")).toThrow(failure)
+    expect(session.bubbles).toHaveLength(0)
+    expect(session.sessionState.messages).toHaveLength(0)
+    await session.detach()
+  })
+})
+
+// C2: exercise early input through the public lifecycle and the actual tee callbacks.
+describe("C2 early transcript frames", () => {
+  function transcriptTexts(session: AgentSession): string[] {
+    return session.bubbles.flatMap((b) => (b.kind === "tool" ? [] : b.segments.map((s) => s.text)))
+  }
+
+  it.each(["initial", "warm"] as const)(
+    "keeps exactly one early chunk across %s newSession adoption",
+    async (mode) => {
+      const session = new AgentSession()
+      if (mode === "warm") await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+      let finish!: (value: { sessionId: string }) => void
+      const barrier = new Promise<{ sessionId: string }>((resolve) => {
+        finish = resolve
+      })
+      vh.state.newSessionMock.mockImplementationOnce(() => {
+        sendReplayChunk(`early-${mode}`, `early-${mode}`)
+        return barrier
+      })
+      const pending =
+        mode === "initial"
+          ? session.attach({ cwd: "/tmp", cliKind: "opencode" })
+          : session.newSession({ cliKind: "opencode" })
+      await vi.waitFor(() => expect(transcriptTexts(session)).toEqual([`early-${mode}`]))
+      expect(JSON.stringify(lastView().state.messages)).toContain(`early-${mode}`)
+      const early = session.bubbles[0]
+      finish({ sessionId: `adopted-${mode}` })
+      await pending
+      expect(session.sessionId).toBe(`adopted-${mode}`)
+      expect(transcriptTexts(session)).toEqual([`early-${mode}`])
+      expect(session.bubbles[0]).toBe(early)
+      session.detach()
+    },
+  )
+
+  it("switch clears before replay and keeps early load content after resolution", async () => {
     const session = new AgentSession()
     await session.attach({ cwd: "/tmp", cliKind: "opencode" })
-
-    LocalSessionViewCaptured.throwOnUpdate = true
-    sendReplayChunk("kept", "m-safe")
-
-    expect(session.status).toBe("connected") // לא קרס
-    expect(session.bubbles.filter((b) => b.kind === "message")).toHaveLength(1)
+    sendReplayChunk("old-content", "old")
+    let finish!: (value: Record<string, never>) => void
+    const barrier = new Promise<Record<string, never>>((resolve) => {
+      finish = resolve
+    })
+    vh.state.loadSessionMock.mockImplementationOnce(() => {
+      expect(transcriptTexts(session)).toEqual([])
+      sendReplayChunk("early-load", "early-load")
+      return barrier
+    })
+    const pending = session.switchSession({ sessionId: "loaded", cwd: "/tmp", cliKind: "opencode" })
+    await vi.waitFor(() => expect(transcriptTexts(session)).toEqual(["early-load"]))
+    const early = session.bubbles[0]
+    finish({})
+    await pending
+    expect(transcriptTexts(session)).toEqual(["early-load"])
+    expect(session.bubbles[0]).toBe(early)
+    session.detach()
   })
+})
+
+describe("canonical hot transitions", () => {
+  for (const operation of ["new", "switch"] as const) {
+    it(`hot transition resets canonical messages ${operation}`, async () => {
+      const s = new AgentSession()
+      await s.attach({ cwd: "/tmp", cliKind: "opencode" })
+      const emit = (text: string) =>
+        vh.state.teedCallbacks?.onUpdate?.({
+          update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
+        } as never)
+      emit("old content")
+      expect(s.sessionState.messages).toHaveLength(1)
+      let finish!: (value: { sessionId: string }) => void
+      const gate = new Promise<{ sessionId: string }>((resolve) => {
+        finish = resolve
+      })
+      const mock = operation === "new" ? vh.state.newSessionMock : vh.state.loadSessionMock
+      mock.mockImplementationOnce(() => {
+        emit("early content")
+        return gate
+      })
+      const pending =
+        operation === "new"
+          ? s.newSession({ cliKind: "opencode" })
+          : s.switchSession({ sessionId: "next", cwd: "/tmp", cliKind: "opencode" })
+      expect(mock).toHaveBeenCalled()
+      const early = JSON.stringify(s.sessionState.messages)
+      expect(early).not.toContain("old content")
+      expect(early).toContain("early content")
+      finish({ sessionId: "next" })
+      await pending
+      emit(" after adopt")
+      expect(JSON.stringify(s.sessionState.messages)).not.toContain("old content")
+      expect(JSON.stringify(s.sessionState.messages)).toContain("early content")
+      expect(JSON.stringify(s.bubbles)).toContain("early content")
+      s.detach()
+    })
+  }
 })

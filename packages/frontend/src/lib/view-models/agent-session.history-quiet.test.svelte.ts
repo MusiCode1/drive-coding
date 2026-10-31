@@ -25,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
 import { RemoteSessionView } from "$lib/session/remote-session-view.js"
+import { MockSessionView } from "./__fixtures__/mock-session-view.svelte"
 import { AgentSession } from "./agent-session.svelte.js"
 import { Settings } from "./settings.svelte"
 import { Speaker } from "./speaker.svelte"
@@ -35,16 +36,20 @@ const mockSynthesize = vi.fn()
 const mockIsAvailable = vi.fn((_provider: "elevenlabs" | "google") => true)
 const mockNarrate = vi.fn()
 
-vi.mock("$lib/adapters/voice/tts-resolve", () => ({
-  resolveTts: vi.fn(() => ({
-    provider: {
-      format: "pcm" as const,
-      synthesize: (...args: unknown[]) => mockSynthesize(...args),
-    },
-    voiceId: "voice",
-    modelId: "model",
-  })),
-}))
+vi.mock("$lib/adapters/voice/tts-resolve", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/adapters/voice/tts-resolve")>()
+  return {
+    ...actual,
+    resolveTts: vi.fn(() => ({
+      provider: {
+        format: "pcm" as const,
+        synthesize: (...args: unknown[]) => mockSynthesize(...args),
+      },
+      voiceId: "voice",
+      modelId: "model",
+    })),
+  }
+})
 
 vi.mock("./capabilities.svelte", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./capabilities.svelte")>()
@@ -251,7 +256,7 @@ function createQuietHarness(
 
   const agent = new AgentSession({ view, settings })
   const speaker = new Speaker({
-    session: agent,
+    session: agent.speakerTranscript(),
     settings,
     playlist,
     audioStream: sink,
@@ -457,4 +462,93 @@ describe("replay-quiet harness", () => {
     expect(harness.enqueueCount()).toBe(RECONNECT_ENQUEUE_BASELINE)
     harness.destroy()
   })
+})
+
+describe("history mark provenance", () => {
+  it("mark A cannot suppress replacement B before effect", async () => {
+    const h = createQuietHarness([
+      {
+        event: "snapshot",
+        data: JSON.stringify(
+          makeSnapshot({
+            version: 1,
+            messages: [historicalMessage(3)],
+            nextMessageSeq: 1,
+            nextSegmentSeq: 3,
+          }),
+        ),
+      },
+    ])
+    await h.view.connect()
+    await flushEffects()
+    const before = h.enqueueCount()
+    h.agent.bubbles = [
+      {
+        id: "m_0",
+        kind: "message",
+        messageId: "prov-hist",
+        createdAt: 0,
+        segments: [
+          {
+            id: "s_0",
+            text: "Replacement live content must be spoken with overlapping historical IDs.",
+          },
+        ],
+      },
+    ]
+    await flushEffects()
+    expect(h.enqueueCount()).toBeGreaterThan(before)
+    h.destroy()
+  })
+})
+
+describe("history provenance before first speaker effect", () => {
+  for (const refresh of [false, true])
+    it(`hydration mark remains scoped when refresh=${refresh}`, async () => {
+      const view = new MockSessionView()
+      view.connect("history-A")
+      view.state = makeSnapshot({
+        version: 1,
+        messages: [historicalMessage(3)],
+        nextMessageSeq: 1,
+        nextSegmentSeq: 3,
+      })
+      const agent = new AgentSession({ view })
+      expect(agent.historyEpoch).toBe(1)
+      const settings = new Settings()
+      settings.muted = false
+      settings.ttsProvider = "google"
+      const sink = makeMockSink(),
+        playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 }),
+        reserve = vi.spyOn(playlist, "reserve")
+      const speaker = new Speaker({
+        session: agent.speakerTranscript(),
+        settings,
+        playlist,
+        audioStream: sink,
+        orderAlloc: new OrderAllocator(),
+      })
+      if (refresh) view.applySnapshot({ ...view.state, version: 2 }, "same-session-reconnect")
+      else
+        agent.bubbles = [
+          {
+            id: "m_0",
+            kind: "message",
+            messageId: "prov-hist",
+            createdAt: 0,
+            segments: [
+              {
+                id: "s_0",
+                text: "Live B content must play despite an older historical mark before effect.",
+              },
+            ],
+          },
+        ]
+      await flushEffects()
+      if (refresh) expect(reserve).not.toHaveBeenCalled()
+      else expect(reserve).toHaveBeenCalledOnce()
+      expect(speaker.debugInfo().historyEpoch).toBe(1)
+      speaker.destroy()
+      agent.detach()
+    })
 })

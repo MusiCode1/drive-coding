@@ -15,25 +15,30 @@ import {
   applyPatch,
   createInitialSessionState,
   type Patch,
-  reduce,
   type SessionState,
 } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { vi } from "vitest"
 import type { SessionInfo } from "$lib/adapters/sessions"
-import type { SessionView, ViewEmission } from "$lib/session/session-view"
+import type { SessionView } from "$lib/session/session-view"
+import { type ProjectionSink, SessionViewDelivery } from "$lib/session/session-view-delivery"
+import { projectSessionSnapshot } from "$lib/session/session-view-projection"
 
 export class MockSessionView implements SessionView {
-  // ─── state (plain object, updated by fireUpdate) ───
-  state: SessionState = $state(createInitialSessionState({ sessionId: null }))
-
-  // ─── slice remote-session-mgmt C5: port extension — supportsSessionDelete ───
-  // Mutable so tests can toggle the capability; the VM getter must follow it.
+  #delivery = new SessionViewDelivery()
+  get state(): SessionState {
+    return this.#delivery.state
+  }
+  set state(state: SessionState) {
+    this.#delivery.state = state
+  }
+  bindProjection(sink: ProjectionSink): void {
+    this.#delivery.bind(sink)
+  }
+  beginProjection(id: string | null, preserveControl = false): void {
+    this.#delivery.begin(id, preserveControl)
+  }
   supportsSessionDelete = $state(false)
-
-  // ─── patches stream ───
-  #controller: ReadableStreamDefaultController<ViewEmission> | null = null
-  readonly patches: ReadableStream<ViewEmission>
 
   // Track calls for assertions
   readonly promptMock = vi
@@ -55,42 +60,25 @@ export class MockSessionView implements SessionView {
   readonly deleteSessionMock = vi.fn().mockResolvedValue(undefined)
   readonly setSessionModelMock = vi.fn().mockResolvedValue(undefined)
 
-  constructor() {
-    this.patches = new ReadableStream<ViewEmission>({
-      start: (controller) => {
-        this.#controller = controller
-      },
-    })
+  hydrate(): void {
+    this.#delivery.frame(projectSessionSnapshot(this.state, this.state.messages.length > 0), true)
+    this.#delivery.endBatch(this.state)
   }
-
-  // ─── Test helper: fire a session/update ───
-
-  /**
-   * מדמה session/update notification:
-   * מריץ reduce, מעדכן state, ודוחף patches לstream.
-   */
+  applySnapshot(state: SessionState, resetOrigin?: "same-session-reconnect"): void {
+    this.#delivery.frame(projectSessionSnapshot(state, true, resetOrigin), true)
+    this.#delivery.endBatch(state)
+  }
   fireUpdate(update: unknown): void {
-    const { state, patches } = reduce(this.state, update)
-    this.state = state
-    try {
-      this.#controller?.enqueue({ patches, updates: [update] })
-    } catch {
-      // stream closed
-    }
+    this.#delivery.update(update, true)
+    this.#delivery.endBatch(this.state)
   }
-
-  /**
-   * מחיל patch (applyPatch, core) על ה-state ודוחף אותו ל-stream — לסימולציית
-   * update-session patches (pending/turnState/lastTurnError) שאין ל-reduce מושג
-   * עליהם (ר' slice view-switch C1: אותה טכניקה בדיוק כמו ה-remote contract harness).
-   */
   applyAndEmit(patch: Patch): void {
     const next = applyPatch(this.state, patch)
-    if (next) this.state = next
-    try {
-      this.#controller?.enqueue({ patches: [patch], updates: [] })
-    } catch {
-      // stream closed
+    if (!next) return
+    if (patch.op === "reset") this.#delivery.frame(projectSessionSnapshot(next, true), true)
+    else {
+      this.#delivery.state = next
+      this.#delivery.endBatch(next)
     }
   }
 
@@ -141,6 +129,7 @@ export class MockSessionView implements SessionView {
     return this.setSessionModelMock(model)
   }
   close(): Promise<void> {
+    this.#delivery.dispose()
     return this.closeMock()
   }
 }

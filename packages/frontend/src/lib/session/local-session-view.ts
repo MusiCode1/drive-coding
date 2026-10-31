@@ -21,18 +21,14 @@ import type {
   RequestPermissionRequest,
   SessionNotification,
 } from "@agentclientprotocol/sdk"
-import {
-  createInitialSessionState,
-  type Patch,
-  reduce,
-  type SessionState,
-} from "@drive-coding/core/session"
+import type { SessionState } from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks, PromptBlocks } from "@drive-coding/provider/client"
 import { createExtClient } from "$lib/adapters/ext"
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitation"
 import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
-import type { SessionView, ViewEmission } from "./session-view"
+import type { SessionView } from "./session-view"
+import { type ProjectionSink, SessionViewDelivery } from "./session-view-delivery"
 
 // ─── Takeover close code (סוגר דליפה #3) ───
 /** ⚠️ חייב להתאים ל-TAKEOVER_CODE ב-packages/backend/src/delivery/ws-agent.ts. */
@@ -44,12 +40,9 @@ const TAKEOVER_CLOSE_CODE = 4409
  * בפרודקשן (C4): ה-factory יוצר WsAcpTransport + AcpClient אמיתיים.
  */
 export class LocalSessionView implements SessionView {
-  // ─── Patches stream ───
-  #controller: ReadableStreamDefaultController<ViewEmission> | null = null
-  readonly patches: ReadableStream<ViewEmission>
+  #delivery = new SessionViewDelivery()
 
   // ─── Session state (C1 fields) ───
-  #state: SessionState = createInitialSessionState({ sessionId: null })
 
   // ─── Connection ───
   #client: AcpClient | null = null
@@ -78,23 +71,19 @@ export class LocalSessionView implements SessionView {
      *
      * Default: throws — use `createClient` option or upgrade to C4 wiring.
      */
+    projection?: ProjectionSink
     createClient?: (callbacks: AcpClientCallbacks) => Promise<AcpClient>
   }) {
     this.#cwd = opts.cwd
     this.#cliKind = opts.cliKind
     this.#createClientFn = opts.createClient ?? this.#defaultCreateClient.bind(this)
-
-    this.patches = new ReadableStream<ViewEmission>({
-      start: (controller) => {
-        this.#controller = controller
-      },
-    })
+    if (opts.projection) this.bindProjection(opts.projection)
   }
 
   // ─── State getter ───
 
   get state(): SessionState {
-    return this.#state
+    return this.#delivery.state
   }
 
   // ─── slice local-view-wiring C2: adopt · dispose · observerCallbacks (TDD) ───
@@ -103,11 +92,16 @@ export class LocalSessionView implements SessionView {
    * ה-callbacks שה-observer (ה-VM) צריך. **קריאה בלבד** — מחזירי-ערך
    * (onRequestPermission/onCreateElicitation) אינם כאן: שני עונים = תשובה כפולה.
    */
-  get observerCallbacks(): Pick<AcpClientCallbacks, "onUpdate" | "onExtNotification"> {
-    return {
-      onUpdate: this.#onUpdate.bind(this),
-      onExtNotification: this.#onExtNotification.bind(this),
-    }
+  bindProjection(sink: ProjectionSink): void {
+    this.#delivery.bind(sink)
+  }
+  begin(sessionId: string | null = null, preserveControl = false): void {
+    this.#delivery.begin(sessionId, preserveControl)
+  }
+  #disposed = false
+  ingestUpdate(update: unknown): void {
+    if (this.#disposed) return
+    this.#delivery.update(update, false)
   }
 
   /**
@@ -118,7 +112,7 @@ export class LocalSessionView implements SessionView {
   adopt(input: { client: AcpClient; sessionId: string }): void {
     this.#client = input.client
     this.#sessionId = input.sessionId
-    this.#state = createInitialSessionState({ sessionId: input.sessionId })
+    this.#delivery.adopt(input.sessionId)
   }
 
   /**
@@ -127,13 +121,10 @@ export class LocalSessionView implements SessionView {
    * (= transport.close()), ובמסלול המקומי הלקוח משותף עם ה-VM; close היה הורג את ה-WS.
    */
   dispose(): void {
+    this.#disposed = true
     this.#client = null
     this.#sessionId = null
-    try {
-      this.#controller?.close()
-    } catch {
-      // כבר סגור/מבוטל
-    }
+    this.#delivery.dispose()
   }
 
   // ─── Default client factory (production wiring — C4) ───
@@ -161,15 +152,7 @@ export class LocalSessionView implements SessionView {
    * (סוגר דליפה #1: transport internals אינם נחשפים)
    */
   #onUpdate(notification: SessionNotification): void {
-    const { state, patches } = reduce(this.#state, notification.update)
-    this.#state = state
-    if (patches.length > 0) {
-      try {
-        this.#controller?.enqueue({ patches, updates: [] })
-      } catch {
-        // Stream cancelled or closed — ignore
-      }
-    }
+    this.ingestUpdate(notification.update)
   }
 
   /**
@@ -182,16 +165,10 @@ export class LocalSessionView implements SessionView {
       // Pending יחיד — בקשה שנייה מבטלת את הקודמת (כמו VM הקיים)
       this.#cancelAllPendingPermissions()
       this.#pendingPermissions.set(requestId, resolve)
-      this.#state = {
-        ...this.#state,
-        pending: {
-          ...this.#state.pending,
-          permission: {
-            requestId,
-            params: params as unknown as RequestPermissionRequest,
-          },
-        },
-      }
+      this.#delivery.updatePending("permission", {
+        requestId,
+        params: params as unknown as RequestPermissionRequest,
+      })
     })
   }
 
@@ -204,16 +181,10 @@ export class LocalSessionView implements SessionView {
     return new Promise<ElicitationResponse>((resolve) => {
       this.#cancelAllPendingElicitations()
       this.#pendingElicitations.set(requestId, resolve)
-      this.#state = {
-        ...this.#state,
-        pending: {
-          ...this.#state.pending,
-          elicitation: {
-            requestId,
-            params: params as unknown as CreateElicitationRequest,
-          },
-        },
-      }
+      this.#delivery.updatePending("elicitation", {
+        requestId,
+        params: params as unknown as CreateElicitationRequest,
+      })
     })
   }
 
@@ -232,7 +203,7 @@ export class LocalSessionView implements SessionView {
       resolve({ outcome: { outcome: "cancelled" } })
     }
     this.#pendingPermissions.clear()
-    this.#state = { ...this.#state, pending: { ...this.#state.pending, permission: null } }
+    this.#delivery.updatePending("permission", null)
   }
 
   #cancelAllPendingElicitations(): void {
@@ -240,7 +211,7 @@ export class LocalSessionView implements SessionView {
       resolve({ action: "cancel" })
     }
     this.#pendingElicitations.clear()
-    this.#state = { ...this.#state, pending: { ...this.#state.pending, elicitation: null } }
+    this.#delivery.updatePending("elicitation", null)
   }
 
   // ─── Public methods (SessionView interface) ───
@@ -254,14 +225,14 @@ export class LocalSessionView implements SessionView {
     if (permResolve) {
       this.#pendingPermissions.delete(requestId)
       permResolve(result as PermissionResponse)
-      this.#state = { ...this.#state, pending: { ...this.#state.pending, permission: null } }
+      this.#delivery.updatePending("permission", null)
       return
     }
     const elicResolve = this.#pendingElicitations.get(requestId)
     if (elicResolve) {
       this.#pendingElicitations.delete(requestId)
       elicResolve(result as ElicitationResponse)
-      this.#state = { ...this.#state, pending: { ...this.#state.pending, elicitation: null } }
+      this.#delivery.updatePending("elicitation", null)
       return
     }
     // Unknown requestId — no-op
@@ -272,12 +243,12 @@ export class LocalSessionView implements SessionView {
    * קורא ל-createClientFn → client.newSession() → מעדכן state.
    */
   async newSession(_cwd?: string): Promise<void> {
-    this.#state = { ...this.#state, status: "connecting" }
+    this.#delivery.state = { ...this.#delivery.state, status: "connecting" }
     this.#client = await this.#createClientFn(this.#makeCallbacks())
     const result = await this.#client.newSession({ cwd: this.#cwd, mcpServers: [] })
     const sessionId = (result as { sessionId?: string }).sessionId ?? null
     this.#sessionId = sessionId
-    this.#state = { ...this.#state, status: "connected", sessionId }
+    this.#delivery.state = { ...this.#delivery.state, status: "connected", sessionId }
     await this.#refreshQuota()
   }
 
@@ -287,11 +258,11 @@ export class LocalSessionView implements SessionView {
    * אחרת cwd החיבור המקורי (#cwd).
    */
   async loadSession(sessionId: string, cwd?: string): Promise<void> {
-    this.#state = { ...this.#state, status: "connecting" }
+    this.#delivery.state = { ...this.#delivery.state, status: "connecting" }
     this.#client = await this.#createClientFn(this.#makeCallbacks())
     await this.#client.loadSession({ sessionId, cwd: cwd ?? this.#cwd, mcpServers: [] })
     this.#sessionId = sessionId
-    this.#state = { ...this.#state, status: "connected", sessionId }
+    this.#delivery.state = { ...this.#delivery.state, status: "connected", sessionId }
     await this.#refreshQuota()
   }
 
@@ -302,12 +273,12 @@ export class LocalSessionView implements SessionView {
    */
   async prompt(content: string | PromptBlocks, _meta?: Record<string, unknown>): Promise<void> {
     if (!this.#client || !this.#sessionId) throw new Error("LocalSessionView: not connected")
-    this.#state = { ...this.#state, turnState: "waiting" }
+    this.#delivery.state = { ...this.#delivery.state, turnState: "waiting" }
     try {
       await this.#client.prompt(this.#sessionId, content)
-      this.#state = { ...this.#state, turnState: "idle" }
+      this.#delivery.state = { ...this.#delivery.state, turnState: "idle" }
     } catch (e) {
-      this.#state = { ...this.#state, turnState: "idle" }
+      this.#delivery.state = { ...this.#delivery.state, turnState: "idle" }
       throw e
     }
   }
@@ -321,7 +292,7 @@ export class LocalSessionView implements SessionView {
         // ignore cancel errors
       }
     }
-    this.#state = { ...this.#state, turnState: "idle" }
+    this.#delivery.state = { ...this.#delivery.state, turnState: "idle" }
   }
 
   async setMode(mode: string): Promise<void> {
@@ -379,12 +350,8 @@ export class LocalSessionView implements SessionView {
     this.#client?.close()
     this.#client = null
     this.#sessionId = null
-    this.#state = { ...this.#state, status: "disconnected" }
-    try {
-      this.#controller?.close()
-    } catch {
-      // already closed or cancelled
-    }
+    this.#delivery.state = { ...this.#delivery.state, status: "disconnected" }
+    this.#delivery.dispose()
   }
 
   // ─── Private: quota refresh ───
@@ -398,7 +365,7 @@ export class LocalSessionView implements SessionView {
     try {
       const ext = createExtClient(this.#client)
       const quota = await ext.getQuota(this.#sessionId)
-      this.#state = { ...this.#state, quota }
+      this.#delivery.state = { ...this.#delivery.state, quota }
     } catch {
       // quota failures are non-fatal — keep previous quota
     }

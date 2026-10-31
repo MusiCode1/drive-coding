@@ -14,6 +14,7 @@ import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createRemoteView } from "./create-session-view.js"
 import { RemoteSessionView } from "./remote-session-view.js"
+import { createProjectionRecorder } from "./session-view-delivery"
 
 const encoder = new TextEncoder()
 
@@ -38,6 +39,7 @@ describe("createRemoteView()", () => {
     }
 
     const view = await createRemoteView({
+      projection: createProjectionRecorder(() => {}),
       agentId: "agent-1",
       baseUrl: "http://be.local",
       _fetch: mockFetch,
@@ -58,6 +60,7 @@ describe("createRemoteView()", () => {
     }
 
     const view = await createRemoteView({
+      projection: createProjectionRecorder(() => {}),
       agentId: "agent-2",
       _fetch: mockFetch,
       _sleep: () => Promise.resolve(),
@@ -81,6 +84,7 @@ describe("createRemoteView()", () => {
     }
 
     const view = await createRemoteView({
+      projection: createProjectionRecorder(() => {}),
       agentId: "agent-3",
       baseUrl: "http://be.local/",
       _fetch: mockFetch,
@@ -104,6 +108,7 @@ describe("createRemoteView()", () => {
     }
 
     const view = await createRemoteView({
+      projection: createProjectionRecorder(() => {}),
       agentId: "agent-4",
       _fetch: mockFetch,
       _sleep: () => Promise.resolve(),

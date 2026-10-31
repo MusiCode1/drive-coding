@@ -13,13 +13,17 @@ import { Speaker } from "$lib/view-models/speaker.svelte"
 import { bindSessionScope } from "./session-scope"
 import { onSessionRouteChange } from "./session-scope-nav"
 
-vi.mock("$lib/adapters/voice/tts-resolve", () => ({
-  resolveTts: vi.fn(() => ({
-    provider: { format: "pcm" as const, synthesize: vi.fn() },
-    voiceId: "v",
-    modelId: "m",
-  })),
-}))
+vi.mock("$lib/adapters/voice/tts-resolve", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("$lib/adapters/voice/tts-resolve")>()
+  return {
+    ...actual,
+    resolveTts: vi.fn(() => ({
+      provider: { format: "pcm" as const, synthesize: vi.fn() },
+      voiceId: "v",
+      modelId: "m",
+    })),
+  }
+})
 vi.mock("$lib/adapters/voice/translate", () => ({ translate: vi.fn() }))
 vi.mock("$lib/adapters/voice/narrate", () => ({ narrate: vi.fn() }))
 
@@ -45,7 +49,13 @@ function harness() {
   const sink = makeMockSink()
   const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
   const orderAlloc = new OrderAllocator()
-  const speaker = new Speaker({ session, settings, playlist, audioStream: sink, orderAlloc })
+  const speaker = new Speaker({
+    session: session.speakerTranscript(),
+    settings,
+    playlist,
+    audioStream: sink,
+    orderAlloc,
+  })
   bindSessionScope({ session, speaker, orderAlloc })
   return { session, sink, playlist }
 }

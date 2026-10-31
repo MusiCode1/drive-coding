@@ -12,6 +12,8 @@ import type { Bubble, MessageBubble } from "$lib/types/bubble"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
 import { Settings } from "./settings.svelte"
 import { Speaker } from "./speaker.svelte"
+import { createSpeakerTranscriptPort } from "./speaker-transcript-port"
+import { TranscriptScope } from "./transcript-scope.svelte"
 
 const mockSynthesize = vi.fn()
 // params declared so the spread into it typechecks against the real
@@ -124,8 +126,22 @@ function createHarness(
   settings.narrateTools = true
   const sink = makeMockSink()
   const playlist = new AudioPlaylist(sink, undefined, { reserveTimeoutMs: 5000 })
+  const model = makeSession(extraSession)
+  const transcript = new TranscriptScope()
+  transcript.replace(sessionBubbles)
+  const port = createSpeakerTranscriptPort(transcript, {
+    status: () => model.status,
+    turnState: () => model.turnState,
+    isLoadingHistory: () => model.isLoadingHistory,
+    historyEpoch: () => model.historyEpoch,
+    historyMark: () => ({
+      mark: model.historyMark,
+      processingTarget: transcript.captureProcessingTarget(),
+    }),
+    lastUserMessage: () => model.lastUserMessage ?? "",
+  })
   const speaker = new Speaker({
-    session: makeSession(extraSession),
+    session: port,
     settings,
     playlist,
     audioStream: sink,

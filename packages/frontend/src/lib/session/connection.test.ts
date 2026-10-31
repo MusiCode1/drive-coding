@@ -1,0 +1,738 @@
+import type { AcpClient, createAcpClient } from "@drive-coding/provider/client"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import {
+  createAgent,
+  deleteAgent,
+  getAgent,
+  listAgents,
+  releaseConnection,
+} from "$lib/adapters/agents-api"
+import { createRemoteView } from "./create-session-view"
+import { HttpConnection, type HttpConnectionDeps } from "./http-connection"
+import { LocalSessionView } from "./local-session-view"
+import type { SessionView } from "./session-view"
+import { createProjectionRecorder } from "./session-view-delivery"
+import { WsConnection, type WsConnectionDeps, type WsReconnectDeps } from "./ws-connection"
+
+const events: string[] = []
+
+describe("WsConnection owner reader cleanup", () => {
+  it("disposes the captured reader after client.close throws without closing its replacement", async () => {
+    const oldClose = vi.fn(() => {
+      throw new Error("wire already closed")
+    })
+    const oldClient = { ...client, close: oldClose }
+    const newClient = {
+      ...client,
+      close: vi.fn(),
+      extMethod: vi.fn(async () => ({ owner: "new-view" })),
+    }
+    const oldView = new LocalSessionView({ cwd: "/workspace", cliKind: "claude" })
+    const newView = new LocalSessionView({ cwd: "/workspace", cliKind: "claude" })
+    oldView.adopt({ client: oldClient, sessionId: "old-session" })
+    newView.adopt({ client: newClient, sessionId: "new-session" })
+    const oldDispose = vi.spyOn(oldView, "dispose")
+    const newDispose = vi.spyOn(newView, "dispose")
+    const oldFrames = vi.fn()
+    const newFrames = vi.fn()
+    oldView.bindProjection(createProjectionRecorder(oldFrames))
+    newView.bindProjection(createProjectionRecorder(newFrames))
+    const oldCallbacks = { onUpdate: (n: { update: unknown }) => oldView.ingestUpdate(n.update) }
+    const newCallbacks = { onUpdate: (n: { update: unknown }) => newView.ingestUpdate(n.update) }
+    const deps = wsDeps()
+    vi.mocked(deps.bindLocalView).mockReturnValueOnce(oldView).mockReturnValueOnce(newView)
+    const owner = new WsConnection(deps)
+    owner.bindLocalView()
+    owner.setClient(oldClient)
+
+    owner.close({ kind: "end-view" })
+    // Owner references are cleared before the rejected close settles.
+    const closeAttempts = oldClose.mock.calls.length
+    owner.closeClientForCold()
+    owner.close({ kind: "end-view" })
+    expect(oldClose).toHaveBeenCalledTimes(closeAttempts)
+    owner.bindLocalView()
+    owner.setClient(newClient)
+
+    await vi.waitFor(() => expect(oldDispose).toHaveBeenCalledOnce())
+    oldCallbacks.onUpdate?.({
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "late" } },
+    } as never)
+    expect(oldFrames).not.toHaveBeenCalled()
+    expect(oldDispose).toHaveBeenCalledOnce()
+    await expect(oldView.extMethod("probe", {})).rejects.toThrow("not connected")
+    expect(newDispose).not.toHaveBeenCalled()
+    expect(newClient.close).not.toHaveBeenCalled()
+    await expect(newView.extMethod("probe", {})).resolves.toEqual({ owner: "new-view" })
+    newCallbacks.onUpdate?.({
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "replacement" },
+      },
+    } as never)
+    expect(newFrames).toHaveBeenCalledOnce()
+    newView.dispose()
+    newCallbacks.onUpdate?.({
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "late new" } },
+    } as never)
+    expect(newFrames).toHaveBeenCalledOnce()
+  })
+})
+const waitBehaviors: Array<(close: (code: number, reason: string) => void) => Promise<void>> = []
+const closeWaitBehaviors: Array<() => Promise<void>> = []
+const client = {
+  authMethods: [],
+  loadSession: vi.fn(async () => ({ sessionId: "session-1" })),
+  newSession: vi.fn(async () => {
+    events.push("newSession")
+    return { sessionId: "session-1" }
+  }),
+} as unknown as AcpClient
+
+vi.mock("@drive-coding/acp-wire/browser", () => ({
+  WsAcpTransport: class {
+    #onClose: Array<(code: number, reason: string) => void> = []
+    constructor() {
+      events.push("WsAcpTransport")
+    }
+    onClose = vi.fn((callback: (code: number, reason: string) => void) => {
+      this.#onClose.push(callback)
+    })
+    async waitForOpen() {
+      events.push("waitForOpen")
+      const behavior = waitBehaviors.shift()
+      if (behavior)
+        await behavior((code, reason) => {
+          for (const callback of this.#onClose) callback(code, reason)
+        })
+    }
+    close() {
+      events.push("close")
+    }
+    async closeAndWait() {
+      events.push("closeAndWait")
+      await closeWaitBehaviors.shift()?.()
+      events.push("closeAndWaitDone")
+    }
+  },
+}))
+vi.mock("@drive-coding/provider/client", () => ({
+  createAcpClient: vi.fn(async () => {
+    events.push("createAcpClient")
+    return client
+  }),
+  createAttachedAcpClient: vi.fn(() => {
+    events.push("createAttachedAcpClient")
+    return client
+  }),
+}))
+vi.mock("$lib/adapters/agents-api", () => ({
+  createAgent: vi.fn(async () => {
+    events.push("createAgent")
+    return { agentId: "agent-1" }
+  }),
+  notifySessionAttached: vi.fn(async () => {
+    events.push("notifySessionAttached")
+  }),
+  listAgents: vi.fn(async () => {
+    events.push("listAgents")
+    return []
+  }),
+  getAgent: vi.fn(async () => null),
+  deleteAgent: vi.fn(async () => {
+    events.push("deleteAgent")
+  }),
+  releaseConnection: vi.fn(async () => {
+    events.push("releaseConnection")
+  }),
+}))
+vi.mock("./create-session-view", () => ({
+  createRemoteView: vi.fn(),
+}))
+
+function wsDeps(): WsConnectionDeps {
+  return {
+    connectionId: "test-conn",
+    prepareNew: vi.fn(),
+    setAgent: vi.fn(() => {
+      events.push("setAgent")
+    }),
+    url: vi.fn(() => "ws://localhost/agent-1"),
+    onClose: vi.fn(),
+    bindLocalView: vi.fn(() => {
+      events.push("bindLocalView")
+      return {} as LocalSessionView
+    }),
+    callbacks: vi.fn(() => ({}) as Parameters<typeof createAcpClient>[1]),
+    setClient: vi.fn(),
+    sessionMeta: vi.fn(() => undefined),
+    enterSession: vi.fn(),
+    adoptLocalView: vi.fn(() => {
+      events.push("adoptLocalView")
+    }),
+    captureSessionConfig: vi.fn(),
+    connected: vi.fn(async () => {
+      events.push("connected")
+    }),
+    failed: vi.fn(),
+    prepareExisting: vi.fn(),
+    failedExisting: vi.fn(),
+  }
+}
+
+function httpDeps(): HttpConnectionDeps {
+  return {
+    prepare: vi.fn(),
+    setAgent: vi.fn(() => {
+      events.push("setAgent")
+    }),
+    viewOptions: vi.fn(() => ({ headers: {}, onSseReconnected: vi.fn() })),
+    enterSession: vi.fn(),
+    bindView: vi.fn(),
+    applyTitle: vi.fn(),
+    connected: vi.fn(async () => {
+      events.push("connected")
+    }),
+    rememberedConfig: vi.fn(async () => {}),
+    failed: vi.fn(),
+    missingSessionId: vi.fn(),
+  }
+}
+
+beforeEach(() => {
+  events.length = 0
+  waitBehaviors.length = 0
+  closeWaitBehaviors.length = 0
+  vi.clearAllMocks()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+function reconnectDeps(): WsConnectionDeps & { reconnect: WsReconnectDeps } {
+  return {
+    ...wsDeps(),
+    reconnect: {
+      context: vi.fn(() => ({
+        sessionId: "session-1",
+        cwd: "/repo",
+        cliKind: "claude",
+        agentId: "old-agent",
+        hidden: false,
+        detached: false,
+        tearingDown: false,
+        remote: false,
+        terminalError: false,
+      })),
+      snapshot: vi.fn(),
+      setStatus: vi.fn(),
+      setAttempt: vi.fn(),
+      setTerminal: vi.fn(),
+      setCrashError: vi.fn(),
+      setWarmHostActiveError: vi.fn(),
+      clearTransientError: vi.fn(),
+      clearClient: vi.fn(),
+      prepareWarm: vi.fn(),
+      setWarmAgent: vi.fn(),
+      setAttachedClient: vi.fn(),
+      startReplay: vi.fn(),
+      finishReplay: vi.fn(),
+      disposeFailedWarm: vi.fn(),
+      cold: vi.fn(async () => ({ kind: "failed" as const, preservedSessionId: "session-1" })),
+      connected: vi.fn(),
+    },
+  }
+}
+
+describe("Connection transport ownership", () => {
+  it("exposes reconnect and cancellation from the connection owner", () => {
+    const ws = new WsConnection(wsDeps())
+    const http = new HttpConnection(httpDeps())
+    expect(typeof ws.reconnect).toBe("function")
+    expect(typeof ws.cancelReconnect).toBe("function")
+    expect(typeof http.reconnect).toBe("function")
+    expect(typeof http.cancelReconnect).toBe("function")
+  })
+
+  it("WS opens and waits, binds the observer before client creation, then adopts the session", async () => {
+    const deps = wsDeps()
+    await new WsConnection(deps).open({ kind: "new", cwd: "/repo", cliKind: "claude" })
+    expect(events).toEqual([
+      "createAgent",
+      "setAgent",
+      "WsAcpTransport",
+      "waitForOpen",
+      "bindLocalView",
+      "createAcpClient",
+      "newSession",
+      "adoptLocalView",
+      "notifySessionAttached",
+      "connected",
+    ])
+    expect(deps.enterSession).toHaveBeenCalledWith("session-1")
+    expect(deps.failed).not.toHaveBeenCalled()
+  })
+
+  it("rejects a missing existing WS sessionId before mutating the VM", async () => {
+    const deps = reconnectDeps()
+    await expect(
+      new WsConnection(deps).open({
+        kind: "existing-ws",
+        agentId: "live",
+        sessionId: "",
+        cwd: "/repo",
+        cliKind: "claude",
+      }),
+    ).rejects.toThrow("requires sessionId")
+    expect(deps.prepareExisting).not.toHaveBeenCalled()
+    expect(deps.prepareNew).not.toHaveBeenCalled()
+    expect(events).not.toContain("WsAcpTransport")
+  })
+
+  it("HTTP new creates an agent before opening SSE and never constructs WS", async () => {
+    vi.mocked(createRemoteView).mockImplementationOnce(async (_opts, hooks) => {
+      events.push("createRemoteView")
+      const view = { state: { sessionId: "from-snapshot" } } as SessionView as Awaited<
+        ReturnType<typeof createRemoteView>
+      >
+      hooks?.onCreated?.(view)
+      hooks?.onReady?.(view)
+      return view
+    })
+    const deps = httpDeps()
+    await new HttpConnection(deps).open({ kind: "new", cwd: "/repo", cliKind: "claude" })
+    expect(events).toEqual(["createAgent", "setAgent", "createRemoteView", "connected"])
+    expect(deps.enterSession).toHaveBeenCalledWith("from-snapshot")
+    expect(deps.rememberedConfig).toHaveBeenCalledOnce()
+    expect(events).not.toContain("WsAcpTransport")
+  })
+
+  it("HTTP existing preserves the live agent on missing snapshot sessionId", async () => {
+    const close = vi.fn(async () => {})
+    vi.mocked(createRemoteView).mockImplementationOnce(async (_opts, hooks) => {
+      const view = { state: { sessionId: null }, close } as unknown as Awaited<
+        ReturnType<typeof createRemoteView>
+      >
+      hooks?.onCreated?.(view)
+      hooks?.onReady?.(view)
+      return view
+    })
+    const deps = httpDeps()
+    await new HttpConnection(deps).open({
+      kind: "existing-http",
+      agentId: "live",
+      cwd: "/repo",
+      cliKind: "claude",
+    })
+    expect(createAgent).not.toHaveBeenCalled()
+    expect(close).toHaveBeenCalledOnce()
+    expect(deps.missingSessionId).toHaveBeenCalledWith(true)
+    expect(deps.connected).not.toHaveBeenCalled()
+    expect(events).not.toContain("WsAcpTransport")
+  })
+
+  it("HTTP new removes its own agent on a failed SSE connection", async () => {
+    const error = new Error("SSE failed")
+    vi.mocked(createRemoteView).mockRejectedValueOnce(error)
+    const deps = httpDeps()
+    await new HttpConnection(deps).open({ kind: "new", cwd: "/repo", cliKind: "claude" })
+    expect(deps.failed).toHaveBeenCalledWith(error, false)
+    expect(events).not.toContain("WsAcpTransport")
+  })
+
+  it("HTTP release is idempotent per captured identity", () => {
+    const http = new HttpConnection(httpDeps())
+    http.captureReleaseIdentity("agent-a", "conn-1")
+    http.release()
+    http.release()
+    expect(releaseConnection).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("Connection reconnect policy", () => {
+  it("retries a transient 1008 warm handshake, then completes replay without cold", async () => {
+    const deps = reconnectDeps()
+    vi.mocked(listAgents).mockResolvedValueOnce([
+      {
+        id: "old-agent",
+        acpSessionId: "session-1",
+        cwd: "/repo",
+        status: "ready",
+      },
+    ] as unknown as Awaited<ReturnType<typeof listAgents>>)
+    waitBehaviors.push(async (close) => {
+      close(1008, "temporary ownership")
+      await new Promise<void>(() => {})
+    })
+    await new WsConnection(deps).reconnect()
+    expect(events.filter((event) => event === "WsAcpTransport")).toHaveLength(2)
+    expect(events).toContain("createAttachedAcpClient")
+    expect(deps.reconnect.cold).not.toHaveBeenCalled()
+    expect(deps.reconnect.setStatus).toHaveBeenLastCalledWith("connected")
+    expect(deps.reconnect.connected).toHaveBeenCalledOnce()
+  })
+
+  it("waits for a transient 1008 WS to close before constructing its replacement", async () => {
+    const deps = reconnectDeps()
+    vi.mocked(listAgents).mockResolvedValueOnce([
+      {
+        id: "old-agent",
+        acpSessionId: "session-1",
+        cwd: "/repo",
+        status: "ready",
+      },
+    ] as unknown as Awaited<ReturnType<typeof listAgents>>)
+    waitBehaviors.push(async (close) => {
+      close(1008, "temporary ownership")
+      await new Promise<void>(() => {})
+    })
+    let releaseClose!: () => void
+    closeWaitBehaviors.push(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseClose = resolve
+        }),
+    )
+    const pending = new WsConnection(deps).reconnect()
+    await vi.waitFor(() => expect(events).toContain("closeAndWait"))
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    expect(events.filter((event) => event === "WsAcpTransport")).toHaveLength(1)
+    expect(events).toContain("closeAndWait")
+    releaseClose()
+    await pending
+    expect(events.indexOf("closeAndWaitDone")).toBeLessThan(events.lastIndexOf("WsAcpTransport"))
+  })
+
+  it("deletes the old agent only after an explicit successful cold result", async () => {
+    const deps = reconnectDeps()
+    vi.mocked(deps.reconnect.cold).mockResolvedValueOnce({
+      kind: "connected",
+      agentId: "new-agent",
+    })
+    await new WsConnection(deps).reconnect()
+    expect(deleteAgent).toHaveBeenCalledWith("old-agent")
+    expect(deps.reconnect.connected).toHaveBeenCalledOnce()
+  })
+
+  it("skips detached, remote and missing context without a WS or new agent", async () => {
+    const deps = reconnectDeps()
+    const connection = new WsConnection(deps)
+    vi.mocked(deps.reconnect.context).mockReturnValueOnce(null)
+    await connection.reconnect()
+    vi.mocked(deps.reconnect.context).mockImplementation(() => ({
+      sessionId: "session-1",
+      cwd: "/repo",
+      cliKind: "claude",
+      agentId: "old-agent",
+      hidden: false,
+      detached: true,
+      tearingDown: false,
+      remote: false,
+      terminalError: false,
+    }))
+    await connection.reconnect()
+    expect(events).not.toContain("WsAcpTransport")
+    expect(listAgents).not.toHaveBeenCalled()
+    expect(createAgent).not.toHaveBeenCalled()
+  })
+
+  it("falls through warm host-active to cold instead of treating it as terminal", async () => {
+    const deps = reconnectDeps()
+    vi.mocked(listAgents).mockResolvedValueOnce([
+      {
+        id: "old-agent",
+        acpSessionId: "session-1",
+        cwd: "/repo",
+        status: "ready",
+      },
+    ] as unknown as Awaited<ReturnType<typeof listAgents>>)
+    waitBehaviors.push(async (close) => {
+      close(1008, "session-host-active")
+      await new Promise<void>(() => {})
+    })
+    await new WsConnection(deps).reconnect()
+    expect(deps.reconnect.setWarmHostActiveError).toHaveBeenCalledOnce()
+    expect(deps.reconnect.setTerminal).not.toHaveBeenCalled()
+    expect(deps.reconnect.cold).toHaveBeenCalledOnce()
+    expect(events.filter((event) => event === "WsAcpTransport")).toHaveLength(1)
+  })
+
+  it("discards a warm WS whose waitForOpen resolves after cancellation", async () => {
+    const deps = reconnectDeps()
+    vi.mocked(listAgents).mockResolvedValueOnce([
+      {
+        id: "old-agent",
+        acpSessionId: "session-1",
+        cwd: "/repo",
+        status: "ready",
+      },
+    ] as unknown as Awaited<ReturnType<typeof listAgents>>)
+    let release!: () => void
+    waitBehaviors.push(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve
+        }),
+    )
+    const connection = new WsConnection(deps)
+    const pending = connection.reconnect()
+    await vi.waitFor(() => expect(events).toContain("waitForOpen"))
+    connection.cancelReconnect()
+    release()
+    await pending
+    expect(events).toContain("close")
+    expect(deps.reconnect.setAttachedClient).not.toHaveBeenCalled()
+    expect(deps.reconnect.cold).not.toHaveBeenCalled()
+  })
+
+  it("settles an active waitForOpen when manual cancellation arrives", async () => {
+    const deps = reconnectDeps()
+    vi.mocked(listAgents).mockResolvedValueOnce([
+      {
+        id: "old-agent",
+        acpSessionId: "session-1",
+        cwd: "/repo",
+        status: "ready",
+      },
+    ] as unknown as Awaited<ReturnType<typeof listAgents>>)
+    waitBehaviors.push(() => new Promise<void>(() => {}))
+    const connection = new WsConnection(deps)
+    const settled = vi.fn()
+    void connection.reconnect().then(settled)
+    await vi.waitFor(() => expect(events).toContain("waitForOpen"))
+    connection.cancelReconnect()
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce(), { timeout: 100 })
+    expect(events).toContain("close")
+  })
+
+  it("closes the owned WS before looking for a reusable agent", async () => {
+    const deps = reconnectDeps()
+    const connection = new WsConnection(deps)
+    connection.adoptTransport({
+      closeAndWait: vi.fn(async () => {
+        events.push("closeAndWait")
+      }),
+    } as unknown as import("@drive-coding/acp-wire/browser").WsAcpTransport)
+    await connection.reconnect()
+    expect(events.indexOf("closeAndWait")).toBeLessThan(events.indexOf("listAgents"))
+    expect(deps.reconnect.clearClient).toHaveBeenCalledOnce()
+  })
+
+  it("keeps the old agent after failed cold and removes only the new failed agent", async () => {
+    const deps = reconnectDeps()
+    vi.mocked(deps.reconnect.cold).mockResolvedValueOnce({
+      kind: "failed",
+      preservedSessionId: "session-1",
+      failedAgentId: "new-failed-agent",
+    })
+    await new WsConnection(deps).reconnect()
+    expect(deleteAgent).toHaveBeenCalledWith("new-failed-agent")
+    expect(deleteAgent).not.toHaveBeenCalledWith("old-agent")
+    expect(deps.reconnect.connected).not.toHaveBeenCalled()
+  })
+
+  it("cancels a pending backoff wait without a later WS attempt", async () => {
+    vi.useFakeTimers()
+    const deps = reconnectDeps()
+    const connection = new WsConnection(deps)
+    await connection.onUnexpectedClose(1006, "")
+    connection.cancelReconnect()
+    await vi.runAllTimersAsync()
+    expect(listAgents).not.toHaveBeenCalled()
+    expect(deps.reconnect.setAttempt).toHaveBeenLastCalledWith(0)
+  })
+
+  it("discards a stale listAgents result after a newer manual attempt", async () => {
+    const deps = reconnectDeps()
+    let release!: (agents: []) => void
+    vi.mocked(listAgents)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = resolve
+          }),
+      )
+      .mockResolvedValueOnce([])
+    const connection = new WsConnection(deps)
+    const stale = connection.reconnect()
+    const current = connection.reconnect()
+    release([])
+    await Promise.all([stale, current])
+    expect(deps.reconnect.cold).toHaveBeenCalledOnce()
+  })
+
+  it("does not recover from takeover or a host-active terminal close", async () => {
+    const deps = reconnectDeps()
+    const connection = new WsConnection(deps)
+    await connection.onUnexpectedClose(4409, "")
+    await connection.onUnexpectedClose(1008, "session-host-active")
+    expect(deps.reconnect.setTerminal).toHaveBeenNthCalledWith(1, "takeover")
+    expect(deps.reconnect.setTerminal).toHaveBeenNthCalledWith(2, "host-active")
+    expect(listAgents).not.toHaveBeenCalled()
+  })
+
+  it("schedules backoff after crashReason when the tab is focused", async () => {
+    vi.useFakeTimers()
+    const deps = reconnectDeps()
+    vi.mocked(getAgent).mockResolvedValueOnce({
+      agent: { status: "crashed", crashReason: "agent crashed" },
+    } as Awaited<ReturnType<typeof getAgent>>)
+    const connection = new WsConnection(deps)
+    const pending = connection.onUnexpectedClose(1006, "")
+    await vi.runAllTimersAsync()
+    await pending
+    expect(deps.reconnect.setCrashError).toHaveBeenCalledWith("agent crashed")
+    expect(deps.reconnect.setTerminal).not.toHaveBeenCalled()
+    expect(listAgents).toHaveBeenCalled()
+  })
+
+  it.each(["detached", "tearingDown"] as const)(
+    "ignores a pending crash result after context becomes %s",
+    async (state) => {
+      const deps = reconnectDeps()
+      const context = {
+        sessionId: "session-1",
+        cwd: "/repo",
+        cliKind: "claude",
+        agentId: "old-agent",
+        hidden: false,
+        detached: false,
+        tearingDown: false,
+        remote: false,
+        terminalError: false,
+      }
+      vi.mocked(deps.reconnect.context).mockReturnValue(context)
+      let releaseAgent!: (value: Awaited<ReturnType<typeof getAgent>>) => void
+      vi.mocked(getAgent).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseAgent = resolve
+          }),
+      )
+      const pending = new WsConnection(deps).onUnexpectedClose(1006, "")
+      await vi.waitFor(() => expect(getAgent).toHaveBeenCalledOnce())
+      context[state] = true
+      releaseAgent({
+        agent: { status: "crashed", crashReason: "agent crashed" },
+      } as Awaited<ReturnType<typeof getAgent>>)
+      await pending
+      expect(deps.reconnect.setCrashError).not.toHaveBeenCalled()
+      expect(deps.reconnect.clearTransientError).not.toHaveBeenCalled()
+      expect(deps.reconnect.setStatus).not.toHaveBeenCalled()
+      expect(deps.reconnect.setAttempt).not.toHaveBeenCalled()
+    },
+  )
+
+  it("does not arm backoff when the tab becomes hidden during getAgent", async () => {
+    const deps = reconnectDeps()
+    const context = {
+      sessionId: "session-1",
+      cwd: "/repo",
+      cliKind: "claude",
+      agentId: "old-agent",
+      hidden: false,
+      detached: false,
+      tearingDown: false,
+      remote: false,
+      terminalError: false,
+    }
+    vi.mocked(deps.reconnect.context).mockImplementation(() => ({ ...context }))
+    let releaseAgent!: (value: Awaited<ReturnType<typeof getAgent>>) => void
+    vi.mocked(getAgent).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseAgent = resolve
+        }),
+    )
+    const pending = new WsConnection(deps).onUnexpectedClose(1006, "")
+    await vi.waitFor(() => expect(getAgent).toHaveBeenCalledOnce())
+    context.hidden = true
+    releaseAgent({
+      agent: { status: "ready", cwd: "/repo" },
+    } as Awaited<ReturnType<typeof getAgent>>)
+    await pending
+    expect(deps.reconnect.setStatus).toHaveBeenCalledWith("disconnected")
+    expect(deps.reconnect.setAttempt).not.toHaveBeenCalled()
+    expect(listAgents).not.toHaveBeenCalled()
+  })
+
+  it("arms reconnect when the tab becomes focused during getAgent", async () => {
+    vi.useFakeTimers()
+    const deps = reconnectDeps()
+    const context = {
+      sessionId: "session-1",
+      cwd: "/repo",
+      cliKind: "claude",
+      agentId: "old-agent",
+      hidden: true,
+      detached: false,
+      tearingDown: false,
+      remote: false,
+      terminalError: false,
+    }
+    vi.mocked(deps.reconnect.context).mockImplementation(() => ({ ...context }))
+    let releaseAgent!: (value: Awaited<ReturnType<typeof getAgent>>) => void
+    vi.mocked(getAgent).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseAgent = resolve
+        }),
+    )
+    const pending = new WsConnection(deps).onUnexpectedClose(1006, "")
+    await vi.waitFor(() => expect(getAgent).toHaveBeenCalledOnce())
+    context.hidden = false
+    releaseAgent({
+      agent: { status: "ready", cwd: "/repo" },
+    } as Awaited<ReturnType<typeof getAgent>>)
+    await pending
+    await vi.runAllTimersAsync()
+    expect(deps.reconnect.setAttempt).toHaveBeenCalledWith(1)
+    expect(listAgents).toHaveBeenCalled()
+  })
+
+  it.each(["detached", "tearingDown"] as const)(
+    "does not set disconnected after context becomes %s during getAgent",
+    async (state) => {
+      const deps = reconnectDeps()
+      const context = {
+        sessionId: "session-1",
+        cwd: "/repo",
+        cliKind: "claude",
+        agentId: "old-agent",
+        hidden: false,
+        detached: false,
+        tearingDown: false,
+        remote: false,
+        terminalError: false,
+      }
+      vi.mocked(deps.reconnect.context).mockReturnValue(context)
+      let releaseAgent!: (value: Awaited<ReturnType<typeof getAgent>>) => void
+      vi.mocked(getAgent).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            releaseAgent = resolve
+          }),
+      )
+      const pending = new WsConnection(deps).onUnexpectedClose(1006, "")
+      await vi.waitFor(() => expect(getAgent).toHaveBeenCalledOnce())
+      context[state] = true
+      releaseAgent({
+        agent: { status: "ready", cwd: "/repo" },
+      } as Awaited<ReturnType<typeof getAgent>>)
+      await pending
+      expect(deps.reconnect.setTerminal).not.toHaveBeenCalled()
+      expect(deps.reconnect.clearTransientError).not.toHaveBeenCalled()
+      expect(deps.reconnect.setStatus).not.toHaveBeenCalled()
+      expect(deps.reconnect.setAttempt).not.toHaveBeenCalled()
+    },
+  )
+
+  it("keeps HTTP reconnect a no-op", async () => {
+    const connection = new HttpConnection(httpDeps())
+    await connection.reconnect()
+    connection.cancelReconnect()
+    expect(events).not.toContain("WsAcpTransport")
+    expect(createAgent).not.toHaveBeenCalled()
+  })
+})

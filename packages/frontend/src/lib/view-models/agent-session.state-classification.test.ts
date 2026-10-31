@@ -16,7 +16,9 @@ const SESSION_SCOPED = new Set([
   "quotaLoading",
 ])
 
-const AGENT_SCOPED = new Set(["turnStalled"])
+const AGENT_SCOPED = new Set(["turnStalled", "#errorScope"])
+
+const TRANSCRIPT_SCOPED = new Set(["#content", "#displaySnapshot", "#processingTarget"])
 
 const CONNECTION_SCOPED = new Set(["sessions", "loading", "error"])
 
@@ -24,8 +26,7 @@ function extractStateFields(path: string): string[] {
   const text = readFileSync(path, "utf8")
   const re = /^\s*(#?[a-zA-Z][a-zA-Z0-9_]*)\s*=\s*\$state/gm
   const names: string[] = []
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text)) !== null) {
+  for (const m of text.matchAll(re)) {
     if (m[1] !== undefined) names.push(m[1])
   }
   return names
@@ -43,19 +44,17 @@ describe("agent-session $state classification gate", () => {
     ),
     ...pendingIn("session-scoped-state.svelte.ts", SESSION_SCOPED),
     ...pendingIn("sessions-cache-scope.svelte.ts", CONNECTION_SCOPED),
+    ...pendingIn("transcript-scope.svelte.ts", TRANSCRIPT_SCOPED),
   ]
 
   it("every $state field is classified", () => {
     expect(pending.sort()).toEqual(
       [
         "#cliKind",
-        "#displaySnapshot",
         "agentId",
         "authMethods",
-        "bubbles",
         "configOptions",
         "cwd",
-        "error",
         "historyEpoch",
         "isLoadingHistory",
         "lastUserMessage",
@@ -77,5 +76,5 @@ describe("agent-session $state classification gate", () => {
   })
 })
 
-/** Measured after sessions-cache-scope C2 — 19 fields remain unscoped in AgentSession holders. */
-const PENDING_CAP = 19
+/** C2 transcript ownership classifies the content and display snapshot; 17 fields remain. */
+const PENDING_CAP = 17

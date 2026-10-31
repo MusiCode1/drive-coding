@@ -17,6 +17,7 @@
  * ─── slice view-switch C3 (integration) ───
  */
 
+import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 import {
   applyPendingRequest,
   applyTurnEnd,
@@ -27,7 +28,13 @@ import {
 import { toWireText } from "@drive-coding/core/session/testing"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
+import {
+  createAgent,
+  deleteAgent,
+  listAgents,
+  notifySessionAttached,
+} from "$lib/adapters/agents-api"
+import { HttpConnection } from "$lib/session/http-connection"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── Module-level mocks (חייבים להיות לפני import AgentSession — נדרש לרגרסיית ה-local) ───
@@ -375,6 +382,71 @@ describe("AgentSession + remote view — lastTurnError", () => {
 
     // "reply failed" לא מקורו ב-lastTurnError sync — שורד
     expect(agent.error).toBe("reply failed")
+  })
+
+  it("re-shows turn error after dismiss when the identical patch is re-emitted (no dedup)", async () => {
+    const view = new MockSessionView()
+    view.connect("remote-sess-dismiss-repeat")
+    const agent = new AgentSession({ view })
+    agent._setStatusForTest("connected")
+
+    const fixedAt = 1_700_000_000_000
+    const ended = applyTurnEnd(view.state, { message: "tool crashed", at: fixedAt })
+    const samePatch = ended.patches[0]
+    if (!samePatch) throw new Error("expected turn-end patch")
+    view.applyAndEmit(samePatch)
+    await delay()
+    expect(agent.error).toContain("tool crashed")
+    expect(view.state.lastTurnError?.message).toBe("tool crashed")
+    expect(view.state.lastTurnError?.at).toBe(fixedAt)
+
+    agent.error = null
+    expect(agent.error).toBeNull()
+
+    view.applyAndEmit(samePatch)
+    await delay()
+
+    expect(view.state.lastTurnError?.message).toBe("tool crashed")
+    expect(view.state.lastTurnError?.at).toBe(fixedAt)
+    expect(agent.error).toContain("tool crashed")
+  })
+})
+
+// ── attachRemote — HttpConnection wiring ─────────────────────────────────────
+
+describe("AgentSession — attachRemote HttpConnection wiring", () => {
+  it("calls HttpConnection.open and never constructs WsAcpTransport", async () => {
+    const encoder = new TextEncoder()
+    const snapshot = createInitialSessionState({ sessionId: "http-wiring-session" })
+    const sseText = toWireText([{ event: "snapshot", data: JSON.stringify(snapshot) }])
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/events")) {
+          const body = new ReadableStream<Uint8Array>({
+            start(ctrl) {
+              ctrl.enqueue(encoder.encode(sseText))
+            },
+          })
+          return { ok: true, status: 200, body } as unknown as Response
+        }
+        return { ok: true, status: 200, json: async () => ({ ok: true }) } as unknown as Response
+      }),
+    )
+    const openSpy = vi.spyOn(HttpConnection.prototype, "open")
+    const agent = new AgentSession()
+    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
+    expect(openSpy).toHaveBeenCalledOnce()
+    expect(vi.mocked(WsAcpTransport)).not.toHaveBeenCalled()
+
+    const owner = agent._getConnectionForTest()
+    expect(owner).toBeInstanceOf(HttpConnection)
+    await agent._handleUnexpectedCloseForTest(1006, "abnormal")
+    expect(agent.status).toBe("connected")
+    expect(agent.reconnectAttempt).toBe(0)
+
+    openSpy.mockRestore()
+    agent.detach()
   })
 })
 

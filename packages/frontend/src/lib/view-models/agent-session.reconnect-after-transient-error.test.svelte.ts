@@ -49,6 +49,7 @@ afterEach(() => {
 describe("AgentSession — reconnect אחרי כשל switchSession/newSession חולף (calev-heavy §10.2, Commit 4)", () => {
   test("switchSession fail (WS חי, #errorSurfaced=false) → drop לא-צפוי → reconnect מוצת, ההודעה מוחלפת", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
     // מדמה את מצב ה-VM מיד אחרי switchSession catch: status="error" + הודעה ספציפית,
     // אך #errorSurfaced *נשאר false* (switchSession לא מדליק אותו — §10.2).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -70,6 +71,7 @@ describe("AgentSession — reconnect אחרי כשל switchSession/newSession ח
 
   test("newSession fail (WS חי, #errorSurfaced=false) → drop לא-צפוי → reconnect מוצת, ההודעה מוחלפת", async () => {
     const session = new AgentSession()
+    session._setSessionContextForTest({ sessionId: "sess-1", cwd: "/repo", cliKind: "claude" })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ;(session as any)._setStatusForTest("error")
     session.error = "newSession failed: boom"

@@ -23,7 +23,9 @@ import {
 } from "@drive-coding/core/session"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { SessionView, ViewEmission } from "$lib/session/session-view"
+import type { SessionView } from "$lib/session/session-view"
+import { type ProjectionSink, SessionViewDelivery } from "$lib/session/session-view-delivery"
+import { projectSessionSnapshot } from "$lib/session/session-view-projection"
 import type { WireUpdateBatch } from "$lib/session/sse-reader"
 import type { Bubble } from "$lib/types/bubble"
 
@@ -53,20 +55,18 @@ function rawUpdate(entry: FixtureEntry): unknown {
 // ─── HTTP replay view (mirrors RemoteSessionView.#applyIncoming) ────────────
 
 class HttpReplayView implements SessionView {
-  state: SessionState = $state(createInitialSessionState({ sessionId: null }))
-
-  #controller: ReadableStreamDefaultController<ViewEmission> | null = null
-  readonly patches: ReadableStream<ViewEmission>
-  #lastVersion = 0
-  supportsSessionDelete = false
-
-  constructor() {
-    this.patches = new ReadableStream<ViewEmission>({
-      start: (controller) => {
-        this.#controller = controller
-      },
-    })
+  #delivery = new SessionViewDelivery()
+  get state(): SessionState {
+    return this.#delivery.state
   }
+  set state(state: SessionState) {
+    this.#delivery.state = state
+  }
+  bindProjection(sink: ProjectionSink): void {
+    this.#delivery.bind(sink)
+  }
+  supportsSessionDelete = false
+  #lastVersion = 0
 
   connect(sessionId: string): void {
     this.state = { ...this.state, sessionId, status: "connected" }
@@ -74,26 +74,16 @@ class HttpReplayView implements SessionView {
 
   applyIncoming(batch: WireUpdateBatch): void {
     if (batch.version <= this.#lastVersion) return
-    let state = this.state
-    const produced: Patch[] = []
-    for (const update of batch.updates) {
-      const { state: next, patches } = reduce(state, update)
-      state = next
-      produced.push(...patches)
-    }
-    this.state = { ...state, version: batch.version }
+    for (const update of batch.updates) this.#delivery.update(update, true, batch.version)
     this.#lastVersion = batch.version
-    if (produced.length > 0 || batch.updates.length > 0) {
-      this.#emit(produced, batch.updates)
-    }
+    this.#delivery.endBatch(this.state)
   }
-
-  #emit(patches: Patch[], updates: unknown[] = []): void {
-    try {
-      this.#controller?.enqueue({ patches, updates })
-    } catch {
-      // stream closed
+  resetTranscript(): void {
+    const state = {
+      ...createInitialSessionState({ sessionId: this.state.sessionId }),
+      status: "connected" as const,
     }
+    this.#delivery.frame(projectSessionSnapshot(state, true), true)
   }
 
   prompt = vi.fn().mockResolvedValue(undefined)
@@ -107,7 +97,9 @@ class HttpReplayView implements SessionView {
   listSessions = vi.fn().mockResolvedValue([])
   deleteSession = vi.fn().mockResolvedValue(undefined)
   setSessionModel = vi.fn().mockResolvedValue(undefined)
-  close = vi.fn().mockResolvedValue(undefined)
+  close = vi.fn(async () => {
+    this.#delivery.dispose()
+  })
 }
 
 // ─── wire synthesis (BE path: reduce → Patch → patchToSessionUpdates + ext wrapper) ─
@@ -389,4 +381,188 @@ describe("frame-ingest parity gate", () => {
       wsTask?.kind === "tool" ? wsTask.toolCall.task : undefined,
     )
   })
+})
+
+// C1 exercises the live consumer with positive content assertions in each transport.
+describe.each(["WS", "HTTP"] as const)("C1 %s classifier consumer", (transport) => {
+  async function open() {
+    const observations: Array<{ update: unknown; turn: string }> = []
+    resetCaptured()
+    const view = transport === "HTTP" ? new HttpReplayView() : undefined
+    view?.connect("c1-http")
+    const agent = new AgentSession({
+      ...(view ? { view } : {}),
+      _onUpdateObserved: (update) => observations.push({ update, turn: agent.turnState }),
+    })
+    if (view) agent._setStatusForTest("connected")
+    else await agent.attach({ cwd: "/proj", cliKind: "claude" })
+    let version = 0
+    const emit = async (update: unknown) => {
+      if (view) {
+        view.applyIncoming({ version: ++version, updates: [update as WireSessionUpdate] })
+        await delay()
+      } else {
+        expect(capturedOnUpdate).toBeTypeOf("function")
+        capturedOnUpdate?.({ update } as SessionNotification)
+      }
+    }
+    return { agent, emit, observations }
+  }
+
+  it.each([
+    [{ type: "image", data: "c1-image", mimeType: "image/png" }, "image"],
+    [{ type: "resource_link", name: "doc", uri: "file:///doc" }, "resource_link"],
+    [{ type: "audio" }, "audio"],
+    [{ type: "resource" }, "resource"],
+    [null, "resource"],
+    [undefined, "resource"],
+    [[], "resource"],
+  ] as const)("adopts optimistic bubble before attachment %#", async (content, kind) => {
+    const { agent, emit, observations } = await open()
+    agent.bubbles.push({
+      id: "optimistic",
+      kind: "user",
+      messageId: null,
+      createdAt: 0,
+      segments: [],
+    })
+    const original = agent.bubbles[0]
+    const update = { sessionUpdate: "user_message_chunk", messageId: "adopted", content }
+    await emit(update)
+    expect(observations.some((entry) => entry.update === update)).toBe(true)
+    expect(agent.bubbles).toHaveLength(1)
+    expect(agent.bubbles[0]).toBe(original)
+    expect(original?.messageId).toBe("adopted")
+    expect(original?.id).toBe("optimistic")
+    if (original?.kind !== "user") throw Error("missing user")
+    if (kind === "image") {
+      expect(original.attachments).toEqual([{ mimeType: "image/png", dataBase64: "c1-image" }])
+    } else {
+      expect(original.contentPlaceholders).toEqual([
+        kind === "resource_link" ? { kind, label: "doc", uri: "file:///doc" } : { kind },
+      ])
+    }
+    agent.detach()
+  })
+
+  it("applies text, nesting, manual title and turn ordering", async () => {
+    const { agent, emit, observations } = await open()
+    await emit({
+      sessionUpdate: "user_message_chunk",
+      messageId: "user",
+      content: { type: "text", text: "question" },
+    })
+    await emit({
+      sessionUpdate: "agent_thought_chunk",
+      messageId: "thought",
+      content: { type: "text", text: "reasoning" },
+    })
+    const answer = {
+      sessionUpdate: "agent_message_chunk",
+      messageId: "answer",
+      content: { type: "text", text: "response" },
+    }
+    await emit(answer)
+    expect(flatMessageTexts(agent.bubbles)).toEqual(["question", "reasoning", "response"])
+    expect(observations.find((entry) => entry.update === answer)?.turn).toBe("thinking")
+    expect(agent.turnState).toBe("responding")
+    expect(agent.bubbles.map((b) => b.messageId)).toEqual(["user", "thought", "answer"])
+    await emit({
+      sessionUpdate: "agent_message_chunk",
+      messageId: "attachment",
+      content: { type: "resource_link", uri: "file:///answer" },
+    })
+    const last = agent.bubbles.at(-1)
+    expect(last?.kind === "message" && last.contentPlaceholders).toEqual([
+      { kind: "resource_link", label: "file:///answer", uri: "file:///answer" },
+    ])
+    await emit({
+      sessionUpdate: "tool_call",
+      toolCallId: "parent",
+      title: "Task",
+      status: "pending",
+    })
+    await emit({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "child",
+      title: "Read",
+      status: "in_progress",
+      _meta: { claudeCode: { parentToolUseId: "parent" } },
+    })
+    await emit({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "child",
+      status: "completed",
+      rawOutput: "done",
+    })
+    const parent = agent.bubbles.find(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === "parent",
+    )
+    expect(
+      parent?.kind === "tool" &&
+        parent.subFrames?.map(
+          (b) => b.kind === "tool" && [b.toolCall.toolCallId, b.toolCall.status, b.toolCall.result],
+        ),
+    ).toEqual([["child", "completed", "done"]])
+    expect(agent.bubbles.filter((b) => b.kind === "tool")).toHaveLength(1)
+    await emit({ sessionUpdate: "session_info_update", title: "automatic" })
+    expect(agent.sessionTitle).toBe("automatic")
+    agent.titleManual = true
+    agent.sessionTitle = "manual"
+    await emit({ sessionUpdate: "session_info_update", title: "replacement" })
+    expect(agent.sessionTitle).toBe("manual")
+    agent.detach()
+  })
+})
+
+it("C1 WS observes nullish update and changes turn before agent-null throws", async () => {
+  resetCaptured()
+  const observations: unknown[] = []
+  const agent = new AgentSession({ _onUpdateObserved: (u) => observations.push(u) })
+  await agent.attach({ cwd: "/proj", cliKind: "claude" })
+  expect(() => capturedOnUpdate?.({ update: null } as unknown as SessionNotification)).toThrow(
+    TypeError,
+  )
+  expect(observations).toContain(null)
+  const update = { sessionUpdate: "agent_message_chunk", content: null }
+  expect(() => capturedOnUpdate?.({ update } as unknown as SessionNotification)).toThrow(TypeError)
+  expect(agent.turnState).toBe("responding")
+  expect(observations).toContain(update)
+  agent.detach()
+})
+
+it("C2 HTTP reset/replay replaces previous transcript at the same session ID", async () => {
+  const view = new HttpReplayView()
+  view.connect("same-http-session")
+  const observed: unknown[] = []
+  const agent = new AgentSession({ view, _onUpdateObserved: (update) => observed.push(update) })
+  agent._setStatusForTest("connected")
+  view.applyIncoming({
+    version: 1,
+    updates: [
+      {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "old",
+        content: { type: "text", text: "http-old" },
+      },
+    ],
+  })
+  await vi.waitFor(() => expect(flatMessageTexts(agent.bubbles)).toEqual(["http-old"]))
+  const original = agent.bubbles
+  view.resetTranscript()
+  view.applyIncoming({
+    version: 2,
+    updates: [
+      {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "fresh",
+        content: { type: "text", text: "http-fresh" },
+      },
+    ],
+  })
+  await vi.waitFor(() => expect(flatMessageTexts(agent.bubbles)).toEqual(["http-fresh"]))
+  expect(agent.bubbles).toBe(original)
+  expect(view.state.sessionId).toBe("same-http-session")
+  expect(observed).toHaveLength(2)
+  agent.detach()
 })

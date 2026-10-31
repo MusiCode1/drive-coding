@@ -8,17 +8,12 @@
  * ─── slice session-view-port C2 ───
  */
 
-import type { Patch, SessionState } from "@drive-coding/core/session"
+import type { SessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import type { SessionInfo } from "$lib/adapters/sessions"
 
-/** Single delivery unit from view to VM. Order guaranteed: same channel, same queue. */
-export type ViewEmission = {
-  /** Patches produced from the batch. Advance view state. */
-  patches: Patch[]
-  /** Raw session/update as received from the wire. Empty on synthetic reset. */
-  updates: unknown[]
-}
+export type { ProjectionSink } from "./session-view-delivery"
+export type { FrameData, ToolContext } from "./session-view-projection"
 
 /**
  * SessionView — port עבור גישה למצב הסשן + methods לניהולו.
@@ -33,15 +28,7 @@ export interface SessionView {
   /** מצב הסשן העכשווי — כולל כל שדות SessionState מ-C1 (status, turnState, pending, ...). */
   readonly state: SessionState
 
-  /**
-   * ReadableStream<ViewEmission> — patch + raw update delivery channel.
-   * Each frame is one ViewEmission from a single reduce batch (agent_message_chunk,
-   * tool_call, etc.). The VM reads this for targeted bubble reactivity.
-   *
-   * ⚠️ stream חי — הצרכן חייב לקרוא (getReader()) כדי למנוע backpressure.
-   * ⚠️ ReadableStream ניתן לצריכה פעם אחת בלבד (לא tee אלא אם צריך).
-   */
-  readonly patches: ReadableStream<ViewEmission>
+  bindProjection(sink: import("./session-view-delivery").ProjectionSink): void
 
   /**
    * שולח פרומפט (טקסט או PromptBlocks).
