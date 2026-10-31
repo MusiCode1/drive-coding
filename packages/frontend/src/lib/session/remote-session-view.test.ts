@@ -1013,6 +1013,9 @@ describe("RemoteSessionView — close()", () => {
     await view.close()
 
     expect(captured).toBeUndefined()
+    expect(
+      vi.mocked(mockFetch).mock.calls.filter(([url]) => !String(url).includes("/events")),
+    ).toHaveLength(0)
     expect(view.state.pending.permission).toBeNull()
     expect(view.state.pending.elicitation).toBeNull()
   })
@@ -1036,6 +1039,9 @@ describe("RemoteSessionView — close()", () => {
     await view.close()
 
     expect(captured).toBeUndefined()
+    expect(
+      vi.mocked(mockFetch).mock.calls.filter(([url]) => !String(url).includes("/events")),
+    ).toHaveLength(0)
     expect(view.state.pending.elicitation).toBeNull()
   })
 
@@ -1059,6 +1065,41 @@ describe("RemoteSessionView — close()", () => {
     await view.close()
     await view.respond(4, { outcome: { outcome: "cancelled" } })
     expect(replies).toHaveLength(1)
+  })
+
+  it.each([
+    ["permission", { outcome: { outcome: "selected", optionId: "allow" } }],
+    ["permission", { outcome: { outcome: "cancelled" } }],
+    ["elicitation", { action: "accept", content: {} }],
+    ["elicitation", { action: "decline" }],
+  ] as const)("explicit %s reply remains available before detach: %j", async (kind, result) => {
+    const snapshot = makeSnapshot({
+      pending: {
+        permission: kind === "permission" ? { requestId: 7, params: {} as never } : null,
+        elicitation: kind === "elicitation" ? { requestId: 7, params: {} as never } : null,
+      },
+    })
+    const mockFetch = makeMockFetch({
+      events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
+    })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
+    await view.connect()
+    await view.respond(7, result)
+    const replies = vi
+      .mocked(mockFetch)
+      .mock.calls.filter(([url]) => String(url).includes("/reply"))
+    expect(replies).toHaveLength(1)
+    expect(JSON.parse(replies[0]![1]!.body as string)).toEqual({ kind, requestId: 7, result })
+    await view.close()
+    await view.close()
+    await view.respond(7, result)
+    expect(
+      vi.mocked(mockFetch).mock.calls.filter(([url]) => !String(url).includes("/events")),
+    ).toHaveLength(1)
   })
 
   it("does not POST /reply on close() when nothing is pending", async () => {
