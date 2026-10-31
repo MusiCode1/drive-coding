@@ -37,8 +37,6 @@ export function createAgentWsHandler(deps: {
   connectionRegistry: ConnectionRegistry
   sessionHostRegistry?: {
     isHeld(agentId: string): boolean
-    getHost(agentId: string): { dispose(): Promise<void> } | undefined
-    unregisterHost(agentId: string): void
   }
   evictionController?: EvictionController
 }): {
@@ -72,6 +70,19 @@ export function createAgentWsHandler(deps: {
     const childLog = log.child({ agentId })
     const connectionId = connectionIdParam ?? randomUUID()
 
+    const conn = deps.connectionRegistry.get(agentId)
+    if (!conn) {
+      childLog.warn({}, "agent not found")
+      feWs.close(1008, "agent not found")
+      return
+    }
+
+    if (deps.sessionHostRegistry?.isHeld(agentId)) {
+      childLog.warn({}, "session host held for this agent — rejecting WS attach")
+      feWs.close(1008, "session-host-active")
+      return
+    }
+
     const existing = activeFeWs.get(agentId)
     if (existing) {
       childLog.warn(
@@ -82,26 +93,6 @@ export function createAgentWsHandler(deps: {
         "taking over — evicting existing feWs",
       )
       existing.ws.close(TAKEOVER_CODE, "taken over by new connection")
-    }
-
-    const conn = deps.connectionRegistry.get(agentId)
-    if (!conn) {
-      childLog.warn({}, "agent not found")
-      feWs.close(1008, "agent not found")
-      return
-    }
-
-    if (deps.sessionHostRegistry?.isHeld(agentId)) {
-      const host = deps.sessionHostRegistry.getHost(agentId)
-      if (host) {
-        childLog.info({}, "WS→host eviction: disposing HTTP host and taking over")
-        await host.dispose()
-        deps.sessionHostRegistry.unregisterHost(agentId)
-      } else {
-        childLog.warn({}, "session host in-flight for this agent — rejecting WS attach")
-        feWs.close(1008, "session-host-active")
-        return
-      }
     }
 
     activeFeWs.set(agentId, { ws: feWs, lastPingAt: Date.now(), connectionId })

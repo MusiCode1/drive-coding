@@ -254,10 +254,10 @@
       "codeLines": 55
     },
     "packages/backend/src/delivery/ws-agent.ts": {
-      "metric": 193,
-      "impurity": 7,
+      "metric": 184,
+      "impurity": 6,
       "class": "mixed",
-      "codeLines": 157
+      "codeLines": 148
     },
     "packages/backend/src/delivery/ws-echo.ts": {
       "metric": 47,
