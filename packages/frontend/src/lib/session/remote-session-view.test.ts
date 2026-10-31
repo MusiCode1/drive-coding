@@ -994,7 +994,7 @@ describe("RemoteSessionView — close()", () => {
     await expect(view.close()).resolves.toBeUndefined()
   })
 
-  it("cancels a pending permission via POST /reply before disconnecting (avigail #10)", async () => {
+  it("does not POST /reply cancelled for pending permission on close (HTTP viewer detach)", async () => {
     let captured: unknown
     const snapshot = makeSnapshot({
       pending: { permission: { requestId: 4, params: {} as never }, elicitation: null },
@@ -1012,14 +1012,12 @@ describe("RemoteSessionView — close()", () => {
 
     await view.close()
 
-    expect(captured).toMatchObject({
-      kind: "permission",
-      requestId: 4,
-      result: { outcome: { outcome: "cancelled" } },
-    })
+    expect(captured).toBeUndefined()
+    expect(view.state.pending.permission).toBeNull()
+    expect(view.state.pending.elicitation).toBeNull()
   })
 
-  it("cancels a pending elicitation via POST /reply before disconnecting (avigail #10)", async () => {
+  it("does not POST /reply cancel for pending elicitation on close (HTTP viewer detach)", async () => {
     let captured: unknown
     const snapshot = makeSnapshot({
       pending: { permission: null, elicitation: { requestId: 8, params: {} as never } },
@@ -1037,11 +1035,30 @@ describe("RemoteSessionView — close()", () => {
 
     await view.close()
 
-    expect(captured).toMatchObject({
-      kind: "elicitation",
-      requestId: 8,
-      result: { action: "cancel" },
+    expect(captured).toBeUndefined()
+    expect(view.state.pending.elicitation).toBeNull()
+  })
+
+  it("explicit respond() before close still sends /reply; after close respond is no-op", async () => {
+    const snapshot = makeSnapshot({
+      pending: { permission: { requestId: 4, params: {} as never }, elicitation: null },
     })
+    const replies: unknown[] = []
+    const mockFetch = makeMockFetch({
+      events: [{ event: "snapshot", data: JSON.stringify(snapshot) }],
+      onReply: (b) => replies.push(b),
+    })
+    const view = newView("agent-1", "http://be.local", {
+      projection: createProjectionRecorder(() => {}),
+      _fetch: mockFetch,
+      _sleep: noSleep,
+    })
+    await view.connect()
+    await view.respond(4, { outcome: { outcome: "selected", optionId: "allow" } })
+    expect(replies).toHaveLength(1)
+    await view.close()
+    await view.respond(4, { outcome: { outcome: "cancelled" } })
+    expect(replies).toHaveLength(1)
   })
 
   it("does not POST /reply on close() when nothing is pending", async () => {

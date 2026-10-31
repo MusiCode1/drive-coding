@@ -95,6 +95,19 @@ async function harness(extra: Partial<SessionState> = {}, observed?: (update: un
     },
   }
 }
+it("HTTP leaveRunning clears local pending without POST /reply", async () => {
+  const h = await harness({ pending: pending("permission") })
+  const pendingUi = h.session.pendingPermission
+  expect(pendingUi).not.toBeNull()
+  const resolveSpy = vi.fn()
+  if (pendingUi) pendingUi.resolve = resolveSpy
+  const before = h.writes.filter((r) => r.url.endsWith("/reply")).length
+  await h.session.leaveRunning()
+  expect(h.session.pendingPermission).toBeNull()
+  expect(resolveSpy).not.toHaveBeenCalled()
+  expect(h.writes.filter((r) => r.url.endsWith("/reply"))).toHaveLength(before)
+})
+
 it("deferred sameSID load loses ownership at host recreation, clears loading and permits a new load", async () => {
   const h = await harness()
   const completion = deferred<Response>()

@@ -37,11 +37,14 @@ function pendingIn(file: string, classified: Set<string>): string[] {
 }
 
 describe("agent-session $state classification gate", () => {
+  const PENDING_UI_SCOPED = new Set(["pendingPermission", "pendingElicitation"])
+
   const pending = [
     ...pendingIn(
       "agent-session.svelte.ts",
       new Set([...AGENT_SCOPED, "#session", "sessionsCache"]),
     ),
+    ...pendingIn("pending-ui-scope.svelte.ts", PENDING_UI_SCOPED),
     ...pendingIn("session-scoped-state.svelte.ts", SESSION_SCOPED),
     ...pendingIn("sessions-cache-scope.svelte.ts", CONNECTION_SCOPED),
     ...pendingIn("transcript-scope.svelte.ts", TRANSCRIPT_SCOPED),
@@ -60,8 +63,6 @@ describe("agent-session $state classification gate", () => {
         "lastUserMessage",
         "models",
         "modes",
-        "pendingElicitation",
-        "pendingPermission",
         "reconnectAttempt",
         "sessionState",
         "status",
@@ -76,5 +77,5 @@ describe("agent-session $state classification gate", () => {
   })
 })
 
-/** C2 transcript ownership classifies the content and display snapshot; 17 fields remain. */
-const PENDING_CAP = 17
+/** C2 transcript ownership + pending-ui-scope; 15 fields remain on AgentSession. */
+const PENDING_CAP = 15

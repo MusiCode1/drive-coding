@@ -87,6 +87,6 @@ export interface SessionView {
   /** מחליף מודל לסשן הפעיל. */
   setSessionModel(model: string): Promise<void>
 
-  /** סוגר את החיבור ומפנה משאבים. מבטל pending permission/elicitation כ-cancelled. */
+  /** סוגר את החיבור ומפנה משאבים. Remote HTTP: local cleanup only (host pending survives). */
   close(): Promise<void>
 }

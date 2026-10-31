@@ -816,8 +816,7 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
   })
 
   it("snapshot without sessionId → fast-fail: error surfaced, status=error, view closed", async () => {
-    // pending permission ב-snapshot — close() שולח POST /reply עם cancelled; זה
-    // ה-side-effect המדיד שה-view נסגר (close מבצע round-trip של ביטול pending).
+    // pending permission ב-snapshot — HTTP viewer detach clears local state only (no /reply).
     const replyBodies: unknown[] = []
     const snapshot = {
       ...createInitialSessionState({ sessionId: null }),
@@ -834,10 +833,7 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
     expect(agent.status).toBe("error")
     expect(agent.error).toContain("did not provide a sessionId")
     expect(createAgent).not.toHaveBeenCalled()
-    // view.close() רץ — ה-pending בוטל דרך POST /reply
-    expect(replyBodies).toContainEqual(
-      expect.objectContaining({ kind: "permission", requestId: 9 }),
-    )
+    expect(replyBodies).toEqual([])
     // הסוכן החי שרד: keepAgent — deleteAgent לא נקרא (סטייה מתועדת מהבריף)
     expect(deleteAgent).not.toHaveBeenCalled()
   })

@@ -323,19 +323,24 @@ describe("Calev exit wire parity and stale callbacks", () => {
           })
         if (exit === "leave") {
           const p = s.leaveRunning()
-          expect(events).toHaveLength(2)
+          if (protocol === "WS") expect(events).toHaveLength(2)
           await p
         } else if (exit === "navigate") {
           s.notifySessionNavigatedAway()
-          expect(events).toHaveLength(2)
+          if (protocol === "WS") expect(events).toHaveLength(2)
           await new Promise((r) => setTimeout(r, 5))
         } else if (exit === "delete") expect(await s.deleteSession(present(s.sessionId))).toBe(true)
         else s.detach()
         expect(s.pendingPermission).toBeNull()
         expect(s.pendingElicitation).toBeNull()
         expect(s.status).toBe("idle")
-        expect(events[0]).toContain("permission:")
-        expect(events[1]).toContain("elicitation:")
+        if (protocol === "WS") {
+          expect(events[0]).toContain("permission:")
+          expect(events[1]).toContain("elicitation:")
+        } else if (exit === "leave" || exit === "navigate") {
+          expect(events.some((e) => e.includes("permission:"))).toBe(false)
+          expect(events.some((e) => e.includes("elicitation:"))).toBe(false)
+        }
         const preserve = exit === "leave" || exit === "navigate"
         expect(api.deleteAgent).toHaveBeenCalledTimes(preserve ? 0 : 1)
         if (protocol === "HTTP")

@@ -14,6 +14,7 @@ export function bindSessionLifecycle(deps: {
   session.setSseReconnectedListener(() => presencePoller.onSseReconnected())
   const unbindScope = bindSessionScope({ session, speaker, orderAlloc })
   beforeNavigate((nav) => {
+    if (nav.willUnload && session.isRemoteView) return
     onSessionRouteChange(nav.from?.url.pathname ?? "", nav.to?.url.pathname, session)
   })
   return () => {

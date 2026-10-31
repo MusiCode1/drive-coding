@@ -24,6 +24,11 @@ import { RPC_METHODS, type SessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import { registerView, unregisterView, type ViewDebugInfo } from "$lib/debug/session-registry"
+import {
+  dispatchRemoteReply,
+  remoteHttpPost,
+  resolveRemoteReplyKind,
+} from "./remote-request-actions.js"
 import { RemoteSessionReplacement } from "./remote-session-replacement"
 import { RemoteStreamDelivery } from "./remote-stream-delivery"
 import type { RemoteTerminal } from "./remote-stream-events"
@@ -232,27 +237,13 @@ export class RemoteSessionView implements SessionView {
 
   /**
    * סוגר את חיבור ה-SSE ומפנה משאבים.
-   * מבטל pending permission/elicitation כ-cancelled (חוזה SessionView.close —
-   * avigail plan-gate r3 #10) לפני הניתוק, דרך respond() (POST /reply) — הbackend
-   * הוא שמחזיק את ה-pending האמיתי, ה-remote view רק משדר את הביטול אליו.
+   * HTTP viewer detach: clears local projection only — no POST /reply, cancel, or delete.
    *
    * טרמינלי (round 2 finding #3): אחרי close(), connect() זורק — לא ניתן לפתוח
    * מחדש את אותו instance.
    */
   async close(): Promise<void> {
     if (!this.#ingress.beginClose()) return
-    const { permission, elicitation } = this.#delivery.state.pending
-    if (permission) {
-      await this.#respond(permission.requestId, { outcome: { outcome: "cancelled" } }).catch(() => {
-        // best-effort — ה-SSE כבר בדרך להיסגר, לא חוסמים את הסגירה על כשל reply
-      })
-    }
-    if (elicitation) {
-      await this.#respond(elicitation.requestId, { action: "cancel" }).catch(() => {
-        // best-effort
-      })
-    }
-    // מנקה pending מקומית — הופך close() לאידמפוטנטי (קריאה חוזרת לא תשלח /reply שוב).
     this.#delivery.state = {
       ...this.#delivery.state,
       pending: { permission: null, elicitation: null },
@@ -407,18 +398,24 @@ export class RemoteSessionView implements SessionView {
     return this.#respond(requestId, result)
   }
   async #respond(requestId: number, result: unknown): Promise<void> {
-    const kind =
-      this.#delivery.state.pending.permission?.requestId === requestId
-        ? "permission"
-        : this.#delivery.state.pending.elicitation?.requestId === requestId
-          ? "elicitation"
-          : undefined
-    if (kind === undefined) return // no-op שקט — id לא תואם אף pending קיים
-    await this.#post(
+    if (resolveRemoteReplyKind(this.#delivery, requestId) === undefined) return
+    await dispatchRemoteReply(
+      this.#httpPostContext(),
+      this.#delivery,
       this.#replyUrl(),
-      { kind, requestId, result },
-      this.#ingress.closed && !this.#ingress.terminalFact,
+      requestId,
+      result,
+      this.#ingress.closed,
+      this.#ingress.terminalFact,
     )
+  }
+
+  #httpPostContext() {
+    return {
+      doFetch: this.#doFetch,
+      headers: this.#headers,
+      assertCurrent: this.#ingress.guardHttpResult(),
+    }
   }
 
   // ─── Private: HTTP helpers ───
@@ -453,43 +450,15 @@ export class RemoteSessionView implements SessionView {
    * gracefully. `.code` is attached to the thrown error when numeric.
    */
   async #post(url: string, body: unknown, localClose = false): Promise<unknown> {
-    const assertCurrent = this.#ingress.guardHttpResult(localClose)
-    const res = await this.#doFetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...this.#headers },
-      body: JSON.stringify(body),
-    })
-    assertCurrent()
-    if (!res.ok) {
-      let payload: { error?: unknown; code?: unknown } | undefined
-      if (res.json) {
-        try {
-          payload = (await res.json()) as { error?: unknown; code?: unknown }
-        } catch {
-          payload = undefined
-        }
-      }
-      assertCurrent()
-      const detail =
-        payload && typeof payload.error === "string" && payload.error.length > 0
-          ? ` (${payload.error})`
-          : ""
-      const err = new Error(
-        `RemoteSessionView: POST ${url} failed with status ${res.status}${detail}`,
-      ) as Error & { code?: number }
-      if (payload && typeof payload.code === "number") err.code = payload.code
-      throw err
-    }
-    if (!res.json) return undefined
-    try {
-      const value: unknown = await res.json()
-      assertCurrent()
-      return value
-    } catch (error) {
-      assertCurrent()
-      void error
-      return undefined
-    }
+    return remoteHttpPost(
+      {
+        doFetch: this.#doFetch,
+        headers: this.#headers,
+        assertCurrent: this.#ingress.guardHttpResult(localClose),
+      },
+      url,
+      body,
+    )
   }
 }
 

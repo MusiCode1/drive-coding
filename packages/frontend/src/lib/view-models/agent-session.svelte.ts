@@ -61,9 +61,6 @@ import { WsConnection } from "$lib/session/ws-connection"
 import { runColdReconnect } from "$lib/session/ws-reconnect-controller"
 import type { Bubble, UserBubble } from "$lib/types/bubble"
 // ─── slice-elicitation-ui: טיפוסי שאלה מובנת (view-model layer, נגזרים מ-SDK) ───
-import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitation"
-// ─── slice-permission-ui-basic: טיפוסי בקשת-הרשאה (view-model layer, נגזרים מ-SDK) ───
-import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
 import { connInfo, connWarn } from "$lib/util/conn-log"
 import { isBypassMode } from "$lib/util/permission-mode"
 import { safeUUID } from "$lib/util/uuid"
@@ -100,17 +97,6 @@ import {
   type SessionWriteTarget,
   type SwitchSessionInput,
 } from "$lib/view-models/agent-session-operations"
-import {
-  cancelPendingDialogs,
-  clearRemotePendingUi,
-  onCreateElicitation as onCreateElicitationExtracted,
-  onRequestPermission as onRequestPermissionExtracted,
-  type PendingRequestDeps,
-  resolvePendingElicitation as resolvePendingElicitationExtracted,
-  resolvePendingPermission as resolvePendingPermissionExtracted,
-  syncPendingElicitation as syncPendingElicitationExtracted,
-  syncPendingPermission as syncPendingPermissionExtracted,
-} from "$lib/view-models/agent-session-pending"
 import { doRefreshQuota, type QuotaRefreshDeps } from "$lib/view-models/agent-session-quota-refresh"
 import {
   endSessionScope,
@@ -120,6 +106,12 @@ import {
 } from "$lib/view-models/agent-session-session-end"
 import { ErrorScope } from "$lib/view-models/error-scope.svelte"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
+import {
+  installPendingUiOnAgentSession,
+  type PendingElicitation,
+  type PendingPermission,
+  type PendingUiScope,
+} from "$lib/view-models/pending-ui-scope.svelte"
 import { SessionScope } from "$lib/view-models/session-scoped-state.svelte"
 import { SessionsCacheScope } from "$lib/view-models/sessions-cache-scope.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
@@ -233,6 +225,21 @@ export class AgentSession {
     this.#cues = opts?.cues
     this.#settings = opts?.settings
     this.#onUpdateObserved = opts?._onUpdateObserved
+    const errorScope = this.#errorScope
+    const self = this
+    this.#pendingUi = installPendingUiOnAgentSession(self, {
+      get error() {
+        return errorScope.message
+      },
+      set error(v: string | null) {
+        errorScope.message = v
+      },
+      get bypassActive() {
+        return self.bypassActive
+      },
+      view: () => self.#view,
+      tearingDown: () => self.#tearingDown,
+    })
     // ─── slice session-view-port C3: אם view הוזרק ─── (additive)
     if (opts?.view) {
       this.#view = opts.view
@@ -299,36 +306,10 @@ export class AgentSession {
   /** טקסט הפרומפט האחרון שנשלח על ידי המשתמש — משמש את ה-Speaker להקשר עבור קריינות. */
   lastUserMessage = $state("")
 
-  // ─── slice-permission-ui-basic: בקשת הרשאה חיה (agent→client, ממתינה לתשובה) ───
-  /**
-   * בקשת הרשאה ממתינה מהסוכן — pending יחיד (בקשה שנייה סוגרת את הקודמת כ-cancelled).
-   * null = אין בקשה פעילה. ה-UI (PermissionRequestBlock) מרנדר inline כשזה לא-null.
-   * `resolve` הוא ה-resolver של ה-Promise שהוחזר ל-`createClientImpl.requestPermission` —
-   * חובה לפתור אותו בכל נקודה ש-#client מתאפס, אחרת ה-turn נתקע (§4 Commit 2, הסיכון #1).
-   * ─── slice view-switch C3-ו: requestId אופציונלי ─── (additive)
-   * remote תמיד מציב אותו (guard-זהות מול patch מעופש); הנתיב המקומי בונה בלי requestId
-   * (#onRequestPermission) — שדה-חובה היה שובר typecheck שם, בניגוד ל"אפס שינוי ב-local".
-   */
-  pendingPermission = $state<{
-    requestId?: number
-    params: PermissionParams
-    resolve: (r: PermissionResponse) => void
-  } | null>(null)
+  #pendingUi!: PendingUiScope
 
-  // ─── slice-elicitation-ui: שאלה מובנת חיה (agent→client, ממתינה לתשובה) ───
-  /**
-   * שאלה מובנת ממתינה מהסוכן — pending יחיד (בקשה שנייה סוגרת את הקודמת כ-cancelled).
-   * null = אין בקשה פעילה. ה-UI (ElicitationDialog) מרנדר inline כשזה לא-null.
-   * `resolve` הוא ה-resolver של ה-Promise שהוחזר ל-`createClientImpl.createElicitation`
-   * — חובה לפתור אותו בכל נקודה ש-#client מתאפס, אחרת ה-turn נתקע (מחקה pendingPermission —
-   * הסיכון #1 יורש מ-A1). ר' docs/plans/slice-elicitation-ui.md §4 Commit 2.
-   * ─── slice view-switch C3-ו: requestId אופציונלי ─── (additive, מקביל ל-pendingPermission)
-   */
-  pendingElicitation = $state<{
-    requestId?: number
-    params: ElicitationParams
-    resolve: (r: ElicitationResponse) => void
-  } | null>(null)
+  pendingPermission!: PendingPermission | null
+  pendingElicitation!: PendingElicitation | null
 
   // ─── slice 23: session config ─── (תוספתי)
   /** אפשרויות config של הסשן הפתוח — מאוכלס מתגובת newSession/loadSession. */
@@ -581,15 +562,6 @@ export class AgentSession {
     return { sessionEndListeners: () => this.#sessionEndListeners }
   }
 
-  #pendingDeps(): PendingRequestDeps {
-    return {
-      state: this,
-      answered: this.#answeredRequests,
-      view: () => this.#view,
-      tearingDown: () => this.#tearingDown,
-    }
-  }
-
   #operationsDeps(): SessionOperationsDeps {
     return {
       read: () => ({
@@ -751,11 +723,6 @@ export class AgentSession {
    * פתוח כרגע" נקרא מהמקור היחיד (pendingPermission?.requestId), לא ממצב-מראה שני.
    * ⚠️ requestId הוא פר-host ומתחיל מ-0 בכל agent חדש — מאופס ב-attachRemote וב-#cleanup.
    */
-  #answeredRequests: { permissionId: number | null; elicitationId: number | null } = {
-    permissionId: null,
-    elicitationId: null,
-  }
-
   // ─── slice ws-reconnect-infra: reconnect internals ───
   /** ה-cliKind של ה-attach/loadSession האחרון — נדרש ל-cold reconnect.
    * $state כדי שה-getter הציבורי יהיה ריאקטיבי (slice cli-name-in-chat). */
@@ -842,7 +809,7 @@ export class AgentSession {
       onHostRecreated: () => {
         this.#operations.invalidate()
         this.isLoadingHistory = false
-        clearRemotePendingUi(this, this.#answeredRequests)
+        this.#pendingUi.clearLocalUi()
       },
     })
     view.bindProjection(sink)
@@ -887,13 +854,8 @@ export class AgentSession {
     return {
       onUpdate: (notification) => view.ingestUpdate(notification.update),
       onExtNotification: this.#onExtNotification,
-      onRequestPermission: (params) => onRequestPermissionExtracted(this.#pendingDeps(), params),
-      onCreateElicitation: (params) => onCreateElicitationExtracted(this.#pendingDeps(), params),
+      ...this.#pendingUi.acpClientCallbacks(),
     }
-  }
-
-  #cancelPendingDialogs(): void {
-    cancelPendingDialogs(this.#pendingDeps())
   }
 
   /**
@@ -942,8 +904,7 @@ export class AgentSession {
     }
 
     // ─── slice view-switch C3-ו.1: pending (permission + elicitation) — guard-זהות ───
-    syncPendingPermissionExtracted(this.#pendingDeps(), viewState.pending.permission, view)
-    syncPendingElicitationExtracted(this.#pendingDeps(), viewState.pending.elicitation, view)
+    this.#pendingUi.syncFromView(viewState.pending, view)
 
     // ─── slice view-switch C3-ו.2: lastTurnError → session.error (דו-כיווני, ממוקד) ───
     this.#errorScope.syncTurnError(viewState.lastTurnError)
@@ -1211,14 +1172,14 @@ export class AgentSession {
         clearClient: () => {
           this.#client = null
           this.#ext = null
-          this.#cancelPendingDialogs()
+          this.#pendingUi.cancelDialogs()
         },
         prepareWarm: () => {
           this.#operations.invalidate()
           this.#detached = false
           this.#errorScope.surfaced = false
           this.#client = null
-          this.#cancelPendingDialogs()
+          this.#pendingUi.cancelDialogs()
         },
         setWarmAgent: (agentId) => {
           this.agentId = agentId
@@ -1240,7 +1201,7 @@ export class AgentSession {
         disposeFailedWarm: () => {
           this.#client = null
           this.#ext = null
-          this.#cancelPendingDialogs()
+          this.#pendingUi.cancelDialogs()
           connection.disposeFailedWarmView()
           this.#localView = null
           this.#view = null
@@ -1254,7 +1215,7 @@ export class AgentSession {
                 connection.closeClientForCold()
                 this.#client = null
                 this.#ext = null
-                this.#cancelPendingDialogs()
+                this.#pendingUi.cancelDialogs()
                 if (this.status === "connecting" || this.status === "connected")
                   this.#setStatus("disconnected")
               },
@@ -1285,7 +1246,7 @@ export class AgentSession {
       operations: this.#operations,
       errors: this.#errorScope,
       transcript: this.#transcript,
-      answered: this.#answeredRequests,
+      answered: this.#pendingUi.answered,
       prepareIdentity: (agent) => {
         this.#detached = false
         this.#cliKind = agent.cliKind
@@ -1357,8 +1318,7 @@ export class AgentSession {
     this.#connection?.cancelReconnect()
     this.reconnectAttempt = 0
     if (keepAgent && (this.pendingPermission || this.pendingElicitation)) {
-      this.#cancelPendingDialogs()
-      await new Promise((resolve) => setTimeout(resolve, 0))
+      await this.#pendingUi.detachForLeaveBeforeCleanup(this.#isRemote)
     }
     this.#cleanup(keepAgent ? { keepAgent: true } : undefined)
     this.#setStatus("idle")
@@ -1405,34 +1365,10 @@ export class AgentSession {
     return this.#client !== null
   }
 
-  // ─── slice-permission-ui-basic: בקשת הרשאה חיה ──────────────────────────────
-  // תשתית גנרית ניתנת-לשכפול (callback + Promise round-trip) — slice B (elicitation)
-  // ישכפל את הדפוס הזה ל-onCreateElicitation.
-
-  /** המשתמש בחר אפשרות — פותר את ה-Promise הממתין עם ה-optionId שנבחר. */
-  resolvePermission = (optionId: string): void => {
-    resolvePendingPermissionExtracted(this.#pendingDeps(), {
-      outcome: { outcome: "selected", optionId },
-    })
-  }
-
-  /** המשתמש ביטל/דחה בלי לבחור אפשרות ספציפית — פותר כ-cancelled. */
-  cancelPermission = (): void => {
-    resolvePendingPermissionExtracted(this.#pendingDeps(), { outcome: { outcome: "cancelled" } })
-  }
-
-  // ─── slice-elicitation-ui: שאלה מובנת חיה ──────────────────────────────
-  // מחקה 1:1 את בלוק בקשת ההרשאה שמעלה (client.ts השאיר עוגן מפורש לשכפול).
-
-  /** המשתמש מילא את הטופס ואישר — פותר את ה-Promise הממתין עם ה-content שהוזן. */
-  resolveElicitation = (content: Record<string, string | number | boolean | string[]>): void => {
-    resolvePendingElicitationExtracted(this.#pendingDeps(), { action: "accept", content })
-  }
-
-  /** המשתמש ביטל/דחה — פותר עם action (decline|cancel). */
-  cancelElicitation = (action: "decline" | "cancel"): void => {
-    resolvePendingElicitationExtracted(this.#pendingDeps(), { action })
-  }
+  resolvePermission!: (optionId: string) => void
+  cancelPermission!: () => void
+  resolveElicitation!: (content: Record<string, string | number | boolean | string[]>) => void
+  cancelElicitation!: (action: "decline" | "cancel") => void
 
   // ─── פרומפטים (prompting) ────────────────────────────────────
 
@@ -1846,7 +1782,7 @@ export class AgentSession {
     if (this.turnState === "idle") return
     // slice-permission-ui-basic: ביטול תור באמצע בקשת-הרשאה ממתינה → פתור כ-cancelled.
     // נתיב עצמאי — לא עובר דרך #cleanup (הסיכון #1, §4 Commit 2).
-    this.#cancelPendingDialogs()
+    this.#pendingUi.cancelDialogs()
     // ─── slice view-switch C3-ג: עריכה נקודתית — רק הבלוק האמצעי מנותב לפי #view ───
     // ❌ ענף-מוקדם היה מדלג על שני ה-resolve למעלה ועל #setTurnState("idle") ⇒ דיאלוג-הרשאה תקוע.
     const remoteView = this.#remoteView()
@@ -2014,11 +1950,8 @@ export class AgentSession {
     // keepAgent=true = leaveRunning — FE מודיע ל-BE שהוא עוזב מרצון.
     // ה-BE מקבל $/detach → markDetached מיד → reconnect-ghost נסגר מיידית
     // (במקום לחכות ל-sweep של ה-WS אחרי 60s).
-    // slice-permission-ui-basic: פתור pending כ-cancelled **לפני** סגירת ה-#client — אחרת
-    // התשובה נשלחת על חיבור סגור ואובדת. קריטי ל-keepAgent (leaveRunning) שבו ה-agent שורד
-    // וממתין לתשובה; leaveRunning גם ממתין ל-flush (setTimeout 0) לפני שמגיע לכאן. מכסה
-    // detach() (agent נהרג ממילא) + attach/loadSession כשל.
-    this.#cancelPendingDialogs()
+    // WS: resolve pending callbacks before transport close. HTTP keepAgent: local UI clear only.
+    this.#pendingUi.detachOnCleanup(!!opts?.keepAgent, this.#isRemote)
     if (opts?.keepAgent && this.#isRemote && owner) {
       owner.release()
     }
@@ -2039,8 +1972,7 @@ export class AgentSession {
     this.#isRemote = false // slice local-view-wiring C1: איפוס מתג-המצב לצד איפוס ה-view
     // ─── slice view-switch C3-ו: מרחב-ה-ids של pending הוא פר-host, לא פר-VM ───
     // בלי איפוס — הדיאלוג הראשון של הסשן המרוחק הבא באותו טאב מדוכא בשקט (id 0 "כבר נענה").
-    this.#answeredRequests.permissionId = null
-    this.#answeredRequests.elicitationId = null
+    this.#pendingUi.resetAnsweredIds()
     this.#ext = null // slice FE-normalization: נקה facade
     this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
     this.contextUsage = null // slice session-budget-meter: נקה context-usage (חיבור חדש = caps חדשים)
