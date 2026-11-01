@@ -16,7 +16,9 @@ const SESSION_SCOPED = new Set([
   "quotaLoading",
 ])
 
-const AGENT_SCOPED = new Set(["turnStalled", "#errorScope"])
+const AGENT_SCOPED = new Set(["#errorScope"])
+
+const TURN_WATCH_SCOPED = new Set(["stalled"])
 
 const TRANSCRIPT_SCOPED = new Set(["#content", "#displaySnapshot", "#processingTarget"])
 
@@ -44,6 +46,7 @@ describe("agent-session $state classification gate", () => {
       "agent-session.svelte.ts",
       new Set([...AGENT_SCOPED, "#session", "sessionsCache"]),
     ),
+    ...pendingIn("local-turn-watch-owner.svelte.ts", TURN_WATCH_SCOPED),
     ...pendingIn("pending-ui-scope.svelte.ts", PENDING_UI_SCOPED),
     ...pendingIn("session-scoped-state.svelte.ts", SESSION_SCOPED),
     ...pendingIn("sessions-cache-scope.svelte.ts", CONNECTION_SCOPED),

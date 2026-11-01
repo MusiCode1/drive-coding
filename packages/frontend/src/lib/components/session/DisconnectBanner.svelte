@@ -13,7 +13,7 @@ const poller = getPresencePoller()
 // (החיבור בסדר גמור) אלא סוכן ששותק. מוצג רק כשאין באנר-ניתוק, כדי לא לערום
 // שתי הודעות זו על זו כשהרשת נפלה באמצע תור.
 const session = getSession()
-const view = $derived(pickBannerView(poller.banner, session.turnStalled))
+const view = $derived(pickBannerView(poller.banner, session.turnWatch.stalled))
 </script>
 
 {#if view === "reconnecting"}

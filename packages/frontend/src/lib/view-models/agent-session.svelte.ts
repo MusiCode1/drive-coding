@@ -42,14 +42,6 @@ import {
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import type { CuesEngine } from "$lib/engines/cues"
 // ─── slice leave-running-background ───
-import {
-  evaluateTurn,
-  initialTurnActivity,
-  onActivity,
-  onTurnEnded,
-  onTurnStarted,
-  type TurnActivityState,
-} from "$lib/engines/turn-watchdog"
 import type { AgentInput, CloseMode, Connection } from "$lib/session/connection"
 import type { HttpConnection } from "$lib/session/http-connection"
 // ─── slice local-view-wiring: LocalSessionView + tee ───
@@ -61,7 +53,7 @@ import { WsConnection } from "$lib/session/ws-connection"
 import { runColdReconnect } from "$lib/session/ws-reconnect-controller"
 import type { Bubble, UserBubble } from "$lib/types/bubble"
 // ─── slice-elicitation-ui: טיפוסי שאלה מובנת (view-model layer, נגזרים מ-SDK) ───
-import { connInfo, connWarn } from "$lib/util/conn-log"
+import { connInfo } from "$lib/util/conn-log"
 import { isBypassMode } from "$lib/util/permission-mode"
 import { safeUUID } from "$lib/util/uuid"
 import {
@@ -106,6 +98,7 @@ import {
 } from "$lib/view-models/agent-session-session-end"
 import { ErrorScope } from "$lib/view-models/error-scope.svelte"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
+import { LocalTurnWatchOwner } from "$lib/view-models/local-turn-watch-owner.svelte"
 import {
   installPendingUiOnAgentSession,
   type PendingElicitation,
@@ -215,6 +208,9 @@ export class AgentSession {
   /** @internal For testing — called on every notification entering #onSessionUpdate. */
   #onUpdateObserved?: (update: unknown) => void
 
+  readonly turnWatch!: Readonly<Pick<LocalTurnWatchOwner, "stalled">>
+  #turnWatchOwner!: LocalTurnWatchOwner
+
   constructor(opts?: {
     view?: SessionView
     cues?: CuesEngine
@@ -240,6 +236,13 @@ export class AgentSession {
       view: () => self.#view,
       tearingDown: () => self.#tearingDown,
     })
+    const browser = typeof document !== "undefined"
+    this.#turnWatchOwner = new LocalTurnWatchOwner({
+      onGiveUp: () => this.#setTurnState("idle"),
+      enabled: browser,
+    })
+    this.turnWatch = this.#turnWatchOwner
+    if (browser) this.#turnWatchOwner.start()
     // ─── slice session-view-port C3: אם view הוזרק ─── (additive)
     if (opts?.view) {
       this.#view = opts.view
@@ -248,11 +251,6 @@ export class AgentSession {
       const connection = this.#newHttpConnection()
       connection.adoptExistingView(opts.view)
       this.#connection = connection
-    }
-    // ─── slice ws-reconnect-infra: visibility tracking (עבר ל-#visibility) ───
-    if (typeof document !== "undefined") {
-      // watchdog §2 — רק בדפדפן. בטסטים/SSR אין טיימר רקע שידלוף.
-      this.#startStallWatch()
     }
   }
 
@@ -1861,60 +1859,13 @@ export class AgentSession {
     this.turnState = next
     // cue thinking: רק על מעבר idle→waiting (תחילת תור חדש)
     if (prev === "idle" && next === "waiting") this.#cues?.play("thinking")
-    // ─── watchdog לתור (slice liveness §2) ───
-    // הנקודה היחידה שבה תור באמת נפתח/נסגר, ולכן כאן מסונכרן מצב-הפעילות.
-    if (prev === "idle") {
-      this.#turnActivity = onTurnStarted(Date.now())
-      this.turnStalled = false
-    } else if (next === "idle") {
-      this.#turnActivity = onTurnEnded()
-      this.turnStalled = false
-    }
+    if (prev === "idle") this.#turnWatchOwner.turnStarted()
+    else if (next === "idle") this.#turnWatchOwner.turnEnded()
   }
 
-  // ─── watchdog לתור ─── (slice liveness §2)
-  /**
-   * חיווי בלבד: התור פעיל ולא הגיע ממנו דבר זמן רב. **אינו מבטל** — הפעולה
-   * נשארת בידי המשתמשת (כפתור-הביטול הקיים). ר' `engines/turn-watchdog.ts`
-   * להסבר מלא, כולל למה הקריטריון הוא "אין פעילות" ולא "אין טקסט".
-   */
-  turnStalled = $state(false)
-  #turnActivity: TurnActivityState = initialTurnActivity()
-  #stallTimer: ReturnType<typeof setInterval> | undefined
-
-  /**
-   * פעילות מהסוכן. נקרא משני הטרנספורטים (WS ו-HTTP) — לכן הוא כאן ב-VM
-   * ולא באחד מהם. **כל** פריים נחשב, לא רק טקסט.
-   */
+  /** פעילות מהסוכן — WS (`beforeUpdate`) ו-HTTP (`#syncFromViewState`). */
   #noteAgentActivity(): void {
-    this.#turnActivity = onActivity(this.#turnActivity, Date.now())
-    if (this.turnStalled) this.turnStalled = false
-  }
-
-  /** מריץ את ההערכה מדי 5ש׳. הליבה טהורה; זה רק השעון סביבה. */
-  #startStallWatch(): void {
-    if (this.#stallTimer !== undefined) return
-    this.#stallTimer = setInterval(() => {
-      const verdict = evaluateTurn(this.#turnActivity, Date.now())
-      if (verdict.kind === "ok") {
-        if (this.turnStalled) this.turnStalled = false
-        return
-      }
-      if (!this.turnStalled) {
-        this.turnStalled = true
-        connWarn("turn-stalled", { silentMs: verdict.silentMs, kind: verdict.kind })
-      }
-      // give-up: משחרר את ההמתנה שלנו בלבד. **אין** session/cancel לסוכן —
-      // הכרעה מפורשת: הקוד לא מבטל תור מדעתו.
-      if (verdict.kind === "give-up") this.#setTurnState("idle")
-    }, 5_000)
-  }
-
-  #stopStallWatch(): void {
-    if (this.#stallTimer !== undefined) {
-      clearInterval(this.#stallTimer)
-      this.#stallTimer = undefined
-    }
+    this.#turnWatchOwner.noteActivity()
   }
 
   // ─── פרטי ─────────────────────────────────────
@@ -1942,10 +1893,7 @@ export class AgentSession {
       clearTimeout(this.#idleTimer)
       this.#idleTimer = null
     }
-    // watchdog §2 — אין תור בלי סשן.
-    this.#stopStallWatch()
-    this.#turnActivity = onTurnEnded()
-    this.turnStalled = false
+    this.#turnWatchOwner.stop()
     // ─── slice be-shutdown-hardening Commit 3: $/detach לפני סגירה מכוונת ───
     // keepAgent=true = leaveRunning — FE מודיע ל-BE שהוא עוזב מרצון.
     // ה-BE מקבל $/detach → markDetached מיד → reconnect-ghost נסגר מיידית
