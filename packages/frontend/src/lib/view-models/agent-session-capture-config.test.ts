@@ -27,7 +27,17 @@ describe("captureSessionConfig — budget boundary", () => {
     owner.contextUsage = { used: 5, size: 100, cost: { amount: 0.1, currency: "USD" } }
     owner.quota = { provider: "p", windows: [] }
     owner.quotaLoading = true
-    owner.setMockQuota({ provider: "mock-p", windows: [{ used: 1, limit: 10 }] })
+    owner.setMockQuota({
+      provider: "mock-p",
+      windows: [
+        {
+          id: "requests",
+          period: { kind: "rolling", durationSeconds: 3600 },
+          consumption: { kind: "absolute", used: 1, limit: 10, unit: "requests" },
+          resetsAtMs: null,
+        },
+      ],
+    })
     const gen0 = owner._generationForTest()
 
     captureSessionConfig(makeCaptureDeps(owner, new SessionScope("mock:quota-test")), {})

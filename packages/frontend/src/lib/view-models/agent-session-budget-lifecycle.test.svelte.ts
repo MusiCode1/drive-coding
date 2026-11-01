@@ -105,7 +105,17 @@ describe("AgentSession budget — lifecycle boundaries", () => {
     })
     session.agentId = "agent-old"
     session.budget.contextUsage = { used: 99, size: 200, cost: undefined }
-    session.budget.quota = { provider: "p", windows: [{ used: 1, limit: 10 }] }
+    session.budget.quota = {
+      provider: "p",
+      windows: [
+        {
+          id: "requests",
+          period: { kind: "rolling", durationSeconds: 3600 },
+          consumption: { kind: "absolute", used: 1, limit: 10, unit: "requests" },
+          resetsAtMs: null,
+        },
+      ],
+    }
     session.budget.quotaLoading = true
 
     mockColdClient.loadSession.mockRejectedValueOnce(new Error("Failed to fetch"))
