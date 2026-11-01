@@ -6,9 +6,7 @@ import { SessionScope } from "./session-scoped-state.svelte"
 
 function makeCaptureDeps(owner: SessionBudgetOwner, session: SessionScope) {
   return {
-    setConfigOptions: vi.fn(),
-    setModels: vi.fn(),
-    setModes: vi.fn(),
+    captureConfig: vi.fn(),
     setAvailableCommands: vi.fn(),
     resetBudget: () => owner.reset(),
     session: () => session,

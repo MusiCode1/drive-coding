@@ -105,6 +105,10 @@ import {
   type PendingUiScope,
 } from "$lib/view-models/pending-ui-scope.svelte"
 import { SessionBudgetOwner } from "$lib/view-models/session-budget-owner.svelte"
+import {
+  SessionConfigOwner,
+  type SessionModelState,
+} from "$lib/view-models/session-config-owner.svelte"
 import { SessionScope } from "$lib/view-models/session-scoped-state.svelte"
 import { SessionsCacheScope } from "$lib/view-models/sessions-cache-scope.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
@@ -146,11 +150,6 @@ import {
  */
 /** Local FE path only — config file does not affect this (brief session-meta-config §4.6). */
 const CLAUDE_SESSION_META = DEFAULT_CLAUDE_SESSION_META
-
-type SessionModelState = {
-  currentModelId: string
-  availableModels: Array<{ modelId: string; name: string; description?: string | null }>
-}
 
 export type AgentSessionStatus =
   | "idle" // טרם נוצר סוכן
@@ -211,6 +210,8 @@ export class AgentSession {
 
   readonly budget!: SessionBudgetOwner
   #budgetOwner!: SessionBudgetOwner
+
+  readonly config = new SessionConfigOwner()
 
   constructor(opts?: {
     view?: SessionView
@@ -316,14 +317,6 @@ export class AgentSession {
 
   pendingPermission!: PendingPermission | null
   pendingElicitation!: PendingElicitation | null
-
-  // ─── slice 23: session config ─── (תוספתי)
-  /** אפשרויות config של הסשן הפתוח — מאוכלס מתגובת newSession/loadSession. */
-  configOptions = $state<SessionConfigOption[]>([])
-  /** מצב המודלים הזמינים — null אם ה-agent לא חשף מידע מודל. */
-  models = $state<SessionModelState | null>(null)
-  /** מצב ה-modes הזמינים — null אם ה-agent לא חשף מידע mode. */
-  modes = $state<SessionModeState | null>(null)
 
   // ─── slice session-scope-migration: per-session holder ($state required — §3.5) ───
   #session = $state(new SessionScope(null))
@@ -593,20 +586,9 @@ export class AgentSession {
 
   #applyConfigToClientDeps(): Omit<ApplyConfigToClientDeps, "isCurrent"> {
     return {
-      configOptions: () => this.configOptions,
-      setConfigOptions: (v) => {
-        this.configOptions = v
-      },
+      ...this.config.applyClientTargets(),
       client: () => this.#client,
       sessionId: () => this.#sessionId,
-      models: () => this.models,
-      setModels: (v) => {
-        this.models = v
-      },
-      modes: () => this.modes,
-      setModes: (v) => {
-        this.modes = v
-      },
     }
   }
 
@@ -622,15 +604,7 @@ export class AgentSession {
 
   #captureSessionConfigDeps(): CaptureSessionConfigDeps {
     return {
-      setConfigOptions: (v) => {
-        this.configOptions = v
-      },
-      setModels: (v) => {
-        this.models = v
-      },
-      setModes: (v) => {
-        this.modes = v
-      },
+      captureConfig: (r) => this.config.capture(r),
       setAvailableCommands: (v) => {
         this.availableCommands = v
       },
@@ -698,16 +672,16 @@ export class AgentSession {
     const sink = createAgentSessionProjection({
       ui: {
         get modes() {
-          return vm.modes
+          return vm.config.modes
         },
         set modes(v) {
-          vm.modes = v
+          vm.config.modes = v
         },
         get configOptions() {
-          return vm.configOptions
+          return vm.config.configOptions
         },
         set configOptions(v) {
-          vm.configOptions = v
+          vm.config.configOptions = v
         },
         get availableCommands() {
           return vm.availableCommands
@@ -842,10 +816,10 @@ export class AgentSession {
     })
     // commands
     this.availableCommands = viewState.commands as typeof this.availableCommands
-    // modes
-    this.modes = viewState.modes as typeof this.modes
-    // configOptions
-    this.configOptions = viewState.configOptions as typeof this.configOptions
+    this.config.syncFromHttpView({
+      modes: viewState.modes as SessionModeState | null,
+      configOptions: viewState.configOptions as SessionConfigOption[],
+    })
     // ─── slice http-usable C1: capabilities from SessionState → #capabilities ───
     // In remote there is no #client, and _drive/capabilities is only sent by
     // ws-agent — so supportsImageInput was always false over HTTP. The BE now
@@ -1283,12 +1257,12 @@ export class AgentSession {
    */
   get bypassActive(): boolean {
     // configOptions מתעדכן חי ב-claude — נעדיף אותו כמקור ראשון.
-    const modeOpt = this.configOptions.find((o) => o.category === "mode")
+    const modeOpt = this.config.configOptions.find((o) => o.category === "mode")
     const liveModeId =
       modeOpt && modeOpt.type === "select"
         ? (modeOpt as Extract<SessionConfigOption, { type: "select" }>).currentValue
         : undefined
-    return isBypassMode(this.#cliKind, liveModeId ?? this.modes?.currentModeId)
+    return isBypassMode(this.#cliKind, liveModeId ?? this.config.modes?.currentModeId)
   }
 
   /** ה-CLI של הסשן הפעיל (claude/opencode/codex), או null כשאין סשן. slice cli-name-in-chat. */

@@ -141,12 +141,12 @@ describe("AgentSession — current_mode_update handler", () => {
     })
 
     const session = await buildConnectedSession()
-    expect(session.modes?.currentModeId).toBe("default")
+    expect(session.config.modes?.currentModeId).toBe("default")
 
     // inject event
     inject({ sessionUpdate: "current_mode_update", currentModeId: "bypassPermissions" })
 
-    expect(session.modes?.currentModeId).toBe("bypassPermissions")
+    expect(session.config.modes?.currentModeId).toBe("bypassPermissions")
   })
 
   it("שומר availableModes לאחר עדכון currentModeId", async () => {
@@ -164,27 +164,27 @@ describe("AgentSession — current_mode_update handler", () => {
     })
 
     const session = await buildConnectedSession()
-    const originalAvailable = session.modes?.availableModes
+    const originalAvailable = session.config.modes?.availableModes
 
     inject({ sessionUpdate: "current_mode_update", currentModeId: "bypassPermissions" })
 
     // availableModes לא נמחק
-    expect(session.modes?.availableModes).toEqual(originalAvailable)
-    expect(session.modes?.availableModes).toHaveLength(2)
+    expect(session.config.modes?.availableModes).toEqual(originalAvailable)
+    expect(session.config.modes?.availableModes).toHaveLength(2)
   })
 
   it("לא קורס כש-modes===null לפני העדכון (מגדיר currentModeId עם availableModes ריק)", async () => {
     // modes=null בברירת מחדל (כבר מוגדר ב-beforeEach)
     const session = await buildConnectedSession()
-    expect(session.modes).toBeNull()
+    expect(session.config.modes).toBeNull()
 
     // לא צריך לזרוק
     expect(() => {
       inject({ sessionUpdate: "current_mode_update", currentModeId: "bypassPermissions" })
     }).not.toThrow()
 
-    expect(session.modes?.currentModeId).toBe("bypassPermissions")
-    expect(session.modes?.availableModes).toEqual([])
+    expect(session.config.modes?.currentModeId).toBe("bypassPermissions")
+    expect(session.config.modes?.availableModes).toEqual([])
   })
 
   it("מתעלם מ-current_mode_update עם currentModeId לא-string", async () => {
@@ -206,7 +206,7 @@ describe("AgentSession — current_mode_update handler", () => {
     }).not.toThrow()
 
     // מצב נשמר
-    expect(session.modes?.currentModeId).toBe("default")
+    expect(session.config.modes?.currentModeId).toBe("default")
   })
 })
 
@@ -231,13 +231,13 @@ describe("AgentSession — config_option_update handler", () => {
     })
 
     const session = await buildConnectedSession()
-    expect(session.configOptions).toHaveLength(1)
+    expect(session.config.configOptions).toHaveLength(1)
 
     const newOptions = [makeOption("opt-new-1"), makeOption("opt-new-2")]
     inject({ sessionUpdate: "config_option_update", configOptions: newOptions })
 
-    expect(session.configOptions).toEqual(newOptions)
-    expect(session.configOptions).toHaveLength(2)
+    expect(session.config.configOptions).toEqual(newOptions)
+    expect(session.config.configOptions).toHaveLength(2)
   })
 
   it("מתעלם מ-config_option_update כש-configOptions לא-array", async () => {
@@ -255,6 +255,6 @@ describe("AgentSession — config_option_update handler", () => {
     }).not.toThrow()
 
     // לא שינה את configOptions
-    expect(session.configOptions).toHaveLength(1)
+    expect(session.config.configOptions).toHaveLength(1)
   })
 })

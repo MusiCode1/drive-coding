@@ -8,9 +8,11 @@ type SessionModelState = {
 }
 
 export type CaptureSessionConfigDeps = {
-  setConfigOptions: (v: SessionConfigOption[]) => void
-  setModels: (v: SessionModelState | null) => void
-  setModes: (v: SessionModeState | null) => void
+  captureConfig: (result: {
+    configOptions?: SessionConfigOption[] | null
+    models?: SessionModelState | null
+    modes?: SessionModeState | null
+  }) => void
   setAvailableCommands: (v: import("@agentclientprotocol/sdk").AvailableCommand[]) => void
   resetBudget: () => void
   session: () => SessionScope
@@ -26,9 +28,7 @@ export function captureSessionConfig(
     modes?: SessionModeState | null
   },
 ): void {
-  d.setConfigOptions(result.configOptions ?? [])
-  d.setModels(result.models ?? null)
-  d.setModes(result.modes ?? null)
+  d.captureConfig(result)
   // slice-slash-commands: ניקוי בהחלפת/פתיחת סשן; ה-update הטרי יאכלס
   d.setAvailableCommands([])
   // slice session-budget-meter / budget-owner: איפוס budget בהחלפת/פתיחת סשן.

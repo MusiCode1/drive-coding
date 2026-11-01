@@ -24,8 +24,8 @@ import { env } from "$env/dynamic/public"
 import MachineStatsBar from "$lib/components/connect/MachineStatsBar.svelte"
 import SessionFieldsList from "$lib/components/layout/SessionFieldsList.svelte"
 import SessionScopePolicyCard from "$lib/components/layout/SessionScopePolicyCard.svelte"
-import SessionTitleField from "$lib/components/layout/SessionTitleField.svelte"
 import SessionsFilterBar from "$lib/components/layout/SessionsFilterBar.svelte"
+import SessionTitleField from "$lib/components/layout/SessionTitleField.svelte"
 import SessionCard from "$lib/components/modals/SessionCard.svelte"
 import CliBadge from "$lib/components/ui/CliBadge.svelte"
 import Select, { type SelectGroup, type SelectOption } from "$lib/components/ui/Select.svelte"
@@ -164,7 +164,7 @@ const toSelectOptions = (
 // מודלים: אם ה-modelId מכיל "/" (למשל "anthropic/claude-..") → קבץ לפי החלק
 // שלפני ה-slash (הספק). אם אף אחד לא מכיל "/" → רשימה שטוחה (בלי קיבוץ).
 const modelGroups = $derived.by<SelectGroup[] | undefined>(() => {
-  const models = session.models?.availableModels
+  const models = session.config.models?.availableModels
   if (!models || models.length === 0) return undefined
   if (!models.some((m) => m.modelId.includes("/"))) return undefined
   const byProvider = new Map<string, SelectOption[]>()
@@ -182,7 +182,7 @@ const modelGroups = $derived.by<SelectGroup[] | undefined>(() => {
 
 /** configOptions שאינם model/mode */
 const extraOptions = $derived(
-  session.configOptions.filter((o) => o.category !== "model" && o.category !== "mode"),
+  session.config.configOptions.filter((o) => o.category !== "model" && o.category !== "mode"),
 )
 
 /**
@@ -212,16 +212,16 @@ function localizeConfigName(name: string): string {
  * (category=null, נופל ל-extraOptions עם שמו "Agent").
  */
 const modeLabel = $derived.by(() => {
-  const name = session.configOptions.find((o) => o.category === "mode")?.name
+  const name = session.config.configOptions.find((o) => o.category === "mode")?.name
   return name ? localizeConfigName(name) : t("agentOptions.mode.label")
 })
 
 /** האם יש אפשרויות סוכן/מודל להציג */
 const hasAgentOptions = $derived(
-  (session.models?.availableModels?.length ?? 0) > 0 ||
-    session.configOptions.some((o) => o.category === "model") ||
-    (session.modes?.availableModes?.length ?? 0) > 0 ||
-    session.configOptions.some((o) => o.category === "mode") ||
+  (session.config.models?.availableModels?.length ?? 0) > 0 ||
+    session.config.configOptions.some((o) => o.category === "model") ||
+    (session.config.modes?.availableModes?.length ?? 0) > 0 ||
+    session.config.configOptions.some((o) => o.category === "mode") ||
     extraOptions.length > 0,
 )
 
@@ -407,19 +407,19 @@ $effect(() => {
     <!-- סוכן + מודל באותה שורה (חצאי רוחב) — מוקאפ redesign-fix -->
     <div class="grid grid-cols-2 gap-2">
       <!-- סוכן/Mode dropdown -->
-      {#if (session.modes?.availableModes?.length ?? 0) > 0}
+      {#if (session.config.modes?.availableModes?.length ?? 0) > 0}
       <label class="flex flex-col gap-1 min-w-0">
         <span class="text-[11px] px-1" style="color:var(--fg-dim)">{modeLabel}</span>
         <Select
-          value={session.modes?.currentModeId ?? ""}
-          options={toSelectOptions(session.modes!.availableModes.map((m) => ({ value: m.id, name: m.name, description: m.description })))}
+          value={session.config.modes?.currentModeId ?? ""}
+          options={toSelectOptions(session.config.modes!.availableModes.map((m) => ({ value: m.id, name: m.name, description: m.description })))}
           title={modeLabel}
           ariaLabel={modeLabel}
           onchange={(v) => session.applyConfigOption("mode", v)}
         />
       </label>
-      {:else if session.configOptions.find((o) => o.category === "mode")}
-        {@const modeOpt = session.configOptions.find((o) => o.category === "mode")!}
+      {:else if session.config.configOptions.find((o) => o.category === "mode")}
+        {@const modeOpt = session.config.configOptions.find((o) => o.category === "mode")!}
         {@const modeChoices = flattenSelectOptions(modeOpt)}
         {#if modeChoices.length > 0}
         <label class="flex flex-col gap-1 min-w-0">
@@ -436,20 +436,20 @@ $effect(() => {
       {/if}
 
       <!-- מודל dropdown — עם חלוקה לספקים (groups) אם יש "/" ב-modelId -->
-      {#if (session.models?.availableModels?.length ?? 0) > 0}
+      {#if (session.config.models?.availableModels?.length ?? 0) > 0}
       <label class="flex flex-col gap-1 min-w-0">
         <span class="text-[11px] px-1" style="color:var(--fg-dim)">{t("agentOptions.model.label")}</span>
         <Select
-          value={session.models?.currentModelId ?? ""}
-          options={modelGroups ? undefined : toSelectOptions(session.models!.availableModels.map((m) => ({ value: m.modelId, name: m.name })))}
+          value={session.config.models?.currentModelId ?? ""}
+          options={modelGroups ? undefined : toSelectOptions(session.config.models!.availableModels.map((m) => ({ value: m.modelId, name: m.name })))}
           groups={modelGroups}
           title={t("agentOptions.model.label")}
           ariaLabel={t("agentOptions.model.label")}
           onchange={(v) => session.applyConfigOption("model", v)}
         />
       </label>
-      {:else if session.configOptions.find((o) => o.category === "model")}
-        {@const modelOpt = session.configOptions.find((o) => o.category === "model")!}
+      {:else if session.config.configOptions.find((o) => o.category === "model")}
+        {@const modelOpt = session.config.configOptions.find((o) => o.category === "model")!}
         {@const modelChoices = flattenSelectOptions(modelOpt)}
         {#if modelChoices.length > 0}
         <label class="flex flex-col gap-1 min-w-0">

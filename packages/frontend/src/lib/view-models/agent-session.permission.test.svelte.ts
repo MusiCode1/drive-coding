@@ -168,7 +168,7 @@ describe("AgentSession — permission request round-trip (slice-permission-ui-ba
 
   it("5. bypass (claude, mode=bypassPermissions) → auto-allow, no pendingPermission block (DoD#6)", async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ;(session as any).modes = {
+    session.config.modes = {
       currentModeId: "bypassPermissions",
       availableModes: [{ id: "bypassPermissions", name: "Bypass" }],
     }

@@ -82,9 +82,9 @@ function snapshot(s: AgentSession) {
       agent: s.agentId,
       bubbles: s.bubbles,
       title: s.sessionTitle,
-      config: s.configOptions,
-      modes: s.modes,
-      models: s.models,
+      config: s.config.configOptions,
+      modes: s.config.modes,
+      models: s.config.models,
       cwd: s.cwd,
       status: s.status,
       error: s.error,
@@ -466,10 +466,10 @@ describe("bound config consumers", () => {
         v.fireUpdate(update)
       } else {
         // availableModes is existing public metadata; the next wire update carries the live current value.
-        s.modes = { currentModeId: "before", availableModes: [{ id: "ask", name: "Ask" }] }
+        s.config.modes = { currentModeId: "before", availableModes: [{ id: "ask", name: "Ask" }] }
         h.callbacks.at(-1)?.onUpdate?.({ sessionId: "same", update } as never)
       }
-      await vi.waitFor(() => expect(s.modes?.currentModeId).toBe("ask"))
+      await vi.waitFor(() => expect(s.config.modes?.currentModeId).toBe("ask"))
       gate.resolve({ configOptions: [] })
       await pending
       const calls = remote ? (h.views.at(-1) as MockSessionView).setModeMock : c.setSessionMode
@@ -524,7 +524,7 @@ describe("current config fallback parity", () => {
         const s = session(settings)
         const c = await attach(s, client(), remote)
         const v = h.views.at(-1) as MockSessionView
-        s.configOptions =
+        s.config.configOptions =
           branch === "id"
             ? [option() as never]
             : branch.startsWith("category")
@@ -574,7 +574,7 @@ describe("current config fallback parity", () => {
             )
         }
         if (remote)
-          expect(s.configOptions).toHaveLength(
+          expect(s.config.configOptions).toHaveLength(
             branch === "id" || branch.startsWith("category") ? 1 : 0,
           )
       })
@@ -588,8 +588,11 @@ describe("direct model/mode completions stay bound", () => {
         const settings = { lastConfig: {}, setLastConfig: vi.fn() }
         const s = session(settings)
         const c = await attach(s)
-        s.modes = { currentModeId: "old", availableModes: [{ id: "old", name: "Old" }] }
-        s.models = { currentModelId: "old", availableModels: [{ modelId: "old", name: "Old" }] }
+        s.config.modes = { currentModeId: "old", availableModes: [{ id: "old", name: "Old" }] }
+        s.config.models = {
+          currentModelId: "old",
+          availableModels: [{ modelId: "old", name: "Old" }],
+        }
         const gate = deferred<void>()
         ;(key === "mode" ? c.setSessionMode : c.setSessionModel).mockImplementationOnce(
           () => gate.promise,
@@ -597,8 +600,8 @@ describe("direct model/mode completions stay bound", () => {
         const pending = s.applyConfigOption(key, "stale")
         s.detach()
         await attach(s, client("replacement"))
-        s.modes = { currentModeId: "replacement", availableModes: [] }
-        s.models = { currentModelId: "replacement", availableModels: [] }
+        s.config.modes = { currentModeId: "replacement", availableModes: [] }
+        s.config.models = { currentModelId: "replacement", availableModels: [] }
         const before = snapshot(s)
         if (reject) gate.reject(new Error("stale direct"))
         else gate.resolve()

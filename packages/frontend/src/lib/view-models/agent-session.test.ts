@@ -542,7 +542,7 @@ describe("AgentSession.bypassActive — reads configOptions first, falls back to
   })
 
   it("returns true when configOptions has mode=select with currentValue=bypassPermissions", () => {
-    session.configOptions = [
+    session.config.configOptions = [
       {
         id: "mode",
         name: "Mode",
@@ -556,7 +556,7 @@ describe("AgentSession.bypassActive — reads configOptions first, falls back to
   })
 
   it("returns false when configOptions has mode=select with currentValue=default", () => {
-    session.configOptions = [
+    session.config.configOptions = [
       {
         id: "mode",
         name: "Mode",
@@ -570,8 +570,8 @@ describe("AgentSession.bypassActive — reads configOptions first, falls back to
   })
 
   it("falls back to modes.currentModeId when no mode configOption exists", () => {
-    session.configOptions = []
-    session.modes = {
+    session.config.configOptions = []
+    session.config.modes = {
       currentModeId: "bypassPermissions",
       availableModes: [],
     }
@@ -581,7 +581,7 @@ describe("AgentSession.bypassActive — reads configOptions first, falls back to
   it("returns false for non-claude cliKind even with bypassPermissions in configOptions", async () => {
     const openCodeSession = new AgentSession()
     await openCodeSession.attach({ cwd: "/tmp", cliKind: "opencode" })
-    openCodeSession.configOptions = [
+    openCodeSession.config.configOptions = [
       {
         id: "mode",
         name: "Mode",

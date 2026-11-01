@@ -489,9 +489,9 @@ describe("DoD 13 — authMethods · _meta · captureSessionConfig · notify · a
     )
 
     // 3. #captureSessionConfig — configOptions/models/modes מלאים
-    expect(session.configOptions.length).toBeGreaterThan(0)
-    expect(session.models?.currentModelId).toBe("llm-1")
-    expect(session.modes?.currentModeId).toBe("default")
+    expect(session.config.configOptions.length).toBeGreaterThan(0)
+    expect(session.config.models?.currentModelId).toBe("llm-1")
+    expect(session.config.modes?.currentModeId).toBe("default")
 
     // 4. notifySessionAttached נקרא
     const { notifySessionAttached } = await import("$lib/adapters/agents-api")

@@ -700,7 +700,7 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
     await delay()
 
     expect(agent.bubbles).toHaveLength(0) // באמת ריק
-    expect(agent.configOptions).toHaveLength(2) // ⚠️ מוד ומודל
+    expect(agent.config.configOptions).toHaveLength(2) // ⚠️ מוד ומודל
     expect(agent.capabilities?.image).toBe(true) // ⚠️ כפתור התמונה
     expect(agent.supportsImageInput).toBe(true)
   })

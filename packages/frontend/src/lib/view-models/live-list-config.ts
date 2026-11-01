@@ -42,10 +42,10 @@ export function buildListConfigInput(deps: LiveListConfigDeps): ListConfigInput 
     options,
   }
 
-  const configOptions = s.configOptions ?? []
+  const configOptions = s.config.configOptions ?? []
 
-  if ((s.models?.availableModels?.length ?? 0) > 0) {
-    const models = s.models!
+  if ((s.config.models?.availableModels?.length ?? 0) > 0) {
+    const models = s.config.models!
     const current = models.availableModels.find((m) => m.modelId === models.currentModelId)
     sessionPart.model = {
       id: models.currentModelId,
@@ -66,8 +66,8 @@ export function buildListConfigInput(deps: LiveListConfigDeps): ListConfigInput 
     }
   }
 
-  if ((s.modes?.availableModes?.length ?? 0) > 0) {
-    const modes = s.modes!
+  if ((s.config.modes?.availableModes?.length ?? 0) > 0) {
+    const modes = s.config.modes!
     const current = modes.availableModes.find((m) => m.id === modes.currentModeId)
     sessionPart.mode = {
       id: modes.currentModeId,
@@ -88,9 +88,7 @@ export function buildListConfigInput(deps: LiveListConfigDeps): ListConfigInput 
     }
   }
 
-  const extraOptions = configOptions.filter(
-    (o) => o.category !== "model" && o.category !== "mode",
-  )
+  const extraOptions = configOptions.filter((o) => o.category !== "model" && o.category !== "mode")
   for (const opt of extraOptions) {
     if (opt.type === "select") {
       const choices = flattenSelectOptions(opt)
@@ -131,9 +129,7 @@ export function validateSessionConfigValue(
   deps: LiveListConfigDeps,
   id: string,
   rawValue: string,
-):
-  | { ok: true; parsed: string | boolean }
-  | { ok: false; reason: "unknown-id" | "invalid-value" } {
+): { ok: true; parsed: string | boolean } | { ok: false; reason: "unknown-id" | "invalid-value" } {
   const snap = formatListConfigSnapshot(buildListConfigInput(deps))
 
   if (id === "model") {

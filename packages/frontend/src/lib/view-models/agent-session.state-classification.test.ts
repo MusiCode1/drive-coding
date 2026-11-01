@@ -15,6 +15,8 @@ const SESSION_SCOPED = new Set([
 
 const BUDGET_SCOPED = new Set(["contextUsage", "quota", "quotaLoading"])
 
+const CONFIG_SCOPED = new Set(["configOptions", "models", "modes"])
+
 const AGENT_SCOPED = new Set(["#errorScope"])
 
 const TURN_WATCH_SCOPED = new Set(["stalled"])
@@ -47,6 +49,7 @@ describe("agent-session $state classification gate", () => {
     ),
     ...pendingIn("local-turn-watch-owner.svelte.ts", TURN_WATCH_SCOPED),
     ...pendingIn("session-budget-owner.svelte.ts", BUDGET_SCOPED),
+    ...pendingIn("session-config-owner.svelte.ts", CONFIG_SCOPED),
     ...pendingIn("pending-ui-scope.svelte.ts", PENDING_UI_SCOPED),
     ...pendingIn("session-scoped-state.svelte.ts", SESSION_SCOPED),
     ...pendingIn("sessions-cache-scope.svelte.ts", CONNECTION_SCOPED),
@@ -59,13 +62,10 @@ describe("agent-session $state classification gate", () => {
         "#cliKind",
         "agentId",
         "authMethods",
-        "configOptions",
         "cwd",
         "historyEpoch",
         "isLoadingHistory",
         "lastUserMessage",
-        "models",
-        "modes",
         "reconnectAttempt",
         "sessionState",
         "status",
@@ -76,7 +76,7 @@ describe("agent-session $state classification gate", () => {
   })
 
   it("PENDING only shrinks", () => {
-    expect(PENDING_CAP).toBeLessThanOrEqual(23)
+    expect(PENDING_CAP).toBeLessThanOrEqual(15)
   })
 
   it("budget $state lives on SessionBudgetOwner only", () => {
@@ -85,7 +85,15 @@ describe("agent-session $state classification gate", () => {
     expect(sessionScoped).not.toMatch(/quota\s*=\s*\$state/)
     expect(BUDGET_SCOPED.size).toBe(3)
   })
+
+  it("config $state lives on SessionConfigOwner only", () => {
+    const sessionScoped = readFileSync(`${vmDir}/session-scoped-state.svelte.ts`, "utf8")
+    expect(sessionScoped).not.toMatch(/configOptions\s*=\s*\$state/)
+    expect(sessionScoped).not.toMatch(/models\s*=\s*\$state/)
+    expect(sessionScoped).not.toMatch(/modes\s*=\s*\$state/)
+    expect(CONFIG_SCOPED.size).toBe(3)
+  })
 })
 
-/** C2 transcript ownership + pending-ui-scope; 15 fields remain on AgentSession. */
-const PENDING_CAP = 15
+/** C2 transcript + config owner; 12 fields remain on AgentSession. */
+const PENDING_CAP = 12

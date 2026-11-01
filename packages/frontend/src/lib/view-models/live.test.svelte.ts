@@ -22,6 +22,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { AgentSession } from "./agent-session.svelte"
 import { Live } from "./live.svelte"
 import type { Mic } from "./mic.svelte"
+import { SessionConfigOwner } from "./session-config-owner.svelte"
 import type { Settings } from "./settings.svelte"
 import type { Palette, ThemeVM } from "./theme.svelte"
 
@@ -99,7 +100,18 @@ function mockMic(state: "idle" | "recording" | "transcribing" = "idle") {
   return { state } as unknown as Mic
 }
 
-function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
+type MockSessionOverrides = Partial<AgentSession> & {
+  configOptions?: SessionConfigOwner["configOptions"]
+  models?: SessionConfigOwner["models"]
+  modes?: SessionConfigOwner["modes"]
+}
+
+function mockSession(overrides: MockSessionOverrides = {}): AgentSession {
+  const config = new SessionConfigOwner()
+  const { configOptions, models, modes, ...rest } = overrides
+  if (configOptions !== undefined) config.configOptions = configOptions
+  if (models !== undefined) config.models = models
+  if (modes !== undefined) config.modes = modes
   const base = {
     status: "connected",
     sessionId: "ses_test",
@@ -109,9 +121,7 @@ function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
     pendingPermission: null,
     bubbles: [] as AgentSession["bubbles"],
     lastUserMessage: "",
-    configOptions: [],
-    models: null,
-    modes: null,
+    config,
     supports: { thinkingTokens: false },
     sendPrompt: vi.fn(async (text: string) => {
       base.lastUserMessage = text
@@ -121,7 +131,7 @@ function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
     resolvePermission: vi.fn(),
     applyConfigOption: vi.fn(async () => {}),
     setThinkingTokens: vi.fn(async () => {}),
-    ...overrides,
+    ...rest,
   }
   return base as unknown as AgentSession
 }
@@ -334,6 +344,7 @@ describe("Live outgoing path (Commit 0)", () => {
       isRemoteView: false,
       turnState: "busy" as "idle" | "busy",
       pendingPermission: null,
+      config: new SessionConfigOwner(),
       sendPrompt: vi.fn(async () => {}),
       recentAssistantMessages: vi.fn(() => ["Marked delivery auth.test.ts"]),
       resolvePermission: vi.fn(),
@@ -366,6 +377,7 @@ describe("Live outgoing path (Commit 0)", () => {
       hasAcpClient: true,
       isRemoteView: false,
       turnState: "idle" as const,
+      config: new SessionConfigOwner(),
       pendingPermission: null as {
         requestId: number
         params: {
@@ -1237,6 +1249,43 @@ describe("Live config control (live-config-control)", () => {
     })
 
     expect(applyConfigOption).toHaveBeenCalledWith("verbose", true)
+  })
+
+  it("list_config reflects session.config.configOptions after owner update", async () => {
+    const session = mockSession({ configOptions: [] })
+    await openLive(session)
+    session.config.configOptions = [
+      {
+        id: "verbose",
+        name: "Verbose",
+        type: "boolean",
+        category: null,
+        currentValue: false,
+      },
+    ]
+    providerSend.mockClear()
+
+    providerOnEvent?.({
+      type: "action",
+      id: "cfg-list-after-owner",
+      name: "list_config",
+      args: {},
+    })
+
+    expect(providerSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "action_result",
+        name: "list_config",
+        result: expect.objectContaining({
+          status: "ok",
+          session: expect.objectContaining({
+            options: expect.arrayContaining([
+              expect.objectContaining({ id: "verbose", type: "boolean" }),
+            ]),
+          }),
+        }),
+      }),
+    )
   })
 
   it("injects Hebrew config seed on open", async () => {
