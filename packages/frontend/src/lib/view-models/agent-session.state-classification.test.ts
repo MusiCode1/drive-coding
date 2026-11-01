@@ -72,11 +72,11 @@ describe("agent-session $state classification gate", () => {
         "turnState",
       ].sort(),
     )
-    expect(PENDING_CAP).toBeGreaterThanOrEqual(pending.length)
+    expect(PENDING_CAP).toBe(pending.length)
   })
 
   it("PENDING only shrinks", () => {
-    expect(PENDING_CAP).toBeLessThanOrEqual(15)
+    expect(PENDING_CAP).toBeLessThanOrEqual(11)
   })
 
   it("budget $state lives on SessionBudgetOwner only", () => {
@@ -95,5 +95,5 @@ describe("agent-session $state classification gate", () => {
   })
 })
 
-/** C2 transcript + config owner; 12 fields remain on AgentSession. */
-const PENDING_CAP = 12
+/** C2 transcript + config owner; 11 fields remain on AgentSession. */
+const PENDING_CAP = 11
