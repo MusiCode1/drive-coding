@@ -98,13 +98,13 @@ import {
 import { ErrorScope } from "$lib/view-models/error-scope.svelte"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
 import { LocalTurnWatchOwner } from "$lib/view-models/local-turn-watch-owner.svelte"
-import { SessionBudgetOwner } from "$lib/view-models/session-budget-owner.svelte"
 import {
   installPendingUiOnAgentSession,
   type PendingElicitation,
   type PendingPermission,
   type PendingUiScope,
 } from "$lib/view-models/pending-ui-scope.svelte"
+import { SessionBudgetOwner } from "$lib/view-models/session-budget-owner.svelte"
 import { SessionScope } from "$lib/view-models/session-scoped-state.svelte"
 import { SessionsCacheScope } from "$lib/view-models/sessions-cache-scope.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"

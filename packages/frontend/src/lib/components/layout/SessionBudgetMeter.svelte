@@ -4,9 +4,9 @@
  *
  * slice session-budget-meter, Commit 5.
  *
- * מופיע רק כש-`session.contextUsage` תקין ו-`size>0` (brief §4 Commit 5 UI contract).
+ * מופיע רק כש-`session.budget.contextUsage` תקין ו-`size>0` (brief §4 Commit 5 UI contract).
  * לחיצה פותחת popover read-only (SessionBudgetPopover) עם ACP context + quota רב-ספקי.
- * open → session.refreshQuota() (on-open, לא polling — brief §9 Q4).
+ * open → session.budget.refreshQuota() (on-open, לא polling — brief §9 Q4).
  *
  * ה-UI כאן אגנוסטי לספק לחלוטין — לא מכיר Claude/Codex/שמות חלונות.
  */

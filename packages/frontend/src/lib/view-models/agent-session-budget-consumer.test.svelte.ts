@@ -14,12 +14,23 @@ describe("AgentSession budget — mutation gate", () => {
     expect(src).toMatch(/#cleanup[\s\S]*this\.#budgetOwner\.reset\(\)/)
   })
 
-  it("facade exposes budget owner without per-field getters", () => {
+  it("facade exposes budget owner without per-field getters or setters", () => {
     const src = readFileSync(vmPath, "utf8")
     expect(src).not.toMatch(/get contextUsage\(\)/)
     expect(src).not.toMatch(/get quota\(\)/)
     expect(src).not.toMatch(/get quotaLoading\(\)/)
+    expect(src).not.toMatch(/set contextUsage\(/)
+    expect(src).not.toMatch(/set quota\(/)
+    expect(src).not.toMatch(/set quotaLoading\(/)
     expect(src).toMatch(/readonly budget!: SessionBudgetOwner/)
+  })
+
+  it("SessionScope source has no budget $state fields", () => {
+    const scopePath = fileURLToPath(new URL("./session-scoped-state.svelte.ts", import.meta.url))
+    const src = readFileSync(scopePath, "utf8")
+    expect(src).not.toMatch(/contextUsage\s*=\s*\$state/)
+    expect(src).not.toMatch(/quota\s*=\s*\$state/)
+    expect(src).not.toMatch(/quotaLoading\s*=\s*\$state/)
   })
 })
 
