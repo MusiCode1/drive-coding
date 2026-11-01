@@ -757,13 +757,13 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
     // ⚠️ טענה ישירה: בלעדיה, הסרת ההשמה ל-#sessionId לא נתפסת — refreshQuota
     // פשוט יוצא מוקדם, המכסה שורדת, והטסט עובר מהסיבה הלא-נכונה.
     expect(agent._sessionIdForTest()).toBe("sess-q")
-    expect(agent.quota).toEqual(quota) // הגיע מהמצב
+    expect(agent.budget.quota).toEqual(quota) // הגיע מהמצב
 
-    await agent.refreshQuota() // פתיחת הפופאובר
+    await agent.budget.refreshQuota() // פתיחת הפופאובר
     await delay()
 
-    expect(agent.quota).toEqual(quota) // ⚠️ שרד — זו כל הבדיקה
-    expect(agent.quotaLoading).toBe(false)
+    expect(agent.budget.quota).toEqual(quota) // ⚠️ שרד — זו כל הבדיקה
+    expect(agent.budget.quotaLoading).toBe(false)
   })
 
   it("success: view created with the agentId — no createAgent — bubbles populated with the exact history", async () => {

@@ -514,7 +514,7 @@ describe("DoD 13 — authMethods · _meta · captureSessionConfig · notify · a
       image: false,
       systemPrompt: "unsupported",
     } as never)
-    await session.refreshQuota()
+    await session.budget.refreshQuota()
     expect(vh.state.client.extMethod).toHaveBeenCalledWith(
       "_drive/getQuota",
       expect.objectContaining({ sessionId: "sess-new" }),

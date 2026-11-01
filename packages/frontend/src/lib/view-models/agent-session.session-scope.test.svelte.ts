@@ -77,12 +77,9 @@ function seedSessionA(session: AgentSession): void {
     order: ["__default__"],
     byId: { __default__: { kind: "entries", entries: [{ content: "step", status: "pending" }] } },
   }
-  session.contextUsage = {
-    usedTokens: 1,
-    maxTokens: 100,
-  } as AgentSession["contextUsage"]
-  session.quota = { provider: "test", windows: [] }
-  session.quotaLoading = true
+  session.budget.contextUsage = { used: 1, size: 100, cost: undefined }
+  session.budget.quota = { provider: "test", windows: [] }
+  session.budget.quotaLoading = true
 }
 
 /** Assert all nine session-scoped fields (§8.3) — use expect.soft so base runs report every leak. */
@@ -96,9 +93,9 @@ function expectSessionScopedDefaultsSoft(
   expect.soft(session.sessionFields).toEqual({})
   expect.soft(session.availableCommands).toEqual([])
   expect.soft(session.planStore).toEqual(EMPTY_PLAN_STORE)
-  expect.soft(session.contextUsage).toBeNull()
-  expect.soft(session.quota).toBeNull()
-  expect.soft(session.quotaLoading).toBe(false)
+  expect.soft(session.budget.contextUsage).toBeNull()
+  expect.soft(session.budget.quota).toBeNull()
+  expect.soft(session.budget.quotaLoading).toBe(false)
 }
 
 function delay(ms = 10): Promise<void> {
@@ -279,9 +276,9 @@ describe("AgentSession session-scope boundary", () => {
     expect.soft(session.sessionFields).toEqual({})
     expect.soft(session.availableCommands).toEqual([])
     expect.soft(session.planStore).toEqual(EMPTY_PLAN_STORE)
-    expect.soft(session.contextUsage).toBeNull()
-    expect.soft(session.quota).toBeNull()
-    expect.soft(session.quotaLoading).toBe(false)
+    expect.soft(session.budget.contextUsage).toBeNull()
+    expect.soft(session.budget.quota).toBeNull()
+    expect.soft(session.budget.quotaLoading).toBe(false)
     expect.soft(session.sessionTitle).toBe("🧪 greeting")
   })
 })

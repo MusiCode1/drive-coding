@@ -12,10 +12,13 @@ const settings = new Settings()
 setI18n(new I18nVM({ settings }))
 
 const sessionStub = {
-  contextUsage: { used: 100, size: 1000, cost: { amount: 0.1 } },
+  budget: {
+    contextUsage: { used: 100, size: 1000, cost: { amount: 0.1 } },
+    quotaLoading: false,
+    quota: null,
+    refreshQuota: async () => {},
+  },
   supports: { usage: false },
-  quotaLoading: false,
-  quota: null,
 } as unknown as AgentSession
 setSession(sessionStub)
 </script>

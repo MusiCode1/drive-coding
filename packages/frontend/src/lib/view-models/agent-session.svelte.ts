@@ -89,7 +89,6 @@ import {
   type SessionWriteTarget,
   type SwitchSessionInput,
 } from "$lib/view-models/agent-session-operations"
-import { doRefreshQuota, type QuotaRefreshDeps } from "$lib/view-models/agent-session-quota-refresh"
 import {
   endSessionScope,
   registerSessionEndListener,
@@ -99,6 +98,7 @@ import {
 import { ErrorScope } from "$lib/view-models/error-scope.svelte"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
 import { LocalTurnWatchOwner } from "$lib/view-models/local-turn-watch-owner.svelte"
+import { SessionBudgetOwner } from "$lib/view-models/session-budget-owner.svelte"
 import {
   installPendingUiOnAgentSession,
   type PendingElicitation,
@@ -122,8 +122,6 @@ const IMAGE_INPUT_ENABLED = true
 import type { PlanStore } from "@drive-coding/core/acp/plan"
 // ─── slice session-state-reducer C4: reduce + types ─── (additive)
 import { createInitialSessionState, type SessionState } from "@drive-coding/core/session"
-// ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
-import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 // ─── slice FE-normalization: ייבוא ─── (additive)
 // import type בלבד — NormalizedCapabilities מ-subpath ./types (pure, ללא spawn-core).
 // ⚠️ אל תייבא value מ-@drive-coding/provider/host → יגרור spawn-core → vite crash.
@@ -211,6 +209,9 @@ export class AgentSession {
   readonly turnWatch!: Readonly<Pick<LocalTurnWatchOwner, "stalled">>
   #turnWatchOwner!: LocalTurnWatchOwner
 
+  readonly budget!: SessionBudgetOwner
+  #budgetOwner!: SessionBudgetOwner
+
   constructor(opts?: {
     view?: SessionView
     cues?: CuesEngine
@@ -243,6 +244,13 @@ export class AgentSession {
     })
     this.turnWatch = this.#turnWatchOwner
     if (browser) this.#turnWatchOwner.start()
+    this.#budgetOwner = new SessionBudgetOwner({
+      sessionId: () => this.#sessionId,
+      supportsUsage: () => this.supports.usage,
+      isRemote: () => this.#remoteView() !== null,
+      ext: () => this.#ext,
+    })
+    this.budget = this.#budgetOwner
     // ─── slice session-view-port C3: אם view הוזרק ─── (additive)
     if (opts?.view) {
       this.#view = opts.view
@@ -355,24 +363,6 @@ export class AgentSession {
   }
   set planStore(v: PlanStore) {
     this.#session.planStore = v
-  }
-  get contextUsage(): UsageUpdate | null {
-    return this.#session.contextUsage
-  }
-  set contextUsage(v: UsageUpdate | null) {
-    this.#session.contextUsage = v
-  }
-  get quota(): QuotaSnapshot | null {
-    return this.#session.quota
-  }
-  set quota(v: QuotaSnapshot | null) {
-    this.#session.quota = v
-  }
-  get quotaLoading(): boolean {
-    return this.#session.quotaLoading
-  }
-  set quotaLoading(v: boolean) {
-    this.#session.quotaLoading = v
   }
 
   // ─── slice reconnect-bubble-merge: render-consumers (additive) ───
@@ -529,17 +519,6 @@ export class AgentSession {
   // ─── slice FE-normalization: capabilities ─── (additive)
   /** NormalizedCapabilities שהתקבלו מ-_drive/capabilities ext notification. null = טרם התקבל. */
   #capabilities: NormalizedCapabilities | null = null
-  // ─── slice session-budget-meter Commit 4: mock quota harness (DEV-only) ─── (additive)
-  /**
-   * snapshot מדומה ל-mock harness בלבד (`/chat?mock=<fixture>` עם `mockState.quota`).
-   * undefined = לא הוזרק ע"י fixture (ברירת המחדל). null = הוזרק במפורש כ"אין מגבלות".
-   * `refreshQuota()` מעתיק את זה ל-`quota` הציבורי רק כש-sessionId מתחיל "mock:" וגם
-   * הערך `!== undefined` — כדי ש-open→refresh→render יעבור דרך אותה מתודה כמו production.
-   * מתאפס ב-#cleanup ו-#captureSessionConfig (brief §0 "התאמת scope").
-   */
-  #mockQuota: QuotaSnapshot | null | undefined = undefined
-  /** Promise פעיל של refreshQuota — dedupe לפתיחות popover מקבילות (brief §4 Commit 4). */
-  #quotaFetchInFlight: Promise<void> | null = null
   /** Counter פנימי ל-spike raw SDK. לא נרנדר ב-UI. */
   #claudeRawSdkMessageCount = 0
   /** slice connection-set C2: one id per VM lifetime — SSE header, presence, WS query, DELETE. */
@@ -552,7 +531,10 @@ export class AgentSession {
    * from the one the current scope was born for (compare `#session.sessionId`, not `#sessionId`).
    */
   #enterSession(id: string | null): void {
-    if (this.#session.sessionId !== id) this.#session = new SessionScope(id)
+    if (this.#session.sessionId !== id) {
+      this.#session = new SessionScope(id)
+      this.#budgetOwner.reset()
+    }
     this.#sessionId = id
   }
 
@@ -638,20 +620,6 @@ export class AgentSession {
     }
   }
 
-  #quotaRefreshDeps(): QuotaRefreshDeps {
-    return {
-      sessionId: () => this.#sessionId,
-      mockQuota: () => this.#mockQuota,
-      ext: () => this.#ext,
-      setQuota: (v) => {
-        this.quota = v
-      },
-      setQuotaLoading: (v) => {
-        this.quotaLoading = v
-      },
-    }
-  }
-
   #captureSessionConfigDeps(): CaptureSessionConfigDeps {
     return {
       setConfigOptions: (v) => {
@@ -666,17 +634,8 @@ export class AgentSession {
       setAvailableCommands: (v) => {
         this.availableCommands = v
       },
-      setContextUsage: (v) => {
-        this.contextUsage = v
-      },
-      setQuota: (v) => {
-        this.quota = v
-      },
-      setQuotaLoading: (v) => {
-        this.quotaLoading = v
-      },
-      setMockQuota: (v) => {
-        this.#mockQuota = v
+      resetBudget: () => {
+        this.#budgetOwner.reset()
       },
       session: () => this.#session,
       setPlanStore: (v) => {
@@ -762,11 +721,8 @@ export class AgentSession {
         set planStore(v) {
           vm.planStore = v
         },
-        get contextUsage() {
-          return vm.contextUsage
-        },
-        set contextUsage(v) {
-          vm.contextUsage = v
+        mergeUsage: (u) => {
+          this.#budgetOwner.mergeUsage(u)
         },
         get titleManual() {
           return vm.titleManual
@@ -880,18 +836,16 @@ export class AgentSession {
     const vt = viewState.turnState as TurnState
     if (vt !== this.turnState) this.#setTurnState(vt)
     syncTitleFromViewState(this, viewState.title)
-    // contextUsage (אופציונלי — אפסר לאמץ ל-UsageUpdate סטרקטורלית)
-    if (viewState.contextUsage !== this.contextUsage) {
-      this.contextUsage = viewState.contextUsage as typeof this.contextUsage
-    }
+    this.#budgetOwner.updateFromView({
+      contextUsage: viewState.contextUsage as UsageUpdate | null,
+      quota: viewState.quota,
+    })
     // commands
     this.availableCommands = viewState.commands as typeof this.availableCommands
     // modes
     this.modes = viewState.modes as typeof this.modes
     // configOptions
     this.configOptions = viewState.configOptions as typeof this.configOptions
-    // quota
-    if (viewState.quota !== this.quota) this.quota = viewState.quota
     // ─── slice http-usable C1: capabilities from SessionState → #capabilities ───
     // In remote there is no #client, and _drive/capabilities is only sent by
     // ws-agent — so supportsImageInput was always false over HTTP. The BE now
@@ -999,13 +953,6 @@ export class AgentSession {
    */
   _setErrorSurfacedForTest(v: boolean): void {
     this.#errorScope.surfaced = v
-  }
-  /**
-   * @internal slice session-budget-meter Commit 4 — מזריק #mockQuota ישירות לטסט,
-   * בלי תלות ב-fixture JSON (ה-wiring האמיתי דרך mockState.quota מגיע ב-Commit 5).
-   */
-  _setMockQuotaForTest(q: QuotaSnapshot | null | undefined): void {
-    this.#mockQuota = q
   }
   /**
    * @internal **predicate טהור** — מחזיר האם onClose עם ה-code הנתון *היה* מצית
@@ -1652,66 +1599,6 @@ export class AgentSession {
     await this.#ext.setThinkingTokens(this.#sessionId, n)
   }
 
-  // ─── slice session-budget-meter Commit 4: refreshQuota ─── (תוספתי)
-
-  /**
-   * מרענן את `quota` מ-`_drive/getQuota` (on-open בלבד — לא polling, brief §9 Q4).
-   * ציבורית — הפופאובר קורא לה ב-on-open.
-   *
-   * כללים (brief §4 Commit 4):
-   *   - `supports.usage===false` → אין request (ה-quota section מוסתר ב-UI ממילא).
-   *     **חריג**: ה-DEV mock harness עוקף את הבדיקה הזו במפורש — mock sessions לא
-   *     עוברות דרך `_drive/capabilities` האמיתי (אין #client/#ext ל-mock בכלל), ולכן
-   *     `supports.usage` לא בהכרח true גם כש-mockState.capabilities מבקש usage:true
-   *     (המיזוג ל-#capabilities מגיע ב-Commit 5). הבדיקה על sessionId+#mockQuota
-   *     מספיקה כדי לזהות "זהו debug harness מכוון", לא request אמיתי.
-   *   - dedupe: פתיחות מקבילות חולקות את אותו Promise, לא שולחות בקשות כפולות.
-   *   - race safety: sessionId נלכד לפני ה-await; תשובה שמגיעה אחרי session
-   *     switch/cleanup (`this.#sessionId !== capturedSessionId`) לא נכתבת.
-   *   - error/unavailable → `quota=null`, `quotaLoading` מסתיים, אין קריסה ב-UI.
-   *   - DEV-only mock harness: sessionId מתחיל "mock:" + `#mockQuota !== undefined` →
-   *     מעתיק ל-quota בלי ext request (אותו flow open→refresh→render כמו production).
-   */
-  refreshQuota = async (): Promise<void> => {
-    const sessionId = this.#sessionId
-    if (sessionId === null) return
-
-    const isMockWithSnapshot =
-      import.meta.env.MODE !== "production" &&
-      sessionId.startsWith("mock:") &&
-      this.#mockQuota !== undefined
-
-    if (!isMockWithSnapshot && !this.supports.usage) return
-
-    // ─── slice http-state-gaps C4: ב-remote המכסה מגיעה מערוץ-המצב ───
-    // ⚠️ בלי היציאה הזו, refreshQuota לא רק "לא מביא" — הוא **מוחק**:
-    // ב-remote אין #ext (הוא נבנה מעל #client שאינו קיים שם), ולכן
-    // #doRefreshQuota נופל ל-`quota = null` ודורס ערך תקין שכבר הגיע
-    // מ-#syncFromViewState. ⇒ גם עם ה-BE מתוקן, המשתמשת לא תראה כלום.
-    // ב-remote ה-BE קורא getQuota וכותב ל-state; ה-FE רק צורך.
-    if (this.#remoteView() && !isMockWithSnapshot) {
-      this.quotaLoading = false
-      return
-    }
-
-    if (this.#quotaFetchInFlight) {
-      await this.#quotaFetchInFlight
-      return
-    }
-
-    this.quotaLoading = true
-    const fetchPromise = this.#doRefreshQuota(sessionId).finally(() => {
-      this.#quotaFetchInFlight = null
-    })
-    this.#quotaFetchInFlight = fetchPromise
-    await fetchPromise
-  }
-
-  /** מבצע את בקשת ה-quota בפועל, עם guard נגד כתיבה אחרי session switch/cleanup. */
-  #doRefreshQuota = async (sessionId: string): Promise<void> => {
-    await doRefreshQuota(this.#quotaRefreshDeps(), sessionId)
-  }
-
   // Bound config snapshots share the controller lifetime token.
   #boundConfigDeps(target = this.#operations.captureTarget()): ApplyConfigOptionDeps {
     return bindConfigDeps(this.#applyConfigOptionDeps(), () => target.isCurrent())
@@ -1923,11 +1810,7 @@ export class AgentSession {
     this.#pendingUi.resetAnsweredIds()
     this.#ext = null // slice FE-normalization: נקה facade
     this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
-    this.contextUsage = null // slice session-budget-meter: נקה context-usage (חיבור חדש = caps חדשים)
-    this.quota = null // slice session-budget-meter Commit 4: נקה quota
-    this.quotaLoading = false
-    this.#mockQuota = undefined
-    this.#quotaFetchInFlight = null
+    this.#budgetOwner.reset()
     this.#claudeRawSdkMessageCount = 0
     // slice subagent-transcript-data-v2: נקה state תעתיק תת-סוכן (חיבור חדש = index/pending חדשים)
     this.#transcript.resetSubagentProjection()
@@ -1969,7 +1852,7 @@ export class AgentSession {
       enterSession: (sessionKey) => this.#enterSession(sessionKey),
       captureSessionConfig: (result) => this.#captureSessionConfig(result),
       setMockQuota: (v) => {
-        this.#mockQuota = v
+        this.#budgetOwner.setMockQuota(v)
       },
       setCapabilities: (v) => {
         this.#capabilities = v

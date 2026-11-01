@@ -2825,3 +2825,23 @@ C1 מממש את `InProcessAcpTransport` — byte-transport מעל `conn.wire` �
   - close(): מבטל את readable
   - onClose: adapter מ-BridgeCrashInfo ל-(code, reason) — exitCode, signal, clean exit
 - typecheck נקי ✅ (0 errors חדשים)
+
+## 2026-11-01 — slice state-agent-session-budget-owner (אליעזר)
+
+### מה בוצע
+
+- `SessionBudgetOwner` — מצב `contextUsage` / `quota` / `quotaLoading`, `updateFromView`, `mergeUsage`, `refreshQuota`, generation guard על reset.
+- `AgentSession.budget` — הוסרו getters/setters ושדות budget מ-`SessionScope`; consumers (meter/popover/tests) עברו ל-`session.budget`.
+- חילוץ `SessionBudgetQuotaPanel` + `session-budget-display.ts` — כיווץ `SessionBudgetPopover` ל-ratchet.
+
+### בדיקות
+
+- FE vitest: 2450/2450 ✅
+- `tsc --build` ✅
+- `typecheck:fe`: 28 errors (baseline 29; אין diagnostics חדשים בקבצי הסלייס)
+- `CI=1 bun run test`: 11 failures / 8 files — **דלתא אפס** מול base `a91eced8`
+- size ratchet: `agent-session.svelte.ts` codeLines 1357→1290; baseline עודכן ✅
+
+### חסם
+
+- Svelte-MCP לא זמין בסביבה — חוזה ריאקטיביות נקבע לפי `LocalTurnWatchOwner` + טסט consumer.

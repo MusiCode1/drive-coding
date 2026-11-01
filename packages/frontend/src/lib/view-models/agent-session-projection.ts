@@ -27,7 +27,7 @@ type ProjectionUi = {
   configOptions: SessionConfigOption[]
   availableCommands: AvailableCommand[]
   planStore: PlanStore
-  contextUsage: UsageUpdate | null
+  mergeUsage: (update: UsageUpdate) => void
   titleManual: boolean
   sessionTitle: string
 }
@@ -207,12 +207,7 @@ function applyFrame(d: AgentSessionProjectionDeps, frame: FrameData, publish: ()
         d.ui.planStore = reducePlan(d.ui.planStore, update)
         break
       case "usage": {
-        const u = update as unknown as UsageUpdate
-        d.ui.contextUsage = {
-          used: u.used,
-          size: u.size,
-          cost: u.cost ?? d.ui.contextUsage?.cost,
-        }
+        d.ui.mergeUsage(update as unknown as UsageUpdate)
         break
       }
       case "title": {

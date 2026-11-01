@@ -129,7 +129,7 @@ beforeEach(() => {
 describe("AgentSession — usage_update handler", () => {
   it("מאכלס contextUsage עם update מלא (used/size/cost)", async () => {
     const session = await buildConnectedSession()
-    expect(session.contextUsage).toBeNull()
+    expect(session.budget.contextUsage).toBeNull()
 
     inject({
       sessionUpdate: "usage_update",
@@ -138,7 +138,7 @@ describe("AgentSession — usage_update handler", () => {
       cost: { amount: 0.12, currency: "USD" },
     })
 
-    expect(session.contextUsage).toEqual({
+    expect(session.budget.contextUsage).toEqual({
       used: 25_000,
       size: 200_000,
       cost: { amount: 0.12, currency: "USD" },
@@ -154,12 +154,12 @@ describe("AgentSession — usage_update handler", () => {
       size: 200_000,
       cost: { amount: 0.05, currency: "USD" },
     })
-    expect(session.contextUsage?.cost).toEqual({ amount: 0.05, currency: "USD" })
+    expect(session.budget.contextUsage?.cost).toEqual({ amount: 0.05, currency: "USD" })
 
     // update חדש בלי cost — לא אמור למחוק את ה-cost הקודם
     inject({ sessionUpdate: "usage_update", used: 15_000, size: 200_000 })
 
-    expect(session.contextUsage).toEqual({
+    expect(session.budget.contextUsage).toEqual({
       used: 15_000,
       size: 200_000,
       cost: { amount: 0.05, currency: "USD" },
@@ -170,13 +170,13 @@ describe("AgentSession — usage_update handler", () => {
     const session = await buildConnectedSession()
 
     inject({ sessionUpdate: "usage_update", used: 1_000, size: 200_000 })
-    expect(session.contextUsage?.used).toBe(1_000)
+    expect(session.budget.contextUsage?.used).toBe(1_000)
 
     inject({ sessionUpdate: "usage_update", used: 2_000, size: 200_000 })
-    expect(session.contextUsage?.used).toBe(2_000)
+    expect(session.budget.contextUsage?.used).toBe(2_000)
 
     inject({ sessionUpdate: "usage_update", used: 3_000, size: 200_000 })
-    expect(session.contextUsage?.used).toBe(3_000)
+    expect(session.budget.contextUsage?.used).toBe(3_000)
   })
 
   it("size=0 לא קורס — הערך נשמר כפי שהוא (ה-UI אחראי ל-clamp/הסתרה)", async () => {
@@ -186,7 +186,7 @@ describe("AgentSession — usage_update handler", () => {
       inject({ sessionUpdate: "usage_update", used: 0, size: 0 })
     }).not.toThrow()
 
-    expect(session.contextUsage).toEqual({ used: 0, size: 0, cost: undefined })
+    expect(session.budget.contextUsage).toEqual({ used: 0, size: 0, cost: undefined })
   })
 
   it("#captureSessionConfig מאפס contextUsage בהחלפת/פתיחת סשן", async () => {
@@ -198,23 +198,23 @@ describe("AgentSession — usage_update handler", () => {
       size: 200_000,
       cost: { amount: 0.02, currency: "USD" },
     })
-    expect(session.contextUsage).not.toBeNull()
+    expect(session.budget.contextUsage).not.toBeNull()
 
     // ניתוק ופתיחת סשן חדש → #captureSessionConfig מאפס
     session.detach()
     await session.attach({ cwd: "/tmp2", cliKind: "opencode" })
 
-    expect(session.contextUsage).toBeNull()
+    expect(session.budget.contextUsage).toBeNull()
   })
 
   it("#cleanup (detach) מאפס contextUsage", async () => {
     const session = await buildConnectedSession()
 
     inject({ sessionUpdate: "usage_update", used: 5_000, size: 200_000 })
-    expect(session.contextUsage).not.toBeNull()
+    expect(session.budget.contextUsage).not.toBeNull()
 
     session.detach()
 
-    expect(session.contextUsage).toBeNull()
+    expect(session.budget.contextUsage).toBeNull()
   })
 })

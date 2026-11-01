@@ -21,11 +21,13 @@ const t = i18n.t
 let open = $state(false)
 
 // מופיע רק עם contextUsage תקין ו-size>0 (brief §4 Commit 5 UI contract).
-const visible = $derived(session.contextUsage !== null && session.contextUsage.size > 0)
+const visible = $derived(
+  session.budget.contextUsage !== null && session.budget.contextUsage.size > 0,
+)
 
 // round(used/size*100) עם clamp ל-0..100.
 const percent = $derived.by(() => {
-  const usage = session.contextUsage
+  const usage = session.budget.contextUsage
   if (usage === null || usage.size <= 0) return 0
   const raw = Math.round((usage.used / usage.size) * 100)
   return Math.min(100, Math.max(0, raw))
@@ -33,7 +35,7 @@ const percent = $derived.by(() => {
 
 function handleOpenChange(next: boolean): void {
   open = next
-  if (next) void session.refreshQuota()
+  if (next) void session.budget.refreshQuota()
 }
 </script>
 

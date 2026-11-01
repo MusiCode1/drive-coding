@@ -1,7 +1,5 @@
 import type { AvailableCommand } from "@agentclientprotocol/sdk"
-import type { UsageUpdate } from "@agentclientprotocol/sdk"
 import { EMPTY_PLAN_STORE, type PlanStore } from "@drive-coding/core/acp/plan"
-import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 
 /** Per-session state. A new instance is born on each **identity change**, not on every method call. */
 export class SessionScope {
@@ -14,9 +12,6 @@ export class SessionScope {
   sessionFields = $state<Record<string, string>>({})
   availableCommands = $state<AvailableCommand[]>([])
   planStore = $state<PlanStore>(EMPTY_PLAN_STORE)
-  contextUsage = $state<UsageUpdate | null>(null)
-  quota = $state<QuotaSnapshot | null>(null)
-  quotaLoading = $state(false)
 
   /** Private on VM today; not $state, no bridge getter. */
   subagentToolCallParents: Map<string, string> = new Map()

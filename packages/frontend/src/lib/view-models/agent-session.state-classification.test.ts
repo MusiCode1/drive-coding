@@ -11,10 +11,9 @@ const SESSION_SCOPED = new Set([
   "sessionFields",
   "availableCommands",
   "planStore",
-  "contextUsage",
-  "quota",
-  "quotaLoading",
 ])
+
+const BUDGET_SCOPED = new Set(["contextUsage", "quota", "quotaLoading"])
 
 const AGENT_SCOPED = new Set(["#errorScope"])
 
@@ -47,6 +46,7 @@ describe("agent-session $state classification gate", () => {
       new Set([...AGENT_SCOPED, "#session", "sessionsCache"]),
     ),
     ...pendingIn("local-turn-watch-owner.svelte.ts", TURN_WATCH_SCOPED),
+    ...pendingIn("session-budget-owner.svelte.ts", BUDGET_SCOPED),
     ...pendingIn("pending-ui-scope.svelte.ts", PENDING_UI_SCOPED),
     ...pendingIn("session-scoped-state.svelte.ts", SESSION_SCOPED),
     ...pendingIn("sessions-cache-scope.svelte.ts", CONNECTION_SCOPED),
@@ -77,6 +77,13 @@ describe("agent-session $state classification gate", () => {
 
   it("PENDING only shrinks", () => {
     expect(PENDING_CAP).toBeLessThanOrEqual(23)
+  })
+
+  it("budget $state lives on SessionBudgetOwner only", () => {
+    const sessionScoped = readFileSync(`${vmDir}/session-scoped-state.svelte.ts`, "utf8")
+    expect(sessionScoped).not.toMatch(/contextUsage\s*=\s*\$state/)
+    expect(sessionScoped).not.toMatch(/quota\s*=\s*\$state/)
+    expect(BUDGET_SCOPED.size).toBe(3)
   })
 })
 

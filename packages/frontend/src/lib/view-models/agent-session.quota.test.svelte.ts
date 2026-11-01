@@ -1,5 +1,5 @@
 /**
- * agent-session.quota.test.svelte.ts — TDD עבור refreshQuota()/quota/quotaLoading
+ * agent-session.budget.quota.test.svelte.ts — TDD עבור refreshQuota()/quota/quotaLoading
  * (slice-session-budget-meter, Commit 4).
  *
  * מראה מדויק של agent-session.context-usage.test.svelte.ts, עם mock ל-ExtClient
@@ -112,7 +112,7 @@ vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("test-uuid") })
 
 // #loadMockSession fetches /fixtures/<name>.json. Default stub returns minimal valid
 // content (empty updates) for most tests — the mock-harness tests below inject #mockQuota
-// directly via _setMockQuotaForTest, so the fixture body is usually irrelevant. The
+// directly via session.budget.setMockQuota, so the fixture body is usually irrelevant. The
 // "real fixture" describe block at the bottom overrides this per-URL to serve the
 // ACTUAL committed session-budget-monthly.json (Commit 5 data-flow-bridge integration test).
 type MockFetchResponse = { ok: boolean; json: () => Promise<unknown> }
@@ -192,10 +192,10 @@ describe("AgentSession — refreshQuota()", () => {
     const session2 = new AgentSession()
     await session2.attach({ cwd: "/tmp2", cliKind: "opencode" })
 
-    await session2.refreshQuota()
+    await session2.budget.refreshQuota()
 
     expect(getQuotaSpy).not.toHaveBeenCalled()
-    expect(session2.quota).toBeNull()
+    expect(session2.budget.quota).toBeNull()
     void session // keep first session referenced (attach side-effects only)
   })
 
@@ -214,31 +214,31 @@ describe("AgentSession — refreshQuota()", () => {
     }
     getQuotaSpy.mockResolvedValue(snapshot)
 
-    await session.refreshQuota()
+    await session.budget.refreshQuota()
 
     expect(getQuotaSpy).toHaveBeenCalledWith("s-quota-test")
-    expect(session.quota).toEqual(snapshot)
-    expect(session.quotaLoading).toBe(false)
+    expect(session.budget.quota).toEqual(snapshot)
+    expect(session.budget.quotaLoading).toBe(false)
   })
 
   it("null result — quota=null (valid 'no limits available' response, not an error)", async () => {
     const session = await buildConnectedSession()
     getQuotaSpy.mockResolvedValue(null)
 
-    await session.refreshQuota()
+    await session.budget.refreshQuota()
 
-    expect(session.quota).toBeNull()
-    expect(session.quotaLoading).toBe(false)
+    expect(session.budget.quota).toBeNull()
+    expect(session.budget.quotaLoading).toBe(false)
   })
 
   it("error — quota=null, quotaLoading ends, no throw out of refreshQuota", async () => {
     const session = await buildConnectedSession()
     getQuotaSpy.mockRejectedValue(new Error("network error"))
 
-    await expect(session.refreshQuota()).resolves.toBeUndefined()
+    await expect(session.budget.refreshQuota()).resolves.toBeUndefined()
 
-    expect(session.quota).toBeNull()
-    expect(session.quotaLoading).toBe(false)
+    expect(session.budget.quota).toBeNull()
+    expect(session.budget.quotaLoading).toBe(false)
   })
 
   it("quotaLoading is true while the request is pending", async () => {
@@ -246,14 +246,14 @@ describe("AgentSession — refreshQuota()", () => {
     const deferred = makeDeferred<QuotaSnapshot | null>()
     getQuotaSpy.mockReturnValue(deferred.promise)
 
-    const p = session.refreshQuota()
+    const p = session.budget.refreshQuota()
     // סינכרוני-עד-await הראשון — quotaLoading כבר true לפני שה-promise resolve
-    expect(session.quotaLoading).toBe(true)
+    expect(session.budget.quotaLoading).toBe(true)
 
     deferred.resolve(null)
     await p
 
-    expect(session.quotaLoading).toBe(false)
+    expect(session.budget.quotaLoading).toBe(false)
   })
 
   it("dedupe — two concurrent refreshQuota() calls share one ext request", async () => {
@@ -261,8 +261,8 @@ describe("AgentSession — refreshQuota()", () => {
     const deferred = makeDeferred<QuotaSnapshot | null>()
     getQuotaSpy.mockReturnValue(deferred.promise)
 
-    const p1 = session.refreshQuota()
-    const p2 = session.refreshQuota()
+    const p1 = session.budget.refreshQuota()
+    const p2 = session.budget.refreshQuota()
 
     expect(getQuotaSpy).toHaveBeenCalledTimes(1)
 
@@ -277,8 +277,8 @@ describe("AgentSession — refreshQuota()", () => {
     const deferred = makeDeferred<QuotaSnapshot | null>()
     getQuotaSpy.mockReturnValue(deferred.promise)
 
-    const p = session.refreshQuota()
-    expect(session.quotaLoading).toBe(true)
+    const p = session.budget.refreshQuota()
+    expect(session.budget.quotaLoading).toBe(true)
 
     // switch session mid-flight (detach + attach) — #captureSessionConfig/#cleanup reset quota
     session.detach()
@@ -304,7 +304,7 @@ describe("AgentSession — refreshQuota()", () => {
     })
     await p
 
-    expect(session.quota).toBeNull()
+    expect(session.budget.quota).toBeNull()
   })
 
   it("cleanup (detach) while pending — stale response is not written, loading resets", async () => {
@@ -312,20 +312,20 @@ describe("AgentSession — refreshQuota()", () => {
     const deferred = makeDeferred<QuotaSnapshot | null>()
     getQuotaSpy.mockReturnValue(deferred.promise)
 
-    const p = session.refreshQuota()
+    const p = session.budget.refreshQuota()
     session.detach()
 
     deferred.resolve({ provider: "claude", windows: [] })
     await p
 
-    expect(session.quota).toBeNull()
-    expect(session.quotaLoading).toBe(false)
+    expect(session.budget.quota).toBeNull()
+    expect(session.budget.quotaLoading).toBe(false)
   })
 })
 
 describe("AgentSession — refreshQuota() DEV mock harness", () => {
   // slice-session-budget-meter Commit 4: the mock harness plumbing itself (state +
-  // refreshQuota copy-behavior) is tested here via _setMockQuotaForTest — a DEV-only
+  // refreshQuota copy-behavior) is tested here via session.budget.setMockQuota — a DEV-only
   // test hook (mirrors _setStatusForTest et al). The real fixture wiring (mockState.quota
   // → #mockQuota, mockState.capabilities merge) lands in Commit 5; this proves the
   // mechanism works independent of that wiring, per brief §4 Commit 4 "mock monthly" test.
@@ -333,7 +333,7 @@ describe("AgentSession — refreshQuota() DEV mock harness", () => {
   it("before open: quota=null even though a mock session is loaded", async () => {
     const session = new AgentSession()
     await session.loadSession({ sessionId: "mock:session-budget-monthly", cwd: "/mock", cliKind: "opencode" })
-    session._setMockQuotaForTest({
+    session.budget.setMockQuota({
       provider: "synthetic",
       windows: [
         {
@@ -345,7 +345,7 @@ describe("AgentSession — refreshQuota() DEV mock harness", () => {
       ],
     })
 
-    expect(session.quota).toBeNull()
+    expect(session.budget.quota).toBeNull()
   })
 
   it("refreshQuota() copies the injected mock snapshot to quota, without calling ext", async () => {
@@ -362,11 +362,11 @@ describe("AgentSession — refreshQuota() DEV mock harness", () => {
         },
       ],
     }
-    session._setMockQuotaForTest(monthlySnapshot)
+    session.budget.setMockQuota(monthlySnapshot)
 
-    await session.refreshQuota()
+    await session.budget.refreshQuota()
 
-    expect(session.quota).toEqual(monthlySnapshot)
+    expect(session.budget.quota).toEqual(monthlySnapshot)
     expect(getQuotaSpy).not.toHaveBeenCalled()
   })
 
@@ -374,25 +374,25 @@ describe("AgentSession — refreshQuota() DEV mock harness", () => {
     const session = new AgentSession()
     await session.loadSession({ sessionId: "mock:greeting", cwd: "/mock", cliKind: "opencode" })
 
-    await session.refreshQuota()
+    await session.budget.refreshQuota()
 
     // no #mockQuota injected + no real #ext (mock path never creates one) → unavailable, no crash.
-    expect(session.quota).toBeNull()
+    expect(session.budget.quota).toBeNull()
     expect(getQuotaSpy).not.toHaveBeenCalled()
   })
 
   it("#mockQuota resets on #cleanup — does not leak into the next session", async () => {
     const session = new AgentSession()
     await session.loadSession({ sessionId: "mock:session-budget-monthly", cwd: "/mock", cliKind: "opencode" })
-    session._setMockQuotaForTest({ provider: "synthetic", windows: [] })
+    session.budget.setMockQuota({ provider: "synthetic", windows: [] })
 
     session.detach()
 
     // new mock session — #mockQuota must be undefined again (reset in #cleanup)
     await session.loadSession({ sessionId: "mock:greeting", cwd: "/mock", cliKind: "opencode" })
-    await session.refreshQuota()
+    await session.budget.refreshQuota()
 
-    expect(session.quota).toBeNull()
+    expect(session.budget.quota).toBeNull()
     expect(getQuotaSpy).not.toHaveBeenCalled()
   })
 })
@@ -430,7 +430,7 @@ describe("AgentSession — /chat?mock=session-budget-monthly data-flow-bridge (C
       cliKind: "opencode",
     })
 
-    expect(session.contextUsage).toEqual({ used: 25_000, size: 200_000, cost: undefined })
+    expect(session.budget.contextUsage).toEqual({ used: 25_000, size: 200_000, cost: undefined })
   })
 
   it("mockState.capabilities merges into #capabilities — supports.usage becomes true", async () => {
@@ -461,7 +461,7 @@ describe("AgentSession — /chat?mock=session-budget-monthly data-flow-bridge (C
       cliKind: "opencode",
     })
 
-    expect(session.quota).toBeNull()
+    expect(session.budget.quota).toBeNull()
   })
 
   it("refreshQuota() populates the monthly calendar/absolute window from the fixture — no ext call", async () => {
@@ -472,10 +472,10 @@ describe("AgentSession — /chat?mock=session-budget-monthly data-flow-bridge (C
       cliKind: "opencode",
     })
 
-    await session.refreshQuota()
+    await session.budget.refreshQuota()
 
     expect(getQuotaSpy).not.toHaveBeenCalled()
-    expect(session.quota).toEqual({
+    expect(session.budget.quota).toEqual({
       provider: "synthetic",
       windows: [
         {

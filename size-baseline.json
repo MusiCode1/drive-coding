@@ -728,10 +728,10 @@
       "codeLines": 106
     },
     "packages/frontend/src/lib/components/layout/SessionBudgetPopover.svelte": {
-      "metric": 89,
-      "impurity": 4,
+      "metric": 58,
+      "impurity": 1,
       "class": "mixed",
-      "codeLines": 144
+      "codeLines": 87
     },
     "packages/frontend/src/lib/components/layout/SessionOptionsPanel.svelte": {
       "metric": 280,
@@ -1016,10 +1016,10 @@
       "codeLines": 68
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 2010,
-      "impurity": 28,
+      "metric": 1893,
+      "impurity": 25,
       "class": "scattered",
-      "codeLines": 1357
+      "codeLines": 1290
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
       "metric": 328,

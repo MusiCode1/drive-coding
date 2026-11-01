@@ -130,8 +130,8 @@ describe("AgentSession as SessionView consumer (C3)", () => {
       size: 4096,
     })
     await delay()
-    expect(agent.contextUsage?.used).toBe(500)
-    expect(agent.contextUsage?.size).toBe(4096)
+    expect(agent.budget.contextUsage?.used).toBe(500)
+    expect(agent.budget.contextUsage?.size).toBe(4096)
   })
 
   it("available_commands_update → availableCommands updated", async () => {
