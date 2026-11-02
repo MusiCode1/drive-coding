@@ -52,7 +52,8 @@ export class SessionCapabilitiesOwner {
 
   /** HTTP batch — null does not clobber an existing value. */
   syncFromHttpView(viewCapabilities: NormalizedCapabilities | null | undefined): void {
-    if (viewCapabilities !== null && viewCapabilities !== this.#capabilities) {
+    if (viewCapabilities == null) return
+    if (viewCapabilities !== this.#capabilities) {
       this.#capabilities = viewCapabilities
     }
   }
