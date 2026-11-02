@@ -93,6 +93,15 @@ describe("agent-session $state classification gate", () => {
     expect(sessionScoped).not.toMatch(/modes\s*=\s*\$state/)
     expect(CONFIG_SCOPED.size).toBe(3)
   })
+
+  it("capabilities connection state lives on SessionCapabilitiesOwner only (non-$state)", () => {
+    const facade = readFileSync(`${vmDir}/agent-session.svelte.ts`, "utf8")
+    expect(facade).not.toMatch(/^ {2}#capabilities\b/m)
+    expect(facade).not.toMatch(/^ {2}#claudeRawSdkMessageCount\b/m)
+    const owner = readFileSync(`${vmDir}/session-capabilities-owner.ts`, "utf8")
+    expect(owner).not.toMatch(/\$state/)
+    expect(facade).toMatch(/#capsOwner = new SessionCapabilitiesOwner\(/)
+  })
 })
 
 /** C2 transcript + config owner; 11 fields remain on AgentSession. */

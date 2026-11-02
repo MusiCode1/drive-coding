@@ -75,7 +75,7 @@ vi.mock("@drive-coding/acp-wire/browser", () => ({
 // client "cold" (loadSession רגיל — נקרא מ-createAcpClient) — loadSession מתוזמן פר-טסט
 // client "warm" (attach reattach — נקרא מ-createAttachedAcpClient, סינכרוני)
 // vi.hoisted: vi.mock מרים את הגוף שלו מעל imports — צריך למנוע ReferenceError (TDZ)
-const { mockColdClient, mockAttachedClient } = vi.hoisted(() => ({
+const { mockColdClient, mockAttachedClient, capturedExtNotification } = vi.hoisted(() => ({
   mockColdClient: {
     newSession: vi.fn().mockResolvedValue({ sessionId: "sess-m06" }),
     loadSession: vi.fn(),
@@ -87,13 +87,26 @@ const { mockColdClient, mockAttachedClient } = vi.hoisted(() => ({
     close: vi.fn(),
     extMethod: vi.fn().mockResolvedValue({ ok: true }),
   },
+  capturedExtNotification: {
+    current: null as ((method: string, params: Record<string, unknown>) => void) | null,
+  },
 }))
 
 vi.mock("@drive-coding/provider/client", async (importActual) => {
   const actual = await importActual<typeof import("@drive-coding/provider/client")>()
   return {
     ...actual,
-    createAcpClient: vi.fn().mockResolvedValue(mockColdClient),
+    createAcpClient: vi.fn(
+      (
+        _transport: unknown,
+        callbacks: {
+          onExtNotification?: (m: string, p: Record<string, unknown>) => void
+        },
+      ) => {
+        capturedExtNotification.current = callbacks.onExtNotification ?? null
+        return Promise.resolve(mockColdClient)
+      },
+    ),
     createAttachedAcpClient: vi.fn().mockImplementation(() => mockAttachedClient),
   }
 })
@@ -161,6 +174,7 @@ async function dropAttachedSessionToDisconnected(session: AgentSession): Promise
 
 beforeEach(() => {
   vi.clearAllMocks()
+  capturedExtNotification.current = null
   waitForOpenBehaviors.length = 0
   onCloseCaptures.length = 0
   vi.mocked(createAgent).mockResolvedValue({ agentId: "agent-1", status: "running" })
@@ -355,6 +369,71 @@ describe("AgentSession — regressions (§4 Commit 0, DoD#5/#6)", () => {
     await (session as any)._handleUnexpectedCloseForTest(1006, "dropped again")
     expect(session.error).toBeNull() // ניתוק חולף — אין מחרוזת גולמית למשתמש
     expect(session.error).not.toBe("old terminal error")
+  })
+
+  test("warm reconnect preserves normalized capabilities seeded before reconnect()", async () => {
+    const session = new AgentSession()
+    const cwd = "/tmp/warm-caps"
+    await session.attach({ cwd, cliKind: "opencode" })
+    expect(capturedExtNotification.current).not.toBeNull()
+
+    capturedExtNotification.current?.("_drive/capabilities", {
+      mcp: false,
+      compact: false,
+      commands: false,
+      usage: false,
+      configOptions: false,
+      rename: false,
+      thinkingTokens: true,
+      image: false,
+      systemPrompt: "unsupported",
+    })
+    expect(session.supports.thinkingTokens).toBe(true)
+
+    vi.mocked(listAgents).mockResolvedValueOnce([
+      {
+        id: "agent-1",
+        acpSessionId: "sess-m06",
+        cwd,
+        status: "ready",
+      },
+    ] as Awaited<ReturnType<typeof listAgents>>)
+    await session.reconnect()
+
+    expect(session.status).toBe("connected")
+    expect(session.capabilities?.thinkingTokens).toBe(true)
+    expect(session.supports.thinkingTokens).toBe(true)
+  })
+
+  test("cold preserveContextOnError cleanup resets capabilities but keeps session identity", async () => {
+    const session = new AgentSession()
+    const cwd = "/tmp/project"
+    await session.attach({ cwd, cliKind: "opencode" })
+    capturedExtNotification.current?.("_drive/capabilities", {
+      mcp: false,
+      compact: false,
+      commands: false,
+      usage: true,
+      configOptions: false,
+      rename: false,
+      thinkingTokens: false,
+      image: false,
+      systemPrompt: "unsupported",
+    })
+    expect(session.supports.usage).toBe(true)
+    const agentId = session.agentId
+    session._setStatusForTest("disconnected")
+
+    mockColdClient.loadSession.mockRejectedValueOnce(new Error("Failed to fetch"))
+    await session.loadSession(
+      { sessionId: "sess-m06", cwd, cliKind: "opencode" },
+      { preserveContextOnError: true },
+    )
+
+    expect(session.capabilities).toBeNull()
+    expect(session.supports.usage).toBe(false)
+    expect(session._getSessionIdForTest()).toBe("sess-m06")
+    expect(session.agentId).toBe(agentId)
   })
 })
 

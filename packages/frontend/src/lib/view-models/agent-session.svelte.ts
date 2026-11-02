@@ -105,6 +105,7 @@ import {
   type PendingUiScope,
 } from "$lib/view-models/pending-ui-scope.svelte"
 import { SessionBudgetOwner } from "$lib/view-models/session-budget-owner.svelte"
+import { SessionCapabilitiesOwner } from "$lib/view-models/session-capabilities-owner"
 import {
   SessionConfigOwner,
   type SessionModelState,
@@ -133,8 +134,6 @@ import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 import { createExtClient, type ExtClient } from "$lib/adapters/ext"
 // ─── slice session-state-reducer C4: FE patch applicator + mappers ─── (additive)
 import { TranscriptScope } from "$lib/view-models/transcript-scope.svelte"
-// ─── slice subagent-transcript-data-v2: פרסר+reducer טהורים (additive) ───
-import { parseClaudeSdkMessage } from "./claude-subagent-parse"
 import type { HistoryMark } from "./history-mark.js"
 import { watchPageVisibility } from "./page-visibility.js"
 import {
@@ -381,7 +380,7 @@ export class AgentSession {
     return (
       IMAGE_INPUT_ENABLED &&
       (this.#client?.capabilities?.promptCapabilities?.image === true ||
-        this.#capabilities?.image === true)
+        this.#capsOwner.capabilities?.image === true)
     )
   }
 
@@ -410,7 +409,7 @@ export class AgentSession {
    * null = טרם התקבל (ה-BE שלח אבל FE עדיין לא קיבל, או לא in-process session).
    */
   get capabilities(): NormalizedCapabilities | null {
-    return this.#capabilities
+    return this.#capsOwner.capabilities
   }
 
   /**
@@ -429,13 +428,12 @@ export class AgentSession {
    * טסט שמעתיק את התנאי לרכיב-fixture עובר גם כשקוד הייצור שבור (ממצא כלב).
    */
   get showsSystemPromptWarning(): boolean {
-    const caps = this.#capabilities
-    return caps !== null && caps.systemPrompt === "unsupported"
+    return this.#capsOwner.showsSystemPromptWarning
   }
 
   /** Test hook ל-spike: כמה raw Claude SDK ext notifications התקבלו בחיבור הנוכחי. */
   get claudeRawSdkMessageCount(): number {
-    return this.#claudeRawSdkMessageCount
+    return this.#capsOwner.claudeRawSdkMessageCount
   }
 
   /**
@@ -443,19 +441,7 @@ export class AgentSession {
    * UI: `{#if vm.supports.thinkingTokens}`.
    */
   get supports(): NormalizedCapabilities {
-    return (
-      this.#capabilities ?? {
-        mcp: false,
-        compact: false,
-        commands: false,
-        usage: false,
-        configOptions: false,
-        rename: false,
-        thinkingTokens: false,
-        image: false,
-        systemPrompt: "unsupported",
-      }
-    )
+    return this.#capsOwner.supports
   }
 
   /**
@@ -509,11 +495,7 @@ export class AgentSession {
   // ─── slice FE-normalization: ext facade ─── (additive)
   /** facade מטופס לשליחת _drive/* ext requests. נוצר/מנוקה עם #client. */
   #ext: ExtClient | null = null
-  // ─── slice FE-normalization: capabilities ─── (additive)
-  /** NormalizedCapabilities שהתקבלו מ-_drive/capabilities ext notification. null = טרם התקבל. */
-  #capabilities: NormalizedCapabilities | null = null
-  /** Counter פנימי ל-spike raw SDK. לא נרנדר ב-UI. */
-  #claudeRawSdkMessageCount = 0
+  readonly #capsOwner = new SessionCapabilitiesOwner(() => this.#transcript)
   /** slice connection-set C2: one id per VM lifetime — SSE header, presence, WS query, DELETE. */
   readonly #connectionId = safeUUID()
   #pageHideReleaseBound = false
@@ -716,7 +698,7 @@ export class AgentSession {
       turnEnded: () => this.#turnEnded,
       setTurnState: (next) => this.#setTurnState(next),
       scheduleIdle: () => this.#scheduleIdle(),
-      onExtNotification: this.#onExtNotification,
+      onExtNotification: this.#capsOwner.onExtNotification,
       pushTitle: (title) => this.#pushTitleToServer(title),
       setSessionState: (state) => {
         this.sessionState = state
@@ -781,7 +763,7 @@ export class AgentSession {
   #callbacksForLocalView(view: LocalSessionView): Parameters<typeof createAcpClient>[1] {
     return {
       onUpdate: (notification) => view.ingestUpdate(notification.update),
-      onExtNotification: this.#onExtNotification,
+      onExtNotification: this.#capsOwner.onExtNotification,
       ...this.#pendingUi.acpClientCallbacks(),
     }
   }
@@ -825,9 +807,7 @@ export class AgentSession {
     // ws-agent — so supportsImageInput was always false over HTTP. The BE now
     // fills state.capabilities and the snapshot carries it; this is where it
     // lands in the VM. null = not received yet → never clobber an existing value.
-    if (viewState.capabilities !== null && viewState.capabilities !== this.#capabilities) {
-      this.#capabilities = viewState.capabilities as NormalizedCapabilities
-    }
+    this.#capsOwner.syncFromHttpView(viewState.capabilities as NormalizedCapabilities | null)
 
     // ─── slice view-switch C3-ו.1: pending (permission + elicitation) — guard-זהות ───
     this.#pendingUi.syncFromView(viewState.pending, view)
@@ -1783,9 +1763,8 @@ export class AgentSession {
     // בלי איפוס — הדיאלוג הראשון של הסשן המרוחק הבא באותו טאב מדוכא בשקט (id 0 "כבר נענה").
     this.#pendingUi.resetAnsweredIds()
     this.#ext = null // slice FE-normalization: נקה facade
-    this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
+    this.#capsOwner.reset()
     this.#budgetOwner.reset()
-    this.#claudeRawSdkMessageCount = 0
     // slice subagent-transcript-data-v2: נקה state תעתיק תת-סוכן (חיבור חדש = index/pending חדשים)
     this.#transcript.resetSubagentProjection()
     // slice subagent-tool-nesting: נקה מיפוי-קינון (חיבור חדש = מיפוי חדש)
@@ -1829,34 +1808,12 @@ export class AgentSession {
         this.#budgetOwner.setMockQuota(v)
       },
       setCapabilities: (v) => {
-        this.#capabilities = v
+        this.#capsOwner.setCapabilities(v)
       },
       resetTurnTracking: () => this.#resetTurnTracking(),
       setTurnState: (state) => this.#setTurnState(state),
       onSessionUpdate: (n) => this.#onSessionUpdate(n),
       setStatus: (status) => this.#setStatus(status),
-    }
-  }
-
-  // ─── slice FE-normalization: ext notification handler ─── (additive)
-  /**
-   * מקבל ext notifications מה-SDK (default-routed).
-   * `_drive/capabilities` → מאחסן ב-#capabilities (reactive via getter).
-   * `_claude/sdkMessage` → מנותח ומקושר לבועת ה-Task האב (slice subagent-transcript-data-v2).
-   * לא ב-#onSessionUpdate — capabilities מגיע כ-extNotification, לא כ-session/update.
-   */
-  #onExtNotification = (method: string, params: Record<string, unknown>): void => {
-    if (method === "_claude/sdkMessage") {
-      // finding #1: השאר את ה-counter — agent-session.capabilities.test.svelte.ts:191 מצפה 0→2.
-      this.#claudeRawSdkMessageCount += 1
-      const ev = parseClaudeSdkMessage(params)
-      if (ev.kind === "ignored") return
-      this.#transcript.onSubagentEvent(ev)
-      return
-    }
-    // finding #2: ענף _drive/capabilities (וכל ענף עתידי) — ללא שינוי.
-    if (method === "_drive/capabilities") {
-      this.#capabilities = params as unknown as NormalizedCapabilities
     }
   }
 

@@ -1016,10 +1016,10 @@
       "codeLines": 68
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 1867,
+      "metric": 1824,
       "impurity": 25,
       "class": "scattered",
-      "codeLines": 1271
+      "codeLines": 1242
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
       "metric": 328,
