@@ -29,9 +29,9 @@ reports/
 docs/reports/
 docs/*-verification-report.md
 
-# docs/ (briefs, decisions, walkthrough) עבר ל-docs-repo (private, משותף בין
-# פרויקטים). docs-for-llm/ הוא Junction (Windows) / symlink (Linux) לעותק
-# המקומי של docs-repo/drive-coding — לא תוכן אמיתי בריפו הזה.
+# התיעוד הפנימי נמצא בריפו פרטי ייעודי ובענף main אחד לכל הכותבים.
+# docs-for-llm/ הוא Junction (Windows) / symlink (Linux) לקלון המקומי
+# המשותף לכל עצי הקוד — לא תוכן מעוקב בריפו הזה.
 #
 # ה-/ המוביל מעגן את התבנית לשורש הריפו בלבד. בלי העיגון, git מתעלם מכל
 # תיקיית docs/ בכל עומק — למשל packages/<pkg>/docs/ — וקובץ חדש שם נחסם
