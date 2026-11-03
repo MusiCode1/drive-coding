@@ -44,6 +44,22 @@ export type CliSessionRow = {
   >
 }
 
+/**
+ * One session as the store remembers it — enough to resume it without a live host.
+ *
+ * `listCliSessionRows` aggregates for the usage view and drops `acpSessionId`, so it
+ * cannot answer "does this session exist, and where did it run". This row can, off the
+ * `(cliKind, acpSessionId)` primary key.
+ */
+export type SessionHistoryRow = {
+  cliKind: string
+  acpSessionId: string
+  cwd: string
+  lastSeenAt: number
+  turns: number
+  lastTitle?: string
+}
+
 export type SessionHistoryStore = {
   recordAttach(p: {
     agentId: string
@@ -68,6 +84,8 @@ export type SessionHistoryStore = {
   listUsageRecords(opts?: { cwd?: string; limit?: number }): TokenUsageRecord[]
   listProjects(opts?: { includeHidden?: boolean }): ProjectRow[]
   listCliSessionRows(opts?: { cwd?: string }): CliSessionRow[]
+  /** A single session by its ACP id, or undefined when we never hosted it. */
+  getSessionRow(cliKind: string, acpSessionId: string): SessionHistoryRow | undefined
   close(): void
 }
 
@@ -242,6 +260,31 @@ function createSessionHistoryStoreFromDb(db: SqliteDb): SessionHistoryStore {
         }
         return row
       })
+    },
+
+    getSessionRow(cliKind, acpSessionId) {
+      const row = db
+        .prepare(
+          "SELECT cliKind, acpSessionId, cwd, lastTitle, lastSeenAt, turns FROM sessions WHERE cliKind = ? AND acpSessionId = ?",
+        )
+        .get<{
+          cliKind: string
+          acpSessionId: string
+          cwd: string
+          lastTitle: string | null
+          lastSeenAt: number
+          turns: number
+        }>(cliKind, acpSessionId)
+      if (row === undefined) return undefined
+      // The column is nullable; the contract is `T | undefined` (AGENTS.md: no deep null).
+      return {
+        cliKind: row.cliKind,
+        acpSessionId: row.acpSessionId,
+        cwd: row.cwd,
+        lastSeenAt: row.lastSeenAt,
+        turns: row.turns,
+        ...(row.lastTitle !== null ? { lastTitle: row.lastTitle } : {}),
+      }
     },
 
     close() {
