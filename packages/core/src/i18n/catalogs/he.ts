@@ -501,8 +501,8 @@ export const he: Catalog = {
   "sessionUrl.notFound.title": "סשן לא נמצא",
   "sessionUrl.notFound.body": "הסשן שביקשת אינו זמין כרגע. ייתכן שהוא נסגר או שהסוכן לא פועל.",
   "sessionUrl.notFound.back": "חזרה לדף הבית",
-  "sessionUrl.resume.offer": "הסשן מופיע בהיסטוריה ואפשר להחיות אותו.",
-  "sessionUrl.resume.action": "החייה את הסשן",
+  "sessionUrl.resume.offer": "הסשן מופיע בהיסטוריה ואפשר לטעון אותו.",
+  "sessionUrl.resume.action": "טען את הסשן",
   "sessionUrl.resume.lastSeen": "נראה לאחרונה",
   "sessionUrl.takeover.title": "יש חיבור פעיל",
   "sessionUrl.takeover.body":
@@ -583,7 +583,7 @@ export const he: Catalog = {
   "usage.clis.col.activity": "פעילות",
   // ─── deep-link ─── (slice deep-link-new-session)
   "deepLink.new.starting": "פותח סשן חדש…",
-  "deepLink.resume.starting": "מחייה את הסשן…",
+  "deepLink.resume.starting": "טוען את הסשן…",
   "deepLink.resume.notInHistory":
     "הסשן הזה אינו מופיע בהיסטוריה של השרת, ולכן אין מאיפה לדעת באיזו תיקייה הוא רץ. אם ידועה לך התיקייה, אפשר להוסיף אותה לכתובת.",
   "deepLink.error.title": "לא ניתן לפתוח את הסשן",
