@@ -15,8 +15,8 @@ routes:
 mcp_tools:
   - session_open
   - notify_parent
-docs_version: 1.6.0
-updated: 2026-10-13
+docs_version: 1.9.2
+updated: 2026-11-03
 ---
 
 # Subagents
@@ -63,12 +63,12 @@ HTTP alternative for event delivery: **`POST /api/agents/:id/subscribe`** (docum
 **Closing a parent does not close its children.** Each child must be **`session_close`** / **`DELETE /api/agents/:id`** on its own id.
 
 - **`DELETE /api/agents/:id`** → `deleteAndKill` removes **one** agent id (`http-agents.ts:148-154` → orchestrator).
-- **`DELETE /api/agents`** (no id) → **`deleteAllAndKill`** — fleet wipe, **not** a parent/child cascade (`http-agents.ts:145`).
+- **`DELETE /api/agents`** (no id) → **`deleteAllAndKill`** — fleet wipe, **not** a parent/child cascade (`http-agents.ts:124`).
 
 | Route | Status | Anchor |
 |-------|--------|--------|
-| `DELETE /api/agents` | `200` JSON summary | `http-agents.ts:145` |
-| `DELETE /api/agents/:id` | `204` empty body | `http-agents.ts:154` |
+| `DELETE /api/agents` | `200` JSON summary | `http-agents.ts:124` |
+| `DELETE /api/agents/:id` | `204` empty body | `http-agents.ts:133` |
 | `DELETE /api/agents/:id` | `404` when no agent with that id exists in the registry | `http-agents.ts:150-151` |
 
 Do not describe recursive or cascade deletion; it is not implemented in `deleteAndKill`.

@@ -18,8 +18,8 @@ routes:
   - POST /api/client-log
   - POST /api/reload-config
   - GET /api/options
-docs_version: 1.9.1
-updated: 2026-10-27
+docs_version: 1.9.2
+updated: 2026-11-03
 ---
 
 # Diagnostics and operations
@@ -50,8 +50,8 @@ On first boot after upgrade, the server may import legacy JSON from `<stateDir>/
 | Route | Status | Anchor |
 |-------|--------|--------|
 | `GET /api/usage/summary` | `200` | `http-usage.ts:17` |
-| `GET /api/usage/clis` | `200` | `http-cli-usage.ts:19` |
-| `GET /api/usage/tokens` | `200` | `http-token-usage.ts:17` |
+| `GET /api/usage/clis` | `200` | `http-cli-usage.ts:32` |
+| `GET /api/usage/tokens` | `200` | `http-token-usage.ts:24` |
 
 ## POST /api/client-log
 

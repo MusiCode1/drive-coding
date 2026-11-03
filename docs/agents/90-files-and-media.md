@@ -16,8 +16,8 @@ routes:
   - DELETE /api/projects
   - GET /api/recordings/:id
   - POST /api/recordings
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.9.2
+updated: 2026-11-03
 ---
 
 # Files, projects, and recordings
@@ -53,25 +53,31 @@ Directory listing under an allowed root.
 
 | Status | When | Anchor |
 |--------|------|--------|
-| `400` | Missing `path` query | `http-history.ts:182` |
-| `404` | Path not found | `http-history.ts:192` |
-| `403` | Access denied | `http-history.ts:204` |
-| `500` | Cannot read directory | `http-history.ts:213` |
-| `200` | `{ path, entries }` | `http-history.ts:238` |
+| `400` | Missing `path` query | `http-history.ts:169` |
+| `404` | Path not found | `http-history.ts:179` |
+| `403` | Access denied | `http-history.ts:191` |
+| `500` | Cannot read directory | `http-history.ts:200` |
+| `200` | `{ path, entries }` | `http-history.ts:225` |
 
 ## Projects
 
 | Route | Status | Anchor |
 |-------|--------|--------|
-| `GET /api/projects` | `200` | `http-history.ts:33` |
-| `DELETE /api/projects` | `400` without `cwd` | `http-history.ts:42` |
-| `DELETE /api/projects` | `204` empty | `http-history.ts:44` |
+| `GET /api/projects` | `200` | `http-projects-api.ts:28` |
+| `DELETE /api/projects` | `400` without `cwd` | `http-projects-api.ts:14` |
+| `DELETE /api/projects` | `204` empty | `http-projects-api.ts:20` |
+
+`GET /api/projects` returns `{ projects: [...] }` — one entry per known cwd, with
+`cwd`, `kind`, `lastSeen`, `sessionCount`, and `lastSessionId` when present
+(`http-projects-api.ts:35-42`). `sessionCount` is a `COUNT(*)` over the session
+history rows for that cwd (`session-history-projects.ts:29`), including child
+sessions — it is **not** a counter of how many times the project was opened.
 
 ## Recordings
 
 | Route | Status | When | Anchor |
 |-------|--------|------|--------|
-| `GET /api/recordings/:id` | `404` | Unknown id | `http-history.ts:59` |
+| `GET /api/recordings/:id` | `404` | Unknown id | `http-history.ts:46` |
 | `GET /api/recordings/:id` | `200` | Audio bytes | `http-history.ts:62-64` |
 | `POST /api/recordings` | `400` | Invalid JSON / missing fields / bad base64 | `http-history.ts:88-104` |
-| `POST /api/recordings` | `201` | `{ id }` | `http-history.ts:108` |
+| `POST /api/recordings` | `201` | `{ id }` | `http-history.ts:95` |

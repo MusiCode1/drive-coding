@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.9.1",
+  "docsVersion": "1.9.2",
   "docs": [
     {
       "id": "orientation",
@@ -279,7 +279,7 @@
       "tags": ["subagents", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.6.0",
+      "docs_version": "1.9.2",
       "routes": ["GET /api/agent-prompt", "DELETE /api/agents"],
       "mcp_tools": ["session_open", "notify_parent"],
       "path": "docs/agents/70-subagents.md",
@@ -327,7 +327,7 @@
       "tags": ["files", "output"],
       "surface": ["http"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.9.2",
       "routes": [
         "GET /api/fs/browse",
         "GET /api/fs/file",
@@ -383,7 +383,7 @@
       "tags": ["diagnostics"],
       "surface": ["http"],
       "stability": "stable",
-      "docs_version": "1.9.1",
+      "docs_version": "1.9.2",
       "routes": [
         "GET /api/diag",
         "GET /api/usage/summary",
@@ -445,7 +445,7 @@
       "tags": ["cli"],
       "surface": ["cli"],
       "stability": "stable",
-      "docs_version": "1.6.0",
+      "docs_version": "1.9.2",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/96-cli.md",
