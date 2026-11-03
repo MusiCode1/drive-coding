@@ -63,10 +63,36 @@ export function gateApiEnvelope(origin: PromptOrigin, enabled: boolean): PromptO
   return { kind: "ui" }
 }
 
+/**
+ * Recover a UTF-8 header value that arrived as latin-1 code units.
+ *
+ * 🔴 Measured on a live preview: `X-Drive-Coding-Caller: סוכן הלילה` reached the
+ * transcript as mojibake, and `n8n · deploy` as `n8n Â· deploy`. HTTP header values are
+ * latin-1 by spec, so a caller sending raw UTF-8 bytes — which every ordinary client
+ * does — is decoded one byte per character, **with nothing raising an error anywhere**.
+ *
+ * Only attempted when every code unit fits in a byte, and only kept when the bytes are
+ * valid UTF-8 (`fatal: true`). A genuinely latin-1 name therefore survives unchanged
+ * instead of being mangled in the other direction.
+ */
+function decodeHeaderUtf8(raw: string): string {
+  if (!/[\u0080-\u00ff]/.test(raw)) return raw
+  for (const ch of raw) {
+    if (ch.codePointAt(0)! > 0xff) return raw
+  }
+  try {
+    const bytes = Uint8Array.from(raw, (c) => c.charCodeAt(0))
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+  } catch {
+    return raw
+  }
+}
+
 function clamp(value: string | undefined, max: number): string | undefined {
   const trimmed = value?.trim()
   if (!trimmed) return undefined
-  return trimmed.length > max ? trimmed.slice(0, max) : trimmed
+  const decoded = decodeHeaderUtf8(trimmed)
+  return decoded.length > max ? decoded.slice(0, max) : decoded
 }
 
 /**

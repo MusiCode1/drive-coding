@@ -109,3 +109,48 @@ describe("apiEnvelopeEnabled", () => {
     expect(apiEnvelopeEnabled({ API_MESSAGE_ENVELOPE: "0" })).toBe(false)
   })
 })
+
+describe("UTF-8 header recovery", () => {
+  /** What a client actually puts on the wire: UTF-8 bytes read back as latin-1. */
+  function asLatin1(utf8: string): string {
+    return Array.from(new TextEncoder().encode(utf8), (b) => String.fromCharCode(b)).join("")
+  }
+
+  it("recovers a Hebrew caller name instead of storing mojibake", async () => {
+    const origin = await resolvePromptOrigin(registry(), {
+      callerName: asLatin1("סוכן הלילה"),
+    })
+
+    expect(origin.kind).toBe("api")
+    if (origin.kind === "api") expect(origin.caller?.name).toBe("סוכן הלילה")
+  })
+
+  it("recovers a middle dot — the case that first showed the bug", async () => {
+    const origin = await resolvePromptOrigin(registry(), {
+      callerName: asLatin1("n8n · nightly deploy"),
+    })
+
+    if (origin.kind === "api") expect(origin.caller?.name).toBe("n8n · nightly deploy")
+  })
+
+  it("leaves pure ASCII untouched", async () => {
+    const origin = await resolvePromptOrigin(registry(), { callerName: "ci-runner" })
+
+    if (origin.kind === "api") expect(origin.caller?.name).toBe("ci-runner")
+  })
+
+  it("keeps bytes that are not valid UTF-8 as they came, rather than mangling them", async () => {
+    // 0xFF is never a legal UTF-8 lead byte; the fallback must return the original.
+    const origin = await resolvePromptOrigin(registry(), { callerName: "caf\u00ff" })
+
+    if (origin.kind === "api") expect(origin.caller?.name).toBe("caf\u00ff")
+  })
+
+  it("caps after decoding, so a multi-byte name is not cut mid-character count", async () => {
+    const origin = await resolvePromptOrigin(registry(), {
+      callerName: asLatin1("א".repeat(300)),
+    })
+
+    if (origin.kind === "api") expect(origin.caller?.name).toHaveLength(CALLER_NAME_MAX)
+  })
+})

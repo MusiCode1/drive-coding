@@ -10,7 +10,7 @@ tags: [rpc, session]
 surface: [http]
 stability: transitional
 routes: [POST /api/agents/:id/rpc]
-docs_version: 1.7.0
+docs_version: 1.7.1
 updated: 2026-11-03
 ---
 
@@ -99,6 +99,12 @@ verified**:
 
 `<caller>` is omitted entirely when nothing was declared, and serialises self-closing
 (`<caller kind="tool"/>`) when only a kind was given.
+
+**Non-ASCII names.** HTTP header values are latin-1 by specification, so UTF-8 bytes sent
+raw would otherwise land in the transcript as mojibake with nothing raising an error. The
+backend recovers them: a value whose bytes form valid UTF-8 is decoded as such, and one
+that does not is kept exactly as received. Send UTF-8 and a Hebrew or accented name
+arrives intact; the 120-char cap is applied **after** decoding.
 
 🛑 **This is provenance, not authorization.** The chat UI renders it as a claim ("received
 via API · identifies as tool: …") and deliberately does **not** give it the resolved name
