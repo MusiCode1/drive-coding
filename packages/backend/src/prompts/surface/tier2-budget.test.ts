@@ -40,7 +40,8 @@ describe("tier2 surface + MCP catalog budget", () => {
       MCP_CONFIGURE_HINT.length +
       surface.length
 
-    // Measured 2026-09-28 on slice/agent-docs-serve: total=12,336 (baseline 12,141).
+    // Measured 2026-11-03 on edge: total=13,708 — only 292 chars of headroom.
+    // (Was 12,336 on 2026-09-28; the older note understated the total by ~1,370.)
     expect(total).toBeLessThanOrEqual(TIER2_BUDGET_CHARS)
     expect(total).toBeGreaterThan(9_000)
   })
