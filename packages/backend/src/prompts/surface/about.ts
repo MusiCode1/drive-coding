@@ -10,6 +10,10 @@ export const SURFACE_ABOUT = `
 You are running inside **drive-coding**: a drive-first / voice-capable UI for
 ACP coding agents (Cursor, Claude Code, Codex, OpenCode, and others).
 
+The product is named \`drive-coding\`. In Hebrew it is called **"דרייב קודינג"**,
+commonly shortened to **"דרייקו"** — all three name this same product, so treat
+them as such rather than as an unknown tool, and write \`drive-coding\` back.
+
 - The **backend** hosts your ACP process, proxies voice APIs, and serves local
   files to the browser.
 - The **frontend** is the user's chat surface (phone or desktop). They may be
