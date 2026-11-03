@@ -519,6 +519,9 @@ export type MessageKey =
   | "sessionUrl.notFound.title"
   | "sessionUrl.notFound.body"
   | "sessionUrl.notFound.back"
+  | "sessionUrl.resume.offer"
+  | "sessionUrl.resume.action"
+  | "sessionUrl.resume.lastSeen"
   | "sessionUrl.takeover.title"
   | "sessionUrl.takeover.body"
   | "sessionUrl.takeover.confirm"
@@ -590,6 +593,8 @@ export type MessageKey =
   | "usage.clis.col.activity"
   // ─── deep-link ─── (slice deep-link-new-session)
   | "deepLink.new.starting"
+  | "deepLink.resume.starting"
+  | "deepLink.resume.notInHistory"
   | "deepLink.error.title"
   | "deepLink.error.unknownCli"
   | "deepLink.error.homeDir"

@@ -10,8 +10,8 @@ tags: [ui]
 surface: [ui]
 stability: transitional
 routes: []
-docs_version: 1.5.0
-updated: 2026-10-11
+docs_version: 1.6.0
+updated: 2026-11-03
 ---
 
 # UI reference
@@ -85,6 +85,43 @@ error on screen. The app does **not** silently fall back to a different CLI.
 **If the folder does not exist** the spawn fails and the user stays on this route with the
 backend's error text. That error currently names the CLI binary rather than the folder —
 a known rough edge, not a sign the link was malformed.
+
+## Deep link — resume a session (`/chat/<cliKind>/<sessionId>/resume`)
+
+**When the user is here:** they opened a link meant to bring an **existing** session back
+up, including when no agent for that CLI is currently running. Like `/new` this is a
+landing route, and it replaces itself in history once it has acted — so Back cannot
+re-trigger it.
+
+🛑 **`/chat/<cliKind>/<sessionId>` does not resume.** It attaches to a session a live host
+already holds and otherwise shows "Session not found". Resuming is only ever reached
+through this route or through the button on that not-found screen; a plain session link
+never spawns anything.
+
+**Where the folder comes from**
+
+| The link says | What happens |
+|---|---|
+| no `?cwd` | the folder is read from the backend's session history |
+| `?cwd=<path>` | the link wins — for a session the CLI knows but this backend never hosted |
+
+`?cwd=` is classified exactly as on `/new`: absolute as-is, relative against the home
+directory, percent-encoded rejected.
+
+**What the user sees:** a one-line status, then the Chat screen. If a live host already
+holds the session under another connection, the takeover prompt appears first — resuming
+never opens a second host for the same session.
+
+**When it cannot resume**
+
+| Case | On screen |
+|---|---|
+| no live host **and** no history row, no `?cwd=` | "not in the server's history", with the hint that a folder can be added to the link |
+| a row exists but the CLI has since deleted the session | the backend's `session/load` error — the host did come up, the load is what failed |
+
+> A missing history row is **not** proof the session is gone: the store records sessions
+> this backend hosted, and ACP `session/list` reports what the CLI itself remembers.
+> Neither contains the other.
 
 ## Chat (`/chat/<cliKind>/<sessionId>`)
 
@@ -250,7 +287,8 @@ Same session side panel / **Drag to open** behavior as Settings.
 - Descriptions match the **application build shown in Settings** (observed **Version:
   v0.40.1 (b550ac6a)** at documentation time), not the `docs_version` of this markdown
   bundle.
-- **Route paths** on this page (`/`, `/chat/...`, `/chat/<cliKind>/new`, `/settings`, `/usage`) are pinned by an
+- **Route paths** on this page (`/`, `/chat/...`, `/chat/<cliKind>/new`,
+  `/chat/<cliKind>/<sessionId>/resume`, `/settings`, `/usage`) are pinned by an
   automated coupling test; **control descriptions are not** — labels can change between
   releases without failing that test.
 - Internal test routes (`/bt-test`, `/wake-word-test`, `/playlist-nav-chrome-test`) are

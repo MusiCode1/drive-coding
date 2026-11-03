@@ -508,6 +508,9 @@ export const en: Catalog = {
   "sessionUrl.notFound.body":
     "The session you requested is not available. It may have closed or the agent is not running.",
   "sessionUrl.notFound.back": "Back to home",
+  "sessionUrl.resume.offer": "This session is in the history and can be resumed.",
+  "sessionUrl.resume.action": "Resume the session",
+  "sessionUrl.resume.lastSeen": "Last seen",
   "sessionUrl.takeover.title": "Active connection",
   "sessionUrl.takeover.body":
     "This session is already connected from another device or tab. Connecting here will disconnect it.",
@@ -588,6 +591,9 @@ export const en: Catalog = {
   "usage.clis.col.activity": "Activity",
   // ─── deep-link ─── (slice deep-link-new-session)
   "deepLink.new.starting": "Opening a new session…",
+  "deepLink.resume.starting": "Resuming the session…",
+  "deepLink.resume.notInHistory":
+    "This session is not in the server's history, so there is no way to tell which folder it ran in. If you know the folder, you can add it to the link.",
   "deepLink.error.title": "Could not open the session",
   "deepLink.error.unknownCli": "The CLI in the link is unknown to the server.",
   "deepLink.error.homeDir":

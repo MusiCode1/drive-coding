@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.9.2",
+    "version": "1.10.0",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
@@ -1048,6 +1048,62 @@
           },
           "500": {
             "description": "Cannot read directory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/:cliKind/:acpSessionId": {
+      "get": {
+        "operationId": "get_api_sessions_cliKind_acpSessionId",
+        "summary": "GET /api/sessions/:cliKind/:acpSessionId",
+        "parameters": [
+          {
+            "name": "cliKind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "acpSessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session as the backend's history remembers it, including its cwd",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "cliKind and acpSessionId required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No history row for that session. This is not proof the session is gone: the store holds sessions this backend hosted, while ACP session/list reports what the CLI itself remembers, and neither contains the other",
             "content": {
               "application/json": {
                 "schema": {

@@ -409,6 +409,15 @@ const SPECIAL = {
       400: jsonErrorResponse("Invalid JSON, policies shape, enum, or empty patch"),
     },
   },
+  "get /api/sessions/:cliKind/:acpSessionId": {
+    responses: {
+      ...jsonResponse("Session as the backend's history remembers it, including its cwd"),
+      400: jsonErrorResponse("cliKind and acpSessionId required"),
+      404: jsonErrorResponse(
+        "No history row for that session. This is not proof the session is gone: the store holds sessions this backend hosted, while ACP session/list reports what the CLI itself remembers, and neither contains the other",
+      ),
+    },
+  },
   "post /api/voice/live/token": {
     requestBody: contractNoneRequestBody({
       type: "object",
@@ -463,8 +472,8 @@ if (!docsVersion) {
 }
 
 const { paths, count } = buildPaths()
-if (count !== 41) {
-  console.error(`🔴 expected 41 documentable operations, got ${count}`)
+if (count !== 42) {
+  console.error(`🔴 expected 42 documentable operations, got ${count}`)
   process.exit(1)
 }
 

@@ -56,10 +56,14 @@ describe("agent-docs coupling", () => {
         pathToken: "`/chat/<cliKind>/<sessionId>`",
         file: path.join("chat", "[cliKind]", "[sessionId]", "+page.svelte"),
       },
+      {
+        pathToken: "`/chat/<cliKind>/<sessionId>/resume`",
+        file: path.join("chat", "[cliKind]", "[sessionId]", "resume", "+page.svelte"),
+      },
       { pathToken: "`/settings`", file: path.join("settings", "+page.svelte") },
       { pathToken: "`/usage`", file: path.join("usage", "+page.svelte") },
     ]
-    expect(coupled).toHaveLength(4)
+    expect(coupled).toHaveLength(5)
     for (const { pathToken, file } of coupled) {
       expect(doc).toContain(pathToken)
       expect(fs.existsSync(path.join(ROUTES_ROOT, file)), `missing ${file}`).toBe(true)
