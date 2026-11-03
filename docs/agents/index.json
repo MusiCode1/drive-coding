@@ -383,7 +383,7 @@
       "tags": ["diagnostics"],
       "surface": ["http"],
       "stability": "stable",
-      "docs_version": "1.4.0",
+      "docs_version": "1.9.1",
       "routes": [
         "GET /api/diag",
         "GET /api/usage/summary",
@@ -398,6 +398,7 @@
       "headings": [
         "Diagnostics and operations",
         "Liveness vs deep diag",
+        "Session history storage",
         "Usage",
         "POST /api/client-log",
         "POST /api/reload-config",
