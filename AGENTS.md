@@ -179,8 +179,41 @@ systemd: dc-agent-….service: State 'final-sigterm' timed out. Killing.
 ‏🔑 ‏ההבדל בין `404` ‏ל-`502` ‏הוא הראיה: ‏404 = ‏גם המנהרה מתה (‏רצה בתוך הסוכן);
 ‏502 = ‏המנהרה שרדה (‏הוקמה ב-`nohup`) ‏וה-BE ‏מת.
 
-🛑 **‏ולכן: ‏בנייה · ‏BE ‏של פריוויו · ‏מנהרה · ‏סריקה ארוכה — ‏ב-tmux ‏או ב-`nohup`,
-‏מחוץ ל-cgroup ‏של הסוכן.** ‏תנאי-קיום, ‏לא נוחות.
+🛑 **‏ולכן: ‏בנייה · ‏BE ‏של פריוויו · ‏מנהרה · ‏סריקה ארוכה — ‏מחוץ ל-cgroup ‏של
+‏הסוכן.** ‏תנאי-קיום, ‏לא נוחות.
+
+### ⛔ ‏תוקן 2026-11-04 — ‏`tmux` ‏ו-`nohup` ‏**‏אינם** ‏מוציאים מה-cgroup
+
+‏הנוסח הקודם כאן אמר "‏ב-tmux ‏או ב-`nohup`, ‏מחוץ ל-cgroup ‏של הסוכן". ‏זה שגוי,
+‏והוא מטעה בדיוק את מי שמסתמך עליו: ‏**‏חברוּת ב-cgroup ‏עוברת בתורשה ב-`fork`,
+‏ורק systemd ‏מעביר תהליך לקבוצה אחרת.** ‏`nohup` ‏מנתק SIGHUP, ‏ו-`tmux` ‏מנתק
+‏את ה-TTY; ‏אף אחד מהם אינו נוגע ב-cgroup.
+
+‏⚠️ ‏**‏ו-`tmux` ‏נראה כאילו הוא כן עובד**, ‏כי אם שרת-tmux ‏כבר רץ מקודם, ‏הסשן
+‏החדש נולד כבן שלו ‏— ‏כלומר בקבוצה **‏שלו**. ‏אבל סוכן שמריץ `tmux new-session`
+‏ראשון **‏משיק את השרת בעצמו**, ‏והוא נולד בתוך הסוכן. ‏נמדד:
+
+```bash
+cat /proc/$(pgrep -f 'tmux: server' | head -1)/cgroup
+# 0::/…/app.slice/dc-agent-a2c88225-….service   ← אותו cgroup כמו הסוכן
+```
+
+‏⇒ ‏זה הסבר שלם ל"‏ארבעה BE ‏של פריוויו ‏שנפלו" ‏למעלה, ‏ולכך שסריקות ב-tmux
+‏מתו בלי סמן-סיום.
+
+**‏מה שכן עובד — ‏יחידת systemd ‏חולפת**, ‏בדיוק כמו שה-BE ‏עושה לסיידקארים:
+
+```bash
+systemd-run --user --unit=dc-preview-<tag> --collect \
+  --working-directory="$WT" --setenv=PORT=4210 --setenv=FE_STATIC_DIR="$WT/packages/frontend/build" \
+  "$(command -v bun)" packages/backend/src/bin/drive-coding.ts --env-file ~/Projects/drive-coding/.env
+
+systemctl --user show -p ControlGroup --value dc-preview-<tag>.service   # ‏חייב להיות שונה משלך
+systemctl --user stop dc-preview-<tag>.service                           # ‏ניקוי
+```
+
+‏🔑 ‏**‏ובדיקת-הקבלה היא השוואת ה-cgroup**, ‏לא "‏הרצתי ב-tmux": ‏`cat /proc/self/cgroup`
+‏מול `systemctl --user show -p ControlGroup`. ‏אם הם זהים ‏— ‏הפריוויו ימות איתך.
 
 > **‏הגוף המלא** ‏— ‏כל המדידות, ‏הפקודות, ‏שש צורות ה-`gate-cannot-fail`
 > ‏(‏14 ‏מתוך 14 ‏החוסמים בסבב ארבעת-הסלייסים היו מהמחלקה הזאת), ‏ומה שעדיין
