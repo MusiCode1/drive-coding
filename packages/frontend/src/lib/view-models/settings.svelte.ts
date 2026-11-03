@@ -20,6 +20,7 @@ import type { ElevenLabsTtsModelId, GeminiTtsModelId } from "../adapters/voice/t
 import type { Voice } from "../adapters/voice/voices"
 import { setBeUrlBase } from "../util/be-url"
 import { clampSidebarWidth } from "../util/sidebar-width"
+import { projectPromptFor, withLastConfig, withProjectPrompt } from "./settings-maps.js"
 import { DEFAULTS, loadSettings, saveSettings } from "./settings-persistence"
 import { SettingsScopePolicy } from "./settings-scope-policy.svelte"
 import { SettingsVoices } from "./settings-voices.svelte"
@@ -29,6 +30,7 @@ export class Settings {
   // ─── טופס חיבור ───
   cliKind = $state<string>(DEFAULTS.cliKind)
   lastCwd = $state(DEFAULTS.lastCwd)
+  defaultNewCwd = $state(DEFAULTS.defaultNewCwd)
 
   // ─── קול ───
   voiceId = $state<string>(DEFAULTS.voiceId)
@@ -138,6 +140,7 @@ export class Settings {
     const loaded = loadSettings()
     this.cliKind = loaded.cliKind
     this.lastCwd = loaded.lastCwd
+    this.defaultNewCwd = loaded.defaultNewCwd
     this.voiceId = loaded.voiceId
     this.beUrl = loaded.beUrl
     setBeUrlBase(this.beUrl)
@@ -186,6 +189,11 @@ export class Settings {
 
   setLastCwd = (cwd: string): void => {
     this.lastCwd = cwd
+    this.#persist()
+  }
+
+  setDefaultNewCwd = (cwd: string): void => {
+    this.defaultNewCwd = cwd.trim()
     this.#persist()
   }
 
@@ -317,18 +325,8 @@ export class Settings {
 
   // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
 
-  /**
-   * שומר את הערך האחרון שהמשתמשת בחרה עבור configId, per-cliKind.
-   * ממזג עם ה-map הקיים (לא מחליף).
-   */
   setLastConfig = (cliKind: string, configId: string, value: string | boolean): void => {
-    this.lastConfig = {
-      ...this.lastConfig,
-      [cliKind]: {
-        ...(this.lastConfig[cliKind] ?? {}),
-        [configId]: value,
-      },
-    }
+    this.lastConfig = withLastConfig(this.lastConfig, cliKind, configId, value)
     this.#persist()
   }
 
@@ -379,17 +377,10 @@ export class Settings {
 
   // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
 
-  /** מחזיר את הפרומפט השמור לפרויקט הנתון (cwd), או מחרוזת ריקה אם אין. */
-  getProjectPrompt = (cwd: string): string => {
-    return this.projectSystemPrompt[cwd] ?? ""
-  }
+  getProjectPrompt = (cwd: string): string => projectPromptFor(this.projectSystemPrompt, cwd)
 
-  /** שומר את הפרומפט עבור cwd נתון. object-replacement (immutable) לשמירת reactivity. */
   setProjectPrompt = (cwd: string, text: string): void => {
-    this.projectSystemPrompt = {
-      ...this.projectSystemPrompt,
-      [cwd]: text,
-    }
+    this.projectSystemPrompt = withProjectPrompt(this.projectSystemPrompt, cwd, text)
     this.#persist()
   }
 
@@ -463,6 +454,7 @@ export class Settings {
     saveSettings({
       cliKind: this.cliKind,
       lastCwd: this.lastCwd,
+      defaultNewCwd: this.defaultNewCwd,
       voiceId: this.voiceId,
       beUrl: this.beUrl,
       speakThoughts: this.speakThoughts,

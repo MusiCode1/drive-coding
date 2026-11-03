@@ -95,6 +95,10 @@ export const he: Catalog = {
   "sessions.refresh": "רענן",
   // ─── settings ─── (slice 9)
   "settings.title": "הגדרות",
+  "settings.defaultNewCwd.label": "תיקיית ברירת-מחדל לסשן חדש",
+  "settings.defaultNewCwd.help":
+    "קישור מהצורה /chat/<cli>/new בלי ?cwd= יפתח סשן בתיקייה הזאת. ריק — מסך בחירת תיקייה.",
+  "settings.defaultNewCwd.absoluteOnly": "נדרש נתיב מוחלט, שמתחיל ב-/",
   "settings.beUrl.label": "כתובת השרת (BE URL)",
   "settings.beUrl.help": "השאר ריק במצב פיתוח. בפרודקשן (Cloudflare) הזן את הכתובת המלאה של ה-BE.",
   "settings.beUrl.invalid": "כתובת לא תקינה",

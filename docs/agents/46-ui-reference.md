@@ -10,7 +10,7 @@ tags: [ui]
 surface: [ui]
 stability: transitional
 routes: []
-docs_version: 1.6.0
+docs_version: 1.7.0
 updated: 2026-11-03
 ---
 
@@ -76,7 +76,7 @@ browser Back button does not return to it (and cannot re-trigger a spawn).
 |---|---|
 | a path starting with `/` | used as-is |
 | a relative path (`Projects/app`) | resolved against the user's home directory |
-| `?cwd=` empty, or no `?cwd` at all | **no session is created** — the user lands on Connect to pick a folder |
+| `?cwd=` empty, or no `?cwd` at all | falls back to the **Default folder for a new session** setting; with that empty, **no session is created** and the user lands on Connect to pick a folder |
 | a percent-encoded path (`%2Fhome%2F…`) | rejected with a message; double-encoded paths are not accepted |
 
 **CLI handling:** a `cliKind` that is not in the backend's registry produces an explicit

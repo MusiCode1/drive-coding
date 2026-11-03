@@ -26,6 +26,8 @@ const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL" // Sarah, ElevenLabs
 export type PersistedSettings = {
   cliKind: string
   lastCwd: string
+  /** Folder a `/chat/<cli>/new` link falls back to. Empty ⇒ show the picker. */
+  defaultNewCwd: string
   voiceId: string
   beUrl: string
   speakThoughts: boolean
@@ -66,6 +68,7 @@ export type PersistedSettings = {
 export const DEFAULTS: PersistedSettings = {
   cliKind: "opencode",
   lastCwd: "",
+  defaultNewCwd: "",
   voiceId: DEFAULT_VOICE_ID,
   beUrl: "",
   speakThoughts: true,

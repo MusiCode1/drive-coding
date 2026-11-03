@@ -9,6 +9,7 @@ import { connectAgent } from "$lib/actions/connect-agent"
 import { fetchServerOptions } from "$lib/adapters/options"
 import { getCliAvailability, getI18n, getSession, getSettings } from "$lib/context"
 import { classifyDeepLinkCwd, joinHomeDir } from "$lib/util/deep-link-cwd"
+import { resolveDefaultNewCwd } from "$lib/view-models/settings-new-session"
 
 type Phase = "starting" | "unknown-cli" | "home-dir-failed" | "spawn-failed"
 
@@ -35,10 +36,17 @@ async function resolveNew(kind: string, raw: string | null) {
     return
   }
 
+  // The chain locked on 2026-09-10 (pre-brief-chat-new-open-routes §7#1):
+  // ?cwd= → settings.defaultNewCwd → folder picker. No silent spawn on a guess.
   const classified = classifyDeepLinkCwd(raw)
   if (classified.kind === "empty") {
-    settings.setCliKind(kind)
-    await goto("/", { replaceState: true })
+    const fallback = resolveDefaultNewCwd(settings.defaultNewCwd)
+    if (fallback === null) {
+      settings.setCliKind(kind)
+      await goto("/", { replaceState: true })
+      return
+    }
+    await startSession(kind, fallback)
     return
   }
 
@@ -55,17 +63,15 @@ async function resolveNew(kind: string, raw: string | null) {
     }
   }
 
+  await startSession(kind, cwd)
+}
+
+async function startSession(kind: string, cwd: string) {
   if (session.status !== "idle") {
     await session.leaveRunning()
   }
 
-  await connectAgent({
-    cliKind: kind,
-    cwd,
-    session,
-    settings,
-    navigate: "replace",
-  })
+  await connectAgent({ cliKind: kind, cwd, session, settings, navigate: "replace" })
 
   if (session.error !== null) {
     phase = "spawn-failed"

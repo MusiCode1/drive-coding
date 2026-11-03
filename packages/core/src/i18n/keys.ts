@@ -108,6 +108,9 @@ export type MessageKey =
   | "sessions.refresh"
   // ─── settings ─── (slice 9)
   | "settings.title"
+  | "settings.defaultNewCwd.label"
+  | "settings.defaultNewCwd.help"
+  | "settings.defaultNewCwd.absoluteOnly"
   | "settings.beUrl.label"
   | "settings.beUrl.help"
   | "settings.beUrl.invalid"

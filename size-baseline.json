@@ -752,10 +752,10 @@
       "codeLines": 123
     },
     "packages/frontend/src/lib/components/settings/SettingsScreen.svelte": {
-      "metric": 118,
+      "metric": 106,
       "impurity": 3,
       "class": "mixed",
-      "codeLines": 188
+      "codeLines": 173
     },
     "packages/frontend/src/lib/components/settings/TtsStatusCard.svelte": {
       "metric": 62,

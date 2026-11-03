@@ -99,6 +99,10 @@ export const en: Catalog = {
   "sessions.refresh": "Refresh",
   // ─── settings ─── (slice 9)
   "settings.title": "Settings",
+  "settings.defaultNewCwd.label": "Default folder for a new session",
+  "settings.defaultNewCwd.help":
+    "A /chat/<cli>/new link with no ?cwd= opens a session in this folder. Empty shows the folder picker.",
+  "settings.defaultNewCwd.absoluteOnly": "An absolute path is required, starting with /",
   "settings.beUrl.label": "Backend URL",
   "settings.beUrl.help":
     "Leave empty in dev mode. In production (Cloudflare) enter the full BE URL.",
