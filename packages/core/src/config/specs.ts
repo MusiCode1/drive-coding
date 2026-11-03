@@ -126,6 +126,23 @@ export const CONFIG_SPECS = [
     serialize: (v: unknown) => (v ? "1" : "0"),
   },
   {
+    /**
+     * Whether an unidentified HTTP prompt is wrapped in a `source="api"` envelope.
+     *
+     * 🔴 Off by default **on purpose, and this is not timidity**: the envelope parser
+     * rejects a source it does not know, so a backend that emits `api` while a cached or
+     * CF-Pages-deployed FE is still the old build renders "partial envelope" plus raw XML
+     * instead of the message. The flag makes the two deployable in either order, and
+     * makes rolling back a config change rather than a release.
+     */
+    key: "apiMessageEnvelope",
+    env: "API_MESSAGE_ENVELOPE",
+    flag: "api-message-envelope",
+    parse: (raw: string) => raw === "1",
+    serialize: (v: unknown) => (v ? "1" : "0"),
+    default: false,
+  },
+  {
     key: "rssBudgetMb",
     env: "RSS_BUDGET_MB",
     parse: (raw: string) => {

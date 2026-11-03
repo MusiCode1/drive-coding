@@ -920,10 +920,10 @@
       "codeLines": 221
     },
     "packages/frontend/src/lib/session/remote-session-view.ts": {
-      "metric": 482,
-      "impurity": 12,
+      "metric": 428,
+      "impurity": 11,
       "class": "scattered",
-      "codeLines": 283
+      "codeLines": 247
     },
     "packages/frontend/src/lib/session/session-transport-read.ts": {
       "metric": 41,

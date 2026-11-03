@@ -4,6 +4,7 @@
 import type { AgentPublic } from "@drive-coding/core"
 import type {
   DriveMessageAgent,
+  DriveMessageApi,
   DriveMessageSystem,
 } from "@drive-coding/core/acp/drive-message-envelope"
 import { parseDriveMessage } from "@drive-coding/core/acp/drive-message-envelope"
@@ -19,6 +20,13 @@ export type DriveMessageView =
   | { kind: "plain" }
   | { kind: "invalid"; reason: "unknown-version" | "malformed" }
   | { kind: "agent"; message: DriveMessageAgent; sender: DriveMessageParty }
+  /**
+   * An API caller. There is deliberately **no `DriveMessageParty`** here: a party carries
+   * a resolved id and a link to its session, and nothing about an api caller is resolved.
+   * Giving it the same shape is exactly how it would end up rendered like a verified
+   * agent.
+   */
+  | { kind: "api"; message: DriveMessageApi }
   | { kind: "system"; message: DriveMessageSystem; subject: DriveMessageParty }
 
 function hasNonemptyTrim(value: string | undefined | null): value is string {
@@ -77,6 +85,9 @@ export function driveMessageView(rawText: string, deps: DriveMessageDeps): Drive
     return { kind: "invalid", reason: "malformed" }
   }
   const message = parsed.value
+  if (message.source === "api") {
+    return { kind: "api", message }
+  }
   if (message.source === "agent") {
     return {
       kind: "agent",

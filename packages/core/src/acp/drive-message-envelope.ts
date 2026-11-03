@@ -14,6 +14,26 @@ export type DriveMessageAgent = {
   body: string
 }
 
+/**
+ * A prompt that arrived over the HTTP API from something that is not a known agent.
+ *
+ * 🔑 `caller` is **what the caller said about itself** and nothing verified it. The
+ * backend has no authentication (see `NOT_A_SECURITY_BOUNDARY`), and a static FE cannot
+ * hold a signing secret, so this is provenance for the human reading the chat — never
+ * authorization. The UI must phrase it as a claim; it must not render like the
+ * registry-resolved `sender` of a `source="agent"` envelope.
+ *
+ * `kind` is an **open** set on purpose: "another agent" and "an automated tool" were the
+ * two cases asked for, and the third cannot be enumerated in advance. An unknown value
+ * degrades to a generic label rather than failing to parse.
+ */
+export type DriveMessageApi = {
+  source: "api"
+  context?: DriveMessageContext
+  caller?: { kind?: string; name?: string }
+  body: string
+}
+
 export type DriveMessageSystem = {
   source: "system"
   context?: DriveMessageContext
@@ -26,7 +46,7 @@ export type DriveMessageSystem = {
   lastAssistantText?: { text: string; truncated: boolean }
 }
 
-export type DriveMessage = DriveMessageAgent | DriveMessageSystem
+export type DriveMessage = DriveMessageAgent | DriveMessageApi | DriveMessageSystem
 
 export type ParseFailure = "not-envelope" | "unknown-version" | "malformed"
 export type ParseResult = Result<DriveMessage, ParseFailure>
@@ -48,6 +68,13 @@ const DriveMessageAgentSchema = type({
   source: "'agent'",
   "context?": DriveMessageContextSchema,
   sender: { id: "string", "name?": "string" },
+  body: "string",
+})
+
+const DriveMessageApiSchema = type({
+  source: "'api'",
+  "context?": DriveMessageContextSchema,
+  "caller?": { "kind?": "string", "name?": "string" },
   body: "string",
 })
 
@@ -241,7 +268,9 @@ function parseEnvelopeInner(wholeText: string): Result<ParsedEnvelope, ParseFail
   if (rootAttrs === null) return err("malformed")
   if (rootAttrs.version === undefined || rootAttrs.source === undefined) return err("malformed")
   if (rootAttrs.version !== KNOWN_VERSION) return err("unknown-version")
-  if (rootAttrs.source !== "agent" && rootAttrs.source !== "system") return err("malformed")
+  if (rootAttrs.source !== "agent" && rootAttrs.source !== "api" && rootAttrs.source !== "system") {
+    return err("malformed")
+  }
   if (!scan.expectLiteral(">")) return err("malformed")
   const rootOpenEnd = lead + scan.pos
 
@@ -274,6 +303,52 @@ function parseEnvelopeInner(wholeText: string): Result<ParsedEnvelope, ParseFail
     childScan.pos = ctxCloseIdx + ctxClose.length
     context = { kind: "project-charter", text: ctxText }
     childScan.skipWs()
+  }
+
+  if (rootAttrs.source === "api") {
+    childScan.skipWs()
+    // `caller` is optional: a caller that declared nothing still produces a valid
+    // envelope, and the UI then says only that the message came through the API.
+    let caller: { kind?: string; name?: string } | undefined
+    if (childScan.expectLiteral("<caller")) {
+      const callerAttrs = childScan.parseAttrs(new Set(["kind"]))
+      if (callerAttrs === null) return err("malformed")
+      const selfClosing = childScan.expectLiteral("/")
+      if (!childScan.expectLiteral(">")) return err("malformed")
+      let callerName: string | undefined
+      if (!selfClosing) {
+        const close = "</caller>"
+        const closeIdx = childrenSlice.indexOf(close, childScan.pos)
+        if (closeIdx < 0) return err("malformed")
+        const innerScan = new Scan(childrenSlice, childScan.pos)
+        innerScan.skipWs()
+        const nameText = innerScan.parseTextElement("name")
+        if (nameText !== null) callerName = nameText
+        innerScan.skipWs()
+        if (innerScan.pos !== closeIdx) return err("malformed")
+        childScan.pos = closeIdx + close.length
+      }
+      caller = {
+        ...(callerAttrs.kind !== undefined ? { kind: callerAttrs.kind } : {}),
+        ...(callerName !== undefined ? { name: callerName } : {}),
+      }
+      childScan.skipWs()
+    }
+
+    const body = childScan.parseTextElement("body")
+    if (body === null) return err("malformed")
+    childScan.skipWs()
+    if (!childScan.eof()) return err("malformed")
+
+    const message: DriveMessageApi = {
+      source: "api",
+      ...(context ? { context } : {}),
+      ...(caller !== undefined ? { caller } : {}),
+      body,
+    }
+    const validated = DriveMessageApiSchema(message)
+    if (validated instanceof type.errors) return err("malformed")
+    return ok({ message, rootOpenEnd })
   }
 
   if (rootAttrs.source === "agent") {
@@ -412,6 +487,12 @@ function formatSender(id: string, name?: string): string {
   return `  <sender id="${encodeAttr(id)}">\n${nameLine}  </sender>\n`
 }
 
+function formatCaller(caller: { kind?: string; name?: string }): string {
+  const kindAttr = caller.kind !== undefined ? ` kind="${encodeAttr(caller.kind)}"` : ""
+  if (caller.name === undefined) return `  <caller${kindAttr}/>\n`
+  return `  <caller${kindAttr}>\n    <name>${encodeText(caller.name)}</name>\n  </caller>\n`
+}
+
 function formatSubject(id: string, name?: string): string {
   const nameLine = name !== undefined ? `    <name>${encodeText(name)}</name>\n` : ""
   return `  <subject-agent id="${encodeAttr(id)}">\n${nameLine}  </subject-agent>\n`
@@ -422,6 +503,15 @@ export function serializeDriveMessage(msg: DriveMessage): string {
     let out = `<${ROOT} version="${KNOWN_VERSION}" source="agent">\n`
     if (msg.context) out += formatContext(msg.context)
     out += formatSender(msg.sender.id, msg.sender.name)
+    out += `  <body>${encodeText(msg.body)}</body>\n`
+    out += `</${ROOT}>\n`
+    return out
+  }
+
+  if (msg.source === "api") {
+    let out = `<${ROOT} version="${KNOWN_VERSION}" source="api">\n`
+    if (msg.context) out += formatContext(msg.context)
+    if (msg.caller !== undefined) out += formatCaller(msg.caller)
     out += `  <body>${encodeText(msg.body)}</body>\n`
     out += `</${ROOT}>\n`
     return out

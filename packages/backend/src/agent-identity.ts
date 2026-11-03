@@ -26,6 +26,28 @@ export const DRIVE_CODING_AGENT_ID_ENV = "DRIVE_CODING_AGENT_ID"
 /** HTTP header on MCP requests — caller identity, not auth (§4.2). */
 export const AGENT_ID_HEADER = "X-Drive-Coding-Agent"
 
+/**
+ * Headers an HTTP caller uses to say what it is. **Declared, never verified.**
+ *
+ * `CLIENT_KIND_HEADER` is how the FE says "a human typed this". Trusting it is not a
+ * weakness we overlooked: the backend has no authentication at all, and a static FE
+ * cannot hold a signing secret, so a token here would look like proof without being any.
+ *
+ * 🔑 The direction was chosen for its failure mode. Because the *absence* of this header
+ * means "api", a script that knows nothing about any of this gets labelled correctly, and
+ * hiding requires actively claiming to be the UI.
+ */
+export {
+  CALLER_KIND_HEADER,
+  CALLER_NAME_HEADER,
+  CLIENT_KIND_HEADER,
+  CLIENT_KIND_UI,
+} from "@drive-coding/core/acp/drive-message-headers"
+
+/** Caps on the declared caller strings; both reach the child prompt and the chat UI. */
+export const CALLER_NAME_MAX = 120
+export const CALLER_KIND_MAX = 40
+
 export const MCP_SERVER_NAME = "drive-coding"
 
 export function buildAgentIdentityEnv(agentId: string): Record<string, string> {

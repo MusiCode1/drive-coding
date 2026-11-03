@@ -10,8 +10,8 @@ tags: [rpc, session]
 surface: [http]
 stability: transitional
 routes: [POST /api/agents/:id/rpc]
-docs_version: 1.6.0
-updated: 2026-10-13
+docs_version: 1.7.0
+updated: 2026-11-03
 ---
 
 # Agent session RPC
@@ -26,7 +26,7 @@ Legacy aliases (for example `prompt` instead of `session/prompt`) may still be a
 
 | Method | Role |
 |--------|------|
-| `session/prompt` | Send user content to the ACP session (`params.sessionId`, `params.content`). When the HTTP caller identifies as another agent (`X-Drive-Coding-Agent`), text is wrapped in **`drive-coding-msg` v1** with that caller as **`sender`**; anonymous callers receive unwrapped content. |
+| `session/prompt` | Send user content to the ACP session (`params.sessionId`, `params.content`). Text is wrapped in **`drive-coding-msg` v1** according to who sent it — see *Envelope* below. |
 | `session/cancel` | Cancel the in-flight turn for `params.sessionId`. |
 | `session/set_mode` | Switch session mode (`params.modeId`). |
 | `session/set_config_option` | Set a config option (`params.configId`, `params.value`). |
@@ -66,6 +66,50 @@ Management methods (`session/list`, `session/load`, `session/new`, `session/dele
 Scoped writes may deny before dispatch — see `60-identity-and-scopes`.
 
 ## Envelope on `session/prompt`
+
+Which envelope you get depends on how the caller identified itself. **None of these
+headers are authenticated** — see `60-identity-and-scopes`.
+
+| Caller | Envelope |
+|---|---|
+| `X-Drive-Coding-Agent` naming an agent **in the registry** | `source="agent"` with that agent as `sender` |
+| `X-Drive-Coding-Client: ui` (the web app) | **none** — content passes through unwrapped |
+| anything else | `source="api"`, when `apiMessageEnvelope` is on |
+
+An `X-Drive-Coding-Agent` value that is **not** in the registry does not fall back to
+`agent`; it is treated like any other unidentified caller. Otherwise an unknown id would
+buy a registry-resolved label for free.
+
+### `source="api"` — declaring where a request came from
+
+An API caller may describe itself. Both headers are optional, free-form, and **never
+verified**:
+
+| Header | Meaning |
+|---|---|
+| `X-Drive-Coding-Caller` | a name, e.g. `n8n · workflow 12`. Capped at 120 chars |
+| `X-Drive-Coding-Caller-Kind` | an **open** set; `agent` and `tool` are recognised for display, anything else gets a generic label. Capped at 40 chars |
+
+```xml
+<drive-coding-msg version="1" source="api">
+  <caller kind="tool"><name>n8n · workflow 12</name></caller>
+  <body>deploy please</body>
+</drive-coding-msg>
+```
+
+`<caller>` is omitted entirely when nothing was declared, and serialises self-closing
+(`<caller kind="tool"/>`) when only a kind was given.
+
+🛑 **This is provenance, not authorization.** The chat UI renders it as a claim ("received
+via API · identifies as tool: …") and deliberately does **not** give it the resolved name
+or the session link that a `source="agent"` sender gets. A caller declaring
+`kind="agent"` is still an api envelope.
+
+⚠️ **Gated by config.** `apiMessageEnvelope` (`API_MESSAGE_ENVELOPE=1`,
+`--api-message-envelope`) is **off by default**: a receiver that rejects an unknown
+`source` would otherwise break the moment a backend rolls out ahead of its frontend. With
+the flag off, unidentified callers keep receiving unwrapped content as before.
+
 
 Identified callers: **string** `params.content` becomes one `<drive-coding-msg … source="agent">`
 with `<sender>` and a single `<body>` (all source text encoded there). **Block** content: each

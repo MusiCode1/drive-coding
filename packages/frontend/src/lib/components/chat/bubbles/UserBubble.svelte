@@ -13,7 +13,6 @@ import { env } from "$env/dynamic/public"
 import {
   getActiveAgents,
   getBubblePlayer,
-  getContentViewer,
   getI18n,
   getSession,
   getSettings,
@@ -24,17 +23,14 @@ import type { UserBubble } from "$lib/types/bubble"
 import { copyToClipboard } from "$lib/util/clipboard"
 import { formatTime } from "$lib/util/formatting"
 import { joinSegmentText } from "./bubble-rendering"
-import DriveMessageEvent from "./DriveMessageEvent.svelte"
-import DriveMessageOrigin from "./DriveMessageOrigin.svelte"
+import DriveMessageBody from "./DriveMessageBody.svelte"
 import { driveMessageView } from "./drive-message-view"
-import MarkdownContent from "./MarkdownContent.svelte"
 import UserBubbleContent from "./UserBubbleContent.svelte"
 
 let { bubble }: { bubble: UserBubble } = $props()
 const t = getI18n().t
 const bubblePlayer = getBubblePlayer()
 const speaker = getSpeaker()
-const viewer = getContentViewer()
 const session = getSession()
 const activeAgents = getActiveAgents()
 const settings = getSettings()
@@ -72,41 +68,7 @@ async function handleCopy() {
       class="px-3.5 py-2.5 rounded-2xl rounded-se-sm text-sm leading-relaxed w-max max-w-full break-words"
       style="background:var(--bubble-user); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
     >
-      {#if view.kind === "plain"}
-        <MarkdownContent
-          text={rawText}
-          imageCwd={session.cwd}
-          fileLinks={{
-            cwd: session.cwd,
-            onOpen: (uri) => viewer.show({ kind: "file", uri }),
-          }}
-        />
-      {:else if view.kind === "invalid"}
-        <p class="drive-envelope-hint">{t("driveMessage.envelope.partial")}</p>
-        <pre class="drive-envelope-raw">{rawText}</pre>
-      {:else if view.kind === "agent"}
-        <DriveMessageOrigin
-          message={view.message}
-          sender={view.sender}
-          rawSource={rawText}
-          imageCwd={session.cwd}
-          fileLinks={{
-            cwd: session.cwd,
-            onOpen: (uri) => viewer.show({ kind: "file", uri }),
-          }}
-        />
-      {:else}
-        <DriveMessageEvent
-          message={view.message}
-          subject={view.subject}
-          rawSource={rawText}
-          imageCwd={session.cwd}
-          fileLinks={{
-            cwd: session.cwd,
-            onOpen: (uri) => viewer.show({ kind: "file", uri }),
-          }}
-        />
-      {/if}
+      <DriveMessageBody {view} {rawText} />
       <span class="hidden">{bubble.segments.length}</span>
     </div>
     <div class="bubble-meta">
@@ -224,15 +186,4 @@ async function handleCopy() {
     opacity: 1;
   }
 
-  .drive-envelope-hint {
-    font-size: 0.75rem;
-    color: var(--fg-dim);
-    margin: 0 0 0.35rem;
-  }
-  .drive-envelope-raw {
-    margin: 0;
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-size: 0.8rem;
-  }
 </style>

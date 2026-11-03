@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.10.0",
+  "docsVersion": "1.11.0",
   "docs": [
     {
       "id": "orientation",
@@ -227,7 +227,7 @@
       "tags": ["rpc", "session"],
       "surface": ["http"],
       "stability": "transitional",
-      "docs_version": "1.6.0",
+      "docs_version": "1.7.0",
       "routes": ["POST /api/agents/:id/rpc"],
       "mcp_tools": [],
       "path": "docs/agents/50-rpc.md",
@@ -237,6 +237,7 @@
         "`waitMs` and blocking",
         "HTTP status codes",
         "Envelope on `session/prompt`",
+        "`source=\"api\"` — declaring where a request came from",
         "Parameter validation (selected)",
         "OpenAPI"
       ]

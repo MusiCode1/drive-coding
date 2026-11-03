@@ -136,7 +136,10 @@ export function registerMcpWriteTools(
           }
         }
 
-        const promptContent = wrapPromptContent(sender, input.prompt)
+        const promptContent = wrapPromptContent(
+          sender !== undefined ? { kind: "agent", sender } : undefined,
+          input.prompt,
+        )
 
         if (input.noWait === true) {
           const promptWork = host.prompt(sessionId, promptContent)

@@ -12,8 +12,8 @@ import {
 } from "../src/config/specs.js"
 
 describe("CONFIG_SPECS — table invariants", () => {
-  it("1. exactly 21 entries", () => {
-    expect(CONFIG_SPECS).toHaveLength(21)
+  it("1. exactly 22 entries", () => {
+    expect(CONFIG_SPECS).toHaveLength(22)
   })
 
   it("1b. historyDbFile spec has env and flag", () => {

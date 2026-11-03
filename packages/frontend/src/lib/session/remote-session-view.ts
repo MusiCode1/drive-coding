@@ -20,15 +20,18 @@
  * ─── slice session-host-pending-surface C4: respond() — exact routing, no fallback ───
  */
 
+import { CLIENT_KIND_HEADER, CLIENT_KIND_UI } from "@drive-coding/core/acp/drive-message-headers"
 import { RPC_METHODS, type SessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import { registerView, unregisterView, type ViewDebugInfo } from "$lib/debug/session-registry"
 import {
-  dispatchRemoteReply,
-  remoteHttpPost,
-  resolveRemoteReplyKind,
-} from "./remote-request-actions.js"
+  type RemoteEndpoints,
+  type RemoteHttp,
+  remoteEndpoints,
+  remoteHttp,
+} from "./remote-endpoints.js"
+import { dispatchRemoteReply, resolveRemoteReplyKind } from "./remote-request-actions.js"
 import { RemoteSessionReplacement } from "./remote-session-replacement"
 import { RemoteStreamDelivery } from "./remote-stream-delivery"
 import type { RemoteTerminal } from "./remote-stream-events"
@@ -36,7 +39,8 @@ import type { SessionView } from "./session-view.js"
 import { type ProjectionSink, SessionViewDelivery } from "./session-view-delivery"
 import { SSEReader } from "./sse-reader.js"
 
-export const ACP_CONNECTION_ID_HEADER = "Acp-Connection-Id"
+export { CLIENT_KIND_HEADER, CLIENT_KIND_UI } from "@drive-coding/core/acp/drive-message-headers"
+export { ACP_CONNECTION_ID_HEADER } from "./remote-endpoints.js"
 
 /** ext methods שדורשות return value אמיתי — לא נתמכות ב-remote mode (§C2 decision #3). */
 const RETURN_VALUE_EXT_METHODS = new Set<string>(["_drive/getQuota"])
@@ -74,9 +78,8 @@ export type RemoteSessionViewOptions = {
  */
 export class RemoteSessionView implements SessionView {
   readonly #agentId: string
-  readonly #baseUrl: string
-  readonly #headers: Record<string, string>
-  readonly #connectionId: string
+  readonly #endpoints: RemoteEndpoints
+  readonly #http: RemoteHttp
   readonly #onSseReconnected?: () => void
   readonly #onTerminal?: RemoteSessionViewOptions["onTerminal"]
   readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
@@ -111,21 +114,18 @@ export class RemoteSessionView implements SessionView {
 
   constructor(agentId: string, baseUrl: string, opts: RemoteSessionViewOptions = {}) {
     this.#agentId = agentId
-    this.#baseUrl = baseUrl
     registerView(this) // תצפית בלבד — ר' debug/session-registry.ts
-    this.#connectionId =
-      opts.headers?.[ACP_CONNECTION_ID_HEADER] ??
-      (typeof crypto !== "undefined" ? crypto.randomUUID() : "remote-view")
-    this.#headers = {
-      [ACP_CONNECTION_ID_HEADER]: this.#connectionId,
-      ...opts.headers,
-    }
+    this.#endpoints = remoteEndpoints(agentId, baseUrl, opts.headers)
     this.#onSseReconnected = opts.onSseReconnected
     this.#doFetch = opts._fetch ?? ((u, init) => globalThis.fetch(u, init))
+    // 🛑 After #doFetch: remoteHttp captures the function by value, so moving this up
+    // hands it `undefined` and every POST fails with "ctx.doFetch is not a function".
+    const guard = (lc: boolean) => this.#ingress.guardHttpResult(lc)
+    this.#http = remoteHttp(this.#endpoints, this.#doFetch, guard)
     // replaced on connect() by the SSE snapshot — this is just a safe pre-connect default
 
-    this.#reader = new SSEReader(this.#eventsUrl(), {
-      headers: this.#headers,
+    this.#reader = new SSEReader(this.#endpoints.events, {
+      headers: this.#endpoints.headers,
       _fetch: opts._fetch,
       _sleep: opts._sleep,
       _now: opts._now,
@@ -285,7 +285,7 @@ export class RemoteSessionView implements SessionView {
     const current = this.#ingress.captureContext()
     return this.#replacement.run(async () => {
       const method = sessionId === undefined ? RPC_METHODS.newSession : RPC_METHODS.loadSession
-      const res = (await this.#rpc(method, {
+      const res = (await this.#http.rpc(method, {
         ...(sessionId !== undefined && { sessionId }),
         ...(cwd && { cwd }),
       })) as { sessionId?: unknown } | undefined
@@ -304,12 +304,12 @@ export class RemoteSessionView implements SessionView {
    * Lists sessions + captures sessionCapabilities (delete gating) in one
    * round-trip. Sessions are normalized here (like LocalSessionView) — the VM
    * consumes them as-is. A -32601 (CLI without list capability) surfaces as an
-   * error carrying `.code` (#post parses the 502 body) → the VM degrades to an
+   * error carrying `.code` (`remoteHttp.post` parses the 502 body) → the VM degrades to an
    * empty list gracefully instead of showing a generic "502".
    */
   async listSessions(): Promise<SessionInfo[]> {
     const current = this.#ingress.captureContext()
-    const res = (await this.#rpc(RPC_METHODS.listSessions, {})) as
+    const res = (await this.#http.rpc(RPC_METHODS.listSessions, {})) as
       | { sessions?: unknown; sessionCapabilities?: unknown }
       | undefined
     if (!current()) throw new Error("RemoteSessionView: obsolete list result")
@@ -334,7 +334,7 @@ export class RemoteSessionView implements SessionView {
    * local (button hidden / false return).
    */
   async deleteSession(sessionId: string): Promise<void> {
-    const res = (await this.#rpc(RPC_METHODS.deleteSession, { sessionId })) as
+    const res = (await this.#http.rpc(RPC_METHODS.deleteSession, { sessionId })) as
       | { ok?: unknown; unsupported?: unknown }
       | undefined
     if (res?.unsupported === true) {
@@ -353,19 +353,19 @@ export class RemoteSessionView implements SessionView {
    * לאחר slice remote-images C1.
    */
   async prompt(content: string | PromptBlocks, meta?: Record<string, unknown>): Promise<void> {
-    await this.#rpc(RPC_METHODS.prompt, { sessionId: this.#sessionId, content, meta })
+    await this.#http.rpc(RPC_METHODS.prompt, { sessionId: this.#sessionId, content, meta })
   }
 
   async cancel(): Promise<void> {
-    await this.#rpc(RPC_METHODS.cancel, { sessionId: this.#sessionId })
+    await this.#http.rpc(RPC_METHODS.cancel, { sessionId: this.#sessionId })
   }
 
   async setMode(mode: string): Promise<void> {
-    await this.#rpc(RPC_METHODS.setMode, { sessionId: this.#sessionId, modeId: mode })
+    await this.#http.rpc(RPC_METHODS.setMode, { sessionId: this.#sessionId, modeId: mode })
   }
 
   async setConfigOption(key: string, value: unknown): Promise<void> {
-    await this.#rpc(RPC_METHODS.setConfigOption, {
+    await this.#http.rpc(RPC_METHODS.setConfigOption, {
       sessionId: this.#sessionId,
       configId: key,
       value,
@@ -373,14 +373,14 @@ export class RemoteSessionView implements SessionView {
   }
 
   async setSessionModel(model: string): Promise<void> {
-    await this.#rpc(RPC_METHODS.setSessionModel, { sessionId: this.#sessionId, model })
+    await this.#http.rpc(RPC_METHODS.setSessionModel, { sessionId: this.#sessionId, model })
   }
 
   async extMethod(method: string, params: unknown): Promise<unknown> {
     if (RETURN_VALUE_EXT_METHODS.has(method)) {
       throw new Error(NOT_SUPPORTED_EXT_RETURN_VALUE)
     }
-    return this.#rpc(RPC_METHODS.extMethod, { sessionId: this.#sessionId, method, params })
+    return this.#http.rpc(RPC_METHODS.extMethod, { sessionId: this.#sessionId, method, params })
   }
 
   // ─── Reply (permission/elicitation) ───
@@ -394,15 +394,12 @@ export class RemoteSessionView implements SessionView {
    * LocalSessionView.respond) — לא נשלחת שום בקשה.
    */
   async respond(requestId: number, result: unknown): Promise<void> {
-    if (this.#ingress.closed) return
-    return this.#respond(requestId, result)
-  }
-  async #respond(requestId: number, result: unknown): Promise<void> {
-    if (resolveRemoteReplyKind(this.#delivery, requestId) === undefined) return
+    const unknownRequest = resolveRemoteReplyKind(this.#delivery, requestId) === undefined
+    if (this.#ingress.closed || unknownRequest) return
     await dispatchRemoteReply(
-      this.#httpPostContext(),
+      this.#http.context(),
       this.#delivery,
-      this.#replyUrl(),
+      this.#endpoints.reply,
       requestId,
       result,
       this.#ingress.closed,
@@ -410,56 +407,7 @@ export class RemoteSessionView implements SessionView {
     )
   }
 
-  #httpPostContext() {
-    return {
-      doFetch: this.#doFetch,
-      headers: this.#headers,
-      assertCurrent: this.#ingress.guardHttpResult(),
-    }
-  }
-
   // ─── Private: HTTP helpers ───
-
-  #eventsUrl(): string {
-    return `${this.#baseUrl}/api/agents/${this.#agentId}/events`
-  }
-
-  #rpcUrl(): string {
-    return `${this.#baseUrl}/api/agents/${this.#agentId}/rpc`
-  }
-
-  #replyUrl(): string {
-    return `${this.#baseUrl}/api/agents/${this.#agentId}/reply`
-  }
-
-  async #rpc(method: string, params: Record<string, unknown>): Promise<unknown> {
-    const res = await this.#post(this.#rpcUrl(), { method, params })
-    return res
-  }
-
-  /**
-   * calev-heavy M4: never checked `res.ok` — a 404/400/500 was silently treated as
-   * success. Measured: setMode that caused a 500 on the BE "succeeded" from the
-   * caller's point of view. A failed prompt would look like a hang to the user,
-   * not an error. Network errors already propagate (fetch rejects); only the HTTP
-   * layer was swallowed.
-   *
-   * slice remote-session-mgmt C4: on !ok the body IS parsed now — the BE ships
-   * 502 {error, code?} for CLI failures (e.g. -32601). Without parsing, the VM
-   * would show a generic "502" instead of handling unsupported methods
-   * gracefully. `.code` is attached to the thrown error when numeric.
-   */
-  async #post(url: string, body: unknown, localClose = false): Promise<unknown> {
-    return remoteHttpPost(
-      {
-        doFetch: this.#doFetch,
-        headers: this.#headers,
-        assertCurrent: this.#ingress.guardHttpResult(localClose),
-      },
-      url,
-      body,
-    )
-  }
 }
 
 // ─── Factory ───

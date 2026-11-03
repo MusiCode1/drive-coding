@@ -55,9 +55,20 @@ import { canonicalRpcMethod, RPC_METHODS } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
 import type { Hono } from "hono"
-import { AGENT_ID_HEADER } from "../../agent-identity.js"
+import {
+  AGENT_ID_HEADER,
+  CALLER_KIND_HEADER,
+  CALLER_NAME_HEADER,
+  CLIENT_KIND_HEADER,
+} from "../../agent-identity.js"
 import type { AgentSessionRegistry } from "../registry.js"
-import { dispatchRpcPrompt, PromptParams, resolveCallerSenderForPrompt } from "./rpc-prompt.js"
+import {
+  apiEnvelopeEnabled,
+  dispatchRpcPrompt,
+  gateApiEnvelope,
+  PromptParams,
+  resolvePromptOrigin,
+} from "./rpc-prompt.js"
 import { respondRpcWait } from "./rpc-respond-wait.js"
 import { preflightRpcScopeDenied } from "./rpc-scope.js"
 import { tryDispatchBlockingSessionRpc } from "./rpc-session-mgmt.js"
@@ -135,9 +146,14 @@ export function registerRpcRoute(
         case RPC_METHODS.prompt: {
           const p = PromptParams(params)
           if (p instanceof type.errors) return c.json({ error: p.summary }, 400)
-          const callerSender = await resolveCallerSenderForPrompt(
-            agentRegistry,
-            c.req.header(AGENT_ID_HEADER),
+          const promptOrigin = gateApiEnvelope(
+            await resolvePromptOrigin(agentRegistry, {
+              agentId: c.req.header(AGENT_ID_HEADER),
+              clientKind: c.req.header(CLIENT_KIND_HEADER),
+              callerName: c.req.header(CALLER_NAME_HEADER),
+              callerKind: c.req.header(CALLER_KIND_HEADER),
+            }),
+            apiEnvelopeEnabled(),
           )
           const outcome = await dispatchRpcPrompt(
             host,
@@ -145,7 +161,7 @@ export function registerRpcRoute(
             p.content as string | PromptBlocks,
             p.meta,
             waitMs,
-            callerSender,
+            promptOrigin,
           )
           if (outcome.kind === "accepted") break
           return c.json(outcome.body, outcome.status)

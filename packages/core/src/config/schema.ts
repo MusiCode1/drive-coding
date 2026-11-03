@@ -19,6 +19,8 @@ export const DriveCodingConfig = type({
   "wireRecord?": "boolean",
   "rssBudgetMb?": "number",
   "httpOwnerTtlMs?": "number",
+  /** Emit `source="api"` envelopes for unidentified HTTP prompts. See CONFIG_SPECS. */
+  "apiMessageEnvelope?": "boolean",
   "fsBrowseBase?": "string",
   // Where the agent registry snapshot is written. Default: <stateDir>/agents/<port>.json.
   // Overridable so two backends can share a port across containers, and so a

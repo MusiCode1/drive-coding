@@ -6,8 +6,9 @@ import type { AgentRegistry } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
+import { CALLER_KIND_MAX, CALLER_NAME_MAX } from "../../agent-identity.js"
 import {
-  type ResolvedSender,
+  type PromptOrigin,
   senderFromRecord,
   wrapPromptContent,
 } from "../../delivery/drive-message-source.js"
@@ -39,15 +40,73 @@ export type RpcPromptOutcome =
   | { kind: "accepted" }
   | { kind: "json"; status: 200; body: Record<string, unknown> }
 
-/** Resolve caller identity only for session/prompt (after params validation). */
-export async function resolveCallerSenderForPrompt(
+/**
+ * Whether `source="api"` envelopes may be emitted (`apiMessageEnvelope`).
+ *
+ * Read from the environment per request rather than captured at boot: `buildEnvPatch`
+ * maps the config-file value into `process.env`, so this one accessor honours the file,
+ * a real env var, and the CLI flag alike — and a reload takes effect without a restart.
+ */
+export function apiEnvelopeEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.API_MESSAGE_ENVELOPE === "1"
+}
+
+/**
+ * Downgrade an `api` origin to the unwrapped path while the flag is off.
+ *
+ * 🔑 Separate from `resolvePromptOrigin` so that *who sent it* and *whether we annotate
+ * it* stay two questions. A test can then pin the identification without the flag, and
+ * the flag without re-deriving identity.
+ */
+export function gateApiEnvelope(origin: PromptOrigin, enabled: boolean): PromptOrigin {
+  if (origin.kind !== "api" || enabled) return origin
+  return { kind: "ui" }
+}
+
+function clamp(value: string | undefined, max: number): string | undefined {
+  const trimmed = value?.trim()
+  if (!trimmed) return undefined
+  return trimmed.length > max ? trimmed.slice(0, max) : trimmed
+}
+
+/**
+ * Resolve who sent a `session/prompt` (after params validation).
+ *
+ * Order matters: a header that names a **known agent** wins, because that identity is
+ * resolved from our registry rather than declared. Only then does the client-kind header
+ * decide between the FE and an outside caller.
+ *
+ * 🛑 An agent id we do not recognise does **not** fall back to `agent` — it lands in
+ * `api` like any other unidentified caller. Otherwise an unknown id would buy a
+ * registry-looking label for free.
+ */
+export async function resolvePromptOrigin(
   agentRegistry: AgentRegistry,
-  callerHeader: string | undefined,
-): Promise<ResolvedSender | undefined> {
-  const rawCaller = callerHeader?.trim()
-  if (!rawCaller) return undefined
-  const rec = await agentRegistry.get(rawCaller)
-  return rec ? senderFromRecord(rec) : undefined
+  headers: {
+    agentId?: string
+    clientKind?: string
+    callerName?: string
+    callerKind?: string
+  },
+): Promise<PromptOrigin> {
+  const rawCaller = headers.agentId?.trim()
+  if (rawCaller) {
+    const rec = await agentRegistry.get(rawCaller)
+    const sender = rec ? senderFromRecord(rec) : undefined
+    if (sender !== undefined) return { kind: "agent", sender }
+  }
+  if (headers.clientKind?.trim().toLowerCase() === "ui") return { kind: "ui" }
+
+  const name = clamp(headers.callerName, CALLER_NAME_MAX)
+  const kind = clamp(headers.callerKind, CALLER_KIND_MAX)
+  if (name === undefined && kind === undefined) return { kind: "api" }
+  return {
+    kind: "api",
+    caller: {
+      ...(kind !== undefined ? { kind } : {}),
+      ...(name !== undefined ? { name } : {}),
+    },
+  }
 }
 
 /** Wrap after validation; honor waitMs on the same wrapped content. */
@@ -57,9 +116,9 @@ export async function dispatchRpcPrompt(
   content: string | PromptBlocks,
   meta: Record<string, unknown> | undefined,
   waitMs: number | null,
-  sender: ResolvedSender | undefined,
+  origin: PromptOrigin | undefined,
 ): Promise<RpcPromptOutcome> {
-  const wrapped = wrapPromptContent(sender, content)
+  const wrapped = wrapPromptContent(origin, content)
   if (waitMs === null) {
     const promptWork = host.prompt(sessionId, wrapped, meta)
     void promptWork.catch((e) => {
