@@ -24,6 +24,7 @@ import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { SSE_WATCHDOG_THRESHOLD_MS } from "$lib/engines/liveness-thresholds"
 import type { RemoteStreamEvent } from "./remote-stream-events"
+import { SNAPSHOT_TIMEOUT_KEY } from "./snapshot-timeout"
 import {
   type ClearIntervalFn,
   type IntervalId,
@@ -1144,6 +1145,19 @@ describe("SSEReader — production timer defaults (no seam injected) — Chrome 
 // ── slice sse-liveness Commit 4: snapshot-wait timeout (מקרה-קצה) ──────────
 
 describe("SSEReader — snapshot-wait timeout (Commit 4)", () => {
+  it("uses the browser timeout override in the extracted opening attempt", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => (key === SNAPSHOT_TIMEOUT_KEY ? "5" : null),
+    })
+    try {
+      const mockFetch = vi.fn().mockResolvedValue(makeAbortableSSEResponse([], { keepOpen: true }))
+      const reader = newReader("/api/events", { _fetch: mockFetch, _sleep: noSleep })
+      await expect(reader.connect()).rejects.toThrow("timed out waiting for snapshot")
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it("a connection that opens but never sends snapshot times out within the bound instead of hanging forever — connect() rejects, not a silent death", async () => {
     // A tiny REAL timeout via `_snapshotTimeoutMs` (not vi.useFakeTimers() +
     // advanceTimersByTimeAsync racing a Promise.race across several `await`
