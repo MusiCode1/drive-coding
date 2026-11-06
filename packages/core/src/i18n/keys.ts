@@ -527,6 +527,7 @@ export type MessageKey =
   | "sidebar.resizeHandle"
   // ─── cwd-path-combo ───
   | "connect.cwd.combo.toggle"
+  | "connect.cwd.combo.sessionCount"
   | "connect.cwd.combo.searchPlaceholder"
   | "connect.cwd.combo.empty"
   | "connect.cwd.combo.loadError"

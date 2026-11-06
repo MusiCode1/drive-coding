@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.9.0",
+    "version": "1.9.1",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
@@ -378,6 +378,43 @@
         "responses": {
           "200": {
             "description": "OpenAPI spec with x-drive-coding extension",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects": {
+      "delete": {
+        "operationId": "delete_api_projects",
+        "summary": "DELETE /api/projects",
+        "responses": {
+          "204": {
+            "description": "Project history cleared"
+          },
+          "400": {
+            "description": "cwd required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_projects",
+        "summary": "GET /api/projects",
+        "responses": {
+          "200": {
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -865,43 +902,6 @@
         "responses": {
           "200": {
             "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/projects": {
-      "get": {
-        "operationId": "get_api_projects",
-        "summary": "GET /api/projects",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "delete_api_projects",
-        "summary": "DELETE /api/projects",
-        "responses": {
-          "204": {
-            "description": "Project history cleared"
-          },
-          "400": {
-            "description": "cwd required",
             "content": {
               "application/json": {
                 "schema": {

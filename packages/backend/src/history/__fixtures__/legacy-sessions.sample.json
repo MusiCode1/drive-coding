@@ -1,0 +1,783 @@
+{
+  "00000000-0000-4000-8000-000000000001": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000001",
+    "agentId": "11111111-1111-4111-8111-000000000001",
+    "cliKind": "codex",
+    "cwd": "/workspace/project-1",
+    "firstSeenAt": 1700000001000,
+    "lastSeenAt": 1700000901000,
+    "turns": 3,
+    "lastUsed": 1000,
+    "size": 200007,
+    "cycles": [
+      {
+        "startedAt": 1700000001000,
+        "peakUsed": 501,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 0.25,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000002": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000002",
+    "agentId": "11111111-1111-4111-8111-000000000002",
+    "cliKind": "cursor",
+    "cwd": "/workspace/project-2",
+    "firstSeenAt": 1700000002000,
+    "lastSeenAt": 1700000902000,
+    "turns": 6,
+    "lastUsed": 2000,
+    "size": 200014,
+    "cycles": [
+      {
+        "startedAt": 1700000002000,
+        "peakUsed": 502,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 0.5,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000003": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000003",
+    "agentId": "11111111-1111-4111-8111-000000000003",
+    "cliKind": "opencode",
+    "cwd": "/workspace/project-3",
+    "firstSeenAt": 1700000003000,
+    "lastSeenAt": 1700000903000,
+    "turns": 9,
+    "lastUsed": 3000,
+    "size": 200021,
+    "cycles": [
+      {
+        "startedAt": 1700000003000,
+        "peakUsed": 503,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 0.75,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000004": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000004",
+    "agentId": "11111111-1111-4111-8111-000000000004",
+    "cliKind": "claude",
+    "cwd": "/workspace/project-4",
+    "firstSeenAt": 1700000004000,
+    "lastSeenAt": 1700000904000,
+    "turns": 12,
+    "lastUsed": 4000,
+    "size": 200028,
+    "cycles": [
+      {
+        "startedAt": 1700000004000,
+        "peakUsed": 504,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 1.0,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000005": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000005",
+    "agentId": "11111111-1111-4111-8111-000000000005",
+    "cliKind": "codex",
+    "cwd": "/workspace/project-0",
+    "firstSeenAt": 1700000005000,
+    "lastSeenAt": 1700000905000,
+    "turns": 15,
+    "lastUsed": 5000,
+    "size": 200035,
+    "cycles": [
+      {
+        "startedAt": 1700000005000,
+        "peakUsed": 505,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false
+  },
+  "00000000-0000-4000-8000-000000000006": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000006",
+    "agentId": "11111111-1111-4111-8111-000000000006",
+    "cliKind": "cursor",
+    "cwd": "/workspace/project-1",
+    "firstSeenAt": 1700000006000,
+    "lastSeenAt": 1700000906000,
+    "turns": 18,
+    "lastUsed": 6000,
+    "size": 200042,
+    "cycles": [
+      {
+        "startedAt": 1700000006000,
+        "peakUsed": 506,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 1.5,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000007": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000007",
+    "agentId": "11111111-1111-4111-8111-000000000007",
+    "cliKind": "opencode",
+    "cwd": "/workspace/project-2",
+    "firstSeenAt": 1700000007000,
+    "lastSeenAt": 1700000907000,
+    "turns": 21,
+    "lastUsed": 7000,
+    "size": 200049,
+    "cycles": [
+      {
+        "startedAt": 1700000007000,
+        "peakUsed": 507,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 1.75,
+    "costCurrency": "USD",
+    "legacyFieldFromOlderWriter": "must survive"
+  },
+  "00000000-0000-4000-8000-000000000008": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000008",
+    "agentId": "11111111-1111-4111-8111-000000000008",
+    "cliKind": "claude",
+    "cwd": "/workspace/project-3",
+    "firstSeenAt": 1700000008000,
+    "lastSeenAt": 1700000908000,
+    "turns": 24,
+    "lastUsed": 8000,
+    "size": 200056,
+    "cycles": [
+      {
+        "startedAt": 1700000008000,
+        "peakUsed": 508,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 2.0,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000009": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000009",
+    "agentId": "11111111-1111-4111-8111-000000000009",
+    "cliKind": "codex",
+    "cwd": "/workspace/project-4",
+    "firstSeenAt": 1700000009000,
+    "lastSeenAt": 1700000909000,
+    "turns": 27,
+    "lastUsed": 9000,
+    "size": 200063,
+    "cycles": [
+      {
+        "startedAt": 1700000009000,
+        "peakUsed": 509,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 2.25,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000010": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000010",
+    "agentId": "11111111-1111-4111-8111-000000000010",
+    "cliKind": "cursor",
+    "cwd": "/workspace/project-0",
+    "firstSeenAt": 1700000010000,
+    "lastSeenAt": 1700000910000,
+    "turns": 30,
+    "lastUsed": 10000,
+    "size": 200070,
+    "cycles": [
+      {
+        "startedAt": 1700000010000,
+        "peakUsed": 510,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false
+  },
+  "00000000-0000-4000-8000-000000000011": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000011",
+    "agentId": "11111111-1111-4111-8111-000000000011",
+    "cliKind": "opencode",
+    "cwd": "/workspace/project-1",
+    "firstSeenAt": 1700000011000,
+    "lastSeenAt": 1700000911000,
+    "turns": 33,
+    "lastUsed": 11000,
+    "size": 200077,
+    "cycles": [
+      {
+        "startedAt": 1700000011000,
+        "peakUsed": 511,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 2.75,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000012": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000012",
+    "agentId": "11111111-1111-4111-8111-000000000012",
+    "cliKind": "claude",
+    "cwd": "/workspace/project-2",
+    "firstSeenAt": 1700000012000,
+    "lastSeenAt": 1700000912000,
+    "turns": 36,
+    "lastUsed": 12000,
+    "size": 200084,
+    "cycles": [
+      {
+        "startedAt": 1700000012000,
+        "peakUsed": 512,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 3.0,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000013": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000013",
+    "agentId": "11111111-1111-4111-8111-000000000013",
+    "cliKind": "codex",
+    "cwd": "/workspace/project-3",
+    "firstSeenAt": 1700000013000,
+    "lastSeenAt": 1700000913000,
+    "turns": 39,
+    "lastUsed": 13000,
+    "size": 200091,
+    "cycles": [
+      {
+        "startedAt": 1700000013000,
+        "peakUsed": 513,
+        "closedAt": 1700000013005
+      },
+      {
+        "startedAt": 1700000013010,
+        "peakUsed": 1013,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 3.25,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000014": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000014",
+    "agentId": "11111111-1111-4111-8111-000000000014",
+    "cliKind": "cursor",
+    "cwd": "/workspace/project-4",
+    "firstSeenAt": 1700000014000,
+    "lastSeenAt": 1700000914000,
+    "turns": 42,
+    "lastUsed": 14000,
+    "size": 200098,
+    "cycles": [
+      {
+        "startedAt": 1700000014000,
+        "peakUsed": 514,
+        "closedAt": 1700000014005
+      },
+      {
+        "startedAt": 1700000014010,
+        "peakUsed": 1014,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 3.5,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000015": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000015",
+    "agentId": "11111111-1111-4111-8111-000000000015",
+    "cliKind": "opencode",
+    "cwd": "/workspace/project-0",
+    "firstSeenAt": 1700000015000,
+    "lastSeenAt": 1700000915000,
+    "turns": 45,
+    "lastUsed": 15000,
+    "size": 200105,
+    "cycles": [
+      {
+        "startedAt": 1700000015000,
+        "peakUsed": 515,
+        "closedAt": 1700000015005
+      },
+      {
+        "startedAt": 1700000015010,
+        "peakUsed": 1015,
+        "closedAt": 1700000015015
+      },
+      {
+        "startedAt": 1700000015020,
+        "peakUsed": 1515,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false
+  },
+  "00000000-0000-4000-8000-000000000016": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000016",
+    "agentId": "11111111-1111-4111-8111-000000000016",
+    "cliKind": "claude",
+    "cwd": "/workspace/project-1",
+    "firstSeenAt": 1700000016000,
+    "lastSeenAt": 1700000916000,
+    "turns": 48,
+    "lastUsed": 16000,
+    "size": 200112,
+    "cycles": [
+      {
+        "startedAt": 1700000016000,
+        "peakUsed": 516,
+        "closedAt": 1700000016005
+      },
+      {
+        "startedAt": 1700000016010,
+        "peakUsed": 1016,
+        "closedAt": 1700000016015
+      },
+      {
+        "startedAt": 1700000016020,
+        "peakUsed": 1516,
+        "closedAt": 1700000016025
+      },
+      {
+        "startedAt": 1700000016030,
+        "peakUsed": 2016,
+        "closedAt": 1700000016035
+      },
+      {
+        "startedAt": 1700000016040,
+        "peakUsed": 2516,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 4.0,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000017": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000017",
+    "agentId": "11111111-1111-4111-8111-000000000017",
+    "cliKind": "codex",
+    "cwd": "/workspace/project-2",
+    "firstSeenAt": 1700000017000,
+    "lastSeenAt": 1700000917000,
+    "turns": 51,
+    "lastUsed": 17000,
+    "size": 200119,
+    "cycles": [
+      {
+        "startedAt": 1700000017000,
+        "peakUsed": 517,
+        "closedAt": 1700000017005
+      },
+      {
+        "startedAt": 1700000017010,
+        "peakUsed": 1017,
+        "closedAt": 1700000017015
+      },
+      {
+        "startedAt": 1700000017020,
+        "peakUsed": 1517,
+        "closedAt": 1700000017025
+      },
+      {
+        "startedAt": 1700000017030,
+        "peakUsed": 2017,
+        "closedAt": 1700000017035
+      },
+      {
+        "startedAt": 1700000017040,
+        "peakUsed": 2517,
+        "closedAt": 1700000017045
+      },
+      {
+        "startedAt": 1700000017050,
+        "peakUsed": 3017,
+        "closedAt": 1700000017055
+      },
+      {
+        "startedAt": 1700000017060,
+        "peakUsed": 3517,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 4.25,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000018": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000018",
+    "agentId": "11111111-1111-4111-8111-000000000018",
+    "cliKind": "cursor",
+    "cwd": "/workspace/project-3",
+    "firstSeenAt": 1700000018000,
+    "lastSeenAt": 1700000918000,
+    "turns": 54,
+    "lastUsed": 18000,
+    "size": 200126,
+    "cycles": [
+      {
+        "startedAt": 1700000018000,
+        "peakUsed": 518,
+        "closedAt": 1700000018005
+      },
+      {
+        "startedAt": 1700000018010,
+        "peakUsed": 1018,
+        "closedAt": 1700000018015
+      },
+      {
+        "startedAt": 1700000018020,
+        "peakUsed": 1518,
+        "closedAt": 1700000018025
+      },
+      {
+        "startedAt": 1700000018030,
+        "peakUsed": 2018,
+        "closedAt": 1700000018035
+      },
+      {
+        "startedAt": 1700000018040,
+        "peakUsed": 2518,
+        "closedAt": 1700000018045
+      },
+      {
+        "startedAt": 1700000018050,
+        "peakUsed": 3018,
+        "closedAt": 1700000018055
+      },
+      {
+        "startedAt": 1700000018060,
+        "peakUsed": 3518,
+        "closedAt": 1700000018065
+      },
+      {
+        "startedAt": 1700000018070,
+        "peakUsed": 4018,
+        "closedAt": 1700000018075
+      },
+      {
+        "startedAt": 1700000018080,
+        "peakUsed": 4518,
+        "closedAt": 1700000018085
+      },
+      {
+        "startedAt": 1700000018090,
+        "peakUsed": 5018,
+        "closedAt": 1700000018095
+      },
+      {
+        "startedAt": 1700000018100,
+        "peakUsed": 5518,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 4.5,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000019": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000019",
+    "agentId": "11111111-1111-4111-8111-000000000019",
+    "cliKind": "opencode",
+    "cwd": "/workspace/project-4",
+    "firstSeenAt": 1700000019000,
+    "lastSeenAt": 1700000919000,
+    "turns": 57,
+    "lastUsed": 19000,
+    "size": 200133,
+    "cycles": [
+      {
+        "startedAt": 1700000019000,
+        "peakUsed": 519,
+        "closedAt": 1700000019005
+      },
+      {
+        "startedAt": 1700000019010,
+        "peakUsed": 1019,
+        "closedAt": 1700000019015
+      },
+      {
+        "startedAt": 1700000019020,
+        "peakUsed": 1519,
+        "closedAt": 1700000019025
+      },
+      {
+        "startedAt": 1700000019030,
+        "peakUsed": 2019,
+        "closedAt": 1700000019035
+      },
+      {
+        "startedAt": 1700000019040,
+        "peakUsed": 2519,
+        "closedAt": 1700000019045
+      },
+      {
+        "startedAt": 1700000019050,
+        "peakUsed": 3019,
+        "closedAt": 1700000019055
+      },
+      {
+        "startedAt": 1700000019060,
+        "peakUsed": 3519,
+        "closedAt": 1700000019065
+      },
+      {
+        "startedAt": 1700000019070,
+        "peakUsed": 4019,
+        "closedAt": 1700000019075
+      },
+      {
+        "startedAt": 1700000019080,
+        "peakUsed": 4519,
+        "closedAt": 1700000019085
+      },
+      {
+        "startedAt": 1700000019090,
+        "peakUsed": 5019,
+        "closedAt": 1700000019095
+      },
+      {
+        "startedAt": 1700000019100,
+        "peakUsed": 5519,
+        "closedAt": 1700000019105
+      },
+      {
+        "startedAt": 1700000019110,
+        "peakUsed": 6019,
+        "closedAt": 1700000019115
+      },
+      {
+        "startedAt": 1700000019120,
+        "peakUsed": 6519,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": true,
+    "costAmount": 4.75,
+    "costCurrency": "USD"
+  },
+  "00000000-0000-4000-8000-000000000020": {
+    "acpSessionId": "00000000-0000-4000-8000-000000000020",
+    "agentId": "11111111-1111-4111-8111-000000000020",
+    "cliKind": "claude",
+    "cwd": "/workspace/project-0",
+    "firstSeenAt": 1700000020000,
+    "lastSeenAt": 1700000920000,
+    "turns": 60,
+    "lastUsed": 20000,
+    "size": 200140,
+    "cycles": [
+      {
+        "startedAt": 1700000020000,
+        "peakUsed": 520,
+        "closedAt": 1700000020005
+      },
+      {
+        "startedAt": 1700000020010,
+        "peakUsed": 1020,
+        "closedAt": 1700000020015
+      },
+      {
+        "startedAt": 1700000020020,
+        "peakUsed": 1520,
+        "closedAt": 1700000020025
+      },
+      {
+        "startedAt": 1700000020030,
+        "peakUsed": 2020,
+        "closedAt": 1700000020035
+      },
+      {
+        "startedAt": 1700000020040,
+        "peakUsed": 2520,
+        "closedAt": 1700000020045
+      },
+      {
+        "startedAt": 1700000020050,
+        "peakUsed": 3020,
+        "closedAt": 1700000020055
+      },
+      {
+        "startedAt": 1700000020060,
+        "peakUsed": 3520,
+        "closedAt": 1700000020065
+      },
+      {
+        "startedAt": 1700000020070,
+        "peakUsed": 4020,
+        "closedAt": 1700000020075
+      },
+      {
+        "startedAt": 1700000020080,
+        "peakUsed": 4520,
+        "closedAt": 1700000020085
+      },
+      {
+        "startedAt": 1700000020090,
+        "peakUsed": 5020,
+        "closedAt": 1700000020095
+      },
+      {
+        "startedAt": 1700000020100,
+        "peakUsed": 5520,
+        "closedAt": 1700000020105
+      },
+      {
+        "startedAt": 1700000020110,
+        "peakUsed": 6020,
+        "closedAt": 1700000020115
+      },
+      {
+        "startedAt": 1700000020120,
+        "peakUsed": 6520,
+        "closedAt": 1700000020125
+      },
+      {
+        "startedAt": 1700000020130,
+        "peakUsed": 7020,
+        "closedAt": 1700000020135
+      },
+      {
+        "startedAt": 1700000020140,
+        "peakUsed": 7520,
+        "closedAt": 1700000020145
+      },
+      {
+        "startedAt": 1700000020150,
+        "peakUsed": 8020,
+        "closedAt": 1700000020155
+      },
+      {
+        "startedAt": 1700000020160,
+        "peakUsed": 8520,
+        "closedAt": 1700000020165
+      },
+      {
+        "startedAt": 1700000020170,
+        "peakUsed": 9020,
+        "closedAt": 1700000020175
+      },
+      {
+        "startedAt": 1700000020180,
+        "peakUsed": 9520,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": true
+  },
+  "bad-missing-clikind": {
+    "acpSessionId": "bad-missing-clikind",
+    "agentId": "11111111-1111-4111-8111-000000000001",
+    "cwd": "/workspace/project-1",
+    "firstSeenAt": 1700000001000,
+    "lastSeenAt": 1700000901000,
+    "turns": 3,
+    "lastUsed": 1000,
+    "size": 200007,
+    "cycles": [
+      {
+        "startedAt": 1700000001000,
+        "peakUsed": 501,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 0.25,
+    "costCurrency": "USD"
+  },
+  "bad-cycles-not-array": {
+    "acpSessionId": "bad-cycles-not-array",
+    "agentId": "11111111-1111-4111-8111-000000000002",
+    "cliKind": "cursor",
+    "cwd": "/workspace/project-2",
+    "firstSeenAt": 1700000002000,
+    "lastSeenAt": 1700000902000,
+    "turns": 6,
+    "lastUsed": 2000,
+    "size": 200014,
+    "cycles": "nope",
+    "cyclesTruncated": false,
+    "costAmount": 0.5,
+    "costCurrency": "USD"
+  },
+  "bad-numeric-id": {
+    "acpSessionId": 42,
+    "agentId": "11111111-1111-4111-8111-000000000003",
+    "cliKind": "opencode",
+    "cwd": "/workspace/project-3",
+    "firstSeenAt": 1700000003000,
+    "lastSeenAt": 1700000903000,
+    "turns": 9,
+    "lastUsed": 3000,
+    "size": 200021,
+    "cycles": [
+      {
+        "startedAt": 1700000003000,
+        "peakUsed": 503,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 0.75,
+    "costCurrency": "USD"
+  },
+  "bad-cycle-member": {
+    "acpSessionId": "bad-cycle-member",
+    "agentId": "11111111-1111-4111-8111-000000000004",
+    "cliKind": "claude",
+    "cwd": "/workspace/project-4",
+    "firstSeenAt": 1700000004000,
+    "lastSeenAt": 1700000904000,
+    "turns": 12,
+    "lastUsed": 4000,
+    "size": 200028,
+    "cycles": [
+      {
+        "startedAt": "x",
+        "peakUsed": 1,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": 1.0,
+    "costCurrency": "USD"
+  },
+  "ok-bad-optional-cost": {
+    "acpSessionId": "ok-bad-optional-cost",
+    "agentId": "11111111-1111-4111-8111-000000000005",
+    "cliKind": "codex",
+    "cwd": "/workspace/project-0",
+    "firstSeenAt": 1700000005000,
+    "lastSeenAt": 1700000905000,
+    "turns": 15,
+    "lastUsed": 5000,
+    "size": 200035,
+    "cycles": [
+      {
+        "startedAt": 1700000005000,
+        "peakUsed": 505,
+        "closedAt": null
+      }
+    ],
+    "cyclesTruncated": false,
+    "costAmount": "free",
+    "costCurrency": "USD"
+  }
+}

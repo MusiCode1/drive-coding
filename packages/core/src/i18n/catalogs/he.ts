@@ -511,6 +511,7 @@ export const he: Catalog = {
   "sidebar.resizeHandle": "גרור לשינוי רוחב",
   // ─── cwd-path-combo ───
   "connect.cwd.combo.toggle": "הצג תיקיות אחרונות",
+  "connect.cwd.combo.sessionCount": "סשנים",
   "connect.cwd.combo.searchPlaceholder": "חיפוש נתיב…",
   "connect.cwd.combo.empty": "אין תיקיות להצגה",
   "connect.cwd.combo.loadError": "טעינת התיקיות נכשלה",
