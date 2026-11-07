@@ -14,6 +14,10 @@ import {
   PromptParams,
 } from "../packages/backend/src/session-host/http/rpc.ts"
 import { AgentSubscribeBody } from "../packages/core/src/schemas/agent-events.ts"
+import {
+  ScopePolicyPatchBodySchema,
+  ScopePolicySnapshotSchema,
+} from "../packages/core/src/schemas/scope-policy.ts"
 import { RPC_METHODS } from "../packages/core/src/session/rpc-methods.ts"
 import { extractOperations } from "./lint-api-documented.mjs"
 
@@ -118,6 +122,24 @@ const components = {
     RpcLoadSessionParams: arkToJsonSchema(LoadSessionParams, "LoadSessionParams"),
     RpcNewSessionParams: arkToJsonSchema(NewSessionParams, "NewSessionParams"),
     RpcDeleteSessionParams: arkToJsonSchema(DeleteSessionParams, "DeleteSessionParams"),
+    ScopePolicySnapshot: arkToJsonSchema(ScopePolicySnapshotSchema, "ScopePolicySnapshot"),
+    ScopePolicyPatchBody: {
+      ...arkToJsonSchema(ScopePolicyPatchBodySchema, "ScopePolicyPatchBody"),
+      properties: {
+        policies: {
+          type: "object",
+          additionalProperties: false,
+          minProperties: 1,
+          properties: {
+            message: { type: "string", enum: ["ask", "allow", "deny"] },
+            update: { type: "string", enum: ["ask", "allow", "deny"] },
+            close: { type: "string", enum: ["ask", "allow", "deny"] },
+          },
+        },
+      },
+      required: ["policies"],
+      additionalProperties: false,
+    },
   },
 }
 
@@ -361,6 +383,32 @@ const SPECIAL = {
       404: { description: "No connection registry for agent" },
     },
   },
+  "get /api/scope-policy": {
+    responses: {
+      200: {
+        description: "Scope action policy snapshot",
+        content: {
+          "application/json": {
+            schema: { $ref: "#/components/schemas/ScopePolicySnapshot" },
+          },
+        },
+      },
+    },
+  },
+  "patch /api/scope-policy": {
+    requestBody: requestBodyFromSchema("#/components/schemas/ScopePolicyPatchBody"),
+    responses: {
+      200: {
+        description: "Updated scope action policy snapshot",
+        content: {
+          "application/json": {
+            schema: { $ref: "#/components/schemas/ScopePolicySnapshot" },
+          },
+        },
+      },
+      400: jsonErrorResponse("Invalid JSON, policies shape, enum, or empty patch"),
+    },
+  },
   "post /api/voice/live/token": {
     requestBody: contractNoneRequestBody({
       type: "object",
@@ -415,8 +463,8 @@ if (!docsVersion) {
 }
 
 const { paths, count } = buildPaths()
-if (count !== 39) {
-  console.error(`🔴 expected 39 documentable operations, got ${count}`)
+if (count !== 41) {
+  console.error(`🔴 expected 41 documentable operations, got ${count}`)
   process.exit(1)
 }
 

@@ -2,25 +2,30 @@
  * agent-events-deliver.test.ts — format + delivery gate (slice be-events-subscribe C3).
  */
 
+import { parseDriveMessage } from "@drive-coding/core/acp/drive-message-envelope"
 import { describe, expect, it, vi } from "vitest"
 import { createAgentEventBus } from "../session-host/agent-events.js"
 import type { ExtendedSessionHost } from "../session-host/session-host.js"
 import { formatAgentEventPrompt, wireAgentEventDelivery } from "./agent-events-deliver.js"
 
 describe("formatAgentEventPrompt", () => {
-  it("is facts-only with required fields", () => {
+  it("returns a system envelope with required fields", () => {
     const prompt = formatAgentEventPrompt({
       kind: "turn-ended",
       agentId: "00000000-0000-4000-8000-000000000001",
       at: 1_700_000_000_000,
       stopReason: "end_turn",
     })
-    expect(prompt.startsWith("[drive-coding event]")).toBe(true)
-    expect(prompt).toContain("kind: turn-ended")
-    expect(prompt).toContain("agentId:")
-    expect(prompt).toContain("at:")
-    expect(prompt).toContain("stopReason: end_turn")
-    expect(prompt.split("\n").every((line) => !line.includes("."))).toBe(true)
+    expect(prompt.startsWith("[drive-coding event]")).toBe(false)
+    const parsed = parseDriveMessage(prompt)
+    expect(parsed.isOk()).toBe(true)
+    if (parsed.isOk() && parsed.value.source === "system") {
+      expect(parsed.value.eventKind).toBe("turn-ended")
+      expect(parsed.value.subjectAgent.id).toBe("00000000-0000-4000-8000-000000000001")
+      expect(parsed.value.at).toBe(1_700_000_000_000)
+      expect(parsed.value.stopReason).toBe("end_turn")
+      expect(parsed.value.subjectAgent.name).toBeUndefined()
+    }
   })
 
   it("does not include lastAssistantText without extras", () => {
@@ -29,23 +34,35 @@ describe("formatAgentEventPrompt", () => {
       agentId: "a",
       at: 1,
     })
-    expect(prompt).not.toContain("lastAssistantText")
+    const parsed = parseDriveMessage(prompt)
+    expect(parsed.isOk()).toBe(true)
+    if (parsed.isOk() && parsed.value.source === "system") {
+      expect(parsed.value.lastAssistantText).toBeUndefined()
+    }
   })
 
-  it("includes lastAssistantText on turn-ended when extras provide text", () => {
+  it("includes lastAssistantText on turn-ended when extras provide quote", () => {
     const prompt = formatAgentEventPrompt(
       { kind: "turn-ended", agentId: "a", at: 1, stopReason: "end_turn" },
-      { lastAssistantText: "hello" },
+      { lastAssistantText: { text: "hello", truncated: false } },
     )
-    expect(prompt).toContain("lastAssistantText: hello")
+    const parsed = parseDriveMessage(prompt)
+    expect(parsed.isOk()).toBe(true)
+    if (parsed.isOk() && parsed.value.source === "system") {
+      expect(parsed.value.lastAssistantText).toEqual({ text: "hello", truncated: false })
+    }
   })
 
   it("omits lastAssistantText on stall-suspected even with extras", () => {
     const prompt = formatAgentEventPrompt(
       { kind: "stall-suspected", agentId: "a", at: 1, silentMs: 100 },
-      { lastAssistantText: "x" },
+      { lastAssistantText: { text: "x", truncated: false } },
     )
-    expect(prompt).not.toContain("lastAssistantText")
+    const parsed = parseDriveMessage(prompt)
+    expect(parsed.isOk()).toBe(true)
+    if (parsed.isOk() && parsed.value.source === "system") {
+      expect(parsed.value.lastAssistantText).toBeUndefined()
+    }
   })
 
   it("includes optional silentMs and lastTurnError when set", () => {
@@ -56,8 +73,12 @@ describe("formatAgentEventPrompt", () => {
       silentMs: 600_001,
       lastTurnError: { message: "boom" },
     })
-    expect(prompt).toContain("silentMs: 600001")
-    expect(prompt).toContain("lastTurnError.message: boom")
+    const parsed = parseDriveMessage(prompt)
+    expect(parsed.isOk()).toBe(true)
+    if (parsed.isOk() && parsed.value.source === "system") {
+      expect(parsed.value.silentMs).toBe(600_001)
+      expect(parsed.value.lastTurnError).toEqual({ message: "boom" })
+    }
   })
 })
 
@@ -93,10 +114,12 @@ describe("wireAgentEventDelivery", () => {
     expect(emitExtNotification).toHaveBeenCalledWith("_drive/agent_event", event)
     await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce())
     const text = String(prompt.mock.calls[0]?.[1] ?? "")
-    expect(text).toContain("kind:")
-    expect(text).toContain("agentId:")
-    expect(text.startsWith("[drive-coding event]")).toBe(true)
-    expect(text).not.toContain("lastAssistantText")
+    const parsed = parseDriveMessage(text)
+    expect(parsed.isOk()).toBe(true)
+    if (parsed.isOk() && parsed.value.source === "system") {
+      expect(parsed.value.eventKind).toBe("turn-ended")
+      expect(parsed.value.lastAssistantText).toBeUndefined()
+    }
   })
 
   it("includes lastAssistantText in prompt when subscriber opted in and host has assistant message", async () => {
@@ -135,7 +158,14 @@ describe("wireAgentEventDelivery", () => {
 
     await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce())
     const text = String(prompt.mock.calls[0]?.[1] ?? "")
-    expect(text).toContain("lastAssistantText: hello-from-state")
+    const parsed = parseDriveMessage(text)
+    expect(parsed.isOk()).toBe(true)
+    if (parsed.isOk() && parsed.value.source === "system") {
+      expect(parsed.value.lastAssistantText).toEqual({
+        text: "hello-from-state",
+        truncated: false,
+      })
+    }
   })
 
   it("does not include lastAssistantText on stall-suspected even when opted in", async () => {
@@ -171,6 +201,10 @@ describe("wireAgentEventDelivery", () => {
 
     await vi.waitFor(() => expect(prompt).toHaveBeenCalledOnce())
     const text = String(prompt.mock.calls[0]?.[1] ?? "")
-    expect(text).not.toContain("lastAssistantText")
+    const parsed = parseDriveMessage(text)
+    expect(parsed.isOk()).toBe(true)
+    if (parsed.isOk() && parsed.value.source === "system") {
+      expect(parsed.value.lastAssistantText).toBeUndefined()
+    }
   })
 })

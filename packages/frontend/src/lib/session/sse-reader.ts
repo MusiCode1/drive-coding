@@ -32,6 +32,7 @@ import {
 } from "@drive-coding/core/session"
 import { SSE_WATCHDOG_THRESHOLD_MS } from "$lib/engines/liveness-thresholds"
 import { connInfo, connWarn } from "$lib/util/conn-log"
+import { readSnapshotTimeoutMs } from "./snapshot-timeout"
 
 // ─── SSE frame parsing ────────────────────────────────────────────────────────
 
@@ -178,7 +179,7 @@ export type SSEReaderOptions = {
   _clearInterval?: ClearIntervalFn
   /**
    * @internal For testing — override the snapshot-wait bound (default
-   * `SNAPSHOT_TIMEOUT_MS`). Deliberately a plain number, not a `_sleep`-style
+   * `SNAPSHOT_TIMEOUT_MS` in `snapshot-timeout.ts`). Deliberately a plain number, not a `_sleep`-style
    * function seam: reusing `_sleep` here would make the timeout win EVERY
    * race instantly in the many existing tests that mock `_sleep` as an
    * instant no-op (it represents backoff delay, not this). A real (but tiny,
@@ -195,17 +196,25 @@ export type SSEReaderOptions = {
 const MAX_BACKOFF_MS = 30_000
 
 /**
- * slice sse-liveness Commit 4: bounded wait for the `snapshot` frame-zero. A
- * connection that opens successfully (fetch resolves ok) but never sends
- * `snapshot` — a misbehaving proxy, or a host that accepts the request and
- * writes nothing — used to hang `#connectOnce` FOREVER: outside the patches
- * loop entirely, so the silence-watchdog below can never see it, and (for the
- * very first connection) before `#runLoop` even exists, so nothing would
- * ever retry. Unrelated to `SSE_WATCHDOG_THRESHOLD_MS` (that one bounds
- * silence on an ALREADY-open stream, after the snapshot) — this bounds the
- * initial handshake itself, so it's deliberately much shorter.
+ * ‏הגבול על המתנה ל-snapshot ‏חי ב-`snapshot-timeout.ts` ‏— ‏שם גם שני ערוצי
+ * ‏העקיפה מהדפדפן (‏`window.__dcSnapshotTimeoutMs` ‏· ‏`localStorage`) ‏והסיבה
+ * ‏שהם מוגבלים ל-`2^31-1`. ‏נקרא כאן פעם אחת, ‏בבנאי.
+ *
+ * ‏slice sse-liveness Commit 4 — ‏**‏למה הוא קיים בכלל:** ‏חיבור שנפתח בהצלחה
+ * ‏(‏ה-fetch ‏נפתר ok) ‏ואינו שולח `snapshot` ‏לעולם — ‏פרוקסי שמתנהג רע, ‏או
+ * ‏מארח שמקבל את הבקשה ואינו כותב דבר — ‏תלה את `#connectOnce` ‏**‏לנצח**:
+ * ‏מחוץ ללולאת-ה-patches ‏ולכן גלאי-השתיקה שלמטה אינו רואה אותו, ‏ובחיבור
+ * ‏הראשון גם לפני ש-`#runLoop` ‏קיים, ‏ולכן שום דבר לא היה מנסה מחדש.
+ *
+ * ‏אינו קשור ל-`SSE_WATCHDOG_THRESHOLD_MS`: ‏זה חוסם שתיקה על זרם שכבר
+ * ‏**‏פתוח**, ‏אחרי ה-snapshot; ‏הגבול הזה חוסם את לחיצת-היד עצמה, ‏ובברירת-המחדל
+ * ‏נשאר מתחתיו (60s < 75s) ‏כדי שזרם שכן נפתח יישפט ע"י הגלאי ולא ע"י הגבול.
+ *
+ * ‏🔴 ‏ברירת-המחדל הועלתה 2026-10-31 ‏מ-15s ‏ל-60s: ‏הערך הקודם ירה בפועל על
+ * ‏חיבורים תקינים (`timed out waiting for snapshot frame` ‏חזר ונשנה), ‏כלומר
+ * ‏היה קצר מזמן-ההינע האמיתי והפך שער-הגנה לכשל-שווא. ‏⚠️ ‏זמן-ההינע עצמו
+ * ‏**‏לא נמדד**; ‏60s ‏הוא 4× ‏מהקודם, ‏לא תוצאה של מדידה — ‏ומכאן ערוצי-העקיפה.
  */
-const SNAPSHOT_TIMEOUT_MS = 15_000
 
 /**
  * כמה זמן חיבור חייב לשרוד כדי שייחשב "הצלחה" לצורך איפוס ה-backoff.
@@ -273,7 +282,7 @@ export class SSEReader {
     this.#now = opts._now ?? (() => Date.now())
     this.#doSetInterval = opts._setInterval ?? ((fn, ms) => globalThis.setInterval(fn, ms))
     this.#doClearInterval = opts._clearInterval ?? ((id) => globalThis.clearInterval(id))
-    this.#snapshotTimeoutMs = opts._snapshotTimeoutMs ?? SNAPSHOT_TIMEOUT_MS
+    this.#snapshotTimeoutMs = opts._snapshotTimeoutMs ?? readSnapshotTimeoutMs()
   }
 
   /**
@@ -355,7 +364,8 @@ export class SSEReader {
 
   /**
    * waitForSnapshot — advances past any non-snapshot frames to find the
-   * required snapshot frame-zero, bounded by `SNAPSHOT_TIMEOUT_MS` (see its
+   * required snapshot frame-zero, bounded by the value resolved in
+   * `snapshot-timeout.ts` (see its
    * doc comment for why: a connection that never sends `snapshot` used to
    * hang here forever, invisible to both the watchdog and — on the initial
    * connection — the reconnect loop).
@@ -363,7 +373,7 @@ export class SSEReader {
    * ⚠️ Deliberately uses the RAW global `setTimeout`/`clearTimeout`, not the
    * `#sleep` seam: `#sleep` is mocked as an INSTANT no-op in almost every
    * test in this file (it represents backoff delay, which tests skip) — if
-   * this raced against `this.#sleep(SNAPSHOT_TIMEOUT_MS)`, the timeout branch
+   * this raced against `this.#sleep(this.#snapshotTimeoutMs)`, the timeout branch
    * would win EVERY race immediately, breaking every existing test. The raw
    * timer is safe here because `advance` below always resolves within a few
    * microtasks in every test that isn't specifically testing this timeout

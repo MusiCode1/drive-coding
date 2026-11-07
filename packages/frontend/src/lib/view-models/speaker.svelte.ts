@@ -28,7 +28,6 @@
  */
 
 import { createI18n, detectLocale } from "@drive-coding/core/i18n"
-import { cacheKeyFor } from "@drive-coding/core/voice/cache-key"
 import { DEFAULT_VOICE_CONFIG } from "@drive-coding/core/voice/capabilities"
 import type { NarrateContext, ToolCallForNarrate } from "@drive-coding/core/voice/narration-prompt"
 import { select } from "@drive-coding/core/voice/select"
@@ -44,17 +43,20 @@ import { registerSpeaker, type SpeakerDebugInfo } from "$lib/debug/playback-regi
 import type { ThoughtBubble, ToolBubble } from "$lib/types/bubble"
 import { safeUUID } from "$lib/util/uuid"
 import { narrate } from "../adapters/voice/narrate"
-import { translate } from "../adapters/voice/translate"
-import { resolveTts } from "../adapters/voice/tts-resolve"
 import type { AudioPlaylist, SegmentOwner } from "../engines/audio-playlist.svelte"
 import type { AudioSink } from "../engines/audio-sink"
 import type { CuesEngine } from "../engines/cues"
 import type { AgentSession, AgentSessionStatus, TurnState } from "./agent-session.svelte"
-import type { Live } from "./live.svelte"
 import { ttsCapabilities } from "./capabilities.svelte"
+import type { Live } from "./live.svelte"
 import type { Settings } from "./settings.svelte"
+import { executeSpeakerFetchJob } from "./speaker-fetch-job"
+import {
+  createMessageThoughtJob,
+  createToolJob,
+  recordEnqueueObservability,
+} from "./speaker-job-enqueue"
 
-const TARGET_LANG = "he" as const
 const MIN_CHARS = 20
 const MAX_CHARS = 200
 const LOOKAHEAD = 2
@@ -462,33 +464,12 @@ export class Speaker implements SegmentOwner {
     bubbleId?: string,
   ): void {
     if (text.length === 0) return
-    const bid = bubbleId ?? messageId ?? safeUUID()
-    // slice 22: הקצה orderKey דטרמיניסטי — seq יציב פר-bubble, segmentIndex עולה
-    const orderKey = this.#orderAlloc.next(bid)
-    // A2 (אביגיל #2): extract segmentId לפני push כדי להעביר ל-reserve
-    const segmentId = safeUUID()
-    this.#jobs.push({
-      segmentId,
-      kind,
-      messageId,
-      text,
-      status: "pending",
-      abort: new AbortController(),
-      bubbleId,
-      orderKey,
-    })
-    // A2: reserve-on-enqueue — הסגמנט נכנס לפלייליסט מיד (לפני fetch)
-    // A4: העבר bubbleId (bid) כדי ש-PlaylistItem יכיל אותו לניווט jumpToBubble
-    // nav-retain: refetch thunk — מאפשר re-fetch בביקור מפורש אחרי skip
-    this.#player.reserve(segmentId, orderKey, bid, this)
+    const orderKey = this.#orderAlloc.next(bubbleId ?? messageId ?? safeUUID())
+    const { job, bid } = createMessageThoughtJob(kind, messageId, text, bubbleId, orderKey)
+    this.#jobs.push(job)
+    this.#player.reserve(job.segmentId, orderKey, bid, this)
     this.#pendingCount += 1
-    // תצפית בלבד — טבעת קצרה, מוגבלת באורך כדי לא להחזיק תמלילים שלמים.
-    this.#recentTexts.push(text.slice(0, 60))
-    if (this.#recentTexts.length > 8) this.#recentTexts.shift()
-    if (bubbleId !== undefined) {
-      this.#recentSources.push(bubbleId)
-      if (this.#recentSources.length > 8) this.#recentSources.shift()
-    }
+    recordEnqueueObservability(this.#recentTexts, this.#recentSources, text, bubbleId)
   }
 
   /**
@@ -622,92 +603,14 @@ export class Speaker implements SegmentOwner {
 
   async #fetchJob(job: TtsJob): Promise<FetchOutcome> {
     try {
-      let text = job.text
-
-      if (job.kind === "thought") {
-        // redesign-3 / slice 9a: תרגום מחשבות מותנה ב-toggle.
-        // כבוי → הקרא טקסט מקורי (אנגלית). נקרא ברגע ה-fetch (לא tracked).
-        if (this.#settings.translateThoughts) {
-          // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
-          const result = await translate(
-            text,
-            TARGET_LANG,
-            select("translate", DEFAULT_VOICE_CONFIG),
-            job.abort.signal,
-            job.messageId,
-          )
-          if (result !== null && result.status === "translated") {
-            // Slice 4: כתיבה חזרה למקטע כדי ש-ThoughtBubble יוכל להציג HE+EN.
-            if (job.bubbleId !== undefined) {
-              this.#persistThoughtTranslation(job.bubbleId, job.text, result.text)
-            }
-            text = result.text
-          }
-          // already_in_target או null → שמור טקסט מקורי (originalText נשאר undefined)
-        }
-      } else if (job.kind === "tool") {
-        // slice 22: narration נוצר כאן (best-effort). null → דלג על ה-job.
-        const narrationText = await this.#narrateForJob(job)
-        if (narrationText === null) {
-          job.status = "error"
-          return { kind: "error", reason: "narration-null" }
-        }
-        text = narrationText
-      }
-
-      if (job.abort.signal.aborted) {
-        job.status = "error"
-        return { kind: "abandoned" }
-      }
-
-      // V4a-unify: בחר ספק דרך resolveTts (מקור-אמת יחיד); V4b: העברת geminiVoice
-      const { provider, voiceId, modelId } = resolveTts(
-        this.#settings.ttsProvider,
-        this.#settings.voiceId,
-        this.#settings.geminiVoice,
-      )
-      // Commit 4 capability-gate: אל תנסה synthesize לספק לא-זמין.
-      // undefined caps → optimistic (true) → ממשיך (לא חוסם בהתחלה).
-      if (!ttsCapabilities.isAvailable(this.#settings.ttsProvider)) {
-        job.status = "error"
-        console.warn("[Speaker] TTS provider unavailable, skipping segment", {
-          provider: this.#settings.ttsProvider,
-          id: job.segmentId,
-        })
-        return { kind: "error", reason: "provider-unavailable" }
-      }
-      // slice 22: חשב textHash על הטקסט שמסונתז (provenance)
-      const textHash = await cacheKeyFor(text, voiceId, modelId)
-      // Slice 24: מעביר messageId כ-metadata לקאש (UNSTABLE, אופציונלי)
-      const stream = await provider.synthesize({
-        text,
-        voiceId,
-        modelId,
-        messageId: job.messageId,
-        signal: job.abort.signal,
-        directing: { pace: this.#settings.geminiPace, tone: this.#settings.geminiTone },
+      return await executeSpeakerFetchJob(job, {
+        settings: this.#settings,
+        narrateForJob: (j) => this.#narrateForJob(j),
+        persistThoughtTranslation: (b, o, t) => this.#persistThoughtTranslation(b, o, t),
+        prepareSegment: (sid, stream, abort, meta) =>
+          this.#audioStream.prepareSegment(sid, stream, abort, meta),
       })
-      await this.#audioStream.prepareSegment(job.segmentId, stream, job.abort, {
-        messageId: job.messageId,
-        textHash,
-        format: provider.format,
-      })
-      job.status = "ready"
-      return { kind: "ready" }
-    } catch (e) {
-      if (job.abort.signal.aborted) {
-        job.status = "error"
-        return { kind: "abandoned" }
-      }
-      // MIN-5: דלג + המשך, אל תזרוק.
-      job.status = "error"
-      console.warn("TTS job failed, skipping segment", {
-        id: job.segmentId,
-        err: e instanceof Error ? e.message : String(e),
-      })
-      return { kind: "error", reason: "synthesize-failed" }
     } finally {
-      // msr-v2: הפחת ספירה (job הסתיים — גם אם שגיאה)
       if (this.#pendingCount > 0) this.#pendingCount -= 1
     }
   }
@@ -754,24 +657,9 @@ export class Speaker implements SegmentOwner {
       // דרך אותו OrderAllocator — לכן ה-seq של ה-tool נכון יחסית למשפטים סביבו.
       const bid = bubble.id
       const orderKey = this.#orderAlloc.next(bid)
-      // A2 (אביגיל #2): extract segmentId לפני push כדי להעביר ל-reserve
-      const segmentId = safeUUID()
-
-      this.#jobs.push({
-        segmentId,
-        kind: "tool",
-        messageId: null,
-        text: "", // יתמלא ב-#narrateForJob
-        status: "pending",
-        abort: new AbortController(),
-        bubbleId: bid,
-        toolCallId: tc.toolCallId,
-        orderKey,
-      })
-      // A2: reserve-on-enqueue
-      // A4: העבר bubbleId כדי ש-PlaylistItem יכיל אותו לניווט jumpToBubble
-      // nav-retain: refetch thunk — re-fetch בביקור מפורש אחרי skip
-      this.#player.reserve(segmentId, orderKey, bid, this)
+      const job = createToolJob(bid, tc.toolCallId, orderKey)
+      this.#jobs.push(job)
+      this.#player.reserve(job.segmentId, orderKey, bid, this)
       this.#pendingCount += 1
       this.#pumpFetchLoop()
     }

@@ -16,20 +16,26 @@ import {
 } from "../agents/persistent-registry.js"
 import { shutdownAgents } from "../agents/shutdown-policy.js"
 import { type AgentOrchestrator, createAgentOrchestrator } from "../app/agent-orchestrator.js"
-import { createProjectsRegistry } from "../app/projects-registry.js"
 import { createRecordingsStore } from "../app/recordings-store.js"
 import { createEvictionController } from "../delivery/eviction-controller.js"
 import { createMemoryGuard, type MemoryGuard } from "../delivery/memory-guard.js"
 import { createWireRecorder } from "../delivery/wire-recorder.js"
+import { asTokenUsageStore } from "../history/session-history-as-token-usage.js"
+import {
+  createSessionHistoryStore,
+  resolveHistoryDbFile,
+  type SessionHistoryStore,
+} from "../history/session-history-store.js"
 import { ensureStateSubdir } from "../paths.js"
 import { createSessionHostRegistryOpts } from "../server-session-host-opts.js"
 import { type AgentEventBus, createAgentEventBus } from "../session-host/agent-events.js"
 import { createAndRegisterSessionHostHttp } from "../session-host/http/index.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { wireTokenUsagePatches } from "../usage/token-usage-patch-wire.js"
-import { createTokenUsageStore, type TokenUsageStore } from "../usage/token-usage-store.js"
+import type { TokenUsageStore } from "../usage/token-usage-store.js"
 import { createUsageStore, type UsageStore } from "../usage/usage-store.js"
 import { wireRecorderDir } from "./config.js"
+import { bootDeadlineFromNow } from "./sqlite-bootstrap.js"
 
 const log = createLogger("backend.server")
 
@@ -43,7 +49,6 @@ export type BootDeps = {
   registry: PersistentAgentRegistry
   wireRecorder: ReturnType<typeof createWireRecorder>
   connectionRegistry: ReturnType<typeof createConnectionRegistry>
-  projectsRegistry: ReturnType<typeof createProjectsRegistry>
   recordingsStore: ReturnType<typeof createRecordingsStore>
   evictionController: ReturnType<typeof createEvictionController>
   acpSessionIdCache: Map<string, string>
@@ -52,20 +57,26 @@ export type BootDeps = {
   orchestrator: AgentOrchestrator
   usageStore: UsageStore
   tokenUsageStore: TokenUsageStore
+  sessionHistoryStore: SessionHistoryStore
   memoryGuard: MemoryGuard
 }
 
-export function createDeps(
+export type CreateDepsOpts = {
+  /** Shared boot budget from `prepareBoot` — product path must pass this. */
+  bootDeadlineAt?: number
+}
+
+export async function createDeps(
   config: DriveCodingConfig,
   env: NodeJS.ProcessEnv,
   app: Hono,
-): { deps: BootDeps; disposables: Disposable[] } {
+  opts?: CreateDepsOpts,
+): Promise<{ deps: BootDeps; disposables: Disposable[] }> {
   const registry = createPersistentAgentRegistry({
     file: resolveAgentsStoreFile(config, env, configDefault("port")),
   })
   const wireRecorder = createWireRecorder({ dir: wireRecorderDir(config) })
   const connectionRegistry = createConnectionRegistry({ wireRecorder })
-  const projectsRegistry = createProjectsRegistry(ensureStateSubdir("cache"))
   const recordingsStore = createRecordingsStore(ensureStateSubdir("recordings"))
   const evictionController = createEvictionController()
   const acpSessionIdCache = new Map<string, string>()
@@ -74,10 +85,17 @@ export function createDeps(
   const tokenUsageStoreRef: { current: TokenUsageStore | null } = { current: null }
   const agentEventBus = createAgentEventBus()
 
+  const historyDbFile = resolveHistoryDbFile(config, env)
+  const sessionHistoryStore = await createSessionHistoryStore(historyDbFile, {
+    deadlineAt: opts?.bootDeadlineAt ?? bootDeadlineFromNow(),
+  })
+  const tokenUsageStore = asTokenUsageStore(sessionHistoryStore)
+  tokenUsageStoreRef.current = tokenUsageStore
+
   const sessionHostRegistryOpts = createSessionHostRegistryOpts({
     registry,
-    projectsRegistry,
     acpSessionIdCache,
+    sessionHistoryStore,
     agentEventBus,
     getOrchestrator: () => orchestratorRef.current,
     evictionController,
@@ -106,15 +124,12 @@ export function createDeps(
   const orchestrator = createAgentOrchestrator({
     registry,
     connectionRegistry,
-    projectsRegistry,
     sessionHostRegistry: agentSessionRegistry,
     urlConfig: config,
   })
   orchestratorRef.current = orchestrator
 
   const usageStore = createUsageStore(ensureStateSubdir("usage"))
-  const tokenUsageStore = createTokenUsageStore(ensureStateSubdir("token-usage"))
-  tokenUsageStoreRef.current = tokenUsageStore
   const memoryGuard = createMemoryGuard({
     thresholdBytes: (config.rssBudgetMb ?? configDefault("rssBudgetMb")) * 1024 * 1024,
   })
@@ -130,7 +145,7 @@ export function createDeps(
     },
     { name: "stopWatching", dispose: () => stopWatching() },
     { name: "usageStore", dispose: () => usageStore.flushUsageOnShutdown() },
-    { name: "tokenUsageStore", dispose: () => tokenUsageStore.flushOnShutdown() },
+    { name: "sessionHistoryStore", dispose: () => sessionHistoryStore.close() },
     { name: "agentsStore", dispose: () => registry.flush() },
   ]
 
@@ -140,7 +155,6 @@ export function createDeps(
     registry,
     wireRecorder,
     connectionRegistry,
-    projectsRegistry,
     recordingsStore,
     evictionController,
     acpSessionIdCache,
@@ -149,6 +163,7 @@ export function createDeps(
     orchestrator,
     usageStore,
     tokenUsageStore,
+    sessionHistoryStore,
     memoryGuard,
   }
 

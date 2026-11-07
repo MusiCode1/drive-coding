@@ -569,3 +569,57 @@ describe("Settings — fe-defaults gate", () => {
     })
   })
 })
+
+describe("Settings — TTS model persistence (tts-model-choice)", () => {
+  test("defaults: eleven_v3 + gemini-3.1 when localStorage empty", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect(s.elevenLabsModelId).toBe("eleven_v3")
+    expect(s.geminiModelId).toBe("gemini-3.1-flash-tts-preview")
+  })
+
+  test("legacy blob without model keys keeps defaults after new Settings()", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ voiceId: SARAH_ID, ttsProvider: "google" }))
+    const s = new Settings()
+    expect(s.elevenLabsModelId).toBe("eleven_v3")
+    expect(s.geminiModelId).toBe("gemini-3.1-flash-tts-preview")
+  })
+
+  test("unknown model id in storage → fallback to provider default", () => {
+    const store = installLocalStorage()
+    store.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        elevenLabsModelId: "not-a-model",
+        geminiModelId: "gpt-tts",
+      }),
+    )
+    const s = new Settings()
+    expect(s.elevenLabsModelId).toBe("eleven_v3")
+    expect(s.geminiModelId).toBe("gemini-3.1-flash-tts-preview")
+  })
+
+  test("setElevenLabsModelId persists and reloads via new Settings()", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setElevenLabsModelId("eleven_v4")
+    const s2 = new Settings()
+    expect(s2.elevenLabsModelId).toBe("eleven_v4")
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.geminiModelId).toBe("gemini-3.1-flash-tts-preview")
+  })
+
+  test("setGeminiModelId persists separately from ElevenLabs", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setGeminiModelId("gemini-3.8-flash-lite-tts")
+    expect(JSON.parse(store.get(STORAGE_KEY) as string).geminiModelId).toBe(
+      "gemini-3.8-flash-lite-tts",
+    )
+    s.setElevenLabsModelId("eleven_v4_turbo")
+    const s2 = new Settings()
+    expect(s2.geminiModelId).toBe("gemini-3.8-flash-lite-tts")
+    expect(s2.elevenLabsModelId).toBe("eleven_v4_turbo")
+  })
+})

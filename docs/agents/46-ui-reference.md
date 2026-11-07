@@ -10,8 +10,8 @@ tags: [ui]
 surface: [ui]
 stability: transitional
 routes: []
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.5.0
+updated: 2026-10-11
 ---
 
 # UI reference
@@ -22,6 +22,9 @@ the user picks another **Interface language** (on Connect or in Settings).
 
 The bare `/chat` route (no CLI or session id) is a thin guard that sends the user home
 when no session is active — not a fifth main screen.
+
+`/chat/<cliKind>/new` is a **deep link**, not a screen the user navigates to from inside
+the app — see its own section below.
 
 ## Connect (`/`)
 
@@ -56,6 +59,32 @@ checking whether agents are already running on the machine.
 
 **State notes:** Active-process count and machine-load numbers change continuously; describe
 the section, not a specific reading from one visit.
+
+## Deep link — new session (`/chat/<cliKind>/new?cwd=<path>`)
+
+**When the user is here:** they opened a link that is meant to start a **new** session on
+a given CLI and folder, skipping the Connect screen. This is a landing route, not a screen
+with controls — the user sees a short status line and is moved on.
+
+**What the user sees:** a one-line status while the session is created, then the Chat
+screen for the new session. The deep-link URL itself is **replaced** in history, so the
+browser Back button does not return to it (and cannot re-trigger a spawn).
+
+**`cwd` handling**
+
+| The link says | What happens |
+|---|---|
+| a path starting with `/` | used as-is |
+| a relative path (`Projects/app`) | resolved against the user's home directory |
+| `?cwd=` empty, or no `?cwd` at all | **no session is created** — the user lands on Connect to pick a folder |
+| a percent-encoded path (`%2Fhome%2F…`) | rejected with a message; double-encoded paths are not accepted |
+
+**CLI handling:** a `cliKind` that is not in the backend's registry produces an explicit
+error on screen. The app does **not** silently fall back to a different CLI.
+
+**If the folder does not exist** the spawn fails and the user stays on this route with the
+backend's error text. That error currently names the CLI binary rather than the folder —
+a known rough edge, not a sign the link was malformed.
 
 ## Chat (`/chat/<cliKind>/<sessionId>`)
 
@@ -128,6 +157,24 @@ or inspecting token/TTS status for the backend.
     it shows a human-readable voice name, e.g. a name plus a short style description).
   - Switches: **Speak model thoughts**, **Narrate tool actions**, **Translate thoughts to
     Hebrew** (observed on). **Car mode (Play on Bluetooth = record)** may appear **disabled**.
+- **Microphone** — picker for the **input device** used for recording. Default option
+  **System default**. **Refresh list** re-enumerates.
+  - **The choice applies to every voice path**: push-to-talk recording, dictation, Live,
+    and wake-word listening. There is no separate per-feature microphone.
+  - **An explicit choice is sticky.** Plugging in a headset does **not** take over the
+    microphone the user picked — that is the point of the setting. A newly connected
+    device only becomes active if the user selects it.
+  - If the selected device is unplugged the app falls back to the system default and
+    shows **Selected device is not connected — using system default**. The preference is
+    **kept**, so reconnecting the device restores it without the user re-picking.
+  - A change takes effect on the **next** recording, not in the middle of one. Wake-word
+    listening is continuous, so it restarts to apply the change.
+  - Device **names** require microphone permission. Until then the picker shows
+    **Allow access to see device names** and entries may be unnamed — the setting still
+    works, only the labels are hidden.
+  - When the platform exposes a single input (common on phones) the hint reads **Only one
+    input source is exposed; routing is controlled by the OS** — there is nothing to pick,
+    and routing is an OS-level choice.
 - **TTS Status** — a **Refresh** button (it reads **Loading…** while fetching), **ElevenLabs quota**,
   **Usage (total since startup)** with **ElevenLabs** / **Gemini** rows (may show **—** while
   loading).
@@ -141,7 +188,8 @@ or inspecting token/TTS status for the backend.
 - **Backend URL** — text field with helper **Leave empty in dev mode. In production
   (Cloudflare) enter the full BE URL.**
 - **Session transport** — picker (observed **HTTP**).
-- Footer **Version: v0.40.1 (b550ac6a)** (semver + build id shown in-app).
+- Footer **Version: v<semver> (<build id>)** — the running version, shown in-app.
+  ⚠️ Read it off the screen; do not quote a version from this page.
 - **Reset** and **Save & Open**.
 
 **Side panel on `/settings` and `/usage`:** the same session sidebar chrome as Chat may
@@ -202,7 +250,7 @@ Same session side panel / **Drag to open** behavior as Settings.
 - Descriptions match the **application build shown in Settings** (observed **Version:
   v0.40.1 (b550ac6a)** at documentation time), not the `docs_version` of this markdown
   bundle.
-- **Route paths** on this page (`/`, `/chat/...`, `/settings`, `/usage`) are pinned by an
+- **Route paths** on this page (`/`, `/chat/...`, `/chat/<cliKind>/new`, `/settings`, `/usage`) are pinned by an
   automated coupling test; **control descriptions are not** — labels can change between
   releases without failing that test.
 - Internal test routes (`/bt-test`, `/wake-word-test`, `/playlist-nav-chrome-test`) are

@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.3.0",
+  "docsVersion": "1.9.1",
   "docs": [
     {
       "id": "orientation",
@@ -64,7 +64,7 @@
       "tags": ["session", "ownership", "turnstate"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.6.0",
       "routes": [
         "GET /api/agents",
         "POST /api/agents",
@@ -89,6 +89,7 @@
         "Close",
         "Ownership and liveness (HTTP session host)",
         "Identity header",
+        "Inbound prompt envelope (receiver)",
         "Configure during lifecycle",
         "CLI equivalents",
         "Limits (MCP)"
@@ -158,17 +159,24 @@
       "summary": "What the drive-coding UI renders from agent output, and what it will not render.",
       "read_when": [
         "You are about to emit a file link, an image or a diagram",
-        "Your output rendered as plain text and you expected something richer"
+        "Your output rendered as plain text and you expected something richer",
+        "You send or receive a drive-coding-msg envelope and need to know what the chat UI shows"
       ],
       "tags": ["render", "output", "ui"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.7.1",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/45-render-contract.md",
       "headings": [
         "Render contract",
+        "`drive-coding-msg` v1 — what the chat UI renders",
+        "When the UI treats text as an envelope",
+        "Agent envelope (`source=\"agent\"`)",
+        "System envelope (`source=\"system\"`)",
+        "Invalid or partial XML",
+        "What envelope display does **not** prove",
         "Images — recipe",
         "Local files and the file proxy",
         "Diagrams",
@@ -191,13 +199,14 @@
       "tags": ["ui"],
       "surface": ["ui"],
       "stability": "transitional",
-      "docs_version": "1.2.0",
+      "docs_version": "1.5.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/46-ui-reference.md",
       "headings": [
         "UI reference",
         "Connect (`/`)",
+        "Deep link — new session (`/chat/<cliKind>/new?cwd=<path>`)",
         "Chat (`/chat/<cliKind>/<sessionId>`)",
         "Settings (`/settings`)",
         "Usage (`/usage`)",
@@ -217,7 +226,7 @@
       "tags": ["rpc", "session"],
       "surface": ["http"],
       "stability": "transitional",
-      "docs_version": "1.2.0",
+      "docs_version": "1.6.0",
       "routes": ["POST /api/agents/:id/rpc"],
       "mcp_tools": [],
       "path": "docs/agents/50-rpc.md",
@@ -226,6 +235,7 @@
         "Methods",
         "`waitMs` and blocking",
         "HTTP status codes",
+        "Envelope on `session/prompt`",
         "Parameter validation (selected)",
         "OpenAPI"
       ]
@@ -242,8 +252,8 @@
       "tags": ["identity"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.2.0",
-      "routes": ["POST /api/agents/:id/reply"],
+      "docs_version": "1.7.0",
+      "routes": ["POST /api/agents/:id/reply", "GET /api/scope-policy", "PATCH /api/scope-policy"],
       "mcp_tools": [],
       "path": "docs/agents/60-identity-and-scopes.md",
       "headings": [
@@ -252,7 +262,9 @@
         "Scope token",
         "What scoped writes protect",
         "HTTP status — `POST /api/agents/:id/reply`",
-        "Not a security boundary"
+        "Not a security boundary",
+        "Scope action policy (message / update / close)",
+        "HTTP API"
       ]
     },
     {
@@ -267,7 +279,7 @@
       "tags": ["subagents", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.6.0",
       "routes": ["GET /api/agent-prompt", "DELETE /api/agents"],
       "mcp_tools": ["session_open", "notify_parent"],
       "path": "docs/agents/70-subagents.md",
@@ -365,12 +377,13 @@
       "read_when": [
         "You need to know if the backend loop is stalling or memory is climbing",
         "You want token or CLI usage summaries without parsing agent logs",
-        "You changed config.jsonc and need HOT_KEYS applied without restart"
+        "You changed config.jsonc and need HOT_KEYS applied without restart",
+        "You set scope escalation defaults in config or ENV (message / update / close groups)"
       ],
       "tags": ["diagnostics"],
       "surface": ["http"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.9.1",
       "routes": [
         "GET /api/diag",
         "GET /api/usage/summary",
@@ -385,10 +398,13 @@
       "headings": [
         "Diagnostics and operations",
         "Liveness vs deep diag",
+        "Session history storage",
         "Usage",
         "POST /api/client-log",
         "POST /api/reload-config",
-        "GET /api/options"
+        "Hot-reload timeout keys",
+        "GET /api/options",
+        "Scope action policy (boot config)"
       ]
     },
     {
@@ -429,7 +445,7 @@
       "tags": ["cli"],
       "surface": ["cli"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.6.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/96-cli.md",

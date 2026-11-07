@@ -54,6 +54,11 @@ export interface ConnectOpts {
    * null/undefined = ללא הזרקה. ספקים שלא קוראים את השדה (opencode/spawn) מתעלמים בשקט.
    */
   systemPrompt?: string | null
+  /**
+   * Full surface prompt built by the orchestrator. Providers that read it prefer it over
+   * systemPrompt; others ignore it silently. Not stored on the registry record.
+   */
+  agentPrompt?: string | null
 }
 
 /**

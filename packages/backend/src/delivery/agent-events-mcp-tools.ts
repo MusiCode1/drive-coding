@@ -15,6 +15,7 @@ import { AGENT_ID_HEADER } from "../agent-identity.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import type { AgentEventBus } from "../session-host/agent-events.js"
 import type { McpRequestContext } from "./http-mcp.js"
+import { senderFromRecord, wrapAgentText } from "./drive-message-source.js"
 
 const log = createLogger("backend.mcp.agent-events")
 
@@ -111,7 +112,10 @@ export function registerAgentEventMcpTools(
           return jsonError("parent has no sessionId")
         }
 
-        void parentHost.prompt(sessionId, input.text).catch((e) => {
+        const callerSender = callerRecord ? senderFromRecord(callerRecord) : undefined
+        const text =
+          callerSender !== undefined ? wrapAgentText(callerSender, input.text) : input.text
+        void parentHost.prompt(sessionId, text).catch((e) => {
           log.warn({ err: e, parentId, callerAgentId }, "notify_parent prompt failed")
         })
         return jsonResult({ ok: true, parent: parentId })

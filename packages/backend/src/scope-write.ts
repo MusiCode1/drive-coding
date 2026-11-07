@@ -3,8 +3,9 @@
  */
 // Guard rail, not a lock - see NOT_A_SECURITY_BOUNDARY in ./agent-scope.ts
 
-import type { AgentRegistry } from "@drive-coding/core"
+import type { Agent, AgentRegistry } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
+import { buildScopePromptDetail, type ScopePartyInfo } from "@drive-coding/core/types/scope-prompt"
 import {
   authorizeWrite,
   NOT_A_SECURITY_BOUNDARY,
@@ -12,6 +13,7 @@ import {
   SCOPE_HEADER,
   verifyToken,
 } from "./agent-scope.js"
+import { escalationPolicyForCaller } from "./scope-policy.js"
 import type { AgentSessionRegistry } from "./session-host/registry.js"
 
 const log = createLogger("backend.scope")
@@ -41,7 +43,7 @@ export async function checkScopedWrite(deps: ScopedWriteDeps): Promise<boolean> 
     targetId: deps.targetId,
     verb: deps.verb,
     agents,
-    onEscalate: async () => escalateScopePermission(deps),
+    onEscalate: async () => escalateScopePermission(deps, agents),
   })
   if (decision !== "allow") {
     log.info(
@@ -52,20 +54,47 @@ export async function checkScopedWrite(deps: ScopedWriteDeps): Promise<boolean> 
   return decision === "allow"
 }
 
-async function escalateScopePermission(deps: ScopedWriteDeps): Promise<"allow" | "deny"> {
+function agentToScopeParty(agent: Agent): ScopePartyInfo {
+  return {
+    id: agent.id,
+    cliKind: agent.cliKind,
+    cwd: agent.cwd,
+    title: agent.title,
+    roleLabel: agent.roleLabel,
+  }
+}
+
+async function escalateScopePermission(
+  deps: ScopedWriteDeps,
+  agents: readonly Agent[],
+): Promise<"allow" | "deny"> {
   const { token, targetId, verb, sessionRegistry } = deps
   if (!token) return "deny"
   const verified = verifyToken(token)
   if (!verified) return "deny"
 
+  const caller = agents.find((a) => a.id === verified.agentId)
+  const policy = escalationPolicyForCaller(verb, caller)
+  if (policy === "allow") return "allow"
+  if (policy === "deny") return "deny"
+
   const callerHost = sessionRegistry.getHost(verified.agentId)
   if (!callerHost) return "deny"
   if (callerHost.state.pending.permission !== null) return "deny"
+
+  const parties = agents.map(agentToScopeParty)
+  const detail = buildScopePromptDetail({
+    callerId: verified.agentId,
+    targetId,
+    verb,
+    agents: parties,
+  })
 
   const decision = await callerHost.requestScopePermission({
     callerId: verified.agentId,
     targetId,
     verb,
+    detail,
   })
   if (decision === "allow_always") {
     recordAllowAlwaysGrant(verified.agentId, targetId, verb)
@@ -86,7 +115,7 @@ export function scopeDeniedBody(): ScopeDeniedBody {
     reason: "This write targets an agent outside your subtree and was denied.",
     hint:
       "Ask the user to approve the action in the drive-coding UI. " +
-      "If no one responds within 30 seconds, the pending scope request is rejected automatically.",
+      "If no one responds within the configured scope window, the pending scope request is rejected automatically.",
   }
 }
 

@@ -15,8 +15,8 @@ routes:
 mcp_tools:
   - session_open
   - notify_parent
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.6.0
+updated: 2026-10-13
 ---
 
 # Subagents
@@ -51,6 +51,10 @@ Registration lives in **`delivery/agent-events-mcp-tools.ts:99`** (not `mcp-writ
 **`notify_parent` appears in the MCP tool list only when the session has `parentAgentId`.** A root session will not see it — that is expected, not a bug (`agent-events-mcp-tools.ts:95-99`).
 
 The tool prompts the parent's live session with your text (`agent-events-mcp-tools.ts:102-117`).
+When you are a known caller, that text is wrapped as **`drive-coding-msg` v1** with **`sender`**
+set to **your** agent id/name and **`body`** equal to the notify text — same shape as
+**session_send**. The parent should read **`sender`** as “which child spoke”, not as proof the
+user typed the message.
 
 HTTP alternative for event delivery: **`POST /api/agents/:id/subscribe`** (documented in `97-transports`).
 

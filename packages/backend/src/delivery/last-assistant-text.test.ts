@@ -4,6 +4,7 @@
 
 import { describe, expect, it } from "vitest"
 import {
+  extractLastAssistantQuote,
   extractLastAssistantText,
   LAST_ASSISTANT_TEXT_MAX_CHARS,
 } from "./last-assistant-text.js"
@@ -43,3 +44,38 @@ describe("extractLastAssistantText", () => {
     expect(text?.slice(0, LAST_ASSISTANT_TEXT_MAX_CHARS)).toBe("x".repeat(LAST_ASSISTANT_TEXT_MAX_CHARS))
   })
 })
+
+describe("extractLastAssistantQuote", () => {
+  it("sets truncated from threshold not trailing ellipsis in source", () => {
+    const endsWithEllipsis = `${"y".repeat(LAST_ASSISTANT_TEXT_MAX_CHARS - 1)}…`
+    const quote = extractLastAssistantQuote([
+      { role: "assistant", segments: [{ text: endsWithEllipsis }] },
+    ])
+    expect(quote).toEqual({ text: endsWithEllipsis, truncated: false })
+  })
+
+  it("returns prior assistant when latest assistant message is empty", () => {
+    const quote = extractLastAssistantQuote([
+      { role: "assistant", segments: [{ text: "prior-turn" }] },
+      { role: "user", segments: [{ text: "next" }] },
+      { role: "assistant", segments: [{ text: "" }] },
+    ])
+    expect(quote).toEqual({ text: "prior-turn", truncated: false })
+  })
+
+  it("uses last non-empty assistant in session", () => {
+    const quote = extractLastAssistantQuote([
+      { role: "assistant", segments: [{ text: "first" }] },
+      { role: "assistant", segments: [{ text: "second" }] },
+    ])
+    expect(quote).toEqual({ text: "second", truncated: false })
+  })
+
+  it("marks truncated true when over max", () => {
+    const long = "z".repeat(LAST_ASSISTANT_TEXT_MAX_CHARS + 1)
+    const quote = extractLastAssistantQuote([{ role: "assistant", segments: [{ text: long }] }])
+    expect(quote?.truncated).toBe(true)
+    expect(quote?.text.endsWith("…")).toBe(true)
+  })
+})
+

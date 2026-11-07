@@ -32,6 +32,27 @@ export const MAX_TIMEOUT_MS = 2_147_483_647
  * opposite of what someone writing a huge number intends. Falling back to
  * "no timeout" fails in the safe direction.
  */
+export const DEFAULT_SCOPE_PERMISSION_TIMEOUT_MS = 120_000
+
+/**
+ * resolveScopeTimeoutMs — parses SCOPE_PERMISSION_TIMEOUT_MS.
+ *
+ * Like resolveRequestTimeoutMs, but the default is 120s rather than `null`,
+ * because scope escalation waits on another agent, not a human at the screen.
+ *
+ * `never` / `off` / `0` / negative / NaN / above MAX_TIMEOUT_MS ⇒ `null`.
+ * `undefined` / blank ⇒ DEFAULT_SCOPE_PERMISSION_TIMEOUT_MS.
+ */
+export function resolveScopeTimeoutMs(raw: string | undefined): number | null {
+  if (raw === undefined) return DEFAULT_SCOPE_PERMISSION_TIMEOUT_MS
+  const trimmed = raw.trim().toLowerCase()
+  if (trimmed === "") return DEFAULT_SCOPE_PERMISSION_TIMEOUT_MS
+  if (trimmed === "never" || trimmed === "off") return null
+  const n = Number(trimmed)
+  if (!Number.isFinite(n) || n <= 0 || n > MAX_TIMEOUT_MS) return null
+  return n
+}
+
 export function resolveRequestTimeoutMs(raw: string | undefined): number | null {
   if (raw === undefined) return null
   const trimmed = raw.trim().toLowerCase()
@@ -50,9 +71,11 @@ export function resolveRequestTimeoutMs(raw: string | undefined): number | null 
 export function defaultRequestTimeouts(env: NodeJS.ProcessEnv = process.env): {
   permission: number | null
   elicitation: number | null
+  scopePermission: number | null
 } {
   return {
     permission: resolveRequestTimeoutMs(env.PERMISSION_TIMEOUT_MS),
     elicitation: resolveRequestTimeoutMs(env.ELICITATION_TIMEOUT_MS),
+    scopePermission: resolveScopeTimeoutMs(env.SCOPE_PERMISSION_TIMEOUT_MS),
   }
 }

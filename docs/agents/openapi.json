@@ -2,10 +2,64 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.3.0",
+    "version": "1.9.1",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
+    "/api/scope-policy": {
+      "get": {
+        "operationId": "get_api_scope_policy",
+        "summary": "GET /api/scope-policy",
+        "responses": {
+          "200": {
+            "description": "Scope action policy snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopePolicySnapshot"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_scope_policy",
+        "summary": "PATCH /api/scope-policy",
+        "responses": {
+          "200": {
+            "description": "Updated scope action policy snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopePolicySnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON, policies shape, enum, or empty patch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopePolicyPatchBody"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/voice/live/token": {
       "post": {
         "operationId": "post_api_voice_live_token",
@@ -324,6 +378,43 @@
         "responses": {
           "200": {
             "description": "OpenAPI spec with x-drive-coding extension",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects": {
+      "delete": {
+        "operationId": "delete_api_projects",
+        "summary": "DELETE /api/projects",
+        "responses": {
+          "204": {
+            "description": "Project history cleared"
+          },
+          "400": {
+            "description": "cwd required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_projects",
+        "summary": "GET /api/projects",
+        "responses": {
+          "200": {
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -811,43 +902,6 @@
         "responses": {
           "200": {
             "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/projects": {
-      "get": {
-        "operationId": "get_api_projects",
-        "summary": "GET /api/projects",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "delete_api_projects",
-        "summary": "DELETE /api/projects",
-        "responses": {
-          "204": {
-            "description": "Project history cleared"
-          },
-          "400": {
-            "description": "cwd required",
             "content": {
               "application/json": {
                 "schema": {
@@ -1666,6 +1720,71 @@
           }
         },
         "required": ["sessionId"]
+      },
+      "ScopePolicySnapshot": {
+        "type": "object",
+        "properties": {
+          "policies": {
+            "type": "object",
+            "properties": {
+              "close": {
+                "enum": ["allow", "ask", "deny"]
+              },
+              "message": {
+                "enum": ["allow", "ask", "deny"]
+              },
+              "update": {
+                "enum": ["allow", "ask", "deny"]
+              }
+            },
+            "required": ["close", "message", "update"],
+            "additionalProperties": false
+          },
+          "sources": {
+            "type": "object",
+            "properties": {
+              "close": {
+                "enum": ["agent", "default", "env", "override"]
+              },
+              "message": {
+                "enum": ["agent", "default", "env", "override"]
+              },
+              "update": {
+                "enum": ["agent", "default", "env", "override"]
+              }
+            },
+            "required": ["close", "message", "update"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["policies", "sources"],
+        "additionalProperties": false
+      },
+      "ScopePolicyPatchBody": {
+        "type": "object",
+        "properties": {
+          "policies": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "message": {
+                "type": "string",
+                "enum": ["ask", "allow", "deny"]
+              },
+              "update": {
+                "type": "string",
+                "enum": ["ask", "allow", "deny"]
+              },
+              "close": {
+                "type": "string",
+                "enum": ["ask", "allow", "deny"]
+              }
+            }
+          }
+        },
+        "required": ["policies"],
+        "additionalProperties": false
       }
     }
   }

@@ -17,6 +17,7 @@
  * ─── slice session-host-pending-surface C3-ד (TDD): non-blocking prompt/cancel ───
  */
 
+import { serializeDriveMessage } from "@drive-coding/core/acp/drive-message-envelope"
 import type { SessionState } from "@drive-coding/core/session"
 import {
   applyUserMessage,
@@ -26,9 +27,11 @@ import {
 import type { AcpClient, AcpClientCallbacks, PromptBlocks } from "@drive-coding/provider/client"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { AGENT_ID_HEADER, buildAgentMcpServers } from "../../agent-identity.js"
+import { issueToken, SCOPE_HEADER } from "../../agent-scope.js"
 import { createInMemoryAgentRegistry } from "../../agents/registry.js"
-import { buildAgentMcpServers } from "../../agent-identity.js"
 import { setSelfBaseUrlForTests } from "../../instances.js"
+import { resetScopePolicyForTests, setScopePolicyOverride } from "../../scope-policy.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
 import type { ExtendedSessionHost } from "../session-host.js"
@@ -971,23 +974,21 @@ describe("POST /api/agents/:id/rpc", () => {
       expect(await res.json()).toEqual({ version: 8 })
     })
 
-    it.each([
-      [-1],
-      [60_001],
-      [1.5],
-      ["5000"],
-    ])("invalid waitMs %j → 400 (status only)", async (waitMs) => {
-      const host = makeMockHost(makeMockState())
-      const registry = makeMockRegistry(host, makeMockBroadcaster())
-      const app = makeApp(registry)
+    it.each([[-1], [60_001], [1.5], ["5000"]])(
+      "invalid waitMs %j → 400 (status only)",
+      async (waitMs) => {
+        const host = makeMockHost(makeMockState())
+        const registry = makeMockRegistry(host, makeMockBroadcaster())
+        const app = makeApp(registry)
 
-      const res = await postRpc(app, "agent-1", {
-        method: "prompt",
-        params: { sessionId: "s1", content: "hi" },
-        waitMs,
-      })
-      expect(res.status).toBe(400)
-    })
+        const res = await postRpc(app, "agent-1", {
+          method: "prompt",
+          params: { sessionId: "s1", content: "hi" },
+          waitMs,
+        })
+        expect(res.status).toBe(400)
+      },
+    )
 
     it("waitMs success → 200 {ok:true, timedOut:false, messagesSince}", async () => {
       const state = makeMockState(10)
@@ -1289,4 +1290,100 @@ describe("POST /api/agents/:id/rpc", () => {
       }
     })
   })
+
+  describe("prompt sender wrapping", () => {
+    it("wraps content when caller identity header resolves", async () => {
+      const agentRegistry = createInMemoryAgentRegistry()
+      const caller = await agentRegistry.create({
+        cliKind: "cursor",
+        cwd: "/tmp/rpc-wrap",
+        roleLabel: "rpc-sender",
+      })
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = new Hono()
+      registerRpcRoute(app, registry, agentRegistry)
+
+      await app.request("/api/agents/agent-1/rpc", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [AGENT_ID_HEADER]: caller.id,
+        },
+        body: JSON.stringify({
+          method: "prompt",
+          params: { sessionId: "s1", content: "rpc-plain" },
+        }),
+      })
+      const delivered = String((host.prompt as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] ?? "")
+      expect(delivered).toContain("<drive-coding-msg")
+      expect(delivered).toContain("rpc-plain")
+      expect(delivered).toContain("rpc-sender")
+    })
+
+    it("does not wrap when caller header is unknown", async () => {
+      const agentRegistry = createInMemoryAgentRegistry()
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = new Hono()
+      registerRpcRoute(app, registry, agentRegistry)
+
+      await app.request("/api/agents/agent-1/rpc", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [AGENT_ID_HEADER]: "00000000-0000-4000-8000-000000000088",
+        },
+        body: JSON.stringify({
+          method: "session/prompt",
+          params: { sessionId: "s1", content: "stay-plain" },
+        }),
+      })
+      expect(host.prompt).toHaveBeenCalledWith("s1", "stay-plain", undefined)
+    })
+  })
+})
+
+// Merge regression: scope preflight must survive envelope dispatch extraction.
+describe("scoped envelope RPC integration", () => {
+  afterEach(resetScopePolicyForTests)
+
+  it.each(["allow", "deny"] as const)(
+    "message policy %s precedes host acquisition",
+    async (policy) => {
+      const agents = createInMemoryAgentRegistry()
+      const caller = await agents.create({ cliKind: "cursor", cwd: "/tmp/rpc-caller" })
+      const target = await agents.create({ cliKind: "cursor", cwd: "/tmp/rpc-target" })
+      const host = makeMockHost(makeMockState())
+      const sessions = makeMockRegistry(host, makeMockBroadcaster())
+      const app = new Hono()
+      registerRpcRoute(app, sessions, agents)
+      setScopePolicyOverride({ message: policy })
+      const content = "merge & <body>"
+      const response = (await app.request(`/api/agents/${target.id}/rpc`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [AGENT_ID_HEADER]: caller.id,
+          [SCOPE_HEADER]: issueToken(caller.id),
+        },
+        body: JSON.stringify({ method: "session/prompt", params: { sessionId: "s1", content } }),
+      })) as unknown as MockResponse
+      expect(response.status).toBe(policy === "allow" ? 202 : 403)
+      if (policy === "deny") {
+        expect(sessions.getOrCreateHost).not.toHaveBeenCalled()
+        expect(host.prompt).not.toHaveBeenCalled()
+      } else {
+        expect(host.prompt).toHaveBeenCalledWith(
+          "s1",
+          serializeDriveMessage({
+            source: "agent",
+            sender: { id: caller.id },
+            body: content,
+          }),
+          undefined,
+        )
+      }
+    },
+  )
 })

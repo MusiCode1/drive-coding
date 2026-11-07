@@ -10,10 +10,11 @@ import * as ort from "onnxruntime-web"
 import { frameRms, liveNoteMic, liveSetFailOpen, liveSetVadLoaded } from "../util/live-log"
 import { VAD_THRESHOLD } from "./wake-word/types.js"
 import { createVadState, runVadStep } from "./wake-word/vad.js"
+import { ONNX_MODEL_BASE_URL, ONNX_WASM_BASE_URL } from "./onnx-assets.js"
 
 // single-thread mode — mirrors wake-word-engine.ts (COOP/COEP not set)
 ort.env.wasm.numThreads = 1
-ort.env.wasm.wasmPaths = "https://cdnjs.cloudflare.com/ajax/libs/onnxruntime-web/1.22.0/"
+ort.env.wasm.wasmPaths = ONNX_WASM_BASE_URL
 
 const DEFAULT_PREFIX_FRAMES = 6
 /**
@@ -50,7 +51,7 @@ export class LiveVad {
     /** Send every frame (pre-slice path). VAD still runs for logs. */
     passthrough?: boolean
   }) {
-    this.#baseAssetUrl = opts?.baseAssetUrl ?? "/wake-word/models"
+    this.#baseAssetUrl = opts?.baseAssetUrl ?? ONNX_MODEL_BASE_URL
     this.#threshold = opts?.threshold ?? VAD_THRESHOLD
     this.#prefixFrames = opts?.prefixFrames ?? DEFAULT_PREFIX_FRAMES
     this.#passthrough = opts?.passthrough ?? false

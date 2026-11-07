@@ -1,0 +1,48 @@
+{
+  "projects": [
+    {
+      "cwd": "/workspace/project-0",
+      "kind": "codex",
+      "lastSeen": "2026-09-01T10:00:00.000Z",
+      "lastSessionId": "00000000-0000-4000-8000-000000000005"
+    },
+    {
+      "cwd": "/workspace/project-1",
+      "kind": "cursor",
+      "lastSeen": "2026-09-01T10:00:00.000Z",
+      "lastSessionId": "00000000-0000-4000-8000-000000000006"
+    },
+    {
+      "cwd": "/workspace/project-2",
+      "kind": "opencode",
+      "lastSeen": "2026-09-01T10:00:00.000Z",
+      "lastSessionId": "00000000-0000-4000-8000-000000000007"
+    },
+    {
+      "cwd": "/workspace/project-3",
+      "kind": "claude",
+      "lastSeen": "2026-09-01T10:00:00.000Z",
+      "lastSessionId": "00000000-0000-4000-8000-000000000008"
+    },
+    {
+      "cwd": "/workspace/project-4",
+      "kind": "codex",
+      "lastSeen": "2026-09-01T10:00:00.000Z",
+      "lastSessionId": "00000000-0000-4000-8000-000000000009"
+    },
+    {
+      "cwd": "/workspace/no-session",
+      "kind": "codex",
+      "lastSeen": "2026-09-02T10:00:00.000Z"
+    },
+    {
+      "cwd": "/workspace/bad-timestamp",
+      "kind": "codex",
+      "lastSeen": "whenever"
+    },
+    {
+      "cwd": "/workspace/missing-kind",
+      "lastSeen": "2026-09-03T10:00:00.000Z"
+    }
+  ]
+}

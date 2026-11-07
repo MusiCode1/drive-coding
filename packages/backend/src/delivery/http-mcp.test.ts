@@ -9,15 +9,18 @@
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import type { AgentRegistry } from "@drive-coding/core"
+import { serializeDriveMessage } from "@drive-coding/core/acp/drive-message-envelope"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { Hono } from "hono"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as readProcessRssMod from "../adapters/read-process-rss.js"
 import { AGENT_ID_HEADER, DRIVE_CODING_AGENT_ID_ENV } from "../agent-identity.js"
+import { issueToken, SCOPE_HEADER } from "../agent-scope.js"
 import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
+import { resetScopePolicyForTests, setScopePolicyOverride } from "../scope-policy.js"
 import { createAgentEventBus } from "../session-host/agent-events.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { registerMcpHttp } from "./http-mcp.js"
@@ -766,7 +769,57 @@ describe("agent-identity-mcp (C2/C3)", () => {
     await childClient.close()
     expect(isToolError(notified)).toBe(false)
     const parentHost = agentSessionRegistry.hosts.get(parent.id)
-    expect(parentHost?.prompt).toHaveBeenCalledWith(`sess-${parent.id}`, "hello parent")
+    expect(parentHost?.prompt).toHaveBeenCalledOnce()
+    const delivered = String(parentHost?.prompt.mock.calls[0]?.[1] ?? "")
+    expect(delivered).toContain("hello parent")
+    expect(delivered).toContain(child.id)
+    expect(delivered).toContain("<drive-coding-msg")
+  })
+
+  it("session_send wraps prompt when caller identity header resolves", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const caller = await registry.create({
+      cliKind: "cursor",
+      cwd: "/tmp/caller-wrap",
+      roleLabel: "caller-role",
+    })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: caller.id })
+    const openedResult = await client.callTool({
+      name: "session_open",
+      arguments: { cli: "cursor", cwd: "/tmp/target-wrap" },
+    })
+    const opened = JSON.parse(toolText(openedResult)) as { agent: string }
+    await client.callTool({
+      name: "session_send",
+      arguments: { agent: opened.agent, prompt: "payload", noWait: true },
+    })
+    await client.close()
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    expect(host?.prompt).toHaveBeenCalledOnce()
+    const delivered = String(host?.prompt.mock.calls[0]?.[1] ?? "")
+    expect(delivered).toContain("<drive-coding-msg")
+    expect(delivered).toContain(caller.id)
+    expect(delivered).toContain("caller-role")
+    expect(delivered).toContain("payload")
+  })
+
+  it("session_send leaves prompt plain without resolved caller", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app, {
+      [AGENT_ID_HEADER]: "00000000-0000-4000-8000-000000000099",
+    })
+    const openedResult = await client.callTool({
+      name: "session_open",
+      arguments: { cli: "cursor", cwd: "/tmp/anon-send" },
+    })
+    const opened = JSON.parse(toolText(openedResult)) as { agent: string }
+    await client.callTool({
+      name: "session_send",
+      arguments: { agent: opened.agent, prompt: "plain-only", noWait: true },
+    })
+    await client.close()
+    const host = agentSessionRegistry.hosts.get(opened.agent)
+    expect(host?.prompt).toHaveBeenCalledWith(`sess-${opened.agent}`, "plain-only")
   })
 })
 
@@ -1172,5 +1225,50 @@ describe("session memory MCP tools (slice session-memory C1)", () => {
     await client.close()
     const body = JSON.parse(toolText(whoami)) as { sessionFields?: Record<string, string> }
     expect(body.sessionFields).toEqual({ keep: "yes" })
+  })
+})
+
+// Merge regression: both policies must run before an enveloped send has effects.
+describe("scoped envelope MCP integration", () => {
+  afterEach(resetScopePolicyForTests)
+
+  it.each([
+    { update: "deny", message: "allow", allowed: false },
+    { update: "allow", message: "deny", allowed: false },
+    { update: "allow", message: "allow", allowed: true },
+  ] as const)("update=$update message=$message", async ({ update, message, allowed }) => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-caller" })
+    const target = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-target" })
+    setScopePolicyOverride({ update, message })
+    const client = await connectClient(app, {
+      [AGENT_ID_HEADER]: caller.id,
+      [SCOPE_HEADER]: issueToken(caller.id),
+    })
+    const prompt = "merge & <body>"
+    try {
+      const result = await client.callTool({
+        name: "session_send",
+        arguments: { agent: target.id, prompt, sets: { model: "fast" }, noWait: true },
+      })
+      expect(isToolError(result)).toBe(!allowed)
+      if (!allowed) {
+        expect(agentSessionRegistry.getOrCreateHost).not.toHaveBeenCalled()
+        expect(agentSessionRegistry.hosts.size).toBe(0)
+      } else {
+        const host = agentSessionRegistry.hosts.get(target.id)
+        expect(host?.setConfigOption).toHaveBeenCalledWith("model", "fast")
+        expect(host?.prompt).toHaveBeenCalledWith(
+          `sess-${target.id}`,
+          serializeDriveMessage({
+            source: "agent",
+            sender: { id: caller.id },
+            body: prompt,
+          }),
+        )
+      }
+    } finally {
+      await client.close()
+    }
   })
 })

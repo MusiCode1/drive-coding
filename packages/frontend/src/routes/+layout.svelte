@@ -5,13 +5,13 @@
 import "$lib/log"
 import PlaybackDebugPanel from "$lib/components/debug/PlaybackDebugPanel.svelte"
 import "../app.css"
-import type { Locale } from "@drive-coding/core/i18n"
 import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { onDestroy, onMount } from "svelte"
 import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import {
   setActiveAgents,
+  setAudioDevices,
   setAudioPlaylist,
   setBubblePlayer,
   setChatScroll,
@@ -43,16 +43,21 @@ import { createConfigChangeRefresher } from "$lib/engines/config-change-socket"
 import { ttsStatus } from "$lib/view-models/tts-status.svelte"
 import { CuesEngine } from "$lib/engines/cues"
 import { createPendingCaptureWiring } from "$lib/engines/pending-capture-wiring"
-import { MediaSessionPlaylistBridge } from "$lib/engines/media-session-playlist.js"
+import MediaSessionPlaylistSync from "$lib/components/layout/MediaSessionPlaylistSync.svelte"
 import { PlayableSink } from "$lib/engines/playable-sink"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
 import { NotifyEngine } from "$lib/engines/notify.svelte"
 import { notifyTexts } from "$lib/notify-texts"
-import { normalizeSessionTransport } from "$lib/session/session-transport"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { beWsUrl } from "$lib/util/be-url"
 import { bindSessionLifecycle } from "$lib/actions/session-lifecycle"
-import { isPageHidden } from "$lib/util/page-visibility.svelte"
+import {
+  installSessionScopePolicy,
+  wireDocumentLocale,
+  wirePresencePoller,
+  wireSessionTransportOverride,
+  wireUiShellCloseOnAttach,
+} from "$lib/actions/layout-session-wiring.svelte"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { BubblePlayer } from "$lib/view-models/bubble-player.svelte"
@@ -66,6 +71,7 @@ import { Live } from "$lib/view-models/live.svelte"
 import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
 import { SessionMemoVM } from "$lib/view-models/session-memo.svelte"
 import { Dictate } from "$lib/view-models/dictate.svelte"
+import { AudioDevicesVM } from "$lib/view-models/audio-devices.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
 import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
@@ -93,6 +99,8 @@ const cues = new CuesEngine()
 // slice-restore-last-config: settings מוזרק לסשן כדי לשמור config פר-CLI
 const session = new AgentSession({ cues, settings })
 
+installSessionScopePolicy({ session, settings })
+
 // ─── audio-playlist ─── (A4 — entity משותף בין Speaker ו-BubblePlayer)
 // AudioSink נוצר כאן — Speaker מחזיק ref אליו (prepareSegment/clear).
 // AudioPlaylist נוצר לפני Speaker כי Speaker מקבל אותו כ-dependency.
@@ -100,9 +108,17 @@ const sharedAudioStream = new PlayableSink()
 const sharedOrderAlloc = new OrderAllocator()
 const audioPlaylist = new AudioPlaylist(sharedAudioStream)
 
+// ─── audio-devices ─── (slice mic-device-selection)
+const audioDevices = new AudioDevicesVM({ settings })
+
 // ─── mic ─── (slice 3; voice-pending-persistence recovery)
 const { micRecovery, dictateRecovery } = createPendingCaptureWiring()
-const mic = new Mic({ session, cues, recovery: micRecovery })
+const mic = new Mic({
+  session,
+  cues,
+  recovery: micRecovery,
+  getInputDeviceId: () => audioDevices.effectiveInputId,
+})
 
 // ─── composer-draft ─── (slice dictate-to-input)
 const composerDraft = new ComposerDraft()
@@ -112,7 +128,12 @@ const composerDraft = new ComposerDraft()
 const sessionMemo = new SessionMemoVM(session)
 
 // ─── dictate ─── (slice dictate-to-input — תלוי ב-composerDraft + mic)
-const dictate = new Dictate({ draft: composerDraft, mic, recovery: dictateRecovery })
+const dictate = new Dictate({
+  draft: composerDraft,
+  mic,
+  recovery: dictateRecovery,
+  getInputDeviceId: () => audioDevices.effectiveInputId,
+})
 
 // ─── theme ─── (redesign-1) — declared before Live getter; instance assigned below Live block
 let theme!: ThemeVM
@@ -125,6 +146,7 @@ const live = new Live({
   getVoiceName: () => settings.liveVoice,
   getSettings: () => settings,
   getTheme: () => theme,
+  getInputDeviceId: () => audioDevices.effectiveInputId,
 })
 
 // ─── speaker ─── (§4.3: live ref — TTS off while Live open)
@@ -152,62 +174,6 @@ const bubblePlayer = new BubblePlayer({
   playlist: audioPlaylist,
   orderAlloc: sharedOrderAlloc,
 })
-
-function titleForCurrentPlaylistSegment(): string | undefined {
-  const item = audioPlaylist.items[audioPlaylist.cursor]
-  if (!item) return undefined
-  const bubble = session.renderBubbles.find((b) => b.id === item.bubbleId)
-  if (!bubble || (bubble.kind !== "message" && bubble.kind !== "thought")) return undefined
-  const text = bubble.segments.map((s) => s.text).join("")
-  return text.slice(0, 80) || undefined
-}
-
-// ─── bt-chat-playback-nav: Media Session ↔ playlist (car mode, no keepalive) ───
-const mediaSessionBridge = new MediaSessionPlaylistBridge({
-  controls: {
-    next: () => audioPlaylist.next(),
-    prev: () => audioPlaylist.prev(),
-    pause: () => audioPlaylist.pause(),
-    resume: () => audioPlaylist.resume(),
-  },
-  onStop: () => bubblePlayer.stop(),
-  getState: () => audioPlaylist.state,
-  getTransport: () => audioPlaylist.transport,
-  getCursor: () => audioPlaylist.cursor,
-  getItemCount: () => audioPlaylist.items.length,
-  getTitle: () => titleForCurrentPlaylistSegment(),
-})
-
-$effect(() => {
-  const hasMediaSession = typeof navigator !== "undefined" && "mediaSession" in navigator
-  if (!hasMediaSession) {
-    mediaSessionBridge.detach()
-    return
-  }
-  const transport = audioPlaylist.transport
-  if (transport !== "stopped") {
-    mediaSessionBridge.attach()
-  } else {
-    mediaSessionBridge.detach()
-  }
-})
-
-$effect(() => {
-  const hasMediaSession = typeof navigator !== "undefined" && "mediaSession" in navigator
-  if (!hasMediaSession) return
-
-  // reactive deps for sync()
-  void audioPlaylist.transport
-  void audioPlaylist.state
-  void audioPlaylist.cursor
-  void audioPlaylist.items.length
-
-  if (audioPlaylist.transport !== "stopped") {
-    mediaSessionBridge.sync()
-  }
-})
-
-onDestroy(() => mediaSessionBridge.detach())
 
 // ─── car-mode ─── (slice 7)
 
@@ -265,17 +231,7 @@ $effect(() => notify.notifyTurn(session.turnState))
 $effect(() => notify.notifyPermissionPending(session.pendingPermission !== null))
 $effect(() => notify.notifyElicitationPending(session.pendingElicitation !== null))
 
-// ─── dir/lang sync ─── (rtl-ltr-bidi)
-// סנכרון <html dir> ו-<html lang> ל-locale — הקסם של הדו-כיווניות.
-// ה-effect קורא $state (i18n.locale) וכותב ל-DOM (לא ל-$state) → אין infinite loop.
-// <html> אינו DOM-node של component ספציפי → layout הוא המקום הנכון (composition root).
-const RTL_LOCALES: Locale[] = ["he"]
-$effect(() => {
-  const loc = i18n.locale // קריאה ריאקטיבית
-  const dir = RTL_LOCALES.includes(loc) ? "rtl" : "ltr"
-  document.documentElement.dir = dir
-  document.documentElement.lang = loc
-})
+wireDocumentLocale(i18n)
 
 // ─── document title ─── (slice app-title-build-env)
 // base מ-env (נצרב ב-build); fallback "Drive Coding" אם ה-var חסר (dev-server בלי FE_ENV).
@@ -289,42 +245,9 @@ const titleContext = $derived.by(() => {
 })
 const docTitle = $derived(titleContext ? `${baseTitle} • ${titleContext}` : baseTitle)
 
-// ─── session-transport override ─── (slice transport-polish C3)
-// עקיפה מ-URL: ?sessionTransport=ws/http → נכתב מנורמל ל-sessionStorage (חיה בטאב).
-// קריאה+נרמול+כתיבה בלבד — לא נוגע ב-attach/detach/reconnect/VM. שינוי הדגל משפיע
-// על החיבור הבא בלבד; סשן חי ממשיך בטרנספורט שלו. $effect לא רץ ב-SSR → גישה לאחסון בטוחה.
-$effect(() => {
-  const q = page.url.searchParams.get("sessionTransport")
-  const normalized = normalizeSessionTransport(q)
-  if (normalized) sessionStorage.setItem("sessionTransport", normalized)
-})
-
-// ─── presence sync ─── (slice liveness C3)
-// סבב-תיקונים liveness — שני תיקונים בבלוק הקטן הזה:
-//
-// 1. `inSession` היה `status === "connected"`. ⇒ ברגע שה-WS נפל, sync קיבל
-//    `inSession:false` → stop() → clearBanner(), והבאנר נמחק **בדיוק** ברגע
-//    שנועד להופיע. הבאנר לא יכול להיות בעל-הבית של מצב-החיבור אם הוא נהרס
-//    בניתוק. "בסשן" = connected **או** disconnected (ניתוק חולף); "error"
-//    ו-"idle" נשארים בחוץ — הראשון טרמינלי (session.error מציג אותו), השני אין בו סשן.
-// 2. `return () => stop()` רץ לפני **כל** הרצה-מחדש של ה-$effect, לא רק בפירוק —
-//    כלומר כל שינוי ב-status/agentId/hidden ניגב את הבאנר ואת מונה-הכשלים.
-//    הפירוק עבר ל-$effect נפרד בלי קריאות ריאקטיביות, שרץ פעם אחת.
-$effect(() => {
-  const status = session.status
-  const inSession = status === "connected" || status === "disconnected"
-  const agentId = session.agentId
-  const hidden = isPageHidden()
-  presencePoller.sync({ inSession, agentId, hidden })
-})
-$effect(() => () => presencePoller.dispose())
-
-// ─── ui-shell inputMode reset ─── (slice ui-shell-session-prefs)
-// Close mobile sheet on session attach/switch; inputMode hydrates at boot only.
-$effect(() => {
-  const agentId = session.agentId
-  if (agentId) uiShell.closeSheet()
-})
+wireSessionTransportOverride()
+wirePresencePoller(presencePoller, session)
+wireUiShellCloseOnAttach(uiShell, session)
 
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
@@ -351,6 +274,7 @@ setNotify(notify)
 setComposerDraft(composerDraft)
 setSessionMemo(sessionMemo)
 setDictate(dictate)
+setAudioDevices(audioDevices)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
 const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })
@@ -394,6 +318,12 @@ onDestroy(() => configSocket.stop())
 </svelte:head>
 
 {@render children?.()}
+
+<MediaSessionPlaylistSync
+  {audioPlaylist}
+  {session}
+  onStop={() => bubblePlayer.stop()}
+/>
 
 <!-- ─── slice playback-observability ───
      ⚠️ אחרי ה-children, מחוץ לכל מכל — `position: fixed` בתוך מכל עם

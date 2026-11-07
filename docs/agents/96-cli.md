@@ -10,8 +10,8 @@ tags: [cli]
 surface: [cli]
 stability: stable
 routes: []
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.6.0
+updated: 2026-10-13
 ---
 
 # drive-coding CLI
@@ -35,7 +35,7 @@ Resolution order for agent commands (`help.ts:7-12`):
 |-----|-----------------|-------|
 | `agent list` | `GET /api/agents` | `help.ts:16` |
 | `agent open` | `POST /api/agents` | `--cli`, `--cwd`, `--parent`, env forwarding (`help.ts:23-33`) |
-| `agent send` | `POST /api/agents/:id/rpc` (prompt) + SSE wait | `--no-wait` skips wait (`help.ts:35-45`) |
+| `agent send` | `POST /api/agents/:id/rpc` (prompt) + SSE wait | Sends **`X-Drive-Coding-Agent`** when the CLI knows your agent id so the target session receives a **`drive-coding-msg`** wrap on text; `--no-wait` skips wait (`help.ts:35-45`) |
 | `agent state` | `GET /api/agents/:id/state` | `help.ts:19` |
 | `agent close` | `DELETE /api/agents/:id` | **`help.ts:20`** → `http-agents.ts:148` → **`deleteAndKill` removes one id only** |
 | `agent notify` | Fire-and-forget prompt on live session | `help.ts:47-49` |

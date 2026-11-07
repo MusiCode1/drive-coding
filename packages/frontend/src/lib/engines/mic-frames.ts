@@ -7,6 +7,7 @@
  * Slice: live-ears, Commit 0.
  */
 
+import { openAudioStream } from "../adapters/audio-devices"
 import { liveInfo } from "../util/live-log"
 
 export type MicFrame = Float32Array
@@ -100,9 +101,7 @@ export class MicFrames {
   async start(deviceId?: string | null): Promise<void> {
     if (this.#stream) return
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: deviceId ? { deviceId: { exact: deviceId } } : true,
-    })
+    const { stream } = await openAudioStream(deviceId ?? null)
     const ctx = new AudioContext({ sampleRate: SAMPLE_RATE })
     const source = ctx.createMediaStreamSource(stream)
 

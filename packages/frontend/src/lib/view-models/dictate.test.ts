@@ -253,3 +253,35 @@ describe("Dictate pending capture retry", () => {
     expect(dictate.state).toBe("idle")
   })
 })
+
+describe("Dictate input device (mic-device-selection)", () => {
+  it("passes getInputDeviceId to recorder.start", async () => {
+    mockStart.mockResolvedValue(undefined)
+    vi.stubGlobal("navigator", {
+      permissions: {
+        query: vi.fn().mockResolvedValue({ state: "granted" }),
+      },
+    })
+    const recovery = createRecovery()
+    const dictate = new Dictate({
+      draft: new ComposerDraft(),
+      mic: fakeMic,
+      recovery,
+      getInputDeviceId: () => "dictate-id",
+    })
+    await dictate.toggle()
+    expect(mockStart).toHaveBeenCalledWith("dictate-id")
+  })
+
+  it("recorder.start receives null without getInputDeviceId", async () => {
+    mockStart.mockResolvedValue(undefined)
+    vi.stubGlobal("navigator", {
+      permissions: {
+        query: vi.fn().mockResolvedValue({ state: "granted" }),
+      },
+    })
+    const { dictate } = createDictate(createRecovery())
+    await dictate.toggle()
+    expect(mockStart).toHaveBeenCalledWith(null)
+  })
+})

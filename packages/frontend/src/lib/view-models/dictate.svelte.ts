@@ -54,13 +54,20 @@ export class Dictate {
   readonly #mic: Mic
   readonly #recorder: Recorder
   readonly #recovery: DictatePendingRecovery
+  readonly #getInputDeviceId?: () => string | null
   #inFlight: Promise<FinishListeningResult> | null = null
 
-  constructor(opts: { draft: ComposerDraft; mic: Mic; recovery: DictatePendingRecovery }) {
+  constructor(opts: {
+    draft: ComposerDraft
+    mic: Mic
+    recovery: DictatePendingRecovery
+    getInputDeviceId?: () => string | null
+  }) {
     this.#draft = opts.draft
     this.#mic = opts.mic
     this.#recorder = new Recorder()
     this.#recovery = opts.recovery
+    this.#getInputDeviceId = opts.getInputDeviceId
   }
 
   get canRetry(): boolean {
@@ -95,7 +102,7 @@ export class Dictate {
         this.#mic.permissionHint = perm === "prompt" ? "mic.hint.needsAllow" : null
       })
       try {
-        await this.#recorder.start()
+        await this.#recorder.start(this.#getInputDeviceId?.() ?? null)
       } catch (e: unknown) {
         this.state = "idle"
         this.awaitingPermissionDialog = false

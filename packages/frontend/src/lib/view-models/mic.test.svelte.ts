@@ -199,3 +199,33 @@ describe("Mic pending capture", () => {
     expect(mic.permissionHint).toBe("mic.hint.needsAllow")
   })
 })
+
+describe("Mic input device (mic-device-selection)", () => {
+  it("passes getInputDeviceId to recorder.start", async () => {
+    mockStart.mockResolvedValue(undefined)
+    vi.stubGlobal("navigator", {
+      permissions: {
+        query: vi.fn().mockResolvedValue({ state: "granted" }),
+      },
+    })
+    const mic = new Mic({
+      session: fakeSession,
+      recovery: createRecovery(),
+      getInputDeviceId: () => "mic-x",
+    })
+    await mic.toggle()
+    expect(mockStart).toHaveBeenCalledWith("mic-x")
+  })
+
+  it("recorder.start receives null without getInputDeviceId", async () => {
+    mockStart.mockResolvedValue(undefined)
+    vi.stubGlobal("navigator", {
+      permissions: {
+        query: vi.fn().mockResolvedValue({ state: "granted" }),
+      },
+    })
+    const mic = new Mic({ session: fakeSession, recovery: createRecovery() })
+    await mic.toggle()
+    expect(mockStart).toHaveBeenCalledWith(null)
+  })
+})

@@ -1,0 +1,16 @@
+{
+  "claude": {
+    "filename": "agentclientprotocol-claude-agent-acp-0.100.0.tgz",
+    "commit": "3bc917deaa34450472ee41a2ec0f6e49b0f7fb69",
+    "sha256": "38095ac9e8cfd0195931a9170d54e5623c12af7921c56ad130e2d23ba187ae12",
+    "repository": "https://github.com/MusiCode1/claude-agent-acp",
+    "license": "Apache-2.0"
+  },
+  "codex": {
+    "filename": "agentclientprotocol-codex-acp-2.5.0.tgz",
+    "commit": "d17fc9554a93fe8498fdb3d63c6f17389adbd98a",
+    "sha256": "9d8b103e29211b63bc8e767f18bc51d047327218165e4e64798d169e61663eb2",
+    "repository": "https://github.com/MusiCode1/codex-acp",
+    "license": "Apache-2.0"
+  }
+}

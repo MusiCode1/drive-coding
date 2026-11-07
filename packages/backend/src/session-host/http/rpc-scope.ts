@@ -9,7 +9,7 @@ import type { Context } from "hono"
 import { whenScopedWriteAllowed, SCOPE_DENIED_BODY } from "../../scope-write.js"
 import type { AgentSessionRegistry } from "../registry.js"
 
-function preflightRpcScope(
+export function preflightRpcScopeDenied(
   c: Context,
   agentId: string,
   method: string | undefined,
@@ -25,17 +25,4 @@ function preflightRpcScope(
     registry: agentRegistry,
     sessionRegistry,
   }).then((allowed) => (allowed ? null : c.json(SCOPE_DENIED_BODY, 403)))
-}
-
-export function guardRpcRoute(
-  c: Context,
-  agentId: string,
-  method: string | undefined,
-  agentRegistry: AgentRegistry,
-  sessionRegistry: AgentSessionRegistry,
-  run: () => Promise<Response>,
-): Promise<Response> {
-  return preflightRpcScope(c, agentId, method, agentRegistry, sessionRegistry).then((denied) =>
-    denied ? denied : run(),
-  )
 }

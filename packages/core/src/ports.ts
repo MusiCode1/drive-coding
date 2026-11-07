@@ -36,6 +36,7 @@ export interface AgentRegistry {
         | "titleManual"
         | "userNotes"
         | "sessionFields"
+        | "scopePolicies"
         | "cwd"
       >
     >,

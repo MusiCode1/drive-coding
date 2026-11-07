@@ -8,10 +8,10 @@
  *  - V4b: פרמטר geminiVoice אופציונלי — ברירת מחדל "Kore", ניתן לשינוי
  */
 import { describe, expect, it, vi } from "vitest"
-import { resolveTts } from "./tts-resolve"
-import { GEMINI_VOICES } from "./voices-gemini"
 import { elevenLabsTts } from "./tts"
 import { geminiTts } from "./tts-gemini"
+import { resolveTts } from "./tts-resolve"
+import { GEMINI_VOICES } from "./voices-gemini"
 
 vi.mock("$lib/util/be-url", () => ({
   beUrl: vi.fn((path: string) => `http://localhost:4000${path}`),
@@ -70,5 +70,37 @@ describe("resolveTts", () => {
   it("(ד) GEMINI_VOICES.length === 30 וכולל Kore", () => {
     expect(GEMINI_VOICES).toHaveLength(30)
     expect(GEMINI_VOICES.some((v) => v.id === "Kore")).toBe(true)
+  })
+
+  it("elevenlabs with saved model → modelId passed through", () => {
+    const result = resolveTts("elevenlabs", "rachel", undefined, {
+      elevenLabsModelId: "eleven_v4_turbo",
+    })
+    expect(result.modelId).toBe("eleven_v4_turbo")
+  })
+
+  it("google with saved model → modelId passed through", () => {
+    const result = resolveTts("google", "x", "Puck", { geminiModelId: "gemini-3.8-flash-tts" })
+    expect(result.modelId).toBe("gemini-3.8-flash-tts")
+    expect(result.voiceId).toBe("Puck")
+  })
+
+  it("unknown model id → provider default (no cross-provider leak)", () => {
+    const el = resolveTts("elevenlabs", "v", undefined, { geminiModelId: "gemini-3.8-flash-tts" })
+    expect(el.modelId).toBe("eleven_v3")
+    const g = resolveTts("google", "v", undefined, { elevenLabsModelId: "eleven_v4" })
+    expect(g.modelId).toBe("gemini-3.1-flash-tts-preview")
+  })
+
+  it.each(["eleven_v3", "eleven_v4", "eleven_v4_turbo"] as const)("eleven model %s", (id) => {
+    expect(resolveTts("elevenlabs", "v", undefined, { elevenLabsModelId: id }).modelId).toBe(id)
+  })
+
+  it.each([
+    "gemini-3.1-flash-tts-preview",
+    "gemini-3.8-flash-tts",
+    "gemini-3.8-flash-lite-tts",
+  ] as const)("gemini model %s", (id) => {
+    expect(resolveTts("google", "v", undefined, { geminiModelId: id }).modelId).toBe(id)
   })
 })

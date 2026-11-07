@@ -24,6 +24,8 @@ export const DriveCodingConfig = type({
   // Overridable so two backends can share a port across containers, and so a
   // test harness can keep its rows out of the real deployment's state dir.
   "agentsStoreFile?": "string",
+  /** Override path for session history SQLite (default: `<stateDir>/history/history.sqlite`). */
+  "historyDbFile?": "string",
   // Prompt timeouts, in milliseconds. Omitted — or "never" / "off" / 0 — means
   // no timeout, which is the default: a question the user has not answered yet
   // must not answer itself. Two flat leaves rather than a `timeouts` object,
@@ -31,6 +33,10 @@ export const DriveCodingConfig = type({
   // would then silently erase the other from the config file.
   "elicitationTimeoutMs?": "number|'never'|'off'",
   "permissionTimeoutMs?": "number|'never'|'off'",
+  "scopeMessagePolicy?": "'ask'|'allow'|'deny'",
+  "scopeUpdatePolicy?": "'ask'|'allow'|'deny'",
+  "scopeClosePolicy?": "'ask'|'allow'|'deny'",
+  "scopePermissionTimeoutMs?": "number|'never'|'off'",
   "log?": {
     "level?": "string",
     "ns?": "string",

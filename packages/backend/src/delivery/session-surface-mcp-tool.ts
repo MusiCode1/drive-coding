@@ -16,7 +16,7 @@
 import { type AgentRegistry, MCP_TOOL_META, McpSessionSurfaceInput } from "@drive-coding/core"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
-import { buildAgentPromptText } from "./http-agent-prompt.js"
+import { buildAgentPromptText } from "../prompts/index.js"
 import type { McpHttpDeps, McpRequestContext } from "./http-mcp.js"
 
 type ArkRegister = (

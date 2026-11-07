@@ -47,6 +47,17 @@ describe("enhanceFileLinks", () => {
     expect(onOpen).toHaveBeenCalledWith("file:///tmp/a.md")
   })
 
+  it("update cwd only — לחיצה חוזרת פותרת מול cwd עדכני", () => {
+    const { node, onOpen, handle, params } = mount("<p>./notes.md</p>", { cwd: "/tmp/first" })
+    const btn = node.querySelector<HTMLElement>("[data-file-link]")
+    btn?.click()
+    expect(onOpen).toHaveBeenCalledWith("file:///tmp/first/notes.md")
+    onOpen.mockClear()
+    handle?.update?.({ ...params, cwd: "/tmp/second" })
+    btn?.click()
+    expect(onOpen).toHaveBeenCalledWith("file:///tmp/second/notes.md")
+  })
+
   it("אינו נוגע בבלוק-קוד", () => {
     const { node } = mount("<pre><code>cat AGENTS.md</code></pre>")
     expect(node.querySelector("[data-file-link]")).toBeNull()

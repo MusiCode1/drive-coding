@@ -4,7 +4,7 @@
  * החבילה @ai-sdk/elevenlabs לא תומכת בהזרמה — לכן משתמשים ב-fetch ישיר.
  * כותרות (Headers): ה-xi-api-key הוא פלייסיהולדר — OneCLI מזריק את המפתח האמיתי בפרוקסי.
  *
- * מודל v3 של ElevenLabs הכרחי עבור עברית (learnings 2026-05-13).
+ * eleven_v3 הוא ברירת-המחדל; עברית נמדדה ב-v3 (learnings 2026-05-13). v4/v4_turbo — לא נמדדו.
  * מחזיר ReadableStream<Uint8Array> עבור שימוש ב-MediaSource.
  *
  * timeout: withTimeout עוטף רק את ה-fetch (connect/first-response).
@@ -14,8 +14,8 @@
  * V3: ElevenLabs נחשף כ-elevenLabsTts: TtsProvider (כלל זהב #5 — synthesizeStreaming הוסר).
  */
 
-import type { TtsProvider, TtsRequest } from "@drive-coding/core/voice/tts-types"
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
+import type { TtsProvider, TtsRequest } from "@drive-coding/core/voice/tts-types"
 import { beUrl } from "$lib/util/be-url"
 import { ttsCacheHeaders } from "./cache-headers"
 
@@ -24,11 +24,16 @@ const TTS_CONNECT_TIMEOUT_MS = 10000
 export const elevenLabsTts: TtsProvider = {
   format: "mp3",
   async synthesize(req: TtsRequest): Promise<ReadableStream<Uint8Array>> {
-    // eleven_v3 הוא מודל ה-ElevenLabs היחיד שתומך בעברית (learnings 2026-05-13)
+    // ברירת-מחדל eleven_v3; עברית נמדדה שם — v4/v4_turbo לא נמדדו (tts-model-choice)
     const modelId = req.modelId ?? "eleven_v3"
 
     // משלב slice 24 (x-cache-key דרך cacheHeaders) עם review-fixes-2 (withTimeout):
-    const cacheHeaders = await ttsCacheHeaders(req.text, req.voiceId, modelId, req.messageId ?? null)
+    const cacheHeaders = await ttsCacheHeaders(
+      req.text,
+      req.voiceId,
+      modelId,
+      req.messageId ?? null,
+    )
 
     // withTimeout עוטף את ה-fetch בלבד (connect + קבלת headers).
     // ברגע ש-response מגיע, withTimeout resolve וה-timer נוקה (clearTimeout ב-finally).
