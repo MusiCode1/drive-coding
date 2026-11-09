@@ -10,16 +10,19 @@ See the documentation map below. Start with `docs-for-llm/design-principles.md`.
 **Every brief, decision, walkthrough, plan and verification report is written to
 `docs-for-llm/` and nowhere else.** Do not create a `docs/` directory in this repo.
 
-`docs-for-llm/` is a **symlink to a separate private repo**, shared across projects:
+`docs-for-llm/` is a **symlink to the dedicated shared documentation repo**.
+All code worktrees use the same local documentation clone on `main`:
 
 ```
-docs-for-llm  ->  ~/Projects/docs-repo/drive-coding      (branch: master)
+docs-for-llm  ->  <configured documentation clone>      (branch: main)
 ```
 
 Two consequences that catch people out:
 
 1. Writing there writes to *that* repo. It will **not** appear in `git status` here,
-   and must be committed separately from `~/Projects/docs-repo`.
+   and must be committed separately from the resolved documentation clone.
+   Resolve it with `realpath docs-for-llm` before running Git. Do not create
+   documentation branches or a separate documentation clone for each code slice.
 2. `.gitignore` blocks both `/docs/` (line 38) and `/docs-for-llm` (line 41), so a stray
    `docs/` is silently ignored rather than committed — you will not get a warning. Both
    patterns are **root-anchored**, so a `packages/<pkg>/docs/` would not be swept up.
@@ -819,7 +822,7 @@ the detail. Open the right one before writing code.
 
 | If you need… | Open | Status |
 |--------------|------|--------|
-Paths below starting with `docs-for-llm/` live in the **private docs-repo** (see the
+Paths below starting with `docs-for-llm/` live in the **dedicated private documentation repo** (see the
 section at the top) — they are not files in this repo, and are unreachable from a
 public clone. Paths under `packages/` are real files here.
 
