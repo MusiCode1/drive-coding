@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ספייק: קול Codex מעל ACP</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 1rem; max-width: 52rem; }
+  button { font-size: 1.1rem; padding: .6rem 1.2rem; margin: .2rem; }
+  ol li { margin: .3rem 0; }
+  #state { margin: .6rem 0; font-weight: bold; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+  pre { background: #f4f4f4; padding: .5rem; font-size: .72rem; height: 18rem; overflow: auto; direction: ltr; text-align: left; white-space: pre-wrap; }
+  #meter { height: .5rem; background: #ddd; } #meter div { height: 100%; width: 0; background: #6aa84f; }
+  .secret { background: #fff2cc; }
+</style>
+</head>
+<body>
+<h2>ספייק: קול Codex מעל ACP</h2>
+<ol>
+  <li>לחץ <b>התחל</b> ואשר מיקרופון.</li>
+  <li><b>ספייק 1:</b> אמור: "תבקש מקודקס להריץ ls ולספור כמה קבצים יש בתיקייה". התשובה הנכונה היא 3. בעמודה "ACP" אמורה להופיע ההודעה.</li>
+  <li><b>ספייק 2:</b> לחץ <b>הוסף כלי</b>, ואז שאל "מה המספר הסודי?". התשובה הנכונה היא 4217, והיא ידועה רק לכלי.</li>
+  <li>בסוף בדוק שהקול עדיין מעביר ל-Codex: "תבקש מקודקס לבדוק מה התאריך היום".</li>
+  <li>לחץ <b>עצור</b>.</li>
+</ol>
+<button id="start">התחל</button><button id="tool" disabled>הוסף כלי</button><button id="stop" disabled>עצור</button>
+<div id="state">מוכן</div>
+<div id="meter"><div></div></div>
+<div class="cols">
+  <div><h4>מה הגיע ללקוח ACP</h4><pre id="acp"></pre></div>
+  <div><h4>ערוץ הנתונים ו-app-server</h4><pre id="log"></pre></div>
+</div>
+<audio id="out" autoplay></audio>
+<script>
+const base = location.pathname.endsWith("/") ? location.pathname : location.pathname + "/";
+const $ = (id) => document.getElementById(id);
+const ts = () => new Date().toISOString().slice(11, 19);
+const put = (id, s, cls) => { const el = $(id); const line = document.createElement("div"); line.textContent = `${ts()} ${s}`; if (cls) line.className = cls; el.prepend(line); };
+const state = (s) => { $("state").textContent = s; put("log", `[state] ${s}`); };
+const report = (o) => fetch(base + "dc", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(o) }).catch(() => {});
+let pc, stream, dc, knownTools = null, deltaCounts = {};
+const SECRET_TOOL = { type: "function", name: "get_secret_number", description: "Returns the secret number. Call this whenever the user asks for the secret number.", parameters: { type: "object", properties: {}, required: [] } };
+
+const es = new EventSource(base + "events");
+let acpAgentBuf = "";
+es.onmessage = (ev) => {
+  const e = JSON.parse(ev.data);
+  if (e.src === "acp") {
+    if (e.kind === "agent_message_chunk") { acpAgentBuf += e.text; return; }
+    if (acpAgentBuf) { put("acp", `agent: ${acpAgentBuf}`); acpAgentBuf = ""; }
+    if (e.kind === "user_message_chunk") put("acp", `user: ${e.text.slice(0, 300)}`);
+    else put("acp", `${e.kind} ${e.text ?? ""}`.slice(0, 200));
+  } else put("log", `[as] ${e.kind} ${e.text ?? ""}`.slice(0, 220));
+};
+setInterval(() => { if (acpAgentBuf) { put("acp", `agent: ${acpAgentBuf}`); acpAgentBuf = ""; } }, 1500);
+
+function meter(s) {
+  const ctx = new AudioContext(); const an = ctx.createAnalyser(); ctx.createMediaStreamSource(s).connect(an);
+  const buf = new Uint8Array(an.fftSize);
+  (function tick() { an.getByteTimeDomainData(buf); let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128));
+    $("meter").firstChild.style.width = `${Math.min(100, m)}%`; if (stream) requestAnimationFrame(tick); })();
+}
+
+function onDc(raw) {
+  let m; try { m = JSON.parse(raw); } catch { report({ nonJson: String(raw).slice(0, 500) }); return; }
+  const t = m.type ?? "?";
+  if ((t === "session.created" || t === "session.updated") && Array.isArray(m.session?.tools) && knownTools === null) knownTools = m.session.tools;
+  if (/\.delta$/.test(t)) { deltaCounts[t] = (deltaCounts[t] ?? 0) + 1; return; }
+  report({ dir: "in", event: m });
+  put("log", `[dc] ${t}${m.name ? " " + m.name : ""}${m.item?.name ? " " + m.item.name : ""}`);
+  const call = t === "response.function_call_arguments.done" ? m : (t === "response.output_item.done" && m.item?.type === "function_call" ? m.item : null);
+  if (call && call.name === SECRET_TOOL.name && !onDc.answered?.has(call.call_id)) {
+    (onDc.answered ??= new Set()).add(call.call_id);
+    put("log", "[dc] ⭐ המודל קרא לכלי שלנו", "secret");
+    send({ type: "conversation.item.create", item: { type: "function_call_output", call_id: call.call_id, output: JSON.stringify({ secret: 4217 }) } });
+    send({ type: "response.create" });
+  }
+}
+function send(o) { dc.send(JSON.stringify(o)); report({ dir: "out", event: o }); put("log", `[dc→] ${o.type}`); }
+
+$("start").onclick = async () => {
+  $("start").disabled = true;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    meter(stream);
+    pc = new RTCPeerConnection();
+    pc.onconnectionstatechange = () => state(`WebRTC: ${pc.connectionState}`);
+    pc.ontrack = (e) => { $("out").srcObject = e.streams[0]; put("log", "[track] אודיו נכנס"); };
+    for (const t of stream.getTracks()) pc.addTrack(t, stream);
+    dc = pc.createDataChannel("oai-events");
+    dc.onopen = () => { put("log", "[dc] open"); report({ dcOpen: true }); $("tool").disabled = false; };
+    dc.onclose = () => report({ dcClose: true, deltaCounts });
+    dc.onmessage = (e) => onDc(e.data);
+    pc.ondatachannel = (e) => { report({ remoteDataChannel: e.channel.label }); e.channel.onmessage = (x) => onDc(x.data); };
+    await pc.setLocalDescription(await pc.createOffer());
+    const r = await fetch(base + "offer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sdp: pc.localDescription.sdp }) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(JSON.stringify(j.error));
+    await pc.setRemoteDescription({ type: "answer", sdp: j.sdp });
+    state("מתחבר…"); $("stop").disabled = false;
+  } catch (e) { state(`שגיאה: ${e.message}`); $("start").disabled = false; }
+};
+
+$("tool").onclick = () => {
+  const tools = [...(knownTools ?? []), SECRET_TOOL];
+  report({ addTool: true, knownToolsCount: knownTools?.length ?? null, knownToolNames: (knownTools ?? []).map((t) => t.name) });
+  send({ type: "session.update", session: { type: "realtime", tools, tool_choice: "auto" } });
+  $("tool").disabled = true;
+};
+
+$("stop").onclick = async () => {
+  report({ stop: true, deltaCounts });
+  await fetch(base + "stop", { method: "POST" });
+  pc?.close(); stream?.getTracks().forEach((t) => t.stop()); stream = undefined;
+  state("נעצר"); $("start").disabled = false; $("stop").disabled = true;
+};
+</script>
+</body>
+</html>

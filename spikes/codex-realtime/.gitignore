@@ -1,0 +1,5 @@
+# runtime artefacts of the spike — logs carry account details
+*.log
+*.out
+.token
+cwd/
