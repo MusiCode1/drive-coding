@@ -626,4 +626,13 @@ export const he: Catalog = {
   "scopePrompt.expiresIn": "נדחה אוטומטית בעוד",
   "scopePrompt.seconds": "שנ'",
   "scopePrompt.expired": "נדחה אוטומטית — איש לא ענה",
+  // codex-voice
+  "codexVoice.start": "קול Codex",
+  "codexVoice.stop": "סיים קול Codex",
+  "codexVoice.connecting": "מתחבר לקול Codex…",
+  "codexVoice.live": "קול Codex פעיל",
+  "codexVoice.error": "קול Codex נכשל:",
+  "codexVoice.prompt":
+    "אתה עוזר קולי שמדבר עם המשתמש בעברית. סוכן Codex עושה את כל העבודה האמיתית. העבר אליו כל בקשה שדורשת עובדות על קבצים, קוד, המחשב או המשימה. כל עוד העברה ממתינה, מותר לך רק לומר שאתה בודק. לעולם אל תמסור מספרים, תוכן קבצים או תוצאות לפני שהתשובה של Codex הגיעה. כשהתשובה מגיעה, מסור אותה בנאמנות ובקצרה, בלי לשנות מספרים או שמות. אם נאמר לך ש-Codex מחכה לאישור, אמור זאת למשתמש מיד.",
+  "codexVoice.permissionSpeech": "Codex מחכה לאישור שלך ואי אפשר לאשר בקול. אשר או דחה במסך:",
 }

@@ -8,8 +8,8 @@
   },
   "codex": {
     "filename": "agentclientprotocol-codex-acp-2.5.0.tgz",
-    "commit": "d17fc9554a93fe8498fdb3d63c6f17389adbd98a",
-    "sha256": "9d8b103e29211b63bc8e767f18bc51d047327218165e4e64798d169e61663eb2",
+    "commit": "dfa2cd9787accf430c27722862535f9a6eea276d",
+    "sha256": "6887878e3cfa0157660436d00528defd6a7c049de5d5da86bb45542472f7a74f",
     "repository": "https://github.com/MusiCode1/codex-acp",
     "license": "Apache-2.0"
   }

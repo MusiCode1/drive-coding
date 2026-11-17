@@ -635,6 +635,14 @@ export type MessageKey =
   | "scopePrompt.expiresIn"
   | "scopePrompt.seconds"
   | "scopePrompt.expired"
+  // ─── codex-voice ─── (slice codex-voice-poc)
+  | "codexVoice.start"
+  | "codexVoice.stop"
+  | "codexVoice.connecting"
+  | "codexVoice.live"
+  | "codexVoice.error"
+  | "codexVoice.prompt"
+  | "codexVoice.permissionSpeech"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.
