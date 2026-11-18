@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest"
-import { createCodexVoiceWire, VOICE_META_KEY } from "./voice-wire.js"
+import { createCodexVoiceWire, TURN_STATE_META_KEY, VOICE_META_KEY } from "./voice-wire.js"
 
 const rpc = (method: string, params: unknown, id = 7) =>
   JSON.stringify({ jsonrpc: "2.0", id, method, params })
@@ -69,16 +69,26 @@ describe("toAgent", () => {
 })
 
 describe("fromAgent — thread status", () => {
-  it("mirrors a status change as a generic state_update, once per change", () => {
-    const wire = createCodexVoiceWire()
-    const active = wire.fromAgent(info("s", "active"))
-    expect(parsed(active)[1]).toEqual({
-      jsonrpc: "2.0",
-      method: "session/update",
-      params: { sessionId: "s", update: { sessionUpdate: "state_update", state: "running" } },
+  it("marks an idle status with the generic turn-end mark, on the same update", () => {
+    const out = createCodexVoiceWire().fromAgent(info("s", "idle"))
+    expect(out).toHaveLength(1)
+    expect(parsed(out)[0].params.update).toEqual({
+      sessionUpdate: "session_info_update",
+      _meta: { codex: { threadStatus: { type: "idle" } }, [TURN_STATE_META_KEY]: "idle" },
     })
-    expect(wire.fromAgent(info("s", "active"))).toHaveLength(1) // no change → nothing added
-    expect(parsed(wire.fromAgent(info("s", "idle")))[1].params.update.state).toBe("idle")
+  })
+
+  it("leaves an active status untouched — the agent's own updates set the busy state", () => {
+    const line = info("s", "active")
+    expect(createCodexVoiceWire().fromAgent(line)).toEqual([line])
+  })
+
+  it("never emits a state_update line (the SDK drops it — voice-wire.sdk.test.ts)", () => {
+    const wire = createCodexVoiceWire()
+    const all = [...wire.fromAgent(info("s", "active")), ...wire.fromAgent(info("s", "idle"))].join(
+      "\n",
+    )
+    expect(all).not.toContain("state_update")
   })
 })
 
@@ -121,15 +131,9 @@ describe("fromAgent — voice-conversation messages", () => {
     })
   })
 
-  it("ends the 'responding' state a voice reply causes, unless Codex is still working", () => {
-    const wire = createCodexVoiceWire()
+  it("a voice reply is one line — the reducer keeps it from moving the turn state", () => {
     const speech = chunk("agent_message_chunk", { kind: "speech", role: "assistant" })
-    expect(parsed(wire.fromAgent(speech)).at(-1).params.update).toEqual({
-      sessionUpdate: "state_update",
-      state: "idle",
-    })
-    wire.fromAgent(info("s", "active"))
-    expect(wire.fromAgent(speech)).toHaveLength(1)
+    expect(createCodexVoiceWire().fromAgent(speech)).toHaveLength(1)
   })
 
   it.each([

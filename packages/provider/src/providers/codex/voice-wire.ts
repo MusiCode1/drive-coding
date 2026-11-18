@@ -12,7 +12,13 @@
  *    (voice-catalog.ts): Codex itself returns names only.
  *  - codex-acp reports Codex's thread status in `session_info_update._meta.codex.threadStatus`.
  *    A voice delegation runs as a turn no prompt owns, so nothing else ends it on our side:
- *    the status is mirrored as a generic `state_update` (idle/running) that the reducer knows.
+ *    an idle status marks that same update with the generic `_meta["_drive/turnState"]: "idle"`,
+ *    which the reducer reads as the end of the turn.
+ *
+ *    🛑 Not a separate `state_update` line, as this file first did: that update type is not ACP
+ *    v1, and the SDK on the backend drops it as "Invalid params" before the reducer sees it —
+ *    measured 18/11/2026, a Codex session stuck in "responding". Voice messages themselves need
+ *    nothing here: the reducer does not let a `_drive/voice` message move the turn state.
  *
  * Slice: codex-voice-poc.
  */
@@ -21,6 +27,9 @@ import { CODEX_VOICE_CATALOG } from "./voice-catalog.js"
 
 /** Generic mark of a voice-conversation message: `{kind:"speech", role}` or `{kind:"handoff", transcript?}`. */
 export const VOICE_META_KEY = "_drive/voice"
+
+/** Generic turn-end mark on a `session_info_update` (`"idle"`). */
+export const TURN_STATE_META_KEY = "_drive/turnState"
 
 /** How Codex's answers reach the voice: `commentary` is spoken, `thinking` (codex default) is quiet context. */
 const HANDOFF_MODE = "commentary"
@@ -100,20 +109,8 @@ function withVoiceDetails(result: Json): Json {
 }
 
 export function createCodexVoiceWire(): CodexVoiceWire {
-  const threadIdle = new Map<string, boolean>()
   /** Ids of in-flight `_drive/voice/listVoices` requests, whose answers get `details`. */
   const listVoicesIds = new Set<unknown>()
-
-  function stateLine(sessionId: string, idle: boolean): string {
-    return JSON.stringify({
-      jsonrpc: "2.0",
-      method: "session/update",
-      params: {
-        sessionId,
-        update: { sessionUpdate: "state_update", state: idle ? "idle" : "running" },
-      },
-    })
-  }
 
   return {
     toAgent(line) {
@@ -147,22 +144,13 @@ export function createCodexVoiceWire(): CodexVoiceWire {
       const realtime = obj(codex.realtime)
       if (realtime) {
         const rewritten = { ...update, _meta: voiceMeta(meta, codex, realtime) }
-        const out = [JSON.stringify({ ...msg, params: { ...params, update: rewritten } })]
-        // The voice speaks between Codex's turns: its message on an idle thread must not leave the
-        // session looking busy.
-        if (update.sessionUpdate === "agent_message_chunk" && threadIdle.get(sessionId) !== false) {
-          out.push(stateLine(sessionId, true))
-        }
-        return out
+        return [JSON.stringify({ ...msg, params: { ...params, update: rewritten } })]
       }
 
       const status = obj(codex.threadStatus)?.type
-      if (update.sessionUpdate !== "session_info_update" || typeof status !== "string")
-        return [line]
-      const idle = status === "idle"
-      if (threadIdle.get(sessionId) === idle) return [line]
-      threadIdle.set(sessionId, idle)
-      return [line, stateLine(sessionId, idle)]
+      if (update.sessionUpdate !== "session_info_update" || status !== "idle") return [line]
+      const marked = { ...update, _meta: { ...meta, [TURN_STATE_META_KEY]: "idle" } }
+      return [JSON.stringify({ ...msg, params: { ...params, update: marked } })]
     },
   }
 }
