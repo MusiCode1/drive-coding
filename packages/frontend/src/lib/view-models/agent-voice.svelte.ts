@@ -104,6 +104,11 @@ export class AgentVoice {
     })
   }
 
+  /** Stops a playing sample, if any (the voice popup closed). */
+  stopPreview(): void {
+    this.#stopPreview?.()
+  }
+
   async #loadVoices(agentId: string, sessionId: string, attempt = 0): Promise<void> {
     try {
       const list = await listAgentVoices(agentId, sessionId)

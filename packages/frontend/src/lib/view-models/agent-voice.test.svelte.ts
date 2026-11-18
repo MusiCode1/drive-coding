@@ -193,6 +193,25 @@ describe("AgentVoice", () => {
     expect(voice.previewing).toBeNull()
   })
 
+  it("stopPreview stops the playing sample, and is a no-op when none plays", async () => {
+    preview.play.mockImplementation((_url: string, onEnd: () => void) => () => {
+      preview.stop()
+      onEnd()
+    })
+    const voice = makeVoice(makeSession(true))
+    voice.setPreferNative(true)
+    await tick()
+    await tick()
+    voice.stopPreview()
+    expect(voice.previewing).toBeNull()
+    voice.togglePreview("cove")
+    expect(voice.previewing).toBe("cove")
+    preview.stop.mockClear()
+    voice.stopPreview()
+    expect(preview.stop).toHaveBeenCalledTimes(1)
+    expect(voice.previewing).toBeNull()
+  })
+
   it("does nothing for a voice without a sample", async () => {
     const voice = makeVoice(makeSession(true))
     voice.setPreferNative(true)
