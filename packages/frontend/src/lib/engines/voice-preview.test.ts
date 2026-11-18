@@ -12,6 +12,7 @@ class FakeAudio {
   src: string
   error: { code: number; message: string } | null = null
   onended: (() => void) | null = null
+  onpause: (() => void) | null = null
   onerror: (() => void) | null = null
   pause = vi.fn()
   constructor(src: string) {
@@ -66,6 +67,25 @@ describe("playVoicePreview", () => {
     audio().onerror?.()
     expect(onEnd).toHaveBeenCalledWith("unsupported source: MEDIA_ELEMENT_ERROR: Format error")
     expect(console.warn).toHaveBeenCalled()
+  })
+
+  it("paused by someone else (browser, media keys) → onEnd with no error", () => {
+    const onEnd = vi.fn()
+    playVoicePreview("https://cdn/a.m4a", onEnd)
+    audio().onpause?.()
+    expect(onEnd).toHaveBeenCalledWith(undefined)
+  })
+
+  it("AbortError from play() is not the end — the clip may still play (measured 18/11)", async () => {
+    FakeAudio.playResult = Promise.reject(
+      new DOMException("The play() request was interrupted", "AbortError"),
+    )
+    const onEnd = vi.fn()
+    playVoicePreview("https://cdn/a.m4a", onEnd)
+    await new Promise((r) => setTimeout(r, 0))
+    expect(onEnd).not.toHaveBeenCalled()
+    audio().onended?.()
+    expect(onEnd).toHaveBeenCalledWith(undefined)
   })
 
   it("rejected play() → onEnd with the rejection", async () => {
