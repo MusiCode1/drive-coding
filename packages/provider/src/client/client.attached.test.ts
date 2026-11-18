@@ -11,7 +11,7 @@
  *   5. regression: createAcpClient still writes "initialize" frame
  */
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { AcpTransport } from "../transport/types.js"
 import { createAcpClient, createAttachedAcpClient } from "./client.js"
 
@@ -63,13 +63,14 @@ function joinWritten(written: string[]) {
 // ─── tests ───────────────────────────────────────────────────────────────────
 
 describe("createAttachedAcpClient", () => {
-  it("does NOT write any 'initialize' frame", () => {
+  it("does NOT write any 'initialize' frame", async () => {
     const { transport, written } = makeTransportDouble()
 
     createAttachedAcpClient(transport, () => {})
 
-    // Give the microtask queue a chance to flush any synchronous SDK writes.
-    // The SDK may write frames synchronously on construction, so we check immediately.
+    // The SDK writes asynchronously (several ticks after the call) — a synchronous check here
+    // would pass whatever happens. Give it a full macrotask first.
+    await new Promise((r) => setTimeout(r, 50))
     expect(joinWritten(written)).not.toContain("initialize")
   })
 
@@ -82,10 +83,8 @@ describe("createAttachedAcpClient", () => {
     // is enqueued on the wire. The Promise will remain pending.
     void client.loadSession({ sessionId: "test-session", cwd: "/tmp", mcpServers: [] })
 
-    // Allow microtask queue to flush the write.
-    await Promise.resolve()
-
-    expect(joinWritten(written)).toContain("session/load")
+    // The SDK writes a few ticks later (one microtask was enough with an older SDK).
+    await vi.waitFor(() => expect(joinWritten(written)).toContain("session/load"))
   })
 
   it("returns capabilities passed via options", () => {
@@ -126,13 +125,9 @@ describe("createAcpClient regression — still writes initialize", () => {
     // Suppress the expected timeout rejection so the test runner doesn't see an unhandled rejection.
     clientPromise.catch(() => {})
 
-    // Flush microtasks — the SDK writes the initialize frame synchronously when
-    // ClientSideConnection.initialize() is called (it serialises the request and
-    // pushes it to the writable stream synchronously before awaiting the response).
-    await Promise.resolve()
-
-    // Core regression assertion: initialize frame must be present for cold path.
-    expect(joinWritten(written)).toContain("initialize")
+    // Core regression assertion: initialize frame must be present for cold path. The SDK
+    // writes it a few ticks after initialize() is called, not synchronously.
+    await vi.waitFor(() => expect(joinWritten(written)).toContain("initialize"))
 
     // Wait for the timeout to fire so the promise settles (no dangling timers in vitest).
     await new Promise((r) => setTimeout(r, 100))

@@ -1196,10 +1196,10 @@
       "codeLines": 228
     },
     "packages/frontend/src/routes/playlist-nav-chrome-test/+page.svelte": {
-      "metric": 194,
+      "metric": 189,
       "impurity": 20,
       "class": "mixed",
-      "codeLines": 158
+      "codeLines": 153
     }
   }
 }

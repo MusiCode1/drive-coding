@@ -11,7 +11,7 @@
  *   2. AcpClient interface exposes deleteSession as a function (type-level via runtime check)
  */
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { AcpTransport } from "../transport/types.js"
 import { createAttachedAcpClient } from "./client.js"
 
@@ -52,10 +52,9 @@ describe("AcpClient.deleteSession", () => {
     // Fire deleteSession — don't await (no server to respond); just verify the frame is enqueued.
     void client.deleteSession("session-123")
 
-    await Promise.resolve()
-
+    // The SDK writes a few ticks later (one microtask was enough with an older SDK).
+    await vi.waitFor(() => expect(joinWritten(written)).toContain("session/delete"))
     const frame = joinWritten(written)
-    expect(frame).toContain("session/delete")
     expect(frame).toContain("session-123")
   })
 

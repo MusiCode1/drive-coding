@@ -1,7 +1,7 @@
 /**
  * media-session-playlist.test.ts — TDD ל-Media Session ↔ AudioPlaylist (ללא keepalive).
  */
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, type Mock, vi } from "vitest"
 import type { AudioPlaylistState, AudioPlaylistTransport } from "./audio-playlist.svelte.js"
 import { MEDIA_ACTIONS } from "./media-session-keepalive.js"
 import {
@@ -15,16 +15,16 @@ import {
 } from "./media-session-playlist.js"
 
 function mockControls(): PlaylistMediaControls & {
-  next: ReturnType<typeof vi.fn>
-  prev: ReturnType<typeof vi.fn>
-  pause: ReturnType<typeof vi.fn>
-  resume: ReturnType<typeof vi.fn>
+  next: Mock<() => void>
+  prev: Mock<() => void>
+  pause: Mock<() => void>
+  resume: Mock<() => void>
 } {
   return {
-    next: vi.fn(),
-    prev: vi.fn(),
-    pause: vi.fn(),
-    resume: vi.fn(),
+    next: vi.fn<() => void>(),
+    prev: vi.fn<() => void>(),
+    pause: vi.fn<() => void>(),
+    resume: vi.fn<() => void>(),
   }
 }
 
@@ -126,7 +126,7 @@ describe("playbackStateForPlaylist", () => {
 describe("MediaSessionPlaylistBridge", () => {
   function makeBridge(
     ms: ReturnType<typeof mockMediaSession>,
-    overrides: Partial<Parameters<typeof MediaSessionPlaylistBridge>[0]> = {},
+    overrides: Partial<ConstructorParameters<typeof MediaSessionPlaylistBridge>[0]> = {},
   ) {
     const controls = mockControls()
     const onStop = vi.fn()
@@ -147,17 +147,12 @@ describe("MediaSessionPlaylistBridge", () => {
         title: string
         artist: string
         album: string
-        artwork?: MediaImage[]
-        constructor(init: {
-          title: string
-          artist: string
-          album: string
-          artwork?: MediaImage[]
-        }) {
-          this.title = init.title
-          this.artist = init.artist
-          this.album = init.album
-          this.artwork = init.artwork
+        artwork: readonly MediaImage[]
+        constructor(init: MediaMetadataInit) {
+          this.title = init.title ?? ""
+          this.artist = init.artist ?? ""
+          this.album = init.album ?? ""
+          this.artwork = init.artwork ?? []
         }
       },
     )

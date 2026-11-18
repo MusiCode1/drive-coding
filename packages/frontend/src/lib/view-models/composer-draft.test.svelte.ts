@@ -32,9 +32,10 @@ async function waitForPersist(): Promise<void> {
 }
 
 let target: HTMLDivElement | null = null
-let app: ReturnType<typeof mount<typeof Harness>> | null = null
+type MountedHarness = ReturnType<typeof mount>
+let app: MountedHarness | null = null
 
-function mountHarness(): ReturnType<typeof mount<typeof Harness>> {
+function mountHarness(): MountedHarness {
   target = document.createElement("div")
   document.body.appendChild(target)
   app = mount(Harness, { target })

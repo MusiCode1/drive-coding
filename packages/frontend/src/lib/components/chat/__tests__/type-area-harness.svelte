@@ -37,10 +37,10 @@ import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
 import type { Dictate, DictateState, FinishListeningResult } from "$lib/view-models/dictate.svelte"
 import type { I18nVM } from "$lib/view-models/i18n.svelte"
-import type { MicState } from "$lib/view-models/mic.svelte"
+import type { Mic, MicState } from "$lib/view-models/mic.svelte"
 import type { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
-import type { InputMode } from "$lib/view-models/ui-shell.svelte"
+import type { InputMode, UiShellVM } from "$lib/view-models/ui-shell.svelte"
 import type { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import TypeArea from "../TypeArea.svelte"
 
@@ -124,8 +124,8 @@ setVoiceMode(fakeVoiceMode)
 setModelStatus(fakeModelStatus)
 setComposerDraft(composerDraft)
 setDictate(fakeDictate as unknown as Dictate)
-setMic(fakeMic)
-setUiShell(fakeUiShell)
+setMic(fakeMic as unknown as Mic)
+setUiShell(fakeUiShell as unknown as UiShellVM)
 </script>
 
 <TypeArea />

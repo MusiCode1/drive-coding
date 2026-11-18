@@ -25,6 +25,7 @@ describe("agent-api gate helpers", () => {
     const keys = documentableRouteKeys(REPO_ROOT)
     expect(keys.has("get /api/health")).toBe(true)
     expect(keys.has("get /*")).toBe(false)
-    expect(keys.size).toBe(39)
+    // 41 since 261db514 (13/10/2026): GET + PATCH /api/scope-policy
+    expect(keys.size).toBe(41)
   })
 })

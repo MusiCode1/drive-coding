@@ -143,7 +143,11 @@ function makeOrchestrator(registry: AgentRegistry): AgentOrchestrator {
 }
 
 function makeApp(opts?: { mcpHttp?: string }) {
-  const env: NodeJS.ProcessEnv = {}
+  // Hermetic: without this, displayName comes from the machine's ~/.config/drive-coding/cli-specs.jsonc
+  // (measured 18/11/2026: a configured machine returned its own display name and failed the test).
+  const env: NodeJS.ProcessEnv = {
+    CLI_SPECS_FILE: "/nonexistent/drive-coding-test/cli-specs.jsonc",
+  }
   if (opts?.mcpHttp !== undefined) env.MCP_HTTP = opts.mcpHttp
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()

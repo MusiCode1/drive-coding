@@ -40,10 +40,11 @@ afterEach(() => {
 
 describe("SessionBudgetPopover cost (C1)", () => {
   it("renders without throw when cost has amount but no currency", async () => {
-    target = document.createElement("div")
-    document.body.appendChild(target)
+    const el = document.createElement("div")
+    target = el
+    document.body.appendChild(el)
     expect(() => {
-      app = mount(Harness, { target })
+      app = mount(Harness, { target: el })
     }).not.toThrow()
     await tick()
     expect(target.textContent).toMatch(/0\.10|0\.1/)

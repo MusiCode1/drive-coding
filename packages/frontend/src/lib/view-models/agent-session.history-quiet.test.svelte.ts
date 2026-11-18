@@ -35,7 +35,10 @@ const mockSynthesize = vi.fn()
 const mockIsAvailable = vi.fn((_provider: "elevenlabs" | "google") => true)
 const mockNarrate = vi.fn()
 
-vi.mock("$lib/adapters/voice/tts-resolve", () => ({
+// Keep the module's real exports (settings-persistence imports its default model ids) and
+// replace only resolveTts — a factory with resolveTts alone crashed the import chain.
+vi.mock("$lib/adapters/voice/tts-resolve", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("$lib/adapters/voice/tts-resolve")>()),
   resolveTts: vi.fn(() => ({
     provider: {
       format: "pcm" as const,

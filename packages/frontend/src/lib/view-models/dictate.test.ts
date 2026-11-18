@@ -33,7 +33,10 @@ const fakeMic = {
   refreshPermissionHint: vi.fn().mockResolvedValue(undefined),
 } as unknown as Mic
 
-function createRecovery(overrides: Partial<DictatePendingRecovery> = {}): DictatePendingRecovery {
+/** The recovery double — `hasPending` is writable here so tests can stage a pending recording. */
+type RecoveryDouble = Omit<DictatePendingRecovery, "hasPending"> & { hasPending: boolean }
+
+function createRecovery(overrides: Partial<DictatePendingRecovery> = {}): RecoveryDouble {
   return {
     hasPending: false,
     hydrate: vi.fn().mockResolvedValue(null),
@@ -41,9 +44,9 @@ function createRecovery(overrides: Partial<DictatePendingRecovery> = {}): Dictat
     processBlob: vi.fn(async (_blob, _mimeType, ctx) => {
       try {
         const result = await ctx.transcribe(_blob)
-        return { ok: true, text: result.text, recordingId: result.recordingId }
+        return { ok: true as const, text: result.text, recordingId: result.recordingId }
       } catch {
-        return { ok: false, error: "dictate.error.transcribe" as const }
+        return { ok: false as const, error: "dictate.error.transcribe" as const }
       }
     }),
     retry: vi.fn(),
@@ -54,7 +57,7 @@ function createRecovery(overrides: Partial<DictatePendingRecovery> = {}): Dictat
 function createDictate(recovery = createRecovery()): {
   dictate: Dictate
   draft: ComposerDraft
-  recovery: DictatePendingRecovery
+  recovery: RecoveryDouble
 } {
   const draft = new ComposerDraft()
   const dictate = new Dictate({ draft, mic: fakeMic, recovery })
