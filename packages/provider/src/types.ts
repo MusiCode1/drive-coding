@@ -51,6 +51,12 @@ export interface NormalizedCapabilities {
    * - `"unsupported"` — no charter support; FE may warn when a project prompt is configured
    */
   systemPrompt: "native" | "prepended" | "unsupported"
+  /**
+   * true = this provider implements the `_drive/voice/*` contract: the agent's own realtime
+   * voice front-end over WebRTC (slice codex-voice-poc). Static per provider; absent = false
+   * (optional so capability objects built before the field existed stay valid).
+   */
+  voice?: boolean
 }
 
 /**

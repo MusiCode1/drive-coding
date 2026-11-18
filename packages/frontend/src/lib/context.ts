@@ -22,6 +22,7 @@ import type { Settings } from "./view-models/settings.svelte"
 import type { Speaker } from "./view-models/speaker.svelte"
 import type { ThemeVM } from "./view-models/theme.svelte"
 import type { UiShellVM } from "./view-models/ui-shell.svelte"
+import type { AgentVoice } from "./view-models/agent-voice.svelte"
 import type { Live } from "./view-models/live.svelte"
 import type { VoiceMode } from "./view-models/derived/voice-mode.svelte"
 import type { ModelStatus } from "./view-models/derived/model-status.svelte"
@@ -122,3 +123,6 @@ export const [getAudioDevices, setAudioDevices] = createContext<AudioDevicesVM>(
 
 // ─── scope-policy-per-caller ───
 export const [getSessionScopePolicy, setSessionScopePolicy] = createContext<SessionScopePolicy>()
+
+// ─── agent-voice ─── (slice codex-voice-poc — the agent's native Live)
+export const [getAgentVoice, setAgentVoice] = createContext<AgentVoice>()

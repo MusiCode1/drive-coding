@@ -1,28 +1,28 @@
 /**
- * codex-voice-call.ts — owns one WebRTC voice call with Codex's realtime front-end (engines layer).
+ * realtime-voice-call.ts — owns one WebRTC call with an agent's realtime voice front-end (engines layer).
  *
  * The browser holds the media: mic track out, model audio in, plus the `oai-events` data channel
- * that carries transcripts and delegation events. The SDP answer comes from `negotiate`, which in
- * production goes through the backend to codex-acp (`_codex/realtime/start`).
+ * that carries transcripts and delegation events (GPT-Live "Frameless Bidi" events, as used by
+ * Codex). The SDP answer comes from `negotiate` — the `_drive/voice/start` contract.
  *
  * Slice: codex-voice-poc.
  */
 
-export type CodexVoiceState = "connecting" | "live" | "closed"
+export type RealtimeVoiceState = "connecting" | "live" | "closed"
 
-export type CodexVoiceEvent =
-  | { type: "state"; state: CodexVoiceState }
+export type RealtimeVoiceEvent =
+  | { type: "state"; state: RealtimeVoiceState }
   | { type: "transcript"; role: "user" | "assistant"; text: string }
   | { type: "delegation"; text: string }
   | { type: "error"; message: string }
 
-export interface CodexVoiceCall {
+export interface RealtimeVoiceCall {
   stop(): void
 }
 
-export interface CodexVoiceCallOptions {
+export interface RealtimeVoiceCallOptions {
   negotiate(offerSdp: string): Promise<string>
-  onEvent(event: CodexVoiceEvent): void
+  onEvent(event: RealtimeVoiceEvent): void
 }
 
 type DataChannelEvent = {
@@ -34,7 +34,7 @@ type DataChannelEvent = {
 }
 
 /** Maps one data-channel event (GPT-Live "Frameless Bidi" shape) to what the UI needs. */
-export function mapDataChannelEvent(raw: string): CodexVoiceEvent | null {
+export function mapDataChannelEvent(raw: string): RealtimeVoiceEvent | null {
   let event: DataChannelEvent
   try {
     event = JSON.parse(raw) as DataChannelEvent
@@ -60,7 +60,9 @@ export function mapDataChannelEvent(raw: string): CodexVoiceEvent | null {
   return null
 }
 
-export async function startCodexVoiceCall(opts: CodexVoiceCallOptions): Promise<CodexVoiceCall> {
+export async function startRealtimeVoiceCall(
+  opts: RealtimeVoiceCallOptions,
+): Promise<RealtimeVoiceCall> {
   opts.onEvent({ type: "state", state: "connecting" })
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
   const pc = new RTCPeerConnection()

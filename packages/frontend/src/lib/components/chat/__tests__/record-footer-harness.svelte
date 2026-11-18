@@ -5,6 +5,7 @@
  * ─── slice live-input-mode (Commit 1) ───
  */
 import {
+  setAgentVoice,
   setAudioPlaylist,
   setComposerDraft,
   setDictate,
@@ -22,6 +23,7 @@ import {
 import type { MessageKey } from "@drive-coding/core/i18n"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import type { I18nVM } from "$lib/view-models/i18n.svelte"
+import type { AgentVoice } from "$lib/view-models/agent-voice.svelte"
 import type { Live } from "$lib/view-models/live.svelte"
 import type { Mic } from "$lib/view-models/mic.svelte"
 import type { Dictate } from "$lib/view-models/dictate.svelte"
@@ -149,6 +151,18 @@ setResponsive(fakeResponsive)
 setUiShell(uiShell)
 setMic(fakeMic)
 setLive(fakeLive)
+// slice codex-voice-poc: LiveToggle reads the agent's native voice (unsupported here → no checkbox)
+setAgentVoice({
+  status: "idle",
+  error: null,
+  preferNative: false,
+  supported: false,
+  selected: false,
+  active: false,
+  setPreferNative: () => {},
+  start: async () => {},
+  stop: async () => {},
+} as unknown as AgentVoice)
 setVoiceMode(fakeVoiceMode)
 setModelStatus(fakeModelStatus)
 setSettings(fakeSettings)

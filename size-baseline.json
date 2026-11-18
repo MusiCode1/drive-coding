@@ -1088,10 +1088,10 @@
       "codeLines": 164
     },
     "packages/frontend/src/routes/+layout.svelte": {
-      "metric": 333,
+      "metric": 314,
       "impurity": 10,
       "class": "mixed",
-      "codeLines": 226
+      "codeLines": 211
     },
     "packages/frontend/src/routes/+page.svelte": {
       "metric": 405,
@@ -1140,12 +1140,6 @@
       "impurity": 7,
       "class": "mixed",
       "codeLines": 257
-    },
-    "packages/provider/src/connection/connect-codex-in-process.ts": {
-      "metric": 282,
-      "impurity": 6,
-      "class": "mixed",
-      "codeLines": 172
     },
     "packages/provider/src/connection/connect-in-process.ts": {
       "metric": 422,

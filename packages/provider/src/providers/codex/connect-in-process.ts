@@ -1,5 +1,5 @@
 /**
- * connect-codex-in-process.ts — connectCodexInProcess: ProviderConnection wrapping
+ * connect-in-process.ts — connectCodexInProcess (moved from connection/connect-codex-in-process.ts): ProviderConnection wrapping
  * the codex ACP agent in-process via the @musicode1/codex-acp fork.
  *
  * Architecture:
@@ -13,58 +13,26 @@
  *
  * onFrame/turn: same as connectInProcess — decodeWireLine + createTurnTracker.
  * capabilities: staticCapsFor("codex") — static, no runtime discovery.
- * ext: undefined — codex has no ext channel.
+ * ext: undefined — codex has no ext channel; `_drive/voice/*` is mapped on the wire (voice-streams.ts).
  * pid: null — the codex child is managed inside startAcpServer (not directly visible).
  *
  * close(): serverIn.end() → triggers readable.on("close") inside startAcpServer,
  * which kills codex child after 2s (built into the fork).
  */
 
-import * as os from "node:os"
-import * as path from "node:path"
 import { PassThrough } from "node:stream"
 import { extractPromptCaps } from "@drive-coding/core/acp/extract-prompt-caps"
-import { resolveCliBinary } from "@drive-coding/core/cli-resolve"
-import { createTurnTracker } from "../shared/turn-tracker.js"
-import { decodeWireLine } from "../shared/wire-decode.js"
-import type { BridgeCrashInfo } from "../spawn/index.js"
-import type { NormalizedCapabilities } from "../types.js"
-import { staticCapsFor } from "./capabilities-static.js"
-import { startCodexAcp } from "./codex-acp-startup.js"
-import type { ConnectOpts, ProviderConnection, WireFrame } from "./types.js"
+import { resolveCodexPath } from "./codex-path.js"
+import { createCodexVoiceStreams } from "./voice-streams.js"
+import { createTurnTracker } from "../../shared/turn-tracker.js"
+import { decodeWireLine } from "../../shared/wire-decode.js"
+import type { BridgeCrashInfo } from "../../spawn/index.js"
+import type { NormalizedCapabilities } from "../../types.js"
+import { staticCapsFor } from "../../connection/capabilities-static.js"
+import { startCodexAcp } from "../../connection/codex-acp-startup.js"
+import type { ConnectOpts, ProviderConnection, WireFrame } from "../../connection/types.js"
 
-/**
- * resolveCodexPath — finds the native codex binary using resolveCliBinary.
- *
- * Resolution order (via resolveCliBinary):
- *   1. CODEX_PATH env var (explicit override).
- *   2. PATH scan (with PATHEXT on Windows).
- *   3. pm-global-bins (~/.bun/bin, npm global, ~/.local/bin, /usr/local/bin, etc.).
- *   4. Known codex install locations per platform.
- *   5. undefined — startAcpServer will attempt its bundled binary (works on Linux/Termux,
- *      broken on Windows; calev verifies the no-CODEX_PATH case out-of-box).
- */
-export function resolveCodexPath(): string | undefined {
-  const home = os.homedir()
-  return resolveCliBinary({
-    bin: "codex",
-    envVar: "CODEX_PATH",
-    knownPaths: [
-      // Windows: OpenAI Codex typical install locations
-      path.join(home, "AppData", "Local", "Programs", "OpenAI", "Codex", "bin"),
-      path.join(home, "AppData", "Local", "Programs", "OpenAI", "Codex"),
-      // WinGet links
-      path.join(home, "AppData", "Local", "Microsoft", "WinGet", "Links"),
-      // npm global bin (common on Windows with npm -g install)
-      path.join(home, "AppData", "Roaming", "npm"),
-      // Scoop
-      path.join(home, "scoop", "shims"),
-      // Linux/macOS: nvm / volta / asdf shims (often not in PATH in non-interactive shells)
-      path.join(home, ".volta", "bin"),
-      path.join(home, ".nvm", "bin"),
-    ],
-  })
-}
+export { resolveCodexPath }
 
 export async function connectCodexInProcess(opts: ConnectOpts): Promise<ProviderConnection> {
   // Listeners for onFrame — broadcast decoded frames.
@@ -166,9 +134,12 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
   // codex `developer_instructions` override **replaces** the effective config value (not append).
   // Measured 2026-10-09 — see codex-acp-startup.integration.test.ts (live config/read probe).
   // startCodexAcp reads the effective user instructions and composes them with the surface prompt.
+  // `_drive/voice/*` ↔ codex-acp realtime (providers/codex), between us and the agent.
+  const voice = createCodexVoiceStreams()
+  voice.fromAgent.pipe(serverOut)
   startCodexAcp({
-    serverIn,
-    serverOut,
+    serverIn: serverIn.pipe(voice.toAgent),
+    serverOut: voice.fromAgent,
     cwd: opts.cwd,
     codexPath,
     instructions,

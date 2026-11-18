@@ -5,9 +5,8 @@
 import { untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { page } from "$app/state"
-import { type OpenSessionOutcome, openSessionUrl } from "$lib/actions/open-session-url"
 import ChatScreen from "$lib/components/chat/ChatScreen.svelte"
-import CodexVoiceToggle from "$lib/components/chat/CodexVoiceToggle.svelte"
+import { openSessionUrl, type OpenSessionOutcome } from "$lib/actions/open-session-url"
 import { getI18n, getSession, getSettings } from "$lib/context"
 
 const session = getSession()
@@ -64,7 +63,6 @@ function goHome() {
 
 {#if outcome === "connected"}
   <ChatScreen />
-  <CodexVoiceToggle />
 {:else if outcome === "needs-takeover"}
   <main class="min-h-dvh flex flex-col items-center justify-center gap-4 p-6 text-center">
     <h1 class="text-lg font-medium">{t("sessionUrl.takeover.title")}</h1>

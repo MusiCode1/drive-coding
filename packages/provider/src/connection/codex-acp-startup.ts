@@ -1,7 +1,7 @@
 /**
  * codex-acp-startup.ts — prepare codex ACP config (preserve developer_instructions) and start server.
  *
- * Async work lives here so connect-codex-in-process stays sync (lint impurity / no await).
+ * Async work lives here so the codex in-process connection (providers/codex/connect-in-process.ts) stays sync (lint impurity / no await).
  */
 
 import { type ChildProcess, spawn } from "node:child_process"

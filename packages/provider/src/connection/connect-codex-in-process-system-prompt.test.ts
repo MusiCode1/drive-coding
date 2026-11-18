@@ -20,7 +20,7 @@ describe("connectCodexInProcess — startCodexAcp instructions", () => {
   })
 
   it("agentPrompt wins over systemPrompt", async () => {
-    const { connectCodexInProcess } = await import("./connect-codex-in-process.js")
+    const { connectCodexInProcess } = await import("../providers/codex/connect-in-process.js")
     const conn = await connectCodexInProcess({
       cwd: "/tmp",
       agentPrompt: "FULL_SURFACE",
@@ -36,7 +36,7 @@ describe("connectCodexInProcess — startCodexAcp instructions", () => {
   })
 
   it("falls back to systemPrompt when agentPrompt absent", async () => {
-    const { connectCodexInProcess } = await import("./connect-codex-in-process.js")
+    const { connectCodexInProcess } = await import("../providers/codex/connect-in-process.js")
     const conn = await connectCodexInProcess({
       cwd: "/tmp",
       systemPrompt: "CHARTER_ONLY",
@@ -54,7 +54,7 @@ describe("connectCodexInProcess — startCodexAcp instructions", () => {
       expect(isClosed()).toBe(false)
       expect(onStartupError).toEqual(expect.any(Function))
     })
-    const { connectCodexInProcess } = await import("./connect-codex-in-process.js")
+    const { connectCodexInProcess } = await import("../providers/codex/connect-in-process.js")
     const conn = await connectCodexInProcess({ cwd: "/tmp" })
     try {
       expect(startCodexAcpMock).toHaveBeenCalledTimes(1)

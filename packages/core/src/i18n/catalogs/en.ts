@@ -635,14 +635,13 @@ export const en: Catalog = {
   "scopePrompt.expiresIn": "Auto-denies in",
   "scopePrompt.seconds": "sec",
   "scopePrompt.expired": "Automatically denied — no one responded",
-  // codex-voice
-  "codexVoice.start": "Codex voice",
-  "codexVoice.stop": "End Codex voice",
-  "codexVoice.connecting": "Connecting Codex voice…",
-  "codexVoice.live": "Codex voice is on",
-  "codexVoice.error": "Codex voice failed:",
-  "codexVoice.prompt":
-    "You are a voice assistant talking to the user. A Codex agent does all the real work. Delegate every request that needs facts about files, code, the computer or the task. While a delegation is pending you may only say that you are checking. Never state numbers, file contents or results before Codex's answer has arrived. When it arrives, convey it faithfully and briefly, without changing numbers or names. If you are told Codex is waiting for approval, tell the user right away.",
-  "codexVoice.permissionSpeech":
-    "Codex is waiting for your approval, which can't be given by voice. Approve or deny on screen:",
+  // agent-voice
+  "agentVoice.useNative": "Agent's built-in Live",
+  "agentVoice.connecting": "Connecting the agent's voice…",
+  "agentVoice.live": "The agent's voice is on",
+  "agentVoice.error": "The agent's voice failed:",
+  "agentVoice.instructions":
+    "You are a voice assistant talking to the user. The agent does all the real work. Delegate every request that needs facts about files, code, the computer or the task. While a delegation is pending you may only say that you are checking. Never state numbers, file contents or results before the agent's answer has arrived. When it arrives, convey it faithfully and briefly, without changing numbers or names. If you are told the agent is waiting for approval, tell the user right away.",
+  "agentVoice.permissionSpeech":
+    "The agent is waiting for your approval, which can't be given by voice. Approve or deny on screen:",
 }
