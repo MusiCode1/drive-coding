@@ -641,6 +641,7 @@ export type MessageKey =
   | "agentVoice.defaultVoice"
   | "agentVoice.preview"
   | "agentVoice.stopPreview"
+  | "agentVoice.previewFailed"
   | "voice.bubble.you"
   | "voice.bubble.voice"
   | "voice.handoff.label"

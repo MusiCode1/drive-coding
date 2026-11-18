@@ -641,6 +641,7 @@ export const en: Catalog = {
   "agentVoice.defaultVoice": "The agent's default",
   "agentVoice.preview": "Play sample",
   "agentVoice.stopPreview": "Stop sample",
+  "agentVoice.previewFailed": "The sample did not play:",
   "voice.bubble.you": "You",
   "voice.bubble.voice": "Voice",
   "voice.handoff.label": "Handed to the agent:",

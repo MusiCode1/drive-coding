@@ -56,6 +56,8 @@ export class AgentVoice {
   paused = $state(false)
   /** The voice whose sample is playing, if any. */
   previewing = $state<string | null>(null)
+  /** Why the last sample could not play (`null` while none failed). */
+  previewError = $state<string | null>(null)
   #stopPreview: (() => void) | null = null
 
   readonly #deps: AgentVoiceDeps
@@ -98,8 +100,10 @@ export class AgentVoice {
     const url = this.voiceDetails[voice]?.previewUrl
     if (!url) return
     this.previewing = voice
-    this.#stopPreview = playVoicePreview(url, () => {
+    this.previewError = null
+    this.#stopPreview = playVoicePreview(url, (error) => {
       if (this.previewing === voice) this.previewing = null
+      if (error !== undefined) this.previewError = error
       this.#stopPreview = null
     })
   }
@@ -107,6 +111,7 @@ export class AgentVoice {
   /** Stops a playing sample, if any (the voice popup closed). */
   stopPreview(): void {
     this.#stopPreview?.()
+    this.previewError = null
   }
 
   async #loadVoices(agentId: string, sessionId: string, attempt = 0): Promise<void> {

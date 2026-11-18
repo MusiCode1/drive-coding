@@ -26,6 +26,7 @@ const options = $derived(
   ariaLabel={t("settings.liveVoice.label")}
   disabled={options.length === 0}
   previewing={agentVoice.previewing}
+  previewError={agentVoice.previewError}
   onchange={(v) => agentVoice.setVoice(v)}
   onPreview={(v) => agentVoice.togglePreview(v)}
   onPreviewStop={() => agentVoice.stopPreview()}

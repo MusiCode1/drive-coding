@@ -632,6 +632,7 @@ export const he: Catalog = {
   "agentVoice.defaultVoice": "ברירת המחדל של הסוכן",
   "agentVoice.preview": "השמע דוגמה",
   "agentVoice.stopPreview": "עצור דוגמה",
+  "agentVoice.previewFailed": "הדוגמה לא הושמעה:",
   "voice.bubble.you": "אתה",
   "voice.bubble.voice": "הקול",
   "voice.handoff.label": "הועבר לסוכן:",

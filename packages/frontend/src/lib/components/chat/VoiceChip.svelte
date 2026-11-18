@@ -8,6 +8,7 @@
  */
 import ChevronDownIcon from "@lucide/svelte/icons/chevron-down"
 import { Dialog } from "bits-ui"
+import { getI18n } from "$lib/context"
 import VoiceChipRow from "./VoiceChipRow.svelte"
 
 export type VoiceChipOption = { value: string; label: string; detail?: string; sample?: boolean }
@@ -18,6 +19,7 @@ let {
   ariaLabel,
   disabled = false,
   previewing = null,
+  previewError = null,
   onchange,
   onPreview,
   onPreviewStop,
@@ -27,11 +29,14 @@ let {
   ariaLabel: string
   disabled?: boolean
   previewing?: string | null
+  /** Why the last sample could not play — shown in the popup. */
+  previewError?: string | null
   onchange: (value: string) => void
   onPreview?: (value: string) => void
   onPreviewStop?: () => void
 } = $props()
 
+const t = getI18n().t
 let open = $state(false)
 const current = $derived(options.find((o) => o.value === value))
 
@@ -66,6 +71,11 @@ function setOpen(next: boolean) {
       <Dialog.Title class="px-4 pt-4 pb-2 text-sm font-semibold shrink-0" style="color:var(--fg-dim)">
         {ariaLabel}
       </Dialog.Title>
+      {#if previewError}
+        <p class="px-4 pb-2 text-xs" style="color:var(--recording)" role="alert" dir="auto">
+          {t("agentVoice.previewFailed")} <span dir="ltr">{previewError}</span>
+        </p>
+      {/if}
       <div class="flex min-h-0 flex-col overflow-y-auto px-2 pb-3">
         {#each options as o (o.value)}
           <VoiceChipRow

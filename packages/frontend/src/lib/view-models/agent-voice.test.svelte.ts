@@ -212,6 +212,27 @@ describe("AgentVoice", () => {
     expect(voice.previewing).toBeNull()
   })
 
+  it("keeps why a sample failed, until the next attempt or the popup closes", async () => {
+    let end: ((error?: string) => void) | undefined
+    preview.play.mockImplementation((_url: string, onEnd: (error?: string) => void) => {
+      end = onEnd
+      return () => onEnd()
+    })
+    const voice = makeVoice(makeSession(true))
+    voice.setPreferNative(true)
+    await tick()
+    await tick()
+    voice.togglePreview("cove")
+    end?.("unsupported source")
+    expect(voice.previewing).toBeNull()
+    expect(voice.previewError).toBe("unsupported source")
+    voice.togglePreview("cove")
+    expect(voice.previewError).toBeNull()
+    end?.("decode")
+    voice.stopPreview()
+    expect(voice.previewError).toBeNull()
+  })
+
   it("does nothing for a voice without a sample", async () => {
     const voice = makeVoice(makeSession(true))
     voice.setPreferNative(true)
