@@ -28,7 +28,7 @@
     },
     "packages/backend": {
       "name": "@drive-coding/backend",
-      "version": "0.24.0",
+      "version": "0.25.0",
       "bin": {
         "drive-coding": "./src/bin/drive-coding.ts",
       },
@@ -60,7 +60,7 @@
     },
     "packages/core": {
       "name": "@drive-coding/core",
-      "version": "0.35.0",
+      "version": "0.36.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.2.1",
         "@drive-coding/provider": "workspace:*",
@@ -73,7 +73,7 @@
     },
     "packages/frontend": {
       "name": "@drive-coding/frontend",
-      "version": "0.42.0",
+      "version": "0.43.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.2.1",
         "@ai-sdk/google": "^3.0.75",
@@ -109,14 +109,14 @@
     },
     "packages/provider": {
       "name": "@drive-coding/provider",
-      "version": "0.15.0",
+      "version": "0.16.0",
       "dependencies": {
         "@agentclientprotocol/claude-agent-acp": "file:../../vendor/acp/agentclientprotocol-claude-agent-acp-0.100.0.tgz",
         "@agentclientprotocol/sdk": "^1.2.1",
         "@anthropic-ai/claude-agent-sdk": "0.3.274",
         "@drive-coding/acp-wire": "workspace:*",
         "@drive-coding/core": "workspace:*",
-        "@musicode1/codex-acp": "file:../../vendor/acp/agentclientprotocol-codex-acp-2.5.0.tgz",
+        "@musicode1/codex-acp": "file:../../vendor/acp/agentclientprotocol-codex-acp-2.5.0-dc.3.tgz",
         "arktype": "^2.0.0",
       },
       "devDependencies": {
@@ -126,7 +126,7 @@
     },
     "packages/release": {
       "name": "drive-coding",
-      "version": "0.47.0",
+      "version": "0.48.0",
       "bin": {
         "drive-coding": "dist/drive-coding.js",
       },
@@ -334,7 +334,7 @@
 
     "@msgpackr-extract/msgpackr-extract-win32-x64": ["@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4", "", { "os": "win32", "cpu": "x64" }, "sha512-CmCXPQrkbwExx3j946/PtHWHbYJiCRBRDl4BlkRQcJB/YOwQxJRTpoo7aTsortjgoJ1x7opzTSxn7C+ASSLVjQ=="],
 
-    "@musicode1/codex-acp": ["@agentclientprotocol/codex-acp@../../vendor/acp/agentclientprotocol-codex-acp-2.5.0.tgz", { "dependencies": { "@agentclientprotocol/sdk": "~2.4.0", "@openai/codex": "^0.166.0", "cross-spawn": "^7.0.6", "diff": "^9.0.0", "open": "^11.0.1", "vscode-jsonrpc": "^9.0.1", "zod": "^4.0.0" }, "bin": { "codex-acp": "dist/index.js" } }, "sha512-m/2GZk+8SBPETbWIpgmJim4VotGBf6+9+n5KElM5lcm3WLFudPqSJGk7QaWfuvOmeuiTVUuclVP3+iQTYMjqUg=="],
+    "@musicode1/codex-acp": ["@agentclientprotocol/codex-acp@../../vendor/acp/agentclientprotocol-codex-acp-2.5.0-dc.3.tgz", { "dependencies": { "@agentclientprotocol/sdk": "~2.4.0", "@openai/codex": "^0.166.0", "cross-spawn": "^7.0.6", "diff": "^9.0.0", "open": "^11.0.1", "vscode-jsonrpc": "^9.0.1", "zod": "^4.0.0" }, "bin": { "codex-acp": "dist/index.js" } }, "sha512-EoGz/qUq8eD0z6qwD5dl09gPLfHWhfIUidGI4zVXe7Hkko3BhV98WJL7IAdDmphZ00mwTEJKhezRTCfKLe0R2Q=="],
 
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 

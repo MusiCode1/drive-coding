@@ -626,4 +626,21 @@ export const he: Catalog = {
   "scopePrompt.expiresIn": "נדחה אוטומטית בעוד",
   "scopePrompt.seconds": "שנ'",
   "scopePrompt.expired": "נדחה אוטומטית — איש לא ענה",
+  // agent-voice
+  "agentVoice.useNative": "Live מובנה של Codex",
+  "agentVoice.useNativeShort": "Codex",
+  "agentVoice.defaultVoice": "ברירת המחדל של הסוכן",
+  "agentVoice.preview": "השמע דוגמה",
+  "agentVoice.stopPreview": "עצור דוגמה",
+  "agentVoice.previewFailed": "הדוגמה לא הושמעה:",
+  "voice.bubble.you": "אתה",
+  "voice.bubble.voice": "הקול",
+  "voice.handoff.label": "הועבר לסוכן:",
+  "voice.handoff.context": "הקשר השיחה",
+  "agentVoice.connecting": "מתחבר לקול של הסוכן…",
+  "agentVoice.live": "הקול של הסוכן פעיל",
+  "agentVoice.error": "הקול של הסוכן נכשל:",
+  "agentVoice.instructions":
+    "אתה עוזר קולי שמדבר עם המשתמש בעברית. הסוכן עושה את כל העבודה האמיתית. העבר אליו כל בקשה שדורשת עובדות על קבצים, קוד, המחשב או המשימה. כל עוד העברה ממתינה, מותר לך רק לומר שאתה בודק. לעולם אל תמסור מספרים, תוכן קבצים או תוצאות לפני שהתשובה של הסוכן הגיעה. כשהתשובה מגיעה, מסור אותה בנאמנות ובקצרה, בלי לשנות מספרים או שמות. אם נאמר לך שהסוכן מחכה לאישור, אמור זאת למשתמש מיד.",
+  "agentVoice.permissionSpeech": "הסוכן מחכה לאישור שלך ואי אפשר לאשר בקול. אשר או דחה במסך:",
 }

@@ -635,4 +635,22 @@ export const en: Catalog = {
   "scopePrompt.expiresIn": "Auto-denies in",
   "scopePrompt.seconds": "sec",
   "scopePrompt.expired": "Automatically denied — no one responded",
+  // agent-voice
+  "agentVoice.useNative": "Codex built-in Live",
+  "agentVoice.useNativeShort": "Codex",
+  "agentVoice.defaultVoice": "The agent's default",
+  "agentVoice.preview": "Play sample",
+  "agentVoice.stopPreview": "Stop sample",
+  "agentVoice.previewFailed": "The sample did not play:",
+  "voice.bubble.you": "You",
+  "voice.bubble.voice": "Voice",
+  "voice.handoff.label": "Handed to the agent:",
+  "voice.handoff.context": "Conversation context",
+  "agentVoice.connecting": "Connecting the agent's voice…",
+  "agentVoice.live": "The agent's voice is on",
+  "agentVoice.error": "The agent's voice failed:",
+  "agentVoice.instructions":
+    "You are a voice assistant talking to the user. The agent does all the real work. Delegate every request that needs facts about files, code, the computer or the task. While a delegation is pending you may only say that you are checking. Never state numbers, file contents or results before the agent's answer has arrived. When it arrives, convey it faithfully and briefly, without changing numbers or names. If you are told the agent is waiting for approval, tell the user right away.",
+  "agentVoice.permissionSpeech":
+    "The agent is waiting for your approval, which can't be given by voice. Approve or deny on screen:",
 }

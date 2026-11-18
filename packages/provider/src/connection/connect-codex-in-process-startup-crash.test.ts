@@ -47,7 +47,7 @@ function fakeSpawnWithConfigRead() {
 
 describe("connectCodexInProcess — buffered startup crash", () => {
   it("without instructions: onCrash after connect receives buffered startup error", async () => {
-    const { connectCodexInProcess } = await import("./connect-codex-in-process.js")
+    const { connectCodexInProcess } = await import("../providers/codex/connect-in-process.js")
     const conn = await connectCodexInProcess({ cwd: "/tmp" })
     let got: unknown
     conn.onCrash((info) => {
@@ -63,7 +63,7 @@ describe("connectCodexInProcess — buffered startup crash", () => {
 
   it("with instructions: onCrash after connect receives buffered startup error (async path)", async () => {
     spawnMock.mockImplementation(() => fakeSpawnWithConfigRead())
-    const { connectCodexInProcess } = await import("./connect-codex-in-process.js")
+    const { connectCodexInProcess } = await import("../providers/codex/connect-in-process.js")
     const conn = await connectCodexInProcess({
       cwd: "/tmp",
       agentPrompt: "SURFACE",

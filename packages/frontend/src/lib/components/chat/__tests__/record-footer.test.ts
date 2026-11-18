@@ -81,15 +81,18 @@ describe("RecordFooter — live input mode", () => {
   })
 
   it("inputMode live + closed => voice picker visible; open => hidden", () => {
+    // slice codex-voice-poc: the picker sits beside the toggle with no visible heading — find it
+    // by its accessible name instead of the heading text.
+    const picker = '[aria-label="settings.liveVoice.label"]'
     const closed = mountHarness({ inputMode: "live", liveOpen: false })
-    expect(closed.textContent).toContain("settings.liveVoice.label")
+    expect(closed.querySelector(picker)).not.toBeNull()
     unmount(app!)
     closed.remove()
     target = null
     app = null
 
     const open = mountHarness({ inputMode: "live", liveOpen: true })
-    expect(open.textContent?.includes("settings.liveVoice.label")).toBe(false)
+    expect(open.querySelector(picker)).toBeNull()
   })
 
   it("inputMode record => no LiveTranscript in active pane", () => {

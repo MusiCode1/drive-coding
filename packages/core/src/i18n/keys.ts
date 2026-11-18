@@ -635,6 +635,22 @@ export type MessageKey =
   | "scopePrompt.expiresIn"
   | "scopePrompt.seconds"
   | "scopePrompt.expired"
+  // ─── agent-voice ─── (slice codex-voice-poc — the agent's native Live)
+  | "agentVoice.useNative"
+  | "agentVoice.useNativeShort"
+  | "agentVoice.defaultVoice"
+  | "agentVoice.preview"
+  | "agentVoice.stopPreview"
+  | "agentVoice.previewFailed"
+  | "voice.bubble.you"
+  | "voice.bubble.voice"
+  | "voice.handoff.label"
+  | "voice.handoff.context"
+  | "agentVoice.connecting"
+  | "agentVoice.live"
+  | "agentVoice.error"
+  | "agentVoice.instructions"
+  | "agentVoice.permissionSpeech"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

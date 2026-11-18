@@ -567,7 +567,7 @@ export class AgentSession {
   #ext: ExtClient | null = null
   // ─── slice FE-normalization: capabilities ─── (additive)
   /** NormalizedCapabilities שהתקבלו מ-_drive/capabilities ext notification. null = טרם התקבל. */
-  #capabilities: NormalizedCapabilities | null = null
+  #capabilities = $state<NormalizedCapabilities | null>(null)
   // ─── slice session-budget-meter Commit 4: mock quota harness (DEV-only) ─── (additive)
   /**
    * snapshot מדומה ל-mock harness בלבד (`/chat?mock=<fixture>` עם `mockState.quota`).

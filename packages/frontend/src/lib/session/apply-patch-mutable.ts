@@ -11,7 +11,7 @@
  * ─── slice session-state-reducer C3 ───
  */
 import type { Patch, SessionMessage } from "@drive-coding/core/session"
-import type { Bubble, ToolBubble, ToolContent, ToolLocation } from "$lib/types/bubble"
+import type { Bubble, BubbleVoice, ToolBubble, ToolContent, ToolLocation } from "$lib/types/bubble"
 
 // ─── Mapper types (injected) ───
 
@@ -21,6 +21,22 @@ export type PatchMappers = {
 }
 
 // ─── SessionMessage → Bubble mapping ───
+
+/** The voice-conversation mark (`_meta["_drive/voice"]`), validated; undefined for ordinary messages. */
+export function voiceOfMeta(meta: Record<string, unknown> | undefined): BubbleVoice | undefined {
+  const v = meta?.["_drive/voice"] as
+    | { kind?: unknown; role?: unknown; transcript?: unknown }
+    | undefined
+  if (v?.kind === "speech" && (v.role === "user" || v.role === "assistant")) {
+    return { kind: "speech", role: v.role }
+  }
+  if (v?.kind === "handoff") {
+    return typeof v.transcript === "string" && v.transcript.trim()
+      ? { kind: "handoff", transcript: v.transcript }
+      : { kind: "handoff" }
+  }
+  return undefined
+}
 
 function sessionMsgToBubble(msg: SessionMessage, mappers: PatchMappers): Bubble {
   if (msg.role === "tool") {
@@ -51,12 +67,14 @@ function sessionMsgToBubble(msg: SessionMessage, mappers: PatchMappers): Bubble 
   // נשאר 0 — מה שגרם לתווית להציג epoch (02:00 בשעון ישראל) בנתיב ה-patches.
   const parsedTs = msg.timestamp != null ? Date.parse(msg.timestamp) : Number.NaN
   const createdAt = Number.isNaN(parsedTs) ? 0 : parsedTs
+  const voice = voiceOfMeta(msg.meta)
   return {
     id: msg.id,
     kind,
     messageId: msg.messageId,
     createdAt,
     segments: msg.segments,
+    ...(voice !== undefined && { voice }),
     ...(kind === "user" &&
       "attachments" in msg &&
       msg.attachments != null && { attachments: msg.attachments }),

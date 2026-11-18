@@ -16,7 +16,7 @@ export type { WireSummary } from "../shared/wire-decode.js"
 export { decodeWireLine } from "../shared/wire-decode.js"
 
 // ProviderConnection factories + types
-export { connectCodexInProcess, resolveCodexPath } from "./connect-codex-in-process.js"
+export { connectCodexInProcess, resolveCodexPath } from "../providers/codex/connect-in-process.js"
 export { connectInProcess } from "./connect-in-process.js"
 export { connectSidecar, type SidecarConnectOpts } from "./sidecar.js"
 export { connectSpawn } from "./spawn.js"

@@ -22,7 +22,6 @@ import {
   setCues,
   setDictate,
   setI18n,
-  setLive,
   setMic,
   setModals,
   setNotify,
@@ -32,10 +31,8 @@ import {
   setResponsive,
   setSession,
   setSettings,
-  setSpeaker,
   setTheme,
   setUiShell,
-  setVoiceMode,
 } from "$lib/context"
 import { installDebugSurface } from "$lib/debug/dc"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
@@ -51,6 +48,7 @@ import { notifyTexts } from "$lib/notify-texts"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { beWsUrl } from "$lib/util/be-url"
 import { bindSessionLifecycle } from "$lib/actions/session-lifecycle"
+import { installVoiceStack } from "$lib/actions/layout-voice-wiring.svelte"
 import {
   installSessionScopePolicy,
   wireDocumentLocale,
@@ -65,9 +63,7 @@ import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
 import { ContentViewerVM } from "$lib/view-models/content-viewer.svelte"
 import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
-import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
-import { Live } from "$lib/view-models/live.svelte"
 import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
 import { SessionMemoVM } from "$lib/view-models/session-memo.svelte"
 import { Dictate } from "$lib/view-models/dictate.svelte"
@@ -78,7 +74,6 @@ import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
 import { RecentProjects } from "$lib/view-models/recent-projects.svelte"
 import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
-import { Speaker } from "$lib/view-models/speaker.svelte"
 import { ThemeVM } from "$lib/view-models/theme.svelte"
 import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
 
@@ -138,30 +133,19 @@ const dictate = new Dictate({
 // ─── theme ─── (redesign-1) — declared before Live getter; instance assigned below Live block
 let theme!: ThemeVM
 
-// ─── live ─── (slice live-ears — תלוי ב-mic)
-const live = new Live({
+// ─── voice stack ─── live · speaker · voice-mode · agent-voice (layout-voice-wiring)
+const { speaker } = installVoiceStack({
   mic,
   session,
-  language: i18n.locale === "he" ? "he" : "en",
-  getVoiceName: () => settings.liveVoice,
-  getSettings: () => settings,
-  getTheme: () => theme,
-  getInputDeviceId: () => audioDevices.effectiveInputId,
-})
-
-// ─── speaker ─── (§4.3: live ref — TTS off while Live open)
-const speaker = new Speaker({
-  session,
   settings,
+  i18n,
   cues,
+  audioDevices,
   playlist: audioPlaylist,
   audioStream: sharedAudioStream,
   orderAlloc: sharedOrderAlloc,
-  live,
+  getTheme: () => theme,
 })
-
-// ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker + live)
-const voiceMode = new VoiceMode({ mic, session, speaker, playlist: audioPlaylist, live })
 
 // ─── model-status ─── (msr-v2 — תלוי ב-session + speaker)
 const modelStatus = new ModelStatus({ session, speaker })
@@ -254,11 +238,8 @@ setI18n(i18n)
 setSettings(settings)
 setCues(cues)
 setSession(session)
-setSpeaker(speaker)
 setAudioPlaylist(audioPlaylist)
 setMic(mic)
-setLive(live)
-setVoiceMode(voiceMode)
 setModelStatus(modelStatus)
 setBubblePlayer(bubblePlayer)
 setTheme(theme)
