@@ -1,12 +1,13 @@
 /**
  * voice-wire.ts — maps the provider-agnostic voice contract onto codex-acp, on the NDJSON wire.
  *
- * Toward the agent: `_drive/voice/{start,stop,speak}` requests become codex-acp's
- * `_codex/realtime/{start,stop,appendSpeech}` (ids and results are unchanged).
+ * Toward the agent: `_drive/voice/*` requests become codex-acp's `_codex/realtime/*`
+ * (ids and results are unchanged).
  *
  * From the agent:
- *  - `_codex/realtime/event` with a final transcript becomes a chat message marked as voice, so
- *    the conversation with the voice shows up in the session like any other message.
+ *  - codex-acp marks the voice conversation's chat messages in `_meta.codex.realtime` (speech of the
+ *    user or the voice, and handoffs to Codex — live and in replayed history). The mark is moved to
+ *    the generic `_meta["_drive/voice"]`, which the client renders as a distinct message type.
  *  - codex-acp reports Codex's thread status in `session_info_update._meta.codex.threadStatus`.
  *    A voice delegation runs as a turn no prompt owns, so nothing else ends it on our side:
  *    the status is mirrored as a generic `state_update` (idle/running) that the reducer knows.
@@ -14,8 +15,8 @@
  * Slice: codex-voice-poc.
  */
 
-/** Marks a chat message that was spoken in the voice conversation. */
-export const VOICE_MESSAGE_PREFIX = "🎙 "
+/** Generic mark of a voice-conversation message: `{kind:"speech", role}` or `{kind:"handoff", transcript?}`. */
+export const VOICE_META_KEY = "_drive/voice"
 
 /** How Codex's answers reach the voice: `commentary` is spoken, `thinking` (codex default) is quiet context. */
 const HANDOFF_MODE = "commentary"
@@ -32,17 +33,18 @@ type Json = Record<string, unknown>
 export interface CodexVoiceWire {
   /** FE→agent line. Returns it unchanged unless it is a `_drive/voice/*` request. */
   toAgent(line: string): string
-  /** agent→FE line. Returns the original line, followed by any synthesized lines. */
+  /** agent→FE line. Returns the (possibly rewritten) line, followed by any synthesized lines. */
   fromAgent(line: string): string[]
 }
 
 function parse(line: string): Json | null {
+  // cheap pre-filter: the wire carries every frame of the session
   if (
     !line.includes("_drive/voice/") &&
-    !line.includes("_codex/realtime/event") &&
+    !line.includes('"realtime"') &&
     !line.includes("threadStatus")
   ) {
-    return null // cheap pre-filter: the wire carries every frame of the session
+    return null
   }
   try {
     const v = JSON.parse(line) as unknown
@@ -54,10 +56,6 @@ function parse(line: string): Json | null {
 
 function obj(v: unknown): Json | null {
   return typeof v === "object" && v !== null ? (v as Json) : null
-}
-
-function sessionUpdateLine(sessionId: string, update: Json): string {
-  return JSON.stringify({ jsonrpc: "2.0", method: "session/update", params: { sessionId, update } })
 }
 
 function translateParams(method: string, params: Json): Json {
@@ -72,14 +70,28 @@ function translateParams(method: string, params: Json): Json {
   return params
 }
 
+/** `_meta` with `codex.realtime` moved to `_drive/voice` (other codex keys kept). */
+function voiceMeta(meta: Json, codex: Json, realtime: Json): Json {
+  const { realtime: _realtime, ...codexRest } = codex
+  const { codex: _codex, ...metaRest } = meta
+  return {
+    ...metaRest,
+    ...(Object.keys(codexRest).length > 0 ? { codex: codexRest } : {}),
+    [VOICE_META_KEY]: realtime,
+  }
+}
+
 export function createCodexVoiceWire(): CodexVoiceWire {
   const threadIdle = new Map<string, boolean>()
-  let voiceMessageSeq = 0
 
   function stateLine(sessionId: string, idle: boolean): string {
-    return sessionUpdateLine(sessionId, {
-      sessionUpdate: "state_update",
-      state: idle ? "idle" : "running",
+    return JSON.stringify({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: { sessionUpdate: "state_update", state: idle ? "idle" : "running" },
+      },
     })
   }
 
@@ -98,50 +110,33 @@ export function createCodexVoiceWire(): CodexVoiceWire {
 
     fromAgent(line) {
       const msg = parse(line)
-      if (!msg) return [line]
-      const params = obj(msg.params)
+      const params = obj(msg?.params)
+      if (msg?.method !== "session/update" || !params) return [line]
+      const sessionId = typeof params.sessionId === "string" ? params.sessionId : null
+      const update = obj(params.update)
+      const meta = obj(update?._meta)
+      const codex = obj(meta?.codex)
+      if (!sessionId || !update || !meta || !codex) return [line]
 
-      if (msg.method === "session/update" && params) {
-        const sessionId = typeof params.sessionId === "string" ? params.sessionId : null
-        const update = obj(params.update)
-        const status = obj(obj(obj(update?._meta)?.codex)?.threadStatus)?.type
-        if (
-          !sessionId ||
-          update?.sessionUpdate !== "session_info_update" ||
-          typeof status !== "string"
-        ) {
-          return [line]
+      const realtime = obj(codex.realtime)
+      if (realtime) {
+        const rewritten = { ...update, _meta: voiceMeta(meta, codex, realtime) }
+        const out = [JSON.stringify({ ...msg, params: { ...params, update: rewritten } })]
+        // The voice speaks between Codex's turns: its message on an idle thread must not leave the
+        // session looking busy.
+        if (update.sessionUpdate === "agent_message_chunk" && threadIdle.get(sessionId) !== false) {
+          out.push(stateLine(sessionId, true))
         }
-        const idle = status === "idle"
-        if (threadIdle.get(sessionId) === idle) return [line]
-        threadIdle.set(sessionId, idle)
-        return [line, stateLine(sessionId, idle)]
-      }
-
-      if (msg.method === "_codex/realtime/event" && params) {
-        const sessionId = typeof params.sessionId === "string" ? params.sessionId : null
-        const inner = obj(params.params)
-        if (!sessionId || params.method !== "thread/realtime/transcript/done" || !inner)
-          return [line]
-        const text = typeof inner.text === "string" ? inner.text.trim() : ""
-        const role =
-          inner.role === "user" ? "user" : inner.role === "assistant" ? "assistant" : null
-        if (!text || !role) return [line]
-        voiceMessageSeq += 1
-        const out = [
-          line,
-          sessionUpdateLine(sessionId, {
-            sessionUpdate: role === "user" ? "user_message_chunk" : "agent_message_chunk",
-            messageId: `voice-${voiceMessageSeq}-${sessionId}`,
-            content: { type: "text", text: `${VOICE_MESSAGE_PREFIX}${text}` },
-          }),
-        ]
-        // A voice message on an idle thread must not leave the session looking busy.
-        if (threadIdle.get(sessionId) !== false) out.push(stateLine(sessionId, true))
         return out
       }
 
-      return [line]
+      const status = obj(codex.threadStatus)?.type
+      if (update.sessionUpdate !== "session_info_update" || typeof status !== "string")
+        return [line]
+      const idle = status === "idle"
+      if (threadIdle.get(sessionId) === idle) return [line]
+      threadIdle.set(sessionId, idle)
+      return [line, stateLine(sessionId, idle)]
     },
   }
 }

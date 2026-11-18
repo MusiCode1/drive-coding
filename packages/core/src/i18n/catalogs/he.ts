@@ -629,6 +629,10 @@ export const he: Catalog = {
   // agent-voice
   "agentVoice.useNative": "Live מובנה של הסוכן",
   "agentVoice.defaultVoice": "ברירת המחדל של הסוכן",
+  "voice.bubble.you": "אתה",
+  "voice.bubble.voice": "הקול",
+  "voice.handoff.label": "הועבר לסוכן:",
+  "voice.handoff.context": "הקשר השיחה",
   "agentVoice.connecting": "מתחבר לקול של הסוכן…",
   "agentVoice.live": "הקול של הסוכן פעיל",
   "agentVoice.error": "הקול של הסוכן נכשל:",

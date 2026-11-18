@@ -638,6 +638,10 @@ export const en: Catalog = {
   // agent-voice
   "agentVoice.useNative": "Agent's built-in Live",
   "agentVoice.defaultVoice": "The agent's default",
+  "voice.bubble.you": "You",
+  "voice.bubble.voice": "Voice",
+  "voice.handoff.label": "Handed to the agent:",
+  "voice.handoff.context": "Conversation context",
   "agentVoice.connecting": "Connecting the agent's voice…",
   "agentVoice.live": "The agent's voice is on",
   "agentVoice.error": "The agent's voice failed:",

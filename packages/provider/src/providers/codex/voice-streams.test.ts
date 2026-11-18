@@ -31,26 +31,27 @@ describe("createCodexVoiceStreams", () => {
     expect(JSON.parse((await done).trim()).method).toBe("_codex/realtime/stop")
   })
 
-  it("passes unrelated frames through byte-for-byte, and expands mapped ones", async () => {
+  it("passes unrelated frames through byte-for-byte, and rewrites marked ones", async () => {
     const { fromAgent } = createCodexVoiceStreams()
     const done = collect(fromAgent)
     const plain = JSON.stringify({ jsonrpc: "2.0", id: 2, result: {} })
-    const transcript = JSON.stringify({
+    const speech = JSON.stringify({
       jsonrpc: "2.0",
-      method: "_codex/realtime/event",
+      method: "session/update",
       params: {
         sessionId: "s",
-        method: "thread/realtime/transcript/done",
-        params: { role: "user", text: "hi" },
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "hi" },
+          _meta: { codex: { realtime: { kind: "speech", role: "user" } } },
+        },
       },
     })
-    fromAgent.end(`${plain}\n${transcript}`) // last line without a newline is flushed on end
+    fromAgent.end(`${plain}\n${speech}`) // last line without a newline is flushed on end
     const lines = (await done).trim().split("\n")
     expect(lines[0]).toBe(plain)
-    expect(lines[1]).toBe(transcript)
-    expect(lines.slice(2).map((l) => JSON.parse(l).params.update.sessionUpdate)).toEqual([
-      "user_message_chunk",
-      "state_update",
-    ])
+    expect(JSON.parse(lines[1] ?? "").params.update._meta).toEqual({
+      "_drive/voice": { kind: "speech", role: "user" },
+    })
   })
 })

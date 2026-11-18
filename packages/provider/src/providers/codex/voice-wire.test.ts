@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest"
-import { createCodexVoiceWire, VOICE_MESSAGE_PREFIX } from "./voice-wire.js"
+import { createCodexVoiceWire, VOICE_META_KEY } from "./voice-wire.js"
 
 const rpc = (method: string, params: unknown, id = 7) =>
   JSON.stringify({ jsonrpc: "2.0", id, method, params })
@@ -20,12 +20,6 @@ const info = (sessionId: string, status: string) =>
       sessionUpdate: "session_info_update",
       _meta: { codex: { threadStatus: { type: status } } },
     },
-  })
-const transcript = (sessionId: string, role: string, text: string) =>
-  note("_codex/realtime/event", {
-    sessionId,
-    method: "thread/realtime/transcript/done",
-    params: { threadId: sessionId, role, text },
   })
 
 describe("toAgent", () => {
@@ -88,42 +82,57 @@ describe("fromAgent — thread status", () => {
   })
 })
 
-describe("fromAgent — voice transcripts", () => {
-  it("turns a final transcript into a voice-marked chat message, per role", () => {
-    const wire = createCodexVoiceWire()
-    const [, user] = parsed(wire.fromAgent(transcript("s", "user", " כמה קבצים? ")))
-    expect(user.params.update).toMatchObject({
-      sessionUpdate: "user_message_chunk",
-      content: { type: "text", text: `${VOICE_MESSAGE_PREFIX}כמה קבצים?` },
+describe("fromAgent — voice-conversation messages", () => {
+  const chunk = (sessionUpdate: string, realtime: unknown, extraCodex: object = {}) =>
+    note("session/update", {
+      sessionId: "s",
+      update: {
+        sessionUpdate,
+        messageId: "m1",
+        content: { type: "text", text: "שלושה" },
+        _meta: { other: 1, codex: { realtime, ...extraCodex } },
+      },
     })
-    const [, assistant] = parsed(wire.fromAgent(transcript("s", "assistant", "שלושה")))
-    expect(assistant.params.update.sessionUpdate).toBe("agent_message_chunk")
-    expect(assistant.params.update.messageId).not.toBe(user.params.update.messageId)
+
+  it("moves codex's realtime mark to the generic _drive/voice mark, keeping everything else", () => {
+    const [out] = parsed(
+      createCodexVoiceWire().fromAgent(
+        chunk("user_message_chunk", { kind: "speech", role: "user" }),
+      ),
+    )
+    expect(out.params.update).toEqual({
+      sessionUpdate: "user_message_chunk",
+      messageId: "m1",
+      content: { type: "text", text: "שלושה" },
+      _meta: { other: 1, [VOICE_META_KEY]: { kind: "speech", role: "user" } },
+    })
   })
 
-  it("ends the 'responding' state the voice message causes, unless Codex is still working", () => {
-    const wire = createCodexVoiceWire()
-    expect(parsed(wire.fromAgent(transcript("s", "assistant", "hi"))).at(-1).params.update).toEqual(
-      {
-        sessionUpdate: "state_update",
-        state: "idle",
-      },
+  it("keeps other codex meta keys next to the moved mark", () => {
+    const [out] = parsed(
+      createCodexVoiceWire().fromAgent(
+        chunk("user_message_chunk", { kind: "handoff", transcript: "user: hi" }, { phase: "x" }),
+      ),
     )
+    expect(out.params.update._meta).toEqual({
+      other: 1,
+      codex: { phase: "x" },
+      [VOICE_META_KEY]: { kind: "handoff", transcript: "user: hi" },
+    })
+  })
+
+  it("ends the 'responding' state a voice reply causes, unless Codex is still working", () => {
+    const wire = createCodexVoiceWire()
+    const speech = chunk("agent_message_chunk", { kind: "speech", role: "assistant" })
+    expect(parsed(wire.fromAgent(speech)).at(-1).params.update).toEqual({
+      sessionUpdate: "state_update",
+      state: "idle",
+    })
     wire.fromAgent(info("s", "active"))
-    expect(wire.fromAgent(transcript("s", "assistant", "checking"))).toHaveLength(2)
+    expect(wire.fromAgent(speech)).toHaveLength(1)
   })
 
   it.each([
-    ["an empty transcript", transcript("s", "assistant", "  ")],
-    ["an unknown role", transcript("s", "system", "x")],
-    [
-      "another realtime event",
-      note("_codex/realtime/event", {
-        sessionId: "s",
-        method: "thread/realtime/started",
-        params: {},
-      }),
-    ],
     [
       "an ordinary agent chunk",
       note("session/update", { sessionId: "s", update: { sessionUpdate: "agent_message_chunk" } }),
@@ -134,6 +143,10 @@ describe("fromAgent — voice transcripts", () => {
         sessionId: "s",
         update: { sessionUpdate: "session_info_update", title: "x" },
       }),
+    ],
+    [
+      "a codex ext notification",
+      note("_codex/realtime/event", { sessionId: "s", method: "thread/realtime/started" }),
     ],
     ["a non-JSON line", "threadStatus garbage"],
   ])("passes %s through alone", (_name, line) => {

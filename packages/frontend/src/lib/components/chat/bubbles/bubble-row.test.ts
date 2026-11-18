@@ -83,3 +83,18 @@ describe("BubbleRow — CSS contract", () => {
     expect(source).toMatch(/<Avatar\s+kind=\{avatar\}/)
   })
 })
+
+describe("voicePlacement (slice codex-voice-poc)", () => {
+  it("puts the user's speech on the user side and the voice on the agent side", async () => {
+    const { voicePlacement } = await import("./bubble-row")
+    expect(voicePlacement({ kind: "speech", role: "user" })).toEqual({
+      side: "end",
+      avatar: "user",
+    })
+    expect(voicePlacement({ kind: "speech", role: "assistant" })).toEqual({
+      side: "start",
+      avatar: "voice",
+    })
+    expect(voicePlacement({ kind: "handoff" })).toEqual({ side: "start", avatar: "voice" })
+  })
+})
