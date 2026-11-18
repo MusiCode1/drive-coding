@@ -8,12 +8,16 @@
  *  - codex-acp marks the voice conversation's chat messages in `_meta.codex.realtime` (speech of the
  *    user or the voice, and handoffs to Codex — live and in replayed history). The mark is moved to
  *    the generic `_meta["_drive/voice"]`, which the client renders as a distinct message type.
+ *  - The answer to `_drive/voice/listVoices` gets `details` from the static catalog
+ *    (voice-catalog.ts): Codex itself returns names only.
  *  - codex-acp reports Codex's thread status in `session_info_update._meta.codex.threadStatus`.
  *    A voice delegation runs as a turn no prompt owns, so nothing else ends it on our side:
  *    the status is mirrored as a generic `state_update` (idle/running) that the reducer knows.
  *
  * Slice: codex-voice-poc.
  */
+
+import { CODEX_VOICE_CATALOG } from "./voice-catalog.js"
 
 /** Generic mark of a voice-conversation message: `{kind:"speech", role}` or `{kind:"handoff", transcript?}`. */
 export const VOICE_META_KEY = "_drive/voice"
@@ -37,15 +41,11 @@ export interface CodexVoiceWire {
   fromAgent(line: string): string[]
 }
 
-function parse(line: string): Json | null {
+function parse(line: string, force = false): Json | null {
   // cheap pre-filter: the wire carries every frame of the session
-  if (
-    !line.includes("_drive/voice/") &&
-    !line.includes('"realtime"') &&
-    !line.includes("threadStatus")
-  ) {
-    return null
-  }
+  const relevant =
+    line.includes("_drive/voice/") || line.includes('"realtime"') || line.includes("threadStatus")
+  if (!force && !relevant) return null
   try {
     const v = JSON.parse(line) as unknown
     return typeof v === "object" && v !== null ? (v as Json) : null
@@ -81,8 +81,28 @@ function voiceMeta(meta: Json, codex: Json, realtime: Json): Json {
   }
 }
 
+/** `{voices, default}` from codex-acp, plus what the catalog knows about each voice. */
+function withVoiceDetails(result: Json): Json {
+  const voices = Array.isArray(result.voices)
+    ? result.voices.filter((v): v is string => typeof v === "string")
+    : []
+  const details: Record<string, Json> = {}
+  for (const id of voices) {
+    const info = CODEX_VOICE_CATALOG[id]
+    if (!info) continue
+    details[id] = {
+      accent: info.accent,
+      previewUrl: info.previewUrl,
+      ...(info.description !== undefined ? { description: info.description } : {}),
+    }
+  }
+  return { ...result, details }
+}
+
 export function createCodexVoiceWire(): CodexVoiceWire {
   const threadIdle = new Map<string, boolean>()
+  /** Ids of in-flight `_drive/voice/listVoices` requests, whose answers get `details`. */
+  const listVoicesIds = new Set<unknown>()
 
   function stateLine(sessionId: string, idle: boolean): string {
     return JSON.stringify({
@@ -101,6 +121,7 @@ export function createCodexVoiceWire(): CodexVoiceWire {
       const method = typeof msg?.method === "string" ? msg.method : null
       const target = method ? TO_CODEX[method] : undefined
       if (!msg || !method || !target) return line
+      if (method === "_drive/voice/listVoices" && msg.id !== undefined) listVoicesIds.add(msg.id)
       return JSON.stringify({
         ...msg,
         method: target,
@@ -109,7 +130,12 @@ export function createCodexVoiceWire(): CodexVoiceWire {
     },
 
     fromAgent(line) {
-      const msg = parse(line)
+      const msg = parse(line, listVoicesIds.size > 0)
+      if (msg && msg.id !== undefined && msg.method === undefined && listVoicesIds.has(msg.id)) {
+        listVoicesIds.delete(msg.id)
+        const result = obj(msg.result)
+        return result ? [JSON.stringify({ ...msg, result: withVoiceDetails(result) })] : [line]
+      }
       const params = obj(msg?.params)
       if (msg?.method !== "session/update" || !params) return [line]
       const sessionId = typeof params.sessionId === "string" ? params.sessionId : null

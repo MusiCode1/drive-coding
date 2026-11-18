@@ -12,6 +12,7 @@
  */
 
 import {
+  type AgentVoiceDetail,
   listAgentVoices,
   loadNativeVoicePref,
   loadVoicePref,
@@ -26,6 +27,7 @@ import {
   type RealtimeVoiceEvent,
   startRealtimeVoiceCall,
 } from "$lib/engines/realtime-voice-call.js"
+import { playVoicePreview } from "$lib/engines/voice-preview.js"
 import type { AgentSession } from "./agent-session.svelte"
 
 export type AgentVoiceStatus = "idle" | "connecting" | "live" | "error"
@@ -48,6 +50,11 @@ export class AgentVoice {
   defaultVoice = $state<string | null>(null)
   /** User's chosen voice; null = the provider's default. */
   voice = $state<string | null>(loadVoicePref())
+  /** Per voice: description, accent and sample clip, when the provider knows them. */
+  voiceDetails = $state<Record<string, AgentVoiceDetail>>({})
+  /** The voice whose sample is playing, if any. */
+  previewing = $state<string | null>(null)
+  #stopPreview: (() => void) | null = null
 
   readonly #deps: AgentVoiceDeps
   #call: RealtimeVoiceCall | null = null
@@ -79,11 +86,26 @@ export class AgentVoice {
     saveVoicePref(voice)
   }
 
+  /** Plays the sample of `voice` (default: the chosen one); a second call on the same voice stops it. */
+  togglePreview(voice = this.effectiveVoice): void {
+    const playing = this.previewing
+    this.#stopPreview?.()
+    if (!voice || playing === voice) return
+    const url = this.voiceDetails[voice]?.previewUrl
+    if (!url) return
+    this.previewing = voice
+    this.#stopPreview = playVoicePreview(url, () => {
+      if (this.previewing === voice) this.previewing = null
+      this.#stopPreview = null
+    })
+  }
+
   async #loadVoices(agentId: string, sessionId: string): Promise<void> {
     try {
       const list = await listAgentVoices(agentId, sessionId)
       this.voices = list.voices
       this.defaultVoice = list.default
+      this.voiceDetails = list.details ?? {}
       // A saved voice this provider does not offer would make start fail — fall back to the default.
       if (this.voice !== null && !list.voices.includes(this.voice)) this.voice = null
     } catch {

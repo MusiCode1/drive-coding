@@ -71,12 +71,17 @@ export async function startAgentVoice(
 }
 
 /** Voices the agent's voice can use, and the one it picks when none is chosen. */
-export async function listAgentVoices(
-  agentId: string,
-  sessionId: string,
-): Promise<{ voices: string[]; default: string }> {
+export async function listAgentVoices(agentId: string, sessionId: string): Promise<AgentVoiceList> {
   const result = await voiceRpc(agentId, "_drive/voice/listVoices", { sessionId }, SHORT_WAIT_MS)
-  return result as { voices: string[]; default: string }
+  return result as AgentVoiceList
+}
+
+/** What the provider knows about one voice (all optional). */
+export type AgentVoiceDetail = { description?: string; accent?: string; previewUrl?: string }
+export type AgentVoiceList = {
+  voices: string[]
+  default: string
+  details?: Record<string, AgentVoiceDetail>
 }
 
 export async function stopAgentVoice(agentId: string, sessionId: string): Promise<void> {

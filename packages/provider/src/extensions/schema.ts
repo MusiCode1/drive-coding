@@ -89,10 +89,19 @@ export const extMethods = {
     params: type({ sessionId: "string" }),
     result: type({}),
   },
-  /** Voices the provider's voice can use, and the one it picks when none is chosen. */
+  /**
+   * Voices the provider's voice can use, and the one it picks when none is chosen. `details`
+   * (optional, per voice id) carries what the provider knows: description, accent, sample clip.
+   */
   "_drive/voice/listVoices": {
     params: type({ sessionId: "string" }),
-    result: type({ voices: "string[]", default: "string" }),
+    result: type({
+      voices: "string[]",
+      default: "string",
+      "details?": type({
+        "[string]": { "description?": "string", "accent?": "string", "previewUrl?": "string" },
+      }),
+    }),
   },
   /** Make the voice say something now (e.g. "approval needed on screen"). */
   "_drive/voice/speak": {

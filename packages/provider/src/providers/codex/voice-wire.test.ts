@@ -153,3 +153,26 @@ describe("fromAgent — voice-conversation messages", () => {
     expect(createCodexVoiceWire().fromAgent(line)).toEqual([line])
   })
 })
+
+describe("listVoices answer", () => {
+  it("adds catalog details to the answer of a _drive/voice/listVoices request only", () => {
+    const wire = createCodexVoiceWire()
+    wire.toAgent(rpc("_drive/voice/listVoices", { sessionId: "s" }, 41))
+    const answer = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 41,
+      result: { voices: ["cove", "porto"], default: "cove" },
+    })
+    const [out] = parsed(wire.fromAgent(answer))
+    expect(out.result.voices).toEqual(["cove", "porto"])
+    expect(out.result.details.cove).toMatchObject({
+      accent: "American English",
+      description: "Composed and direct",
+    })
+    expect(out.result.details.cove.previewUrl).toMatch(/cove\.en\..+\.m4a$/)
+    expect(out.result.details).not.toHaveProperty("porto")
+    // an unrelated answer with another id passes untouched
+    const other = JSON.stringify({ jsonrpc: "2.0", id: 42, result: { voices: ["cove"] } })
+    expect(wire.fromAgent(other)).toEqual([other])
+  })
+})

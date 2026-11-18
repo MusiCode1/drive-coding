@@ -638,6 +638,8 @@ export type MessageKey =
   // ─── agent-voice ─── (slice codex-voice-poc — the agent's native Live)
   | "agentVoice.useNative"
   | "agentVoice.defaultVoice"
+  | "agentVoice.preview"
+  | "agentVoice.stopPreview"
   | "voice.bubble.you"
   | "voice.bubble.voice"
   | "voice.handoff.label"

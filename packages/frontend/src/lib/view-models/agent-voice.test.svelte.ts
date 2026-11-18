@@ -16,7 +16,11 @@ const adapter = vi.hoisted(() => ({
   speakAgentVoice: vi.fn(async () => {}),
   loadNativeVoicePref: vi.fn(() => false),
   saveNativeVoicePref: vi.fn(),
-  listAgentVoices: vi.fn(async () => ({ voices: ["cove", "maple"], default: "cove" })),
+  listAgentVoices: vi.fn(async () => ({
+    voices: ["cove", "maple"],
+    default: "cove",
+    details: { cove: { accent: "American English", previewUrl: "https://cdn/cove.m4a" } },
+  })),
   loadVoicePref: vi.fn((): string | null => null),
   saveVoicePref: vi.fn(),
 }))
@@ -27,6 +31,13 @@ const engine = vi.hoisted(() => ({
   stop: vi.fn(),
   startRealtimeVoiceCall: vi.fn(),
 }))
+const preview = vi.hoisted(() => ({
+  stop: vi.fn(),
+  end: null as null | (() => void),
+  play: vi.fn(),
+}))
+vi.mock("$lib/engines/voice-preview.js", () => ({ playVoicePreview: preview.play }))
+
 vi.mock("$lib/engines/realtime-voice-call.js", () => ({
   startRealtimeVoiceCall: engine.startRealtimeVoiceCall,
 }))
@@ -158,5 +169,37 @@ describe("AgentVoice", () => {
     await tick()
     expect(voice.voice).toBeNull()
     expect(voice.effectiveVoice).toBe("cove")
+  })
+
+  it("plays the chosen voice's sample, and stops it on a second press", async () => {
+    preview.play.mockImplementation((_url: string, onEnd: () => void) => {
+      preview.end = onEnd
+      return () => {
+        preview.stop()
+        onEnd()
+      }
+    })
+    const voice = makeVoice(makeSession(true))
+    voice.setPreferNative(true)
+    await tick()
+    await tick()
+    expect(voice.voiceDetails.cove?.accent).toBe("American English")
+    voice.togglePreview()
+    expect(preview.play).toHaveBeenCalledWith("https://cdn/cove.m4a", expect.any(Function))
+    expect(voice.previewing).toBe("cove")
+    voice.togglePreview()
+    expect(preview.stop).toHaveBeenCalled()
+    expect(voice.previewing).toBeNull()
+  })
+
+  it("does nothing for a voice without a sample", async () => {
+    const voice = makeVoice(makeSession(true))
+    voice.setPreferNative(true)
+    await tick()
+    await tick()
+    preview.play.mockClear()
+    voice.togglePreview("maple")
+    expect(preview.play).not.toHaveBeenCalled()
+    expect(voice.previewing).toBeNull()
   })
 })
