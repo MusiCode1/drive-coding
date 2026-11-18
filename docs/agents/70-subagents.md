@@ -15,8 +15,9 @@ routes:
 mcp_tools:
   - session_open
   - notify_parent
-docs_version: 1.6.0
-updated: 2026-10-13
+  - session_surface
+docs_version: 1.10.1
+updated: 2026-11-18
 ---
 
 # Subagents
@@ -43,6 +44,10 @@ The child receives **`DC_PARENT`** in its environment when the server sets `pare
 | `200` | Plain-text body | `http-agent-prompt.ts:105` |
 
 Hooks and MCP **session_surface** use the same builder; this route is the HTTP mirror.
+Call **session_surface** (no parameters; identity from `X-Drive-Coding-Agent`) when no CLI
+hook delivered the prompt: it returns the same plain-text body — what this product is, how to
+reach this backend, the session-bus tools, how to show the user files, images and diagrams,
+and your session memory.
 
 ## notify_parent
 

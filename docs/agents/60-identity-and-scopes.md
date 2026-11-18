@@ -13,8 +13,10 @@ routes:
   - POST /api/agents/:id/reply
   - GET /api/scope-policy
   - PATCH /api/scope-policy
-docs_version: 1.7.0
-updated: 2026-10-13
+mcp_tools:
+  - session_whoami
+docs_version: 1.10.1
+updated: 2026-11-18
 ---
 
 # Agent identity and scoped writes
@@ -26,7 +28,12 @@ Your agent id travels on two channels (`agent-identity.ts:24-27`, `agent-identit
 - **Environment:** `DRIVE_CODING_AGENT_ID` on spawned CLI processes.
 - **HTTP/MCP header:** `X-Drive-Coding-Agent` on requests to this backend.
 
-MCP **session_whoami** returns the same id when the header or env is set.
+MCP **session_whoami** (no parameters) reads the id from the `X-Drive-Coding-Agent` header
+only — it never guesses from the environment, and a missing or unknown header is an error. It
+returns `agent`, `cliKind`, `cwd`, `hasParent`, `sessionId`, your note and fields if set, a
+`backend` block (`pid`, `port`, `version`, `uptimeSec`, `publicBaseUrl`, memory budget) and a
+`runtime` block (CLI `pid`, `attached`, `busy`, `via`, child memory — Linux only; elsewhere
+`memory` is `null`). It is discovery, not authentication.
 
 ## Scope token
 
