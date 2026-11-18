@@ -637,6 +637,7 @@ export type MessageKey =
   | "scopePrompt.expired"
   // ─── agent-voice ─── (slice codex-voice-poc — the agent's native Live)
   | "agentVoice.useNative"
+  | "agentVoice.useNativeShort"
   | "agentVoice.defaultVoice"
   | "agentVoice.preview"
   | "agentVoice.stopPreview"

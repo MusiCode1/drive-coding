@@ -637,6 +637,7 @@ export const en: Catalog = {
   "scopePrompt.expired": "Automatically denied — no one responded",
   // agent-voice
   "agentVoice.useNative": "Codex built-in Live",
+  "agentVoice.useNativeShort": "Codex",
   "agentVoice.defaultVoice": "The agent's default",
   "agentVoice.preview": "Play sample",
   "agentVoice.stopPreview": "Stop sample",

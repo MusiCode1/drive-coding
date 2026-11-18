@@ -1,6 +1,6 @@
 <script lang="ts">
 /**
- * LivePane — the Live input pane: transcript, then a row of [settings | toggle] (extracted from
+ * LivePane — the Live input pane: transcript, then a centred row of [settings · toggle] (extracted from
  * RecordFooter).
  *
  * Settings sit beside the big toggle, not stacked above it, so a small screen keeps its height:
@@ -8,62 +8,77 @@
  * the engine Live will open — the agent's voices, or Gemini's (slice codex-voice-poc).
  */
 
-import { getAgentVoice, getI18n, getLive, getSettings } from "$lib/context"
+import AudioLinesIcon from "@lucide/svelte/icons/audio-lines"
+import { getAgentVoice, getI18n, getLive } from "$lib/context"
 import AgentVoicePicker from "./AgentVoicePicker.svelte"
-import GeminiVoicePicker from "./GeminiVoicePicker.svelte"
+import GeminiVoiceChip from "./GeminiVoiceChip.svelte"
 import LiveToggle from "./LiveToggle.svelte"
 import LiveTranscript from "./LiveTranscript.svelte"
 
 const t = getI18n().t
 const live = getLive()
 const agentVoice = getAgentVoice()
-const settings = getSettings()
 const idle = $derived(!live.isOpen && !agentVoice.active)
 </script>
 
 <LiveTranscript />
 <div class="live-pane-row w-full">
-  <div class="live-pane-side flex min-w-0 flex-col gap-2">
+  <div class="live-pane-side flex min-w-0 flex-col items-end gap-2">
     {#if idle}
       {#if agentVoice.supported}
-        <label class="flex items-center gap-1.5 text-xs leading-tight" style="color:var(--fg-dim)">
-          <input
-            type="checkbox"
-            checked={agentVoice.preferNative}
-            onchange={(e) => agentVoice.setPreferNative(e.currentTarget.checked)}
-          />
-          {t("agentVoice.useNative")}
-        </label>
+        <button
+          type="button"
+          class="codex-chip inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold"
+          class:codex-chip--on={agentVoice.preferNative}
+          onclick={() => agentVoice.setPreferNative(!agentVoice.preferNative)}
+          aria-pressed={agentVoice.preferNative}
+          aria-label={t("agentVoice.useNative")}
+          title={t("agentVoice.useNative")}
+        >
+          <AudioLinesIcon size={13} strokeWidth={2} />
+          {t("agentVoice.useNativeShort")}
+        </button>
       {/if}
       {#if agentVoice.selected}
         <AgentVoicePicker />
       {:else}
-        <GeminiVoicePicker
-          value={settings.liveVoice}
-          labelKey="settings.liveVoice.label"
-          onchange={(v) => settings.setLiveVoice(v)}
-        />
+        <GeminiVoiceChip />
       {/if}
     {/if}
   </div>
   <div class="flex flex-col items-center">
     <LiveToggle />
   </div>
-  <div aria-hidden="true"></div>
 </div>
 
 <style>
-  /* settings | toggle | spacer — the toggle stays centred; the settings column takes the side. */
+  /* settings beside the toggle, as one centred group. (A symmetric spacer column kept the
+     toggle exactly centred but left the settings ~110px on a phone — measured.) */
   .live-pane-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    display: flex;
+    justify-content: center;
     align-items: center;
     gap: 0.75rem;
   }
 
   .live-pane-side {
-    justify-self: end;
-    width: 100%;
+    min-width: 0;
     max-width: 11rem;
+  }
+
+  .live-pane-side:empty {
+    display: none;
+  }
+
+  .codex-chip {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--fg-dim);
+  }
+
+  .codex-chip--on {
+    background: color-mix(in srgb, var(--recording) 16%, transparent);
+    border-color: color-mix(in srgb, var(--recording) 45%, transparent);
+    color: var(--recording);
   }
 </style>

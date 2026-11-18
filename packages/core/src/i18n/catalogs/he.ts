@@ -628,6 +628,7 @@ export const he: Catalog = {
   "scopePrompt.expired": "נדחה אוטומטית — איש לא ענה",
   // agent-voice
   "agentVoice.useNative": "Live מובנה של Codex",
+  "agentVoice.useNativeShort": "Codex",
   "agentVoice.defaultVoice": "ברירת המחדל של הסוכן",
   "agentVoice.preview": "השמע דוגמה",
   "agentVoice.stopPreview": "עצור דוגמה",
