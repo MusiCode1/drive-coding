@@ -62,6 +62,7 @@ export class AgentVoice {
   #disposeWatch: (() => void) | null = null
   #announced: string | null = null
   #voicesFor: string | null = null
+  #voicesRetry: ReturnType<typeof setTimeout> | null = null
 
   constructor(deps: AgentVoiceDeps) {
     this.#deps = deps
@@ -71,6 +72,7 @@ export class AgentVoice {
         const { agentId, sessionId } = deps.session
         if (!this.selected || !agentId || !sessionId || this.#voicesFor === sessionId) return
         this.#voicesFor = sessionId
+        if (this.#voicesRetry !== null) clearTimeout(this.#voicesRetry)
         void this.#loadVoices(agentId, sessionId)
       })
     })
@@ -100,7 +102,7 @@ export class AgentVoice {
     })
   }
 
-  async #loadVoices(agentId: string, sessionId: string): Promise<void> {
+  async #loadVoices(agentId: string, sessionId: string, attempt = 0): Promise<void> {
     try {
       const list = await listAgentVoices(agentId, sessionId)
       this.voices = list.voices
@@ -109,9 +111,24 @@ export class AgentVoice {
       // A saved voice this provider does not offer would make start fail — fall back to the default.
       if (this.voice !== null && !list.voices.includes(this.voice)) this.voice = null
     } catch {
-      this.#voicesFor = null // retried on the next selection change; the call still works without a list
+      // Typically the session is not ready yet right after it opens. The call itself works without
+      // a list, so retry a few times quietly instead of leaving the picker empty.
+      this.#retryVoices(agentId, sessionId, attempt)
     }
   }
+
+  #retryVoices(agentId: string, sessionId: string, attempt: number): void {
+    const delay = AgentVoice.#VOICES_RETRY_MS[attempt]
+    if (delay === undefined) return
+    this.#voicesRetry = setTimeout(() => {
+      this.#voicesRetry = null
+      const { agentId: a, sessionId: s } = this.#deps.session
+      if (this.selected && a === agentId && s === sessionId)
+        void this.#loadVoices(agentId, sessionId, attempt + 1)
+    }, delay)
+  }
+
+  static readonly #VOICES_RETRY_MS = [1_000, 3_000, 8_000]
 
   /** The active session's provider implements the voice contract. */
   get supported(): boolean {

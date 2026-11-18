@@ -1,4 +1,5 @@
 /**
+ * @vitest-environment jsdom
  * agent-session.capabilities.test.svelte.ts — integration tests
  * לcapability ingestion ו-gating (slice FE-normalization, Phase 1).
  *
@@ -15,6 +16,7 @@
 
 import type { AcpClient } from "@drive-coding/provider/client"
 import type { NormalizedCapabilities } from "@drive-coding/provider/types"
+import { flushSync } from "svelte"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 // ─── Module-level mocks ───────────────────────────────────────────────────────
@@ -167,6 +169,23 @@ describe("AgentSession — capabilities ingestion (FE-normalization)", () => {
     simulateCaps({ thinkingTokens: false })
 
     expect(session.supports.thinkingTokens).toBe(false)
+  })
+
+  // slice codex-voice-poc: consumers that react to capabilities (the built-in Live voice) never
+  // saw them arrive — the field was not $state, so an effect read null once and never re-ran.
+  it("capabilities are reactive: an effect re-runs when they arrive", async () => {
+    await session.attach({ cwd: "/some/cwd", cliKind: "codex" })
+    const seen: (boolean | undefined)[] = []
+    const dispose = $effect.root(() => {
+      $effect(() => {
+        seen.push(session.capabilities?.voice)
+      })
+    })
+    flushSync()
+    simulateCaps({ voice: true })
+    flushSync()
+    dispose()
+    expect(seen.at(-1)).toBe(true)
   })
 
   it("detach clears #capabilities → vm.capabilities == null", async () => {

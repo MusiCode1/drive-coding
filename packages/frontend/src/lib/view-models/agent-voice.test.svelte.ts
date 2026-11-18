@@ -202,4 +202,23 @@ describe("AgentVoice", () => {
     expect(preview.play).not.toHaveBeenCalled()
     expect(voice.previewing).toBeNull()
   })
+
+  it("retries the voice list when it fails right after the session opens", async () => {
+    vi.useFakeTimers()
+    try {
+      adapter.listAgentVoices.mockRejectedValueOnce(
+        new Error("_drive/voice/listVoices: Unknown session"),
+      )
+      const voice = makeVoice(makeSession(true))
+      voice.setPreferNative(true)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(adapter.listAgentVoices).toHaveBeenCalledTimes(1)
+      expect(voice.voices).toEqual([])
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(adapter.listAgentVoices).toHaveBeenCalledTimes(2)
+      expect(voice.voices).toEqual(["cove", "maple"])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

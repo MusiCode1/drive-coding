@@ -16,7 +16,9 @@ const SESSION_SCOPED = new Set([
   "quotaLoading",
 ])
 
-const AGENT_SCOPED = new Set(["turnStalled"])
+// #capabilities: the provider's capabilities — per agent, reset on a new connection
+// (slice codex-voice-poc made it $state so consumers react when they arrive).
+const AGENT_SCOPED = new Set(["turnStalled", "#capabilities"])
 
 const CONNECTION_SCOPED = new Set(["sessions", "loading", "error"])
 
