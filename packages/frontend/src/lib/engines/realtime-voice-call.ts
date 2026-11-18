@@ -18,6 +18,8 @@ export type RealtimeVoiceEvent =
 
 export interface RealtimeVoiceCall {
   stop(): void
+  /** Pause/resume: the mic track stops sending; the call stays up. */
+  setMicEnabled(on: boolean): void
 }
 
 export interface RealtimeVoiceCallOptions {
@@ -70,6 +72,10 @@ export async function startRealtimeVoiceCall(
   audio.autoplay = true
   let stopped = false
 
+  const setMicEnabled = (on: boolean) => {
+    for (const track of stream.getAudioTracks()) track.enabled = on
+  }
+
   const stop = () => {
     if (stopped) return
     stopped = true
@@ -99,11 +105,11 @@ export async function startRealtimeVoiceCall(
     }
     await pc.setLocalDescription(await pc.createOffer())
     const answer = await opts.negotiate(pc.localDescription?.sdp ?? "")
-    if (stopped) return { stop }
+    if (stopped) return { stop, setMicEnabled }
     await pc.setRemoteDescription({ type: "answer", sdp: answer })
   } catch (err) {
     stop()
     throw err
   }
-  return { stop }
+  return { stop, setMicEnabled }
 }

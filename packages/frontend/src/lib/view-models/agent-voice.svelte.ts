@@ -52,6 +52,8 @@ export class AgentVoice {
   voice = $state<string | null>(loadVoicePref())
   /** Per voice: description, accent and sample clip, when the provider knows them. */
   voiceDetails = $state<Record<string, AgentVoiceDetail>>({})
+  /** Live is paused: the mic is muted, the call stays up. */
+  paused = $state(false)
   /** The voice whose sample is playing, if any. */
   previewing = $state<string | null>(null)
   #stopPreview: (() => void) | null = null
@@ -179,6 +181,17 @@ export class AgentVoice {
     }
   }
 
+  pause(): void {
+    if (this.status !== "live") return
+    this.#call?.setMicEnabled(false)
+    this.paused = true
+  }
+
+  resume(): void {
+    this.#call?.setMicEnabled(true)
+    this.paused = false
+  }
+
   async stop(): Promise<void> {
     const target = this.#target
     this.#teardown()
@@ -222,6 +235,7 @@ export class AgentVoice {
   }
 
   #teardown(): void {
+    this.paused = false
     this.#disposeWatch?.()
     this.#disposeWatch = null
     this.#call?.stop()

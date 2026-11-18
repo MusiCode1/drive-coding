@@ -29,6 +29,7 @@ vi.mock("$lib/adapters/voice/agent-voice.js", () => adapter)
 const engine = vi.hoisted(() => ({
   onEvent: null as null | ((e: unknown) => void),
   stop: vi.fn(),
+  setMicEnabled: vi.fn(),
   startRealtimeVoiceCall: vi.fn(),
 }))
 const preview = vi.hoisted(() => ({
@@ -73,7 +74,7 @@ describe("AgentVoice", () => {
       }) => {
         engine.onEvent = opts.onEvent
         await opts.negotiate("offer")
-        return { stop: engine.stop }
+        return { stop: engine.stop, setMicEnabled: engine.setMicEnabled }
       },
     )
   })
@@ -220,5 +221,23 @@ describe("AgentVoice", () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it("pauses by muting the mic, keeps the call up, and resumes", async () => {
+    const voice = makeVoice(makeSession(true))
+    await voice.start()
+    voice.pause() // not live yet → ignored
+    expect(engine.setMicEnabled).not.toHaveBeenCalled()
+    engine.onEvent?.({ type: "state", state: "live" })
+    voice.pause()
+    expect(engine.setMicEnabled).toHaveBeenLastCalledWith(false)
+    expect(voice.paused).toBe(true)
+    expect(voice.status).toBe("live")
+    voice.resume()
+    expect(engine.setMicEnabled).toHaveBeenLastCalledWith(true)
+    expect(voice.paused).toBe(false)
+    voice.pause()
+    await voice.stop()
+    expect(voice.paused).toBe(false)
   })
 })

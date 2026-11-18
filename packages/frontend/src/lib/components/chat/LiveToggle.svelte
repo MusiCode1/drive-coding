@@ -8,7 +8,8 @@
  * Slice: live-ears, Commit 7 · enlarged circle (live-input-mode follow-up).
  * Slice: live-silence-cost — Pause beside Stop when open; Resume when paused (D19 exception).
  * Slice: codex-voice-poc — when the session's agent has its own voice (`capabilities.voice`) and
- *   the user ticks "built-in Live", the same button opens the agent's native voice instead.
+ *   the user picks its built-in Live (LivePane), the same controls drive the agent's native voice:
+ *   one branch for both engines (open · pause/resume · close).
  */
 
 import PauseIcon from "@lucide/svelte/icons/pause"
@@ -20,6 +21,12 @@ const live = getLive()
 const agentVoice = getAgentVoice()
 const t = getI18n().t
 const native = $derived(agentVoice.selected)
+const nativeOn = $derived(agentVoice.status === "live")
+const open = $derived(nativeOn || live.state === "open" || live.paused)
+const paused = $derived(nativeOn ? agentVoice.paused : live.paused)
+const pause = () => (nativeOn ? agentVoice.pause() : live.pause())
+const resume = () => (nativeOn ? agentVoice.resume() : live.resume())
+const close = () => void (nativeOn ? agentVoice.stop() : live.toggle())
 
 const closedLabelKey = $derived(
   agentVoice.status === "connecting"
@@ -31,28 +38,14 @@ const closedLabelKey = $derived(
 </script>
 
 <div class="live-toggle flex flex-col items-center gap-2">
-  {#if agentVoice.status === "live"}
-    <button
-      type="button"
-      class="live-toggle-btn rounded-full border-none cursor-pointer flex items-center justify-center transition-all"
-      style="background:var(--recording); color:#fff"
-      onclick={() => void agentVoice.stop()}
-      aria-pressed={true}
-      aria-label={t("live.toggle.close")}
-    >
-      <RadioIcon size={40} strokeWidth={1.5} />
-    </button>
-    <span class="text-sm font-semibold" style="color:var(--fg-dim)" aria-hidden="true">
-      {t("agentVoice.live")}
-    </span>
-  {:else if live.state === "open" || live.paused}
+  {#if open}
     <div class="live-toggle-row flex items-center gap-3">
-      {#if live.paused}
+      {#if paused}
         <button
           type="button"
           class="live-toggle-secondary rounded-full border-none cursor-pointer flex items-center justify-center transition-all"
           style="background:var(--accent); color:#fff"
-          onclick={() => live.resume()}
+          onclick={resume}
           aria-label={t("live.toggle.resume")}
         >
           <PlayIcon size={28} strokeWidth={1.5} />
@@ -62,7 +55,7 @@ const closedLabelKey = $derived(
           type="button"
           class="live-toggle-secondary rounded-full border-none cursor-pointer flex items-center justify-center transition-all"
           style="background:var(--fg-dim); color:#fff"
-          onclick={() => live.pause()}
+          onclick={pause}
           aria-label={t("live.toggle.pause")}
         >
           <PauseIcon size={28} strokeWidth={1.5} />
@@ -72,7 +65,7 @@ const closedLabelKey = $derived(
         type="button"
         class="live-toggle-btn rounded-full border-none cursor-pointer flex items-center justify-center transition-all"
         style="background:var(--recording); color:#fff"
-        onclick={() => void live.toggle()}
+        onclick={close}
         aria-pressed={true}
         aria-label={t("live.toggle.close")}
       >
@@ -80,7 +73,7 @@ const closedLabelKey = $derived(
       </button>
     </div>
     <span class="text-sm font-semibold" style="color:var(--fg-dim)" aria-hidden="true">
-      {t(live.paused ? "live.toggle.resume" : "live.toggle.close")}
+      {t(paused ? "live.toggle.resume" : nativeOn ? "agentVoice.live" : "live.toggle.close")}
     </span>
   {:else}
     <button
@@ -100,17 +93,6 @@ const closedLabelKey = $derived(
     </span>
   {/if}
 </div>
-
-{#if agentVoice.supported && !live.isOpen && !agentVoice.active}
-  <label class="mt-1 flex items-center justify-center gap-2 text-sm" style="color:var(--fg-dim)">
-    <input
-      type="checkbox"
-      checked={agentVoice.preferNative}
-      onchange={(e) => agentVoice.setPreferNative(e.currentTarget.checked)}
-    />
-    {t("agentVoice.useNative")}
-  </label>
-{/if}
 
 {#if native && agentVoice.error}
   <p class="text-xs text-center mt-1" style="color:var(--recording)" role="alert">
