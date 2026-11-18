@@ -22,6 +22,7 @@ import { beUrl } from "$lib/util/be-url.js"
 const START_WAIT_MS = 40_000
 const SHORT_WAIT_MS = 10_000
 const NATIVE_PREF_KEY = "dc.liveNativeVoice"
+const VOICE_PREF_KEY = "dc.liveNativeVoice.voice"
 
 type RpcBody = { ok?: boolean; timedOut?: boolean; result?: unknown; error?: unknown }
 
@@ -62,14 +63,20 @@ export async function startAgentVoice(
   sessionId: string,
   sdp: string,
   instructions: string,
+  voice?: string,
 ): Promise<string> {
-  const result = await voiceRpc(
-    agentId,
-    "_drive/voice/start",
-    { sessionId, sdp, instructions },
-    START_WAIT_MS,
-  )
+  const params = { sessionId, sdp, instructions, ...(voice ? { voice } : {}) }
+  const result = await voiceRpc(agentId, "_drive/voice/start", params, START_WAIT_MS)
   return (result as { sdp: string }).sdp
+}
+
+/** Voices the agent's voice can use, and the one it picks when none is chosen. */
+export async function listAgentVoices(
+  agentId: string,
+  sessionId: string,
+): Promise<{ voices: string[]; default: string }> {
+  const result = await voiceRpc(agentId, "_drive/voice/listVoices", { sessionId }, SHORT_WAIT_MS)
+  return result as { voices: string[]; default: string }
 }
 
 export async function stopAgentVoice(agentId: string, sessionId: string): Promise<void> {
@@ -98,5 +105,21 @@ export function saveNativeVoicePref(on: boolean): void {
     globalThis.localStorage?.setItem(NATIVE_PREF_KEY, on ? "1" : "0")
   } catch {
     // storage unavailable (private mode): the choice lasts for this page only
+  }
+}
+
+export function loadVoicePref(): string | null {
+  try {
+    return globalThis.localStorage?.getItem(VOICE_PREF_KEY) || null
+  } catch {
+    return null
+  }
+}
+
+export function saveVoicePref(voice: string): void {
+  try {
+    globalThis.localStorage?.setItem(VOICE_PREF_KEY, voice)
+  } catch {
+    // storage unavailable: the choice lasts for this page only
   }
 }

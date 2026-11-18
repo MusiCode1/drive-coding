@@ -6,7 +6,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { speakAgentVoice, startAgentVoice, stopAgentVoice } from "./agent-voice"
+import { listAgentVoices, speakAgentVoice, startAgentVoice, stopAgentVoice } from "./agent-voice"
 
 function stubFetch(status: number, body: unknown) {
   const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => ({
@@ -69,5 +69,31 @@ describe("agent-voice adapter", () => {
       ([, init]) => JSON.parse(String(init?.body)).params.method,
     )
     expect(methods).toEqual(["_drive/voice/stop", "_drive/voice/speak"])
+  })
+
+  it("listVoices returns the provider's voices and default", async () => {
+    const fetchMock = stubFetch(200, {
+      ok: true,
+      timedOut: false,
+      result: { voices: ["cove", "maple"], default: "cove" },
+    })
+    await expect(listAgentVoices("a", "s")).resolves.toEqual({
+      voices: ["cove", "maple"],
+      default: "cove",
+    })
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)).params.method).toBe(
+      "_drive/voice/listVoices",
+    )
+  })
+
+  it("start sends the chosen voice only when there is one", async () => {
+    const fetchMock = stubFetch(200, { ok: true, timedOut: false, result: { sdp: "ans" } })
+    await startAgentVoice("a", "s", "offer", "p", "maple")
+    await startAgentVoice("a", "s", "offer", "p")
+    const sent = fetchMock.mock.calls.map(
+      ([, init]) => JSON.parse(String(init?.body)).params.params,
+    )
+    expect(sent[0]).toMatchObject({ voice: "maple" })
+    expect(sent[1]).not.toHaveProperty("voice")
   })
 })

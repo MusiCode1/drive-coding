@@ -77,12 +77,22 @@ export const extMethods = {
   // Provider-agnostic: the client holds the peer (mic, speaker, data channel) and
   // exchanges SDP through the session. Gated by `capabilities.voice`.
   "_drive/voice/start": {
-    params: type({ sessionId: "string", sdp: "string > 0", "instructions?": "string" }),
+    params: type({
+      sessionId: "string",
+      sdp: "string > 0",
+      "instructions?": "string",
+      "voice?": "string",
+    }),
     result: type({ sdp: "string > 0" }),
   },
   "_drive/voice/stop": {
     params: type({ sessionId: "string" }),
     result: type({}),
+  },
+  /** Voices the provider's voice can use, and the one it picks when none is chosen. */
+  "_drive/voice/listVoices": {
+    params: type({ sessionId: "string" }),
+    result: type({ voices: "string[]", default: "string" }),
   },
   /** Make the voice say something now (e.g. "approval needed on screen"). */
   "_drive/voice/speak": {

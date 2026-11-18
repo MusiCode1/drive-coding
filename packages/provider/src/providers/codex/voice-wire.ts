@@ -24,6 +24,7 @@ const TO_CODEX: Readonly<Record<string, string>> = {
   "_drive/voice/start": "_codex/realtime/start",
   "_drive/voice/stop": "_codex/realtime/stop",
   "_drive/voice/speak": "_codex/realtime/appendSpeech",
+  "_drive/voice/listVoices": "_codex/realtime/listVoices",
 }
 
 type Json = Record<string, unknown>

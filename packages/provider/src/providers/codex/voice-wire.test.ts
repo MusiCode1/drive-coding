@@ -32,20 +32,32 @@ describe("toAgent", () => {
   it("maps _drive/voice/start to _codex/realtime/start, keeping the id", () => {
     const out = JSON.parse(
       createCodexVoiceWire().toAgent(
-        rpc("_drive/voice/start", { sessionId: "s", sdp: "v=0", instructions: "be brief" }),
+        rpc("_drive/voice/start", {
+          sessionId: "s",
+          sdp: "v=0",
+          instructions: "be brief",
+          voice: "maple",
+        }),
       ),
     )
     expect(out).toEqual({
       jsonrpc: "2.0",
       id: 7,
       method: "_codex/realtime/start",
-      params: { sessionId: "s", sdp: "v=0", prompt: "be brief", handoffMode: "commentary" },
+      params: {
+        sessionId: "s",
+        sdp: "v=0",
+        voice: "maple",
+        prompt: "be brief",
+        handoffMode: "commentary",
+      },
     })
   })
 
   it.each([
     ["_drive/voice/stop", "_codex/realtime/stop", { sessionId: "s" }],
     ["_drive/voice/speak", "_codex/realtime/appendSpeech", { sessionId: "s", text: "hi" }],
+    ["_drive/voice/listVoices", "_codex/realtime/listVoices", { sessionId: "s" }],
   ])("maps %s to %s with params unchanged", (from, to, params) => {
     expect(JSON.parse(createCodexVoiceWire().toAgent(rpc(from, params)))).toMatchObject({
       method: to,

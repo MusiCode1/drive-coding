@@ -12,8 +12,11 @@
  */
 
 import {
+  listAgentVoices,
   loadNativeVoicePref,
+  loadVoicePref,
   saveNativeVoicePref,
+  saveVoicePref,
   speakAgentVoice,
   startAgentVoice,
   stopAgentVoice,
@@ -40,15 +43,52 @@ export class AgentVoice {
   error = $state<string | null>(null)
   /** User preference: use the agent's native voice in Live when the session supports it. */
   preferNative = $state(loadNativeVoicePref())
+  /** Voices of the agent's voice (loaded once the native voice is selected). */
+  voices = $state<string[]>([])
+  defaultVoice = $state<string | null>(null)
+  /** User's chosen voice; null = the provider's default. */
+  voice = $state<string | null>(loadVoicePref())
 
   readonly #deps: AgentVoiceDeps
   #call: RealtimeVoiceCall | null = null
   #target: { agentId: string; sessionId: string } | null = null
   #disposeWatch: (() => void) | null = null
   #announced: string | null = null
+  #voicesFor: string | null = null
 
   constructor(deps: AgentVoiceDeps) {
     this.#deps = deps
+    // Load the voice list once per session when the native voice becomes selected.
+    $effect.root(() => {
+      $effect(() => {
+        const { agentId, sessionId } = deps.session
+        if (!this.selected || !agentId || !sessionId || this.#voicesFor === sessionId) return
+        this.#voicesFor = sessionId
+        void this.#loadVoices(agentId, sessionId)
+      })
+    })
+  }
+
+  /** The voice the next call will use. */
+  get effectiveVoice(): string | null {
+    return this.voice ?? this.defaultVoice
+  }
+
+  setVoice(voice: string): void {
+    this.voice = voice
+    saveVoicePref(voice)
+  }
+
+  async #loadVoices(agentId: string, sessionId: string): Promise<void> {
+    try {
+      const list = await listAgentVoices(agentId, sessionId)
+      this.voices = list.voices
+      this.defaultVoice = list.default
+      // A saved voice this provider does not offer would make start fail — fall back to the default.
+      if (this.voice !== null && !list.voices.includes(this.voice)) this.voice = null
+    } catch {
+      this.#voicesFor = null // retried on the next selection change; the call still works without a list
+    }
   }
 
   /** The active session's provider implements the voice contract. */
@@ -84,7 +124,14 @@ export class AgentVoice {
     this.status = "connecting"
     try {
       this.#call = await startRealtimeVoiceCall({
-        negotiate: (sdp) => startAgentVoice(agentId, sessionId, sdp, this.#deps.getInstructions()),
+        negotiate: (sdp) =>
+          startAgentVoice(
+            agentId,
+            sessionId,
+            sdp,
+            this.#deps.getInstructions(),
+            this.voice ?? undefined,
+          ),
         onEvent: (e) => this.#onEvent(e),
       })
       this.#watch(target)

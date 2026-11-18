@@ -116,7 +116,7 @@
         "@anthropic-ai/claude-agent-sdk": "0.3.274",
         "@drive-coding/acp-wire": "workspace:*",
         "@drive-coding/core": "workspace:*",
-        "@musicode1/codex-acp": "file:../../vendor/acp/agentclientprotocol-codex-acp-2.5.0-dc.1.tgz",
+        "@musicode1/codex-acp": "file:../../vendor/acp/agentclientprotocol-codex-acp-2.5.0-dc.2.tgz",
         "arktype": "^2.0.0",
       },
       "devDependencies": {
@@ -334,7 +334,7 @@
 
     "@msgpackr-extract/msgpackr-extract-win32-x64": ["@msgpackr-extract/msgpackr-extract-win32-x64@3.0.4", "", { "os": "win32", "cpu": "x64" }, "sha512-CmCXPQrkbwExx3j946/PtHWHbYJiCRBRDl4BlkRQcJB/YOwQxJRTpoo7aTsortjgoJ1x7opzTSxn7C+ASSLVjQ=="],
 
-    "@musicode1/codex-acp": ["@agentclientprotocol/codex-acp@../../vendor/acp/agentclientprotocol-codex-acp-2.5.0-dc.1.tgz", { "dependencies": { "@agentclientprotocol/sdk": "~2.4.0", "@openai/codex": "^0.166.0", "cross-spawn": "^7.0.6", "diff": "^9.0.0", "open": "^11.0.1", "vscode-jsonrpc": "^9.0.1", "zod": "^4.0.0" }, "bin": { "codex-acp": "dist/index.js" } }, "sha512-/AM70I8OY+PUqqwJ573Z9mZV73BO9sWxSW8kQz09NrW2gHYwEk9IsswvM3U3n+2Q6LcvCIS9Vc83BtJ1uG7xJg=="],
+    "@musicode1/codex-acp": ["@agentclientprotocol/codex-acp@../../vendor/acp/agentclientprotocol-codex-acp-2.5.0-dc.2.tgz", { "dependencies": { "@agentclientprotocol/sdk": "~2.4.0", "@openai/codex": "^0.166.0", "cross-spawn": "^7.0.6", "diff": "^9.0.0", "open": "^11.0.1", "vscode-jsonrpc": "^9.0.1", "zod": "^4.0.0" }, "bin": { "codex-acp": "dist/index.js" } }, "sha512-Aq5A90COc7SCzatYrIm6OeR47adqP2R0Kb491PzEZmLoGALvLxHw/wHImrVmuL+pHjQ/OQe5keMBwesJg81DwQ=="],
 
     "@napi-rs/lzma-linux-x64-gnu": ["@napi-rs/lzma-linux-x64-gnu@1.5.1", "", { "os": "linux", "cpu": "x64" }, "sha512-oTXEIha4SsuXdTA4Iyskj0kpdx2yVXdhd75c2v3xGrHFfVMsbhTPZU/nMPL4sWKo4pBHm3aucLaqGlF696dTyQ=="],
 

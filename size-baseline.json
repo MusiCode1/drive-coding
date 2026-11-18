@@ -626,10 +626,10 @@
       "codeLines": 199
     },
     "packages/frontend/src/lib/components/chat/RecordFooter.svelte": {
-      "metric": 63,
+      "metric": 61,
       "impurity": 0,
       "class": "pure",
-      "codeLines": 166
+      "codeLines": 151
     },
     "packages/frontend/src/lib/components/chat/SlashCommandMenu.svelte": {
       "metric": 64,

@@ -16,6 +16,9 @@ const adapter = vi.hoisted(() => ({
   speakAgentVoice: vi.fn(async () => {}),
   loadNativeVoicePref: vi.fn(() => false),
   saveNativeVoicePref: vi.fn(),
+  listAgentVoices: vi.fn(async () => ({ voices: ["cove", "maple"], default: "cove" })),
+  loadVoicePref: vi.fn((): string | null => null),
+  saveVoicePref: vi.fn(),
 }))
 vi.mock("$lib/adapters/voice/agent-voice.js", () => adapter)
 
@@ -81,7 +84,13 @@ describe("AgentVoice", () => {
   it("negotiates through _drive/voice/start with the session and instructions", async () => {
     const voice = makeVoice(makeSession(true))
     await voice.start()
-    expect(adapter.startAgentVoice).toHaveBeenCalledWith("agent-1", "sess-1", "offer", "be brief")
+    expect(adapter.startAgentVoice).toHaveBeenCalledWith(
+      "agent-1",
+      "sess-1",
+      "offer",
+      "be brief",
+      undefined,
+    )
     engine.onEvent?.({ type: "state", state: "live" })
     expect(voice.status).toBe("live")
     await voice.stop()
@@ -116,5 +125,38 @@ describe("AgentVoice", () => {
       "approve on screen: Write a.txt",
     )
     await voice.stop()
+  })
+
+  it("loads the voices once the native voice is selected, and starts with the chosen one", async () => {
+    const voice = makeVoice(makeSession(true))
+    await tick()
+    expect(adapter.listAgentVoices).not.toHaveBeenCalled()
+    voice.setPreferNative(true)
+    await tick()
+    await tick()
+    expect(adapter.listAgentVoices).toHaveBeenCalledTimes(1)
+    expect(voice.voices).toEqual(["cove", "maple"])
+    expect(voice.effectiveVoice).toBe("cove")
+    voice.setVoice("maple")
+    expect(adapter.saveVoicePref).toHaveBeenLastCalledWith("maple")
+    await voice.start()
+    expect(adapter.startAgentVoice).toHaveBeenLastCalledWith(
+      "agent-1",
+      "sess-1",
+      "offer",
+      "be brief",
+      "maple",
+    )
+    await voice.stop()
+  })
+
+  it("drops a saved voice the provider does not offer", async () => {
+    adapter.loadVoicePref.mockReturnValueOnce("not-a-voice")
+    const voice = makeVoice(makeSession(true))
+    voice.setPreferNative(true)
+    await tick()
+    await tick()
+    expect(voice.voice).toBeNull()
+    expect(voice.effectiveVoice).toBe("cove")
   })
 })
