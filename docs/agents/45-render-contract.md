@@ -9,8 +9,8 @@ read_when:
 tags: [render, output, ui]
 surface: [http, mcp]
 stability: stable
-docs_version: 1.7.1
-updated: 2026-10-13
+docs_version: 1.10.0
+updated: 2026-11-18
 ---
 
 # Render contract
@@ -165,6 +165,21 @@ the same content viewer as file links — convenient for plan artifacts the prot
 
 It is **not** a substitute for an explicit markdown link when you want the user to read a
 document you just wrote — prefer **`/api/fs/file`** or a markdown link you control.
+
+## Voice-conversation messages (`_meta["_drive/voice"]`)
+
+When a session's agent has its own realtime voice (`_drive/voice/*`, see `50-rpc`), the spoken
+conversation lands in the chat too. Its messages carry `_meta["_drive/voice"]` on the ACP
+update, and the UI draws them apart from ordinary messages, with a voice avatar:
+
+| Mark | Rendered as |
+|---|---|
+| `{ "kind": "speech", "role": "user" \| "assistant" }` | A voice bubble — what the user said to the voice, or what the voice answered |
+| `{ "kind": "handoff", "transcript"?: string }` | A hand-off card: the work the voice passed to the agent, with the spoken context collapsed under it |
+
+The mark is the provider's to set — an agent's own text output never needs it, and other
+`_meta` keys on the same update are kept. Messages without a recognized mark render as usual.
+They are restored with the session history like any other message.
 
 ## What does not work
 

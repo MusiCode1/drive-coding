@@ -17,6 +17,25 @@ describe("agent-api gate helpers", () => {
     expect(names).toContain("session_open")
   })
 
+  it("parses the six _drive/* extensions from the extMethods registry", async () => {
+    const { extMethodNamesFromText, EXT_METHODS_PATH } = await import(
+      // @ts-expect-error — gate scripts are Node ESM outside the TS program
+      "../../../../scripts/agent-docs-lib.mjs"
+    )
+    const fs = await import("node:fs")
+    const names = extMethodNamesFromText(
+      fs.readFileSync(path.join(REPO_ROOT, EXT_METHODS_PATH), "utf8"),
+    )
+    expect(names).toEqual([
+      "_drive/setThinkingTokens",
+      "_drive/getQuota",
+      "_drive/voice/start",
+      "_drive/voice/stop",
+      "_drive/voice/listVoices",
+      "_drive/voice/speak",
+    ])
+  })
+
   it("documentableRouteKeys includes GET /api/health and excludes GET /*", async () => {
     const { documentableRouteKeys } = await import(
       // @ts-expect-error — gate scripts are Node ESM outside the TS program

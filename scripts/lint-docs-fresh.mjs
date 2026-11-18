@@ -5,7 +5,13 @@ import { execFileSync } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
-import { listDocFiles, parseFrontMatter, readDoc } from "./agent-docs-lib.mjs"
+import {
+  EXT_METHODS_PATH,
+  extMethodNamesFromText,
+  listDocFiles,
+  parseFrontMatter,
+  readDoc,
+} from "./agent-docs-lib.mjs"
 import { compareSemver, parseSemver } from "./docs-version-semver.mjs"
 import { PUBLISH_REAL_ISSUES } from "./gen-known-issues.mjs"
 import { extractOperations } from "./lint-api-documented.mjs"
@@ -23,12 +29,12 @@ function matchRouteLines(line) {
 const ROUTE_FM = /^(GET|POST|PUT|PATCH|DELETE) (\S+)$/
 
 /** Surfaces that exist in code but are not yet described in any docs/agents/*.md.
- *  Measured 2026-09-29 (stage 5 shipped them; documenting them is tracked
- *  separately and is out of scope for agent-docs-freshness).
+ *  Emptied 2026-11-18: the four entries listed since 2026-09-29 (the docs routes and
+ *  docs_get) are now in 00-orientation.
  *  🛑 Removing an entry here is the point — do not add one to silence a finding. */
 export const KNOWN_UNDOCUMENTED = {
-  routes: ["GET /api/docs", "GET /api/docs/:id", "GET /api/openapi.json"],
-  mcpTools: ["docs_get"],
+  routes: [],
+  mcpTools: [],
 }
 
 const KNOWN_UNDOCUMENTED_ROUTE_KEYS = new Set(
@@ -211,6 +217,18 @@ function mcpToolOwners(root) {
   return owners
 }
 
+function extMethodOwners(root) {
+  const owners = new Map()
+  for (const name of listDocFiles(root)) {
+    const doc = readDoc(root, name)
+    if (!doc.front.ok) continue
+    const methods = doc.front.data.ext_methods
+    if (!Array.isArray(methods)) continue
+    for (const m of methods) owners.set(String(m), doc.rel)
+  }
+  return owners
+}
+
 function symmetricRouteDelta(root, range) {
   let diff
   try {
@@ -377,6 +395,23 @@ export function runFreshnessChecks(root, rangeSpec, opts = {}) {
       if (!mcpMap.has(tool)) {
         fails.push(
           `no document declares MCP tool ${JSON.stringify(tool)} in its front matter \`mcp_tools:\``,
+        )
+      }
+    }
+  }
+
+  // `_drive/*` extensions: a method new in the range needs a document that declares it.
+  if (fs.existsSync(path.join(root, EXT_METHODS_PATH))) {
+    const headExt = extMethodNamesFromText(
+      fs.readFileSync(path.join(root, EXT_METHODS_PATH), "utf8"),
+    )
+    const baseExtText = gitShow(root, range.base, EXT_METHODS_PATH)
+    const baseExt = baseExtText ? extMethodNamesFromText(baseExtText) : []
+    const extMap = extMethodOwners(root)
+    for (const method of headExt.filter((m) => !baseExt.includes(m))) {
+      if (!extMap.has(method)) {
+        fails.push(
+          `no document declares extension ${JSON.stringify(method)} in its front matter \`ext_methods:\``,
         )
       }
     }

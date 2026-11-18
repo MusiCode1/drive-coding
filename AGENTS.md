@@ -518,9 +518,18 @@ specific commit (rare): `git commit --no-verify`.
 When the size ratchet passes (`lint-file-size.mjs` exit 0), `pre-push` also runs
 `node scripts/lint-docs-fresh.mjs`. It compares the **push range** (stdin from
 git, or `merge-base` with upstream, or unpushed commits on the branch) against
-agent-docs surfaces: HTTP route registration, MCP tools, render contract, new FE
-pages, config keys, `DOCS_VERSION` vs edited `docs/agents/*.md`, and
-`99-known-issues.md` vs the private bug register.
+agent-docs surfaces: HTTP route registration, MCP tools, `_drive/*` extensions
+(`extMethods` in `packages/provider/src/extensions/schema.ts` → a doc's `ext_methods:`),
+render contract, new FE pages, config keys, `DOCS_VERSION` vs edited `docs/agents/*.md`,
+and `99-known-issues.md` vs the private bug register.
+
+**Before a release, run it over the whole release range** — a push only checks its own
+commits, so a gap that built up across many pushes stays green push by push. Measured
+2026-11-18: three MCP tools had been undocumented for two months, invisible to every push.
+
+```bash
+node scripts/lint-docs-fresh.mjs --range origin/dev..HEAD < /dev/null   # needs docs-for-llm/
+```
 
 The gate is **fail-open**: missing `docs-for-llm/`, a non-git tree, or an
 unresolvable range exits 0 with no output. Any internal error also exits 0.

@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.9.1",
+  "docsVersion": "1.10.0",
   "docs": [
     {
       "id": "orientation",
@@ -12,9 +12,9 @@
       "tags": ["orientation"],
       "surface": ["http", "mcp", "cli"],
       "stability": "stable",
-      "docs_version": "1.2.0",
-      "routes": [],
-      "mcp_tools": [],
+      "docs_version": "1.10.0",
+      "routes": ["GET /api/docs", "GET /api/docs/:id", "GET /api/openapi.json"],
+      "mcp_tools": ["docs_get"],
       "path": "docs/agents/00-orientation.md",
       "headings": [
         "Orientation",
@@ -23,6 +23,7 @@
         "How to choose in practice",
         "MCP limits (stateless)",
         "Security posture (orientation only)",
+        "Reading these docs at runtime",
         "Where to read next"
       ]
     },
@@ -64,7 +65,7 @@
       "tags": ["session", "ownership", "turnstate"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.6.0",
+      "docs_version": "1.10.0",
       "routes": [
         "GET /api/agents",
         "POST /api/agents",
@@ -78,7 +79,10 @@
         "session_open",
         "session_send",
         "session_state",
-        "session_close"
+        "session_close",
+        "session_note_set",
+        "session_field_set",
+        "session_field_delete"
       ],
       "path": "docs/agents/20-session-lifecycle.md",
       "headings": [
@@ -90,6 +94,7 @@
         "Ownership and liveness (HTTP session host)",
         "Identity header",
         "Inbound prompt envelope (receiver)",
+        "Session memory — your own note and fields",
         "Configure during lifecycle",
         "CLI equivalents",
         "Limits (MCP)"
@@ -165,7 +170,7 @@
       "tags": ["render", "output", "ui"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.7.1",
+      "docs_version": "1.10.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/45-render-contract.md",
@@ -183,6 +188,7 @@
         "Code and math",
         "BIDI",
         "resource_link / plan files",
+        "Voice-conversation messages (`_meta[\"_drive/voice\"]`)",
         "What does not work",
         "Quick checklist"
       ]
@@ -199,7 +205,7 @@
       "tags": ["ui"],
       "surface": ["ui"],
       "stability": "transitional",
-      "docs_version": "1.5.0",
+      "docs_version": "1.10.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/46-ui-reference.md",
@@ -226,13 +232,15 @@
       "tags": ["rpc", "session"],
       "surface": ["http"],
       "stability": "transitional",
-      "docs_version": "1.6.0",
+      "docs_version": "1.10.0",
       "routes": ["POST /api/agents/:id/rpc"],
       "mcp_tools": [],
       "path": "docs/agents/50-rpc.md",
       "headings": [
         "Agent session RPC",
         "Methods",
+        "Extensions (`_drive/ext`)",
+        "The agent's own voice (`_drive/voice/*`)",
         "`waitMs` and blocking",
         "HTTP status codes",
         "Envelope on `session/prompt`",
@@ -359,7 +367,7 @@
       "tags": ["voice"],
       "surface": ["http"],
       "stability": "transitional",
-      "docs_version": "1.2.0",
+      "docs_version": "1.10.0",
       "routes": ["GET /api/tts/capabilities", "POST /api/voice/live/token"],
       "mcp_tools": [],
       "path": "docs/agents/91-voice.md",
@@ -367,6 +375,7 @@
         "Voice",
         "GET /api/tts/capabilities",
         "POST /api/voice/live/token",
+        "The agent's own voice",
         "Upstream proxies (prose only)"
       ]
     },
