@@ -13,6 +13,7 @@ class FakeAudio {
   error: { code: number; message: string } | null = null
   onended: (() => void) | null = null
   onpause: (() => void) | null = null
+  paused = false
   onerror: (() => void) | null = null
   pause = vi.fn()
   constructor(src: string) {
@@ -72,8 +73,17 @@ describe("playVoicePreview", () => {
   it("paused by someone else (browser, media keys) → onEnd with no error", () => {
     const onEnd = vi.fn()
     playVoicePreview("https://cdn/a.m4a", onEnd)
+    audio().paused = true
     audio().onpause?.()
     expect(onEnd).toHaveBeenCalledWith(undefined)
+  })
+
+  it("a pause already resumed when dispatched is not the end (Plasma Browser Integration, 18/11)", () => {
+    const onEnd = vi.fn()
+    playVoicePreview("https://cdn/a.m4a", onEnd)
+    audio().paused = false
+    audio().onpause?.()
+    expect(onEnd).not.toHaveBeenCalled()
   })
 
   it("AbortError from play() is not the end — the clip may still play (measured 18/11)", async () => {

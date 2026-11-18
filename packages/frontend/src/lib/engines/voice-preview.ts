@@ -6,10 +6,12 @@
  * and nothing when it ended, was stopped or was paused — a failing sample must not look like a
  * short one.
  *
- * Whether the clip is playing is told by the element's own events, not by the `play()` promise:
- * measured 18/11/2026, a user's Chrome rejected it with `AbortError: The play() request was
- * interrupted because the media was removed from the document` while the clip went on playing
- * (not reproduced in the GUI container's Chrome). An element that really stopped fires `pause`.
+ * Whether the clip is playing is told by the element's state, not by the `play()` promise or a
+ * bare `pause` event. Measured 18/11/2026 in Edge with KDE's Plasma Browser Integration: to put
+ * a detached <audio> under the desktop's media controls, the extension appends it to <head> and
+ * removes it at once (`registerInDom`), then calls `play()` again (`replayAfterRemoval`). The
+ * removal pauses the clip and rejects our `play()` with `AbortError: … the media was removed from
+ * the document`, yet the clip goes on — and by the time `pause` is dispatched, `paused` is false.
  */
 
 const MEDIA_ERRORS: Readonly<Record<number, string>> = {
@@ -29,8 +31,10 @@ export function playVoicePreview(url: string, onEnd: (error?: string) => void): 
     onEnd(error)
   }
   audio.onended = () => finish()
-  // paused by the browser or the OS (media keys, another app) — not only by `stop` below
-  audio.onpause = () => finish()
+  // paused by the browser or the OS (media keys) — unless something already resumed it (above)
+  audio.onpause = () => {
+    if (audio.paused) finish()
+  }
   audio.onerror = () => {
     const err = audio.error
     const kind = err ? (MEDIA_ERRORS[err.code] ?? `code ${err.code}`) : "unknown"
