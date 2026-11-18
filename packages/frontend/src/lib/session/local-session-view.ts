@@ -32,7 +32,7 @@ import { createExtClient } from "$lib/adapters/ext"
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitation"
 import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
-import type { SessionView } from "./session-view"
+import type { SessionView, ViewEmission } from "./session-view"
 
 // ─── Takeover close code (סוגר דליפה #3) ───
 /** ⚠️ חייב להתאים ל-TAKEOVER_CODE ב-packages/backend/src/delivery/ws-agent.ts. */
@@ -45,8 +45,8 @@ const TAKEOVER_CLOSE_CODE = 4409
  */
 export class LocalSessionView implements SessionView {
   // ─── Patches stream ───
-  #controller: ReadableStreamDefaultController<Patch[]> | null = null
-  readonly patches: ReadableStream<Patch[]>
+  #controller: ReadableStreamDefaultController<ViewEmission> | null = null
+  readonly patches: ReadableStream<ViewEmission>
 
   // ─── Session state (C1 fields) ───
   #state: SessionState = createInitialSessionState({ sessionId: null })
@@ -84,7 +84,7 @@ export class LocalSessionView implements SessionView {
     this.#cliKind = opts.cliKind
     this.#createClientFn = opts.createClient ?? this.#defaultCreateClient.bind(this)
 
-    this.patches = new ReadableStream<Patch[]>({
+    this.patches = new ReadableStream<ViewEmission>({
       start: (controller) => {
         this.#controller = controller
       },
@@ -165,7 +165,7 @@ export class LocalSessionView implements SessionView {
     this.#state = state
     if (patches.length > 0) {
       try {
-        this.#controller?.enqueue(patches)
+        this.#controller?.enqueue({ patches, updates: [] })
       } catch {
         // Stream cancelled or closed — ignore
       }
@@ -271,10 +271,10 @@ export class LocalSessionView implements SessionView {
    * יוצר session ACP חדש.
    * קורא ל-createClientFn → client.newSession() → מעדכן state.
    */
-  async newSession(): Promise<void> {
+  async newSession(_cwd?: string): Promise<void> {
     this.#state = { ...this.#state, status: "connecting" }
     this.#client = await this.#createClientFn(this.#makeCallbacks())
-    const result = await this.#client.newSession({ cwd: this.#cwd })
+    const result = await this.#client.newSession({ cwd: this.#cwd, mcpServers: [] })
     const sessionId = (result as { sessionId?: string }).sessionId ?? null
     this.#sessionId = sessionId
     this.#state = { ...this.#state, status: "connected", sessionId }
@@ -289,7 +289,7 @@ export class LocalSessionView implements SessionView {
   async loadSession(sessionId: string, cwd?: string): Promise<void> {
     this.#state = { ...this.#state, status: "connecting" }
     this.#client = await this.#createClientFn(this.#makeCallbacks())
-    await this.#client.loadSession({ sessionId, cwd: cwd ?? this.#cwd })
+    await this.#client.loadSession({ sessionId, cwd: cwd ?? this.#cwd, mcpServers: [] })
     this.#sessionId = sessionId
     this.#state = { ...this.#state, status: "connected", sessionId }
     await this.#refreshQuota()

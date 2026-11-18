@@ -11,7 +11,7 @@
  *  7. flag-layer --elevenlabs-key → warning about process list visibility
  *  8. cliSpecs from file → CLI_SPECS_JSON in envPatch
  *  9. --log-level flag → LOG_LEVEL in envPatch
- * 10. all defaults absent → empty config + empty envPatch (no crash)
+ * 10. all absent → product defaults in config + envPatch
  */
 
 import * as fs from "node:fs"
@@ -112,12 +112,12 @@ describe("loadConfig — precedence", () => {
 
 describe("loadConfig — env vars", () => {
   it("6. voice keys from env", () => {
-    const { config, envPatch } = loadConfig({
+    const { secrets, envPatch } = loadConfig({
       argv: {},
       env: { ELEVENLABS_API_KEY: "el-key", GEMINI_API_KEY: "gm-key" },
     })
-    expect(config.voice?.elevenLabsKey).toBe("el-key")
-    expect(config.voice?.geminiKey).toBe("gm-key")
+    expect(secrets.elevenLabsKey).toBe("el-key")
+    expect(secrets.geminiKey).toBe("gm-key")
     expect(envPatch["ELEVENLABS_API_KEY"]).toBe("el-key")
     expect(envPatch["GEMINI_API_KEY"]).toBe("gm-key")
   })
@@ -141,14 +141,64 @@ describe("loadConfig — env vars", () => {
   })
 })
 
+describe("loadConfig — prompt timeouts", () => {
+  it("elicitationTimeoutMs from the config file → env patch", () => {
+    const configPath = writeTmpJson({ elicitationTimeoutMs: 5000 })
+    const { config, envPatch } = loadConfig({ argv: { config: configPath }, env: {} })
+    expect(config.elicitationTimeoutMs).toBe(5000)
+    expect(envPatch["ELICITATION_TIMEOUT_MS"]).toBe("5000")
+  })
+
+  it('"never" survives the file → envPatch round-trip unchanged', () => {
+    const configPath = writeTmpJson({ permissionTimeoutMs: "never" })
+    const { config, envPatch } = loadConfig({ argv: { config: configPath }, env: {} })
+    expect(config.permissionTimeoutMs).toBe("never")
+    expect(envPatch["PERMISSION_TIMEOUT_MS"]).toBe("never")
+  })
+
+  it("env beats the config file", () => {
+    const configPath = writeTmpJson({ elicitationTimeoutMs: 5000 })
+    const { config } = loadConfig({
+      argv: { config: configPath },
+      env: { ELICITATION_TIMEOUT_MS: "never" },
+    })
+    expect(config.elicitationTimeoutMs).toBe("never")
+  })
+
+  // 🔴 The reason these are two flat leaves and not one `timeouts` object:
+  // resolveConfig overrides object fields wholesale, so an object would let
+  // the env var below silently erase permissionTimeoutMs from the file.
+  it("setting one timeout in env does not erase the other from the file", () => {
+    const configPath = writeTmpJson({ elicitationTimeoutMs: 5000, permissionTimeoutMs: 7000 })
+    const { config } = loadConfig({
+      argv: { config: configPath },
+      env: { ELICITATION_TIMEOUT_MS: "never" },
+    })
+    expect(config.elicitationTimeoutMs).toBe("never")
+    expect(config.permissionTimeoutMs).toBe(7000)
+  })
+
+  it("unset → absent from config and from the env patch", () => {
+    const { config, envPatch } = loadConfig({ argv: {}, env: {} })
+    expect(config.elicitationTimeoutMs).toBeUndefined()
+    expect(envPatch["ELICITATION_TIMEOUT_MS"]).toBeUndefined()
+  })
+
+  it("unparseable env value is left for resolveRequestTimeoutMs to reject", () => {
+    const { config, envPatch } = loadConfig({ argv: {}, env: { ELICITATION_TIMEOUT_MS: "abc" } })
+    expect(config.elicitationTimeoutMs).toBeUndefined()
+    expect(envPatch["ELICITATION_TIMEOUT_MS"]).toBeUndefined()
+  })
+})
+
 describe("loadConfig — flag secrets", () => {
   it("7. --elevenlabs-key flag → warning about process list visibility", () => {
-    const { config, warnings } = loadConfig({
+    const { secrets, warnings } = loadConfig({
       argv: { "elevenlabs-key": "secret-key" },
       env: {},
     })
     expect(warnings.some(w => w.includes("visible in the process list"))).toBe(true)
-    expect(config.voice?.elevenLabsKey).toBe("secret-key")
+    expect(secrets.elevenLabsKey).toBe("secret-key")
   })
 
   it("--gemini-key flag → warning", () => {
@@ -179,10 +229,58 @@ describe("loadConfig — log flags", () => {
 })
 
 describe("loadConfig — empty inputs", () => {
-  it("10. all absent → no crash, empty envPatch", () => {
+  it("10. all absent → product defaults in config + envPatch", () => {
     const { config, envPatch, warnings } = loadConfig({ argv: {}, env: {} })
-    expect(config).toEqual({})
-    expect(envPatch).toEqual({})
+    expect(config.port).toBe(4000)
+    expect(config.host).toBe("127.0.0.1")
+    expect(config.rssBudgetMb).toBe(1500)
+    expect(config.httpOwnerTtlMs).toBe(600_000)
+    expect(config.opencodeBin).toBe("opencode")
+    expect(envPatch["PORT"]).toBe("4000")
+    expect(envPatch["DRIVE_CODING_HOST"]).toBe("127.0.0.1")
+    expect(envPatch["RSS_BUDGET_MB"]).toBe("1500")
+    expect(envPatch["HTTP_OWNER_TTL_MS"]).toBe("600000")
+    expect(envPatch["OPENCODE_BIN"]).toBe("opencode")
     expect(warnings).toHaveLength(0)
+  })
+})
+
+describe("loadConfig — secret keys in config file (loud failure)", () => {
+  it("voice in config file → errors with key name and secrets.json, not the value", () => {
+    const configPath = writeTmpJson({ port: 4100, voice: { elevenLabsKey: "PLACEHOLDER-EL" } })
+    const { errors } = loadConfig({ argv: { config: configPath }, env: {} })
+    const joined = errors.join("\n")
+    expect(errors.length).toBeGreaterThan(0)
+    expect(joined).toContain("elevenLabsKey")
+    expect(joined).toContain("secrets.json")
+    expect(joined).not.toContain("PLACEHOLDER-EL")
+  })
+
+  it("top-level geminiKey in config file → same error shape", () => {
+    const configPath = writeTmpJson({ geminiKey: "PLACEHOLDER-GM" })
+    const { errors } = loadConfig({ argv: { config: configPath }, env: {} })
+    expect(errors.join("\n")).toContain("geminiKey")
+  })
+
+  it("--config-json with voice → errors", () => {
+    const { errors } = loadConfig({
+      argv: { "config-json": JSON.stringify({ voice: { geminiKey: "PLACEHOLDER-GM" } }) },
+      env: {},
+    })
+    expect(errors.length).toBeGreaterThan(0)
+    expect(errors.join("\n")).toContain("--config-json")
+  })
+
+  it("secret via env or flag → errors empty", () => {
+    const r1 = loadConfig({ argv: { "gemini-key": "PLACEHOLDER-GM" }, env: {} })
+    const r2 = loadConfig({ argv: {}, env: { ELEVENLABS_API_KEY: "PLACEHOLDER-EL" } })
+    expect(r1.errors).toEqual([])
+    expect(r2.errors).toEqual([])
+  })
+
+  it("valid config file → errors empty", () => {
+    const configPath = writeTmpJson({ port: 4100 })
+    const { errors } = loadConfig({ argv: { config: configPath }, env: {} })
+    expect(errors).toEqual([])
   })
 })

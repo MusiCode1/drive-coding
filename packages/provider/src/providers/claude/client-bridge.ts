@@ -28,11 +28,11 @@ export function makeAcpClientFromCtx(ctx: AgentContext): ClaudeAcpClient {
     readTextFile: (params: unknown) => ctx.request(methods.client.fs.readTextFile, params as never),
     writeTextFile: (params: unknown) =>
       ctx.request(methods.client.fs.writeTextFile, params as never),
-    unstable_createElicitation: (params: unknown, signal?: AbortSignal) =>
+    createElicitation: (params: unknown, signal?: AbortSignal) =>
       ctx.request(methods.client.elicitation.create, params as never, {
         cancellationSignal: signal,
       }),
-    unstable_completeElicitation: (params: unknown) =>
+    completeElicitation: (params: unknown) =>
       ctx.notify(methods.client.elicitation.complete, params as never),
     extNotification: (method: string, params: Record<string, unknown>) =>
       ctx.notify(method, params as never),

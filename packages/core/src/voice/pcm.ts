@@ -1,11 +1,11 @@
 /**
- * pcm.ts — PCM parsing טהור (l16: signed 16-bit little-endian, 24kHz mono).
+ * pcm.ts — PCM parsing/conversion טהור (l16: signed 16-bit little-endian).
  *
  * אין IO — פונקציות טהורות בלבד. מתאים ל-core (אין browser globals).
  *
- * שימוש: Gemini TTS מחזיר זרם PCM (base64-decoded) שמגיע בחתיכות.
- * splitInt16LE מטפל בחתיכות בגבול אי-זוגי (byte boundary) באמצעות carry.
- * pcmToFloat32 ממיר ל-Float32 [-1,1) לשימוש ב-WebAudio AudioBuffer.
+ * שימוש:
+ * - Gemini TTS (24kHz): splitInt16LE + pcmToFloat32 לחתיכות base64-decoded.
+ * - Live mic (16kHz): float32ToInt16LE לפריימי worklet לפני שליחה ל-Gemini.
  */
 
 /**
@@ -52,6 +52,22 @@ export function splitInt16LE(
  *
  * חלוקה ב-32768 מבטיחה ש-−32768 → −1.0 ו-32767 → ~0.99997.
  */
+/**
+ * Float32 [-1,1] → s16le bytes for Live mic upload (16kHz mono).
+ *
+ * Clipping: s < 0 ? s * 0x8000 : s * 0x7fff (matches wake-word wav encoder).
+ */
+export function float32ToInt16LE(frame: Float32Array): Uint8Array {
+  const bytes = new Uint8Array(frame.length * 2)
+  const view = new DataView(bytes.buffer)
+  for (let i = 0; i < frame.length; i++) {
+    const clamped = Math.max(-1, Math.min(1, frame[i] ?? 0))
+    const int16 = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff
+    view.setInt16(i * 2, int16, true)
+  }
+  return bytes
+}
+
 export function pcmToFloat32(samples: Int16Array): Float32Array {
   const floats = new Float32Array(samples.length)
   for (let i = 0; i < samples.length; i++) {

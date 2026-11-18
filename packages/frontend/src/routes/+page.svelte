@@ -1,18 +1,20 @@
 <script lang="ts">
 import type { AgentPublic } from "@drive-coding/core"
-import FolderIcon from "@lucide/svelte/icons/folder"
 import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
 import { onMount, untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { env } from "$env/dynamic/public"
 import { readSessionTransport } from "$lib/session/session-transport-read"
+import { sessionPath } from "$lib/session/session-url"
 import { connectAgent } from "$lib/actions/connect-agent"
+import { reconnectAgent } from "$lib/actions/reconnect-agent"
 import { fetchServerOptions } from "$lib/adapters/options"
 import type { RecentProject } from "$lib/adapters/recent-projects"
 import { postReloadConfig } from "$lib/adapters/cli-availability"
 import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import ActiveProcessesPanel from "$lib/components/connect/ActiveProcessesPanel.svelte"
+import CwdPathCombo from "$lib/components/connect/CwdPathCombo.svelte"
 import RecentProjectsPanel from "$lib/components/connect/RecentProjectsPanel.svelte"
 import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
@@ -107,36 +109,22 @@ $effect(() => {
 const isRtl = $derived(settings.locale === "he")
 
 async function handleReconnect(agent: AgentPublic) {
-  // ─── slice remote-warm-reconnect C4 / transport-polish C2: ניתוב לפי דגל sessionTransport ───
-  // פתירת הדגל דרך הפונקציה המשותפת — query ← override(sessionStorage) ←
-  // stored(settings) ← env ← "ws". http → warm reconnect דרך SSE
-  // (attachRemoteToLiveAgent, בלי WS); ws → הנתיב הקיים (attachToLiveAgent).
-  const transport = readSessionTransport({
-    env: env.PUBLIC_SESSION_TRANSPORT,
-    stored: settings.sessionTransport,
-  })
-
-  if (transport === "http") {
-    await session.attachRemoteToLiveAgent({
-      agentId: agent.id,
-      cwd: agent.cwd,
-      cliKind: agent.cliKind,
-    })
-    if (session.status === "connected") {
-      await goto("/chat?sessionTransport=http")
-    }
-    // if status==="error" — stay on /, VM set this.error
-    return
-  }
-  await session.attachToLiveAgent({
-    agentId: agent.id,
-    sessionId: agent.acpSessionId,
-    cwd: agent.cwd,
-    cliKind: agent.cliKind,
-  })
-  if (session.status === "connected") {
-    await goto("/chat")
-  }
+  const outcome = await reconnectAgent({ agent, session, settings })
+  if (outcome !== "navigated") return
+  const http =
+    readSessionTransport({
+      env: env.PUBLIC_SESSION_TRANSPORT,
+      stored: settings.sessionTransport,
+    }) === "http"
+  await goto(
+    agent.acpSessionId
+      ? http
+        ? `${sessionPath(agent.cliKind, agent.acpSessionId)}?sessionTransport=http`
+        : sessionPath(agent.cliKind, agent.acpSessionId)
+      : http
+        ? "/chat?sessionTransport=http"
+        : "/chat",
+  )
 }
 
 async function onSubmit(e: SubmitEvent) {
@@ -237,27 +225,14 @@ async function refreshCliAvailability() {
              כפתור תיקייה עם order:-1 תמיד = ראשון בflex.
              RTL (עברית): flex מימין לשמאל → ראשון=ימין ויזואלי. ✓
              LTR (אנגלית): flex משמאל לימין → ראשון=שמאל ויזואלי. ✓ -->
-        <div class="cwd-row" dir={isRtl ? "rtl" : "ltr"}>
-          <input
-            type="text"
-            bind:value={cwd}
-            placeholder={t("connect.cwd.placeholder")}
-            dir="ltr"
-            disabled={session.status === "connecting"}
-          />
-          <!-- C15: order:-1 → תמיד ראשון בflex: LTR=שמאל, RTL=ימין -->
-          <button
-            type="button"
-            class="folder-btn"
-            style="order: -1"
-            onclick={() => modals.openFolder()}
-            disabled={session.status === "connecting"}
-            aria-label={t("settings.folder.pick")}
-            title={t("settings.folder.pick")}
-          >
-            <FolderIcon size={18} strokeWidth={1.75} />
-          </button>
-        </div>
+        <CwdPathCombo
+          bind:value={cwd}
+          placeholder={t("connect.cwd.placeholder")}
+          disabled={session.status === "connecting"}
+          {isRtl}
+          onFolderPick={() => modals.openFolder()}
+          folderLabel={t("settings.folder.pick")}
+        />
       </label>
     </form>
 
@@ -296,7 +271,7 @@ async function refreshCliAvailability() {
      ב-.connect-footer נשאר מוצמד לתחתית ולא נגלל איתה (slice: connect-screen-layout). */
   .connect {
     max-width: 420px;
-    height: 100dvh;
+    height: calc(100dvh - var(--kb)); /* minus the OSK - cwd input + submit stay reachable */
     margin: 0 auto;
     display: flex;
     flex-direction: column;
@@ -307,7 +282,7 @@ async function refreshCliAvailability() {
     flex: 1 1 auto;
     min-height: 0; /* קריטי — בלי זה flex-child לא מתכווץ ולא נגלל */
     overflow-y: auto; /* עיצוב ה-scrollbar עצמו מגיע ממחלקת chat-scroll שעל האלמנט */
-    padding: 4rem 1rem 1rem;
+    padding: calc(4rem + var(--safe-t)) calc(1rem + var(--safe-x)) 1rem; /* + cutout insets */
     /* slice connect-panel-resize (Commit 2.5): inset ל-scrollIntoView של ידית הגרירה —
        הידית מעוגנת לתחתית ה-body(=ראש ה-footer), לכן הערך אינו-תלוי בגובה ה-footer המדויק. */
     scroll-padding-bottom: 5rem;
@@ -315,8 +290,8 @@ async function refreshCliAvailability() {
 
   .connect-footer {
     flex-shrink: 0;
-    padding: 0.75rem 1rem;
-    padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); /* notch/home-indicator בנייד */
+    padding: 0.75rem calc(1rem + var(--safe-x));
+    padding-bottom: max(0.75rem, var(--safe-b)); /* notch/home-indicator בנייד */
     border-top: 1px solid var(--border);
     background: var(--bg);
   }
@@ -372,17 +347,17 @@ async function refreshCliAvailability() {
 
   /* slice cli-specs-hot-reload: refresh button next to the CLI dropdown */
   .cli-refresh-btn {
-    margin-top: 0;
     margin-inline-start: auto;
     padding: 0;
     flex-shrink: 0;
     display: grid;
     place-items: center;
-    width: 1.5rem;
-    height: 1.5rem;
+    /* 44px hit target (mobile-parity); negative margin-block keeps the label row compact. */
+    width: 44px;
+    height: 44px;
+    margin-block: -0.625rem;
     background: transparent;
-    border: none;
-    border-radius: 0.375rem;
+    border-radius: 0.375rem; /* border:none already comes from the generic button rule */
     color: var(--fg-dim);
   }
 
@@ -392,62 +367,6 @@ async function refreshCliAvailability() {
   }
 
   .cli-refresh-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* יישור לגובה ה-Select (px-3 py-2.5 text-sm rounded-xl) — אחידות שורות */
-  input {
-    padding: 0.625rem 0.75rem;
-    font-size: 0.875rem;
-    background: var(--bg-elev);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    color: var(--fg);
-  }
-
-  input:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(79, 140, 255, 0.2);
-  }
-
-  /* C10+C15: שורת cwd — input גמיש + כפתור תיקייה */
-  .cwd-row {
-    display: flex;
-    gap: 0.5rem;
-    align-items: stretch;
-  }
-
-  .cwd-row .folder-btn {
-    align-self: stretch;
-  }
-
-  .cwd-row input {
-    flex: 1;
-    min-width: 0;
-  }
-
-  /* folder-btn — זהה ל-refresh-btn ב-SessionPicker (אחידות 2 הלחצנים) */
-  .folder-btn {
-    flex-shrink: 0;
-    margin-top: 0; /* מאפס את ה-margin-top של כלל ה-button הגלובלי — מיישר עם ה-input */
-    display: grid;
-    place-items: center;
-    padding: 0 0.7rem;
-    background: var(--bg-elev);
-    border: 1px solid var(--border);
-    border-radius: 0.75rem;
-    color: var(--fg-dim);
-    cursor: pointer;
-  }
-
-  .folder-btn:hover:not(:disabled) {
-    color: var(--fg);
-    border-color: var(--accent);
-  }
-
-  .folder-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }

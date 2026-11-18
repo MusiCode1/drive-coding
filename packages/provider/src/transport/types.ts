@@ -22,9 +22,4 @@
  * start/prompt/cancel/shutdown) — מושג שונה לחלוטין. לא לאחד.
  */
 
-export interface AcpTransport {
-  readonly readable: ReadableStream<Uint8Array>
-  readonly writable: WritableStream<Uint8Array>
-  close(): void
-  onClose(cb: (code: number, reason: string) => void): void
-}
+export type { AcpTransport } from "@drive-coding/acp-wire"

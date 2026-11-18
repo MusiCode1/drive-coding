@@ -1,3 +1,5 @@
+import { normalizePublicBaseUrl } from "@drive-coding/core/config/public-base-url"
+
 const DEFAULT_ORIGINS = ["http://localhost:5173"]
 
 export function parseCorsOrigins(raw: string | undefined): string | string[] {
@@ -33,4 +35,18 @@ export function parseCorsOrigins(raw: string | undefined): string | string[] {
   }
 
   return origins.length === 1 ? origins[0]! : origins
+}
+
+export function effectiveCorsOrigins(
+  rawCorsOrigins: string | undefined,
+  publicBaseUrl: string | undefined,
+): string | string[] {
+  const parsed = parseCorsOrigins(rawCorsOrigins)
+  const normalizedPublic = normalizePublicBaseUrl(publicBaseUrl ?? "")
+  if (normalizedPublic === undefined) return parsed
+  if (parsed === "*") return "*"
+
+  const existing = Array.isArray(parsed) ? parsed : [parsed]
+  if (existing.includes(normalizedPublic)) return existing
+  return [...existing, normalizedPublic]
 }

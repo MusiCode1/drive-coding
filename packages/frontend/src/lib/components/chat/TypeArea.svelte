@@ -6,7 +6,6 @@
  * ChatInput נמחק ב-C4; TypeArea מחליף אותו.
  *
  * ─── record-footer (redesign-4) ───
- *
  * slice-image-paste (Commit 2):
  *  - tray thumbnails מעל ה-form (מחוץ ל-<form items-end>)
  *  - onpaste / ondrop / file-picker → fileToImageAttachment → tray
@@ -14,22 +13,44 @@
  */
 import type { AvailableCommand } from "@agentclientprotocol/sdk"
 import ImagePlusIcon from "@lucide/svelte/icons/image-plus"
+import Loader2Icon from "@lucide/svelte/icons/loader-2"
+import MicIcon from "@lucide/svelte/icons/mic"
+import MicOffIcon from "@lucide/svelte/icons/mic-off"
+import OctagonXIcon from "@lucide/svelte/icons/octagon-x"
 import SendIcon from "@lucide/svelte/icons/send"
 import XIcon from "@lucide/svelte/icons/x"
-import { getI18n, getSession, getSettings } from "$lib/context"
+import {
+  getComposerDraft,
+  getDictate,
+  getI18n,
+  getMic,
+  getModelStatus,
+  getSession,
+  getSettings,
+  getUiShell,
+  getVoiceMode,
+} from "$lib/context"
 import {
   fileToImageAttachment,
   type ImageAttachment,
   revokeAttachment,
 } from "$lib/engines/image-attachment"
+import { runTypeAreaSubmit } from "$lib/actions/type-area-submit"
 import { applySlashSelection, matchSlashCommands } from "$lib/engines/slash-commands"
 import SlashCommandMenu from "./SlashCommandMenu.svelte"
+import PendingCaptureBanner from "./PendingCaptureBanner.svelte"
 
 const session = getSession()
 const settings = getSettings()
-const t = getI18n().t
+const voiceMode = getVoiceMode()
+const modelStatus = getModelStatus()
+const draft = getComposerDraft()
+const dictate = getDictate()
+const mic = getMic()
+const uiShell = getUiShell()
+const i18n = getI18n()
+const t = i18n.t
 
-let promptText = $state("")
 let taEl = $state<HTMLTextAreaElement>()
 const MAX_ROWS = 6
 
@@ -40,7 +61,7 @@ let fileInputEl = $state<HTMLInputElement>()
 // ─── slash-command dropdown state ─── (slice-slash-commands, Commit 2)
 let dismissed = $state(false)
 let selectedIndex = $state(0)
-const slash = $derived(matchSlashCommands(promptText, session.availableCommands))
+const slash = $derived(matchSlashCommands(draft.text, session.availableCommands))
 const menuOpen = $derived(!!slash && slash.matches.length > 0 && !dismissed)
 
 // ─── ghost-hint (slice-slash-menu-native, Commit 2) ─────────────────────────
@@ -48,7 +69,7 @@ const menuOpen = $derived(!!slash && slash.matches.length > 0 && !dismissed)
 // הצג את ה-hint כ-ghost אפור. slash=null במצב הזה (matchSlashCommands מחזיר null
 // כש-rest.includes(" ")), לכן סורקים את availableCommands ישירות.
 const ghostHint = $derived.by(() => {
-  const text = promptText
+  const text = draft.text
   if (!text.startsWith("/")) return null
   const spaceIdx = text.indexOf(" ")
   // בדיוק "/name " — יש רווח אחד, אחריו אין ארגומנט
@@ -71,7 +92,7 @@ $effect(() => {
 })
 
 function acceptSlashSelection(cmd: AvailableCommand): void {
-  promptText = applySlashSelection(cmd)
+  draft.setText(applySlashSelection(cmd))
   dismissed = false
   taEl?.focus()
 }
@@ -106,7 +127,7 @@ $effect(() => {
 
 // גדל עם התוכן עד תקרה; scrollbar מופיע רק כשהתוכן חותך את ה-max-height
 $effect(() => {
-  promptText // dependency — re-run on every value change
+  draft.text // dependency — re-run on every value change
   const el = taEl
   if (!el) return
   el.style.height = "auto" // קודם מאפסים כדי שה-scrollHeight ישקף את התוכן הנוכחי
@@ -119,16 +140,35 @@ $effect(() => {
 
 const isDisabled = $derived(session.status !== "connected")
 
+const dictateListening = $derived(dictate.state === "listening")
+const dictateBusy = $derived(dictate.state === "busy")
+const dictateRequesting = $derived(dictate.state === "requesting")
+const dictateBtnEnabled = $derived(
+  !isDisabled &&
+    mic.state === "idle" &&
+    (dictate.state === "idle" || dictate.state === "listening"),
+)
+const dictateBtnLabel = $derived(
+  dictateListening
+    ? "dictate.stop"
+    : dictateBusy
+      ? "dictate.transcribing"
+      : dictateRequesting && dictate.awaitingPermissionDialog
+        ? "dictate.requesting"
+        : "dictate.start",
+)
+
+$effect(() => {
+  const mode = uiShell.inputMode
+  const state = dictate.state
+  if (mode !== "typing" && state !== "idle") {
+    dictate.cancel()
+  }
+})
+
 function onSubmit(e?: SubmitEvent) {
   e?.preventDefault()
-  const text = promptText.trim()
-  // ─── slice-image-paste Commit 4b: שכבה 2 — תמונה-בלבד מותרת ───
-  if ((!text && attachments.length === 0) || isDisabled) return
-  session.sendPrompt(text, { attachments })
-  promptText = ""
-  // ─── slice-image-paste Commit 4b: ניקוי tray ───
-  attachments.forEach(revokeAttachment)
-  attachments = []
+  void runTypeAreaSubmit({ isDisabled, dictateState: dictate.state, finishListening: () => dictate.finishListening(), draftText: () => draft.text, attachments, sendPrompt: (t, o) => session.sendPrompt(t, o), sessionStatus: () => session.status, clear: () => { draft.clear(); attachments.forEach(revokeAttachment); attachments = [] } })
 }
 
 // ─── image handlers (slice-image-paste) ─────────────────────────────────────
@@ -170,6 +210,13 @@ function handleDragOver(e: DragEvent): void {
   e.preventDefault()
 }
 
+/** מעבד את קבצי-התמונה שב-FileList; שאר הטיפוסים מדולגים בשקט. */
+function processImageFiles(files: FileList): void {
+  for (const file of files) {
+    if (file.type.startsWith("image/")) void processImageFile(file)
+  }
+}
+
 function handleDrop(e: DragEvent): void {
   if (!session.supportsImageInput) return
   e.preventDefault()
@@ -177,11 +224,7 @@ function handleDrop(e: DragEvent): void {
   const files = e.dataTransfer?.files
   if (!files) return
 
-  for (const file of files) {
-    if (file.type.startsWith("image/")) {
-      void processImageFile(file)
-    }
-  }
+  processImageFiles(files)
 }
 
 function handleFileChange(e: Event): void {
@@ -190,11 +233,7 @@ function handleFileChange(e: Event): void {
   const files = input.files
   if (!files) return
 
-  for (const file of files) {
-    if (file.type.startsWith("image/")) {
-      void processImageFile(file)
-    }
-  }
+  processImageFiles(files)
   // reset input כדי שאפשר לבחור אותו קובץ שוב
   input.value = ""
 }
@@ -203,16 +242,24 @@ function removeAttachment(att: ImageAttachment): void {
   revokeAttachment(att)
   attachments = attachments.filter((a) => a.id !== att.id)
 }
-
-function openFilePicker(): void {
-  fileInputEl?.click()
-}
 </script>
 
 <!-- container אנכי: tray מעל, form מתחת (לשמר items-end בתוך ה-form) -->
 <div class="flex flex-col gap-1 w-full">
+  <PendingCaptureBanner
+    error={dictate.error}
+    canRetry={dictate.canRetry}
+    restored={dictate.pendingRestored}
+    onRetry={() => void dictate.retryTranscribe()}
+    onDismiss={() => void dictate.dismiss()}
+    {t}
+  />
+  {#if dictateRequesting && dictate.awaitingPermissionDialog}
+    <p class="text-xs px-1" style="color:var(--fg-dim)" role="status">{t("dictate.requesting")}</p>
+  {:else if !dictate.error && mic.permissionHint}
+    <p class="text-xs px-1" style="color:var(--fg-dim)" role="status">{t(mic.permissionHint)}</p>
+  {/if}
 
-  <!-- ─── attachment tray (slice-image-paste) ─── -->
   {#if attachments.length > 0}
     <div class="flex flex-wrap gap-1.5 px-1">
       {#each attachments as att (att.id)}
@@ -237,10 +284,10 @@ function openFilePicker(): void {
     </div>
   {/if}
 
-  <!-- ─── form (autogrow נשמר — items-end, taEl, MAX_ROWS, rows=1) ─── -->
   <form
     onsubmit={onSubmit}
-    class="flex gap-2 items-end w-full"
+    class="type-area-form flex gap-2 items-stretch w-full"
+    style="--control-h: 2.5rem"
     ondrop={handleDrop}
     ondragover={handleDragOver}
   >
@@ -255,23 +302,47 @@ function openFilePicker(): void {
       onchange={handleFileChange}
     />
 
+    <div class="type-area-left-tools flex gap-2 shrink-0">
     <!-- כפתור הוספת תמונה (גלוי רק כש-supportsImageInput) -->
     {#if session.supportsImageInput}
       <button
         type="button"
-        onclick={openFilePicker}
+        onclick={() => fileInputEl?.click()}
         disabled={isDisabled}
         aria-label={t("attach.addImage")}
         title={t("attach.addImage")}
-        class="shrink-0 rounded-xl p-2 flex items-center"
-        style="color:var(--fg-dim)"
+        class="type-area-control type-area-icon-control shrink-0 rounded-xl p-2 flex items-center"
+        style="color:var(--fg-dim); min-height:var(--control-h)"
       >
         <ImagePlusIcon size={18} strokeWidth={1.75} />
       </button>
     {/if}
 
+    <!-- ─── dictate-to-input: append-only mic (slice dictate-to-input) ─── -->
+    <button
+      type="button"
+      onclick={() => void dictate.toggle()}
+      disabled={!dictateBtnEnabled}
+      aria-pressed={dictateListening ? true : undefined}
+      aria-busy={dictateBusy || dictateRequesting ? true : undefined}
+      aria-label={mic.permissionDenied ? t("dictate.error.permission") : t(dictateBtnLabel)}
+      title={mic.permissionDenied ? t("dictate.error.permission") : t(dictateBtnLabel)}
+      class="type-area-control type-area-icon-control shrink-0 rounded-xl p-2 flex items-center"
+      class:dictate-arming={dictateRequesting && !dictateBusy}
+      style="color:{dictateListening ? 'var(--recording)' : 'var(--fg-dim)'}; min-height:var(--control-h)"
+    >
+      {#if dictateBusy}
+        <Loader2Icon size={18} strokeWidth={1.75} class="animate-spin" />
+      {:else if mic.permissionDenied}
+        <MicOffIcon size={18} strokeWidth={1.75} />
+      {:else}
+        <MicIcon size={18} strokeWidth={1.75} />
+      {/if}
+    </button>
+    </div>
+
     <!-- ─── wrapper: מארח את ה-textarea (ה-dropdown עצמו portal-ל-body — ר' SlashCommandMenu.svelte) ─── -->
-    <div class="flex-1 relative">
+    <div class="type-area-prompt flex-1 relative min-w-0">
     {#if menuOpen && slash && menuRect}
       <SlashCommandMenu
         matches={slash.matches}
@@ -290,21 +361,21 @@ function openFilePicker(): void {
         dir="auto"
         class="absolute inset-0 z-10 rounded-xl px-3 py-2.5 text-sm pointer-events-none overflow-hidden whitespace-pre-wrap break-words"
         style="color:transparent; background:transparent; border:1px solid transparent"
-      ><span style="color:transparent">{promptText}</span><span style="color:var(--fg-muted); opacity:0.6">{ghostHint}</span></div>
+      ><span style="color:transparent">{draft.text}</span><span style="color:var(--fg-muted); opacity:0.6">{ghostHint}</span></div>
     {/if}
     <textarea
       bind:this={taEl}
-      bind:value={promptText}
+      bind:value={draft.text}
       placeholder={t("record.placeholder")}
       rows={1}
       disabled={isDisabled}
-      dir={promptText.length ? "auto" : "rtl"}
+      dir={draft.text.length ? "auto" : i18n.dir}
       role="combobox"
       aria-expanded={menuOpen}
       aria-controls={menuOpen ? "slash-listbox" : undefined}
       aria-activedescendant={menuOpen ? `slash-opt-${selectedIndex}` : undefined}
-      class="w-full rounded-xl px-3 py-2.5 text-sm resize-none outline-none border relative"
-      style="background:var(--bg-card); border-color:var(--border); color:var(--fg); max-height:calc({MAX_ROWS} * 1.5em + 1.25rem)"
+      class="type-area-control w-full rounded-xl px-3 py-2.5 text-sm resize-none outline-none border relative"
+      style="background:var(--bg-card); border-color:var(--border); color:var(--fg); min-height:var(--control-h); max-height:calc({MAX_ROWS} * 1.5em + 1.25rem)"
       onpaste={handlePaste}
       onkeydown={(e) => {
         // ─── slice-slash-commands: keydown-intercept לדפדוף-בתפריט ───────────
@@ -364,16 +435,109 @@ function openFilePicker(): void {
     ></textarea>
     </div>
 
+    <div class="type-area-right-actions flex gap-2 shrink-0">
     <!-- ─── slice-image-paste Commit 4b: שכבה 1 — disabled רק אם אין טקסט ואין תמונות ─── -->
+    <!-- icon-square כמו stop (compact-align): אותם גודל/צורה בערימה האנכית -->
     <button
       type="submit"
-      disabled={(!promptText.trim() && attachments.length === 0) || isDisabled}
-      class="rounded-xl px-4 py-2.5 text-sm font-semibold flex items-center gap-1.5 shrink-0"
-      style="background:var(--accent); color:white"
+      disabled={!(draft.text.trim().length > 0 || attachments.length > 0 || dictate.state === "listening") || isDisabled || dictate.state === "busy"}
+      class="type-area-control type-area-icon-control shrink-0 rounded-xl p-2.5 flex items-center justify-center"
+      style="background:var(--accent); color:white; min-height:var(--control-h)"
       aria-label={t("record.send")}
     >
       <SendIcon size={16} strokeWidth={2} style="transform:scaleX(-1)" />
     </button>
+
+    <!-- ─── slice control-roles: כפתור עצור-ריצה קבוע (disabled כשאין ריצה) ─── -->
+    <button
+      type="button"
+      disabled={!modelStatus.isRunActive}
+      onclick={() => voiceMode.cancelRun()}
+      class="type-area-control type-area-icon-control type-area-stop-run shrink-0 rounded-xl p-2.5 flex items-center justify-center"
+      style="min-height:var(--control-h)"
+      aria-label={t(modelStatus.stopRunLabelKey)}
+    >
+      <OctagonXIcon size={16} strokeWidth={2} />
+    </button>
+    </div>
   </form>
 
 </div>
+
+<style>
+  form.type-area-form {
+    container-type: inline-size;
+    container-name: type-area;
+  }
+
+  .type-area-left-tools,
+  .type-area-right-actions {
+    display: flex;
+    align-items: center;
+  }
+
+  /* צפוף: 2×2 אנכי צמוד + textarea בגובה הערימה (לא items-end שמשאיר חור) */
+  @container type-area (max-width: 26rem) {
+    .type-area-left-tools,
+    .type-area-right-actions {
+      flex-direction: column;
+      gap: 0.25rem; /* gap-1 */
+      align-self: stretch;
+      justify-content: flex-start;
+    }
+
+    .type-area-prompt {
+      display: flex;
+      flex-direction: column;
+      align-self: stretch;
+    }
+
+    .type-area-prompt textarea.type-area-control {
+      flex: 1 1 auto;
+      /* רצפה = 2 כפתורים + gap — ה-$effect ל-autogrow לא יורד מתחת לזה */
+      min-height: calc(2 * var(--control-h) + 0.25rem);
+      box-sizing: border-box;
+    }
+  }
+
+  textarea.type-area-control {
+    display: block;
+  }
+
+  button.type-area-icon-control {
+    aspect-ratio: 1;
+  }
+
+  button.type-area-stop-run {
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--fg-dim);
+  }
+
+  button.type-area-stop-run:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  button.type-area-stop-run:not(:disabled) {
+    border: 1px solid var(--recording);
+    color: var(--recording);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  button.dictate-arming {
+    animation: dictate-arm-pulse 1s ease-in-out infinite;
+    cursor: wait;
+  }
+
+  @keyframes dictate-arm-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.45;
+    }
+  }
+</style>

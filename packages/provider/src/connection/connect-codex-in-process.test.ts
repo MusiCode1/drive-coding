@@ -17,7 +17,7 @@
 
 import { PassThrough } from "node:stream"
 import { describe, expect, it, vi, afterEach } from "vitest"
-import { resolveCodexPath } from "./connect-codex-in-process.js"
+import { resolveCodexPath } from "../providers/codex/connect-in-process.js"
 
 // ─── resolveCodexPath tests ────────────────────────────────────────────────────
 //

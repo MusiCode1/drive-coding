@@ -74,6 +74,317 @@ The current slice roadmap is `docs-for-llm/frontend/slices.md`.
 - No `any` — use `unknown` + ArkType to refine.
 - No deep `null` — `T | undefined` or Option pattern.
 
+### 🔴 A fail-open path is not implemented until its silence is pinned
+
+Fail-open is the right default for anything that must not block the user — hooks,
+prompt injection, optional fetches. It is also the most dangerous shape we have:
+**a broken fail-open path looks exactly like a healthy one that had nothing to do.**
+Both are "exit 0, no output". Nothing goes red, so nothing gets looked at.
+
+Three mechanisms were found dead on 2026-09-01, all the same shape: a scoped-write
+escalation the child could answer itself, a watcher that never notified on the MCP
+path, and a surface hook that reached one CLI out of three. None of them had a test,
+and all three had been silently useless for days.
+
+⇒ **Every fail-open path needs one of these before it counts as done:**
+
+1. a test that asserts the silent branches (not just the happy one), or
+2. a live probe whose result is written down with a date.
+
+`packages/provider/hooks/cursor/inject-prompt.test.ts` is the reference shape:
+five of its nine cases assert `exit 0 + empty stdout` — no agent id, backend down,
+non-2xx, wrong content-type, empty body. The happy path was never the risk.
+
+### 🔴 ‏ואדום-בבסיס אינו שלך — ‏חמישה שערים אדומים לפני שנגעת
+
+‏**‏לפני שאתה מסיק ששברת משהו, ‏קרא את זה.** ‏נמדד על `edge @ 968c56ce`
+‏ע"י שלושה סוכנים בלתי-תלויים, ‏ואומת שוב ב-11/10/2026:
+
+| ‏השער | ‏מה הוא מחזיר על בסיס **‏נקי** |
+|---|---|
+| `bun run typecheck` | ‏🔴 ‏`rc=1` ‏— ‏**‏29 ‏שגיאות ב-10 ‏קבצים** |
+| ‏סוויטת-הטסטים של ה-FE | ‏🔴 ‏**‏3 ‏סוויטות נופלות** (‏שורש: ‏`vi.mock` ‏של `tts-resolve` ‏מול `settings-persistence.ts` ‏⇒ ‏שרשרת-היבוא קורסת לפני שרץ טסט). ‏🛑 ‏**‏ובעץ טרי — ‏קודם `bunx svelte-kit sync`**, ‏ר' ‏מיד למטה |
+| `npx tsc --build` | ‏`rc=0` ‏— ‏אבל ‏🛑 ‏**‏עיוור ל-`packages/frontend`**: ‏ה-`tsconfig.json` ‏בשורש מפנה ל-4 ‏חבילות בלי FE |
+| `bunx biome check …/session-host-scope.ts` | ‏🔴 ‏`Found 2 errors` |
+| `lint-file-size.mjs` ‏אחרי חילוץ **‏מוצלח** | ‏🔴 ‏`rc=1` ‏— ‏חסר `--update-baseline` |
+
+‏🛑 **‏ו-"‏3 ‏סוויטות" ‏תקף רק בעץ מסונכרן.** ‏סקריפט-הטסט של ה-FE ‏הוא `vitest run` ‏**‏חשוף**
+(`packages/frontend/package.json`), ‏ו-`.svelte-kit/` ‏**‏ב-gitignore** (`.gitignore:4`) ‏⇒ ‏בעץ
+‏שנוצר ב-`git worktree add` ‏הוא **‏אינו קיים**. ‏⇒ ‏בעץ חדש, ‏לפני כל מדידת-בסיס:
+
+```bash
+bun install && bunx svelte-kit sync
+```
+
+‏⚠️ **‏מה נמדד ומה לא:** ‏שהסקריפט חשוף ושהתיקייה ב-gitignore — ‏**‏אומת**. ‏שבלי הצעד
+‏**‏כל 190 ‏הקבצים נכשלים ב-collect** ‏— ‏נמדד ע"י אימות-בריף ‏(`scope-escalation-timeout`,
+‏ממצא 5), ‏**‏ולא שוחזר עצמאית** ‏— ‏שלושת העצים הפעילים כבר מסונכרנים. ‏⇒ ‏מי שרואה
+‏**‏את כל** ‏הסוויטות אדומות בעץ טרי: ‏זה הצעד החסר, ‏לא רגרסיה.
+
+‏⇒ ‏**‏כל DoD ‏מול שער כזה הוא דלתא, ‏לא מוחלט.** ‏ושער-טיפוסים הוא **‏שתי
+‏שכבות, ‏ושתיהן חובה**: ‏`npx tsc --build` ‏(`rc=0` ‏מוחלט) ‏**‏+**
+‏`bun run typecheck:fe` ‏(‏סך ≤29 ‏*‏וגם*‏ ‏אפס בקבצים שנגעת — ‏ספירה לבדה אינה שער).
+
+### 🛑 ‏וחמישה מנגנונים שמייצרים **‏"ירוק שמשמעותו לא-נבדק"**
+
+| ‏המנגנון | ‏מה קורה |
+|---|---|
+| `cmd-a && cmd-b` | ‏`cmd-a` ‏נכשל ‏⇒ ‏**‏`cmd-b` ‏לא רץ** ‏והשער נעלם בשקט |
+| `cmd \| tail` | ‏**‏הצינור בולע את ה-rc.** ‏נמדד: ‏`biome check <f>` ‏⇒ ‏`1`; ‏עם `\| tail -1` ‏⇒ ‏**‏`0`** |
+| `tsc --build` ‏על FE | ‏אין פרויקט לבדוק ‏⇒ ‏ירוק חסר-משמעות |
+| `lint:size` ‏בלי staging | ‏**‏אינרטי** ‏— ‏`rc=0` ‏ושקט. ‏`rc=2` ‏נגיש **‏רק** ‏כשקובץ-המקור ב-index (`:855`) |
+| `vitest` ‏שלא עלה | ‏**‏`rc=1` ‏שמשמעותו "‏לא רץ"**, ‏לא "‏נכשל". ‏הסימן המבדיל: ‏שורת `Tests  N passed` ‏קיימת רק כשהריצה התרחשה |
+
+‏🔑 ‏**‏ולכן, ‏בכל חילוץ:**
+
+```bash
+git add -- <קובצי-המקור> size-baseline.json   # 🛑 ‏שניהם באותו add, ‏נתיבים מפורשים
+node scripts/lint-file-size.mjs               # ‏קרא את `fails`, ‏לא את ה-rc ‏כשלעצמו
+node scripts/lint-file-size.mjs --update-baseline
+node scripts/lint-file-size.mjs
+```
+
+‏⚠️ ‏`stale` ‏נבדק על `metric` ‏ו-must-shrink על `codeLines`. ‏ב-`.svelte`
+‏ה-`metric` ‏הוא `scriptLines`, ‏ולכן **‏חילוץ markup ‏מחזיר `rc=0` ‏ישר** ‏ואין
+‏`stale` ‏כלל. ‏**‏אל תקבע "‏צפוי rc=1" ‏— ‏קבע את התנאי.**
+
+### ‏🔴 ‏ומה שאין לו שער בכלל: ‏**‏ערכי קטלוגי ה-i18n**
+
+‏`lint:i18n` ‏בודק עברית **‏קשיחה בקוד** ‏ו**‏מחריג את `catalogs/`**
+(`scripts/lint-no-hebrew-in-code.mjs:37`); ‏`typecheck` ‏בודק **‏מפתחות** ‏בלבד;
+‏אין קובץ-טסט תחת `i18n/`. ‏⇒ ‏**‏כ-560 ‏ערכים בלי שום הגנה.**
+
+‏נמצא בפועל 11/10: ‏`settings.inputDevice.label` ‏נכתב `מיקרофон` ‏עם
+‏**‏U+043E ‏ו-U+0444 ‏קיריליים** ‏— ‏ומכיוון שקירילית היא LTR ‏בתוך מחרוזת RTL,
+‏גם הכיווניות נשברה. ‏**‏מי שתפס: ‏המשתמש, ‏בעין, ‏על הפריוויו.**
+
+🛑 **‏שרשרת-הגרסאות של משטח-הסוכן היא *‏חמישה*‏ ‏חפצים:** ‏front-matter ‏·
+‏`DOCS_VERSION` ‏· ‏`index.json` ‏· ‏`llms.txt` ‏(‏שניהם ‏← ‏`bun run docs:index`) ‏·
+‏ו-**‏`openapi.json`** ‏← ‏**‏`bun run docs:openapi`, ‏סקריפט נפרד.**
+
+### 🔴 ‏ומה שמת כשסוכן נסגר — ‏cgroup, ‏לא זיכרון
+
+‏**‏כל תהליך שמופעל מתוך תור של סוכן יושב ב-cgroup ‏של `dc-agent-<id>.service`.
+‏כשה-unit ‏נעצר, ‏systemd ‏שולח SIGTERM ‏לכל הקבוצה.** ‏נמדד 11/10/2026:
+
+```
+systemd: dc-agent-….service: State 'final-sigterm' timed out. Killing.
+```
+
+‏⇒ ‏`vite build` ‏שרץ מתוך תור נהרג ב-**‏SIGTERM (143)**, ‏לא ב-OOM-kill (137),
+‏**‏ובכל כמות זיכרון**. ‏אותה בנייה ב-tmux ‏הצליחה ב-67 ‏שניות כש-`available`
+‏ירד עד **‏724MB**. ‏⚠️ ‏⛔ ‏ההסבר "‏נגמר הזיכרון" ‏נבדק ו**‏הופרך**.
+
+‏ואותו מנגנון הפיל **‏ארבעה BE ‏של פריוויו** ‏כשהסוכנים שהקימו אותם נסגרו.
+‏🔑 ‏ההבדל בין `404` ‏ל-`502` ‏הוא הראיה: ‏404 = ‏גם המנהרה מתה (‏רצה בתוך הסוכן);
+‏502 = ‏המנהרה שרדה (‏הוקמה ב-`nohup`) ‏וה-BE ‏מת.
+
+🛑 **‏ולכן: ‏בנייה · ‏BE ‏של פריוויו · ‏מנהרה · ‏סריקה ארוכה — ‏ב-tmux ‏או ב-`nohup`,
+‏מחוץ ל-cgroup ‏של הסוכן.** ‏תנאי-קיום, ‏לא נוחות.
+
+> **‏הגוף המלא** ‏— ‏כל המדידות, ‏הפקודות, ‏שש צורות ה-`gate-cannot-fail`
+> ‏(‏14 ‏מתוך 14 ‏החוסמים בסבב ארבעת-הסלייסים היו מהמחלקה הזאת), ‏ומה שעדיין
+> ‏**‏אינו מוסבר** ‏(‏`vite build` ‏נהרג ב-SIGTERM ‏ולא ב-OOM-kill) ‏—
+> ‏`docs-for-llm/investigations/2026-10-11-gates-that-cannot-fail.md`.
+
+## 🔴 `agent-session.svelte.ts` — ‏מהקובץ הזה **רק מסירים**
+
+```json
+// size-baseline.json — ‏עודכן אחרי סלייס agent-session-mechanical-split (28/09/2026)
+"packages/frontend/src/lib/view-models/agent-session.svelte.ts":
+  { "metric": 3445, "impurity": 78, "class": "scattered", "codeLines": 2124 }
+// size-budgets.json — view-models budget: 400
+```
+
+**3,445 שורות מול תקציב 400 — פי 8.6**, עם `class: "scattered"` (‏הסיווג החמור
+בסכימה). ‏הקובץ הבא אחריו ב-FE הוא 1,351 שורות.
+
+‏הנתיב עד כאן: ‏**3,675 → 3,599 → 3,445**. ‏הירידה האחרונה (‏−154) ‏היא סלייס
+`agent-session-mechanical-split`, ‏שהוציא 13 ‏גושים לתשעה מודולים
+(`agent-session-{apply-config,bubble-append,capture-config,config-choice,delete,`
+`drain-view-patches,quota-refresh,request-permission,session-end}.ts`).
+‏🔑 **‏מה שהסלייס לימד:** ‏חילוץ מכני **‏אינו** ‏מוריד את מה שגודל-הגוש מבטיח.
+‏319 ‏שורות-ברוטו עברו, ‏אבל ‏~165 ‏חזרו כשארית — ‏בלוקי `#…Deps()` (‏~110)
+‏ועוטפים שנשארו במחלקה כדי לא לגעת בקריאות ובטסטים. ‏מי שמתכנן יעד-שורות
+‏מסכימת גדלים ‏**‏יחטיא בפי-שניים**.
+
+‏🟢 **אכיף היום**: `.githooks/pre-commit` מריץ `node scripts/lint-file-size.mjs`,
+‏שהוא ratchet מונוטוני — ‏גדילה של קובץ-בסיס **מפילה את הקומיט**, ו-
+‏`--update-baseline` *"refuses to raise any number"*.
+‏⚠️ ‏**אין CI** — ‏`git commit --no-verify` עוקף. ‏האכיפה תלויה גם במשמעת.
+
+### ‏🔴 ‏אכיפה: ‏`lint:size` ‏דורש **‏כיווץ**, ‏לא רק אי-גדילה
+
+‏מאז 28/09 ‏הכלל אכיף אוטומטית. ‏קובץ ש-`metric > effectiveBudget` ‏**ונמצא
+‏ב-staging של הקומיט** ‏חייב לרדת:
+
+| סף | ערך |
+|---|---|
+| ‏ירידה ב**שורות-קוד** | ‏**≥15** |
+| ‏(‏ירידה ב-`wc -l` ‏≥25) | ‏**‏fallback בלבד** — ‏לרשומת-baseline ישנה בלי `codeLines` |
+
+### ‏🟢 ‏תוקן 29/09 — ‏**‏שינוי שאינו קוד אינו חוסם ואינו חייב מס**
+
+‏עד 29/09 ‏הכלל נגזר מ-`wc -l`, ‏ולכן **‏תיקון הערה בקובץ חורג עלה 25 ‏שורות
+‏חילוץ** — ‏וסוכן דילג על שיפור הערה במקום לשלם. ‏הכלל לימד את ההפך ממטרתו.
+
+| ‏מה שונה | ‏כעת |
+|---|---|
+| ‏כלל הגדילה | ‏נשען על **`codeLines`**. ‏הערה / ‏JSDoc / ‏שורה ריקה — ‏חופשיים |
+| ‏מס-החילוץ | ‏חל רק כש-`codeLines` ‏**‏השתנה**. ‏עריכת-הערה טהורה פטורה |
+| ‏`metric` (`wc -l`) | ‏**‏מידע בלבד**, ‏לא בסיס-חסימה |
+
+‏⚠️ **‏מגבלה מוצהרת של המדידה:** ‏ריפקטור ששומר `codeLines` ‏זהה נקרא
+‏"‏לא-שינוי-קוד" ‏וחומק מהמס. ‏מקובל — ‏זיהוי מבוסס-diff ‏הוא מנגנון גדול
+‏מהכלל עצמו. ‏`scripts/lint-file-size.test.mjs` ‏מקבע את שלושת המקרים, ‏והטסט
+‏של הפטור נושא **‏שער-שפיות** ‏שמאמת שהכלל פעיל לפני שהוא בודק את הפטור.
+
+### ‏🟢 ‏תוקן 30/09 — ‏הערת-תבנית ב-`.svelte`, ‏והמדידה שהיא שיברה
+
+‏הפטור מ-29/09 ‏כיסה `//` ‏ו-`/* */` ‏בלבד. ‏`stripComments` ‏לא הכיר
+‏`<!-- -->`, ‏ולכן **‏הערה בתבנית `.svelte` ‏נספרה כקוד** ‏וחייבה מס-חילוץ —
+‏בדיוק ההפך מכוונת הכלל. ‏נוסף ענף html, ‏**‏מופעל לפי סיומת בלבד** ‏כדי
+‏ש-`a < !--b` ‏ב-TS ‏לא ייגע.
+
+‏🔴 **‏והתיקון חשף שהמספרים עצמם לא היו מדידה.** ‏הערות בעברית מכילות גרש
+‏בודד (`ר'`). ‏בסטריפר הישן הוא **‏פתח מחרוזת** ‏ודה-סינכרן את זוגיות הגרשים
+‏**‏לכל שאר הקובץ**; ‏שורות markup ‏אמיתיות נבלעו ונספרו כריקות.
+
+| ‏קובץ | ‏baseline ‏ישן | ‏אמיתי |
+|---|---|---|
+| `ActiveProcessesPanel.svelte` | 229 | **‏663** |
+| `TypeArea.svelte` | 277 | **‏439** |
+| `routes/+page.svelte` | 145 | **‏307** |
+
+‏**‏9 ‏מתוך 86 ‏קובצי `.svelte`** ‏הושפעו; ‏7 ‏קיבלו רה-בסיס כתיקון-מדידה
+(`3907afc4`). ‏⇒ **‏כל מספר `codeLines` ‏של `.svelte` ‏שנרשם לפני 30/09 ‏חשוד**,
+‏ואין להשוות אליו. ‏שלושה טסטים מקבעים את השלושה: ‏הערה אינה קוד · ‏גרש בהערה
+‏אינו בולע markup · ‏`.ts` ‏אינו מושפע.
+
+### ‏🛑 ‏מלכודת: ‏`size-baseline.json` ‏ורזולוציית-מיזוג
+
+‏קובץ JSON ‏שכל ענף נוגע בו הוא **‏מגנט להתנגשויות**, ‏וההתנגשות **‏שקטה**:
+‏ב-`f7d01bb2` ‏שני צדי המיזוג עדכנו את רשומת `agent-session.svelte.ts`, ‏והפתרון
+‏בחר את המספר **‏הנמוך** (`codeLines` ‏2054 ‏מול 2055, ‏`metric` ‏3321 ‏מול 3330).
+
+‏ה-baseline ‏תיאר גרסה שלא הייתה קיימת אחרי המיזוג, ‏ולכן **‏כל `git push`
+‏ל-edge ‏נחסם על הפרש של שורה אחת** — ‏במשך ימים, ‏בלי שאיש יֵדע למה.
+‏תוקן ב-`d297cc91`.
+
+‏🔑 **‏איך מזהים:** ‏`code grew N → N+1` ‏על קובץ ש**‏לא נגעת בו**. ‏לפני שמניחים
+‏"‏מישהו דחף עם `--no-verify`" — ‏`git log -- size-baseline.json` ‏ו-`git show`
+‏על המיזוג האחרון. ‏נצרב: ‏הסקתי עקיפה מתסמין, ‏והאמת הייתה רזולוציה שגויה.
+
+‏🔑 **‏למה שני מדדים:** ‏`countLines` ‏הוא `wc -l` — ‏סופר הערות ושורות ריקות.
+‏בלי מדידת-קוד נפרדת, ‏מחיקת 25 ‏שורות הערה הייתה מספקת את הכלל **‏בלי לחלץ
+‏דבר**. ‏`codeLines` ‏מחושב מ-`stripCommentsAndStrings`, ‏ונשמר ב-baseline.
+
+‏**‏הכלל אינרטי כשאין staging** — ‏`bun run lint:size` ‏על עץ נקי, ‏ריצה ידנית
+‏וסביבה בלי git אינם מושפעים.
+
+### ‏ארבע שכבות — ‏רכה מוקדם, ‏קשה מאוחר
+
+‏`lint:size` ‏מחזיר **‏שלושה** ‏קודים: ‏`0` ‏נקי · ‏`1` ‏חסימה · ‏`2` ‏must-shrink.
+‏ההבחנה חיה **בסקריפט**, ‏לא ב-hook — ‏git ‏חוסם על כל קוד ≠ 0 ‏(‏נמדד), ‏ולכן
+‏hook שמחזיר 2 ‏היה חוסם בדיוק כמו 1.
+
+| שכבה | מה | חוסם? | שורד `--no-verify`? |
+|---|---|---|---|
+| ‏`bun run lint:size` | ‏`exit 2` | — | — |
+| ‏`pre-commit` | ‏מתרגם 2→0 ‏ומדפיס | ❌ | ❌ |
+| ‏**`post-commit`** | ‏מזכיר אחרי הקומיט | ❌ | ✅ |
+| ‏`pre-push` | ‏חוסם — **‏must-shrink + ‏`tsc --build`** | ✅ | ❌ |
+| ‏**`dod-check.sh check`** | ‏חוסם | ✅ | ✅ — **‏אינו hook** |
+
+**‏למה `exit 2` ולא הודעה בלבד:** ‏סוכן בודק קוד-יציאה, ‏לא טקסט. ‏`exit 0`
+‏פירושו "‏המשך" ‏והאזהרה נבלעת. ‏קוד ≠ 0 ‏נתפס גם בלי לקרוא.
+
+**‏למה `post-commit`:** ‏`--no-verify` ‏מדלג על `pre-commit` ‏**‏כולו**, ‏כלומר מי
+‏שעוקף חסימה מאבד גם את האזהרה. ‏`post-commit` **‏אינו מדולג** (‏נמדד 28/09),
+‏ולכן התזכורת מגיעה גם אליו.
+
+**‏למה הקומיט אינו היחידה הנכונה:** ‏ה-ratchet משווה מול baseline שמתעדכן אחרי
+‏כל כיווץ. ‏סלייס שמחלץ בקומיט אחד ומוסיף גטרים בשני — ‏השני נכשל, ‏אף
+‏שהסלייס בסך-הכול כיווץ. ‏לכן החסימה חיה ב-pre-push וב-dod-check, ‏שם היחידה
+‏היא הענף/הסלייס.
+
+‏עקיפה: ‏`--no-verify` ‏ב-commit וב-push. ‏⚠️ ‏אין CI. ‏**‏`dod-check` ‏הוא השער
+‏היחיד שאינו ניתן לעקיפה בדגל** — ‏רק בכך שלא מריצים אותו, ‏וזה נראה בדוח.
+
+### מס-החילוץ — ‏הכלל
+
+**סלייס שנוגע בקובץ מחלץ ממנו חתיכה לוגית מאותו תחום שהוא עובד עליו.**
+‏מי שנוגע בלוגיקת-איפוס מחלץ לוגיקת-איפוס; ‏מי שנוגע בפריימים מחלץ טיפול-פריימים.
+‏החילוץ נעשה במקום שבו ממילא יש הקשר מלא — ‏וזה מה שהופך אותו לזול ולבטוח.
+
+**מדד-הבחירה הוא צימוד, לא גודל:**
+
+```bash
+# כמה שדות פרטיים הבלוק נוגע בהם
+sed -n '<start>,<end>p' <file> | grep -oE 'this\.#[a-zA-Z][a-zA-Z0-9_]*' | sort -u | wc -l
+```
+
+‏≤5 ⇒ ‏מועמד טוב. ‏20+ ⇒ ‏סלייס נפרד, לא מס-אגב.
+
+‏`#cleanup` — ‏76 שורות, ‏**21** ‏שדות (‏לא לגעת אגב).
+
+### מועמדים ידועים
+
+‏🛑 **‏תוקן 28/09/2026 — ‏הגרסה הקודמת של הטבלה הכילה שלושה מספרים שגויים**,
+‏שנמדדו בספירת-שורות בין כותרות במקום בהתאמת-סוגריים. ‏מי שתכנן לפיהם תכנן
+‏על חילוץ שאינו קיים:
+
+| ‏מה נכתב | ‏מה נמדד בפועל |
+|---|---|
+| ‏`#resetTurnTracking` — ‏106 שורות | ‏**7** (‏הטווח 501–607 ‏הוא ברובו הצהרות-שדה שאחריה) |
+| ‏`constructor` — ‏263 שורות | ‏**26** |
+| ‏`#cleanup` — ‏82 שורות | ‏**76** |
+
+‏⚠️ ‏חתימות בקובץ הזה מכילות **‏טיפוסי-אובייקט מוטבעים**, ‏ולכן ספירת `{`/`}`
+‏נאיבית נסגרת על ה-`},` ‏של הפרמטר ומחזירה גבול שגוי. ‏פרסר תקין חייב להתחיל
+‏לספור רק כשעומק-הסוגריים-העגולים הוא 0.
+
+| חתיכה | שורות | ‏שורות-קוד | צימוד (‏שדות פרטיים) |
+|---|---|---|---|
+| `#onSessionUpdate` | 272 | 213 | 15 |
+| `#warmReconnect` | 140 | 99 | **24** |
+| `switchSession` | 101 | 74 | 12 |
+| `attach` | 87 | 70 | **21** |
+| `#loadMockSession` | 78 | 62 | 7 |
+| `#cleanup` | 76 | 46 | **21** |
+
+‏ששתן = ‏**754 שורות**, ‏כ-22% ‏מהקובץ. ‏בקצב של אחת לסלייס זה נפרע בלי אף
+‏סלייס-ריפקטור ייעודי.
+
+‏🛑 **‏`#handleSubagentToolCallUpdate` ‏הוסר מהטבלה 28/09/2026 — ‏הוא כבר חולץ**
+‏ל-`subagent-tool-nesting.ts`, ‏ומה שנשאר בקובץ הוא קריאה
+(`agent-session.svelte.ts:3163`). ‏השורה הזאת הבטיחה חילוץ בן 50 ‏שורות שאינו קיים.
+
+‏⚠️ **‏מה שסלייס `mechanical-split` ‏כבר לקח** (‏28/09) — ‏אין לתכנן עליהם שוב:
+`#isValidChoice` · ‏`#appendUser{Image,Placeholder}` · ‏`#appendAgentPlaceholder` ·
+`#drainViewPatches` · ‏`#doRefreshQuota` · ‏`#onRequestPermission` ·
+`#applyConfigToClient` + ‏`applyConfigOption` · ‏`deleteSession` ·
+`#captureSessionConfig` · ‏`onSessionEnd` + ‏`#endSessionScope`.
+
+‏🔴 **‏ומה שנמדד כחסום:** ‏`#coldReconnect` (‏8 ‏שדות-גרעין), ‏`cancelTurn` (‏6)
+‏ו-`#loadMockSession` (‏5+) ‏אינם ניתנים לחילוץ מכני — ‏אובייקט-`deps` ‏בגודל כזה
+‏אינו חילוץ אלא העברת-המחלקה. ‏**‏כל שש החתיכות שנשארו בטבלה נוגעות ב-5+ ‏שדות-גרעין**
+(‏נמדד: ‏`switchSession` ‏6, ‏`#cleanup` ‏~11, ‏והשאר יותר) — ‏כלומר הצעד הבא ששווה
+‏משהו הוא **‏הכרעה ארכיטקטונית** (‏המרת `#` ‏ל-`private`, ‏שתפתח חילוץ אמיתי),
+‏לא עוד סבב מכני.
+
+‏"‏גרעין" = ‏22 ‏שדות פרטיים שש-‏6+ ‏חברים נוגעים בהם. ‏לשחזור:
+`node /tmp/ms-block-ranges2.mjs` ‏אינו בריפו — ‏המדידה נעשתה בפרסר-AST חד-פעמי
+‏(‏ר' ‏דוח `mechanical-split-avigail.md` ‏ב-`$BDS_REPORTS/drive-coding/`).
+
+‏🔴 **‏גטר אינו שורה אחת.** ‏Biome ‏מרחיב כל גוף-פונקציה, ‏ולכן זוג get/set
+‏עולה **‏6 שורות**. ‏מי שמחליף שדה בגטר-האצלה **‏מגדיל** ‏את הקובץ, ‏וה-ratchet
+‏חוסם אותו כ-`fails` (‏exit 1), ‏לא כאזהרת must-shrink. ‏נמדד בסלייס
+‏`session-scope-migration`: ‏9 ‏שדות ⇒ ‏+54 ‏שורות גטרים.
+
+**הכרעת-משתמש 28/09:** *"בכל פעם שניגע שם, נוציא חתיכה לוגית בהתאם למה
+שאנחנו מתעסקים איתו. ככה בסוף זה ייגמר."*
+
 ## Versioning — מספור גרסאות (טקס מיזוג)
 
 > ה-bump קורה **בכל מיזוג ל-dev** (לא בכל commit) — חלק מטקס-המיזוג של מרדכי, אחרי calev GO + אישור משתמשת.
@@ -101,12 +412,35 @@ git push origin dev
 bun install
 bun run dev           # all packages
 bun run test          # all tests
-bun run typecheck
+bun run typecheck     # tsc --build (core/backend/provider) + svelte-check (frontend)
+bun run typecheck:fe  # frontend only — svelte-check
 bun run lint          # Biome
 bun run lint:i18n     # scripts/lint-no-hebrew-in-code.sh — blocks Hebrew in code
 bun run format
 bun run hooks:install # one-time: set core.hooksPath=.githooks (runs pre-commit lint)
 ```
+
+> ⚠️ **The frontend is inside `typecheck` since 2026-08-31.** `tsconfig.json` at the root
+> referenced only `core` and `backend`, so `tsc --build` never saw `packages/frontend` —
+> it is checked by `svelte-check`, which nothing ran automatically. 63 type errors
+> accumulated there unnoticed. `typecheck` now chains both; keep it that way.
+
+### ‏🟢 ‏נוסף 29/09 — ‏`tsc --build` ‏הוא שער ב-`pre-push`
+
+‏השורש references ‏היום **‏ארבעה**: ‏`core` ‏· ‏`backend` ‏· ‏`acp-wire` ‏· ‏**‏`provider`**.
+‏האחרון נוסף בסלייס `typecheck-gate`, ‏וזה **‏לא** ‏שינוי-נוחות: ‏בלעדיו קבצי-הטסט
+‏של `provider` ‏**‏אינם עוברים בדיקת-טיפוסים כלל**. ‏נמדד בבקרה — ‏שגיאה שהוזרקה
+‏ל-`client.create-elicitation.test.ts` ‏נתפסה **‏עם** ‏ה-reference, ‏והחזירה `0` ‏שגיאות
+‏**‏בלעדיו**, ‏על אותו קובץ שבור בדיוק.
+
+‏🔴 **‏למה `tsc --build` ‏ולבדו.** ‏השער נולד מ-`bugs/archive/73` (‏elicitation ‏מת
+‏שבוע בעוד `tsc` ‏מדפיס שתי שגיאות שאיש לא הריץ). ‏החצי השני של `bun run typecheck`
+‏הוא `svelte-check` — ‏**‏36ש' ‏מול 12ש'**, ‏והוא בודק **‏רק את ה-FE**. ‏הבאג ישב
+‏ב-`packages/provider`, ‏כלומר `svelte-check` ‏לא היה נוגע בו גם אילו רץ:
+‏שלושה רבעים מהעלות עבור אפס כיסוי על הכשל שקרה בפועל. ‏`svelte-check` ‏נשאר ידני.
+
+‏⚠️ ‏`pre-commit` ‏**‏לא** ‏השתנה — ‏קומיטים תכופים מ-push, ‏והנזק (‏קוד שבור שיוצא
+‏החוצה) ‏מתגלה ב-push. ‏עקיפה: ‏`git push --no-verify`, ‏ואין CI.
 
 > **Per-package commands** stay PM-agnostic via `node scripts/pm.mjs run-filter <pkg> <script>`
 > (it detects bun from the user-agent), or directly as `bun run --filter <pkg> <script>`.
@@ -154,6 +488,20 @@ the FE for the **user** to inspect, follow these rules:
 3. **Hand over a URL the user can actually open over HTTPS** — that is the deliverable
    of a preview, not a "it builds" report.
 
+4. **Close the preview the moment the user approves.** The preview exists for the
+   approval moment; once the user says "merge", nothing consumes it. Kill the BE and
+   the tunnel (only PIDs you launched — other agents run here too). Closing it is part
+   of the merge ritual, not an afterthought: an open preview holds a port, a tunnel,
+   and **a worktree that cannot be removed while it lives** — which is the usual reason
+   post-merge cleanup "didn't work". Merge is not done until preview + worktree +
+   branch are all closed (method: `brief-driven-slices` → `workflow.md`
+   §ניקוי-אחרי-מיזוג).
+
+   > Measured 2026-08-31: worktrees had piled to **95**, about **50 of them merged and
+   > clean** — leftovers. A one-off sweep took it back to 51. Use
+   > `bun run worktrees:prune` (it refuses to remove a worktree with a live process
+   > inside — `git worktree remove` does **not** check that).
+
 > **TODO (after `ui-session-polish` is merged):** make the preview target
 > **environment-variable driven** (localhost vs. tunnel, and the tunnel URL) so the
 > serve flow is config-driven instead of decided ad-hoc per run. Tracked as a
@@ -165,14 +513,54 @@ After clone, run `bun run hooks:install` once. It sets `core.hooksPath=.githooks
 so `.githooks/pre-commit` runs the i18n lint before every commit. To skip a
 specific commit (rare): `git commit --no-verify`.
 
-## Worktrees
+### Agent docs freshness (`pre-push`)
 
-All worktrees live under `.worktrees/<name>/`. Branch names use the `slice/` prefix;
-the worktree **directory omits it** (a slash would nest a subdir). Create one with:
+When the size ratchet passes (`lint-file-size.mjs` exit 0), `pre-push` also runs
+`node scripts/lint-docs-fresh.mjs`. It compares the **push range** (stdin from
+git, or `merge-base` with upstream, or unpushed commits on the branch) against
+agent-docs surfaces: HTTP route registration, MCP tools, `_drive/*` extensions
+(`extMethods` in `packages/provider/src/extensions/schema.ts` → a doc's `ext_methods:`),
+render contract, new FE pages, config keys, `DOCS_VERSION` vs edited `docs/agents/*.md`,
+and `99-known-issues.md` vs the private bug register.
+
+**Before a release, run it over the whole release range** — a push only checks its own
+commits, so a gap that built up across many pushes stays green push by push. Measured
+2026-11-18: three MCP tools had been undocumented for two months, invisible to every push.
 
 ```bash
-git worktree add .worktrees/<name> -b slice/<name> dev   # branch: slice/<name> | dir: .worktrees/<name>
+node scripts/lint-docs-fresh.mjs --range origin/dev..HEAD < /dev/null   # needs docs-for-llm/
 ```
+
+The gate is **fail-open**: missing `docs-for-llm/`, a non-git tree, or an
+unresolvable range exits 0 with no output. Any internal error also exits 0.
+
+**Convention (not enforced):** when you edit an agent doc, bump `docs_version` on
+that doc and raise `DOCS_VERSION` in `packages/core/src/docs/index.ts` in the
+same push range. The linter only requires that *some* doc change in the range
+pairs with a semver increase of `DOCS_VERSION`; it does not require the edited
+file’s `docs_version` to match HEAD, only `<= DOCS_VERSION`.
+
+There is **no CI**; hooks can be skipped with `git push --no-verify`.
+
+## Worktrees
+
+All worktrees live under **`<repo-root>/.worktrees/<name>/`** — a *sibling* of the
+long-lived trees (`main/`, `dev/`, `edge/`), never a child of one. Branch names use the
+`slice/` prefix; the worktree **directory omits it** (a slash would nest a subdir).
+Create one with:
+
+```bash
+ROOT="$(git rev-parse --git-common-dir)/.."   # repo root, from any worktree
+git worktree add "$ROOT/.worktrees/<name>" -b slice/<name> dev   # branch: slice/<name> | dir: .worktrees/<name>
+```
+
+🛑 **Anchor the path — never write a bare `.worktrees/`.** It resolves against your
+cwd, so the same line run from inside `edge/` silently creates `edge/.worktrees/`
+instead, and nothing warns you. Measured 2026-09-30: **34** worktrees in the right
+place against **22** scattered — 16 under `edge/.worktrees/`, 6 under
+`dev/.worktrees/`. Verified the same day: `git worktree add` **normalizes** the `..`
+in `$ROOT`, so the registered path has no `.bare/..` in it. `git rev-parse` must run
+from inside the repo — pass `-C <any-worktree>` from a script that may not be.
 
 Cleanup after merge (worktrees pile up otherwise — we hit 34 at once):
 
@@ -191,14 +579,14 @@ a running BE takes its `FE_STATIC_DIR` with it. `--keep <name>` spares one by na
 On Windows there is no `/proc`, so the process check cannot run: `--apply` refuses
 unless you also pass `--no-process-check`.
 
-By hand, if you must: `git worktree remove .worktrees/<name>`,
+By hand, if you must: `git worktree remove "$ROOT/.worktrees/<name>"`,
 `git branch -d slice/<name>`, `git worktree prune`.
 
-Don't pollute the project root with worktree directories. The two long-lived
-worktrees `dev/` and `main/` (at the project root) are the exception, not the rule.
-Any new branch for a slice / bugfix / experiment goes under `.worktrees/`.
+Don't pollute the repo root with worktree directories. The long-lived trees there
+(`main/`, `dev/`, `edge/`, plus the bare `.bare/`) are the exception, not the rule.
+Any new branch for a slice / bugfix / experiment goes under `$ROOT/.worktrees/`.
 
-After `cd .worktrees/<name>`, run `bun install && bun run hooks:install`.
+After `cd "$ROOT/.worktrees/<name>"`, run `bun install && bun run hooks:install`.
 
 ## Ports
 
@@ -211,11 +599,43 @@ After `cd .worktrees/<name>`, run `bun install && bun run hooks:install`.
 
 - **`HTTP_OWNER_TTL_MS`** — how long an HTTP owner may go without a liveness
   signal (`POST /api/agents/:id/presence` → `touchOwner`) before the backend
-  **releases ownership**. Default `600000` (10 min). Expiry releases ownership
+  **releases ownership**. Default: `configDefault("httpOwnerTtlMs")` in
+  `CONFIG_SPECS` (10 min). Expiry releases ownership
   and severs abandoned SSE streams — it does **not** destroy the session host,
   kill the agent, or reset `version`; the next connection is a continuation.
   Set it low (e.g. `HTTP_OWNER_TTL_MS=5000`) to exercise the path without a
   10-minute wait. The sweep interval itself is fixed at 30s.
+
+### Config hot reload
+
+- `packages/backend/src/config/runtime-config.ts` re-resolves `config.jsonc` +
+  `secrets.json` while the process is live and applies only the keys in
+  `HOT_KEYS`. Triggers: the file watcher, and `POST /api/reload-config`. Both go
+  through `onConfigChange` — **do not add a second emitter**.
+- 🔴 **Why the env snapshot exists.** The bin writes `envPatch` into
+  `process.env` at boot. Precedence is `file < env < flag`, so calling
+  `loadConfig({ env: process.env })` again rebuilds the env layer from those
+  written-back values and the env layer beats the freshly edited file — a reload
+  that silently does nothing. `captureConfigInputs` snapshots `process.env`
+  *before* that write. There is a test pinning the broken behaviour.
+- 🛑 **`applyReloadEffects` must never call `invalidateCache()`.**
+  `invalidateCache` is what *emits* the config-change event, and the effects run
+  from that event's listener — calling it there recurses forever.
+- Adding a key to `HOT_KEYS` requires tracing it to a call site that re-reads it
+  per request / per spawn / per session. A key captured in a module-level
+  `const` or a closure will look reloadable and change nothing.
+- A key that vanishes from the file is reverted to its boot-time environment
+  value (or unset). Without that, deleting a leaked secret would leave it live
+  until a restart — there is a regression test for exactly this.
+- `HOT_KEYS` may only contain keys that some spec table can actually emit. A key
+  read per use but absent from `CONFIG_SPECS`/`SECRET_SPECS` (e.g. `OPENCODE_ARGS`,
+  `LOG_WIRE`) can never appear in an envPatch, so listing it is dead code that
+  reads as a promise.
+- The watcher only covers the directory containing `cli-specs.jsonc`. With
+  `--config`/`--secrets` elsewhere, `POST /api/reload-config` is the only trigger.
+- Tests that call `loadConfig` must pass `secrets` explicitly. Otherwise it
+  falls back to the real `<stateDir>/secrets.json` and the machine's actual API
+  keys leak into assertions.
 
 ### Running parallel worktrees
 
@@ -226,33 +646,81 @@ the first worktree, 4001 for the second, etc.
 ```bash
 # Worktree A — BE on 4000, FE Vite proxies → 4000 (default)
 cd .worktrees/slice-X
-PORT=4000 onecli run --agent voice-acp -- bun --watch src/server.ts
+PORT=4000 bun packages/backend/src/bin/drive-coding.ts --env-file ~/Projects/drive-coding/.env
 bun run --filter @drive-coding/frontend dev
 # (no env var needed — FE defaults to BE_PORT=4000)
 
 # Worktree B — BE on 4001, FE Vite proxies → 4001
 cd .worktrees/slice-Y
-PORT=4001 onecli run --agent voice-acp -- bun --watch src/server.ts
+PORT=4001 bun packages/backend/src/bin/drive-coding.ts --env-file ~/Projects/drive-coding/.env
 BE_PORT=4001 bun run --filter @drive-coding/frontend dev
 ```
 
 Each worktree's FE will get a different OS-assigned Vite port — no conflict
 on the FE side. Tunnels (if used) point at each FE's specific Vite port.
 
-## Backend MUST run through OneCLI
+## Agent scopes — a guard rail, not a lock
 
-The BE proxy at `/proxy/elevenlabs/*` and `/proxy/google/*` requires API
-credentials injected by the OneCLI gateway. **Do NOT start the BE with a
-plain `bun` command** — every TTS/translate call will return 401/400.
+Spawned agents carry a signed `DC_TOKEN` (env) / `X-Drive-Coding-Scope` (MCP header), and
+write calls — `DELETE`/`PATCH /api/agents/:id`, `/reply`, `/rpc`, and the MCP `session_close`
+/ `session_send` tools — are limited to the caller's own subtree. Anything outside it raises
+a permission prompt on the caller's session. Entry point: `authorizeWrite()` in
+`packages/backend/src/agent-scope.ts`.
+
+> ⚠️ **This is not a security boundary, and it is not meant to become one.** A spawned agent
+> runs as the same OS user as the backend, inherits its whole environment (`spawn-core.ts`
+> builds the child env as `{ ...process.env }`, so `DC_MASTER_KEY` and `DC_SCOPE_SECRET` are
+> readable by any child), can call the HTTP API with no header at all — `authorizeWrite()`
+> returns `"allow"` when there is no token — and can edit the guard itself. The backend has
+> no authentication of any kind.
+
+What it *is* for: a confused agent pursuing an unrelated task should not close, prompt or
+reconfigure a **stranger's** session by accident. That is the whole goal, and it is worth
+having on its own.
+
+**If you are reviewing this code: the bypasses above are known and accepted. Do not report
+them as findings.** A real boundary needs a separate uid or container per agent, a secret
+that never enters the child env, and an authenticated FE — a project, not a patch. Grep
+`NOT_A_SECURITY_BOUNDARY` for the canonical statement in code.
+
+## Backend needs API credentials — OneCLI is **one** way, not the only way
+
+> ⛔ **Corrected 2026-08-26.** This section used to say *"Backend MUST run through
+> OneCLI"* and *"do NOT start the BE with a plain `bun` command"*. **That is wrong,
+> and it cost real time**: an agent went hunting for `onecli` — which **is not
+> installed on this machine** — instead of using the mechanism that actually works.
+
+The proxies at `/proxy/elevenlabs/*` and `/proxy/google/*` need
+`ELEVENLABS_API_KEY` and `GEMINI_API_KEY` **in the environment**. *How* they get
+there is open — the BE only ever reads `process.env`.
 
 ```bash
-# ✅ Correct
-cd packages/backend
-onecli run --agent voice-acp -- bun --watch src/server.ts
+# ✅ env file — what the live deployment actually does
+bun packages/backend/src/bin/drive-coding.ts --env-file ~/Projects/drive-coding/.env
 
-# ❌ Wrong — works for boot, fails on every proxy request
-bun run --filter @drive-coding/backend dev
+# ✅ config file — voice.elevenLabsKey / voice.geminiKey in config.jsonc.
+#    load-config maps them to ENV via buildEnvPatch, so child CLIs inherit them too.
+bun packages/backend/src/bin/drive-coding.ts --config ~/.config/drive-coding/config.jsonc
+
+# ✅ plain environment variables
+ELEVENLABS_API_KEY=… GEMINI_API_KEY=… bun packages/backend/src/bin/drive-coding.ts
+
+# ✅ OneCLI — still valid **on a machine where it is installed**
+onecli run --agent voice-acp -- bun --watch src/server.ts
 ```
+
+**Precedence** (`packages/backend/src/config/load-config.ts`):
+config file < `process.env` < CLI flags. `--env-file` is applied first and is
+**non-overriding** — a real env var beats it.
+
+**On this machine (srv1812097)**: both deployments run under systemd
+(`drive-coding-{main,dev}.service`) and use **`--env-file`**. `onecli` is absent.
+
+**`PUBLIC_BASE_URL`** — the backend's public origin (`https://host`, no path). Set via
+env, `--public-base-url`, or `publicBaseUrl` in `config.jsonc`. It is **automatically
+unioned into effective CORS** even when omitted from `CORS_ORIGINS`, and drives the chat
+URL that `session_open` returns. It is **not** `DRIVE_CODING_BASE` / `DC_BASE` — child
+CLI processes still receive loopback for those.
 
 ### Running BE with CORS for deployed CF Pages FE
 
@@ -260,29 +728,32 @@ When connecting the deployed `https://drive-coding.pages.dev` FE to a local BE,
 include the Pages origin in `CORS_ORIGINS`:
 
 ```bash
-# Local BE serving both local and CF Pages FE (consistent with deploy/systemd/voice-acp-be.service)
+# Local BE serving both local and CF Pages FE (consistent with deploy/systemd/drive-coding-main.service)
 CORS_ORIGINS="https://drive-coding.pages.dev,http://localhost:4000" \
-  PORT=4000 onecli run --agent voice-acp -- bun --watch src/server.ts
+  PORT=4000 bun packages/backend/src/bin/drive-coding.ts --env-file ~/Projects/drive-coding/.env
 ```
 
 See `docs-for-llm/deploy-cf-pages.md` for full deploy instructions and known limitations
 (mixed-content + Private Network Access).
 
-The `voice-acp` OneCLI agent injects `xi-api-key` for `api.elevenlabs.io`
-and `x-goog-api-key` for `generativelanguage.googleapis.com`. It does NOT
-inject Anthropic credentials (intentional — see `~/.config/opencode/learnings.md`
-2026-05-14 about Anthropic balance drain).
+Whichever mechanism you use, the BE needs the same two keys — `ELEVENLABS_API_KEY`
+for `api.elevenlabs.io` and `GEMINI_API_KEY` for `generativelanguage.googleapis.com`.
+Anthropic credentials are **deliberately not** injected (see
+`~/.config/opencode/learnings.md` 2026-05-14, Anthropic balance drain).
+Where OneCLI *is* installed, the `voice-acp` agent supplies those two as
+`xi-api-key` / `x-goog-api-key`.
 
-How to tell if the BE is missing OneCLI: the FE shows `TTS failed: 401`
+How to tell the BE is missing its keys: the FE shows `TTS failed: 401`
 and the BE log shows `proxy upstream non-2xx` warnings (since the
 observability commit `a76e7c1`).
 
 ## Wire tracing & recording (debug)
 
-Two passive taps on the ACP pipe (`packages/backend/src/acp/bridge-manager.ts`), both
+Two passive taps on the ACP pipe (`packages/backend/src/acp/connection-registry.ts`), both
 **off by default**, neither alters the stream (each runs *after* the send/write).
-Both live in `bridge-manager` — **always-active for the full child lifetime**, surviving
+Both live in `connection-registry` (`onFrame`) — **always-active for the full child lifetime**, surviving
 FE disconnect/reconnect cycles (unlike the previous `ws-agent` location).
+`bridge-manager.ts` was removed; `server.ts` notes the registry replaced that singleton.
 
 - **`LOG_WIRE=acp`** — live wire summary to the BE stdout via pino (slice-wire-observability-bridge).
   Namespace: `backend.acp.wire.*` (CLI↔BE layer).
@@ -365,6 +836,7 @@ public clone. Paths under `packages/` are real files here.
 |--------------|------|--------|
 | **Code design rules** — layers, what an "engine" is, when to use `$effect` vs a method, state-machine pattern, primary-vs-derived VMs | `docs-for-llm/design-principles.md` §1-5 | **canonical** |
 | **The 50 architectural decisions (D1-D50)** | `docs-for-llm/design-principles.md` §6 | **canonical** |
+| **Config defaults** — product default of a `CONFIG_SPECS` key lives only there | `docs-for-llm/design-principles.md` §7 · `.cursor/rules/config-defaults.mdc` | **canonical** |
 | **FE five golden rules** (the short, injected version) | `packages/frontend/AGENTS.md` | canonical (design-principles expands it) |
 | **UX spec** — drive-first, colors, mic states, bubbles, car mode | `docs-for-llm/frontend-spec.md` | canonical |
 | **FE↔BE protocol, schemas, ports** | `docs-for-llm/vnext-spec.md` | canonical (§8.5 slices is OBSOLETE) |
@@ -373,10 +845,29 @@ public clone. Paths under `packages/` are real files here.
 | **Per-slice rationale** (why the code looks the way it does) | `docs-for-llm/decisions/voice-acp.md` | living log (written by מרדכי) |
 | **How to write a slice plan** (handoff to executor) | `docs-for-llm/plans/README.md` | canonical |
 | **Planning history** — *how* we reached D1-D50, mental model, competitor/library research | `docs-for-llm/vnext-planning.md`, `docs-for-llm/vnext-research.md` | **historical** (not maintained) |
+| **What drive-coding offers an agent at runtime** — connect, session lifecycle, what the chat UI renders from your output | `docs/agents/` — **run `bun run docs:list` first** | public, agent-facing |
 
 > **Reading order for a new code task:** `design-principles.md` (rules) →
 > `frontend/AGENTS.md` (FE golden rules) → the relevant spec (`frontend-spec.md` §X)
 > → `parallel-safe-code.md` if you touch a shared file.
+
+### Agent-facing docs (`docs/agents/`) — how to find them
+
+**Work that touches the runtime surface an agent talks to: run `bun run docs:list`,
+then read only the documents whose `read_when` matches your task.** The command prints
+every document's path, `summary` and `read_when`; it reports `[missing front matter]`
+rather than skipping a malformed file. `bun run lint:docs` is the gate over that
+directory and runs in `pre-commit`.
+
+These are **public** docs written for coding agents, not for maintainers — the private
+planning notes stay in `docs-for-llm/`.
+
+> **Three routing channels — all live.** An agent working *inside this repo* reads
+> `docs/agents/` on disk (`bun run docs:list`). A **spawned child** without the repo
+> should use **`docs_get`** (MCP tool), **`drive-coding://docs/<id>`** resources, or
+> **`GET /api/docs`** / **`GET /api/docs/:id`** on the backend. Parent injection still
+> delivers the same pointers via `prompts/surface/*` (CLI hook / `GET /api/agent-prompt` /
+> `session_surface` MCP).
 
 ## עבודה עם מרדכי (planner)
 

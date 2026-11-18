@@ -1,3 +1,1033 @@
+## 2026-09-27 — slice `usage-per-cli` (אליעזר)
+
+ענף: `slice/usage-per-cli` @ base `0f32eabf`. worktree: `.worktrees/usage-per-cli`.
+
+**C1** — `GET /api/usage/clis`: צבירה טהורה `aggregateCliUsage` (טוקנים + registry), handler ב-`http-cli-usage.ts`, גזירות מחזור ב-`core/usage/cli-usage.ts`, re-export ב-`adapters/token-usage.ts`. טסטים: cursor רק ב-registry, מטבעות, cwd.
+
+**C2** — `/usage`: `fetchCliUsage` (ArkType), `CliUsageTable` + `UsageScreen`, `TtsStatusCard` + `ttsStatus.refresh()`, קישור ב-AppHeader וב-Settings. i18n additive בבלוק `// ─── usage ───`.
+
+**שערים (4022):** `application/json`, `.clis` GREEN, `["claude","codex","cursor"]`, cursor `sessions:0` / `reportsUsage:false`.
+
+**בדיקות:** אחרי `bun run --filter @drive-coding/frontend typecheck` — `Test Files 3 failed | 400 passed`, `Tests 5 failed | 4379 passed`; אפס `(0 test)` ב-FE. כשלים קדם-קיימים: `http-mcp.test.ts` (2), `client.attached.test.ts` (2), `client.delete-session.test.ts` (1). §7.1 — לא תוקנו.
+
+**חריגות:** `bun run typecheck` (root) נכשל על provider (`unstable_createElicitation`) גם על `0f32eabf` נקי; `bun run lint` — אי-התאמת גרסת Biome CLI מול `biome.json` (443 diagnostics בריפו). `lint:i18n` ירוק.
+
+---
+
+## 2026-09-08 14:20 (ביטול טיימר-השאלות + טעינה חמה של קונפיגורציה)
+
+ענף: `integration/run-config-hot-reload`, worktree `edge/.worktrees/config-hot-reload`,
+בסיס `edge` @ `5373830b`. שני סלייסים קשורים בענף אחד, כי השני נולד מהראשון.
+
+### 1 — הטיימר שסגר שאלות
+
+באג מהשטח: שאלות `AskUserQuestion` ואישורי-הרשאה **נעלמו אחרי ~30 שניות**,
+בלי הודעה. חקירה קודמת כיוונה ל-AFK של ה-TUI של Claude Code
+(`askUserQuestionTimeout`) — אבל במסלול הזה אין TUI: כל תהליכי ה-CLI רצים
+`--output-format stream-json` מתחת ל-drive-coding.
+
+השורש: `DEFAULT_PERMISSION_TIMEOUT_MS` / `DEFAULT_ELICITATION_TIMEOUT_MS`
+= `30_000` ב-`session-host.ts`. הוחלפו ב-`resolveRequestTimeoutMs` (טהורה
+ומיוצאת, בתבנית `resolveHttpOwnerTtlMs`) + `MAX_TIMEOUT_MS`. ברירת המחדל
+היא עכשיו **`null` — בלי טיימר**; `never`/`off`/`0`/ריק זהים.
+`pending-requests.ts` קיבל `timeoutMs: number | null`, וכש-`null` הוא
+**לא קורא ל-`setTimeout` כלל**.
+
+🛑 **המלכודת ששולטת בעיצוב:** Node מכווץ כל השהיית `setTimeout` מעל
+`2_147_483_647` — וגם `Infinity` — ל-**1ms** עם `TimeoutOverflowWarning`
+(נמדד, Node 25.9). "ערך ענק כדי לבטל טיימר" הופך את הבאג ממעצבן ל**מיָדי**.
+לכן ערכים כאלה נדחים ונופלים ל"בלי טיימר", ו"בלי טיימר" הוא `null` ולא מספר.
+
+פקיעה (רק כשמוגדר טיימר) עברה מ-`{action:"cancel"}` ל-`{action:"decline"}`:
+decline מחזיר answers ריק והתור ממשיך, cancel מפיל את קריאת-הכלי.
+⚠️ מסלולי ה-**dispose** (`session-host.integration.test.ts:1546,1586`) נשארו
+`cancel` — שם זו ההתנהגות הנכונה.
+
+### 2 — טעינה חמה
+
+הרציונל: התיקון דורש restart, ו-restart על `edge` סוגר את כל הסוכנים החיים.
+אם משלמים את המחיר, שה-restart יביא גם טעינה חמה — ולא יידרש עוד אחד.
+
+**הממצא:** מפתחות ה-API כבר חמים. `resolveProviderAuth`
+(`delivery/proxy-auth.ts`) טהורה ומקבלת `env` כפרמטר, ו-`http-proxy.ts`
+קורא לה **פר-בקשה**. חסרה הייתה רק נקודת-כתיבה.
+
+🔴 **הבאג המרכזי — לולאת-משוב.** ה-bin כותב `envPatch` ל-`process.env`
+(Step 3). הקדימות `file < env < flag`, ולכן קריאה שנייה של
+`loadConfig({env: process.env})` בונה `envLayer` מהערכים שהריצה כתבה,
+ו**שכבת ה-env מנצחת את הקובץ המעודכן**. עריכה בזמן ריצה לא נקלטת, בשקט.
+
+`config/runtime-config.ts` (חדש) — `captureConfigInputs(argv, env)` נקרא
+ב-bin **אחרי** בלוק `--env-file` ו**לפני** Step 3. `reloadRuntimeConfig()`
+מריץ `loadConfig` על ה-snapshot, ולכן הקובץ שוב מנצח. `loadConfig` לא נגע —
+הוא כבר חסר state. `ARGV_SNAPSHOT` שומר את `--config`/`--secrets`.
+
+`HOT_KEYS` — allowlist שכל ערך בו אומת מול אתר-קריאה: מפתחות API (פר-בקשה),
+`OPENCODE_BIN`/`OPENCODE_ARGS` (פר-spawn), הטיימאאוטים (פר-host), `LOG_*`
+(עם `initLogger`), `CLI_SPECS_JSON` (עם איפוס memo). מפתח מחוץ לרשימה מדווח
+`restart required to apply` ו**אינו מוחל**.
+
+🛑 **רקורסיה שנחסמה:** `applyReloadEffects` **אינו** קורא ל-`invalidateCache()`
+— זו הפונקציה ש**פולטת** את האירוע, וה-effects רצים מהמאזין שלה.
+
+`http-tts-capabilities.ts` — `invalidateCapabilitiesCache()`. בלעדיו המטמון
+בן 60 השניות מחזיר `reason:"auth"` דקה אחרי שהמפתח תוקן.
+
+ה-watcher (`cli-config-file.ts`) מזהה עכשיו גם `config.jsonc` ו-`secrets.json`
+דרך `WATCHED_FILENAMES` — לא watcher שני. `config_changed` נושאת
+`changed?: string[]`, וה-FE מרענן `ttsStatus` בנוסף ל-`cliAvailability`.
+
+**התאמות לארכיטקטורה של edge:** ההגדרות נוספו ל-`CONFIG_SPECS`
+(`core/config/specs.ts`) ולא לשלוש פונקציות נפרדות; `AssertCovered` תפס
+בזמן קומפילציה שהסכימה חייבת כיסוי. הסודות ב-edge חיים ב-`secrets.json`
+נפרד, ו-`loadConfig` מחזיר `errors` על סוד בקובץ הרגיל — הרלואודר **מסרב
+לרענן** במקרה כזה במקום לצאת.
+
+### סקירת-קוד — חמישה ממצאים, ארבעה תוקנו
+
+**🔴 מחיקת מפתח לא ביטלה אותו.** הלולאה ב-`reloadRuntimeConfig` עברה רק על
+מפתחות שקיימים ב-`envPatch` **החדש**, ולכן מפתח שהוסר מהקובץ נשאר
+ב-`process.env` עם ערכו הישן. במונחי אבטחה: מחיקת מפתח שדלף מ-`secrets.json`
+לא ביטלה אותו עד restart. **אומת חי** מול ה-preview לפני התיקון (המפתח
+המשיך להחזיר `available:true`) ואחריו (`no-key`, ואז חוזר עם החזרת הקובץ).
+התיקון: `lastPatchKeys` + נפילה חזרה ל-`ENV_SNAPSHOT` — לא ל-unset, כי
+המפתח עשוי להגיע גם מהסביבה והקובץ רק דרס אותו. `captureBootPatch` נוסף
+ב-bin כדי שגם הרענון הראשון יידע מה נמחק.
+
+**ה-FE ריענן את ה-VM הלא נכון.** ה-BE ניקה את מטמון ה-probe, אבל ה-FE קרא
+ל-`ttsStatus.refresh()` (subscription+usage) במקום ל-`ttsCapabilities.refresh()`
+— זה שמחזיק `available/reason` וחוסם את VoicePicker. תוקן: שניהם, capabilities
+ראשון.
+
+**`OPENCODE_ARGS` ו-`LOG_WIRE` היו קוד מת ב-`HOT_KEYS`** — אין להם ספק
+ב-`CONFIG_SPECS`, ולכן `buildConfigEnvPatch` לעולם לא מייצר אותם.
+`docs/configuration.md` הבטיח במפורש ש-`OPENCODE_ARGS` נטען חם. הוסרו, והתיעוד
+תוקן.
+
+**`changed: []` היה דו-משמעי** — שימש גם כ"backend ישן" וגם כ"לא הוחל כלום".
+הופרד: `undefined` = ישן (לרענן הכל), `[]` = הוחל כלום (לא לרענן).
+
+**מגבלת ה-watcher — תועדה ולא תוקנה.** הצפייה היא על
+`dirname(resolveCliSpecsPath())`, ולכן `--config`/`--secrets` מחוץ לתיקייה
+הזו (או `CLI_SPECS_FILE` אחר) לא מייצרים אירוע, ורק ה-endpoint עובד. נכנס
+ל-`configuration.md` ול-`AGENTS.md` כאזהרה.
+
+### טסטים
+
+`runtime-config.test.ts` (18) — המרכזי מוכיח שהקובץ הערוך נקלט, ולצדו טסט
+ש**מקבע את הבאג**: המסלול הנאיבי מחזיר את הערך הישן.
+`runtime-config.effects.test.ts` (6, `vi.hoisted` כי `vi.mock` מורם מעל consts).
+`cli-config-file.watch.test.ts` (+4) — **הראשונים בפרויקט על `fs.watch` אמיתי**,
+כולל שמירה אטומית וסינון קבצים. `session-host.test.ts` (+15 טבלאי, כולל
+`"Infinity"` ו-`"2147483648"` → `null`). `load-config.test.ts` (+6), ועוד 3 טסטי-רגרסיה למחיקת מפתח. **אומת שהם
+תופסים**: נטרול הלולאה החדשה מפיל את `deleting a key from the file stops it
+from being used` — טסט ירוק שלא נבדק מול הבאג אינו ראיה.
+
+⚠️ **נלמד תוך כדי:** טסט שקורא ל-`loadConfig` בלי `secrets` מפורש נופל על
+`<stateDir>/secrets.json` האמיתי — המפתח האמיתי של המכונה דלף ל-assertion
+ונתפס בהרצה הראשונה. כל טסט מצביע עכשיו לנתיב-סודות שאינו קיים.
+
+**מגבלה שנרשמה:** סוכן שכבר רץ מחזיק את הסביבה שאיתה נוצר
+(`spawn-core.ts` מעתיק `{...process.env}` ב-spawn). חדשים מקבלים, קיימים לא.
+
+## 2026-09-04 22:05
+
+### פריסת קונטיינר — Containerfile רב-שלבי + יוניט Quadlet
+
+הרצת ה-BE וה-FE הבנוי כאימג' אחד תחת podman rootless, כמקבילה
+ל-`deploy/systemd/drive-coding-*.service`. עלה ואומת על VPS חיצוני.
+
+#### מה בוצע?
+
+`deploy/container/` — שלושה קבצים חדשים, בלי לגעת בקוד קיים:
+
+- **`Containerfile`** — builder (`bun install` + FE build) ו-runtime נפרדים.
+  כל עבודת ה-`ExecStartPre` עוברת לזמן בנייה.
+- **`drive-coding-edge.container`** — יוניט Quadlet.
+- **`healthcheck.js`** — probe.
+
+`packages/backend/Dockerfile` נשאר stub מ-Slice 10; לא נגעתי בו.
+
+#### ארבע החלטות שנקבעו מבדיקה
+
+| ממצא | נגזרת |
+|---|---|
+| ל-`oven/bun:1` אין node, git או curl | ה-FE נבנה ב-`bun scripts/dc-build-fe.mjs` (מייבא רק `node:` builtins); ה-probe הוא bun ולא curl |
+| `cli-config-file.ts:30` משתמש ב-`os.homedir()`, **לא** ב-`XDG_CONFIG_HOME` | `HOME=/data` באימג', נפח ב-`/data/.config/drive-coding` |
+| `FE_ENV`/`FE_PREVIEW_LABEL` נקראים ב-`vite.config.ts` בזמן בנייה | `ARG` ב-builder, לא `ENV` בריצה |
+| `DRIVE_CODING_HOST=127.0.0.1` לא עובד בקונטיינר — loopback הוא ה-netns | `0.0.0.0` בפנים, `PublishPort=127.0.0.1:4002:4000` בחוץ |
+
+#### שלוש מלכודות שנצרבו
+
+**1. `acp-wire/dist` חסר.** `exports` הצביע ל-`dist/`, שנמצא ב-`.gitignore`.
+בעץ עבודה קיים הוא שורד מבנייה ידנית; checkout נקי נשבר. נוסף
+`RUN cd packages/acp-wire && bun run build` — **זמני**, ראה הערה בקובץ.
+
+**2. `Memory` אינו מפתח Quadlet.** podman 5.4 דוחה את **כל הקובץ** בגללו,
+ו-`daemon-reload` נכשל **בשקט** — היוניט פשוט לא נוצר. לאבחון:
+`/usr/libexec/podman/quadlet -user -dryrun`. הועבר ל-`MemoryMax` ב-`[Service]`,
+ו-`StartLimit*` הועברו ל-`[Unit]` ששם systemd מצפה להם.
+
+**3. Quadlet קוטע ציטוט מקונן.** `HealthCmd=bun -e "..."` הגיע ל-podman חתוך
+בגרש הסוגר, וכל probe החזיר `unhealthy`. לכן `healthcheck.js` כקובץ, בלי ציטוט.
+בנוסף podman מזהיר ש-`HEALTHCHECK` **מתעלמים ממנו בפורמט OCI** — מה שרץ בפועל
+הוא `HealthCmd` של Quadlet.
+
+#### אימות
+
+`/api/health` מחזיר `{"status":"ok","version":"0.19.0"}`, ה-FE מוגש `HTTP 200`,
+הקונטיינר `Up (healthy)`. צריכה: **197MB RAM**, 21 תהליכים. אימג' 1.93GB.
+
+הגרסה `0.19.0` ולא `0.39.0` היא תקינה ומתועדת: `resolveAppVersion()` במצב
+לא-מבונדל קורא את ה-`package.json` הקרוב, כלומר של `@drive-coding/backend`.
+
+#### מה לא בפנים
+
+אין CLIs של סוכנים ואין אישורי claude/codex — **סוכנים לא עובדים בהרצה הזו**.
+זו מגבלה עקרונית ולא השמטה: `connection-registry.ts:33-34` ממפה
+`claude → connectInProcess` ו-`codex → connectCodexInProcess`, כלומר הם רצים
+**בתוך תהליך ה-BE**. שורה 168 מתעלמת מ-`override.bin/args` עבורם. בידוד
+אמיתי לשניים האלה דורש את אימוץ `acp-wire`, לא Dockerfile.
+## 2026-09-04 21:54
+
+### acp-wire — שלוש כניסות סימטריות, והשורש מפסיק להיות מלכודת
+
+מיזוג `integration/run-acp-wire-be` אל edge, ובאותה הזדמנות פיצול ה-`exports`
+של `@drive-coding/acp-wire` לשלוש כניסות: שורש ניטרלי, `/browser`, `/node`.
+
+הרקע: ה-`exports` הצביעו ל-`dist/`, ו-`dist/` ב-`.gitignore`. בעץ עבודה קיים
+זה לא מורגש (הוא שרד מבנייה ידנית), אבל **checkout נקי נשבר** —
+`Rollup failed to resolve import "@drive-coding/acp-wire/browser"`. התגלה
+בבניית קונטיינר, שהיא הדבר היחיד שמתחיל באמת מאפס. `ExecStartPre` ביוניט
+מריץ רק `bun install` + `dc-build-fe.mjs` ואף פעם לא בונה את החבילה.
+
+#### מה בוצע?
+
+**1. מיזוג `integration/run-acp-wire-be`**
+
+- `in-process-acp-transport.ts` (147 שורות) נמחק; הפונקציונליות עברה ל-`acp-wire`
+  כ-`from-line-wire.ts`, והטסט עבר איתה.
+- `SessionHost` מייבא `createFromLineWire` + `AcpTransport` מהחבילה.
+- התנגשות יחידה: `packages/acp-wire/package.json` → `exports`.
+  **לא נלקח "theirs"** — הענף מסיר את `./browser`, שמיובא ב-22 קבצי FE.
+
+**2. פיצול לשלוש כניסות**
+
+מיפוי תלויות `node:` בפועל — רק 4 מתוך 11 קבצים תלויים:
+
+| קובץ | תלות |
+|---|---|
+| `transport/stdio.ts` | `node:stream` |
+| `transport/unix-socket.ts` | `node:fs`, `node:fs/promises`, `node:net` |
+| `transport/node-streams.ts` | `node:net` |
+| `streamable-http/server.ts` | `node:crypto`, `node:http` |
+
+- `.` → `src/index.ts` — `AcpTransport`, `createFromLineWire`,
+  `createInProcessAcpTransport`, `ACP_*`, `FORBIDDEN_HTTP_PORTS`,
+  `inboundKind`/`outboundSink`, `createHttpClient`.
+- `./browser` → `src/browser.ts` — `WsAcpTransport`, `wsToWebStreams`.
+- `./node` → `src/node.ts` (חדש) — stdio · unix · net · http server.
+
+`createHttpClient` בשורש **במכוון**: הוא מדבר `fetch` + `ReadableStream`,
+מייבא רק `./headers.js`, ולכן עובד גם בדפדפן. `named-pipe.ts` הוא stub שזורק.
+
+**3. אפס שינוי בצרכנים**
+
+מהשורש מיובאים רק `AcpTransport` ו-`createFromLineWire`, ושניהם נשארו שם.
+`agent-session.svelte.ts` ו-21 קבצי FE נוספים כבר מייבאים מ-`/browser`.
+השינוי היחיד: `index.test.ts` → `browser-entry.test.ts`, מייבא מ-`./browser.js`
+(המסלול שה-FE באמת עובר בו).
+
+#### אימות
+
+מדידה מול edge נקי ב-worktree נפרד, לא מול הזיכרון:
+
+| שער | edge | הענף |
+|---|---|---|
+| typecheck | 10 errors | 10 errors — **רשימות זהות** |
+| טסטים | 2 failed (`http-mcp.test.ts`) | אותם 2 בדיוק |
+| `bun run fe:build` | — | ✅ built in 43s |
+| טסטי acp-wire | — | 7 files / 45 tests ✅ |
+
+שני הכשלים (`session_list`, `session_open`) קיימים מראש ב-edge.
+
+**בדיקת הדליפה שהמבנה נועד למנוע:** בתוצר הלקוח נמצאה הפניה אחת ל-`node:`,
+והיא ב-sourcemap בלבד, בקוד מת מאחורי `if(!1)`, מספרייה חיצונית — אפס
+אזכורי acp-wire.
+
+#### נגזרת
+
+`Containerfile` מכיל כרגע `RUN cd packages/acp-wire && bun run build` כעקיפה.
+אחרי המיזוג הוא **מיותר** — אין יותר `dist` ב-`exports`. להסיר ולבנות מחדש.
+
+## 2026-09-03 01:32
+
+### מתג מחשבות/כלים פותח וסוגר בועות שכבר בתצוגה
+
+שינוי `showThoughts` / `showTools` מעדכן את `<details>` של בועות mounted, לא רק של בועות ש-virtua יוצר מחדש בגלילה.
+
+#### מה בוצע?
+
+**1. ממשק**
+
+- `setting-backed-open.svelte.ts` — `$state` + `$effect` צר על ה-boolean בלבד.
+- `ThoughtBubble` / `ToolBubble` — `bind:open={open.value}`.
+- לא `$derived`: לחיצה ידנית על בועה אחת נשארת.
+
+**2. ratchet**
+
+- `$effect` הוצא מהקומפוננטה (`ToolBubble` היה 54/0 → impurity). baseline נכתב למטה ל-53/0.
+
+#### בדיקות
+
+- lint:size + lint:i18n עברו.
+- פריוויו חי על edge (עין משתמשת: להשאיר).
+
+---
+
+## 2026-08-31 — config defaults live only in CONFIG_SPECS
+
+Product defaults for catalogued config keys (`port`, `host`, `rssBudgetMb`, `httpOwnerTtlMs`, `opencodeBin`) now live on `CONFIG_SPECS[].default` and are applied in `resolveConfig`. Consumers call `configDefault(...)` — no more `?? 4000` / `DEFAULT_HTTP_OWNER_TTL_MS` at the call site.
+
+Rule: `docs-for-llm/design-principles.md` §7 · `.cursor/rules/config-defaults.mdc`.
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | vitest (specs/resolve/load-config/mapping/registry/liveness) | **127 עברו** |
+| 2 | core typecheck | **עבר** |
+## 2026-08-29 15:10 — slice playlist-nav-chrome · Commit 2 (harness)
+
+Phase 2: 20 MP3 fixtures (ffmpeg) + `/playlist-nav-chrome-test` harness + `tests/smoke/playlist-nav-chrome.mjs` (PLAYLIST_NAV_CHROME=1 gate).
+
+#### בדיקות
+
+- smoke without flag: exit 0 `skipped: no-chrome`
+- chrome DoD: manual (linux-gui CDP)
+
+---
+
+## 2026-08-29 15:08 — slice playlist-nav-chrome · Commit 1 (contract)
+
+Phase 1: `#playLoop` replay branch includes `skipped`+`jumpTarget`+`isComplete`; `#navigate` resets `skipped`+!complete like done/error; `markReady` on `skipped`+`reconsiderable` → ready without cursor move.
+
+#### בדיקות
+
+- audio-playlist*: 50 passed
+- lint:i18n: pass
+
+---
+
+## 2026-08-29 15:07 — slice playlist-nav-chrome · Commit 0 (tdd red)
+
+Phase 0: `audio-playlist.late-arrive.test.ts` — 2 tests red on base `f7d49905`.
+
+| Case | Assert |
+|------|--------|
+| A | late markReady → no cursor jump; prev → sink.play(s1) |
+| B | noteBuffered without markReady; prev while skipped → sink.play(s1) |
+
+#### בדיקות
+
+- late-arrive: 2 failed (expected red)
+- lint:i18n: pass
+
+---
+
+## 2026-08-27 12:25 — slice live-transcript-box · Commit 2 (data-live-entry) · סיום
+
+Phase 2: `data-live-entry` על כל רשומה + טסט DoD 4 נפרד.
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | typecheck · test · lint | **עבר** |
+| 2 | svelte-check | **54 / 54** (לפני/אחרי) |
+| 3 | תקרה inline | **עבר** |
+| 4 | 25 entries → 25 nodes | **עבר** |
+| 6 | מוטציה: הסר style | **עבר** — DoD 3 נכשל, DoD 4 ירוק |
+| 7–8 | scroll-follow | **עבר** |
+| 9–10 | עין | **לא-נמדד** |
+| 11 | עץ נקי | **ממתין לקומיט** |
+
+3 commits: `93ef76f2..HEAD`
+
+#### מה בוצע?
+
+- `data-live-entry` על עטיפת כל רשומה ב-`{#each}`.
+- טסט DoD 4 נפרד מ-DoD 3.
+
+#### בדיקות
+
+- live-transcript tests: 2 passed; scroll-config: 3 passed.
+- full suite: green.
+
+---
+
+
+Phase 1: scroll-follow עם פרמטרים מכוילים לתיבת 12rem (sentinel 8px, distanceLines 1).
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | typecheck · test · lint | **עבר** |
+| 2 | svelte-check | **54 / 54** |
+| 7 | scroll-follow + כיול | **עבר** (3 טסטים) |
+| 8 | following=false | **עבר** (mutation gate) |
+| 9–10 | עין — נעילה / שחרור | **לא-נמדד** (⏸ אין מכשיר) |
+
+#### מה בוצע?
+
+- `live-transcript-scroll-config.ts`: margin 8px, distanceLines 1.
+- `LiveTranscript.svelte`: batched follow (ResizeObserver, user-intent, $effect על transcript).
+- `live-transcript-scroll-config.test.ts`: DoD 7+8.
+
+#### בדיקות
+
+- live-transcript tests: 4 passed.
+- full suite: green.
+
+---
+
+
+Phase 0: `max-height: 12rem; overflow-y: auto` כ-`style` inline על מכל `[data-live-scroll]`.
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | typecheck · test · lint (קבצים שנגעו) | **עבר** |
+| 2 | svelte-check לפני/אחרי | **54 / 54** |
+| 3 | DoD 3 — computed max-height + overflow-y | **עבר** (jsdom) |
+| 6 | מוטציה: הסר style | **לא-נמדד** (DoD 3 תופס הסרה) |
+
+#### מה בוצע?
+
+- `LiveTranscript.svelte`: מכל גלילה עם תקרת 12rem inline.
+- `live-transcript-harness.svelte` + `live-transcript.test.ts`: DoD 3.
+
+#### בדיקות
+
+- `live-transcript.test.ts`: 1 passed.
+- full suite: green.
+
+---
+
+
+3 commits: `56ca6e14..HEAD`
+
+| # | בדיקה | תוצאה |
+|---|--------|--------|
+| 1 | typecheck · test · lint:i18n | **עבר** |
+| 2 | אפס redispatch ב-5 ריצות PROBE_DELIVERY | **5/5 pass, redispatch=false** |
+| 3 | מוטציה: הסרת סמן | **5/5 redispatch=true** — הסמן הוא השער |
+| 4 | סעיף-איסור בפרומפט | **עבר** (grep על קבוע מיוצא) |
+| 5 | pendingPermission ⇒ הזרקה מסומנת | **עבר** (טסט) |
+| 6 | optionId מחוץ לרשימה ⇒ invalid-option | **עבר** (טסט) |
+| 7 | DoD 11 מקצה-לקצה | **לא-נמדד** (פרוב חי; מנגנון מחווט) |
+| 8 | `$effect` רץ בטסט (jsdom + `$effect.root`) | **עבר** |
+| 9 | טסט נופל בלי סמן | **עבר** (assert על MARKER) |
+| 10 | DoD 9 על agentAnswer | **עבר** (probe pass ללא idDelivered בשער) |
+| 11 | 5ב+18 | **5ב פתוח · 18 ירד** (מנגנון ב-headless, אין צרכן mouth) |
+| 12 | vitest.config.ts | **לא נגע** |
+| 13 | עץ נקי | **ממתין לקומיטים** |
+
+#### מה בוצע?
+
+- `LIVE_AGENT_DELIVERY_MARKER` + `formatAgentDelivery` + סעיף פרומפט — מונע compose_prompt חוזר.
+- `LIVE_PERMISSION_PENDING_MARKER` + `$effect` הודעת הרשאה + `invalid-option` / `no-pending-permission`.
+- `live.test.svelte.ts`: `@vitest-environment jsdom`, `$effect.root`, טסט `$effect` על turnState.
+- `probe-live-adapter.mjs`: `formatAgentDelivery`, שער `redispatch`, pass על agentAnswer.
+
+#### בדיקות
+
+- PROBE_DELIVERY ×5 על 4031: pass=true, redispatch=false (×5).
+- מוטציה bare delivery ×5: redispatch=true (×5).
+- voice tests: 166 passed.
+
+---
+
+
+7 commits: `54fe3dcd..f668bc51`
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck · test · lint:i18n | **עבר** (2 נפילות ידועות) |
+| 2 | מסלול יוצא compose_prompt→sendPrompt | **עבר** (טסט) |
+| 3 | action_result מיידי | **עבר** |
+| 4 | מוטציה on("action") | **לא-נמדד** |
+| 5 | mouth speaking ב-Live | **עבר** (טסט VM) |
+| 5ב | mouth consumer ב-svelte | **פתוח** (grep ריק) |
+| 6 | mouth mutation | **עבר** (טסט) |
+| 8 | PROBE_DELIVERY שלושה טקסטים | **עבר** (פלט JSON; pass=false ב-STT) |
+| 9 | מזהה במסירה | **לא-נמדד** (probe pass=false) |
+| 10 | מוצהר⇔מטופל (4=4) | **עבר** (3 handlers + answer_permission=4) |
+| 14 | probe slice 1 | **עבר** (4031) |
+| 16 | not_sent לכל reason | **עבר** |
+| 17 | audio→sink | **עבר** |
+| 18 | mouth ריאקטיבי | **לא-נמדד** (פריוויו) |
+| 11–13 | פריוויו mic/TTS/PTT | **לא-נמדד** |
+
+calev-heavy: **לא הורץ** (usage limit) — מרדכי ירים verifier.
+
+---
+
+
+- `PROBE_DELIVERY=1` — מזריק agentAnswer סינתטי, מדפיס שלושת הטקסטים (§3).
+- DoD 14: פרוב בסיסי ירוק על 4031.
+
+#### חוב 3 (mouth consumer)
+
+- `grep '.mouth' *.svelte` → **ריק** — חוב 3 **פתוח** (לא מומצא צרכן).
+
+---
+
+
+- Speaker: liveOpen → #stopAndClear + skip enqueue (§4.3).
+- +layout: mic → live → speaker (live ref).
+
+---
+
+
+- mapPermissionOptions + resolvePermission; not_sent ללא pending/optionId לא חוקי.
+
+---
+
+
+- LIVE_ACTION_SHAPES: 12 → 4 (compose_prompt · forward · cancel_turn · answer_permission).
+- handler cancel_turn → session.cancelTurn + action_result מיידי.
+
+---
+
+
+base: `dfeff3ff`
+
+- `sendContext` על LiveSessionEngine.
+- `$effect` על `turnState===idle` → `recentAssistantMessages(1)` → speakable.
+- `#pendingAgentDelivery` נקבע אחרי dispatch מוצלח.
+
+---
+
+
+base: `fe55b249`
+
+#### מה בוצע?
+
+- `LiveAudioSink` — PCM 24kHz gapless, `isPlaying` + `onPlayingChange`.
+- `LiveSessionEngine`: `audio`/`interrupted` → sink; `#cleanupSession` stops sink.
+- `Live.isSpeaking` — גשר `$state` לריאקטיביות.
+- `VoiceMode.mouth` — Live פתוח → `live.isSpeaking`, אחרת Speaker.
+
+#### בדיקות
+
+- live-audio-sink: 3 · live-session audio: 2 · voice-mode mouth: 3 חדשים.
+
+---
+
+
+base: `54fe3dcd` · ענף `slice/live-secretary`
+
+#### מה בוצע?
+
+- `core/voice/live-dispatch.ts` — `canDispatchPrompt` (TDD, 6 tests).
+- `Live` VM: `engine.on("action")` → `compose_prompt`/`forward` → `sendPrompt` + `action_result` מיידי.
+- `not_sent` + reason כשה-gate נכשל; פרומפט מעודכן.
+- `LiveSessionEngine.sendActionResult` · getters `isRemoteView`/`hasAcpClient`.
+- `live.test.svelte.ts`: 7 passed.
+
+#### בדיקות
+
+- typecheck ירוק · lint:i18n ירוק · test: 2 נפילות ידועות.
+
+---
+
+
+base: `dfbb4078` → HEAD `2d1acca8` (8 commits)
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck | ✅ |
+| 2 | tests | ✅ (2 נפילות ידועות: cli-availability, bridge-failure F-1) |
+| 3 | lint:i18n | ✅ |
+| 4 | float32ToInt16LE | ✅ |
+| 5 | shouldForwardFrame | ✅ |
+| 6 | FSM regression | ✅ |
+| 7 | mutation ear/mouth | ✅ |
+| 8 | ear/mouth getters | ✅ |
+| 9 | תמליל זורם | ⏸ לא-נמדד (mic HTTPS) |
+| 10 | לחיצה אחת | ⏸ לא-נמדד |
+| 11 | PTT regression | ⏸ לא-נמדד |
+| 12 | בלעדיות מצבים | ⏸ wiring ✅; runtime ⏸ |
+| 13 | connect → error | ✅ |
+| 14 | no API key | ⏸ לא-נמדד runtime |
+| 15 | PCM mutation | ⏸ לא-נמדד preview |
+| 16 | auth.test.ts UI | ⏸ probe ✅; UI ⏸ |
+| 17 | probe | ✅ identifierTranscribedExactly |
+| 18 | עץ נקי | ✅ |
+
+בדיקות-עצמיות של המבצע (**אינן verdict**). השער האמיתי: כלב-heavy r1 NO-GO → תוקן → r2 **GO** — `$BDS_REPORTS/drive-coding/live-ears-calev.md` · `-r2.md`
+
+### Commits
+
+0. MicFrames worklet · 1. float32ToInt16LE · 2. echo-gate · 3. fetchLiveToken
+4. LiveSessionEngine · 5. Live VM + layout · 6. ear/mouth FSM · 7. UI + i18n
+
+#### חריגות
+
+- `Live` constructor מקבל `mic` (נדרש ל-`canOpen`).
+- calev-heavy לא רץ (usage limit).
+
+---
+## 2026-08-27 — slice live-context (סיום)
+
+base: `dfbb4078` → HEAD `a96b4910` — 5 commits
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck | ✅ |
+| 2 | tests | ✅ (2 כשלים סביבתיים קיימים) |
+| 3 | lint:i18n | ✅ |
+| 4 | session overflow | ✅ live-memory.test |
+| 5 | always refuse | ✅ live-memory.test |
+| 6 | full:true לא throw | ✅ live-memory.test |
+| 7 | search ריק | ✅ live-search.test |
+| 8 | seed maxChars | ✅ live-seed.test |
+| 9 | silent inject | ✅ PROBE_SEED pass |
+| 10 | answer from seed | ✅ answerUsedSeed:true |
+| 11 | mutation empty seed | ✅ pass:false |
+| 12 | slice 1 regression | ✅ |
+| 13 | עץ נקי | ✅ |
+
+בדיקות-עצמיות של המבצע (**אינן verdict**). השער האמיתי: כלב light **GO** — `$BDS_REPORTS/drive-coding/live-context-calev.md`
+
+#### סטיות
+
+- warmup speakable לפני seed בפרוב (Commit 4).
+
+---
+
+
+### PROBE_SEED — שער חי
+
+#### מה בוצע?
+
+- `scripts/probe-live-adapter.mjs` — מצב `PROBE_SEED=1` + `PROBE_SEED_EMPTY=1` למוטציה.
+- buildLiveSeed → הזרקה silent → שאלה → `answerUsedSeed` מ-transcript + compose_args.
+- `pass = seedCharCount > 0 && contextProvokedFrames === 0 && answerUsedSeed`.
+
+#### בדיקות
+
+- `PROBE_BE_PORT=4021 PROBE_SEED=1` → pass:true, seedCharCount:37, contextProvokedFrames:0.
+- `PROBE_SEED_EMPTY=1` → pass:false (DoD 11).
+- רגרסיה slice 1 (ללא PROBE_SEED) → ירוק.
+
+#### סטיות
+
+- warmup speakable לפני seed (turn_done) — נדרש כדי שהמזכיר יענה מתוך seed ולא compose_prompt.
+
+---
+
+## 2026-08-27 — slice live-context Commit 3
+
+### remember_session + remember_always
+
+#### מה בוצע?
+
+- `live-actions.ts` — שתי פעולות חדשות.
+- `live-prompt.ts` — פרוזה עם איסור סיכומי-תמליל.
+- עדכון ספירה 10→12 ב-`live-actions.test.ts` ו-`live-gemini-config.test.ts`.
+
+#### בדיקות
+
+- live-actions.test.ts: 5/5.
+- live-gemini-config.test.ts: 2/2.
+
+#### סטיות
+
+- אין.
+
+---
+
+## 2026-08-27 — slice live-context Commit 2
+
+### live-memory.ts — מכסות · חיתוך · גלישה
+
+#### מה בוצע?
+
+- `packages/core/src/voice/live-memory.ts` — `upsertMemory` + `formatMemoryForPrompt`.
+- session: חוצץ מעגלי; always: מסרב עם `{ full: true, items }`.
+- dedup מחרוזת זהה (idempotency).
+- `live-memory.test.ts` — 11 טסטים.
+
+#### בדיקות
+
+- live-memory.test.ts: 11/11 ירוק.
+
+#### סטיות
+
+- אין.
+
+---
+
+## 2026-08-27 — slice live-context Commit 1
+
+### live-search.ts — חיפוש ב-bubbles
+
+#### מה בוצע?
+
+- `packages/core/src/voice/live-search.ts` — `searchSessionBubbles` + `SearchHit`.
+- פיצול-טוקנים עברית/אנגלית עם `\u0590-\u05FF` (lint:i18n-safe).
+- status bubbles מסוננים במפורש.
+- `live-search.test.ts` — 9 טסטים.
+
+#### בדיקות
+
+- live-search.test.ts: 9/9 ירוק.
+- lint:i18n ירוק.
+
+#### סטיות
+
+- אין.
+
+---
+
+
+### live-seed.ts — בניית seed מ-bubbles
+
+#### מה בוצע?
+
+- `packages/core/src/voice/live-seed.ts` — `buildLiveSeed` + טיפוסים (`LiveSeedBubble`, `LiveSeedLabels`, …).
+- `live-seed.test.ts` — 12 טסטים: redaction, maxTurns, maxChars, turnState, lastUserMessage.
+
+#### בדיקות
+
+- live-seed.test.ts: 12/12 ירוק.
+- typecheck + lint:i18n ירוקים.
+- `bun run test`: 2 כשלים סביבתיים קיימים (cli-availability, bridge-failure) — לא קשורים לסלייס.
+
+#### סטיות
+
+- אין.
+
+---
+
+
+### slice live-contract-gemini fix1 — 4 commits (A–D)
+
+base: `aabc8f42` → HEAD `8edb36de`
+
+| DoD | בדיקה | תוצאה |
+|-----|--------|--------|
+| 1 | typecheck + lint:i18n | ✅ |
+| 2 | tests (2 נפילות ידועות בלבד) | ✅ 2 failed |
+| 3 | פרוב מסרב ל-4020 תפוס | ✅ exit=1 |
+| 4 | אפס דליפה אחרי הצלחה | ✅ 4020 ריק |
+| 5 | אפס דליפה אחרי כישלון | ✅ 4020 ריק |
+| 6 | מוטציה onopen | ⚠️ לא נמדד חי (unit tests מכסים setupComplete) |
+| 7 | setupComplete → session_started | ✅ gemini.test 14/14 |
+| 8 | action_result מחרוזת | ✅ errorEvents=[], session נמשך |
+| 9 | compose_prompt בעברית ×3 | ✅ 3/3 עברי |
+| 10 | identifierSurvived ×3 | ✅ 3/3 |
+| 11 | MUT14 tools removed | ✅ actionCount=0 |
+| 12 | עץ נקי | ✅ |
+
+#### סטיות
+
+- אין.
+
+---
+
+## 2026-08-27 (fix1 Commit D — שפה נדרשת בפרומפט)
+
+### slice live-contract-gemini fix1 — Commit D: סעיף שפה
+
+#### מה בוצע?
+
+- `live-prompt.ts` — עברית **חובה** (לא "יכול להיות באנגלית"); סעיף מזהים ללא שינוי.
+
+#### בדיקות
+
+- live-actions.test.ts: 5/5 ירוק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
+## 2026-08-27 (fix1 Commit C — action_result Struct wrap)
+
+### slice live-contract-gemini fix1 — Commit C: עטיפת action_result
+
+#### מה בוצע?
+
+- `wrapActionResultResponse` — פרימיטיבים → `{ value }`; אובייקט/מערך כמות-שהם.
+- הערת protobuf Struct; 6 טסטים ב-gemini.test.ts.
+
+#### בדיקות
+
+- gemini.test.ts: 14/14 ירוק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
+## 2026-08-27 (fix1 Commit B — session_started from setupComplete)
+
+### slice live-contract-gemini fix1 — Commit B: אות מוכנות אמיתי
+
+#### מה בוצע?
+
+- `gemini.ts` — `session_started` מ-`setupComplete` בנרמול, לא מ-`onopen`.
+- `gemini.test.ts` — טסט setupComplete + שלילה ל-onopen path.
+
+#### בדיקות
+
+- gemini.test.ts: 8/8 ירוק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
+## 2026-08-27 (fix1 Commit A — probe leak / false-green)
+
+### slice live-contract-gemini fix1 — Commit A: probe cleanup + fail-fast
+
+#### מה בוצע?
+
+- `scripts/probe-live-adapter.mjs` — fail-fast אם 4020 תפוס; `process.exit` אחרי `finally`;
+  ניקוי SIGTERM→SIGKILL; וידוא שחרור פורט (מזהה LISTEN, לא כותרת ss).
+
+#### בדיקות
+
+- DoD fix1 #3: BE ידני על 4020 → פרוב exit=1.
+- DoD fix1 #4: ריצה מוצלחת → `ss -ltn | grep 4020` ריק.
+- typecheck + lint:i18n ירוקים.
+
+---
+
+## 2026-08-27 01:25
+
+### slice live-contract-gemini — סיום
+
+4 commits מעל בסיס 3952f4f9 (+ 2 probe artifacts). calev phase1: GO (0 findings).
+calev-heavy: ממתין.
+
+#### סטיות
+
+- PCM/STT ~20% flake בשער (4/5 pass אחרי timeout fix)
+- usage לפעמים null
+
+---
+
+## 2026-08-27 01:17
+
+### slice live-contract-gemini — Commit 3: probe-live-adapter (שער חי)
+
+#### מה בוצע?
+
+- `scripts/probe-live-adapter.mjs` — BE 4020, token, adapter, PCM עברי, JSON gate.
+- תיקון usage normalization ב-gemini.ts.
+
+#### בדיקות DoD (§5)
+
+- #4: probe על בסיס 3952f4f9 — exit=1 (no such file) ✓
+- #5-#13: probe עבר (session, עברית, compose_prompt, identifier, usage)
+- #14: הסרת tools — רק actionEvents נכשל ✓
+- #15: PROBE_CONTEXT=1 בלי role — closedReason invalid argument ✓
+- #16: raw 1/1 · tok-constr 0/1 · tok-full 1/1 ✓
+- #6: 503 ללא GEMINI_API_KEY ✓
+
+---
+
+## 2026-08-27 01:14
+
+### slice live-contract-gemini — Commit 2: אדפטר Gemini Live
+
+#### מה בוצע?
+
+- `live/gemini.ts` — נרמול LiveEvent, send עם role:"user" ב-sendClientContent.
+- `live/index.ts` — resolveLive לפי VoiceModelRef.
+- gemini.test.ts — 5 טסטי נרמול.
+
+#### בדיקות
+
+- bun import מחוץ לדפדפן — OK.
+- vitest gemini.test.ts — 5/5.
+
+---
+
+## 2026-08-27 01:13
+
+### slice live-contract-gemini — Commit 1: endpoint הנפקת-טוקן
+
+#### מה בוצע?
+
+- `live-gemini-config.ts` — בניית קונפיג-סשן מלא (תואם SESSION_CONFIG בפרוב).
+- `http-live-token.ts` — POST `/api/voice/live/token`, authTokens.create v1alpha.
+- טסטי אינטגרציה: 503 ללא מפתח, 400, tools לא-ריק ב-constraints.
+- `server.ts` — registerLiveTokenHttp.
+
+#### בדיקות
+
+- curl ל-4020 — token + sessionConfig חוזרים.
+- vitest: live-gemini-config + http-live-token — 5/5.
+
+---
+
+## 2026-08-27 01:10
+
+### slice live-contract-gemini — Commit 0: חוזה ליבה
+
+ענף: `slice/live-contract-gemini`, worktree `.worktrees/live-contract-gemini`, base `3952f4f9`.
+
+#### מה בוצע?
+
+- `live-types.ts` — חוזה LiveEvent / LiveCommand / LiveProvider (type-only).
+- `live-actions.ts` + `live-prompt.ts` — 10 פעולות; מבנה באנגלית, פרוזה בעברית ב-prompt בלבד.
+- `capabilities.ts` — מפתח `live` ב-voiceService/voiceConfig/DEFAULT_VOICE_CONFIG.
+- `select.test.ts` — עודכן unknown-provider test עם `live`.
+
+#### בדיקות
+
+- typecheck ירוק.
+- vitest: `live-actions.test.ts` + `select.test.ts` — 11/11.
+- lint:i18n נקי.
+
+---
+
+## 2026-08-26 02:44
+
+### slice msg-coalesce — קיבוץ chunks מעל tool/thought (באג #53)
+
+ענף: `integration/run-msg-coalesce`, worktree `.worktrees/run-msg-coalesce`, base
+`04df4c6c`. בריף: `docs-repo/drive-coding/plans/slice-msg-coalesce.md`.
+
+#### מה בוצע?
+
+**1. שער אדום (TDD)**
+
+- קובץ חדש `packages/core/src/session/msg-coalesce.test.ts` — G1/G2/G4 + 13 מקרי G3.
+- בסיס: 9 failed | 7 passed (16) — הצמד ל-commit 62d9269a.
+
+**2. תיקון**
+
+- `handleTextChunk` ב-`reduce.ts` בלבד: לולאת `targetIdx` שמדלגת אחורה על `tool` ועל
+  `thought`/`assistant` עם אותו `messageId`, וכותבת ל-`messages[targetIdx]` במקום
+  לאחרון. commit 6d5d4b37.
+
+**3. אימות**
+
+- core/session: 182→198 (אפס רגרסיות).
+- ריפו מלא (אחרי `svelte-kit sync`): 262/3067 → 263/3083.
+- שער-מוטציה (שני עוגנים יחד): רק `msg-coalesce.test.ts` נופל (9/198).
+- `typecheck` + `lint:i18n` נקיים.
+
+#### סטיות
+
+- 2 טסטי `agent-session.test.ts` עודכנו (ציפיית `:n2` → בועה מאוחדת) — קוד FE לא
+  נגע; נדרש ל-DoD #4.
+
+#### פתוח / backlog
+
+- שארית 12 זוגות ב-6 הקלטות (prompt-בתור) — מחוץ לגבולות; תיקון ב-`handleWholeMessage`.
+
+---
+
+## 2026-08-25 (slice agent-patch-unify — דלת אחת ל-PATCH /api/agents/:id)
+
+ענף: `slice/agent-patch-unify`, worktree `.worktrees/agent-patch-unify`, base
+`integration/run-http-api-reorg` @ `11da4b5f`. בריף:
+`docs-repo/drive-coding/plans/slice-agent-patch-unify.md` (אימות אביגיל: כל 9
+הממצאים תוקנו במקום).
+
+מבטל שלוש דלתות ל-`registry.update` (`POST …/session-attached`,
+`POST …/persistent`, `PATCH {title}`) לטובת `PATCH /api/agents/:id` גנרי אחד,
+תוך שימור הגנת-הגנריות (§3.5: `onUndeclaredKey("reject")` + `status` מצומצם
+לליטרל `"ready"` + extract מפורש עם שומר-`undefined` + שומר-409 שקורא את
+ה-*סוכן* ולא את ה-*בקשה*), ומתקן את שרשרת ה-`cwd` שהייתה נשברת בין
+`loadSession`(rpc) ל-`registry.update` (מעבר-תיקיות לא שרד F5).
+
+**C0** (972e6ca4, none) — חפץ-שער `scripts/probe-agent-patch.sh` (הועתק כלשונו).
+אומת אדום על הבסיס: exit 1, שלוש שורות FAIL.
+
+**C1** (31a30613, tdd) — `http-agents.ts`: `PatchAgentInput` (arktype) עם
+D1–D5 (§3.5), DELETE של שני ה-handlers הישנים (שומר MED-9 ותופעות
+`projectsRegistry` עברו ל-PATCH — לא נמחקו). `ports.ts`: `AgentRegistry.update`
+Pick הורחב ב-`cwd`. שער ירוק: `probe-agent-patch.sh` exit 0.
+
+**C2** (0e8aa45a, tdd) — הזרמת `cwd` דרך `registry.ts`
+(`notifySessionAttached`/`OnSessionAttached` מקבלים `cwd?: string` שלישי,
+Promise<void>|void נשמר) ← `rpc.ts` (`case "loadSession"`) וגם `doCreate`
+(אתר שני שהבריף מנה במפורש — anchor "onSessionAttached failed — host
+creation continues") ← `server.ts` (`registry.update` מקבל `cwd` רק כשסופק —
+D4, ו-`projectsRegistry` עם `cwd ?? agent.cwd` — D7). verifier-phase אחרי C2
+(§8 בבריף) — כלב: GO, אפס ממצאים.
+
+**C3** (1e9478e8, tdd) — חיווט החזית לדלת האחת:
+- `agents-api.ts`: `notifySessionAttached`/`setAgentPersistent` שומרים שם +
+  חתימה ציבורית, גופם עבר לקרוא ל-`patchAgent` (סוג `PatchAgentBody` תואם
+  1:1 ל-`PatchAgentInput` ב-BE). `notifySessionAttached` מקבל `opts.cwd?`
+  אופציונלי נוסף.
+- `agent-session.svelte.ts`: `cwd` נוסף ב-**שני אתרים בלבד** לפי D6 —
+  `switchSession` (ענף ה-WS, `input.cwd`) ו-`newSession` החם (המשתנה
+  `cwd = input.cwd ?? this.cwd`). ארבעת האתרים האחרים (`#warmReconnect`,
+  `attach`, `loadSession` הכבד, ו-`presence-poller.svelte.ts`) **לא** שונו —
+  אלה חזרות-הצהרה שעלולות לשדר `cwd` מעופש (הבריף הדגיש זאת במפורש).
+- שני הטסטים שהבריף חזה במפורש עודכנו: `agents-api.test.ts` (label
+  `withTimeout` עבר מ-`"notifySessionAttached"` ל-`"patchAgent"` — תוצאת
+  ההאצלה) ו-`agent-session.test.ts` (הטסט `calls notifySessionAttached with
+  replace:true` עבר על `newSession` — אתר D6 השני — נדרש `cwd: "/tmp"`
+  נוסף להתאמה-מדויקת).
+- שינוי-סמנטיקה (`notifySessionAttached` עבר מ"לא בודק res.ok" ל"זורק
+  דרך `patchAgent`"): אומת ששת אתרי-הקריאה (2× ב-agent-session.svelte.ts
+  D6, 3× נוספים בלתי-D6, 1× ב-presence-poller.svelte.ts) עוטפים ב-
+  `.catch(() => {})` — אין רגרסיה.
+
+**שערים**: `bun run typecheck` (שורש) exit 0 · `bun run --filter
+@drive-coding/frontend typecheck` — 9 שגיאות (זהה לבסיס, 5 קבצים זהים,
+0 חדשות) · `bunx vitest run packages/frontend/src/lib/adapters
+packages/frontend/src/lib/view-models` — 508/508 · `bunx vitest run
+packages/frontend` המלא — 1101/1101 · `bun run lint:i18n` exit 0 ·
+`bunx biome check` על 4 הקבצים ששונו — זהה לבסיס (2 errors / 62 warnings
+טרם-קיימים, 0 חדשים).
+
+**C4** (הקומיט הזה, integration) — שני ממצאי הביקורת:
+- **ממצא 2** (`SessionOptionsPanel.svelte`): `selectSession`/`onNewSession`
+  פלטו נתיב עירום (בלי `?sessionTransport=http`) — F5 אחרי בחירת-סשן ב-http
+  מהפאנל היה נופל בחזרה ל-ws. עזר משותף חדש `sessionPathWithTransport`
+  (`session-url.ts`) — אותה מוסכמה כמו `connect-agent.ts`/`handleReconnect`
+  (`+page.svelte`), לא שוכפל. `currentTransport()` מקומי לרכיב קורא
+  ל-`readSessionTransport` עם אותם ארגומנטים (`env.PUBLIC_SESSION_TRANSPORT`,
+  `settings.sessionTransport`).
+- **ממצא 3** (`agent-session.svelte.ts`, `newSession`): ה-guard
+  `if (this.#remoteView()) return` היה no-op שקט — הפאנל היה מנווט בשקט
+  לסשן הנוכחי. עכשיו מציב `this.error` עם מחרוזת i18n חדשה
+  (`session.newSessionUnsupportedRemote`, נוספה ל-`keys.ts`+שני הקטלוגים)
+  ומחזיר בלי לשנות `#sessionId` — הפאנל (`onNewSession`) בודק `session.error`
+  אחרי ה-`await` ומדלג על הניווט. מימוש `newSession` ב-remote עצמו נשאר
+  מחוץ ל-scope.
+- טסטים חדשים: `session-url.test.ts` (4 מקרים ל-`sessionPathWithTransport`
+  — http/ws × sessionId-נוכח/null) ו-`agent-session.remote.test.svelte.ts`
+  (newSession ב-remote מציב את מחרוזת ה-i18n המדויקת, `status`/`sessionId`
+  לא משתנים).
+
+**אימות חי (פריוויו, C3+C4 יחד)** — build production על 4261
+(`FE_STATIC_DIR` מאומת מול `<title>`+נתיב), דרך playwright-cli בסשן מבודד
+(`-s=eliezer-apu` — המכונה משותפת, הפרופיל `default` תפוס ע"י סוכן אחר):
+- **DoD 10 (ws)**: agent אמיתי ב-`/tmp/probe-dirA` (claude), בחירת סשן אחר
+  מהרשימה ששייך ל-`/home/user/Projects/drive-coding/dev` דרך הפאנל →
+  `curl /api/agents/:id` מאשר `cwd`+`acpSessionId`+`title` עודכנו לפני ה-F5;
+  אחרי `reload()` (+"Connect anyway" על דיאלוג takeover צפוי) התג בכותרת
+  מציג `dev` (לא חוזר ל-`probe-dirA`) וההיסטוריה הנכונה מוצגת.
+- **DoD 11**: בחירת סשן מהפאנל ב-http → הכתובת מכילה `?sessionTransport=http`.
+- **DoD 12**: "סשן חדש" ב-remote → הבאנר "Starting a new session is not
+  supported yet in remote mode." מוצג (`document.body.innerText`), הכתובת
+  לא השתנתה (`/chat?sessionTransport=http` — אין ניווט). Evidence:
+  `/tmp/agent-patch-unify/c4-finding3-error.png`,
+  `/tmp/agent-patch-unify/dod10-ws-f5-correct-folder.png`.
+- **DoD 9 (http)**: לא הורץ מחדש דרך דפדפן — כבר מאומת חי ב-`--live claude`
+  (`probe-agent-patch.sh`, אותה שרשרת BE בדיוק) ובדוח calev C2 (GO).
+- **DoD 6–8**: `probe-agent-patch.sh http://127.0.0.1:4260` exit 0 (רגיל
+  ו-`--live claude`), `POST …/session-attached`/`…/persistent` → 404.
+- ניקוי: תהליכי claude שנוצרו בפריוויו נסגרו (graceful shutdown של ה-BE
+  + kill לתת-תהליך יתום אחד שנשאר), תיקיות `/tmp/eliezer-dir{A,B}` נמחקו.
+
+**שערים (C4)**: `bun run typecheck` (שורש) exit 0 · FE typecheck 9 שגיאות
+(זהה) · `bunx vitest run packages/frontend packages/core` — 1668/1668
+· `bun run lint:i18n` exit 0 · `bunx biome check` על 6 הקבצים ששונו —
+זהה לבסיס (4 errors / 18 warnings טרם-קיימים, 0 חדשים).
+
 ## 2026-08-19 23:27 (slice ttl-ownership — פקיעת-TTL הופכת מהרס לשחרור-בעלות)
 
 ענף: `slice/ttl-ownership`, worktree `.worktrees/ttl-ownership`, base

@@ -1,0 +1,139 @@
+<!doctype html>
+<!--
+  Offline fallback page.
+
+  Served by the service worker (src/service-worker.ts) when a navigation request
+  fails because the device has no network. It MUST be fully self-contained:
+  no external CSS, fonts, scripts, or images — none of them can be fetched
+  while offline. That is also why the Hebrew copy lives here as plain markup
+  instead of going through the i18n runtime (`t(key)`): this page renders with
+  zero app JS and zero network. It is a static asset, not scanned by the
+  no-hardcoded-Hebrew lint (which only covers .ts/.svelte).
+
+  Colors mirror the default "ember" palette from src/app.css.
+-->
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#16130f" />
+    <title>לא מקוון — drive-coding</title>
+    <style>
+      :root {
+        --bg: #16130f;
+        --bg-elev: #211c16;
+        --fg: #f0e9e1;
+        --fg-dim: #b3a596;
+        --fg-muted: #7d7064;
+        --border: rgba(255, 240, 225, 0.08);
+        --accent: #e8845c;
+        --accent-hi: #f29b78;
+        --accent-soft: rgba(232, 132, 92, 0.15);
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: max(1.5rem, env(safe-area-inset-top)) 1.5rem
+          max(1.5rem, env(safe-area-inset-bottom));
+        -webkit-font-smoothing: antialiased;
+      }
+      .card {
+        width: 100%;
+        max-width: 24rem;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.25rem;
+      }
+      .icon {
+        width: 5rem;
+        height: 5rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 9999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+      .icon svg {
+        width: 2.5rem;
+        height: 2.5rem;
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.375rem;
+        font-weight: 600;
+        line-height: 1.3;
+        color: var(--fg);
+      }
+      .sub {
+        margin: 0;
+        font-size: 0.95rem;
+        line-height: 1.5;
+        color: var(--fg-dim);
+      }
+      .sub-en {
+        margin: 0;
+        font-size: 0.8rem;
+        color: var(--fg-muted);
+        direction: ltr;
+      }
+      button {
+        margin-top: 0.25rem;
+        appearance: none;
+        border: 1px solid var(--border);
+        background: var(--bg-elev);
+        color: var(--fg);
+        font: inherit;
+        font-size: 0.95rem;
+        font-weight: 500;
+        padding: 0.7rem 1.6rem;
+        border-radius: 0.9rem;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+      button:hover {
+        border-color: var(--accent);
+        color: var(--accent-hi);
+      }
+      button:active {
+        transform: translateY(1px);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card" role="alert">
+      <div class="icon" aria-hidden="true">
+        <!-- cloud-off (lucide) -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="m2 2 20 20" />
+          <path d="M5.782 5.782A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.307-.193" />
+          <path d="M21.532 16.5A4.5 4.5 0 0 0 17.5 10h-1.79A7.008 7.008 0 0 0 10 5.07" />
+        </svg>
+      </div>
+      <h1>שגיאה — המכשיר איננו מקוון</h1>
+      <p class="sub">בדוק את חיבור הרשת ונסה שוב. הדף ייטען מחדש אוטומטית ברגע שהחיבור יחזור.</p>
+      <p class="sub-en">You are offline. Check your connection.</p>
+      <button type="button" onclick="location.reload()">נסה שוב</button>
+    </main>
+    <script>
+      // Reload automatically the moment connectivity is restored.
+      addEventListener("online", () => location.reload());
+    </script>
+  </body>
+</html>

@@ -1,6 +1,15 @@
 /** נקודת עצירה של ה-bottom-sheet (מובייל). peek = רק הידית מציצה. */
 export type SheetDetent = "peek" | "half" | "full"
 
+/** מצב אזור-הקלט בתחתית הצ'אט — record / typing / live / hidden. */
+export type InputMode = "record" | "typing" | "live" | "hidden"
+
+/** Coerce persisted / unknown values to a valid InputMode. */
+export function coerceInputMode(v: unknown): InputMode {
+  if (v === "record" || v === "typing" || v === "live" || v === "hidden") return v
+  return "record"
+}
+
 /**
  * UiShellVM — מצב ה-shell ה-UI הגלובלי (entity: חוצה chat + settings).
  *
@@ -18,6 +27,9 @@ export class UiShellVM {
   sheetDetent = $state<SheetDetent>("peek")
   /** גובה הגלוי (px) בזמן גרירה — null כשלא גוררים. ה-component קובע. */
   sheetDragPx = $state<number | null>(null)
+
+  /** מצב אזור-הקלט (RecordFooter) — ברירת מחדל record. */
+  inputMode = $state<InputMode>("record")
 
   /** תאימות: "פתוח" = כל detent שאינו peek. נצרך ל-backdrop ולחיצות חוץ. */
   get sheetOpen(): boolean {
@@ -44,5 +56,9 @@ export class UiShellVM {
   /** קליק על הידית: peek → full, אחרת → peek. */
   toggleSheet(): void {
     this.setDetent(this.sheetDetent === "peek" ? "full" : "peek")
+  }
+
+  setInputMode(mode: InputMode): void {
+    this.inputMode = mode
   }
 }

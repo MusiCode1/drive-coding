@@ -1,32 +1,29 @@
-import { type AgentRegistry, CliId, toAgentPublic, validateCwd } from "@drive-coding/core"
-import { getCliSpec, getEffectiveCliKinds } from "@drive-coding/provider/config"
-import { type } from "arktype"
+import { type AgentRegistry, toAgentPublic } from "@drive-coding/core"
+import { createLogger } from "@drive-coding/core/log"
 import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
-import type { ProjectsRegistry } from "../app/projects-registry"
-// slice liveness C2: short response cache + no-store on GET /api/agents.
+import type { SessionHistoryStore } from "../history/session-history-store.js"
+import { parseCreateAgentBody } from "./create-agent-input.js"
+import { registerAgentsPatchHttp } from "./http-agents-patch.js"
 import { httpCacheGet, httpCacheSet } from "./http-cache.js"
+import { CF_ACCESS_EMAIL_HEADER, readOpenedByEmail } from "./opened-by-email.js"
+
+const log = createLogger("backend.agents.http")
+
+export { PatchAgentInput } from "./http-agents-patch.js"
 
 /**
  * הרחבת צד-שרת בלבד של CreateAgentInput — כולל existingSessionId
- * עבור טעינת סשן ב-Slice 8a. מוגדר כאן כי זה מרחיב את סכימת הליבה.
+ * עבור טעינת סשן ב-Slice 8a. מוגדר ב-create-agent-input.ts (slice session-bus-mcp C1)
+ * כדי ש-POST /api/agents ו-session_open לא ייסחפו.
  */
-const CreateAgentInputFull = type({
-  cliKind: CliId,
-  cwd: "string >= 1",
-  "modelOverride?": "string | null",
-  "existingSessionId?": "string | null",
-  // slice project-system-prompt: פרומפט-מערכת פר-פרויקט, מתווסף (append) בתוך provider (§3).
-  "systemPrompt?": "string | null",
-})
 
 export function registerAgentsHttp(
   app: Hono,
   deps: {
     registry: AgentRegistry
     orchestrator: AgentOrchestrator
-    projectsRegistry?: ProjectsRegistry
-    // אופציונלי בכוונה — call-sites קיימים בטסט לא מעבירים אותו (slice active-agents)
+    sessionHistoryStore: SessionHistoryStore
     // pid: number | null — in-process connections (claude) have no child process (CUT-3b-iii-2).
     bridgeManager?: {
       getRuntimeInfo(id: string): {
@@ -37,7 +34,9 @@ export function registerAgentsHttp(
         lastSeenAt: number | null
         via: "ws" | "http" | null
       } | null
+      getConnectionCount(id: string): number
     }
+    env: NodeJS.ProcessEnv
   },
 ): void {
   // GET /api/agents — רשימה (מועשרת ב-pid+attached+via אם bridgeManager זמין)
@@ -61,6 +60,7 @@ export function registerAgentsHttp(
           lastMessageAt: rt?.lastMessageAt ?? null,
           lastSeenAt: rt?.lastSeenAt ?? null,
           attachedVia: rt?.via,
+          connectionCount: deps.bridgeManager?.getConnectionCount(a.id) ?? 0,
         }
       }),
     }
@@ -78,32 +78,22 @@ export function registerAgentsHttp(
     }
 
     // מאמת מול הסכימה המלאה (כולל existingSessionId אופציונלי עבור Slice 8a)
-    const parsed = CreateAgentInputFull(body)
-    if (parsed instanceof type.errors) {
-      return c.json({ error: parsed.summary }, 400)
+    const parsed = parseCreateAgentBody(body, deps.env)
+    if (!parsed.ok) {
+      return c.json(parsed.error.body, parsed.error.status)
     }
 
-    if (getCliSpec(parsed.cliKind, process.env) === undefined) {
-      return c.json(
-        { error: `unknown cliKind: ${parsed.cliKind}`, known: getEffectiveCliKinds() },
-        400,
-      )
-    }
-
-    // מאמת נתיב cwd — דוחה נתיבים בקידוד כפול, בתי NUL, נתיבים יחסיים, וכו'.
-    const cwdResult = validateCwd(parsed.cwd)
-    if (cwdResult.isErr()) {
-      const e = cwdResult.error
-      return c.json({ error: `invalid cwd: ${e.kind}`, detail: e }, 400)
+    const email = readOpenedByEmail(c.req.header(CF_ACCESS_EMAIL_HEADER))
+    log.info(
+      { accessEmailHeader: email ? CF_ACCESS_EMAIL_HEADER : "none" },
+      "openedByEmail attribution",
+    )
+    if (email) {
+      parsed.value.openedByEmail = email
     }
 
     try {
-      // null → undefined: סכימת ה-HTTP מקבלת null (תאימות JSON), ה-orchestrator מצפה ל-string | undefined
-      const result = await deps.orchestrator.createAndSpawn({
-        ...parsed,
-        cwd: cwdResult.value, // משתמש ב-cwd מנורמל (לוכסן סוגר הוסר)
-        existingSessionId: parsed.existingSessionId ?? undefined,
-      })
+      const result = await deps.orchestrator.createAndSpawn(parsed.value)
       // מחזיר את מבנה CreateAndSpawnResult (סלייס 10)
       return c.json(result, 201)
     } catch (e) {
@@ -120,6 +110,19 @@ export function registerAgentsHttp(
     return c.json({ agent: toAgentPublic(agent) })
   })
 
+  /**
+   * DELETE /api/agents — end every agent at once.
+   *
+   * Registered before the `:id` route because Hono matches in order and `:id`
+   * would otherwise never let a bare `/api/agents` through.
+   *
+   * 200 with a per-agent report rather than 204: a bulk close whose whole point
+   * is "make sure nothing is left running" has to say which ones are left. The
+   * status stays 200 even with failures — the operation ran; the body is the
+   * result.
+   */
+  app.delete("/api/agents", (c) => deps.orchestrator.deleteAllAndKill().then((r) => c.json(r, 200)))
+
   // DELETE /api/agents/:id — מחיקה דרך orchestrator
   app.delete("/api/agents/:id", async (c) => {
     const id = c.req.param("id")
@@ -130,112 +133,8 @@ export function registerAgentsHttp(
     return c.body(null, 204)
   })
 
-  /**
-   * POST /api/agents/:id/session-attached
-   *
-   * Slice 10 Phase 1: ה-FE קורא לזה אחרי הצלחת ה-ACP handshake.
-   * מעדכן את סטטוס ה-registry ל-"ready", מתעד cwd + sessionId ב-projectsRegistry.
-   *
-   * גוף הבקשה (Body): { sessionId: string, replace?: true }
-   *   replace: כשמורם (warm switch), מאפשר דריסת sessionId קיים. ללא replace → guard MED-9 פעיל.
-   * תגובה (Response): { ok: true }
-   *
-   * שומר MED-9: אם הסוכן כבר "ready" עם acpSessionId אחר → 409 (רק כש-replace !== true).
-   */
-  app.post("/api/agents/:id/session-attached", async (c) => {
-    const agentId = c.req.param("id")
-
-    let body: unknown
-    try {
-      body = await c.req.json()
-    } catch {
-      return c.json({ error: "invalid json" }, 400)
-    }
-
-    const { sessionId, replace } = body as Record<string, unknown>
-    if (typeof sessionId !== "string" || !sessionId) {
-      return c.json({ error: "sessionId is required" }, 400)
-    }
-
-    const agent = await deps.registry.get(agentId)
-    if (!agent) return c.json({ error: "agent not found" }, 404)
-
-    // שומר MED-9: חוסם דריסה לא-מכוונת. warm switch מצהיר replace:true ועוקף ביודעין.
-    if (
-      replace !== true &&
-      agent.status === "ready" &&
-      agent.acpSessionId &&
-      agent.acpSessionId !== sessionId
-    ) {
-      return c.json({ error: "agent already attached to a different session" }, 409)
-    }
-
-    // מסמן כ-ready ומתעד סשן
-    await deps.registry.update(agentId, { status: "ready", acpSessionId: sessionId })
-
-    if (deps.projectsRegistry) {
-      await deps.projectsRegistry.recordCwd(
-        agent.cwd,
-        agent.cliKind as import("@drive-coding/core").BridgeKind,
-      )
-      await deps.projectsRegistry.recordSession(agent.cwd, sessionId)
-    }
-
-    return c.json({ ok: true })
-  })
-
-  /**
-   * PATCH /api/agents/:id — עדכון גנרי (whitelist) של שדות-משתמש. כרגע: title בלבד.
-   * (slice session-title-in-process-list) — ה-BE שכבת-אחסון טיפשה, לא מפענח wire בעצמו;
-   * ה-client (agent-session VM) דוחף לכאן את הכותרת שקיבל מ-session_info_update.
-   *
-   * ⚠️ הגנת-גנריות load-bearing (אביגיל אימתה אמפירית) — שתי שכבות, לא אחת:
-   * (א) `.onUndeclaredKey("reject")` על ה-schema — דוחה body עם מפתחות זרים (400).
-   * (ב) extract מפורש ל-`registry.update` — **אף פעם לא** spread של body/parsed גולמי,
-   *     כי `registry.update` ב-runtime מבצע `{ ...existing, ...patch }` בלי סינון
-   *     (ה-Pick ב-ports.ts הוא type-only). בלי שתי השכבות, PATCH {title, status:"crashed"}
-   *     היה דורס את ה-status.
-   */
-  const PatchAgentInput = type({ "title?": "string | null" }).onUndeclaredKey("reject")
-
-  app.patch("/api/agents/:id", async (c) => {
-    const id = c.req.param("id")
-    let body: unknown
-    try {
-      body = await c.req.json()
-    } catch {
-      return c.json({ error: "invalid json" }, 400)
-    }
-    const parsed = PatchAgentInput(body)
-    if (parsed instanceof type.errors) {
-      return c.json({ error: parsed.summary }, 400)
-    }
-    const agent = await deps.registry.get(id)
-    if (!agent) return c.json({ error: "agent not found" }, 404)
-    // guard: title absent (undefined) → no-op, שלא לנקות כותרת קיימת בטעות.
-    // title: null = clear מכוון (הסכמה מתירה); string = set.
-    if (parsed.title !== undefined) {
-      await deps.registry.update(id, { title: parsed.title })
-    }
-    return c.json({ ok: true })
-  })
-
-  // POST /api/agents/:id/persistent — נעיצה: { persistent: boolean }
-  app.post("/api/agents/:id/persistent", async (c) => {
-    const id = c.req.param("id")
-    let body: unknown
-    try {
-      body = await c.req.json()
-    } catch {
-      return c.json({ error: "invalid json" }, 400)
-    }
-    const { persistent } = body as Record<string, unknown>
-    if (typeof persistent !== "boolean") {
-      return c.json({ error: "persistent (boolean) is required" }, 400)
-    }
-    const agent = await deps.registry.get(id)
-    if (!agent) return c.json({ error: "agent not found" }, 404)
-    await deps.registry.update(id, { persistent })
-    return c.json({ ok: true })
+  registerAgentsPatchHttp(app, {
+    registry: deps.registry,
+    sessionHistoryStore: deps.sessionHistoryStore,
   })
 }

@@ -7,6 +7,7 @@
  *   agent   → Sparkles icon, accent-soft bg
  *   thought → Brain icon, thinking-soft bg
  *   tool    → Wrench icon, accent-soft bg
+ *   voice   → AudioLines icon, recording-soft bg (slice codex-voice-poc — the agent's built-in voice)
  *
  * ─── redesign-5 (C3) ───
  */
@@ -14,8 +15,9 @@ import UserIcon from "@lucide/svelte/icons/user"
 import SparklesIcon from "@lucide/svelte/icons/sparkles"
 import BrainIcon from "@lucide/svelte/icons/brain"
 import WrenchIcon from "@lucide/svelte/icons/wrench"
+import AudioLinesIcon from "@lucide/svelte/icons/audio-lines"
 
-type AvatarKind = "user" | "agent" | "thought" | "tool"
+type AvatarKind = "user" | "agent" | "thought" | "tool" | "voice"
 
 interface Props {
   kind: AvatarKind
@@ -28,6 +30,7 @@ const BG: Record<AvatarKind, string> = {
   agent:   "color-mix(in srgb, var(--accent) 22%, transparent)",
   thought: "color-mix(in srgb, var(--thinking) 15%, transparent)",
   tool:    "color-mix(in srgb, var(--accent) 15%, transparent)",
+  voice:   "color-mix(in srgb, var(--recording) 16%, transparent)",
 }
 
 const FG: Record<AvatarKind, string> = {
@@ -35,6 +38,7 @@ const FG: Record<AvatarKind, string> = {
   agent:   "var(--accent-hi)",
   thought: "var(--thinking)",
   tool:    "var(--accent-hi)",
+  voice:   "var(--recording)",
 }
 </script>
 
@@ -50,5 +54,7 @@ const FG: Record<AvatarKind, string> = {
     <BrainIcon size={15} strokeWidth={1.75} />
   {:else if kind === "tool"}
     <WrenchIcon size={15} strokeWidth={1.75} />
+  {:else if kind === "voice"}
+    <AudioLinesIcon size={15} strokeWidth={1.75} />
   {/if}
 </span>

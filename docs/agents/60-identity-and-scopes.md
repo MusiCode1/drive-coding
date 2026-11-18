@@ -1,0 +1,111 @@
+---
+id: identity
+title: Agent identity and scoped writes
+summary: Who you are on this backend, what DC_TOKEN does, and why it is not a security boundary.
+read_when:
+  - You need to know your agent id or scope token at runtime
+  - A write to another agent was denied or you must answer a scope permission prompt
+  - You are reviewing whether scoped writes protect against malicious agents
+tags: [identity]
+surface: [http, mcp]
+stability: stable
+routes:
+  - POST /api/agents/:id/reply
+  - GET /api/scope-policy
+  - PATCH /api/scope-policy
+mcp_tools:
+  - session_whoami
+docs_version: 1.10.1
+updated: 2026-11-18
+---
+
+# Agent identity and scoped writes
+
+## Who you are
+
+Your agent id travels on two channels (`agent-identity.ts:24-27`, `agent-identity.ts:33-50`):
+
+- **Environment:** `DRIVE_CODING_AGENT_ID` on spawned CLI processes.
+- **HTTP/MCP header:** `X-Drive-Coding-Agent` on requests to this backend.
+
+MCP **session_whoami** (no parameters) reads the id from the `X-Drive-Coding-Agent` header
+only — it never guesses from the environment, and a missing or unknown header is an error. It
+returns `agent`, `cliKind`, `cwd`, `hasParent`, `sessionId`, your note and fields if set, a
+`backend` block (`pid`, `port`, `version`, `uptimeSec`, `publicBaseUrl`, memory budget) and a
+`runtime` block (CLI `pid`, `attached`, `busy`, `via`, child memory — Linux only; elsewhere
+`memory` is `null`). It is discovery, not authentication.
+
+## Scope token
+
+Scoped writes use (`agent-scope.ts:29-31`):
+
+- Header **`X-Drive-Coding-Scope`** or env **`DC_TOKEN`** — a signed token binding the caller to one agent id (`agent-scope.ts:58-61`, `agent-scope.ts:65-83`).
+- Optional **`DC_MASTER_KEY`** — when the token equals this env value, all scoped writes are allowed (`agent-scope.ts:86-90`).
+
+Your **subtree** is the set of agent ids reachable via `parentAgentId` links, including yourself. Computation is cycle-safe and depth-capped at **`SUBTREE_MAX_DEPTH = 20`** (`agent-scope.ts:34`, `agent-scope.ts:94-113`).
+
+## What scoped writes protect
+
+`authorizeWrite()` (`agent-scope.ts:161-177`) is the single gate for dangerous writes (close, prompt, reconfigure) on **another** agent's session. It allows when:
+
+- No token was sent → **`"allow"`** (`agent-scope.ts:164`).
+- Token is master key → allow.
+- Target id is inside the caller's subtree → allow.
+- Caller has a prior **allow_always** grant → allow.
+- Otherwise → **`onEscalate`** asks the caller's session for permission (`scope-write.ts:37-75`).
+
+When escalation succeeds, the user (or parent agent) answers through **`POST /api/agents/:id/reply`** with a permission result (`reply.ts:40-67`).
+
+### HTTP status — `POST /api/agents/:id/reply`
+
+| Status | When | Anchor |
+|--------|------|--------|
+| `404` | No live session host for `:id` | `reply.ts:44-45` |
+| `403` | Self-approve blocked for a scope permission on your own session | `reply.ts:52-55` |
+| `400` | Unknown `kind` (not `permission` or `elicitation`) | `reply.ts:64` |
+| `200` | `{ ok: true }` — including silent no-op when `requestId` is unknown | `reply.ts:59-67` |
+
+## Not a security boundary
+
+The canonical stance is **`NOT_A_SECURITY_BOUNDARY`** (`agent-scope.ts:26-27`):
+
+> This is not a security boundary, and it is not meant to become one.
+
+**All of the following bypasses are real and accepted:**
+
+1. A spawned agent runs as the **same OS user** as the backend (`agent-scope.ts:6-8`).
+2. The child inherits the **full process environment** (`spawn-core.ts` builds `{ ...process.env }`), so **`DC_MASTER_KEY`** and **`DC_SCOPE_SECRET`** are readable by any child (`agent-scope.ts:7-11`).
+3. HTTP calls **without any scope header** → `authorizeWrite()` returns **`"allow"`** when there is no token (`agent-scope.ts:164`, `agent-scope.ts:10`).
+4. A child can **edit the guard code** itself — same user, same filesystem (`agent-scope.ts:8`, `agent-scope.ts:17-20`).
+5. The backend has **no authentication** of any kind on this surface (`agent-scope.ts:12`, `agent-scope.ts:17-20`).
+
+Do not soften this list or suggest hardening here. The guard exists so a **confused agent pursuing an unrelated task** does not close, prompt, or reconfigure a **stranger's** session by accident (`agent-scope.ts:14-15`).
+
+## Scope action policy (message / update / close)
+
+Three independent global selectors — **`ask`**, **`allow`**, or **`deny`** — one per action group. Defaults are **`ask`** for all three. Policy applies only when a scoped token writes **outside** the caller's subtree (same gate as above); missing token, master key, in-subtree targets, and existing `allow_always` grants behave unchanged.
+
+| Group | Examples |
+|-------|----------|
+| **message** | MCP `session_send`, RPC `session/prompt` |
+| **update** | HTTP `PATCH`, `POST …/reply`, RPC config/session control methods |
+| **close** | HTTP `DELETE` agent, MCP `session_close`, RPC `session/delete` |
+
+Unclassified RPC (e.g. `_drive/ext`) always **`ask`** on escalation even when all selectors are **`allow`**.
+
+### HTTP API
+
+| Method | Path | Body | Response |
+|--------|------|------|----------|
+| `GET` | `/api/scope-policy` | — | Global `{ policies, sources }` snapshot |
+| `GET` | `/api/scope-policy?agent=<uuid>` | — | **Effective** snapshot for that caller agent (`404` if id unknown) |
+| `PATCH` | `/api/scope-policy` | `{ policies: { message?, update?, close? } }` — at least one declared key; **no** extra keys at top level or under `policies` (`400`) | Global snapshot (override layer) |
+| `PATCH` | `/api/scope-policy` | `{ agent: "<uuid>", policies: { message?, update?, close? } }` — same key rules; **`null`** on a key **clears** the per-agent override for that group (`404` if agent unknown) | Effective snapshot for that agent |
+
+Both response shapes use **`Cache-Control: no-store`**. **`sources`** values: **`agent`** (per-agent row on `agents.json`), **`override`** (live global PATCH in this process), **`env`** (effective process ENV for that group), **`default`** (product default when ENV omitted/invalid). Global PATCH overrides are **in-memory only** — lost on backend restart; **per-agent** values persist in **`agents.json`** across restart.
+
+Per-agent policy is a **guard-rail convenience**, not a security boundary: any HTTP client may set it; visibility comes from **`sources: "agent"`** and the public stance in **`NOT_A_SECURITY_BOUNDARY`**.
+
+**`allow`** on a group permits matching cross-subtree writes **without** a UI prompt (no caller host required). **`deny`** rejects without creating a prompt. **`ask`** keeps the existing escalation + permission flow.
+
+MCP **`session_send`** with non-empty **`sets`**: the backend checks **update** (`session/set_config_option`) then **message** (`send`); if either group denies, the whole call fails with scope-denied and **no** config/prompt side effects.

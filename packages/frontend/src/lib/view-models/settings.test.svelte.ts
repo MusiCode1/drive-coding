@@ -25,8 +25,8 @@ vi.mock("../adapters/voice/voices", () => ({
   listVoices: vi.fn(),
 }))
 
-import { Settings } from "./settings.svelte"
 import { listVoices } from "../adapters/voice/voices"
+import { Settings } from "./settings.svelte"
 
 const SARAH_ID = "EXAVITQu4vr4xnSDxMaL"
 const STORAGE_KEY = "drive-coding-v2-settings"
@@ -144,10 +144,10 @@ describe("Settings — speech toggles (redesign-3 / 9a)", () => {
 })
 
 describe("Settings — muted (ui-polish-batch · C7)", () => {
-  test("default muted = false when localStorage empty", () => {
+  test("default muted = true when localStorage empty", () => {
     installLocalStorage()
     const s = new Settings()
-    expect(s.muted).toBe(false)
+    expect(s.muted).toBe(true)
   })
 
   test("setMuted(true) writes to localStorage", () => {
@@ -185,10 +185,10 @@ describe("Settings — muted (ui-polish-batch · C7)", () => {
 })
 
 describe("Settings — screenWakeLock (slice-wake-lock)", () => {
-  test("default screenWakeLock = false when localStorage empty", () => {
+  test("default screenWakeLock = true when localStorage empty", () => {
     installLocalStorage()
     const s = new Settings()
-    expect(s.screenWakeLock).toBe(false)
+    expect(s.screenWakeLock).toBe(true)
   })
 
   test("setScreenWakeLock(true) writes to localStorage", () => {
@@ -329,6 +329,23 @@ describe("Settings — showThoughts / showTools (display-toggle-consistency)", (
     store.set(STORAGE_KEY, JSON.stringify({ showThoughts: true, collapseThoughts: true }))
     const s = new Settings()
     expect(s.showThoughts).toBe(true)
+  })
+})
+
+describe("Settings — sessionsCurrentCwdOnly (sessions-search-filter)", () => {
+  test("default sessionsCurrentCwdOnly = false when localStorage empty", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect(s.sessionsCurrentCwdOnly).toBe(false)
+  })
+
+  test("setSessionsCurrentCwdOnly writes to localStorage", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setSessionsCurrentCwdOnly(true)
+    expect(s.sessionsCurrentCwdOnly).toBe(true)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.sessionsCurrentCwdOnly).toBe(true)
   })
 })
 
@@ -473,5 +490,136 @@ describe("Settings — loadVoices", () => {
 
     expect(vi.mocked(listVoices)).toHaveBeenCalledTimes(1)
     expect(s.availableVoices).toEqual(voicesFixture)
+  })
+})
+
+describe("Settings — autoLoadRemoteImages (slice msg-media)", () => {
+  // 🔴 ‏זה מתג-כיבוי של בקרת-אבטחה. ‏הטסטים כאן שומרים על התנאי היחיד
+  // ‏שהמשתמש הציב: ‏אפס שינוי-התנהגות בלי פעולה מפורשת שלו.
+  test("default = false when localStorage empty (safe default)", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect(s.autoLoadRemoteImages).toBe(false)
+  })
+
+  test("backward-compat: existing user without the key stays OFF", () => {
+    const store = installLocalStorage()
+    store.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        cliKind: "opencode",
+        voiceId: "v1",
+        showThoughts: true,
+        enterToSend: false,
+      }),
+    )
+    const s = new Settings()
+    expect(s.autoLoadRemoteImages).toBe(false)
+  })
+
+  test("setAutoLoadRemoteImages(true) persists, and a new instance reads it back", () => {
+    const store = installLocalStorage()
+    const s1 = new Settings()
+    s1.setAutoLoadRemoteImages(true)
+    expect(s1.autoLoadRemoteImages).toBe(true)
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.autoLoadRemoteImages).toBe(true)
+    const s2 = new Settings()
+    expect(s2.autoLoadRemoteImages).toBe(true)
+  })
+})
+
+describe("Settings — fe-defaults gate", () => {
+  test("CASE1: new user (no blob) → muted true, screenWakeLock true, sessionTransport http", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect({ m: s.muted, w: s.screenWakeLock, t: s.sessionTransport }).toEqual({
+      m: true,
+      w: true,
+      t: "http",
+    })
+  })
+
+  test("CASE2: existing blob without the three keys → muted false, screenWakeLock false, sessionTransport null", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ cliKind: "opencode", voiceId: "v1" }))
+    const s = new Settings()
+    expect({ m: s.muted, w: s.screenWakeLock, t: s.sessionTransport }).toEqual({
+      m: false,
+      w: false,
+      t: null,
+    })
+  })
+
+  test("CASE3: existing blob with explicit choices → honors parsed values", () => {
+    const store = installLocalStorage()
+    store.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        muted: true,
+        screenWakeLock: false,
+        sessionTransport: "ws",
+      }),
+    )
+    const s = new Settings()
+    expect({ m: s.muted, w: s.screenWakeLock, t: s.sessionTransport }).toEqual({
+      m: true,
+      w: false,
+      t: "ws",
+    })
+  })
+})
+
+describe("Settings — TTS model persistence (tts-model-choice)", () => {
+  test("defaults: eleven_v3 + gemini-3.1 when localStorage empty", () => {
+    installLocalStorage()
+    const s = new Settings()
+    expect(s.elevenLabsModelId).toBe("eleven_v3")
+    expect(s.geminiModelId).toBe("gemini-3.1-flash-tts-preview")
+  })
+
+  test("legacy blob without model keys keeps defaults after new Settings()", () => {
+    const store = installLocalStorage()
+    store.set(STORAGE_KEY, JSON.stringify({ voiceId: SARAH_ID, ttsProvider: "google" }))
+    const s = new Settings()
+    expect(s.elevenLabsModelId).toBe("eleven_v3")
+    expect(s.geminiModelId).toBe("gemini-3.1-flash-tts-preview")
+  })
+
+  test("unknown model id in storage → fallback to provider default", () => {
+    const store = installLocalStorage()
+    store.set(
+      STORAGE_KEY,
+      JSON.stringify({
+        elevenLabsModelId: "not-a-model",
+        geminiModelId: "gpt-tts",
+      }),
+    )
+    const s = new Settings()
+    expect(s.elevenLabsModelId).toBe("eleven_v3")
+    expect(s.geminiModelId).toBe("gemini-3.1-flash-tts-preview")
+  })
+
+  test("setElevenLabsModelId persists and reloads via new Settings()", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setElevenLabsModelId("eleven_v4")
+    const s2 = new Settings()
+    expect(s2.elevenLabsModelId).toBe("eleven_v4")
+    const parsed = JSON.parse(store.get(STORAGE_KEY) as string)
+    expect(parsed.geminiModelId).toBe("gemini-3.1-flash-tts-preview")
+  })
+
+  test("setGeminiModelId persists separately from ElevenLabs", () => {
+    const store = installLocalStorage()
+    const s = new Settings()
+    s.setGeminiModelId("gemini-3.8-flash-lite-tts")
+    expect(JSON.parse(store.get(STORAGE_KEY) as string).geminiModelId).toBe(
+      "gemini-3.8-flash-lite-tts",
+    )
+    s.setElevenLabsModelId("eleven_v4_turbo")
+    const s2 = new Settings()
+    expect(s2.geminiModelId).toBe("gemini-3.8-flash-lite-tts")
+    expect(s2.elevenLabsModelId).toBe("eleven_v4_turbo")
   })
 })

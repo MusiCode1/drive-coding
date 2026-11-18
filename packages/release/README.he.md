@@ -82,6 +82,19 @@ OPENCODE_BIN=/opt/opencode/bin/opencode drive-coding
 
 בלי monorepo, בלי workspace, בלי build step מצדכם — הכל נשלח בחבילה.
 
+## שיחה קולית חיה
+
+מצב **לייב** (הלשונית השלישית בשורת הקלט) הוא שיחה קולית דו-כיוונית על הסשן. שני מנועים
+יכולים להפעיל אותו:
+
+- **Gemini Live** — ברירת המחדל, לכל סוכן. דורש `GEMINI_API_KEY` בסביבה של השרת.
+- **Live מובנה של Codex** — כשהסשן מריץ את Codex, צ'יפ **Codex** ליד כפתור הלייב עובר לקול
+  ה-realtime של Codex עצמו (GPT-Live). הוא רץ על חשבון ChatGPT ש-Codex מחובר אליו — בלי
+  מפתח API — ודורש Codex CLI בגרסה **0.167 ומעלה** (הגדירו `CODEX_PATH` אם זה לא זה שב-`PATH`).
+  בורר הקולות מציג את קולות Codex, עם דוגמה לכל קול.
+
+המיקרופון דורש הקשר מאובטח: `http://localhost`, או HTTPS מכל מארח אחר.
+
 ## פתרון תקלות
 
 | תופעה | סיבה / פתרון |
@@ -90,6 +103,7 @@ OPENCODE_BIN=/opt/opencode/bin/opencode drive-coding
 | `command not found: bunx` | התקינו Bun (`curl -fsSL https://bun.sh/install \| bash`), ואז הפעילו מחדש את ה-shell. |
 | הפורט תפוס | הגדירו `PORT` לפורט פנוי, למשל `PORT=4100 drive-coding`. |
 | הדף ריק / 404 על `/` | כנראה הגדרתם `FE_STATIC_DIR` לנתיב ריק או שגוי — בטלו אותו כדי להשתמש בממשק המבונדל. |
+| אין צ'יפ **Codex** במצב לייב | הסוכן של הסשן אינו Codex, או ש-Codex ישן מ-0.167 — עדכנו אותו, או כוונו את `CODEX_PATH` לגרסה חדשה. |
 
 ## רישיון
 

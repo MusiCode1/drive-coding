@@ -1,0 +1,50 @@
+# Quadlet unit — drive-coding EDGE, rootless podman.
+# Install to ~/.config/containers/systemd/ then: systemctl --user daemon-reload
+#
+# Requires: loginctl enable-linger <user>  (else the service dies on logout)
+# Ports: 4000=main 4001=dev 4002=edge — same reservation as the systemd units.
+
+[Unit]
+Description=drive-coding EDGE (container) — Hono + static FE
+After=network-online.target
+Wants=network-online.target
+# StartLimit* live in [Unit]; a short crash-loop would otherwise pin the unit
+# in failed with no recovery.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Container]
+Image=localhost/drive-coding:edge
+ContainerName=drive-coding-edge
+
+# Loopback only. Ingress is the Cloudflare tunnel, exactly as on bare metal.
+PublishPort=127.0.0.1:4002:4000
+
+Environment=FE_ENV=preview
+Environment=FE_PREVIEW_LABEL=edge
+Environment=WIRE_RECORD=1
+Environment=CORS_ORIGINS=http://localhost:4002,https://drive-coding-edge-vps.musicode.ovh
+Environment=PUBLIC_BASE_URL=https://drive-coding-edge-vps.musicode.ovh
+
+# cli-specs.jsonc (live provider catalog) + wire-recordings.
+# HOME=/data in the image, so os.homedir() resolves here.
+Volume=%h/.config/drive-coding:/data/.config/drive-coding:Z
+
+# Secrets are NOT baked in. When the .env exists, uncomment both lines:
+# Secret=dc-env,type=mount,target=/run/secrets/dc.env
+# Exec=bun packages/backend/src/bin/drive-coding.ts --env-file /run/secrets/dc.env
+
+# No nested quotes — Quadlet's unquoting truncates them (see healthcheck.js).
+HealthCmd=bun /app/deploy/container/healthcheck.js
+HealthInterval=30s
+HealthStartPeriod=40s
+
+[Service]
+Restart=always
+RestartSec=5
+# 'Memory' is NOT a Quadlet key (podman 5.4 rejects the whole file).
+# systemd's own cgroup limit is the right lever anyway.
+MemoryMax=2G
+
+[Install]
+WantedBy=default.target

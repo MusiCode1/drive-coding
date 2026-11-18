@@ -14,6 +14,7 @@
  *   - user with messageId="x" × 2 → 1 bubble with 2 segments (existing behavior preserved)
  */
 
+import { DEFAULT_CLAUDE_SESSION_META } from "@drive-coding/core"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { MessageBubble, ThoughtBubble, ToolBubble, UserBubble } from "$lib/types/bubble"
@@ -53,7 +54,7 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
   }
 })
 
-vi.mock("$lib/engines/ws-transport", () => ({
+vi.mock("@drive-coding/acp-wire/browser", () => ({
   WsAcpTransport: vi.fn(function mockWsTransport() {
     return {
       onClose: vi.fn(),
@@ -220,20 +221,17 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     onSessionUpdate?.(thoughtChunk("thinking...", "msg-019fed5d"))
     onSessionUpdate?.(msgChunk("part 2", "msg-019fed5d"))
 
-    expect(session.bubbles).toHaveLength(3)
+    // slice msg-coalesce: part 2 coalesces into part 1 (skips same-mid thought)
+    expect(session.bubbles).toHaveLength(2)
     const list = session.renderBubbles
     const keys = list.map((b) => stableBubbleKey(b, list))
     const uniqueKeys = new Set(keys)
-    expect(keys.length).toBe(3)
-    expect(uniqueKeys.size).toBe(3)
-    expect(keys).toEqual([
-      "message:m:msg-019fed5d",
-      "thought:m:msg-019fed5d",
-      "message:m:msg-019fed5d:n2",
-    ])
+    expect(keys.length).toBe(2)
+    expect(uniqueKeys.size).toBe(2)
+    expect(keys).toEqual(["message:m:msg-019fed5d", "thought:m:msg-019fed5d"])
   })
 
-  it("message → tool → message with same messageId → second message gets :n2", () => {
+  it("message → tool → message with same messageId → coalesces into one bubble", () => {
     expect(onSessionUpdate).not.toBeNull()
     onSessionUpdate?.(msgChunk("before tool", "m1"))
     // ⚠️ מיזוג dev → שרשרת: הגרסה של dev דחפה בועת-כלי ידנית ל-session.bubbles.
@@ -244,11 +242,11 @@ describe("AgentSession bubble grouping (#appendChunk via #onSessionUpdate)", () 
     onSessionUpdate?.(msgChunk("after tool", "m1"))
 
     const list = session.renderBubbles
-    expect(list).toHaveLength(3)
+    // slice msg-coalesce: after-tool chunk merges back into the first message bubble
+    expect(list).toHaveLength(2)
     expect(list.map((b) => stableBubbleKey(b, list))).toEqual([
       "message:m:m1",
       "tool:t:call-1",
-      "message:m:m1:n2",
     ])
   })
 
@@ -336,18 +334,20 @@ describe("AgentSession.newSession", () => {
 
     await session.newSession({ cliKind: "opencode" })
 
-    expect(mockClient.newSession).toHaveBeenCalledWith({ cwd: "/tmp" })
+    expect(mockClient.newSession).toHaveBeenCalledWith({ cwd: "/tmp", mcpServers: [] })
     expect(session.bubbles).toHaveLength(0)
     expect(session.status).toBe("connected")
   })
 
-  it("calls notifySessionAttached with replace:true", async () => {
+  it("calls notifySessionAttached with replace:true and cwd (D6 — newSession מחזיק מקור-אמת ל-cwd)", async () => {
     const { notifySessionAttached } = await import("$lib/adapters/agents-api")
 
     await session.newSession({ cliKind: "opencode" })
 
+    // cwd נגזר מ-input.cwd ?? this.cwd — כאן "/tmp" (מ-attach ב-beforeEach, אין input.cwd מפורש)
     expect(notifySessionAttached).toHaveBeenCalledWith("test-agent", "test-session", {
       replace: true,
+      cwd: "/tmp",
     })
   })
 
@@ -374,23 +374,7 @@ describe("AgentSession.newSession", () => {
 
 // ─── TDD: claude-thinking-meta — #sessionMeta + _meta injection ──────────────
 
-const EXPECTED_META = {
-  claudeCode: {
-    options: {
-      thinking: { type: "adaptive", display: "summarized" },
-      forwardSubagentText: true,
-    },
-    emitRawSDKMessages: [
-      { type: "system", subtype: "task_started" },
-      { type: "system", subtype: "task_progress" },
-      { type: "system", subtype: "task_notification" },
-      { type: "system", subtype: "task_updated" },
-      { type: "assistant" },
-      // slice subagent-transcript-data-v2 Commit 0: בלי זה, tool_result של תת-הסוכן לא זורם.
-      { type: "user" },
-    ],
-  },
-}
+const EXPECTED_META = DEFAULT_CLAUDE_SESSION_META
 
 describe("AgentSession._meta injection (claude-thinking-meta)", () => {
   beforeEach(() => {
@@ -409,6 +393,7 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
     >)
     expect(mockClient.newSession).toHaveBeenCalledWith({
       cwd: "/proj",
+      mcpServers: [],
       _meta: EXPECTED_META,
     })
   })
@@ -422,7 +407,7 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
     const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<
       typeof createAcpClient
     >)
-    expect(mockClient.newSession).toHaveBeenCalledWith({ cwd: "/tmp" })
+    expect(mockClient.newSession).toHaveBeenCalledWith({ cwd: "/tmp", mcpServers: [] })
   })
 
   // ── loadSession (cold) with claude → _meta injected ──
@@ -437,6 +422,7 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
     expect(mockClient.loadSession).toHaveBeenCalledWith({
       sessionId: "sess-1",
       cwd: "/proj",
+      mcpServers: [],
       _meta: EXPECTED_META,
     })
   })
@@ -450,7 +436,11 @@ describe("AgentSession._meta injection (claude-thinking-meta)", () => {
     const mockClient = await (vi.mocked(createAcpClient).mock.results[0]?.value as ReturnType<
       typeof createAcpClient
     >)
-    expect(mockClient.loadSession).toHaveBeenCalledWith({ sessionId: "sess-2", cwd: "/tmp" })
+    expect(mockClient.loadSession).toHaveBeenCalledWith({
+      sessionId: "sess-2",
+      cwd: "/tmp",
+      mcpServers: [],
+    })
   })
 })
 

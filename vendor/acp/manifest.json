@@ -1,0 +1,17 @@
+{
+  "claude": {
+    "filename": "agentclientprotocol-claude-agent-acp-0.100.0.tgz",
+    "commit": "3bc917deaa34450472ee41a2ec0f6e49b0f7fb69",
+    "sha256": "38095ac9e8cfd0195931a9170d54e5623c12af7921c56ad130e2d23ba187ae12",
+    "repository": "https://github.com/MusiCode1/claude-agent-acp",
+    "license": "Apache-2.0"
+  },
+  "codex": {
+    "filename": "agentclientprotocol-codex-acp-2.5.0-dc.3.tgz",
+    "commit": "31cc10d3954c942e2798563f609647688bfffd43",
+    "sha256": "2da9457caa1f284581fb8c7e9ef8d2cdb93e4eae37ade698ba14f167382b0e0f",
+    "repository": "https://github.com/MusiCode1/codex-acp",
+    "license": "Apache-2.0",
+    "branch": "drive-coding-realtime"
+  }
+}

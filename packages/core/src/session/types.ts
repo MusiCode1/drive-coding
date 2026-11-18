@@ -70,7 +70,8 @@ export type SessionModes = {
 export type SessionUsage = {
   used: number
   size: number
-  cost?: number
+  /** ACP wire uses `{ amount, currency? }`; number accepted at reduce boundary only. */
+  cost?: { amount: number; currency?: string }
 }
 
 // ─── Roles ───
@@ -117,6 +118,12 @@ export type SessionMessage =
       role: "user" | "thought" | "assistant"
       messageId: string | null
       segments: SessionSegment[]
+      /**
+       * חותמת-זמן ISO של ההודעה מהמקור (SDK ≥0.3.211 פולט על assistant; user תמיד).
+       * מקורלטת ב-reduce מזרם `_claude/sdkMessage` לפי messageId. אופציונלי ו-additive.
+       * ⚠️ שעון-המקור, **לתצוגה בלבד** — לא למיין לפיו (הוראת ה-SDK).
+       */
+      timestamp?: string
       meta?: Record<string, unknown>
       /** slice remote-images C2 — תמונות שנשלחו עם הפרומפט. אופציונלי ו-additive. */
       attachments?: { mimeType: string; dataBase64: string }[]
@@ -131,6 +138,24 @@ export type SessionMessage =
 
 // ��── State ───
 
+/**
+ * רשומה ב-`SessionState.carried` — update שהליבה אינה מכירה, שמור לשחזור.
+ *
+ * ─── slice carried-snapshot C1 ───
+ */
+export type CarriedUpdate = {
+  /**
+   * מפתח-כיווץ. אחרון-מנצח, ו-🔴 **הרשומה עוברת לסוף המערך** ברענון
+   * (מחיקה + דחיפה), לא מוחלפת במקום: ‏`stateToSessionUpdates` שוזר לפי
+   * ה-`after`, ולכן סדר-המערך חייב להתלכד עם סדר ה-`after`.
+   */
+  key: string
+  /** ה-id הסינתטי (`m_<seq>`) של ההודעה האחרונה שהייתה ב-state בהגעה; null = לפני כולן. */
+  after: string | null
+  /** ה-update הגולמי כמות שהוא. core אינו מפרש את תוכנו. */
+  update: unknown
+}
+
 export type SessionState = {
   /** מונה-על; כל reduce / applyPatch מעלה ב-1 */
   version: number
@@ -140,6 +165,13 @@ export type SessionState = {
   nextMessageSeq: number
   /** מונה דטרמיניסטי ל-ids של segments (s_<n>) */
   nextSegmentSeq: number
+  /**
+   * חותמות-זמן ממתינות לפי messageId (מ-`_claude/sdkMessage`). הגשר פולט את
+   * ה-timestamp של ההודעה **לפני** שבועת ה-assistant נוצרת מה-chunks; שומרים
+   * כאן ומחילים כשההודעה נוצרת/מתעדכנת. buffer — לא תלוי בסדר ההגעה.
+   * אופציונלי (additive) — state ישן / literal בטסטים בלי השדה עדיין תקף.
+   */
+  messageTimestamps?: Record<string, string>
 
   // ─── C1: session lifecycle + metadata fields ───
 
@@ -177,6 +209,15 @@ export type SessionState = {
    * ─── slice session-host-pending-surface C1 ───
    */
   lastTurnError: { message: string; at: number } | null
+
+  /**
+   * updates שהליבה אינה מכירה (`plan` / `plan_update` / כל סוג עתידי),
+   * שמורים כדי שה-snapshot יוכל לפלוט אותם חזרה במיקומם. הליבה אינה מפרשת
+   * את תוכנם — רק בוחרת משבצת לפי `sessionUpdate` ומגבילה את המטען.
+   * אופציונלי (additive) — state ישן / literal בטסטים בלי השדה עדיין תקף.
+   * ─── slice carried-snapshot C1 ───
+   */
+  carried?: CarriedUpdate[]
 }
 
 // ─── Patches ───
@@ -207,9 +248,35 @@ export type Patch =
    * ⇒ פיצ'ר חדש ב-CLI מגיע ל-FE **באפס עבודת-BE**, בדיוק כמו בצינור השקוף.
    */
   | { version: number; op: "opaque"; update: unknown }
-  | { version: number; op: "append-segment"; targetId: string; segment: SessionSegment }
+  | {
+      version: number
+      op: "append-segment"
+      targetId: string
+      segment: SessionSegment
+      meta?: Record<string, unknown>
+    }
   | { version: number; op: "add-message"; message: SessionMessage }
-  | { version: number; op: "update-tool"; targetId: string; toolCall: Partial<SessionToolCall> }
+  /**
+   * החלפת הודעה קיימת **בשלמותה**, במקומה בסדר.
+   *
+   * ─── slice acp-v2-reduce ───
+   * נדרש ל-`agent_message`/`user_message`/`agent_thought` של ACP v2, שהם
+   * upsert של הודעה שלמה ולא הוספת-קטע. זו בדיוק היכולת ש-v1 **חסר**, ובלעדיה
+   * snapshot מכווץ אינו ניתן לביטוי בפרוטוקול: השרת שמשחזר מ-`SessionState`
+   * שלו מייצר הודעות שלמות, לא את ה-chunks המקוריים (§2.2 בתוכנית-העל).
+   *
+   * ⚠️ `targetId` הוא ה-id הסינתטי (`m_<seq>`), כמו בשאר ה-ops — **לא**
+   * ה-`messageId` של ACP. ההתאמה לפי messageId נעשית ב-`reduce`, פעם אחת,
+   * ומה שיוצא לחוט כבר מדבר במזהים שלנו.
+   */
+  | { version: number; op: "set-message"; targetId: string; message: SessionMessage }
+  | {
+      version: number
+      op: "update-tool"
+      targetId: string
+      toolCall: Partial<SessionToolCall>
+      meta?: Record<string, unknown>
+    }
   | {
       version: number
       op: "reset"
@@ -236,6 +303,7 @@ export type Patch =
           | "lastTurnError"
         >
       >
+      meta?: Record<string, unknown>
     }
 
 // ─── Helpers ───
@@ -252,6 +320,7 @@ export function createInitialSessionState({
     messages: [],
     nextMessageSeq: 0,
     nextSegmentSeq: 0,
+    messageTimestamps: {},
     // C1 fields
     status: "idle",
     turnState: "idle",
@@ -264,6 +333,7 @@ export function createInitialSessionState({
     title: "",
     commands: [],
     lastTurnError: null,
+    carried: [],
   }
 }
 
@@ -319,6 +389,20 @@ export function synthesizeUserMessage(
  * מחזיר { state: SessionState; patches: Patch[] } — אותה צורה כמו reduce.
  * נועד ל-S3 (meta passthrough): synthesizeUserMessage → applyUserMessage → LocalSessionView.prompt().
  */
+/** Builds a tool message and applies it via applyUserMessage (single code path). */
+export function applyToolMessage(
+  state: SessionState,
+  toolCall: SessionToolCall,
+): { state: SessionState; patches: Patch[] } {
+  const msg: SessionMessage = {
+    id: `m_${state.nextMessageSeq}`,
+    role: "tool",
+    messageId: null,
+    toolCall,
+  }
+  return applyUserMessage(state, msg)
+}
+
 export function applyUserMessage(
   state: SessionState,
   msg: SessionMessage,

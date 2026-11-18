@@ -15,7 +15,14 @@ import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../src/acp/connection-registry.js"
 
-const { createAgentOrchestrator } = await import("../src/app/agent-orchestrator.js")
+const { createAgentOrchestrator, composeShapeEnv } = await import("../src/app/agent-orchestrator.js")
+const {
+  DC_TOKEN_ENV,
+  hasAllowAlwaysGrant,
+  issueToken,
+  recordAllowAlwaysGrant,
+  resetAllowAlwaysGrantsForTests,
+} = await import("../src/agent-scope.js")
 
 // ─── Mock helpers ─────────────────────────────────────────────────────
 
@@ -99,16 +106,31 @@ function makeConnectionRegistry(
   reg: ConnectionRegistry
   closeMock: ReturnType<typeof vi.fn>
   connectMock: ReturnType<typeof vi.fn>
-  lastConnectOpts: { cwd?: string; modelOverride?: string | null } | null
+  lastConnectOpts: {
+    cwd?: string
+    modelOverride?: string | null
+    shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
+    agentEnv?: Record<string, string>
+  } | null
 } {
   let crashHandler: ((id: string, info: BridgeCrashInfo) => void) | null = null
-  let lastConnectOpts: { cwd?: string; modelOverride?: string | null } | null = null
+  let lastConnectOpts: {
+    cwd?: string
+    modelOverride?: string | null
+    shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
+    agentEnv?: Record<string, string>
+  } | null = null
   const closeMock = vi.fn(async (_id: string) => {})
   const connectMock = vi.fn(
     async (
       _agentId: string,
       _cliKind: string,
-      connectOpts: { cwd: string; modelOverride?: string | null },
+      connectOpts: {
+        cwd: string
+        modelOverride?: string | null
+        shapeEnv?: (cliKind: string, base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
+        agentEnv?: Record<string, string>
+      },
     ) => {
       lastConnectOpts = connectOpts
       if (opts.onConnectError) throw opts.onConnectError()
@@ -119,10 +141,23 @@ function makeConnectionRegistry(
   const reg: ConnectionRegistry = {
     connect: connectMock,
     get: vi.fn(() => undefined),
-    markAttached: vi.fn(),
-    markDetached: vi.fn(),
+    getCwd: vi.fn(() => undefined),
+    getCharter: vi.fn(() => undefined),
+    consumeCharter: vi.fn(() => undefined),
+    getCliKind: vi.fn(() => undefined),
+    list: vi.fn(() => []),
+    addConnection: vi.fn(),
+    removeConnection: vi.fn(),
+    touchConnection: vi.fn(),
+    clearAllConnections: vi.fn(),
+    getConnectionCount: vi.fn(() => 0),
     isAttached: vi.fn(() => false),
+    getEpoch: vi.fn(() => 0),
+    isOwnedByWs: vi.fn(() => false),
     getRuntimeInfo: vi.fn(() => null),
+    getLastSeenAt: vi.fn(() => null),
+    listHttpConnectionIds: vi.fn(() => []),
+    setWsSocketChecker: vi.fn(),
     close: closeMock,
     onCrash(handler) {
       crashHandler = handler
@@ -235,6 +270,20 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
 
     expect(closeMock).toHaveBeenCalledWith(result.agentId)
     expect(state.has(result.agentId)).toBe(false)
+  })
+
+  it("deleteAndKill clears allow_always grants involving the agent", async () => {
+    resetAllowAlwaysGrantsForTests()
+    const { registry } = makeRegistry()
+    const { reg } = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: reg })
+
+    const a = await orch.createAndSpawn({ cliKind: "opencode", cwd: "/tmp/a", modelOverride: null })
+    const b = await orch.createAndSpawn({ cliKind: "opencode", cwd: "/tmp/b", modelOverride: null })
+    recordAllowAlwaysGrant(a.agentId, b.agentId, "close")
+
+    await orch.deleteAndKill(a.agentId)
+    expect(hasAllowAlwaysGrant(a.agentId, b.agentId, "close")).toBe(false)
   })
 
   it("deleteAndKill on non-existent id → no throw, close still attempted", async () => {
@@ -483,6 +532,105 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
       "claude",
       expect.objectContaining({ systemPrompt: null }),
     )
+  })
+
+  // slice session-create-contract C2 — env via composeShapeEnv (wraps drivecodingShapeEnv).
+  describe("composeShapeEnv (C2)", () => {
+    it("merges env above baseEnv without dropping existing keys", () => {
+      const shape = composeShapeEnv({ BDS_SLICE: "probe" })
+      const result = shape("cursor", { PATH: "/bin", HOME: "/home/user" })
+      expect(result).toMatchObject({
+        PATH: "/bin",
+        HOME: "/home/user",
+        BDS_SLICE: "probe",
+      })
+    })
+
+    it("opencode: OPENCODE_CONFIG_CONTENT still injected (regression)", () => {
+      const shape = composeShapeEnv({ BDS_SLICE: "probe" })
+      const result = shape("opencode", {})
+      expect(result.OPENCODE_CONFIG_CONTENT).toBeTruthy()
+      expect(result.PROMPT_INJECTOR_TEXT).toBeTruthy()
+      expect(result.BDS_SLICE).toBe("probe")
+    })
+
+    it("absent env → identical to drivecodingShapeEnv behavior for opencode", () => {
+      const composed = composeShapeEnv(undefined)
+      const direct = composeShapeEnv(undefined)
+      const base = { FOO: "bar" }
+      expect(composed("opencode", base)).toEqual(direct("opencode", base))
+    })
+  })
+
+  it("createAndSpawn passes env through shapeEnv to connect", async () => {
+    const { registry } = makeRegistry()
+    const connReg = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: connReg.reg })
+
+    const result = await orch.createAndSpawn({
+      cliKind: "cursor",
+      cwd: "/proj",
+      modelOverride: null,
+      env: { BDS_SLICE: "probe" },
+    })
+
+    expect(connReg.lastConnectOpts?.shapeEnv).toBeTypeOf("function")
+    const shaped = connReg.lastConnectOpts!.shapeEnv!("cursor", { EXISTING: "yes" })
+    expect(shaped).toMatchObject({ EXISTING: "yes", BDS_SLICE: "probe" })
+    expect(shaped.DRIVE_CODING_BASE).toMatch(/^http:\/\//)
+    expect(shaped.DC_BASE).toBe(shaped.DRIVE_CODING_BASE)
+    expect(shaped.DRIVE_CODING_AGENT_ID).toBeTruthy()
+    // agentEnv carries the same BASE/identity for in-process bridges
+    expect(connReg.lastConnectOpts).toMatchObject({
+      agentEnv: expect.objectContaining({
+        DRIVE_CODING_BASE: shaped.DRIVE_CODING_BASE,
+        DC_BASE: shaped.DC_BASE,
+        BDS_SLICE: "probe",
+      }),
+    })
+
+    const expectedToken = issueToken(result.agentId)
+    expect(shaped[DC_TOKEN_ENV]).toBe(expectedToken)
+    expect(connReg.lastConnectOpts?.agentEnv?.[DC_TOKEN_ENV]).toBe(expectedToken)
+  })
+
+  it("createAndSpawn forces loopback BASE even if caller passes a public URL", async () => {
+    const { registry } = makeRegistry()
+    const connReg = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({
+      registry,
+      connectionRegistry: connReg.reg,
+      urlConfig: { port: 4371, host: "127.0.0.1", publicBaseUrl: "https://public.example.com" },
+    })
+
+      await orch.createAndSpawn({
+        cliKind: "cursor",
+        cwd: "/proj",
+        modelOverride: null,
+        env: {
+          DRIVE_CODING_BASE: "https://public.example.com",
+          DC_BASE: "https://public.example.com",
+        },
+      })
+
+      const shaped = connReg.lastConnectOpts!.shapeEnv!("cursor", {})
+      expect(shaped.DRIVE_CODING_BASE).toBe("http://127.0.0.1:4371")
+      expect(shaped.DC_BASE).toBe("http://127.0.0.1:4371")
+  })
+
+  it("createAndSpawn without env → shapeEnv still wraps opencode injection", async () => {
+    const { registry } = makeRegistry()
+    const connReg = makeConnectionRegistry()
+    const orch = createAgentOrchestrator({ registry, connectionRegistry: connReg.reg })
+
+    await orch.createAndSpawn({
+      cliKind: "opencode",
+      cwd: "/proj",
+      modelOverride: null,
+    })
+
+    const shaped = connReg.lastConnectOpts!.shapeEnv!("opencode", {})
+    expect(shaped.OPENCODE_CONFIG_CONTENT).toBeTruthy()
   })
 
   // ─── slice remote-warm-reconnect C2b: ניקוי session-hosts ב-delete/crash ───

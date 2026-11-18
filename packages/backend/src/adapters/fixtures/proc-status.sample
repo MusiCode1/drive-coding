@@ -1,0 +1,55 @@
+Name:	cursor
+Umask:	0022
+State:	S (sleeping)
+Tgid:	250735
+Ngid:	0
+Pid:	250735
+PPid:	591395
+TracerPid:	0
+Uid:	1000	1000	1000	1000
+Gid:	1000	1000	1000	1000
+FDSize:	256
+Groups:	1000 27
+NStgid:	250735
+NSpid:	250735
+NSpgid:	250735
+NSsid:	250735
+VmPeak:	 4194304 kB
+VmSize:	 4194304 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	 1884160 kB
+VmRSS:	 1884160 kB
+RssAnon:	 1875968 kB
+RssFile:	    8192 kB
+RssShmem:	       0 kB
+VmData:	 3145728 kB
+VmStk:	     132 kB
+VmExe:	   16384 kB
+VmLib:	  262144 kB
+VmPTE:	    4096 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+Threads:	32
+SigQ:	0/127000
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000000000000
+SigCgt:	0000000000000000
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	000001ffffffffff
+CapAmb:	0000000000000000
+NoNewPrivs:	0
+Seccomp:	0
+Speculation_Store_Bypass:	thread vulnerable
+Cpus_allowed:	ff
+Cpus_allowed_list:	0-7
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	12345
+nonvoluntary_ctxt_switches:	678

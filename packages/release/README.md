@@ -83,6 +83,21 @@ A single self-contained package:
 No monorepo, no workspace, no build step on your side — everything ships in the
 package.
 
+## Live voice conversation
+
+**Live** mode (the third input tab) is a spoken, two-way conversation about the session.
+Two engines can drive it:
+
+- **Gemini Live** — the default, for every agent. Needs `GEMINI_API_KEY` in the
+  server's environment.
+- **Codex built-in Live** — when the session runs Codex, a **Codex** chip next to the
+  Live button switches to Codex's own realtime voice (GPT-Live). It runs on the
+  ChatGPT account Codex is signed in with — no API key — and needs Codex CLI
+  **0.167 or newer** (set `CODEX_PATH` if it is not the one on your `PATH`). The voice
+  picker lists Codex's voices, each with a sample.
+
+The microphone needs a secure context: `http://localhost`, or HTTPS from any other host.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |
@@ -91,6 +106,7 @@ package.
 | `command not found: bunx` | Install Bun (`curl -fsSL https://bun.sh/install \| bash`), then restart your shell. |
 | Port already in use | Set `PORT` to a free port, e.g. `PORT=4100 drive-coding`. |
 | The page is blank / 404 on `/` | You likely set `FE_STATIC_DIR` to an empty or wrong path — unset it to use the bundled UI. |
+| No **Codex** chip in Live mode | The session's agent is not Codex, or Codex is older than 0.167 — update it, or point `CODEX_PATH` at a newer one. |
 
 ## License
 

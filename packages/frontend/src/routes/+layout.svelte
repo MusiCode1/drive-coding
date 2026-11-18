@@ -1,70 +1,81 @@
 <script lang="ts">
 /**
- * Composition root — מאתחל (instantiates) את כל ה-view-models הראשיים ומחבר
- * אותם לקונטקסט. זהו המקום היחיד באפליקציה שבו קוראים ל-`new <VM>()`.
- *
- * ─── עיצוב תוספתי בטוח למקביליות ───
- *
- * הוספת VM חדש:
- *   1. הוסף `import { Foo } from "$lib/view-models/foo.svelte"` לייבואים.
- *   2. הוסף בלוק `// ─── <domain> ───` חדש באזור למטה.
- *      לסדר יש חשיבות רק כאשר VM תלוי באחר (הצהר קודם על תלויות).
- *   3. הוסף `setFoo(foo)` בבלוק ה-setContext המתאים.
- *
- * שני slices שמוסיפים VMs בלתי תלויים ייפלו בחלקים שונים → ויעברו git auto-merge.
+ * Composition root — view-models + setContext. Additive-only; see parallel-safe-code.md.
  */
+import "$lib/log"
+import PlaybackDebugPanel from "$lib/components/debug/PlaybackDebugPanel.svelte"
 import "../app.css"
+import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { onDestroy, onMount } from "svelte"
 import { page } from "$app/state"
-import { installDebugSurface } from "$lib/debug/dc"
-import { normalizeSessionTransport } from "$lib/session/session-transport"
 import { env } from "$env/dynamic/public"
-import type { Locale } from "@drive-coding/core/i18n"
 import {
   setActiveAgents,
+  setAudioDevices,
+  setAudioPlaylist,
   setBubblePlayer,
   setChatScroll,
   setCliAvailability,
   setContentViewer,
+  setComposerDraft,
+  setSessionMemo,
   setCues,
+  setDictate,
   setI18n,
   setMic,
   setModals,
+  setNotify,
   setModelStatus,
   setPresencePoller,
   setRecentProjects,
   setResponsive,
   setSession,
   setSettings,
-  setSpeaker,
   setTheme,
   setUiShell,
-  setVoiceMode,
 } from "$lib/context"
+import { installDebugSurface } from "$lib/debug/dc"
+import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
+import { createConfigChangeRefresher } from "$lib/engines/config-change-socket"
+import { ttsStatus } from "$lib/view-models/tts-status.svelte"
+import { CuesEngine } from "$lib/engines/cues"
+import { createPendingCaptureWiring } from "$lib/engines/pending-capture-wiring"
+import MediaSessionPlaylistSync from "$lib/components/layout/MediaSessionPlaylistSync.svelte"
+import { PlayableSink } from "$lib/engines/playable-sink"
+import { WakeLockEngine } from "$lib/engines/wake-lock"
+import { NotifyEngine } from "$lib/engines/notify.svelte"
+import { notifyTexts } from "$lib/notify-texts"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { beWsUrl } from "$lib/util/be-url"
-import { CuesEngine } from "$lib/engines/cues"
-import { WakeLockEngine } from "$lib/engines/wake-lock"
-import { createConfigChangeSocket } from "$lib/engines/config-change-socket"
+import { bindSessionLifecycle } from "$lib/actions/session-lifecycle"
+import { installVoiceStack } from "$lib/actions/layout-voice-wiring.svelte"
+import {
+  installSessionScopePolicy,
+  wireDocumentLocale,
+  wirePresencePoller,
+  wireSessionTransportOverride,
+  wireUiShellCloseOnAttach,
+} from "$lib/actions/layout-session-wiring.svelte"
 import { ActiveAgents } from "$lib/view-models/active-agents.svelte"
-import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
-import { RecentProjects } from "$lib/view-models/recent-projects.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { BubblePlayer } from "$lib/view-models/bubble-player.svelte"
-import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
-import { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
-import { I18nVM } from "$lib/view-models/i18n.svelte"
-import { Mic } from "$lib/view-models/mic.svelte"
+import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
+import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
 import { ContentViewerVM } from "$lib/view-models/content-viewer.svelte"
+import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
+import { I18nVM } from "$lib/view-models/i18n.svelte"
+import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
+import { SessionMemoVM } from "$lib/view-models/session-memo.svelte"
+import { Dictate } from "$lib/view-models/dictate.svelte"
+import { AudioDevicesVM } from "$lib/view-models/audio-devices.svelte"
+import { Mic } from "$lib/view-models/mic.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
+import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
+import { RecentProjects } from "$lib/view-models/recent-projects.svelte"
 import { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
-import { Speaker } from "$lib/view-models/speaker.svelte"
 import { ThemeVM } from "$lib/view-models/theme.svelte"
-import { ttsCapabilities } from "$lib/view-models/capabilities.svelte"
 import { UiShellVM } from "$lib/view-models/ui-shell.svelte"
-import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
-import { isPageHidden } from "$lib/util/page-visibility.svelte"
 
 let { children } = $props()
 
@@ -83,31 +94,81 @@ const cues = new CuesEngine()
 // slice-restore-last-config: settings מוזרק לסשן כדי לשמור config פר-CLI
 const session = new AgentSession({ cues, settings })
 
-// ─── speaker ─── (תלוי ב-session + settings + cues)
-const speaker = new Speaker({ session, settings, cues })
+installSessionScopePolicy({ session, settings })
 
-// ─── mic ─── (slice 3 — תלוי ב-session + cues)
-const mic = new Mic({ session, cues })
+// ─── audio-playlist ─── (A4 — entity משותף בין Speaker ו-BubblePlayer)
+// AudioSink נוצר כאן — Speaker מחזיק ref אליו (prepareSegment/clear).
+// AudioPlaylist נוצר לפני Speaker כי Speaker מקבל אותו כ-dependency.
+const sharedAudioStream = new PlayableSink()
+const sharedOrderAlloc = new OrderAllocator()
+const audioPlaylist = new AudioPlaylist(sharedAudioStream)
 
-// ─── voice-mode ─── (slice 3 — תלוי ב-mic + session + speaker)
-const voiceMode = new VoiceMode({ mic, session, speaker })
+// ─── audio-devices ─── (slice mic-device-selection)
+const audioDevices = new AudioDevicesVM({ settings })
+
+// ─── mic ─── (slice 3; voice-pending-persistence recovery)
+const { micRecovery, dictateRecovery } = createPendingCaptureWiring()
+const mic = new Mic({
+  session,
+  cues,
+  recovery: micRecovery,
+  getInputDeviceId: () => audioDevices.effectiveInputId,
+})
+
+// ─── composer-draft ─── (slice dictate-to-input)
+const composerDraft = new ComposerDraft()
+
+// ─── session-memo ─── (slice session-memo-pad)
+// המעקב אחרי הסשן הפעיל יושב בתוך ה-VM (חוק זהב #4) — כאן רק הרכבה.
+const sessionMemo = new SessionMemoVM(session)
+
+// ─── dictate ─── (slice dictate-to-input — תלוי ב-composerDraft + mic)
+const dictate = new Dictate({
+  draft: composerDraft,
+  mic,
+  recovery: dictateRecovery,
+  getInputDeviceId: () => audioDevices.effectiveInputId,
+})
+
+// ─── theme ─── (redesign-1) — declared before Live getter; instance assigned below Live block
+let theme!: ThemeVM
+
+// ─── voice stack ─── live · speaker · voice-mode · agent-voice (layout-voice-wiring)
+const { speaker } = installVoiceStack({
+  mic,
+  session,
+  settings,
+  i18n,
+  cues,
+  audioDevices,
+  playlist: audioPlaylist,
+  audioStream: sharedAudioStream,
+  orderAlloc: sharedOrderAlloc,
+  getTheme: () => theme,
+})
 
 // ─── model-status ─── (msr-v2 — תלוי ב-session + speaker)
 const modelStatus = new ModelStatus({ session, speaker })
 
-// ─── bubble-player ─── (msr-v2 — תלוי ב-session + settings)
-const bubblePlayer = new BubblePlayer({ session, settings })
+// ─── bubble-player ─── (msr-v2 — תלוי ב-session + settings + audioPlaylist)
+// A4: playlist משותף עם Speaker — BubblePlayer יאוחד ב-Commit 3
+const bubblePlayer = new BubblePlayer({
+  session,
+  settings,
+  playlist: audioPlaylist,
+  orderAlloc: sharedOrderAlloc,
+})
 
 // ─── car-mode ─── (slice 7)
 
-// ─── theme ─── (redesign-1)
-const theme = new ThemeVM()
+theme = new ThemeVM()
 
 // ─── responsive ─── (redesign-2)
 const responsive = new ResponsiveVM()
 
 // ─── ui-shell ─── (redesign-2)
 const uiShell = new UiShellVM()
+uiShell.setInputMode(settings.inputMode)
 
 // ─── modals ─── (redesign-6)
 const modals = new ModalsVM()
@@ -136,7 +197,7 @@ void ttsCapabilities.refresh()
 // ─── presence-poller ─── (slice liveness C3 — חי לכל אורך הסשן, גם כשהפאנל סגור)
 const presencePoller = new PresencePoller(session)
 presencePoller.init()
-session.setSseReconnectedListener(() => presencePoller.onSseReconnected())
+bindSessionLifecycle({ session, speaker, orderAlloc: sharedOrderAlloc, presencePoller })
 
 // ─── wake-lock ─── (Track C — drive-first chrome)
 const wakeLock = new WakeLockEngine()
@@ -145,17 +206,16 @@ $effect(() => {
   return () => wakeLock.dispose()
 })
 
-// ─── dir/lang sync ─── (rtl-ltr-bidi)
-// סנכרון <html dir> ו-<html lang> ל-locale — הקסם של הדו-כיווניות.
-// ה-effect קורא $state (i18n.locale) וכותב ל-DOM (לא ל-$state) → אין infinite loop.
-// <html> אינו DOM-node של component ספציפי → layout הוא המקום הנכון (composition root).
-const RTL_LOCALES: Locale[] = ["he"]
-$effect(() => {
-  const loc = i18n.locale // קריאה ריאקטיבית
-  const dir = RTL_LOCALES.includes(loc) ? "rtl" : "ltr"
-  document.documentElement.dir = dir
-  document.documentElement.lang = loc
-})
+// ─── notifications ─── (slice notify-local · notify-quiet-prompt)
+const notify = new NotifyEngine({ text: (kind) => notifyTexts(i18n.t, kind) })
+notify.watchPermission()
+$effect(() => notify.setEnabled(settings.notifications))
+$effect(() => () => notify.dispose())
+$effect(() => notify.notifyTurn(session.turnState))
+$effect(() => notify.notifyPermissionPending(session.pendingPermission !== null))
+$effect(() => notify.notifyElicitationPending(session.pendingElicitation !== null))
+
+wireDocumentLocale(i18n)
 
 // ─── document title ─── (slice app-title-build-env)
 // base מ-env (נצרב ב-build); fallback "Drive Coding" אם ה-var חסר (dev-server בלי FE_ENV).
@@ -169,43 +229,17 @@ const titleContext = $derived.by(() => {
 })
 const docTitle = $derived(titleContext ? `${baseTitle} • ${titleContext}` : baseTitle)
 
-// ─── session-transport override ─── (slice transport-polish C3)
-// עקיפה מ-URL: ?sessionTransport=ws/http → נכתב מנורמל ל-sessionStorage (חיה בטאב).
-// קריאה+נרמול+כתיבה בלבד — לא נוגע ב-attach/detach/reconnect/VM. שינוי הדגל משפיע
-// על החיבור הבא בלבד; סשן חי ממשיך בטרנספורט שלו. $effect לא רץ ב-SSR → גישה לאחסון בטוחה.
-$effect(() => {
-  const q = page.url.searchParams.get("sessionTransport")
-  const normalized = normalizeSessionTransport(q)
-  if (normalized) sessionStorage.setItem("sessionTransport", normalized)
-})
+wireSessionTransportOverride()
+wirePresencePoller(presencePoller, session)
+wireUiShellCloseOnAttach(uiShell, session)
 
-// ─── presence sync ─── (slice liveness C3)
-// סבב-תיקונים liveness — שני תיקונים בבלוק הקטן הזה:
-//
-// 1. `inSession` היה `status === "connected"`. ⇒ ברגע שה-WS נפל, sync קיבל
-//    `inSession:false` → stop() → clearBanner(), והבאנר נמחק **בדיוק** ברגע
-//    שנועד להופיע. הבאנר לא יכול להיות בעל-הבית של מצב-החיבור אם הוא נהרס
-//    בניתוק. "בסשן" = connected **או** disconnected (ניתוק חולף); "error"
-//    ו-"idle" נשארים בחוץ — הראשון טרמינלי (session.error מציג אותו), השני אין בו סשן.
-// 2. `return () => stop()` רץ לפני **כל** הרצה-מחדש של ה-$effect, לא רק בפירוק —
-//    כלומר כל שינוי ב-status/agentId/hidden ניגב את הבאנר ואת מונה-הכשלים.
-//    הפירוק עבר ל-$effect נפרד בלי קריאות ריאקטיביות, שרץ פעם אחת.
-$effect(() => {
-  const status = session.status
-  const inSession = status === "connected" || status === "disconnected"
-  const agentId = session.agentId
-  const hidden = isPageHidden()
-  presencePoller.sync({ inSession, agentId, hidden })
-})
-$effect(() => () => presencePoller.dispose())
 // ─── חיווט ───────────────────────────────────────
 setI18n(i18n)
 setSettings(settings)
 setCues(cues)
 setSession(session)
-setSpeaker(speaker)
+setAudioPlaylist(audioPlaylist)
 setMic(mic)
-setVoiceMode(voiceMode)
 setModelStatus(modelStatus)
 setBubblePlayer(bubblePlayer)
 setTheme(theme)
@@ -217,6 +251,11 @@ setActiveAgents(activeAgents)
 setRecentProjects(recentProjects)
 setCliAvailability(cliAvailability)
 setPresencePoller(presencePoller)
+setNotify(notify)
+setComposerDraft(composerDraft)
+setSessionMemo(sessionMemo)
+setDictate(dictate)
+setAudioDevices(audioDevices)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
 const chatScroll = $state<ChatScrollBridge>({ scrollEl: null, handle: null })
@@ -231,17 +270,26 @@ if (import.meta.env.DEV && typeof window !== "undefined") {
 // ─── slice debug-surface: משטח-תצפית ב-dev **וגם בפריוויו** ───
 // הגייט הוא PUBLIC_APP_ENV (מ-FE_ENV בזמן-בילד) ולא import.meta.env.DEV,
 // שהוא false בכל בילד — בדיוק הסיבה שה-hook שמעל חסר-תועלת בפריוויו.
-if (__DC_ENABLED__) {
+// slice playback-observability: הגייט הוא **או** בזמן-בילד **או** דגל-ריצה.
+// ⚠️ הדגל נחוץ דווקא בייצור: הבאגים שנתפסים בשדה (הקראה שנפסקת אחרי תור
+// שלם) אינם מופיעים ב-dev, ובלי משטח-תצפית מאבחנים אותם בעיוורון. הקוד
+// זעיר, המשטח קריא-בלבד, והנתונים סגורים עד ש-`__dc.enable()` נקרא.
+const dcOptIn = typeof localStorage !== "undefined" && localStorage.getItem("__dc") === "1"
+if (__DC_ENABLED__ || dcOptIn) {
   void installDebugSurface()
 }
+
+// ─── pending-capture ─── (slice voice-pending-persistence)
+onMount(() => {
+  void mic.hydratePending()
+  void dictate.hydratePending()
+})
 
 // ─── config-change-socket ─── (slice cli-specs-hot-reload)
 // Wiring only: the socket, lifecycle and reconnect live in the engine (golden rule
 // forbids WebSocket in routes). Here we only create it and pass the callback.
-const configSocket = createConfigChangeSocket({
-  url: beWsUrl("/ws/echo"),
-  onConfigChanged: () => void cliAvailability.reload(),
-})
+const cfgTargets = { cliAvailability, ttsCapabilities, ttsStatus }
+const configSocket = createConfigChangeRefresher(beWsUrl("/ws/echo"), cfgTargets)
 onMount(() => configSocket.start())
 onDestroy(() => configSocket.stop())
 </script>
@@ -251,3 +299,16 @@ onDestroy(() => configSocket.stop())
 </svelte:head>
 
 {@render children?.()}
+
+<MediaSessionPlaylistSync
+  {audioPlaylist}
+  {session}
+  onStop={() => bubblePlayer.stop()}
+/>
+
+<!-- ─── slice playback-observability ───
+     ⚠️ אחרי ה-children, מחוץ לכל מכל — `position: fixed` בתוך מכל עם
+     `transform`/`filter` היה נצמד למכל ולא ל-viewport. -->
+{#if __DC_ENABLED__ || dcOptIn}
+  <PlaybackDebugPanel />
+{/if}

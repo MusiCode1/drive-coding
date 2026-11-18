@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "bash \"$HOME/Projects/drive-coding/edge/packages/provider/hooks/cursor/inject-prompt.sh\" sessionStart",
+        "timeout": 5
+      }
+    ]
+  }
+}

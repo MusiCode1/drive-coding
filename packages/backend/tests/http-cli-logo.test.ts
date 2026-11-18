@@ -32,7 +32,7 @@ afterEach(async () => {
 async function makeApp(): Promise<Hono> {
   const { registerCliLogoHttp } = await import("../src/delivery/http-cli-logo.js")
   const app = new Hono()
-  registerCliLogoHttp(app)
+  registerCliLogoHttp(app, process.env)
   return app
 }
 

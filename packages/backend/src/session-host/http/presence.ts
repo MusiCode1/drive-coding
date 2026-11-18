@@ -26,6 +26,7 @@ import type { Hono } from "hono"
 // touchOwner runs BEFORE any cache short-circuit — the side effect is the point.
 import { httpCacheGet, httpCacheSet } from "../../delivery/http-cache.js"
 import type { AgentSessionRegistry } from "../registry.js"
+import { readConnectionId } from "./connection-id.js"
 
 /**
  * registerPresenceRoute — registers POST /api/agents/:id/presence on the Hono app.
@@ -34,8 +35,10 @@ export function registerPresenceRoute(app: Hono, registry: AgentSessionRegistry)
   app.post("/api/agents/:id/presence", (c) => {
     const agentId = c.req.param("id")
 
-    // liveness side effect — always, before anything else (C1 §2).
-    registry.touchOwner(agentId)
+    const connectionId = readConnectionId(c)
+    if (connectionId !== undefined) {
+      registry.touchConnection(agentId, connectionId)
+    }
 
     c.header("Cache-Control", "no-store")
     const key = `presence:${agentId}`

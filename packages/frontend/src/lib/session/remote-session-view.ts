@@ -3,12 +3,13 @@
  *
  * מתחבר ל-SessionHost בשרת דרך HTTP+SSE (S4 routes):
  * - GET  /api/agents/:id/events  — SSE snapshot+patches (דרך SSEReader)
- * - POST /api/agents/:id/rpc     — prompt/cancel/setMode/setConfigOption/setSessionModel/extMethod
+ * - POST /api/agents/:id/rpc     — session/prompt · session/cancel · session/set_mode
+ *                                  session/set_config_option · _drive/ext · _drive/set_session_model
  * - POST /api/agents/:id/reply   — respond ל-permission/elicitation
  *
- * Session management (slice remote-session-mgmt C4): listSessions/loadSession/
- * deleteSession go through the BE rpc (blocking mappings, real results);
- * newSession still throws — session creation stays BE-owned (§5.1).
+ * Session management (slice remote-session-mgmt C4 + remote warm newSession):
+ * listSessions/loadSession/deleteSession/newSession go through the BE rpc
+ * (blocking mappings, real results).
  *
  * Reactivity: RemoteSessionView רק מתחזק state + מזרים patches (עוטף כל Patch בודד
  * מ-SSEReader ל-[patch] כדי להתאים ל-VM's ReadableStream<Patch[]>). ה-VM עושה את
@@ -23,19 +24,23 @@ import {
   applyPatch,
   createInitialSessionState,
   type Patch,
+  RPC_METHODS,
+  reduce,
   type SessionState,
 } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import { registerView, unregisterView, type ViewDebugInfo } from "$lib/debug/session-registry"
 import { connWarn } from "$lib/util/conn-log"
-import type { SessionView } from "./session-view.js"
+import type { SessionView, ViewEmission } from "./session-view.js"
+import type { WireUpdateBatch } from "./sse-reader"
 import { SSEReader } from "./sse-reader.js"
+
+export const ACP_CONNECTION_ID_HEADER = "Acp-Connection-Id"
 
 /** ext methods שדורשות return value אמיתי — לא נתמכות ב-remote mode (§C2 decision #3). */
 const RETURN_VALUE_EXT_METHODS = new Set<string>(["_drive/getQuota"])
 
-const NOT_SUPPORTED_SESSION_MGMT = "not supported in remote mode — backend manages sessions"
 const NOT_SUPPORTED_EXT_RETURN_VALUE = "not supported in remote mode — use state instead"
 
 export type RemoteSessionViewOptions = {
@@ -68,6 +73,7 @@ export class RemoteSessionView implements SessionView {
   readonly #agentId: string
   readonly #baseUrl: string
   readonly #headers: Record<string, string>
+  readonly #connectionId: string
   readonly #onSseReconnected?: () => void
   readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly #reader: SSEReader
@@ -81,9 +87,9 @@ export class RemoteSessionView implements SessionView {
    */
   #sessionCapabilities: { delete?: unknown; [key: string]: unknown } | null = null
 
-  // ─── patches stream (עטוף — Patch בודד מ-SSEReader → [patch]) ───
-  #patchesCtrl: ReadableStreamDefaultController<Patch[]> | null = null
-  readonly patches: ReadableStream<Patch[]>
+  // ─── patches stream (ViewEmission: patches + raw wire updates) ───
+  #patchesCtrl: ReadableStreamDefaultController<ViewEmission> | null = null
+  readonly patches: ReadableStream<ViewEmission>
 
   // ─── C3: Speaker water-mark (§8.1) — מונע הקראה כפולה אחרי reconnect ───
   #lastReadMessageId: string | null = null
@@ -95,7 +101,13 @@ export class RemoteSessionView implements SessionView {
     this.#agentId = agentId
     this.#baseUrl = baseUrl
     registerView(this) // תצפית בלבד — ר' debug/session-registry.ts
-    this.#headers = opts.headers ?? {}
+    this.#connectionId =
+      opts.headers?.[ACP_CONNECTION_ID_HEADER] ??
+      (typeof crypto !== "undefined" ? crypto.randomUUID() : "remote-view")
+    this.#headers = {
+      [ACP_CONNECTION_ID_HEADER]: this.#connectionId,
+      ...opts.headers,
+    }
     this.#onSseReconnected = opts.onSseReconnected
     this.#doFetch = opts._fetch ?? ((u, init) => globalThis.fetch(u, init))
     // replaced on connect() by the SSE snapshot — this is just a safe pre-connect default
@@ -109,7 +121,7 @@ export class RemoteSessionView implements SessionView {
     })
     this.#reader.onReconnected = this.#handleReconnected.bind(this)
 
-    this.patches = new ReadableStream<Patch[]>({
+    this.patches = new ReadableStream<ViewEmission>({
       start: (ctrl) => {
         this.#patchesCtrl = ctrl
       },
@@ -193,7 +205,7 @@ export class RemoteSessionView implements SessionView {
   }
 
   async #doConnect(): Promise<void> {
-    const { snapshot, patches } = await this.#reader.connect()
+    const { snapshot, updates } = await this.#reader.connect()
     this.#state = snapshot
     this.#sessionId = snapshot.sessionId
     this.#lastVersion = snapshot.version
@@ -212,9 +224,9 @@ export class RemoteSessionView implements SessionView {
         nextMessageSeq: snapshot.nextMessageSeq,
         nextSegmentSeq: snapshot.nextSegmentSeq,
       }
-      this.#emit([resetPatch])
+      this.#emit([resetPatch], [])
     }
-    void this.#drainPatches(patches)
+    void this.#drainUpdates(updates)
   }
 
   /**
@@ -252,8 +264,8 @@ export class RemoteSessionView implements SessionView {
 
   // ─── Incoming patches: apply to state (core applyPatch) + wrap + emit ───
 
-  async #drainPatches(patches: ReadableStream<Patch>): Promise<void> {
-    const reader = patches.getReader()
+  async #drainUpdates(updates: ReadableStream<WireUpdateBatch>): Promise<void> {
+    const reader = updates.getReader()
     try {
       while (true) {
         const { done, value } = await reader.read()
@@ -278,28 +290,43 @@ export class RemoteSessionView implements SessionView {
     }
   }
 
-  #applyIncoming(patch: Patch): void {
+  /**
+   * ─── slice acp-wire-session-update ───
+   * מקבל **batch של `session/update`** במקום `Patch` יחיד, ומקפל אותו כאן
+   * ב-`reduce` — אותו reducer בדיוק שמסלול ה-WS משתמש בו. ⇒ שתי התעבורות
+   * מתאחדות על קיפול יחיד, וה-`Patch` נשאר יחידת-ההחלה הפנימית בלבד.
+   */
+  #applyIncoming(batch: WireUpdateBatch): void {
     // calev-heavy B1: PatchesBroadcaster.subscribe() replays up to 64 buffered patches
     // to every new subscriber — including reconnects, and even the very first connect
     // if patches happened before this client attached. Those patches are already
     // reflected in the snapshot (frame-zero) / in whatever #lastVersion already covers.
     // Applying them again duplicates messages/segments (measured: "hello"+" world"
     // appearing twice after one server-side drop). Skip anything already applied.
-    if (patch.version <= this.#lastVersion) return
-    const nextState = applyPatch(this.#state, patch)
-    // calev-heavy round 2 finding #1: applyPatch's default case now no-ops on an
-    // unknown op (core fix), but this is defense-in-depth against #state ever
-    // becoming nullish — never let a single patch wipe the whole view state.
-    if (!nextState) return
-    this.#state = nextState
-    this.#lastVersion = patch.version
-    this.#advanceWaterMark(patch)
-    this.#emit([patch])
+    if (batch.version <= this.#lastVersion) return
+
+    let state = this.#state
+    const produced: Patch[] = []
+    for (const update of batch.updates) {
+      const { state: next, patches } = reduce(state, update)
+      state = next
+      produced.push(...patches)
+    }
+    // ⚠️ **ה-version נדרס לזה של השרת.** `reduce` מקדם מונה מקומי אחד לכל
+    // update, וה-batch יכול להחזיק כמה — ספירה מקומית הייתה מסיטה את המונה
+    // מזה של השרת בהדרגה, ואז כל השוואת-watermark הופכת לשקר. זו בדיוק
+    // רגרסיית-הגרסה שבאג #41 נבנה סביבה.
+    this.#state = { ...state, version: batch.version }
+    this.#lastVersion = batch.version
+    for (const p of produced) this.#advanceWaterMark(p)
+    if (produced.length > 0 || batch.updates.length > 0) {
+      this.#emit(produced, batch.updates)
+    }
   }
 
-  #emit(patches: Patch[]): void {
+  #emit(patches: Patch[], updates: unknown[] = []): void {
     try {
-      this.#patchesCtrl?.enqueue(patches)
+      this.#patchesCtrl?.enqueue({ patches, updates })
     } catch {
       // stream cancelled by consumer — ignore
     }
@@ -364,18 +391,26 @@ export class RemoteSessionView implements SessionView {
     this.#lastVersion = snapshot.version
     this.#lastReadMessageId = null
     this.#lastReadSegmentIndex = 0
-    this.#emit([resetPatch])
+    this.#emit([resetPatch], [])
     this.#onSseReconnected?.()
   }
 
-  // ─── Session management — slice remote-session-mgmt C4 ───
+  // ─── Session management — slice remote-session-mgmt C4 + remote warm newSession ───
 
   /**
-   * ❌ newSession stays throwing (documented): creating a session means a fresh
-   * connection through createAgent — out of this slice's scope.
+   * Warm ACP session/new on the existing HTTP host (BE reset + session/new).
+   * cwd optional — route falls back to connection cwd (400 if neither).
+   * Updates #sessionId and state.sessionId from the rpc response (same as loadSession).
    */
-  newSession(): Promise<void> {
-    return Promise.reject(new Error(NOT_SUPPORTED_SESSION_MGMT))
+  async newSession(cwd?: string): Promise<void> {
+    const res = (await this.#rpc(RPC_METHODS.newSession, {
+      ...(cwd && { cwd }),
+    })) as { sessionId?: unknown } | undefined
+    const attached =
+      typeof res?.sessionId === "string" && res.sessionId.length > 0 ? res.sessionId : null
+    if (!attached) throw new Error("RemoteSessionView: newSession returned no sessionId")
+    this.#sessionId = attached
+    this.#state = { ...this.#state, sessionId: attached }
   }
 
   /**
@@ -388,7 +423,7 @@ export class RemoteSessionView implements SessionView {
    * state write it would stay stale across the switch).
    */
   async loadSession(sessionId: string, cwd?: string): Promise<void> {
-    const res = (await this.#rpc("loadSession", {
+    const res = (await this.#rpc(RPC_METHODS.loadSession, {
       sessionId,
       ...(cwd && { cwd }),
     })) as { sessionId?: unknown } | undefined
@@ -406,7 +441,7 @@ export class RemoteSessionView implements SessionView {
    * empty list gracefully instead of showing a generic "502".
    */
   async listSessions(): Promise<SessionInfo[]> {
-    const res = (await this.#rpc("listSessions", {})) as
+    const res = (await this.#rpc(RPC_METHODS.listSessions, {})) as
       | { sessions?: unknown; sessionCapabilities?: unknown }
       | undefined
     this.#sessionCapabilities =
@@ -430,7 +465,7 @@ export class RemoteSessionView implements SessionView {
    * local (button hidden / false return).
    */
   async deleteSession(sessionId: string): Promise<void> {
-    const res = (await this.#rpc("deleteSession", { sessionId })) as
+    const res = (await this.#rpc(RPC_METHODS.deleteSession, { sessionId })) as
       | { ok?: unknown; unsupported?: unknown }
       | undefined
     if (res?.unsupported === true) {
@@ -449,30 +484,34 @@ export class RemoteSessionView implements SessionView {
    * לאחר slice remote-images C1.
    */
   async prompt(content: string | PromptBlocks, meta?: Record<string, unknown>): Promise<void> {
-    await this.#rpc("prompt", { sessionId: this.#sessionId, content, meta })
+    await this.#rpc(RPC_METHODS.prompt, { sessionId: this.#sessionId, content, meta })
   }
 
   async cancel(): Promise<void> {
-    await this.#rpc("cancel", { sessionId: this.#sessionId })
+    await this.#rpc(RPC_METHODS.cancel, { sessionId: this.#sessionId })
   }
 
   async setMode(mode: string): Promise<void> {
-    await this.#rpc("setMode", { sessionId: this.#sessionId, modeId: mode })
+    await this.#rpc(RPC_METHODS.setMode, { sessionId: this.#sessionId, modeId: mode })
   }
 
   async setConfigOption(key: string, value: unknown): Promise<void> {
-    await this.#rpc("setConfigOption", { sessionId: this.#sessionId, configId: key, value })
+    await this.#rpc(RPC_METHODS.setConfigOption, {
+      sessionId: this.#sessionId,
+      configId: key,
+      value,
+    })
   }
 
   async setSessionModel(model: string): Promise<void> {
-    await this.#rpc("setSessionModel", { sessionId: this.#sessionId, model })
+    await this.#rpc(RPC_METHODS.setSessionModel, { sessionId: this.#sessionId, model })
   }
 
   async extMethod(method: string, params: unknown): Promise<unknown> {
     if (RETURN_VALUE_EXT_METHODS.has(method)) {
       throw new Error(NOT_SUPPORTED_EXT_RETURN_VALUE)
     }
-    return this.#rpc("extMethod", { sessionId: this.#sessionId, method, params })
+    return this.#rpc(RPC_METHODS.extMethod, { sessionId: this.#sessionId, method, params })
   }
 
   // ─── Reply (permission/elicitation) ───

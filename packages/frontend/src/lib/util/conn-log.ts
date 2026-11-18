@@ -8,8 +8,11 @@
  * נפח נמוך בכוונה: רק אירועי-מעבר (נפילה · ניסיון · חזרה), לא כל tick.
  */
 
+import { createLogger } from "../log"
+
 /** תג אחיד — `[conn]` נותן `grep`/סינון-קונסול אחד לכל מצב-החיבור. */
 const TAG = "[conn]"
+const log = createLogger("fe.conn")
 
 /**
  * חוצץ-מעגלי של אירועי-חיבור.
@@ -44,6 +47,7 @@ export function connInfo(event: string, detail?: Record<string, unknown>): void 
   const d = fmt(detail)
   push("info", event, d)
   console.info(`${TAG} ${event}`, d)
+  log.info(detail ?? {}, event)
 }
 
 /** נפילה או כשל — מה שהמשתמש **לא** רואה יותר על המסך. */
@@ -51,4 +55,5 @@ export function connWarn(event: string, detail?: Record<string, unknown>): void 
   const d = fmt(detail)
   push("warn", event, d)
   console.warn(`${TAG} ${event}`, d)
+  log.warn(detail ?? {}, event)
 }

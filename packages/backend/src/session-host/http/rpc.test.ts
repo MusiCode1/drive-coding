@@ -17,13 +17,25 @@
  * ─── slice session-host-pending-surface C3-ד (TDD): non-blocking prompt/cancel ───
  */
 
+import { serializeDriveMessage } from "@drive-coding/core/acp/drive-message-envelope"
 import type { SessionState } from "@drive-coding/core/session"
-import { createInitialSessionState } from "@drive-coding/core/session"
+import {
+  applyUserMessage,
+  createInitialSessionState,
+  synthesizeUserMessage,
+} from "@drive-coding/core/session"
+import type { AcpClient, AcpClientCallbacks, PromptBlocks } from "@drive-coding/provider/client"
 import { Hono } from "hono"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { AGENT_ID_HEADER, buildAgentMcpServers } from "../../agent-identity.js"
+import { issueToken, SCOPE_HEADER } from "../../agent-scope.js"
+import { createInMemoryAgentRegistry } from "../../agents/registry.js"
+import { setSelfBaseUrlForTests } from "../../instances.js"
+import { resetScopePolicyForTests, setScopePolicyOverride } from "../../scope-policy.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
 import type { ExtendedSessionHost } from "../session-host.js"
+import { createSessionHost } from "../session-host.js"
 import { registerRpcRoute } from "./rpc.js"
 
 // ── mock helpers ──────────────────────────────────────────────────────────────
@@ -36,7 +48,11 @@ function makeMockHost(state: SessionState): ExtendedSessionHost {
   return {
     state,
     patches: new ReadableStream({ start() {} }),
-    prompt: vi.fn().mockResolvedValue(undefined),
+    prompt: vi.fn().mockImplementation(async (_sessionId, content, meta) => {
+      const msg = synthesizeUserMessage(state, content as string | PromptBlocks, meta)
+      const applied = applyUserMessage(state, msg)
+      Object.assign(state, applied.state)
+    }),
     newSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
     loadSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
     cancel: vi.fn().mockResolvedValue(undefined),
@@ -44,12 +60,18 @@ function makeMockHost(state: SessionState): ExtendedSessionHost {
     setConfigOption: vi.fn().mockResolvedValue(undefined),
     setSessionModel: vi.fn().mockResolvedValue(undefined),
     extMethod: vi.fn().mockResolvedValue({ result: "ok" }),
+    emitExtNotification: vi.fn(),
     respondPermission: vi.fn(),
     respondElicitation: vi.fn(),
+    isScopeRequest: () => false,
+    requestScopePermission: vi.fn().mockResolvedValue("deny"),
     listSessions: vi.fn().mockResolvedValue({}),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),
-    agentCapabilities: {},
+    agentCapabilities: { mcpCapabilities: { http: true } },
+    getTurnStartedAt: () => 0,
+    getStallReported: () => false,
+    markStallReported: () => {},
   }
 }
 
@@ -58,6 +80,8 @@ function makeMockBroadcaster(): PatchesBroadcaster {
     subscribe: vi.fn().mockReturnValue(new ReadableStream()),
     unsubscribe: vi.fn(),
     close: vi.fn(),
+    // slice history-cursor C2: חבר חדש בחוזה PatchesBroadcaster.
+    oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
   }
 }
 
@@ -81,15 +105,18 @@ function makeMockRegistry(
     unregisterHost: vi.fn(),
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),
     getCwd: vi.fn(),
+    getCliKind: vi.fn(),
     getEpoch: vi.fn().mockReturnValue(0),
-    touchOwner: vi.fn(),
+    touchConnection: vi.fn(),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
+    getConnectionCount: vi.fn().mockReturnValue(0),
+    stop: vi.fn(),
   }
 }
 
 function makeApp(registry: AgentSessionRegistry): Hono {
   const app = new Hono()
-  registerRpcRoute(app, registry)
+  registerRpcRoute(app, registry, createInMemoryAgentRegistry())
   return app
 }
 
@@ -106,7 +133,18 @@ function makeApp(registry: AgentSessionRegistry): Hono {
  * tsconfig, not this slice). This local structural type sidesteps the ambiguous
  * `Response` name entirely for the one function that needs it.
  */
-type MockResponse = { status: number; json(): Promise<{ version?: number; error?: string }> }
+type MockResponse = {
+  status: number
+  json(): Promise<{
+    version?: number
+    error?: string
+    ok?: boolean
+    timedOut?: boolean
+    messagesSince?: unknown[]
+    result?: unknown
+    code?: number
+  }>
+}
 
 async function postRpc(app: Hono, agentId: string, body: unknown): Promise<MockResponse> {
   const res = await app.request(`/api/agents/${agentId}/rpc`, {
@@ -511,7 +549,7 @@ describe("POST /api/agents/:id/rpc", () => {
       expect(json.sessionCapabilities).toBeNull()
     })
 
-    it("host.listSessions rejecting → 502 with {error, code}", async () => {
+    it("host.listSessions -32601 → 200 {sessions:[], sessionCapabilities} (CF-safe)", async () => {
       const host = makeMockHost(makeMockState())
       ;(host.listSessions as ReturnType<typeof vi.fn>).mockRejectedValue(
         Object.assign(new Error("Method not found"), { code: -32601 }),
@@ -520,15 +558,43 @@ describe("POST /api/agents/:id/rpc", () => {
       const app = makeApp(registry)
 
       const res = await postRpc(app, "agent-1", { method: "listSessions", params: {} })
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as unknown as {
+        sessions: unknown[]
+        sessionCapabilities: unknown
+      }
+      expect(json.sessions).toEqual([])
+      expect(json.sessionCapabilities).toBeNull()
+    })
+
+    it("host.listSessions rejecting non-32601 → 502 with {error, code}", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.listSessions as ReturnType<typeof vi.fn>).mockRejectedValue(
+        Object.assign(new Error("boom"), { code: -32000 }),
+      )
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "listSessions", params: {} })
       expect(res.status).toBe(502)
       const json = (await res.json()) as unknown as { error: string; code: number }
-      expect(json.code).toBe(-32601)
-      expect(json.error).toBe("Method not found")
+      expect(json.code).toBe(-32000)
+      expect(json.error).toBe("boom")
     })
   })
 
   describe("loadSession (blocking, cwd resolution, notifySessionAttached)", () => {
-    it("happy path: 200 {sessionId, version}; cwd from params passed to host; notifySessionAttached called", async () => {
+    const TEST_SELF_BASE = "http://127.0.0.1:4055"
+    const expectedMcp = () => buildAgentMcpServers("agent-1", TEST_SELF_BASE)
+
+    beforeEach(() => {
+      setSelfBaseUrlForTests(TEST_SELF_BASE)
+    })
+    afterEach(() => {
+      setSelfBaseUrlForTests(undefined)
+    })
+
+    it("happy path: 200 {sessionId, version}; cwd from params passed to host and to notifySessionAttached", async () => {
       const host = makeMockHost(makeMockState(13))
       ;(host.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
         sessionId: "sess-9",
@@ -545,8 +611,18 @@ describe("POST /api/agents/:id/rpc", () => {
       const json = (await res.json()) as unknown as { sessionId: string; version: number }
       expect(json.sessionId).toBe("sess-9")
       expect(json.version).toBe(13)
-      expect(host.loadSession).toHaveBeenCalledWith({ cwd: "/from/params", sessionId: "sess-9" })
-      expect(registry.notifySessionAttached).toHaveBeenCalledWith("agent-1", "sess-9")
+      expect(host.loadSession).toHaveBeenCalledWith({
+        cwd: "/from/params",
+        sessionId: "sess-9",
+        mcpServers: expectedMcp(),
+      })
+      // slice agent-patch-unify C2: ה-cwd שכבר חושב כאן (מ-params או מ-fallback)
+      // עובר גם ל-notifySessionAttached — זו החוליה שהייתה חסרה בשרשרת ה-cwd (§3).
+      expect(registry.notifySessionAttached).toHaveBeenCalledWith(
+        "agent-1",
+        "sess-9",
+        "/from/params",
+      )
     })
 
     it("cwd missing in params → falls back to registry.getCwd", async () => {
@@ -565,7 +641,17 @@ describe("POST /api/agents/:id/rpc", () => {
       })
       expect(res.status).toBe(200)
       expect(registry.getCwd).toHaveBeenCalledWith("agent-1")
-      expect(host.loadSession).toHaveBeenCalledWith({ cwd: "/fallback-cwd", sessionId: "sess-9" })
+      expect(host.loadSession).toHaveBeenCalledWith({
+        cwd: "/fallback-cwd",
+        sessionId: "sess-9",
+        mcpServers: expectedMcp(),
+      })
+      // ה-cwd שנפתר (fallback, לא params) הוא זה שמגיע ל-notifySessionAttached.
+      expect(registry.notifySessionAttached).toHaveBeenCalledWith(
+        "agent-1",
+        "sess-9",
+        "/fallback-cwd",
+      )
     })
 
     it("cwd missing in params AND registry.getCwd undefined → 400 'no cwd available'", async () => {
@@ -582,6 +668,28 @@ describe("POST /api/agents/:id/rpc", () => {
       const json = (await res.json()) as unknown as { error: string }
       expect(json.error).toBe("no cwd available")
       expect(host.loadSession).not.toHaveBeenCalled()
+    })
+
+    it("passes empty mcpServers when agent did not declare http MCP in initialize", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = {}
+      ;(host.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({
+        sessionId: "sess-9",
+        version: 1,
+      })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "loadSession",
+        params: { sessionId: "sess-9", cwd: "/from/params" },
+      })
+      expect(res.status).toBe(200)
+      expect(host.loadSession).toHaveBeenCalledWith({
+        cwd: "/from/params",
+        sessionId: "sess-9",
+        mcpServers: [],
+      })
     })
 
     it("missing sessionId in params → 400 (ArkType), host.loadSession never called", async () => {
@@ -629,6 +737,142 @@ describe("POST /api/agents/:id/rpc", () => {
         params: { sessionId: "sess-9", cwd: "/x" },
       })
       expect(res.status).toBe(200)
+    })
+  })
+
+  describe("newSession (blocking, cwd resolution, notifySessionAttached, Claude _meta)", () => {
+    const TEST_SELF_BASE = "http://127.0.0.1:4055"
+    const expectedMcp = () => buildAgentMcpServers("agent-1", TEST_SELF_BASE)
+
+    beforeEach(() => {
+      setSelfBaseUrlForTests(TEST_SELF_BASE)
+    })
+    afterEach(() => {
+      setSelfBaseUrlForTests(undefined)
+    })
+
+    it("happy path: 200 {sessionId, version}; cwd from params; notifySessionAttached", async () => {
+      const host = makeMockHost(makeMockState(7))
+      ;(host.newSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "sess-new" })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "newSession",
+        params: { cwd: "/from/params" },
+      })
+      expect(res.status).toBe(200)
+      const json = (await res.json()) as unknown as { sessionId: string; version: number }
+      expect(json.sessionId).toBe("sess-new")
+      expect(json.version).toBe(7)
+      expect(host.newSession).toHaveBeenCalledWith({
+        cwd: "/from/params",
+        mcpServers: expectedMcp(),
+      })
+      expect(registry.notifySessionAttached).toHaveBeenCalledWith(
+        "agent-1",
+        "sess-new",
+        "/from/params",
+      )
+    })
+
+    it("cwd missing → falls back to registry.getCwd", async () => {
+      const host = makeMockHost(makeMockState(1))
+      ;(host.newSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "sess-fb" })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      ;(registry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue("/fallback-cwd")
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "newSession", params: {} })
+      expect(res.status).toBe(200)
+      expect(host.newSession).toHaveBeenCalledWith({
+        cwd: "/fallback-cwd",
+        mcpServers: expectedMcp(),
+      })
+    })
+
+    it("no cwd available → 400; host.newSession never called", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      ;(registry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue(undefined)
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "newSession", params: {} })
+      expect(res.status).toBe(400)
+      expect(host.newSession).not.toHaveBeenCalled()
+    })
+
+    it("GATE-B wiring: injectDriveCodingMcp:false in cli-specs → rpc newSession without drive-coding MCP", async () => {
+      vi.resetModules()
+      const fs = await import("node:fs")
+      const os = await import("node:os")
+      const path = await import("node:path")
+      const filePath = path.join(os.tmpdir(), `rpc-gate-b-${Date.now()}.jsonc`)
+      fs.writeFileSync(filePath, JSON.stringify({ claude: { injectDriveCodingMcp: false } }))
+      process.env.CLI_SPECS_FILE = filePath
+      try {
+        const { registerRpcRoute: registerRpc } = await import("./rpc.js")
+        const host = makeMockHost(makeMockState())
+        ;(host.newSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "s" })
+        const registry = makeMockRegistry(host, makeMockBroadcaster())
+        ;(registry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue("/c")
+        ;(registry.getCliKind as ReturnType<typeof vi.fn>).mockReturnValue("claude")
+        const app = new Hono()
+        registerRpc(app, registry, createInMemoryAgentRegistry())
+
+        await postRpc(app, "agent-1", { method: "newSession", params: {} })
+
+        expect(host.newSession).toHaveBeenCalledWith(
+          expect.objectContaining({
+            cwd: "/c",
+            mcpServers: [],
+          }),
+        )
+      } finally {
+        fs.unlinkSync(filePath)
+        delete process.env.CLI_SPECS_FILE
+        vi.resetModules()
+      }
+    })
+
+    it("cliKind claude → injects _meta; other cliKinds omit it", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.newSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "s" })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      ;(registry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue("/c")
+      ;(registry.getCliKind as ReturnType<typeof vi.fn>).mockReturnValue("claude")
+      const app = makeApp(registry)
+
+      await postRpc(app, "agent-1", { method: "newSession", params: {} })
+      expect(host.newSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cwd: "/c",
+          _meta: expect.objectContaining({ claudeCode: expect.any(Object) }),
+        }),
+      )
+
+      ;(host.newSession as ReturnType<typeof vi.fn>).mockClear()
+      ;(registry.getCliKind as ReturnType<typeof vi.fn>).mockReturnValue("cursor")
+      await postRpc(app, "agent-1", { method: "newSession", params: {} })
+      const call = (host.newSession as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as Record<
+        string,
+        unknown
+      >
+      expect(call._meta).toBeUndefined()
+    })
+
+    it("host.newSession rejecting → 502; notifySessionAttached NOT called", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.newSession as ReturnType<typeof vi.fn>).mockRejectedValue(
+        Object.assign(new Error("cli boom"), { code: -32000 }),
+      )
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      ;(registry.getCwd as ReturnType<typeof vi.fn>).mockReturnValue("/c")
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "newSession", params: {} })
+      expect(res.status).toBe(502)
+      expect(registry.notifySessionAttached).not.toHaveBeenCalled()
     })
   })
 
@@ -711,4 +955,435 @@ describe("POST /api/agents/:id/rpc", () => {
       expect(res.status).toBe(202)
     })
   })
+
+  // ─── slice rpc-wait C1: prompt + waitMs ───
+
+  describe("prompt waitMs (slice rpc-wait C1)", () => {
+    it("without waitMs → 202 regression (byte-for-byte contract)", async () => {
+      const state = makeMockState(7)
+      const host = makeMockHost(state)
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "prompt",
+        params: { sessionId: "s1", content: "hi" },
+      })
+      expect(res.status).toBe(202)
+      // prompt adds user message synchronously before first await — version bumps
+      expect(await res.json()).toEqual({ version: 8 })
+    })
+
+    it.each([[-1], [60_001], [1.5], ["5000"]])(
+      "invalid waitMs %j → 400 (status only)",
+      async (waitMs) => {
+        const host = makeMockHost(makeMockState())
+        const registry = makeMockRegistry(host, makeMockBroadcaster())
+        const app = makeApp(registry)
+
+        const res = await postRpc(app, "agent-1", {
+          method: "prompt",
+          params: { sessionId: "s1", content: "hi" },
+          waitMs,
+        })
+        expect(res.status).toBe(400)
+      },
+    )
+
+    it("waitMs success → 200 {ok:true, timedOut:false, messagesSince}", async () => {
+      const state = makeMockState(10)
+      const host = makeMockHost(state)
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "prompt",
+        params: { sessionId: "s1", content: "hello wait" },
+        waitMs: 5000,
+      })
+      expect(res.status).toBe(200)
+      const json = await res.json()
+      expect(json).toMatchObject({ ok: true, timedOut: false, version: 11 })
+      expect(json.messagesSince).toHaveLength(1)
+      expect(json.messagesSince?.[0]).toMatchObject({ role: "user" })
+    })
+
+    it("waitMs turn failure → 200 {ok:false, error from rejection, messagesSince}", async () => {
+      const state = makeMockState(11)
+      const host = makeMockHost(state)
+      ;(host.prompt as ReturnType<typeof vi.fn>).mockImplementation(async (_sid, content, meta) => {
+        const msg = synthesizeUserMessage(state, content as string | PromptBlocks, meta)
+        Object.assign(state, applyUserMessage(state, msg).state)
+        throw Object.assign(new Error("turn failed"), { code: -32601 })
+      })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "prompt",
+        params: { sessionId: "s1", content: "fail me" },
+        waitMs: 5000,
+      })
+      expect(res.status).toBe(200)
+      const json = await res.json()
+      expect(json).toMatchObject({
+        ok: false,
+        timedOut: false,
+        error: { message: "turn failed", code: -32601 },
+      })
+      expect(json.messagesSince).toHaveLength(1)
+    })
+
+    it("waitMs timeout → 200 {ok:false, timedOut:true}, no messagesSince key", async () => {
+      const state = makeMockState(12)
+      const host = makeMockHost(state)
+      ;(host.prompt as ReturnType<typeof vi.fn>).mockImplementation(async (_sid, content, meta) => {
+        const msg = synthesizeUserMessage(state, content as string | PromptBlocks, meta)
+        Object.assign(state, applyUserMessage(state, msg).state)
+        await new Promise(() => {})
+      })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "prompt",
+        params: { sessionId: "s1", content: "slow" },
+        waitMs: 30,
+      })
+      expect(res.status).toBe(200)
+      const json = await res.json()
+      expect(json).toEqual({ version: 13, ok: false, timedOut: true })
+      expect(json.messagesSince).toBeUndefined()
+    })
+
+    it("late prompt rejection after timeout → no unhandledRejection", async () => {
+      const state = makeMockState()
+      const host = makeMockHost(state)
+      ;(host.prompt as ReturnType<typeof vi.fn>).mockImplementation(async (_sid, content, meta) => {
+        const msg = synthesizeUserMessage(state, content as string | PromptBlocks, meta)
+        Object.assign(state, applyUserMessage(state, msg).state)
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        throw new Error("late turn failed")
+      })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const rejections: unknown[] = []
+      const onRejection = (reason: unknown): void => {
+        rejections.push(reason)
+      }
+      process.on("unhandledRejection", onRejection)
+      try {
+        const res = await postRpc(app, "agent-1", {
+          method: "prompt",
+          params: { sessionId: "s1", content: "late" },
+          waitMs: 20,
+        })
+        expect(res.status).toBe(200)
+        expect(await res.json()).toMatchObject({ timedOut: true })
+        await new Promise((resolve) => setTimeout(resolve, 60))
+        expect(rejections).toHaveLength(0)
+      } finally {
+        process.off("unhandledRejection", onRejection)
+      }
+    })
+  })
+
+  describe("prompt waitMs integration (real SessionHost)", () => {
+    it("messagesSince from real host.prompt synthesizeUserMessage path", async () => {
+      const host = await createSessionHost({
+        createClient: async (_callbacks: AcpClientCallbacks) => {
+          const mock = {
+            newSession: vi.fn().mockResolvedValue({ sessionId: "test-session-id" }),
+            loadSession: vi.fn().mockResolvedValue({ sessionId: "test-session-id" }),
+            prompt: vi
+              .fn()
+              .mockImplementation(() => new Promise<void>((resolve) => setTimeout(resolve, 15))),
+            cancel: vi.fn().mockResolvedValue(undefined),
+            conn: { sessionUpdate: vi.fn() },
+          }
+          return mock as unknown as AcpClient
+        },
+      })
+
+      const registry = makeMockRegistry(
+        host as unknown as ExtendedSessionHost,
+        makeMockBroadcaster(),
+      )
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "prompt",
+        params: { sessionId: "test-session-id", content: "integration hello" },
+        waitMs: 500,
+      })
+      expect(res.status).toBe(200)
+      const json = await res.json()
+      expect(json.ok).toBe(true)
+      expect(json.messagesSince).toHaveLength(1)
+      const first = json.messagesSince?.[0] as { role: string; segments: { text: string }[] }
+      expect(first.role).toBe("user")
+      expect(first.segments[0]?.text).toBe("integration hello")
+    })
+  })
+
+  // ─── slice rpc-wait C2: five remaining methods + extMethod result ───
+
+  describe("waitMs on cancel/setMode/setConfigOption/extMethod/setSessionModel (C2)", () => {
+    it.each([
+      ["cancel", { sessionId: "s1" }],
+      ["setMode", { modeId: "auto" }],
+      ["setConfigOption", { configId: "k", value: true }],
+      ["setSessionModel", { model: "claude-opus" }],
+    ] as const)("without waitMs %s → 202 regression", async (method, params) => {
+      const state = makeMockState(4)
+      const host = makeMockHost(state)
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method, params })
+      expect(res.status).toBe(202)
+      expect(await res.json()).toEqual({ version: 4 })
+    })
+
+    it.each([
+      ["cancel", { sessionId: "s1" }],
+      ["setMode", { modeId: "auto" }],
+      ["setConfigOption", { configId: "k", value: true }],
+      ["setSessionModel", { model: "claude-opus" }],
+    ] as const)("with waitMs %s → 200 {ok:true, timedOut:false}", async (method, params) => {
+      const host = makeMockHost(makeMockState(6))
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method, params, waitMs: 5000 })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ ok: true, timedOut: false })
+    })
+
+    it("extMethod without waitMs → 202 regression", async () => {
+      const state = makeMockState(4)
+      const host = makeMockHost(state)
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "extMethod",
+        params: { method: "_drive/custom", params: { n: 1 } },
+      })
+      expect(res.status).toBe(202)
+      expect(await res.json()).toEqual({ version: 4 })
+    })
+
+    it("extMethod with waitMs → 200 {ok:true, result}", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.extMethod as ReturnType<typeof vi.fn>).mockResolvedValue({ answer: 42 })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "extMethod",
+        params: { method: "_drive/custom", params: {} },
+        waitMs: 5000,
+      })
+      expect(res.status).toBe(200)
+      const json = await res.json()
+      expect(json).toMatchObject({ ok: true, timedOut: false, result: { answer: 42 } })
+    })
+
+    it("listSessions with invalid waitMs → 200 (ignored silently)", async () => {
+      const host = makeMockHost(makeMockState())
+      ;(host.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({ sessions: [] })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "listSessions",
+        params: {},
+        waitMs: -1,
+      })
+      expect(res.status).toBe(200)
+    })
+  })
+
+  // ─── slice acp-method-names ─────────────────────────────────────────────
+  //
+  // ⚠️ שים לב לכל שאר הקובץ: **הוא לא השתנה.** כל 44 הטסטים שמעל שולחים את
+  // השמות הישנים ועוברים כמות שהם — וזו בדיוק ההוכחה שחלון-המעבר חי, ולא
+  // טענה שצריך להאמין לה. הטסטים כאן מוסיפים את החצי השני.
+  describe("canonical ACP method names", () => {
+    it.each([
+      ["session/prompt", { sessionId: "s1", content: "hi" }],
+      ["session/cancel", { sessionId: "s1" }],
+      ["session/set_mode", { modeId: "auto" }],
+      ["session/set_config_option", { configId: "k", value: true }],
+      ["_drive/ext", { method: "_drive/x", params: {} }],
+      ["_drive/set_session_model", { model: "m" }],
+    ])("%s dispatches and returns 202", async (method, params) => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method, params })
+      expect(res.status).toBe(202)
+    })
+
+    it("session/prompt reaches host.prompt with the same arguments as the legacy name", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      await postRpc(app, "agent-1", {
+        method: "session/prompt",
+        params: { sessionId: "s1", content: "hi" },
+      })
+      expect(host.prompt).toHaveBeenCalledWith("s1", "hi", undefined)
+    })
+
+    it("session/list returns the blocking 200 body, not a 202 ack", async () => {
+      const host = makeMockHost(makeMockState())
+      host.listSessions = vi.fn().mockResolvedValue({ sessions: [{ sessionId: "a" }] })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "session/list", params: {} })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ sessions: [{ sessionId: "a" }] })
+    })
+
+    it("session/delete maps -32601 to the graceful unsupported body", async () => {
+      const host = makeMockHost(makeMockState())
+      host.deleteSession = vi.fn().mockRejectedValue({ code: -32601, message: "nope" })
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "session/delete",
+        params: { sessionId: "s1" },
+      })
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ ok: false, unsupported: true })
+    })
+
+    // 🔴 הכשל שהתיקון הזה נועד למנוע: השם המנורמל הוא `undefined` בדיוק
+    // כאן, ולכן דיווח שלו במקום השם שנשלח היה מוחק את הפרט היחיד שמאפשר
+    // לאבחן — "Unknown method: undefined".
+    it("an unknown method reports the name the caller actually sent", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", { method: "session/teleport", params: {} })
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ error: "Unknown method: session/teleport" })
+    })
+
+    // ⚠️ קלט חיצוני מגיע ישירות לטבלת-ההקבלה. מפתח ירושתי אינו שם-מתודה.
+    it("an inherited Object key is not a method", async () => {
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      for (const method of ["toString", "constructor", "__proto__"]) {
+        const res = await postRpc(app, "agent-1", { method, params: {} })
+        expect(res.status).toBe(400)
+      }
+    })
+  })
+
+  describe("prompt sender wrapping", () => {
+    it("wraps content when caller identity header resolves", async () => {
+      const agentRegistry = createInMemoryAgentRegistry()
+      const caller = await agentRegistry.create({
+        cliKind: "cursor",
+        cwd: "/tmp/rpc-wrap",
+        roleLabel: "rpc-sender",
+      })
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = new Hono()
+      registerRpcRoute(app, registry, agentRegistry)
+
+      await app.request("/api/agents/agent-1/rpc", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [AGENT_ID_HEADER]: caller.id,
+        },
+        body: JSON.stringify({
+          method: "prompt",
+          params: { sessionId: "s1", content: "rpc-plain" },
+        }),
+      })
+      const delivered = String((host.prompt as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] ?? "")
+      expect(delivered).toContain("<drive-coding-msg")
+      expect(delivered).toContain("rpc-plain")
+      expect(delivered).toContain("rpc-sender")
+    })
+
+    it("does not wrap when caller header is unknown", async () => {
+      const agentRegistry = createInMemoryAgentRegistry()
+      const host = makeMockHost(makeMockState())
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = new Hono()
+      registerRpcRoute(app, registry, agentRegistry)
+
+      await app.request("/api/agents/agent-1/rpc", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [AGENT_ID_HEADER]: "00000000-0000-4000-8000-000000000088",
+        },
+        body: JSON.stringify({
+          method: "session/prompt",
+          params: { sessionId: "s1", content: "stay-plain" },
+        }),
+      })
+      expect(host.prompt).toHaveBeenCalledWith("s1", "stay-plain", undefined)
+    })
+  })
+})
+
+// Merge regression: scope preflight must survive envelope dispatch extraction.
+describe("scoped envelope RPC integration", () => {
+  afterEach(resetScopePolicyForTests)
+
+  it.each(["allow", "deny"] as const)(
+    "message policy %s precedes host acquisition",
+    async (policy) => {
+      const agents = createInMemoryAgentRegistry()
+      const caller = await agents.create({ cliKind: "cursor", cwd: "/tmp/rpc-caller" })
+      const target = await agents.create({ cliKind: "cursor", cwd: "/tmp/rpc-target" })
+      const host = makeMockHost(makeMockState())
+      const sessions = makeMockRegistry(host, makeMockBroadcaster())
+      const app = new Hono()
+      registerRpcRoute(app, sessions, agents)
+      setScopePolicyOverride({ message: policy })
+      const content = "merge & <body>"
+      const response = (await app.request(`/api/agents/${target.id}/rpc`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          [AGENT_ID_HEADER]: caller.id,
+          [SCOPE_HEADER]: issueToken(caller.id),
+        },
+        body: JSON.stringify({ method: "session/prompt", params: { sessionId: "s1", content } }),
+      })) as unknown as MockResponse
+      expect(response.status).toBe(policy === "allow" ? 202 : 403)
+      if (policy === "deny") {
+        expect(sessions.getOrCreateHost).not.toHaveBeenCalled()
+        expect(host.prompt).not.toHaveBeenCalled()
+      } else {
+        expect(host.prompt).toHaveBeenCalledWith(
+          "s1",
+          serializeDriveMessage({
+            source: "agent",
+            sender: { id: caller.id },
+            body: content,
+          }),
+          undefined,
+        )
+      }
+    },
+  )
 })

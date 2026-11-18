@@ -6,7 +6,17 @@
  * כשרק אחד לא-ברירת-מחדל; שילובי pace/tone.
  */
 import { describe, expect, it } from "vitest"
-import { buildGeminiDirecting } from "./gemini-directing"
+import { buildGeminiDirecting, buildGeminiStyle } from "./gemini-directing"
+
+describe("buildGeminiStyle", () => {
+  it("neutral+normal → undefined", () => {
+    expect(buildGeminiStyle({ pace: "normal", tone: "neutral" })).toBeUndefined()
+  })
+
+  it("tone=calm → Style line only", () => {
+    expect(buildGeminiStyle({ tone: "calm" })).toBe("Style: Calm.")
+  })
+})
 
 describe("buildGeminiDirecting", () => {
   it("ללא directing → מחזיר req.text כמות שהוא (אפס עטיפה)", () => {

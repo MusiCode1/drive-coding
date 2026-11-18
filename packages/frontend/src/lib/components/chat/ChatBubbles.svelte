@@ -16,17 +16,21 @@
  * {#if chatScroll.scrollEl} מונע mount לפני שה-scrollEl קיים.
  */
 import { Virtualizer, type VirtualizerHandle } from "virtua/svelte"
-import { getChatScroll, getI18n, getSession } from "$lib/context"
-import { stableBubbleKey } from "$lib/util/bubble-key"
+import { getChatScroll, getI18n, getSession, getSettings } from "$lib/context"
 import BubbleRenderer from "./BubbleRenderer.svelte"
+import ActivityGroupBubble from "./bubbles/ActivityGroupBubble.svelte"
+import { groupActivityRuns } from "./bubbles/activity-groups"
 import ElicitationDialog from "./ElicitationDialog.svelte"
 import PermissionRequestBlock from "./PermissionRequestBlock.svelte"
 import PlanChecklist from "./PlanChecklist.svelte"
 import StatusBubble from "./StatusBubble.svelte"
 
 const session = getSession()
+const settings = getSettings()
 const t = getI18n().t
 const chatScroll = getChatScroll()
+
+const items = $derived(groupActivityRuns(session.renderBubbles, settings.compactActivity))
 
 let handle = $state<VirtualizerHandle | undefined>(undefined)
 
@@ -40,12 +44,18 @@ $effect(() => {
   <Virtualizer
     bind:this={handle}
     scrollRef={chatScroll.scrollEl}
-    data={session.renderBubbles}
-    getKey={(b) => stableBubbleKey(b, session.renderBubbles)}
+    data={items}
+    getKey={(it) => it.key}
     startMargin={80}
   >
-    {#snippet children(bubble)}
-      <div class="pb-5"><BubbleRenderer {bubble} /></div>
+    {#snippet children(item)}
+      <div class="pb-5">
+        {#if item.kind === "single"}
+          <BubbleRenderer bubble={item.bubble} />
+        {:else}
+          <ActivityGroupBubble bubbles={item.bubbles} allBubbles={session.renderBubbles} />
+        {/if}
+      </div>
     {/snippet}
   </Virtualizer>
 {/if}

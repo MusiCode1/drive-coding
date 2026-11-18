@@ -65,6 +65,14 @@ describe("parseLogConfig", () => {
     expect(cfg.remote).toBe(true)
   })
 
+  it("logRemote=0 clears a remote default", () => {
+    const cfg = parseLogConfig({
+      search: "?logRemote=0",
+      defaults: { remote: true },
+    })
+    expect(cfg.remote).toBe(false)
+  })
+
   it("default format is both", () => {
     const cfg = parseLogConfig({})
     expect(cfg.format).toBe("both")

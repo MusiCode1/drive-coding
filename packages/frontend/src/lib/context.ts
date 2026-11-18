@@ -22,6 +22,8 @@ import type { Settings } from "./view-models/settings.svelte"
 import type { Speaker } from "./view-models/speaker.svelte"
 import type { ThemeVM } from "./view-models/theme.svelte"
 import type { UiShellVM } from "./view-models/ui-shell.svelte"
+import type { AgentVoice } from "./view-models/agent-voice.svelte"
+import type { Live } from "./view-models/live.svelte"
 import type { VoiceMode } from "./view-models/derived/voice-mode.svelte"
 import type { ModelStatus } from "./view-models/derived/model-status.svelte"
 import type { CuesEngine } from "./engines/cues"
@@ -30,7 +32,14 @@ import type { ActiveAgents } from "./view-models/active-agents.svelte"
 import type { BubblePlayer } from "./view-models/bubble-player.svelte"
 import type { ContentViewerVM } from "./view-models/content-viewer.svelte"
 import type { RecentProjects } from "./view-models/recent-projects.svelte"
+import type { AudioPlaylist } from "./engines/audio-playlist.svelte"
 import type { PresencePoller } from "./view-models/presence-poller.svelte"
+import type { NotifyEngine } from "./engines/notify.svelte"
+import type { ComposerDraft } from "./view-models/composer-draft.svelte"
+import type { SessionMemoVM } from "./view-models/session-memo.svelte"
+import type { Dictate } from "./view-models/dictate.svelte"
+import type { AudioDevicesVM } from "./view-models/audio-devices.svelte"
+import type { SessionScopePolicy } from "./view-models/session-scope-policy.svelte"
 
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
@@ -46,6 +55,9 @@ export const [getSpeaker, setSpeaker] = createContext<Speaker>()
 
 // ─── mic ─── (slice 3)
 export const [getMic, setMic] = createContext<Mic>()
+
+// ─── live ─── (slice live-ears)
+export const [getLive, setLive] = createContext<Live>()
 
 // ─── voice-mode ─── (slice 3)
 export const [getVoiceMode, setVoiceMode] = createContext<VoiceMode>()
@@ -85,8 +97,32 @@ export const [getContentViewer, setContentViewer] = createContext<ContentViewerV
 // ─── recent-projects ─── (slice connect-recent-projects)
 export const [getRecentProjects, setRecentProjects] = createContext<RecentProjects>()
 
+// ─── audio-playlist ─── (slice A4 — shared between Speaker + BubblePlayer)
+export const [getAudioPlaylist, setAudioPlaylist] = createContext<AudioPlaylist>()
+
 // ─── cli-availability ─── (slice cli-branding, Commit 3)
 export const [getCliAvailability, setCliAvailability] = createContext<CliAvailability>()
 
 // ─── presence-poller ─── (slice liveness C3)
 export const [getPresencePoller, setPresencePoller] = createContext<PresencePoller>()
+
+// ─── notifications ─── (slice notify-local)
+export const [getNotify, setNotify] = createContext<NotifyEngine>()
+
+// ─── composer-draft ─── (slice dictate-to-input)
+export const [getComposerDraft, setComposerDraft] = createContext<ComposerDraft>()
+
+// ─── session-memo ─── (slice session-memo-pad)
+export const [getSessionMemo, setSessionMemo] = createContext<SessionMemoVM>()
+
+// ─── dictate ─── (slice dictate-to-input)
+export const [getDictate, setDictate] = createContext<Dictate>()
+
+// ─── audio-devices ─── (slice mic-device-selection)
+export const [getAudioDevices, setAudioDevices] = createContext<AudioDevicesVM>()
+
+// ─── scope-policy-per-caller ───
+export const [getSessionScopePolicy, setSessionScopePolicy] = createContext<SessionScopePolicy>()
+
+// ─── agent-voice ─── (slice codex-voice-poc — the agent's native Live)
+export const [getAgentVoice, setAgentVoice] = createContext<AgentVoice>()

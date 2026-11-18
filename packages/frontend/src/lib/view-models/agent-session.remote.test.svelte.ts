@@ -24,9 +24,10 @@ import {
   clearPendingRequest,
   createInitialSessionState,
 } from "@drive-coding/core/session"
+import { toWireText } from "@drive-coding/core/session/testing"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { createAgent, deleteAgent, notifySessionAttached } from "$lib/adapters/agents-api"
+import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 // ─── Module-level mocks (חייבים להיות לפני import AgentSession — נדרש לרגרסיית ה-local) ───
@@ -39,7 +40,7 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
   }
 })
 
-vi.mock("$lib/engines/ws-transport", () => ({
+vi.mock("@drive-coding/acp-wire/browser", () => ({
   WsAcpTransport: vi.fn(function mockWsTransport() {
     return {
       onClose: vi.fn(),
@@ -383,7 +384,7 @@ describe("AgentSession — attachRemote fast-fail", () => {
   it("fails fast when the BE snapshot carries no sessionId — #cleanup runs, status=error", async () => {
     const encoder = new TextEncoder()
     const snapshot = createInitialSessionState({ sessionId: null })
-    const sseText = `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`
+    const sseText = toWireText([{ event: "snapshot", data: JSON.stringify(snapshot) }])
     const fetchMock = vi.fn(async (url: string) => {
       if (String(url).includes("/events")) {
         const body = new ReadableStream<Uint8Array>({
@@ -408,7 +409,7 @@ describe("AgentSession — attachRemote fast-fail", () => {
   it("full flow: attachRemote succeeds (real sessionId) → applyConfigOption persists via #cliKind", async () => {
     const encoder = new TextEncoder()
     const snapshot = createInitialSessionState({ sessionId: "remote-sess-full" })
-    const sseText = `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`
+    const sseText = toWireText([{ event: "snapshot", data: JSON.stringify(snapshot) }])
     const fetchMock = vi.fn(async (url: string) => {
       if (String(url).includes("/events")) {
         const body = new ReadableStream<Uint8Array>({
@@ -439,6 +440,129 @@ describe("AgentSession — attachRemote fast-fail", () => {
   })
 })
 
+// ── attachRemote — cold parity עם ה-WS (slice http-cold-parity, §4 Commit 0) ─────
+
+/**
+ * שער אדום→ירוק לסלייס http-cold-parity. שלושה טסטים (A/B/C) חייבים ליפול על
+ * b0ec7640 מיד; טסט D ירוק על הבסיס מהסיבה הלא-נכונה (#sessionId===null עוצר את
+ * #doReconnect מוקדם) — הוא נופל רק אחרי §4/Commit 1#1-4 (בלי #5), ורק אז מקבל
+ * את השומר שמחזיר אותו לירוק. ר' הבריף §4/Commit 0 + §4/Commit 1#5.
+ */
+describe("AgentSession — attachRemote cold parity (slice http-cold-parity C0)", () => {
+  // 🔴 צורת ACP מקובעת (ר' הבריף §4/Commit 0) — id="claude-mode" (לא "mode") כדי
+  // ש-#isValidChoice יעבור דרך ה-flatten האמיתי של type:"select", לא דרך ה-fallback
+  // המתירני (availableValues בלי type הוא ירוק-שקרי).
+  const ACP_OPTION = {
+    id: "claude-mode",
+    name: "Mode",
+    category: "mode",
+    type: "select",
+    currentValue: "manual",
+    options: [
+      { value: "auto", name: "Auto" },
+      { value: "manual", name: "Manual" },
+    ],
+  }
+
+  function makeSettingsWithLastConfig(): Settings {
+    return {
+      lastConfig: { claude: { "claude-mode": "auto" } },
+      setLastConfig: vi.fn(),
+    } as unknown as Settings
+  }
+
+  /** אותו דפוס fetchMock כמו ב-"attachRemote fast-fail" — SSE keepOpen + לוכד גופי /rpc. */
+  function sseFetchWithRpcCapture(snapshot: unknown): {
+    fetchMock: ReturnType<typeof vi.fn>
+    rpcBodies: unknown[]
+  } {
+    const encoder = new TextEncoder()
+    const sseText = toWireText([{ event: "snapshot", data: JSON.stringify(snapshot) }])
+    const rpcBodies: unknown[] = []
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).includes("/events")) {
+        const body = new ReadableStream<Uint8Array>({
+          start(ctrl) {
+            ctrl.enqueue(encoder.encode(sseText))
+            // keepOpen — לא סוגרים כדי לא להצית reconnect-loop עם setTimeout אמיתי
+          },
+        })
+        return { ok: true, status: 200, body } as unknown as Response
+      }
+      if (String(url).includes("/rpc")) {
+        if (init?.body) rpcBodies.push(JSON.parse(init.body as string))
+        return { ok: true, status: 202, json: async () => ({ version: 1 }) } as unknown as Response
+      }
+      return { ok: true, status: 200, json: async () => ({ ok: true }) } as unknown as Response
+    })
+    return { fetchMock, rpcBodies }
+  }
+
+  it("A: agent.sessionId מאמץ את ה-sessionId מה-snapshot אחרי attachRemote", async () => {
+    const snapshot = createInitialSessionState({ sessionId: "probe-sess" })
+    const { fetchMock } = sseFetchWithRpcCapture(snapshot)
+    vi.stubGlobal("fetch", fetchMock)
+
+    const agent = new AgentSession()
+    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
+
+    expect(agent.sessionId).toBe("probe-sess")
+  })
+
+  it("B: שחזור-הבחירות שולח RPC אמיתי עם configId+value מהסנאפשוט", async () => {
+    const snapshot = {
+      ...createInitialSessionState({ sessionId: "probe-sess-b" }),
+      configOptions: [ACP_OPTION] as never,
+    }
+    const { fetchMock, rpcBodies } = sseFetchWithRpcCapture(snapshot)
+    vi.stubGlobal("fetch", fetchMock)
+
+    const settings = makeSettingsWithLastConfig()
+    const agent = new AgentSession({ settings })
+    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
+    await delay()
+
+    expect(rpcBodies).toContainEqual(
+      expect.objectContaining({
+        params: expect.objectContaining({ configId: "claude-mode", value: "auto" }),
+      }),
+    )
+  })
+
+  it("C: systemPrompt שהועבר ל-attachRemote מגיע ל-createAgent", async () => {
+    const snapshot = createInitialSessionState({ sessionId: "probe-sess-c" })
+    const { fetchMock } = sseFetchWithRpcCapture(snapshot)
+    vi.stubGlobal("fetch", fetchMock)
+    vi.mocked(createAgent).mockClear()
+
+    const agent = new AgentSession()
+    // ⚠️ משתנה, לא object literal inline — כדי שה-excess-property-check לא ייכשל
+    // typecheck על הבסיס (החתימה כאן היא עדיין דו-פרמטרית; ר' subtyping מבני).
+    const input = { cwd: "/ws", cliKind: "claude", systemPrompt: "You are terse and helpful." }
+    await agent.attachRemote(input)
+
+    expect(createAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ systemPrompt: "You are terse and helpful." }),
+    )
+  })
+
+  it("D: reconnect() על סשן remote חי הוא no-op — אין listAgents, status נשאר connected", async () => {
+    const snapshot = createInitialSessionState({ sessionId: "probe-sess-d" })
+    const { fetchMock } = sseFetchWithRpcCapture(snapshot)
+    vi.stubGlobal("fetch", fetchMock)
+    vi.mocked(listAgents).mockClear()
+
+    const agent = new AgentSession()
+    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
+    expect(agent.status).toBe("connected")
+
+    await agent.reconnect()
+
+    expect(listAgents).not.toHaveBeenCalled()
+    expect(agent.status).toBe("connected")
+  })
+})
+
 // ── attachRemoteToLiveAgent — warm reconnect ב-remote (slice remote-warm-reconnect C3) ──
 
 describe("AgentSession — attachRemoteToLiveAgent", () => {
@@ -450,7 +574,7 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
     fetchMock: ReturnType<typeof vi.fn>
   } {
     const encoder = new TextEncoder()
-    const sseText = `event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`
+    const sseText = toWireText([{ event: "snapshot", data: JSON.stringify(snapshot) }])
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (String(url).includes("/events")) {
         const body = new ReadableStream<Uint8Array>({
@@ -493,7 +617,7 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
         rename: false,
         thinkingTokens: false,
         image: true,
-        systemPrompt: false,
+        systemPrompt: "unsupported",
       },
     }
     const { fetchMock } = sseFetchFor(snapshot)
@@ -681,10 +805,10 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
   })
 })
 
-// ── loadSession/switchSession — no-op ב-remote ──────────────────────────────
+// ── loadSession/switchSession/newSession/attachToLiveAgent — remote routing ──
 
 describe("AgentSession + remote view — WS paths are blocked", () => {
-  it("loadSession/switchSession/newSession/attachToLiveAgent are no-ops when #view is set", async () => {
+  it("loadSession/attachToLiveAgent stay no-ops; switchSession/newSession route through the view", async () => {
     const view = new MockSessionView()
     view.connect("remote-sess-11")
     const agent = new AgentSession({ view })
@@ -695,7 +819,39 @@ describe("AgentSession + remote view — WS paths are blocked", () => {
     await agent.newSession({ cwd: "/ws", cliKind: "claude" })
     await agent.attachToLiveAgent({ agentId: "a", sessionId: "s", cwd: "/ws", cliKind: "claude" })
 
-    // אף אחד מהם לא נגע ב-status/#view — עדיין connected, אין WS
+    expect(agent.status).toBe("connected")
+    expect(view.loadSessionMock).toHaveBeenCalled()
+    expect(view.newSessionMock).toHaveBeenCalledWith("/ws")
+  })
+
+  it("newSession on remote calls view.newSession, syncs sessionId, clears title", async () => {
+    const view = new MockSessionView()
+    view.connect("remote-sess-13")
+    const agent = new AgentSession({ view })
+    agent._setStatusForTest("connected")
+    agent.sessionTitle = "Old Title"
+
+    await agent.newSession({ cwd: "/ws", cliKind: "claude" })
+
+    expect(view.newSessionMock).toHaveBeenCalledWith("/ws")
+    expect(agent.error).toBeNull()
+    expect(agent.status).toBe("connected")
+    expect(agent.sessionTitle).toBe("")
+    expect(agent._getSessionIdForTest()).toBe("remote-new-sess")
+  })
+
+  it("newSession remote failure populates session.error and leaves prior sessionId", async () => {
+    const view = new MockSessionView()
+    view.connect("remote-sess-13b")
+    const agent = new AgentSession({ view })
+    agent._setStatusForTest("connected")
+    const sessionIdBefore = agent._getSessionIdForTest()
+    view.newSessionMock.mockRejectedValueOnce(new Error("RPC 502"))
+
+    await agent.newSession({ cwd: "/ws", cliKind: "claude" })
+
+    expect(agent.error).toContain("newSession failed")
+    expect(agent._getSessionIdForTest()).toBe(sessionIdBefore)
     expect(agent.status).toBe("connected")
   })
 })
@@ -794,9 +950,9 @@ describe("AgentSession + remote view — session management via #view (remote-se
     await agent.listSessions()
 
     expect(view.listSessionsMock).toHaveBeenCalledTimes(1)
-    expect(agent.sessions).toHaveLength(2)
-    expect(agent.sessions[0]?.sessionId).toBe("s-1")
-    expect(agent.sessionsError).toBeNull()
+    expect(agent.sessionsCache.sessions).toHaveLength(2)
+    expect(agent.sessionsCache.sessions[0]?.sessionId).toBe("s-1")
+    expect(agent.sessionsCache.error).toBeNull()
   })
 
   it("listSessions with -32601 → empty list, sessionsError stays gentle/null (like local, no crash)", async () => {
@@ -806,9 +962,9 @@ describe("AgentSession + remote view — session management via #view (remote-se
 
     await agent.listSessions()
 
-    expect(agent.sessions).toEqual([])
+    expect(agent.sessionsCache.sessions).toEqual([])
     // Gentle handling (DoD): no scary error — the empty list renders.
-    expect(agent.sessionsError).toBeNull()
+    expect(agent.sessionsCache.error).toBeNull()
   })
 
   it("listSessions with a generic error → sessionsError is set", async () => {
@@ -816,7 +972,7 @@ describe("AgentSession + remote view — session management via #view (remote-se
 
     await agent.listSessions()
 
-    expect(agent.sessionsError).toContain("network down")
+    expect(agent.sessionsCache.error).toContain("network down")
   })
 
   it("deleteSession with -32601 → false (graceful no-op, button hidden)", async () => {
@@ -825,7 +981,7 @@ describe("AgentSession + remote view — session management via #view (remote-se
     )
 
     await expect(agent.deleteSession("s-x")).resolves.toBe(false)
-    expect(agent.sessionsError).toBeNull()
+    expect(agent.sessionsCache.error).toBeNull()
   })
 
   it("deleteSession success removes optimistically; deleting the ACTIVE session detaches (wasActive)", async () => {
@@ -841,11 +997,11 @@ describe("AgentSession + remote view — session management via #view (remote-se
       { sessionId: "other", cwd: "/b", title: "", updatedAt: "" },
     ])
     await agent.listSessions()
-    expect(agent.sessions).toHaveLength(2)
+    expect(agent.sessionsCache.sessions).toHaveLength(2)
 
     // Deleting a NON-active session → optimistic removal, no detach
     await expect(agent.deleteSession("other")).resolves.toBe(false)
-    expect(agent.sessions).toHaveLength(1)
+    expect(agent.sessionsCache.sessions).toHaveLength(1)
     expect(view.closeMock).not.toHaveBeenCalled()
 
     // Deleting the ACTIVE session → wasActive true → detach() (view closed;

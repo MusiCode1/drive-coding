@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest"
-import { Agent, AgentPublic, CLI_KINDS, CreateAgentInput, toAgentPublic } from "../src"
+import {
+  Agent,
+  AgentPublic,
+  CLI_KINDS,
+  CLI_SPECS,
+  CreateAgentInput,
+  toAgentPublic,
+} from "../src"
+
+describe("CLI_SPECS sessionMeta (slice session-meta-config C0)", () => {
+  it("claude default sessionMeta requests summarized thinking", () => {
+    const meta = CLI_SPECS.claude.sessionMeta
+    expect(meta).toBeDefined()
+    const claudeCode = meta?.claudeCode as
+      | { options?: { thinking?: { display?: string } } }
+      | undefined
+    expect(claudeCode?.options?.thinking?.display).toBe("summarized")
+  })
+})
 
 describe("CreateAgentInput", () => {
   it("accepts valid input", () => {
@@ -61,6 +79,57 @@ describe("CreateAgentInput", () => {
     })
     expect(result).toMatchObject({ modelOverride: null })
   })
+
+  // slice session-create-contract C1
+  it("accepts permissionPolicy allow_once", () => {
+    const result = CreateAgentInput({
+      cliKind: "claude",
+      cwd: "/x",
+      permissionPolicy: "allow_once",
+    })
+    expect(result).toMatchObject({ permissionPolicy: "allow_once" })
+  })
+
+  it("rejects invalid permissionPolicy", () => {
+    const result = CreateAgentInput({
+      cliKind: "claude",
+      cwd: "/x",
+      permissionPolicy: "auto_allow",
+    })
+    expect(result).toHaveProperty("summary")
+  })
+
+  it("omitted permissionPolicy — valid (today's behavior)", () => {
+    const result = CreateAgentInput({ cliKind: "claude", cwd: "/x" })
+    expect(result).not.toHaveProperty("summary")
+    expect(result).not.toHaveProperty("permissionPolicy")
+  })
+
+  // slice session-create-contract C2
+  it("accepts env as string map", () => {
+    const result = CreateAgentInput({
+      cliKind: "cursor",
+      cwd: "/x",
+      env: { BDS_SLICE: "probe" },
+    })
+    expect(result).toMatchObject({ env: { BDS_SLICE: "probe" } })
+  })
+
+  it("omitted env — valid (today's behavior)", () => {
+    const result = CreateAgentInput({ cliKind: "cursor", cwd: "/x" })
+    expect(result).not.toHaveProperty("summary")
+    expect(result).not.toHaveProperty("env")
+  })
+
+  // slice session-lifecycle-fields C0
+  it("accepts parentAgentId", () => {
+    const result = CreateAgentInput({
+      cliKind: "cursor",
+      cwd: "/x",
+      parentAgentId: "parent-uuid",
+    })
+    expect(result).toMatchObject({ parentAgentId: "parent-uuid" })
+  })
 })
 
 describe("toAgentPublic", () => {
@@ -85,6 +154,20 @@ describe("toAgentPublic", () => {
       cliKind: "opencode",
       status: "ready",
     })
+  })
+
+  it("exposes parentAgentId (slice session-lifecycle-fields C0)", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440099",
+      cliKind: "cursor" as const,
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T05:00:00.000Z",
+      parentAgentId: "parent-1",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub.parentAgentId).toBe("parent-1")
   })
 
   it("preserves all public fields", () => {
@@ -225,6 +308,134 @@ describe("AgentPublic — title field", () => {
   })
 })
 
+// slice agent-role-label C0
+describe("AgentPublic — roleLabel field", () => {
+  it("accepts roleLabel as string", () => {
+    const result = AgentPublic({
+      id: "550e8400-e29b-41d4-a716-446655440011",
+      cliKind: "cursor",
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready",
+      createdAt: "2026-05-16T05:00:00.000Z",
+      roleLabel: "planner",
+    })
+    expect(result).not.toHaveProperty("summary")
+  })
+
+  it("accepts agent without roleLabel (optional)", () => {
+    const result = AgentPublic({
+      id: "550e8400-e29b-41d4-a716-446655440012",
+      cliKind: "cursor",
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready",
+      createdAt: "2026-05-16T05:00:00.000Z",
+    })
+    expect(result).not.toHaveProperty("summary")
+  })
+})
+
+describe("CreateAgentInput — roleLabel field (slice agent-role-label C0)", () => {
+  it("accepts roleLabel", () => {
+    const result = CreateAgentInput({
+      cliKind: "cursor",
+      cwd: "/x",
+      roleLabel: "executor",
+    })
+    expect(result).toMatchObject({ roleLabel: "executor" })
+  })
+})
+
+describe("toAgentPublic — titleManual field (slice session-title-manual C0)", () => {
+  it("copies titleManual from agent to pub", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440017",
+      cliKind: "cursor" as const,
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T05:00:00.000Z",
+      titleManual: true,
+      title: "My title",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub.titleManual).toBe(true)
+    expect(pub.title).toBe("My title")
+  })
+
+  it("omits titleManual from pub when not set on agent", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440018",
+      cliKind: "cursor" as const,
+      cwd: "/project",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T10:00:00.000Z",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub).not.toHaveProperty("titleManual")
+  })
+})
+
+describe("toAgentPublic — openedByEmail field (slice session-attribution-core C0)", () => {
+  it("copies openedByEmail from agent to pub", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440015",
+      cliKind: "cursor" as const,
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T05:00:00.000Z",
+      openedByEmail: "user@example.com",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub.openedByEmail).toBe("user@example.com")
+  })
+
+  it("omits openedByEmail from pub when not set on agent", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440016",
+      cliKind: "cursor" as const,
+      cwd: "/project",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T10:00:00.000Z",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub).not.toHaveProperty("openedByEmail")
+  })
+})
+
+describe("toAgentPublic — roleLabel field (slice agent-role-label C0)", () => {
+  it("copies roleLabel from agent to pub", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440013",
+      cliKind: "cursor" as const,
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T05:00:00.000Z",
+      roleLabel: "planner",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub.roleLabel).toBe("planner")
+  })
+
+  it("omits roleLabel from pub when not set on agent", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440014",
+      cliKind: "cursor" as const,
+      cwd: "/project",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T10:00:00.000Z",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub).not.toHaveProperty("roleLabel")
+  })
+})
+
 describe("toAgentPublic — title field (slice session-title-in-process-list)", () => {
   it("copies title from agent to pub", () => {
     const agent = {
@@ -252,5 +463,37 @@ describe("toAgentPublic — title field (slice session-title-in-process-list)", 
     const pub = toAgentPublic(agent)
     expect(pub).not.toHaveProperty("title")
     expect(pub).toEqual(agent)
+  })
+})
+
+describe("toAgentPublic — userNotes/sessionFields (slice session-memory C0)", () => {
+  it("copies userNotes and sessionFields from agent to pub", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440020",
+      cliKind: "cursor" as const,
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T05:00:00.000Z",
+      userNotes: "remember the refactor",
+      sessionFields: { branch: "slice/session-memory" },
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub.userNotes).toBe("remember the refactor")
+    expect(pub.sessionFields).toEqual({ branch: "slice/session-memory" })
+  })
+
+  it("omits userNotes/sessionFields from pub when not set on agent", () => {
+    const agent = {
+      id: "550e8400-e29b-41d4-a716-446655440021",
+      cliKind: "cursor" as const,
+      cwd: "/project",
+      modelOverride: null,
+      status: "ready" as const,
+      createdAt: "2026-05-16T10:00:00.000Z",
+    }
+    const pub = toAgentPublic(agent)
+    expect(pub).not.toHaveProperty("userNotes")
+    expect(pub).not.toHaveProperty("sessionFields")
   })
 })

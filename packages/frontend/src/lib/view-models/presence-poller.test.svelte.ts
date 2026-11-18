@@ -26,6 +26,7 @@ function makeSession(overrides: Record<string, unknown> = {}) {
   return {
     status: "connected",
     agentId: "agent-1",
+    connectionId: "conn-test-1",
     sessionState: { sessionId: "sess-1" },
     ...overrides,
   } as import("./agent-session.svelte.js").AgentSession
@@ -279,5 +280,72 @@ describe("PresencePoller — agent:null הוא סוכן שאיננו", () => {
     await vi.advanceTimersByTimeAsync(PRESENCE_INTERVAL_MS)
     expect(mocks.postPresence).toHaveBeenCalledTimes(1)
     expect(poller.banner).toBe("gone")
+  })
+})
+
+// ── machine stats from presence (slice machine-stats-in-session) ─────────────
+
+const SAMPLE_MACHINE = {
+  totalMemMB: 16384,
+  usedMemMB: 8192,
+  freeMemMB: 8192,
+  memPct: 50,
+  loadAvg1: 1.7,
+  cpuCount: 4,
+  loadPct: 42,
+} as const
+
+describe("PresencePoller — machine stats", () => {
+  let poller: PresencePoller
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    _resetPageVisibilityForTest()
+    _setPageHiddenForTest(false)
+    mocks.postPresence.mockReset()
+    mocks.notifySessionAttached.mockReset()
+    mocks.postPresence.mockResolvedValue({
+      ok: true,
+      agent: { attached: true, lastSeenAt: Date.now() },
+      machine: null,
+    })
+    mocks.notifySessionAttached.mockResolvedValue(undefined)
+    poller = new PresencePoller(makeSession())
+    poller.init()
+  })
+
+  afterEach(() => {
+    poller.dispose()
+    vi.useRealTimers()
+  })
+
+  test("successful tick with machine updates poller.machine", async () => {
+    mocks.postPresence.mockResolvedValue({
+      ok: true,
+      agent: { attached: true, lastSeenAt: Date.now() },
+      machine: SAMPLE_MACHINE,
+    })
+    poller.sync({ inSession: true, agentId: "agent-1", hidden: false })
+    await Promise.resolve()
+
+    expect(poller.machine).toEqual(SAMPLE_MACHINE)
+  })
+
+  test("failed tick does not reset machine to null", async () => {
+    mocks.postPresence.mockResolvedValueOnce({
+      ok: true,
+      agent: { attached: true, lastSeenAt: Date.now() },
+      machine: SAMPLE_MACHINE,
+    })
+    poller.sync({ inSession: true, agentId: "agent-1", hidden: false })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(poller.machine).toEqual(SAMPLE_MACHINE)
+
+    mocks.postPresence.mockRejectedValue(new Error("network down"))
+    await poller.tick("focus")
+    await vi.advanceTimersByTimeAsync(PRESENCE_BANNER_DELAY_MS)
+
+    expect(poller.machine).toEqual(SAMPLE_MACHINE)
   })
 })

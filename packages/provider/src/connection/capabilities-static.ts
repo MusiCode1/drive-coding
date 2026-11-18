@@ -33,7 +33,8 @@ export function staticCapsFor(cliKind: SpawnBridgeInput["cliKind"]): NormalizedC
         rename: false,
         thinkingTokens: false,
         image: false, // slice reattach-state-sync: safe default; the init-frame tap updates this
-        systemPrompt: false,
+        systemPrompt: "unsupported",
+        voice: false,
       }
     case "claude":
       return {
@@ -45,7 +46,8 @@ export function staticCapsFor(cliKind: SpawnBridgeInput["cliKind"]): NormalizedC
         rename: false,
         thinkingTokens: false,
         image: false, // slice reattach-state-sync: safe default; the init-frame tap updates this
-        systemPrompt: false,
+        systemPrompt: "unsupported",
+        voice: false,
       }
     case "codex":
       // Values from live initialize response (in-process harness):
@@ -64,8 +66,9 @@ export function staticCapsFor(cliKind: SpawnBridgeInput["cliKind"]): NormalizedC
         // don't hardcode it here — the init-frame tap (extractPromptCaps) is the source of
         // truth for all providers uniformly. Safe default until the tap observes a real frame.
         image: false,
-        // codex passes opts.systemPrompt as config.developer_instructions (connect-codex-in-process.ts)
-        systemPrompt: true,
+        // codex passes opts.systemPrompt as config.developer_instructions (providers/codex/connect-in-process.ts)
+        systemPrompt: "native",
+        voice: true, // _drive/voice/* via codex app-server realtime (providers/codex/voice-wire.ts)
       }
     case "cursor":
       // Spawn-native. Measured live (2026-07-08, brief §-1): mcp = http+sse → mcp:true.
@@ -79,7 +82,8 @@ export function staticCapsFor(cliKind: SpawnBridgeInput["cliKind"]): NormalizedC
         rename: false,
         thinkingTokens: false,
         image: false, // slice reattach-state-sync: safe default; the init-frame tap updates this
-        systemPrompt: false,
+        systemPrompt: "unsupported",
+        voice: false,
       }
     case "grok":
       // Spawn-native. Measured live (2026-07-10, brief §-1): mcpCapabilities.http/sse:true → mcp:true.
@@ -92,7 +96,8 @@ export function staticCapsFor(cliKind: SpawnBridgeInput["cliKind"]): NormalizedC
         rename: false,
         thinkingTokens: false,
         image: false, // slice reattach-state-sync: safe default; the init-frame tap updates this
-        systemPrompt: false,
+        systemPrompt: "unsupported",
+        voice: false,
       }
     default:
       return {
@@ -104,7 +109,8 @@ export function staticCapsFor(cliKind: SpawnBridgeInput["cliKind"]): NormalizedC
         rename: false,
         thinkingTokens: false,
         image: false, // slice reattach-state-sync: safe default; the init-frame tap updates this
-        systemPrompt: false,
+        systemPrompt: "unsupported",
+        voice: false,
       }
   }
 }

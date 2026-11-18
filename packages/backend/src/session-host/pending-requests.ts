@@ -12,6 +12,10 @@
  * Timeout: if respond() is not called within timeoutMs, the promise:
  *   - rejects with Error("Request timed out") if no defaultValue provided
  *   - resolves with defaultValue if provided
+ * `timeoutMs: null` disables the timeout entirely — the promise stays pending
+ * until respond()/respondAll(). That is the default for permission and
+ * elicitation requests: a question the user has not answered yet must not
+ * answer itself.
  *
  * ─── slice session-host-core C3 (TDD) ───
  */
@@ -19,7 +23,17 @@
 // ─── Public API ─────────────────────────────────────────────────────────────
 
 export type PendingRequestsOptions<T> = {
-  timeoutMs: number
+  /**
+   * Milliseconds before the request settles on its own, or `null` for no
+   * timeout at all.
+   *
+   * 🛑 `null` means "never call setTimeout" — do NOT express "no timeout" as a
+   * huge number. Node coerces any delay above 2_147_483_647 (and Infinity)
+   * down to **1ms** with a TimeoutOverflowWarning, so a request meant to wait
+   * forever would instead settle immediately: strictly worse than the finite
+   * timeout it replaced.
+   */
+  timeoutMs: number | null
   /**
    * Optional default value returned on timeout instead of rejecting.
    * When provided, timeout resolves with defaultValue rather than throwing.
@@ -52,7 +66,8 @@ export type PendingRequests<T = unknown> = {
 type PendingEntry<T> = {
   resolve: (value: T) => void
   reject: (err: Error) => void
-  timer: ReturnType<typeof setTimeout>
+  /** null when the registry runs without a timeout (timeoutMs === null). */
+  timer: ReturnType<typeof setTimeout> | null
   settled: boolean
 }
 
@@ -60,9 +75,9 @@ type PendingEntry<T> = {
  * createPendingRequests — factory for a typed pending-request registry.
  *
  * @example
- * // permission requests (auto-deny after 30s)
+ * // permission requests — no timeout (the production default)
  * const permPending = createPendingRequests<RequestPermissionResponse>({
- *   timeoutMs: 30_000,
+ *   timeoutMs: null,
  *   defaultValue: { outcome: "deny" }
  * })
  */
@@ -74,6 +89,13 @@ export function createPendingRequests<T>(options: PendingRequestsOptions<T>): Pe
 
   function request(requestId: number): Promise<T> {
     return new Promise<T>((resolve, reject) => {
+      // No timeout: register the entry and leave the promise pending. Nothing
+      // but respond()/respondAll() can settle it.
+      if (timeoutMs === null) {
+        map.set(requestId, { resolve, reject, timer: null, settled: false })
+        return
+      }
+
       const timer = setTimeout(() => {
         const entry = map.get(requestId)
         if (!entry || entry.settled) return
@@ -95,7 +117,7 @@ export function createPendingRequests<T>(options: PendingRequestsOptions<T>): Pe
     const entry = map.get(requestId)
     if (!entry || entry.settled) return
     entry.settled = true
-    clearTimeout(entry.timer)
+    if (entry.timer !== null) clearTimeout(entry.timer)
     map.delete(requestId)
     entry.resolve(result)
   }
@@ -107,7 +129,7 @@ export function createPendingRequests<T>(options: PendingRequestsOptions<T>): Pe
     for (const [requestId, entry] of map) {
       if (entry.settled) continue
       entry.settled = true
-      clearTimeout(entry.timer)
+      if (entry.timer !== null) clearTimeout(entry.timer)
       map.delete(requestId)
       entry.resolve(result)
     }

@@ -22,14 +22,21 @@
  * ─── slice session-host-pending-surface C4: respond() routing + JSDoc ───
  */
 
-import type { Patch, SessionMessage, SessionState } from "@drive-coding/core/session"
-import { createInitialSessionState } from "@drive-coding/core/session"
+import {
+  createInitialSessionState,
+  type Patch,
+  RPC_METHODS,
+  type SessionMessage,
+  type SessionState,
+} from "@drive-coding/core/session"
+import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   createRemoteSessionView,
   RemoteSessionView,
   type RemoteSessionViewOptions,
 } from "./remote-session-view.js"
+import type { ViewEmission } from "./session-view.js"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -67,7 +74,7 @@ function sseBody(
   frames: Array<{ event: string; data: string }>,
   opts: { keepOpen?: boolean } = {},
 ): ReadableStream<Uint8Array> {
-  const text = frames.map((f) => `event: ${f.event}\ndata: ${f.data}\n\n`).join("")
+  const text = toWireText(frames)
   return new ReadableStream({
     start(ctrl) {
       ctrl.enqueue(encoder.encode(text))
@@ -134,14 +141,17 @@ function makeMockFetch(opts: {
 }
 
 /** Read exactly n patch-arrays from the wrapped patches stream. */
-async function readNPatchArrays(patches: ReadableStream<Patch[]>, n: number): Promise<Patch[][]> {
+async function readNPatchArrays(
+  patches: ReadableStream<ViewEmission>,
+  n: number,
+): Promise<Patch[][]> {
   const reader = patches.getReader()
   const results: Patch[][] = []
   try {
     for (let i = 0; i < n; i++) {
       const { value, done } = await reader.read()
       if (done) break
-      if (value !== undefined) results.push(value)
+      if (value !== undefined) results.push(value.patches)
     }
   } finally {
     reader.releaseLock()
@@ -295,7 +305,10 @@ describe("RemoteSessionView — connect()", () => {
 
 describe("RemoteSessionView — hydration on first connect (slice remote-warm-reconnect C3)", () => {
   /** מוודא שאין עוד פליטות בערוץ — כשל-כפילות: reset שני היה מכפיל את ההיסטוריה ב-VM. */
-  async function expectNoMoreEmissions(patches: ReadableStream<Patch[]>, ms = 50): Promise<void> {
+  async function expectNoMoreEmissions(
+    patches: ReadableStream<ViewEmission>,
+    ms = 50,
+  ): Promise<void> {
     const reader = patches.getReader()
     try {
       const result = await Promise.race([
@@ -336,7 +349,10 @@ describe("RemoteSessionView — hydration on first connect (slice remote-warm-re
       nextSegmentSeq: 2,
     })
     const emitted = results[0]?.[0]
-    expect(emitted && emitted.op === "reset" ? emitted.messages : []).toEqual(messages)
+    const expectedMessages: SessionMessage[] = messages.map((m) =>
+      m.role !== "tool" && m.messageId === null ? { ...m, meta: { "_drive/messageId": null } } : m,
+    )
+    expect(emitted && emitted.op === "reset" ? emitted.messages : []).toEqual(expectedMessages)
     // פעם אחת בלבד — אין reset שני בערוץ (רגרסיית כפילות)
     await expectNoMoreEmissions(view.patches)
     // state עצמו נשאר ה-snapshot (הפליטה לא משנה state)
@@ -396,7 +412,7 @@ describe("RemoteSessionView — RPC methods", () => {
     await view.prompt("hi there", { source: "voice" })
 
     expect(captured).toMatchObject({
-      method: "prompt",
+      method: RPC_METHODS.prompt,
       params: { sessionId: "sess-1", content: "hi there", meta: { source: "voice" } },
     })
   })
@@ -409,7 +425,7 @@ describe("RemoteSessionView — RPC methods", () => {
 
     await view.cancel()
 
-    expect(captured).toMatchObject({ method: "cancel", params: { sessionId: "sess-1" } })
+    expect(captured).toMatchObject({ method: RPC_METHODS.cancel, params: { sessionId: "sess-1" } })
   })
 
   it("setMode() POSTs /rpc setMode with sessionId + modeId", async () => {
@@ -421,7 +437,7 @@ describe("RemoteSessionView — RPC methods", () => {
     await view.setMode("compact")
 
     expect(captured).toMatchObject({
-      method: "setMode",
+      method: RPC_METHODS.setMode,
       params: { sessionId: "sess-1", modeId: "compact" },
     })
   })
@@ -435,7 +451,7 @@ describe("RemoteSessionView — RPC methods", () => {
     await view.setConfigOption("verbosity", "high")
 
     expect(captured).toMatchObject({
-      method: "setConfigOption",
+      method: RPC_METHODS.setConfigOption,
       params: { sessionId: "sess-1", configId: "verbosity", value: "high" },
     })
   })
@@ -449,7 +465,7 @@ describe("RemoteSessionView — RPC methods", () => {
     await view.setSessionModel("claude-opus")
 
     expect(captured).toMatchObject({
-      method: "setSessionModel",
+      method: RPC_METHODS.setSessionModel,
       params: { sessionId: "sess-1", model: "claude-opus" },
     })
   })
@@ -463,7 +479,7 @@ describe("RemoteSessionView — RPC methods", () => {
     const result = await view.extMethod("_drive/setThinkingTokens", { n: 100 })
 
     expect(captured).toMatchObject({
-      method: "extMethod",
+      method: RPC_METHODS.extMethod,
       params: { sessionId: "sess-1", method: "_drive/setThinkingTokens", params: { n: 100 } },
     })
     expect(result).toBeDefined()
@@ -482,7 +498,11 @@ describe("RemoteSessionView — RPC methods", () => {
   // ─── slice remote-images C1 (TDD) ───
   it("prompt() with PromptBlocks — passes blocks to RPC without throwing", async () => {
     let capturedParams: unknown = null
-    const mockFetch = makeMockFetch({ onRpc: (params) => { capturedParams = params } })
+    const mockFetch = makeMockFetch({
+      onRpc: (params) => {
+        capturedParams = params
+      },
+    })
     const view = newView("agent-1", "http://be.local", { _fetch: mockFetch, _sleep: noSleep })
     await view.connect()
 
@@ -490,7 +510,7 @@ describe("RemoteSessionView — RPC methods", () => {
     await view.prompt(blocks as never)
 
     expect(capturedParams).toMatchObject({
-      method: "prompt",
+      method: RPC_METHODS.prompt,
       params: { content: blocks },
     })
   })
@@ -628,16 +648,59 @@ describe("RemoteSessionView — respond()", () => {
   })
 })
 
-// ── session management — newSession still throws; list/load/delete are real RPCs ──
-// (slice remote-session-mgmt C4)
+// ── session management — newSession/list/load/delete over rpc ──
+// (slice remote-session-mgmt C4 + remote warm newSession)
 
-describe("RemoteSessionView — newSession still throws", () => {
-  it("newSession() throws", async () => {
+describe("RemoteSessionView — newSession over rpc", () => {
+  it("newSession() posts session/new and updates sessionId from the response", async () => {
+    const seen: unknown[] = []
     const view = newView("agent-1", "http://be.local", {
-      _fetch: makeMockFetch({}),
+      _fetch: vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.includes("/events")) {
+          return sseResponse([{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }], {
+            keepOpen: true,
+          })
+        }
+        if (url.includes("/rpc")) {
+          const body = init?.body ? JSON.parse(init.body as string) : undefined
+          seen.push(body)
+          return jsonResponse({ sessionId: "sess-brand-new", version: 9 })
+        }
+        throw new Error(`unexpected fetch: ${url}`)
+      }),
       _sleep: noSleep,
     })
-    await expect(view.newSession()).rejects.toThrow("not supported in remote mode")
+    await view.connect()
+    await view.newSession("/work")
+
+    expect(seen[0]).toMatchObject({
+      method: RPC_METHODS.newSession,
+      params: { cwd: "/work" },
+    })
+    expect(view.state.sessionId).toBe("sess-brand-new")
+  })
+
+  it("newSession() without cwd omits cwd from params", async () => {
+    const seen: unknown[] = []
+    const view = newView("agent-1", "http://be.local", {
+      _fetch: vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+        if (url.includes("/events")) {
+          return sseResponse([{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }], {
+            keepOpen: true,
+          })
+        }
+        if (url.includes("/rpc")) {
+          const body = init?.body ? JSON.parse(init.body as string) : undefined
+          seen.push(body)
+          return jsonResponse({ sessionId: "sess-x", version: 1 })
+        }
+        throw new Error(`unexpected fetch: ${url}`)
+      }),
+      _sleep: noSleep,
+    })
+    await view.connect()
+    await view.newSession()
+    expect(seen[0]).toMatchObject({ method: RPC_METHODS.newSession, params: {} })
   })
 })
 // ─── slice remote-session-mgmt C4: listSessions/loadSession/deleteSession ───
@@ -655,23 +718,25 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
       if (url.includes("/events")) {
         // keepOpen: a closing stream would spin the noSleep reconnect loop and
         // #handleReconnected would keep resetting #state to the snapshot.
-        return sseResponse(
-          [{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }],
-          { keepOpen: true },
-        )
+        return sseResponse([{ event: "snapshot", data: JSON.stringify(makeSnapshot()) }], {
+          keepOpen: true,
+        })
       }
       if (url.includes("/rpc")) {
         const body = init?.body ? JSON.parse(init.body as string) : undefined
         opts.onRpc?.(body)
         const method = (body as { method?: string })?.method
-        if (method === "listSessions") {
+        if (method === RPC_METHODS.listSessions) {
           const status = opts.listSessionsStatus ?? 200
           return jsonResponse(opts.listSessionsBody ?? { sessions: [] }, status)
         }
-        if (method === "loadSession") {
+        if (method === RPC_METHODS.loadSession) {
           return jsonResponse(opts.loadSessionBody ?? { sessionId: "sess-2", version: 5 })
         }
-        if (method === "deleteSession") {
+        if (method === RPC_METHODS.newSession) {
+          return jsonResponse({ sessionId: "sess-new", version: 6 })
+        }
+        if (method === RPC_METHODS.deleteSession) {
           return jsonResponse(opts.deleteSessionBody ?? { ok: true })
         }
         return jsonResponse({ version: 1 }, 202)
@@ -699,7 +764,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
 
     const sessions = await view.listSessions()
 
-    expect(seen[0]).toMatchObject({ method: "listSessions" })
+    expect(seen[0]).toMatchObject({ method: RPC_METHODS.listSessions })
     expect(sessions).toEqual([
       { sessionId: "a", cwd: "/a", title: "A", updatedAt: "" },
       { sessionId: "b", cwd: "/b", title: "", updatedAt: "" },
@@ -762,7 +827,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
     await view.loadSession("sess-42", "/custom/cwd")
 
     expect(seen[0]).toMatchObject({
-      method: "loadSession",
+      method: RPC_METHODS.loadSession,
       params: { sessionId: "sess-42", cwd: "/custom/cwd" },
     })
     expect(view.state.sessionId).toBe("sess-42")
@@ -796,7 +861,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
 
     await expect(view.deleteSession("sess-x")).resolves.toBeUndefined()
     expect(seen[0]).toMatchObject({
-      method: "deleteSession",
+      method: RPC_METHODS.deleteSession,
       params: { sessionId: "sess-x" },
     })
   })

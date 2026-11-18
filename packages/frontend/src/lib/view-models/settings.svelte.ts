@@ -13,143 +13,17 @@
  * הרלוונטי ללא מתודת set שכותבת ל-localStorage.
  */
 
-import { DEFAULT_LOCALE, detectLocale, type Locale } from "@drive-coding/core/i18n"
+import type { Locale } from "@drive-coding/core/i18n"
 import type { SpeechPace, SpeechTone } from "@drive-coding/core/voice/tts-types"
 import type { SessionTransport } from "$lib/session/session-transport"
-import { listVoices, type Voice } from "../adapters/voice/voices"
-import { DEFAULT_GEMINI_VOICE } from "../adapters/voice/voices-gemini"
+import type { ElevenLabsTtsModelId, GeminiTtsModelId } from "../adapters/voice/tts-resolve"
+import type { Voice } from "../adapters/voice/voices"
 import { setBeUrlBase } from "../util/be-url"
-import { ttsCapabilities } from "./capabilities.svelte"
-
-const STORAGE_KEY = "drive-coding-v2-settings"
-
-const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL" // Sarah, ElevenLabs
-
-type Persisted = {
-  /** open-cli-registry-fe: string (לא CliKind) — כל kind ברג'יסטרי האפקטיבי, כולל קונפ'. */
-  cliKind: string
-  lastCwd: string
-  voiceId: string
-  beUrl: string
-  // ─── דיבור ─── (redesign-3 / 9a)
-  speakThoughts: boolean
-  narrateTools: boolean
-  translateThoughts: boolean
-  // ─── רכב ─── (redesign-3, חיווט מלא: slice 7)
-  carMode: boolean
-  // ─── שפה ─── (rtl-ltr-bidi)
-  locale: Locale
-  // ─── השתקה ─── (ui-polish-batch · C7)
-  muted: boolean
-  // ─── מסך ─── (slice-wake-lock)
-  screenWakeLock: boolean
-  // ─── תצוגת צ'אט ─── (display-toggle-consistency — פולריות חיובית: ON=מציג)
-  showThoughts: boolean
-  showTools: boolean
-  // ─── Enter toggle ─── (slice-enter-toggle)
-  enterToSend: boolean
-  // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
-  // מפה: cliKind → { configId/category → value }
-  lastConfig: Record<string, Record<string, string | boolean>>
-  // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
-  ttsProvider: "elevenlabs" | "google"
-  // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
-  recentCollapsed: boolean
-  // ─── leave-running (runtime-gate fixes) ───
-  suppressLeaveWarning: boolean
-  // ─── קול Gemini ─── (V4b-gemini-voice-picker)
-  geminiVoice: string
-  // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
-  // מפה: cwd → טקסט הפרומפט (מתווסף להוראות ברירת-המחדל של הסוכן, ר' provider/connection).
-  projectSystemPrompt: Record<string, string>
-  // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
-  recentPanelHeight: number
-  activePanelHeight: number
-  // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
-  geminiPace: SpeechPace
-  geminiTone: SpeechTone
-  // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4)
-  // null = לא נבחרה העדפה → קדימות ממשיכה ל-env. ws/http כותב דרך ה-Select בהגדרות.
-  sessionTransport: SessionTransport | null
-}
-
-const DEFAULTS: Persisted = {
-  cliKind: "opencode",
-  // Slice 24: lastCwd נשלף מ-GET /api/options.homeDir ב-+page.svelte (async, אחרי init).
-  // ריק עד אז — המשתמש ימלא ידנית אם ה-fetch נכשל.
-  lastCwd: "",
-  voiceId: DEFAULT_VOICE_ID,
-  beUrl: "",
-  // ─── דיבור ─── (redesign-3 / 9a)
-  speakThoughts: true,
-  narrateTools: true,
-  translateThoughts: true,
-  // ─── רכב ───
-  carMode: false,
-  // ─── שפה ─── (rtl-ltr-bidi) — DEFAULT_LOCALE="he"; detectLocale() רץ רק כש-localStorage ריק
-  locale: DEFAULT_LOCALE,
-  // ─── השתקה ─── (ui-polish-batch · C7)
-  muted: false,
-  // ─── מסך ─── (slice-wake-lock)
-  screenWakeLock: false,
-  // ─── תצוגת צ'אט ─── (display-toggle-consistency) — ברירות מחדל = התנהגות נוכחית (מחשבות פתוחות, כלים סגורים)
-  showThoughts: true,
-  showTools: false,
-  // ─── Enter toggle ─── (slice-enter-toggle) — ברירת מחדל = התנהגות נוכחית (Enter שולח)
-  enterToSend: true,
-  // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
-  lastConfig: {},
-  // ─── TTS provider ─── (V4a) — ברירת מחדל = ElevenLabs (Q1=לא flip)
-  ttsProvider: "elevenlabs" as const,
-  // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
-  recentCollapsed: false,
-  // ─── leave-running (runtime-gate fixes) ───
-  suppressLeaveWarning: false,
-  // ─── קול Gemini ─── (V4b-gemini-voice-picker)
-  geminiVoice: DEFAULT_GEMINI_VOICE,
-  // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
-  projectSystemPrompt: {},
-  // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize) — 256px = 16rem, זהה להתנהגות היום
-  recentPanelHeight: 256,
-  activePanelHeight: 256,
-  geminiPace: "normal",
-  geminiTone: "neutral",
-  // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4) — null = env נבחר
-  sessionTransport: null,
-}
-
-function load(): Persisted {
-  if (typeof localStorage === "undefined") return { ...DEFAULTS, locale: detectLocale() }
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    // ללא ערך שמור: locale נגזר מהדפדפן (detectLocale), שאר ה-DEFAULTS.
-    if (!raw) return { ...DEFAULTS, locale: detectLocale() }
-    const parsed = JSON.parse(raw) as Partial<Persisted> & {
-      collapseThoughts?: boolean
-      expandTools?: boolean
-    }
-    // migration (display-toggle-consistency): מפתחות ישנים → פולריות חיובית.
-    // נשמר רק אם המפתח החדש עדיין לא קיים (לא לדרוס בחירה חדשה).
-    if (parsed.showThoughts === undefined && parsed.collapseThoughts !== undefined) {
-      parsed.showThoughts = !parsed.collapseThoughts
-    }
-    if (parsed.showTools === undefined && parsed.expandTools !== undefined) {
-      parsed.showTools = parsed.expandTools
-    }
-    return { ...DEFAULTS, ...parsed }
-  } catch {
-    return { ...DEFAULTS, locale: detectLocale() }
-  }
-}
-
-function save(s: Persisted): void {
-  if (typeof localStorage === "undefined") return
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
-  } catch {
-    // מכסה (quota) / אחסון מושבת — דלג בשקט
-  }
-}
+import { clampSidebarWidth } from "../util/sidebar-width"
+import { DEFAULTS, loadSettings, saveSettings } from "./settings-persistence"
+import { SettingsScopePolicy } from "./settings-scope-policy.svelte"
+import { SettingsVoices } from "./settings-voices.svelte"
+import { coerceInputMode, type InputMode } from "./ui-shell.svelte"
 
 export class Settings {
   // ─── טופס חיבור ───
@@ -158,14 +32,24 @@ export class Settings {
 
   // ─── קול ───
   voiceId = $state<string>(DEFAULTS.voiceId)
-  /** נטען אסינכרונית מ-ElevenLabs דרך `loadVoices()`. ריק עד אז. */
-  availableVoices = $state<Voice[]>([])
-  voicesLoading = $state<boolean>(false)
-  voicesError = $state<string | null>(null)
-  /** מונה נסיונות כושלים רצופים — מזין את ה-backoff. מתאפס בהצלחה / force. */
-  #voicesRetries = 0
-  /** ה-timer של הנסיון החוזר המתוזמן (null = אין retry ממתין). */
-  #voicesRetryTimer: ReturnType<typeof setTimeout> | null = null
+  readonly #voices = new SettingsVoices()
+  readonly #scopePolicy = new SettingsScopePolicy(() => this.beUrl)
+
+  get scopePolicy(): SettingsScopePolicy {
+    return this.#scopePolicy
+  }
+
+  get availableVoices(): Voice[] {
+    return this.#voices.availableVoices
+  }
+
+  get voicesLoading(): boolean {
+    return this.#voices.voicesLoading
+  }
+
+  get voicesError(): string | null {
+    return this.#voices.voicesError
+  }
 
   // ─── שרת ───
   beUrl = $state<string>(DEFAULTS.beUrl)
@@ -190,15 +74,26 @@ export class Settings {
   // ─── תצוגת צ'אט ─── (display-toggle-consistency — פולריות חיובית: ON=מציג)
   showThoughts = $state<boolean>(DEFAULTS.showThoughts)
   showTools = $state<boolean>(DEFAULTS.showTools)
+  compactActivity = $state<boolean>(DEFAULTS.compactActivity)
+
+  // ─── session-memo ─── (slice session-memo-pad)
+  showSessionMemo = $state<boolean>(DEFAULTS.showSessionMemo)
 
   // ─── Enter toggle ─── (slice-enter-toggle)
   enterToSend = $state<boolean>(DEFAULTS.enterToSend)
+
+  // ─── תמונות מרוחקות ─── (slice msg-media)
+  autoLoadRemoteImages = $state<boolean>(DEFAULTS.autoLoadRemoteImages)
 
   // ─── config אחרון פר-CLI ─── (slice-restore-last-config)
   lastConfig = $state<Record<string, Record<string, string | boolean>>>(DEFAULTS.lastConfig)
 
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   ttsProvider = $state<"elevenlabs" | "google">(DEFAULTS.ttsProvider)
+
+  // ─── TTS model ─── (tts-model-choice)
+  elevenLabsModelId = $state<ElevenLabsTtsModelId>(DEFAULTS.elevenLabsModelId)
+  geminiModelId = $state<GeminiTtsModelId>(DEFAULTS.geminiModelId)
 
   // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
   recentCollapsed = $state<boolean>(DEFAULTS.recentCollapsed)
@@ -208,12 +103,18 @@ export class Settings {
   // ─── קול Gemini ─── (V4b-gemini-voice-picker)
   geminiVoice = $state<string>(DEFAULTS.geminiVoice)
 
+  // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker)
+  liveVoice = $state<string>(DEFAULTS.liveVoice)
+
   // ─── פרומפט-מערכת פר-פרויקט ─── (slice project-system-prompt)
   projectSystemPrompt = $state<Record<string, string>>(DEFAULTS.projectSystemPrompt)
 
   // ─── גובה פאנלים נגרר ─── (slice connect-panel-resize)
   recentPanelHeight = $state<number>(DEFAULTS.recentPanelHeight)
   activePanelHeight = $state<number>(DEFAULTS.activePanelHeight)
+
+  // ─── sidebar-resize ───
+  sidebarWidthRem = $state<number>(DEFAULTS.sidebarWidthRem)
 
   // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
   geminiPace = $state<SpeechPace>(DEFAULTS.geminiPace)
@@ -222,48 +123,58 @@ export class Settings {
   // ─── טרנספורט סשן (העדפה) ─── (slice transport-polish C4)
   sessionTransport = $state<SessionTransport | null>(DEFAULTS.sessionTransport)
 
+  // ─── notifications ─── (slice notify-local)
+  notifications = $state<boolean>(DEFAULTS.notifications)
+
+  // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
+  sessionsCurrentCwdOnly = $state<boolean>(DEFAULTS.sessionsCurrentCwdOnly)
+  inputMode = $state<InputMode>(DEFAULTS.inputMode)
+
+  // ─── input device ─── (slice mic-device-selection)
+  inputDeviceId = $state<string | null>(DEFAULTS.inputDeviceId)
+  inputDeviceLabel = $state<string>(DEFAULTS.inputDeviceLabel)
+
   constructor() {
-    const loaded = load()
+    const loaded = loadSettings()
     this.cliKind = loaded.cliKind
     this.lastCwd = loaded.lastCwd
     this.voiceId = loaded.voiceId
     this.beUrl = loaded.beUrl
     setBeUrlBase(this.beUrl)
-    // ─── דיבור ───
     this.speakThoughts = loaded.speakThoughts
     this.narrateTools = loaded.narrateTools
     this.translateThoughts = loaded.translateThoughts
-    // ─── רכב ───
     this.carMode = loaded.carMode
-    // ─── שפה ───
     this.locale = loaded.locale
-    // ─── השתקה ───
     this.muted = loaded.muted
-    // ─── מסך ───
     this.screenWakeLock = loaded.screenWakeLock
-    // ─── תצוגת צ'אט ───
     this.showThoughts = loaded.showThoughts
     this.showTools = loaded.showTools
-    // ─── Enter toggle ───
+    this.compactActivity = loaded.compactActivity
+    this.showSessionMemo = loaded.showSessionMemo
     this.enterToSend = loaded.enterToSend
-    // ─── config אחרון פר-CLI ───
+    this.autoLoadRemoteImages = loaded.autoLoadRemoteImages
     this.lastConfig = loaded.lastConfig
-    // ─── TTS provider ───
     this.ttsProvider = loaded.ttsProvider
-    // ─── תיקיות אחרונות ───
+    this.elevenLabsModelId = loaded.elevenLabsModelId
+    this.geminiModelId = loaded.geminiModelId
     this.recentCollapsed = loaded.recentCollapsed
-    // ─── leave-running ───
     this.suppressLeaveWarning = loaded.suppressLeaveWarning
-    // ─── קול Gemini ───
     this.geminiVoice = loaded.geminiVoice
-    // ─── פרומפט-מערכת פר-פרויקט ───
+    this.liveVoice = loaded.liveVoice
     this.projectSystemPrompt = loaded.projectSystemPrompt
-    // ─── גובה פאנלים נגרר ───
     this.recentPanelHeight = loaded.recentPanelHeight
     this.activePanelHeight = loaded.activePanelHeight
+    this.sidebarWidthRem = Number.isFinite(loaded.sidebarWidthRem)
+      ? clampSidebarWidth(loaded.sidebarWidthRem)
+      : DEFAULTS.sidebarWidthRem
     this.geminiTone = loaded.geminiTone
-    // ─── טרנספורט סשן ─── (slice transport-polish C4)
     this.sessionTransport = loaded.sessionTransport
+    this.notifications = loaded.notifications
+    this.sessionsCurrentCwdOnly = loaded.sessionsCurrentCwdOnly
+    this.inputMode = coerceInputMode(loaded.inputMode)
+    this.inputDeviceId = loaded.inputDeviceId
+    this.inputDeviceLabel = loaded.inputDeviceLabel
   }
 
   // ─── טופס חיבור ───
@@ -285,79 +196,7 @@ export class Settings {
     this.#persist()
   }
 
-  /**
-   * מביא את קטלוג הקולות מ-ElevenLabs (דרך פרוקסי BE + רכיב OneCLI).
-   *
-   * retry עם exponential backoff: בכשל מתזמן נסיון חוזר (2s,4s,8s,16s,cap 30s)
-   * עד #VOICES_MAX_RETRIES, ואז עוצר. הצלחה / `force=true` מאפסים backoff ו-timer.
-   *
-   * חשוב: ה-retry מתוזמן כאן (setTimeout), **לא** מ-$effect של הקורא — אחרת
-   * הכתיבה ל-voicesError הייתה מפעילה את ה-$effect מחדש בקצב event-loop (DDoS).
-   * הקורא (VoicePicker) מפעיל פעם אחת ב-mount עטוף ב-untrack. שגיאות → voicesError.
-   */
-  loadVoices = async (force = false): Promise<void> => {
-    // Commit 3 capability-gate (הגנה שנייה, סינכרונית — לקוראים אחרים מחוץ ל-VoicePicker).
-    // undefined caps → optimistic → לא חוסם (test-7 ממשיך לעבוד בלי שינוי).
-    // available===false → 0 בקשות ל-ElevenLabs.
-    // אין await כאן — Guard הסינכרוני (voicesLoading) בשורה הבאה נשאר שלם.
-    if (!ttsCapabilities.isAvailable("elevenlabs")) {
-      this.#clearVoicesRetry()
-      return
-    }
-    if (this.voicesLoading) return
-    // טעינה מוצלחת קיימת — אל תטען שוב.
-    if (this.availableVoices.length > 0 && this.voicesError === null) return
-
-    if (force) {
-      // רענון מפורש (כפתור / beUrl השתנה) — בטל retry ממתין ואפס backoff.
-      this.#clearVoicesRetry()
-      this.#voicesRetries = 0
-    } else if (this.#voicesRetryTimer !== null) {
-      // כבר יש retry מתוזמן — אל תכפיל קריאות.
-      return
-    }
-
-    this.voicesLoading = true
-    this.voicesError = null
-    try {
-      const voices = await listVoices()
-      this.availableVoices = voices
-      this.#voicesRetries = 0
-    } catch (e) {
-      this.voicesError = e instanceof Error ? e.message : String(e)
-      this.#scheduleVoicesRetry()
-    } finally {
-      this.voicesLoading = false
-    }
-  }
-
-  static #VOICES_MAX_RETRIES = 6
-  static #VOICES_BASE_DELAY_MS = 2000
-  static #VOICES_MAX_DELAY_MS = 30_000
-
-  /** מתזמן נסיון חוזר עם exponential backoff, עד תקרת הנסיונות. */
-  #scheduleVoicesRetry(): void {
-    // Commit 3: אל תתזמן retry אם ElevenLabs לא-זמין (מניעת retry-loop על מפתח שרוף).
-    if (!ttsCapabilities.isAvailable("elevenlabs")) return
-    if (this.#voicesRetries >= Settings.#VOICES_MAX_RETRIES) return
-    const delay = Math.min(
-      Settings.#VOICES_BASE_DELAY_MS * 2 ** this.#voicesRetries,
-      Settings.#VOICES_MAX_DELAY_MS,
-    )
-    this.#voicesRetries += 1
-    this.#clearVoicesRetry()
-    this.#voicesRetryTimer = setTimeout(() => {
-      this.#voicesRetryTimer = null
-      void this.loadVoices()
-    }, delay)
-  }
-
-  #clearVoicesRetry(): void {
-    if (this.#voicesRetryTimer !== null) {
-      clearTimeout(this.#voicesRetryTimer)
-      this.#voicesRetryTimer = null
-    }
-  }
+  loadVoices = (force = false): Promise<void> => this.#voices.loadVoices(force)
 
   // ─── שרת ───
 
@@ -368,10 +207,15 @@ export class Settings {
    */
   setBeUrl = (value: string): { ok: true } | { ok: false; error: string } => {
     const trimmed = value.trim().replace(/\/$/, "")
+    const before = this.beUrl
     if (trimmed === "") {
       this.beUrl = ""
       setBeUrlBase(this.beUrl)
       this.#persist()
+      if (before !== this.beUrl) {
+        this.#scopePolicy.noteBeUrlChanged()
+        void this.#scopePolicy.refresh()
+      }
       return { ok: true }
     }
     try {
@@ -382,6 +226,10 @@ export class Settings {
       this.beUrl = trimmed
       setBeUrlBase(this.beUrl)
       this.#persist()
+      if (before !== this.beUrl) {
+        this.#scopePolicy.noteBeUrlChanged()
+        void this.#scopePolicy.refresh()
+      }
       return { ok: true }
     } catch {
       return { ok: false, error: "malformed URL" }
@@ -444,6 +292,21 @@ export class Settings {
     this.showTools = v
     this.#persist()
   }
+  setCompactActivity = (v: boolean): void => {
+    this.compactActivity = v
+    this.#persist()
+  }
+  setShowSessionMemo = (v: boolean): void => {
+    this.showSessionMemo = v
+    this.#persist()
+  }
+
+  // ─── תמונות מרוחקות ─── (slice msg-media)
+
+  setAutoLoadRemoteImages = (v: boolean): void => {
+    this.autoLoadRemoteImages = v
+    this.#persist()
+  }
 
   // ─── Enter toggle ─── (slice-enter-toggle)
 
@@ -476,6 +339,16 @@ export class Settings {
     this.#persist()
   }
 
+  setElevenLabsModelId = (v: ElevenLabsTtsModelId): void => {
+    this.elevenLabsModelId = v
+    this.#persist()
+  }
+
+  setGeminiModelId = (v: GeminiTtsModelId): void => {
+    this.geminiModelId = v
+    this.#persist()
+  }
+
   // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
 
   setRecentCollapsed = (v: boolean): void => {
@@ -494,6 +367,13 @@ export class Settings {
 
   setGeminiVoice = (v: string): void => {
     this.geminiVoice = v
+    this.#persist()
+  }
+
+  // ─── קול Gemini Live (מזכיר) ─── (live-voice-picker)
+
+  setLiveVoice = (v: string): void => {
+    this.liveVoice = v
     this.#persist()
   }
 
@@ -525,6 +405,13 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── sidebar-resize ───
+
+  setSidebarWidthRem = (rem: number): void => {
+    this.sidebarWidthRem = clampSidebarWidth(rem)
+    this.#persist()
+  }
+
   // ─── בימוי Gemini (קצב/טון) ─── (slice-gemini-tts-directing)
 
   setGeminiPace = (v: SpeechPace): void => {
@@ -544,10 +431,36 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── notifications ─── (slice notify-local)
+
+  setNotifications = (v: boolean): void => {
+    this.notifications = v
+    this.#persist()
+  }
+
+  // ─── סינון רשימת סשנים ─── (slice sessions-search-filter)
+
+  setSessionsCurrentCwdOnly = (v: boolean): void => {
+    this.sessionsCurrentCwdOnly = v
+    this.#persist()
+  }
+
+  setInputMode = (mode: InputMode): void => {
+    this.inputMode = coerceInputMode(mode)
+    this.#persist()
+  }
+
+  /** label is display-only — not used to match devices. */
+  setInputDevice = (id: string | null, label: string): void => {
+    this.inputDeviceId = id
+    this.inputDeviceLabel = label
+    this.#persist()
+  }
+
   // ─── פרטי ───
 
   #persist(): void {
-    save({
+    saveSettings({
       cliKind: this.cliKind,
       lastCwd: this.lastCwd,
       voiceId: this.voiceId,
@@ -561,18 +474,30 @@ export class Settings {
       screenWakeLock: this.screenWakeLock,
       showThoughts: this.showThoughts,
       showTools: this.showTools,
+      compactActivity: this.compactActivity,
+      showSessionMemo: this.showSessionMemo,
       enterToSend: this.enterToSend,
+      autoLoadRemoteImages: this.autoLoadRemoteImages,
       lastConfig: this.lastConfig,
       ttsProvider: this.ttsProvider,
+      elevenLabsModelId: this.elevenLabsModelId,
+      geminiModelId: this.geminiModelId,
       recentCollapsed: this.recentCollapsed,
       suppressLeaveWarning: this.suppressLeaveWarning,
       geminiVoice: this.geminiVoice,
+      liveVoice: this.liveVoice,
       projectSystemPrompt: this.projectSystemPrompt,
       recentPanelHeight: this.recentPanelHeight,
       activePanelHeight: this.activePanelHeight,
+      sidebarWidthRem: this.sidebarWidthRem,
       geminiPace: this.geminiPace,
       geminiTone: this.geminiTone,
       sessionTransport: this.sessionTransport,
+      notifications: this.notifications,
+      sessionsCurrentCwdOnly: this.sessionsCurrentCwdOnly,
+      inputMode: this.inputMode,
+      inputDeviceId: this.inputDeviceId,
+      inputDeviceLabel: this.inputDeviceLabel,
     })
   }
 }

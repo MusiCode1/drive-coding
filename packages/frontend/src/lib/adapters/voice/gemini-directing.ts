@@ -28,9 +28,10 @@ const TONE_LABELS: Record<Exclude<SpeechTone, "neutral">, string> = {
   casual: "Conversational",
 }
 
-export function buildGeminiDirecting(req: { text: string; directing?: SpeechDirecting }): string {
-  const pace = req.directing?.pace
-  const tone = req.directing?.tone
+/** Style instruction only (for Gemini 3.8 `Part.speechMetadata.style`). */
+export function buildGeminiStyle(directing?: SpeechDirecting): string | undefined {
+  const pace = directing?.pace
+  const tone = directing?.tone
 
   const parts: string[] = []
   if (tone !== undefined && tone !== "neutral") {
@@ -40,12 +41,17 @@ export function buildGeminiDirecting(req: { text: string; directing?: SpeechDire
     parts.push(`Pace: ${PACE_LABELS[pace]}`)
   }
 
-  if (parts.length === 0) return req.text
+  if (parts.length === 0) return undefined
+  return `${parts.join(". ")}.`
+}
 
-  const noteLine = `${parts.join(". ")}.`
+export function buildGeminiDirecting(req: { text: string; directing?: SpeechDirecting }): string {
+  const styleNote = buildGeminiStyle(req.directing)
+  if (styleNote === undefined) return req.text
+
   return (
     "Read the following transcript based on the director's note.\n\n" +
-    `# Director's note\n${noteLine}\n\n` +
+    `# Director's note\n${styleNote}\n\n` +
     `## Transcript:\n${req.text}`
   )
 }

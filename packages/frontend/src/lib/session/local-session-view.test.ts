@@ -109,7 +109,7 @@ describe("LocalSessionView — connection", () => {
     await view.newSession()
 
     expect(cbsCaptured).not.toBeNull()
-    expect(mock.client.newSession).toHaveBeenCalledWith({ cwd: "/workspace" })
+    expect(mock.client.newSession).toHaveBeenCalledWith({ cwd: "/workspace", mcpServers: [] })
     expect(view.state.status).toBe("connected")
     expect(view.state.sessionId).toBe("s-test")
   })
@@ -125,7 +125,11 @@ describe("LocalSessionView — connection", () => {
     await view.loadSession("existing-session-42")
 
     expect(mock.client.loadSession).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: "existing-session-42", cwd: "/workspace" }),
+      expect.objectContaining({
+        sessionId: "existing-session-42",
+        cwd: "/workspace",
+        mcpServers: [],
+      }),
     )
     expect(view.state.status).toBe("connected")
     expect(view.state.sessionId).toBe("existing-session-42")
@@ -184,7 +188,7 @@ describe("LocalSessionView — reduce + patches (C2)", () => {
 
     expect(done).toBe(false)
     expect(value).toBeDefined()
-    expect((value as Patch[])[0]!.op).toBe("add-message")
+    expect(value?.patches[0]!.op).toBe("add-message")
   })
 
   it("metadata update (session_info_update) → state.title updated", async () => {
@@ -381,6 +385,7 @@ describe("LocalSessionView — turnState lifecycle (C2)", () => {
     let turnStateBeforeResp = ""
     vi.mocked(mock.client.prompt).mockImplementationOnce(async () => {
       turnStateBeforeResp = view.state.turnState
+      return { stopReason: "end_turn" as const }
     })
 
     await view.prompt("Hello")

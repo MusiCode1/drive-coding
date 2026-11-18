@@ -46,6 +46,7 @@ export function mapClaudeCapabilities(raw: unknown): NormalizedCapabilities {
     // is the source of truth, not a per-provider hardcode.
     image: false,
     // claude injects opts.systemPrompt via _meta.systemPrompt.append (connect-in-process.ts)
-    systemPrompt: true,
+    systemPrompt: "native",
+    voice: false,
   }
 }

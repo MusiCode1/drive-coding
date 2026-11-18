@@ -5,9 +5,8 @@
  *  1. precedence: flag > env > file (same field — flag wins)
  *  2. env layer wins over file (flag missing)
  *  3. file layer used when no higher layer sets value
- *  4. object field (log) — override wholesale (not deep merge)
- *  5. object field (voice) — override wholesale
- *  6. cliSpecs — merge per-key across layers
+ *  4. object field (log) — per-leaf merge (highest layer per leaf wins)
+ *  5. cliSpecs — merge per-key across layers
  *  7. invalid field → Err with message
  *  8. empty layer — skipped
  *  9. all layers empty → valid empty config (ok result)
@@ -18,6 +17,7 @@
 
 import { describe, expect, it } from "vitest"
 import { resolveConfig } from "../src/config/resolve.js"
+import { configDefault } from "../src/config/specs.js"
 
 describe("resolveConfig — precedence", () => {
   it("1. flag > env > file: flag wins when all set", () => {
@@ -39,6 +39,15 @@ describe("resolveConfig — precedence", () => {
     expect(result._unsafeUnwrap().port).toBe(4200)
   })
 
+  it("2b. scope policy: invalid env layer ask beats file allow", () => {
+    const result = resolveConfig([
+      { scopeMessagePolicy: "allow" },
+      { scopeMessagePolicy: "ask" },
+    ])
+    expect(result.isOk()).toBe(true)
+    expect(result._unsafeUnwrap().scopeMessagePolicy).toBe("ask")
+  })
+
   it("3. file layer used when no higher layer", () => {
     const result = resolveConfig([{ port: 4100 }])
     expect(result.isOk()).toBe(true)
@@ -55,29 +64,16 @@ describe("resolveConfig — precedence", () => {
     expect(result._unsafeUnwrap().host).toBe("0.0.0.0")
   })
 
-  it("4. log object — wholesale override (higher layer wins entirely)", () => {
+  it("4. log object — per-leaf merge", () => {
     const result = resolveConfig([
       { log: { level: "debug", ns: "all", format: "pretty" } }, // file
-      { log: { level: "info" } }, // env — overrides entire log
+      { log: { level: "info" } }, // env — overrides level only
     ])
     expect(result.isOk()).toBe(true)
     const cfg = result._unsafeUnwrap()
     expect(cfg.log?.level).toBe("info")
-    // ns and format from file layer are gone — wholesale override
-    expect(cfg.log?.ns).toBeUndefined()
-    expect(cfg.log?.format).toBeUndefined()
-  })
-
-  it("5. voice object — wholesale override", () => {
-    const result = resolveConfig([
-      { voice: { elevenLabsKey: "key1", geminiKey: "gk1" } },
-      { voice: { elevenLabsKey: "key2" } }, // env — only sets elevenLabsKey
-    ])
-    expect(result.isOk()).toBe(true)
-    const cfg = result._unsafeUnwrap()
-    expect(cfg.voice?.elevenLabsKey).toBe("key2")
-    // geminiKey from file layer is gone — wholesale override
-    expect(cfg.voice?.geminiKey).toBeUndefined()
+    expect(cfg.log?.ns).toBe("all")
+    expect(cfg.log?.format).toBe("pretty")
   })
 
   it("6. cliSpecs — merge per-key across layers", () => {
@@ -121,10 +117,17 @@ describe("resolveConfig — validation", () => {
     expect(result._unsafeUnwrap().port).toBe(4100)
   })
 
-  it("9. all layers empty → valid empty config", () => {
+  it("9. all layers empty → product defaults filled", () => {
     const result = resolveConfig([{}, {}, {}])
     expect(result.isOk()).toBe(true)
-    expect(result._unsafeUnwrap()).toEqual({})
+    const cfg = result._unsafeUnwrap()
+    expect(cfg.port).toBe(configDefault("port"))
+    expect(cfg.host).toBe(configDefault("host"))
+    expect(cfg.rssBudgetMb).toBe(configDefault("rssBudgetMb"))
+    expect(cfg.httpOwnerTtlMs).toBe(configDefault("httpOwnerTtlMs"))
+    expect(cfg.opencodeBin).toBe(configDefault("opencodeBin"))
+    expect(cfg.feStaticDir).toBeUndefined()
+    expect(cfg.wireRecord).toBeUndefined()
   })
 
   it("10. https as boolean", () => {
@@ -143,9 +146,14 @@ describe("resolveConfig — validation", () => {
 
 describe("resolveConfig — other fields", () => {
   it("corsOrigins as string array", () => {
-    const result = resolveConfig([{ corsOrigins: ["http://localhost:3000", "http://localhost:3001"] }])
+    const result = resolveConfig([
+      { corsOrigins: ["http://localhost:3000", "http://localhost:3001"] },
+    ])
     expect(result.isOk()).toBe(true)
-    expect(result._unsafeUnwrap().corsOrigins).toEqual(["http://localhost:3000", "http://localhost:3001"])
+    expect(result._unsafeUnwrap().corsOrigins).toEqual([
+      "http://localhost:3000",
+      "http://localhost:3001",
+    ])
   })
 
   it("wireRecord boolean", () => {

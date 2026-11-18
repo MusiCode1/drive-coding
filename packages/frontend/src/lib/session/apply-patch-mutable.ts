@@ -11,7 +11,7 @@
  * ─── slice session-state-reducer C3 ───
  */
 import type { Patch, SessionMessage } from "@drive-coding/core/session"
-import type { Bubble, ToolBubble, ToolContent, ToolLocation } from "$lib/types/bubble"
+import type { Bubble, BubbleVoice, ToolBubble, ToolContent, ToolLocation } from "$lib/types/bubble"
 
 // ─── Mapper types (injected) ───
 
@@ -21,6 +21,22 @@ export type PatchMappers = {
 }
 
 // ─── SessionMessage → Bubble mapping ───
+
+/** The voice-conversation mark (`_meta["_drive/voice"]`), validated; undefined for ordinary messages. */
+export function voiceOfMeta(meta: Record<string, unknown> | undefined): BubbleVoice | undefined {
+  const v = meta?.["_drive/voice"] as
+    | { kind?: unknown; role?: unknown; transcript?: unknown }
+    | undefined
+  if (v?.kind === "speech" && (v.role === "user" || v.role === "assistant")) {
+    return { kind: "speech", role: v.role }
+  }
+  if (v?.kind === "handoff") {
+    return typeof v.transcript === "string" && v.transcript.trim()
+      ? { kind: "handoff", transcript: v.transcript }
+      : { kind: "handoff" }
+  }
+  return undefined
+}
 
 function sessionMsgToBubble(msg: SessionMessage, mappers: PatchMappers): Bubble {
   if (msg.role === "tool") {
@@ -38,26 +54,30 @@ function sessionMsgToBubble(msg: SessionMessage, mappers: PatchMappers): Bubble 
         title: msg.toolCall.title,
         result: msg.toolCall.result,
         content:
-          msg.toolCall.content != null
-            ? mappers.mapToolContent(msg.toolCall.content)
-            : undefined,
+          msg.toolCall.content != null ? mappers.mapToolContent(msg.toolCall.content) : undefined,
         locations:
-          msg.toolCall.locations != null
-            ? mappers.mapLocations(msg.toolCall.locations)
-            : undefined,
+          msg.toolCall.locations != null ? mappers.mapLocations(msg.toolCall.locations) : undefined,
       },
       segments: [],
     } satisfies ToolBubble
   }
   // user / thought / assistant
   const kind = msg.role === "assistant" ? "message" : msg.role === "thought" ? "thought" : "user"
+  // createdAt מוזן מ-timestamp הנייטיב (SDK ≥0.3.211, מקורלט ב-reduce). בלעדיו
+  // נשאר 0 — מה שגרם לתווית להציג epoch (02:00 בשעון ישראל) בנתיב ה-patches.
+  const parsedTs = msg.timestamp != null ? Date.parse(msg.timestamp) : Number.NaN
+  const createdAt = Number.isNaN(parsedTs) ? 0 : parsedTs
+  const voice = voiceOfMeta(msg.meta)
   return {
     id: msg.id,
     kind,
     messageId: msg.messageId,
-    createdAt: 0,
+    createdAt,
     segments: msg.segments,
-    ...(kind === "user" && "attachments" in msg && msg.attachments != null && { attachments: msg.attachments }),
+    ...(voice !== undefined && { voice }),
+    ...(kind === "user" &&
+      "attachments" in msg &&
+      msg.attachments != null && { attachments: msg.attachments }),
   } as Bubble
 }
 
@@ -79,6 +99,17 @@ export function applyPatchMutable(
     switch (patch.op) {
       case "add-message": {
         bubbles.push(sessionMsgToBubble(patch.message, mappers))
+        break
+      }
+
+      // ─── slice acp-v2-reduce ───
+      // ⚠️ **object-replacement, לא מוטציה של השדות.** בועה שמוחלפת בשלמותה
+      // חייבת להיות אובייקט חדש, אחרת ה-`{#key}`/הזיהוי ב-Virtualizer עלול
+      // להחזיק את הישן. זהו בדיוק הדפוס של update-tool מתחת.
+      case "set-message": {
+        const idx = bubbles.findIndex((b) => b.id === patch.targetId)
+        if (idx === -1) break
+        bubbles[idx] = sessionMsgToBubble(patch.message, mappers)
         break
       }
 
@@ -127,7 +158,11 @@ export function applyPatchMutable(
 
       case "reset": {
         // מחיקה + אכלוס (מוטציה על אותו מערך — $state proxy נשמר)
-        bubbles.splice(0, bubbles.length, ...patch.messages.map((m) => sessionMsgToBubble(m, mappers)))
+        bubbles.splice(
+          0,
+          bubbles.length,
+          ...patch.messages.map((m) => sessionMsgToBubble(m, mappers)),
+        )
         break
       }
     }

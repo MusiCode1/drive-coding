@@ -648,3 +648,64 @@ describe("getCliCommand: bin resolution (slice cli-bin-resolution-unify)", () =>
     expect(result.args).toContain("claude-sonnet-4-5")
   })
 })
+
+// ─── sessionMeta + injectDriveCodingMcp (slice session-meta-config C1) ───────
+// Four stations: CliSpec → MutableOverride → validateOverride → getCliSpec.
+
+describe("getCliSpec — sessionMeta + MCP toggle (session-meta-config C1)", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    delete process.env.OPENCODE_BIN
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    delete process.env.CLI_SPECS_FILE
+    delete process.env.OPENCODE_BIN
+  })
+
+  it("injectDriveCodingMcp:false from override reaches getCliSpec", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(os.tmpdir(), `cli-meta-test-${Date.now()}.jsonc`)
+    fs.writeFileSync(filePath, JSON.stringify({ claude: { injectDriveCodingMcp: false } }))
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getCliSpec } = await import("./src/config/cli-config.js")
+      expect(getCliSpec("claude")?.injectDriveCodingMcp).toBe(false)
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+
+  it("without override, getCliSpec(claude).sessionMeta equals built-in default", async () => {
+    process.env.CLI_SPECS_FILE = "NO_OVERRIDE_FILE"
+    const { getCliSpec } = await import("./src/config/cli-config.js")
+    const { CLI_SPECS } = await import("@drive-coding/core")
+    expect(getCliSpec("claude")?.sessionMeta).toEqual(CLI_SPECS.claude.sessionMeta)
+  })
+
+  it("sessionMeta override deep-merges and keeps thinking display", async () => {
+    const fs = await import("node:fs")
+    const os = await import("node:os")
+    const path = await import("node:path")
+    const filePath = path.join(os.tmpdir(), `cli-meta-merge-${Date.now()}.jsonc`)
+    fs.writeFileSync(
+      filePath,
+      JSON.stringify({ claude: { sessionMeta: { customFlag: true } } }),
+    )
+    process.env.CLI_SPECS_FILE = filePath
+    try {
+      const { getCliSpec } = await import("./src/config/cli-config.js")
+      const meta = getCliSpec("claude")?.sessionMeta
+      expect(meta?.customFlag).toBe(true)
+      const claudeCode = meta?.claudeCode as
+        | { options?: { thinking?: { display?: string } } }
+        | undefined
+      expect(claudeCode?.options?.thinking?.display).toBe("summarized")
+    } finally {
+      fs.unlinkSync(filePath)
+    }
+  })
+})

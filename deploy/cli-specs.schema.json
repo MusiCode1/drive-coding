@@ -51,6 +51,18 @@
         "logo": {
           "type": "string",
           "description": "Local file path or HTTPS URL to a logo image. Plain HTTP URLs are blocked by the browser (mixed-content). Absent → a deterministic monogram is shown."
+        },
+        "sessionMeta": {
+          "type": "object",
+          "description": "Full _meta object for ACP session/new|load (deep-merged with built-in default for this CLI). Passthrough — only injected as _meta, never as top-level cwd/mcpServers."
+        },
+        "injectDriveCodingMcp": {
+          "type": "boolean",
+          "description": "When false, omits the drive-coding MCP server from session/new|load. Omitted = inject (default)."
+        },
+        "sessionMetaAllowDefaultOverride": {
+          "type": "boolean",
+          "description": "When true, suppresses warnings when sessionMeta override changes built-in default values. Omitted/false = warn on conflicts at load."
         }
       },
       "additionalProperties": false

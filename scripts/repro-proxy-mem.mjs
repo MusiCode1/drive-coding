@@ -42,8 +42,7 @@ function buildFakeSseStream(totalMb) {
   // Pre-build a single audio chunk line (~64KB of base64 = ~48KB binary)
   // base64 alphabet only — valid base64 padding not required for the repro
   const audioBase64 = "A".repeat(CHUNK_SIZE - 200) // leave room for JSON wrapper
-  const audioChunkLine =
-    `data: {"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"audio/mp3","data":"${audioBase64}"}}],"role":"model"}}]}\r\n\r\n`
+  const audioChunkLine = `data: {"candidates":[{"content":{"parts":[{"inlineData":{"mimeType":"audio/mp3","data":"${audioBase64}"}}],"role":"model"}}]}\r\n\r\n`
 
   const usageLine = `data: {"candidates":[],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":50,"candidatesTokensDetails":[{"modality":"AUDIO","tokenCount":50}]}}\r\n\r\ndata: [DONE]\r\n\r\n`
 
@@ -71,9 +70,7 @@ async function startMinimalServer() {
   // We can't easily import the full BE here without running server.ts.
   // Instead, build a minimal Hono app with just registerProxyHttp.
   const { Hono } = await import("hono")
-  const { registerProxyHttp } = await import(
-    "../packages/backend/src/delivery/http-proxy.js"
-  )
+  const { registerProxyHttp } = await import("../packages/backend/src/delivery/http-proxy.js")
 
   const app = new Hono()
 
@@ -101,9 +98,7 @@ async function startMinimalServer() {
 
     const honoReq = new Request(url.toString(), {
       method: req.method,
-      headers: Object.fromEntries(
-        Object.entries(req.headers).map(([k, v]) => [k, String(v)]),
-      ),
+      headers: Object.fromEntries(Object.entries(req.headers).map(([k, v]) => [k, String(v)])),
       body: req.method !== "GET" && req.method !== "HEAD" ? body : undefined,
     })
 

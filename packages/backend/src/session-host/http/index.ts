@@ -1,32 +1,40 @@
 /**
  * http/index.ts — exports registerSessionHostHttp (S4 C5).
  *
- * Wires all 5 session-host HTTP routes to a Hono app:
+ * Wires all 6 session-host HTTP routes to a Hono app:
  *   GET  /api/agents/:id/events — SSE snapshot→patches
  *   POST /api/agents/:id/rpc    — 202 Accepted, method dispatch
  *   POST /api/agents/:id/reply  — kind discriminator (permission/elicitation)
  *   GET  /api/agents/:id/state  — one-shot snapshot (debug/health)
  *   POST /api/agents/:id/presence — liveness heartbeat (slice liveness C1)
+ *   GET  /api/agents/:id/history — pull of frame-zero's updates (slice history-get C1)
  *
  * ─── slice session-host-http C5 ───
  */
 
 import type { Hono } from "hono"
+import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
+import type { AgentRegistry } from "@drive-coding/core"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import { createAgentSessionRegistry, type OnSessionAttached } from "../registry.js"
+import { bindScopeEnforcement } from "../../bind-scope-enforcement.js"
 import { registerEventsRoute } from "./events.js"
+import { registerHistoryRoute } from "./history.js"
 import { registerPresenceRoute } from "./presence.js"
 import { registerReplyRoute } from "./reply.js"
 import { registerRpcRoute } from "./rpc.js"
 import { registerStateRoute } from "./state.js"
 
+export { registerConnectionRoute, type ConnectionRouteOpts } from "./connection.js"
+
 export type RegisterSessionHostHttpOpts = {
-  /** AgentSessionRegistry — created externally and passed in for wiring */
   agentSessionRegistry: ReturnType<typeof createAgentSessionRegistry>
+  connectionRegistry: ConnectionRegistry
+  agentRegistry: AgentRegistry
 }
 
 /**
- * registerSessionHostHttp — registers the 4 session-host HTTP routes.
+ * registerSessionHostHttp — registers the 6 session-host HTTP routes.
  *
  * Called from server.ts after creating agentSessionRegistry.
  * Follows the same pattern as registerAgentsHttp / registerOptionsHttp.
@@ -35,12 +43,13 @@ export function registerSessionHostHttp(
   app: Hono,
   opts: RegisterSessionHostHttpOpts,
 ): void {
-  const { agentSessionRegistry } = opts
-  registerEventsRoute(app, agentSessionRegistry)
-  registerRpcRoute(app, agentSessionRegistry)
+  const { agentSessionRegistry, connectionRegistry, agentRegistry } = opts
+  registerEventsRoute(app, agentSessionRegistry, connectionRegistry)
+  registerRpcRoute(app, agentSessionRegistry, agentRegistry)
   registerReplyRoute(app, agentSessionRegistry)
   registerStateRoute(app, agentSessionRegistry)
   registerPresenceRoute(app, agentSessionRegistry)
+  registerHistoryRoute(app, agentSessionRegistry)
 }
 
 /**
@@ -54,6 +63,7 @@ export function createAndRegisterSessionHostHttp(
   app: Hono,
   connectionRegistry: ConnectionRegistry,
   opts: {
+    agentRegistry: AgentRegistry
     onSessionAttached?: OnSessionAttached
     /**
      * slice ownership-handoff C4: eviction controller for HTTP→WS takeover.
@@ -67,14 +77,56 @@ export function createAndRegisterSessionHostHttp(
      * instead of newSession when taking over from a WS-owned agent.
      */
     getAcpSessionId?: (agentId: string) => string | undefined
-  } = {},
+    /**
+     * slice session-create-contract: permissionPolicy from agent record at create time.
+     */
+    getPermissionPolicy?: (
+      agentId: string,
+    ) => PermissionPolicyKind | undefined | Promise<PermissionPolicyKind | undefined>
+    /** slice session-lifecycle-fields C1 */
+    getCloseOnTurnEnd?: (agentId: string) => boolean | Promise<boolean>
+    onScheduleCloseOnTurnEnd?: (agentId: string) => void
+    /** slice boot-layer C1: HTTP ownership TTL from config */
+    _httpOwnerTtlMs?: number
+    /** slice boot-layer C5: env reference for TTL fallback */
+    env?: NodeJS.ProcessEnv
+    /** slice be-events-subscribe C1 */
+    onTurnEnded?: (
+      agentId: string,
+      info: import("../agent-events-turn.js").TurnEndedInfo,
+    ) => void
+    /** slice be-events-subscribe C2 */
+    onStallSuspected?: (agentId: string, silentMs: number) => void
+    _stallSweepMs?: number
+    _stallSuspectMs?: number
+    /** slice token-usage-persistence C3 */
+    afterHostCreated?: Parameters<typeof createAgentSessionRegistry>[0]["afterHostCreated"]
+  },
 ): ReturnType<typeof createAgentSessionRegistry> {
   const agentSessionRegistry = createAgentSessionRegistry({
     connectionRegistry,
+    env: opts.env,
     onSessionAttached: opts.onSessionAttached,
     evictionController: opts.evictionController,
     getAcpSessionId: opts.getAcpSessionId,
+    getPermissionPolicy: opts.getPermissionPolicy,
+    getCloseOnTurnEnd: opts.getCloseOnTurnEnd,
+    onScheduleCloseOnTurnEnd: opts.onScheduleCloseOnTurnEnd,
+    _httpOwnerTtlMs: opts._httpOwnerTtlMs,
+    onTurnEnded: opts.onTurnEnded,
+    onStallSuspected: opts.onStallSuspected,
+    _stallSweepMs: opts._stallSweepMs,
+    _stallSuspectMs: opts._stallSuspectMs,
+    afterHostCreated: opts.afterHostCreated,
   })
-  registerSessionHostHttp(app, { agentSessionRegistry })
+  bindScopeEnforcement(app, {
+    registry: opts.agentRegistry,
+    sessionRegistry: agentSessionRegistry,
+  })
+  registerSessionHostHttp(app, {
+    agentSessionRegistry,
+    connectionRegistry,
+    agentRegistry: opts.agentRegistry,
+  })
   return agentSessionRegistry
 }

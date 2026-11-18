@@ -120,8 +120,8 @@ describe("createWireRecorder — write (tmp dir)", () => {
     const dir = makeTmpDir()
     let ts = 1000
     const rec = createWireRecorder({ dir, now: () => ts++ })
-    const s1 = rec.open("agent-alpha")  // ts=1000
-    const s2 = rec.open("agent-beta")   // ts=1001
+    const s1 = rec.open("agent-alpha") // ts=1000
+    const s2 = rec.open("agent-beta") // ts=1001
     s1.record("in", "alpha-data")
     s2.record("out", "beta-data")
     s1.close()

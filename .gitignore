@@ -5,6 +5,7 @@ build/
 *.log
 .env
 .env.local
+secrets.json
 .DS_Store
 packages/backend/data/
 scripts/node_modules
@@ -40,9 +41,16 @@ docs/*-verification-report.md
 /docs/*
 # תיעוד ציבורי מיועד-לבני-אדם — נשאר בריפו הזה במפורש.
 !/docs/configuration.md
+# תיעוד-סוכנים (‏שלב 0 ‏של plan-agent-docs) — ‏תיקייה שלמה, ‏ולכן שלילת-התיקייה
+# ‏מספיקה: ‏/docs/* ‏תופס **‏ילדים ישירים בלבד**, ‏ואינו מחריג את docs/agents/*.md.
+!/docs/agents/
 # בלי / בסוף — docs-for-llm הוא סימלינק, וגit מתייחס לסימלינק כקובץ.
 # תבנית שמסתיימת ב-/ מתאימה לספריות בלבד ולא הייתה חוסמת אותו.
 /docs-for-llm
+
+# Wake-word ONNX models — served from jsDelivr at runtime (lib/engines/onnx-assets.ts).
+# Same convention as poc/wake-word*/ — downloaded binaries stay out of git.
+/packages/frontend/static/wake-word/models/*.onnx
 
 # FE build staging dirs (atomic swap — slice-fe-build-decouple)
 packages/frontend/.build-staging/
@@ -67,3 +75,8 @@ packages/frontend/.build-old/
 !packages/frontend/docs/
 @Vendor/
 docs/plans/
+
+# Machine-local Cursor rule: a symlink to ~/.cursor/rules/machine-agents.mdc.
+# Per-machine and absolute — committing it would publish a broken link.
+# (.cursor/rules/config-defaults.mdc IS tracked; only this one is local.)
+/.cursor/rules/machine-agents.mdc

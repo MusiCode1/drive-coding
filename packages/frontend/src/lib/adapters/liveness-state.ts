@@ -7,9 +7,10 @@
  *   resumable — רץ אך לא מחובר, עם acpSessionId לחזרה
  */
 import type { AgentPublic } from "@drive-coding/core"
+import { configDefault } from "@drive-coding/core/config/specs"
 
-/** מראה את HTTP_OWNER_TTL_MS ב-BE (registry.ts) — סף טריות lastSeenAt. */
-export const LIVENESS_FRESH_MS = 600_000
+/** Same product default as BE `httpOwnerTtlMs` — freshness of lastSeenAt. */
+export const LIVENESS_FRESH_MS = configDefault("httpOwnerTtlMs")
 
 const RUNNING_STATUSES = new Set<AgentPublic["status"]>(["starting", "ready", "busy"])
 

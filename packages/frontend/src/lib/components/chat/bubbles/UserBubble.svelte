@@ -2,35 +2,49 @@
 /**
  * UserBubble — בועת משתמש (C4).
  *
- * עיצוב מוקאפ 249-255: self-start, avatar user, bubble-user token.
- * flex gap-2 self-start items-end.
- *
- * msr-v2: כפתור ▶ אם recordingId קיים.
- *
- * ui-polish-batch C3: כפתור העתקה + timestamp.
- * ui-polish-batch C4: markdown ל-joinSegmentText → MarkdownContent.
- *
- * ─── slice/markdown-content-unify (Commit 1) — CSS עבר ל-MarkdownContent ───
+ * slice agent-message-envelope-ui C1: envelope display via driveMessageView + leaf components.
  */
-import type { UserBubble } from "$lib/types/bubble"
-import { getBubblePlayer, getContentViewer, getI18n, getSpeaker } from "$lib/context"
-import Avatar from "$lib/components/chat/Avatar.svelte"
-import { joinSegmentText } from "./bubble-rendering"
-import { copyToClipboard } from "$lib/util/clipboard"
-import { formatTime } from "$lib/util/formatting"
-import MarkdownContent from "./MarkdownContent.svelte"
+
+import CheckIcon from "@lucide/svelte/icons/check"
+import CopyIcon from "@lucide/svelte/icons/copy"
 import PlayIcon from "@lucide/svelte/icons/play"
 import SquareIcon from "@lucide/svelte/icons/square"
-import CopyIcon from "@lucide/svelte/icons/copy"
-import CheckIcon from "@lucide/svelte/icons/check"
-import PaperclipIcon from "@lucide/svelte/icons/paperclip"
+import { env } from "$env/dynamic/public"
+import {
+  getActiveAgents,
+  getBubblePlayer,
+  getContentViewer,
+  getI18n,
+  getSession,
+  getSettings,
+  getSpeaker,
+} from "$lib/context"
+import { readSessionTransport } from "$lib/session/session-transport-read"
+import type { UserBubble } from "$lib/types/bubble"
+import { copyToClipboard } from "$lib/util/clipboard"
+import { formatTime } from "$lib/util/formatting"
+import { joinSegmentText } from "./bubble-rendering"
+import DriveMessageEvent from "./DriveMessageEvent.svelte"
+import DriveMessageOrigin from "./DriveMessageOrigin.svelte"
+import { driveMessageView } from "./drive-message-view"
+import MarkdownContent from "./MarkdownContent.svelte"
+import UserBubbleContent from "./UserBubbleContent.svelte"
 
 let { bubble }: { bubble: UserBubble } = $props()
 const t = getI18n().t
 const bubblePlayer = getBubblePlayer()
-// C10: גייט על speaker.enabled — מסתיר כפתור ▶ כשמושתק
 const speaker = getSpeaker()
 const viewer = getContentViewer()
+const session = getSession()
+const activeAgents = getActiveAgents()
+const settings = getSettings()
+const transport = readSessionTransport({
+  env: env.PUBLIC_SESSION_TRANSPORT,
+  stored: settings.sessionTransport,
+})
+
+const rawText = $derived(joinSegmentText(bubble.segments))
+const view = $derived(driveMessageView(rawText, { agents: activeAgents.agents, transport }))
 
 const isPlaying = $derived(bubblePlayer.playingBubbleId === bubble.id)
 
@@ -51,105 +65,113 @@ async function handleCopy() {
 }
 </script>
 
-<div class="flex gap-2 self-start max-w-[85%] min-w-0 items-end group">
-  <Avatar kind="user" />
-  <div class="bubble-wrapper min-w-0 flex-1">
-    <!-- תמונות מצורפות (slice-image-paste Commit 3) -->
-    {#if bubble.attachments && bubble.attachments.length > 0}
-      <div class="flex flex-wrap gap-1.5 mb-1">
-        {#each bubble.attachments as att, i (i)}
-          <button
-            class="user-image-btn"
-            onclick={() => viewer.show({ kind: "image", src: `data:${att.mimeType};base64,${att.dataBase64}`, alt: "" })}
-            aria-label={t("contentViewer.expand")}
-            title={t("contentViewer.expand")}
-          >
-            <img
-              src="data:{att.mimeType};base64,{att.dataBase64}"
-              alt=""
-              class="max-h-40 max-w-[12rem] rounded-xl object-contain border"
-              style="border-color:var(--border)"
-            />
-          </button>
-        {/each}
-      </div>
-    {/if}
-    <!-- §11.3א: placeholder chips לתוכן לא-טקסטואלי מ-replay (resource_link / audio / resource) -->
-    {#if bubble.contentPlaceholders && bubble.contentPlaceholders.length > 0}
-      <div class="flex flex-wrap gap-1.5 mb-1">
-        {#each bubble.contentPlaceholders as ph, i (i)}
-          {#if ph.kind === "resource_link"}
-            <span
-              class="content-chip"
-              title={t("chat.content.attachedFile")}
-              aria-label={t("chat.content.attachedFile")}
-            >
-              <PaperclipIcon size={12} strokeWidth={2} />
-              {ph.label}
-            </span>
-          {:else}
-            <span class="content-chip" title={t("chat.content.unsupported")} aria-label={t("chat.content.unsupported")}>
-              {t("chat.content.unsupported")}
-            </span>
-          {/if}
-        {/each}
-      </div>
-    {/if}
+<div class="user-bubble-outer group">
+  <div class="bubble-wrapper">
+    <UserBubbleContent {bubble} />
     <div
-      class="px-3.5 py-2.5 rounded-2xl rounded-es-sm text-sm leading-relaxed min-w-0 max-w-full overflow-hidden break-words"
+      class="px-3.5 py-2.5 rounded-2xl rounded-se-sm text-sm leading-relaxed w-max max-w-full break-words"
       style="background:var(--bubble-user); {isPlaying ? 'outline:2px solid var(--accent); outline-offset:1px' : ''}"
     >
-      <MarkdownContent text={joinSegmentText(bubble.segments)} />
-      <!-- כופה ריאקטיביות -->
+      {#if view.kind === "plain"}
+        <MarkdownContent
+          text={rawText}
+          imageCwd={session.cwd}
+          fileLinks={{
+            cwd: session.cwd,
+            onOpen: (uri) => viewer.show({ kind: "file", uri }),
+          }}
+        />
+      {:else if view.kind === "invalid"}
+        <p class="drive-envelope-hint">{t("driveMessage.envelope.partial")}</p>
+        <pre class="drive-envelope-raw">{rawText}</pre>
+      {:else if view.kind === "agent"}
+        <DriveMessageOrigin
+          message={view.message}
+          sender={view.sender}
+          rawSource={rawText}
+          imageCwd={session.cwd}
+          fileLinks={{
+            cwd: session.cwd,
+            onOpen: (uri) => viewer.show({ kind: "file", uri }),
+          }}
+        />
+      {:else}
+        <DriveMessageEvent
+          message={view.message}
+          subject={view.subject}
+          rawSource={rawText}
+          imageCwd={session.cwd}
+          fileLinks={{
+            cwd: session.cwd,
+            onOpen: (uri) => viewer.show({ kind: "file", uri }),
+          }}
+        />
+      {/if}
       <span class="hidden">{bubble.segments.length}</span>
     </div>
     <div class="bubble-meta">
-      <span class="timestamp">{formatTime(bubble.createdAt)}</span>
-    </div>
-  </div>
-  <!-- כפתורי פעולה: copy + play (play רק אם recordingId קיים) -->
-  <div class="bubble-actions">
-    <button
-      class="action-btn"
-      onclick={handleCopy}
-      aria-label={copied ? t("bubble.copied") : t("bubble.copy")}
-      title={copied ? t("bubble.copied") : t("bubble.copy")}
-    >
-      {#if copied}
-        <CheckIcon size={12} strokeWidth={2} />
-      {:else}
-        <CopyIcon size={12} strokeWidth={2} />
+      {#if bubble.createdAt}
+        <span class="timestamp">{formatTime(bubble.createdAt)}</span>
       {/if}
-    </button>
-    {#if bubble.recordingId && speaker.enabled}
-      <button
-        class="action-btn play-btn"
-        onclick={() => bubblePlayer.toggle(bubble.id)}
-        aria-label={isPlaying ? t("bubble.stop") : t("bubble.play")}
-        title={isPlaying ? t("bubble.stop") : t("bubble.play")}
-      >
-        {#if isPlaying}
-          <SquareIcon size={12} strokeWidth={2} />
-        {:else}
-          <PlayIcon size={12} strokeWidth={2} />
+      <div class="bubble-actions">
+        <button
+          class="action-btn"
+          onclick={handleCopy}
+          aria-label={copied ? t("bubble.copied") : t("bubble.copy")}
+          title={copied ? t("bubble.copied") : t("bubble.copy")}
+        >
+          {#if copied}
+            <CheckIcon size={12} strokeWidth={2} />
+          {:else}
+            <CopyIcon size={12} strokeWidth={2} />
+          {/if}
+        </button>
+        {#if bubble.recordingId && speaker.enabled}
+          <button
+            class="action-btn play-btn"
+            onclick={() => bubblePlayer.toggle(bubble.id)}
+            aria-label={isPlaying ? t("bubble.stop") : t("bubble.play")}
+            title={isPlaying ? t("bubble.stop") : t("bubble.play")}
+          >
+            {#if isPlaying}
+              <SquareIcon size={12} strokeWidth={2} />
+            {:else}
+              <PlayIcon size={12} strokeWidth={2} />
+            {/if}
+          </button>
         {/if}
-      </button>
-    {/if}
+      </div>
+    </div>
   </div>
 </div>
 
 <style>
+  .user-bubble-outer {
+    max-width: 85cqw;
+  }
+
+  @media (min-width: 768px) {
+    .user-bubble-outer {
+      max-width: calc(85cqw - 1.75rem - 8px);
+    }
+  }
+
   .bubble-wrapper {
     display: flex;
     flex-direction: column;
     gap: 0.15rem;
-    align-items: flex-start;
+    width: max-content;
+    max-width: 100%;
+    align-items: end;
   }
 
   .bubble-meta {
     display: flex;
-    justify-content: flex-start;
-    padding-inline-start: 0.25rem;
+    justify-content: space-between;
+    align-items: center;
+    padding-inline-end: 0.25rem;
+    width: 0;
+    min-width: 100%;
   }
 
   .timestamp {
@@ -161,29 +183,28 @@ async function handleCopy() {
 
   .bubble-actions {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 0.25rem;
-    align-self: flex-end;
-    /* מוסתר ב-desktop עד hover */
+    flex-shrink: 0;
     opacity: 0;
     transition: opacity 0.15s;
   }
 
-  /* Desktop: hover על ה-group מציג את הכפתורים */
   @media (hover: hover) {
     :global(.group):hover .bubble-actions {
       opacity: 1;
     }
   }
 
-  /* Mobile: כפתורים תמיד גלויים */
   @media (hover: none) {
     .bubble-actions {
       opacity: 1;
     }
   }
 
-  .hidden { display: none; }
+  .hidden {
+    display: none;
+  }
   .action-btn {
     flex-shrink: 0;
     width: 22px;
@@ -199,31 +220,19 @@ async function handleCopy() {
     transition: opacity 0.15s;
     padding: 0;
   }
-  .action-btn:hover { opacity: 1; }
-
-  /* §12: lightbox לתמונת-משתמש */
-  .user-image-btn {
-    background: none;
-    border: none;
-    padding: 0;
-    cursor: pointer;
-    display: inline-flex;
+  .action-btn:hover {
+    opacity: 1;
   }
 
-  /* §11.3א: chip לתוכן לא-טקסטואלי מ-replay */
-  .content-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
+  .drive-envelope-hint {
     font-size: 0.75rem;
-    padding: 0.2rem 0.5rem;
-    border-radius: 0.75rem;
-    border: 1px solid var(--border);
-    background: var(--bg-card);
     color: var(--fg-dim);
-    max-width: 16rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    margin: 0 0 0.35rem;
+  }
+  .drive-envelope-raw {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-size: 0.8rem;
   }
 </style>

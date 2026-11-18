@@ -3,7 +3,7 @@
  *
  * Fan-out/tee over a single ReadableStream<Patch>.
  * Maintains a ring-buffer of the last N patches so late subscribers
- * can receive buffered patches (supports the "register-then-snapshot" pattern).
+ * can receive buffered patches (supports filtered replay via `sinceVersion`).
  *
  * The constructor drains the source stream in the background via a shared
  * drain loop — each new patch is dispatched to all current subscribers.
@@ -19,9 +19,27 @@ const BUFFER_SIZE = 64
 export type PatchesBroadcaster = {
   /**
    * subscribe — returns a new ReadableStream<Patch> for this client.
-   * Late subscribers receive buffered patches first, then live ones.
+   * @param sinceVersion — when set, replay only patches with version > sinceVersion;
+   *   when omitted, replay the full buffer (compatibility / sse-resume tail).
    */
-  subscribe(): ReadableStream<Patch>
+  subscribe(sinceVersion?: number): ReadableStream<Patch>
+
+  /**
+   * oldestBufferedVersion — ה-version הנמוך ביותר ששמור בחוצץ;
+   * ‏`undefined` כשהחוצץ ריק.
+   *
+   * ─── slice history-cursor C2 ───
+   *
+   * 🔴 **זהו שומר, לא אופטימיזציה.** ‏`subscribe(sinceVersion)` מסנן את החוצץ
+   * ומחזיר את מה שיש — קורא שמבקש `sinceVersion` **ישן מכל מה שבחוצץ** מקבל
+   * פריימים שמתחילים אחרי הפער, **בלי שום סימן שמשהו חסר**: אין ערך-החזרה
+   * ואין שגיאה. היום זה סמוי (הקורא היחיד מעביר `snapshot.version`, שתמיד
+   * מכוסה), ולכן זו פצצה מתוזמנת לקורא הבא ולא באג חי.
+   *
+   * החשיפה כאן היא מה שמאפשר ל-`events.ts` לאמת את ההנחה המתועדת
+   * "‏no await between snapshot and subscribe" במקום להניח אותה.
+   */
+  oldestBufferedVersion(): number | undefined
 
   /**
    * unsubscribe — removes the client stream from the fan-out.
@@ -115,7 +133,7 @@ export function createPatchesBroadcaster(source: ReadableStream<Patch>): Patches
   void drain()
 
   return {
-    subscribe(): ReadableStream<Patch> {
+    subscribe(sinceVersion?: number): ReadableStream<Patch> {
       let ctrl!: ReadableStreamDefaultController<Patch>
       const stream = new ReadableStream<Patch>({
         start(controller) {
@@ -132,7 +150,11 @@ export function createPatchesBroadcaster(source: ReadableStream<Patch>): Patches
       subscribers.set(stream, ctrl)
 
       // Replay buffered patches to the new subscriber
-      for (const patch of buffer) {
+      const replay =
+        sinceVersion === undefined
+          ? buffer
+          : buffer.filter((p) => p.version > sinceVersion)
+      for (const patch of replay) {
         try {
           ctrl.enqueue(patch)
         } catch {
@@ -141,6 +163,10 @@ export function createPatchesBroadcaster(source: ReadableStream<Patch>): Patches
       }
 
       return stream
+    },
+
+    oldestBufferedVersion(): number | undefined {
+      return buffer[0]?.version
     },
 
     unsubscribe(stream: ReadableStream<Patch>): void {

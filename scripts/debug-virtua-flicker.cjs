@@ -15,8 +15,7 @@ const INSTRUMENTATION = () => {
   let observedScroll = null
   let flickerCount = 0
 
-  const snippet = (node) =>
-    (node.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40)
+  const snippet = (node) => (node.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40)
 
   // גובה הבועה (ה-.pb-5 הפנימי, שהוא יחידת-המדידה של virtua)
   const heightOf = (node) => {
@@ -54,11 +53,19 @@ const INSTRUMENTATION = () => {
           const prevH = lastHeight.get(s)
           lastHeight.set(s, h)
           const hInfo =
-            prevH === undefined ? `h=${h}` : prevH === h ? `h=${h}(same)` : `h=${prevH}→${h} ⚠HEIGHT-CHANGED`
+            prevH === undefined
+              ? `h=${h}`
+              : prevH === h
+                ? `h=${h}(same)`
+                : `h=${prevH}→${h} ⚠HEIGHT-CHANGED`
           const prev = recentRemoved.get(s)
           if (prev !== undefined && now - prev < 1500) {
             flickerCount++
-            log(`⚡⚡ FLICKER #${flickerCount}`, JSON.stringify(s), `${hInfo} scrollTop=${st} gap=${Math.round(now - prev)}ms`)
+            log(
+              `⚡⚡ FLICKER #${flickerCount}`,
+              JSON.stringify(s),
+              `${hInfo} scrollTop=${st} gap=${Math.round(now - prev)}ms`,
+            )
           } else {
             log("+", JSON.stringify(s), `${hInfo} scrollTop=${st}`)
           }
@@ -76,7 +83,9 @@ const INSTRUMENTATION = () => {
         }
         const span = items.length ? `[${top}..${bot}]` : "[]"
         // viewport הנראה בפועל = 0..clientHeight. אם הטווח-המרונדר לא מכסה אותו → virtua מרנדר חלון קטן/מוסט מהנראה.
-        log(`  GEO viewportVisible=[0..${scroll.clientHeight}] renderedSpanPx=${span} items=${items.length} scrollTop=${st}`)
+        log(
+          `  GEO viewportVisible=[0..${scroll.clientHeight}] renderedSpanPx=${span} items=${items.length} scrollTop=${st}`,
+        )
       }
     })
     // subtree=true — תופס mount/unmount בכל עומק (כל בועה עטופה ב-wrapper של virtua)

@@ -1,4 +1,8 @@
 import { type } from "arktype"
+import { AgentScopePoliciesSchema } from "./scope-policy.js"
+
+export const PermissionPolicy = type.enumerated("allow_once", "allow_always", "reject_once", "ask")
+export type PermissionPolicy = typeof PermissionPolicy.infer
 
 // ─── מקור-האמת היחיד ל-CLIs (שמות + פקודות) ─────────────────────────────────
 // כאן יושב הכל במקום אחד: רשימת ה-CLIs, וגם פקודת ההרצה (bin/args) של כל אחד.
@@ -48,7 +52,40 @@ export type CliSpec = {
    * מחזיקה רק את השני. ר' slice-cli-bin-resolution-unify §0.
    */
   readonly fallbackBins?: readonly string[]
+  /**
+   * Full `_meta` object passed to ACP session/new|load for this CLI (passthrough).
+   * Only keys under this object are injected — never cwd/mcpServers even if nested here.
+   */
+  readonly sessionMeta?: Readonly<Record<string, unknown>>
+  /**
+   * When false, backend omits the drive-coding MCP server from session/new|load.
+   * Undefined = inject (today's behavior).
+   */
+  readonly injectDriveCodingMcp?: boolean
+  /**
+   * When true, suppresses conflict warnings when override.sessionMeta changes built-in defaults.
+   * Undefined/false = warn on conflicts at load/reload time.
+   */
+  readonly sessionMetaAllowDefaultOverride?: boolean
 }
+
+/** Default `_meta` for claude — parity with FE local path and rpc newSession (slice session-meta-config). */
+export const DEFAULT_CLAUDE_SESSION_META = {
+  claudeCode: {
+    options: {
+      thinking: { type: "adaptive", display: "summarized" },
+      forwardSubagentText: true,
+    },
+    emitRawSDKMessages: [
+      { type: "system", subtype: "task_started" },
+      { type: "system", subtype: "task_progress" },
+      { type: "system", subtype: "task_notification" },
+      { type: "system", subtype: "task_updated" },
+      { type: "assistant" },
+      { type: "user" },
+    ],
+  },
+} as const satisfies Readonly<Record<string, unknown>>
 
 export const CLI_SPECS = {
   opencode: { bin: "opencode", args: ["acp"], supportsModelFlag: false, envVar: "OPENCODE_BIN" },
@@ -57,6 +94,7 @@ export const CLI_SPECS = {
     args: ["-y", "@agentclientprotocol/claude-agent-acp@latest"],
     supportsModelFlag: true,
     detectBin: "claude",
+    sessionMeta: DEFAULT_CLAUDE_SESSION_META,
   },
   gemini: { bin: "gemini", args: ["--acp"], supportsModelFlag: true },
   codex: {
@@ -126,6 +164,31 @@ export const Agent = type({
   // כותרת-הסשן (slice session-title-in-process-list): נדחפת ע"י ה-client שפתח את הסשן
   // (מקור: session_info_update ACP). runtime-only — נאבד ב-restart. null = ניקוי מכוון.
   "title?": "string | null",
+  // slice session-create-contract: auto-resolve permission by kind before pending.
+  "permissionPolicy?": PermissionPolicy,
+  // slice session-lifecycle-fields: who opened this agent (free-form, not validated).
+  "parentAgentId?": "string",
+  // slice session-lifecycle-fields: auto-close after first clean turn end (grace timer).
+  "closeOnTurnEnd?": "boolean",
+  // slice be-events-subscribe: UUID of agent to notify when this agent's turn ends.
+  "notifyOnDone?": "string.uuid",
+  // slice agent-role-label: free-form display label (e.g. planner / executor).
+  "roleLabel?": "string",
+  // slice session-attribution-core: CF Access email at creation (attribution, not auth).
+  "openedByEmail?": "string",
+  // slice session-title-manual: user-set title must survive ACP session_info_update + BE restart.
+  "titleManual?": "boolean",
+  // slice session-memory: shared session note (user + agent read; user writes via PATCH).
+  "userNotes?": "string",
+  // slice session-memory: agent-written key→value map (MCP only; read-only in UI).
+  "sessionFields?": { "[string]": "string" },
+  // slice scope-policy-per-caller: per-caller override above the global policy.
+  // Absent key = inherit. Rides agents.json ⇒ survives restart.
+  "scopePolicies?": AgentScopePoliciesSchema,
+  // slice charter-in-hook: the charter text is kept on the record so the surface
+  // endpoint can serve it to provider hooks. Deliberately NOT on AgentPublic —
+  // it is content, not display metadata, and can be long.
+  "systemPrompt?": "string | null",
 })
 export type Agent = typeof Agent.infer
 
@@ -160,8 +223,22 @@ export const AgentPublic = type({
   // null = אין בעלים. runtime-only — נאבד ב-restart. ה-FE גוזר ממנו את ממד ה"מחובר"
   // (attached לבדו כבר אינו מספיק — סוקט פתוח ניתן לזיוף, §2 בבריף).
   "lastSeenAt?": "number | null",
+  // slice connection-set: number of live viewer rows (runtime-only).
+  "connectionCount?": "number",
   // כותרת-הסשן (slice session-title-in-process-list): נדחפת ע"י ה-client שפתח את הסשן. runtime-only.
   "title?": "string | null",
+  // slice session-lifecycle-fields: who opened this agent.
+  "parentAgentId?": "string",
+  // slice agent-role-label: free-form display label (e.g. planner / executor).
+  "roleLabel?": "string",
+  // slice session-attribution-core: CF Access email at creation (attribution, not auth).
+  "openedByEmail?": "string",
+  // slice session-title-manual: user-set title must survive ACP session_info_update + BE restart.
+  "titleManual?": "boolean",
+  // slice session-memory: shared session note (user + agent read; user writes via PATCH).
+  "userNotes?": "string",
+  // slice session-memory: agent-written key→value map (MCP only; read-only in UI).
+  "sessionFields?": { "[string]": "string" },
 })
 export type AgentPublic = typeof AgentPublic.infer
 
@@ -175,6 +252,26 @@ export const CreateAgentInput = type({
   // slice project-system-prompt: פרומפט-מערכת פר-פרויקט, מתווסף (append) להוראות ברירת-המחדל.
   // גנרי — הצורה הספציפית-לספק נכתבת רק בקובץ-הספק (provider/connection).
   "systemPrompt?": "string | null",
+  // slice session-create-contract: בחירת הרשאה לפי kind (ACP option kinds, not tool names).
+  // "ask" = default = today's behavior (enters pending).
+  "permissionPolicy?": PermissionPolicy,
+  /**
+   * Extra env vars merged into the spawned CLI child (above baseEnv via shapeEnv).
+   * Does NOT reach in-process bridges (claude · codex) — cli-spec-env-parity.
+   */
+  "env?": { "[string]": "string" },
+  // slice session-lifecycle-fields: who opened this agent (free-form, not validated).
+  "parentAgentId?": "string",
+  // slice session-lifecycle-fields: auto-close after first clean turn end.
+  "closeOnTurnEnd?": "boolean",
+  // slice be-events-subscribe: UUID of agent to notify when this agent's turn ends.
+  "notifyOnDone?": "string.uuid",
+  // slice mcp-event-last-text: include last assistant text in turn-ended notify prompts.
+  "includeLastAssistantText?": "boolean",
+  // slice agent-role-label: free-form display label (e.g. planner / executor).
+  "roleLabel?": "string",
+  // slice session-attribution-core: set server-side from CF Access header on POST /api/agents.
+  "openedByEmail?": "string",
 })
 export type CreateAgentInput = typeof CreateAgentInput.infer
 
@@ -205,6 +302,24 @@ export function toAgentPublic(agent: Agent): AgentPublic {
   }
   if (agent.title !== undefined) {
     pub.title = agent.title
+  }
+  if (agent.parentAgentId !== undefined) {
+    pub.parentAgentId = agent.parentAgentId
+  }
+  if (agent.roleLabel !== undefined) {
+    pub.roleLabel = agent.roleLabel
+  }
+  if (agent.openedByEmail !== undefined) {
+    pub.openedByEmail = agent.openedByEmail
+  }
+  if (agent.titleManual !== undefined) {
+    pub.titleManual = agent.titleManual
+  }
+  if (agent.userNotes !== undefined) {
+    pub.userNotes = agent.userNotes
+  }
+  if (agent.sessionFields !== undefined) {
+    pub.sessionFields = agent.sessionFields
   }
   return pub
 }

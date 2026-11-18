@@ -37,11 +37,16 @@ export interface ConnectOpts {
    */
   modelOverride?: string | null
   /**
-   * shapeEnv — hook להזרקת env variables ספציפיות לצרכן (למשל opencode-config).
-   * מקבל (cliKind, baseEnv) ומחזיר env סופי.
-   * אותו חתימה כמו SpawnCoreHooks.shapeEnv — תואם ישיר.
+   * shapeEnv — hook for spawn-path env injection (opencode config, etc.).
+   * **Spawn-only** — in-process bridges (claude, codex) ignore this; they use
+   * `agentEnv` via `_meta.claudeCode.options.env` (claude) or have no env channel (codex).
    */
   shapeEnv?: (cliKind: SpawnBridgeInput["cliKind"], base: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
+  /**
+   * agentEnv — per-agent env keys (e.g. DRIVE_CODING_AGENT_ID) for in-process bridges.
+   * Spawn path receives the same keys through `shapeEnv` instead.
+   */
+  agentEnv?: Record<string, string>
   /**
    * systemPrompt — פרומפט-מערכת פר-פרויקט, טקסט חופשי שמתווסף (append) להוראות ברירת-המחדל
    * של הסוכן. גנרי כאן (string) — הצורה הספציפית-לספק (`_meta.systemPrompt` לקלוד,
@@ -49,6 +54,11 @@ export interface ConnectOpts {
    * null/undefined = ללא הזרקה. ספקים שלא קוראים את השדה (opencode/spawn) מתעלמים בשקט.
    */
   systemPrompt?: string | null
+  /**
+   * Full surface prompt built by the orchestrator. Providers that read it prefer it over
+   * systemPrompt; others ignore it silently. Not stored on the registry record.
+   */
+  agentPrompt?: string | null
 }
 
 /**

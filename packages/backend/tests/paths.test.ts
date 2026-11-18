@@ -1,84 +1,55 @@
 /**
- * paths.test.ts — בדיקות TDD ל-getStateDir / ensureStateSubdir.
- *
- * Covers:
- *  1. getStateDir() מחזיר <home>/.config/drive-coding — עם mock HOME (POSIX-style)
- *  2. getStateDir() מחזיר <home>/.config/drive-coding — עם mock USERPROFILE (Windows-style)
- *  3. ensureStateSubdir("recordings") יוצר את התיקייה ומחזיר את הנתיב
- *  4. ensureStateSubdir idempotent — קריאה כפולה לא זורקת
- *  5. ensureStateSubdir תומך במספר segments (nested subdir)
+ * paths.test.ts — TDD tests for getStateDir / ensureStateSubdir.
  */
 
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-
-// Mock child_process כמו ב-http-options.test — http-options מפעיל execFileSync
-const execFileSyncMock = vi.fn().mockReturnValue("")
-vi.mock("node:child_process", () => ({
-  execFileSync: (...args: unknown[]) => execFileSyncMock(...args),
-}))
-
-// ייבוא סטטי — getHomeDir קורא process.env בזמן ריצה (לא ב-import), כך שstubEnv תקף
+import { afterEach, describe, expect, it } from "vitest"
 import { ensureStateSubdir, getStateDir } from "../src/paths.js"
 
 describe("getStateDir", () => {
-  afterEach(() => {
-    vi.unstubAllEnvs()
-  })
-
-  it("מחזיר <HOME>/.config/drive-coding כש-HOME מוגדר", () => {
-    const fakeHome = path.join(os.tmpdir(), "fake-home-posix")
-    vi.stubEnv("HOME", fakeHome)
-    vi.stubEnv("USERPROFILE", "")
-    expect(getStateDir()).toBe(path.join(fakeHome, ".config", "drive-coding"))
-  })
-
-  it("מחזיר <USERPROFILE>/.config/drive-coding כש-USERPROFILE מוגדר ו-HOME ריק", () => {
-    const fakeHome = path.join(os.tmpdir(), "fake-home-win")
-    vi.stubEnv("HOME", "")
-    vi.stubEnv("USERPROFILE", fakeHome)
-    expect(getStateDir()).toBe(path.join(fakeHome, ".config", "drive-coding"))
+  it("returns os.homedir()/.config/drive-coding (boot-layer C5)", () => {
+    expect(getStateDir()).toBe(path.join(os.homedir(), ".config", "drive-coding"))
   })
 })
 
 describe("ensureStateSubdir", () => {
-  let tmpBase: string
-
-  beforeEach(() => {
-    tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), "state-dir-test-"))
-    vi.stubEnv("HOME", tmpBase)
-    vi.stubEnv("USERPROFILE", "")
-  })
+  const created: string[] = []
 
   afterEach(() => {
-    vi.unstubAllEnvs()
-    try {
-      fs.rmSync(tmpBase, { recursive: true, force: true })
-    } catch {
-      // התעלם
+    for (const p of created) {
+      try {
+        fs.rmSync(p, { recursive: true, force: true })
+      } catch {
+        // ignore
+      }
     }
+    created.length = 0
   })
 
-  it("יוצר תת-תיקייה ומחזיר נתיב נכון", () => {
-    const result = ensureStateSubdir("recordings")
-    const expected = path.join(tmpBase, ".config", "drive-coding", "recordings")
-    expect(result).toBe(expected)
+  it("creates subdir and returns correct path", () => {
+    const name = `recordings-test-${Date.now()}`
+    const result = ensureStateSubdir(name)
+    created.push(result)
+    expect(result).toBe(path.join(getStateDir(), name))
     expect(fs.existsSync(result)).toBe(true)
   })
 
-  it("idempotent — קריאה כפולה לא זורקת", () => {
+  it("idempotent — double call does not throw", () => {
+    const name = `cache-test-${Date.now()}`
+    created.push(path.join(getStateDir(), name))
     expect(() => {
-      ensureStateSubdir("cache")
-      ensureStateSubdir("cache")
+      ensureStateSubdir(name)
+      ensureStateSubdir(name)
     }).not.toThrow()
   })
 
-  it("תומך במספר segments (nested subdir)", () => {
-    const result = ensureStateSubdir("cache", "proxy")
-    const expected = path.join(tmpBase, ".config", "drive-coding", "cache", "proxy")
-    expect(result).toBe(expected)
+  it("supports multiple segments (nested subdir)", () => {
+    const name = `cache-proxy-test-${Date.now()}`
+    const result = ensureStateSubdir("cache", `${name}`)
+    created.push(result)
+    expect(result).toBe(path.join(getStateDir(), "cache", name))
     expect(fs.existsSync(result)).toBe(true)
   })
 })

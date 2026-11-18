@@ -18,8 +18,8 @@
 import type { ThoughtBubble } from "$lib/types/bubble"
 import { getI18n, getSettings, getChatScroll } from "$lib/context"
 import { joinSegmentText, visibleThoughtSegments } from "./bubble-rendering"
-import Avatar from "$lib/components/chat/Avatar.svelte"
 import MarkdownContent from "./MarkdownContent.svelte"
+import { settingBackedOpen } from "./setting-backed-open.svelte"
 import { onMount } from "svelte"
 
 let { bubble }: { bubble: ThoughtBubble } = $props()
@@ -33,9 +33,7 @@ const isAllOriginal = $derived(displaySegments.every((seg) => seg.originalText =
 // join לטקסט רץ אחד כשהמקור (לא מתורגם)
 const runningText = $derived(isAllOriginal ? joinSegmentText(displaySegments) : null)
 
-// local state — מאותחל פעם אחת מה-setting, לא נגזר ממנו reactively.
-// מונע snap-back כשה-effect של bubble.segments.length רץ מחדש.
-let open = $state(settings.showThoughts)
+const open = settingBackedOpen(() => settings.showThoughts)
 
 // ─── toggle-intent (slice chat-virtualization, Commit 3 / fix) ───
 // chatScroll נקרא ב-component init (חוקי) — לא בתוך ה-callback.
@@ -48,13 +46,11 @@ onMount(() => requestAnimationFrame(() => { ready = true }))
 const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 </script>
 
-<div class="flex gap-2 self-end max-w-[85%] min-w-0 items-end flex-row-reverse">
-  <Avatar kind="thought" />
-  <div
-    class="px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed italic border border-dashed min-w-0 break-words"
-    style="border-color:var(--border-str); color:var(--fg-dim)"
-  >
-    <details bind:open ontoggle={onUserToggle}>
+<div
+  class="px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed italic border border-dashed min-w-0 max-w-[85%] break-words"
+  style="border-color:var(--border-str); color:var(--fg-dim)"
+>
+    <details bind:open={open.value} ontoggle={onUserToggle}>
       <summary class="text-[11px] font-semibold not-italic opacity-70 mb-1 cursor-pointer thought-summary">
         {t("chat.bubble.thought")}
       </summary>
@@ -80,7 +76,6 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 
     <!-- כופה ריאקטיביות של Svelte בעת .segments.push() או כשה-originalText מגיע -->
     <span class="hidden">{bubble.segments.length}</span>
-  </div>
 </div>
 
 <style>

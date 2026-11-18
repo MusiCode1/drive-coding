@@ -1,4 +1,5 @@
 /**
+ * @vitest-environment jsdom
  * agent-session.capabilities.test.svelte.ts — integration tests
  * לcapability ingestion ו-gating (slice FE-normalization, Phase 1).
  *
@@ -15,6 +16,7 @@
 
 import type { AcpClient } from "@drive-coding/provider/client"
 import type { NormalizedCapabilities } from "@drive-coding/provider/types"
+import { flushSync } from "svelte"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 // ─── Module-level mocks ───────────────────────────────────────────────────────
@@ -64,7 +66,7 @@ vi.mock("@drive-coding/provider/client", async (importActual) => {
   }
 })
 
-vi.mock("$lib/engines/ws-transport", () => ({
+vi.mock("@drive-coding/acp-wire/browser", () => ({
   WsAcpTransport: vi.fn(function mockWsTransport() {
     return {
       onClose: vi.fn(),
@@ -111,7 +113,7 @@ function makeCapabilities(overrides: Partial<NormalizedCapabilities> = {}): Norm
     rename: false,
     thinkingTokens: false,
     image: false,
-    systemPrompt: false,
+    systemPrompt: "unsupported",
     ...overrides,
   }
 }
@@ -167,6 +169,23 @@ describe("AgentSession — capabilities ingestion (FE-normalization)", () => {
     simulateCaps({ thinkingTokens: false })
 
     expect(session.supports.thinkingTokens).toBe(false)
+  })
+
+  // slice codex-voice-poc: consumers that react to capabilities (the built-in Live voice) never
+  // saw them arrive — the field was not $state, so an effect read null once and never re-ran.
+  it("capabilities are reactive: an effect re-runs when they arrive", async () => {
+    await session.attach({ cwd: "/some/cwd", cliKind: "codex" })
+    const seen: (boolean | undefined)[] = []
+    const dispose = $effect.root(() => {
+      $effect(() => {
+        seen.push(session.capabilities?.voice)
+      })
+    })
+    flushSync()
+    simulateCaps({ voice: true })
+    flushSync()
+    dispose()
+    expect(seen.at(-1)).toBe(true)
   })
 
   it("detach clears #capabilities → vm.capabilities == null", async () => {
@@ -227,14 +246,21 @@ describe("AgentSession — capabilities ingestion (FE-normalization)", () => {
 
   it("showsSystemPromptWarning is true when the provider does not support it", async () => {
     await session.attach({ cwd: "/some/cwd", cliKind: "opencode" })
-    simulateCaps({ systemPrompt: false })
+    simulateCaps({ systemPrompt: "unsupported" })
 
     expect(session.showsSystemPromptWarning).toBe(true)
   })
 
   it("showsSystemPromptWarning is false when the provider supports it", async () => {
     await session.attach({ cwd: "/some/cwd", cliKind: "claude" })
-    simulateCaps({ systemPrompt: true })
+    simulateCaps({ systemPrompt: "native" })
+
+    expect(session.showsSystemPromptWarning).toBe(false)
+  })
+
+  it("showsSystemPromptWarning is false when the provider prepends charter", async () => {
+    await session.attach({ cwd: "/some/cwd", cliKind: "opencode" })
+    simulateCaps({ systemPrompt: "prepended" })
 
     expect(session.showsSystemPromptWarning).toBe(false)
   })

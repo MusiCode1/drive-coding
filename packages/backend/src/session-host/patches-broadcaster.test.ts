@@ -7,7 +7,7 @@
  *   - subscribe: returns a ReadableStream per client (fan-out)
  *   - multi-client: each subscriber gets each patch
  *   - unsubscribe: removed client no longer receives patches
- *   - late subscriber gets buffered patches (register-then-snapshot race prevention)
+ *   - late subscriber gets filtered or full buffered replay (subscribe(sinceVersion?))
  *   - constructor accepts ReadableStream<Patch>
  */
 
@@ -159,8 +159,68 @@ describe("PatchesBroadcaster", () => {
     })
   })
 
-  describe("buffering — late subscriber (register-then-snapshot support)", () => {
-    it("late subscriber receives recent patches from buffer", async () => {
+  describe("buffering — late subscriber (filtered replay)", () => {
+    it("sinceVersion at buffer head → zero replay", async () => {
+      const { stream, push } = makeControlledStream()
+      const broadcaster = createPatchesBroadcaster(stream)
+
+      const s1 = broadcaster.subscribe()
+      await new Promise<void>((r) => setTimeout(r, 0))
+      push(makePatch(1))
+      push(makePatch(2))
+      await new Promise<void>((r) => setTimeout(r, 20))
+
+      const s2 = broadcaster.subscribe(2)
+      const r2 = await readAvailable(s2, 30)
+      expect(r2).toHaveLength(0)
+    })
+
+    it("sinceVersion in the middle → tail only", async () => {
+      const { stream, push } = makeControlledStream()
+      const broadcaster = createPatchesBroadcaster(stream)
+
+      broadcaster.subscribe()
+      await new Promise<void>((r) => setTimeout(r, 0))
+      push(makePatch(1))
+      push(makePatch(2))
+      push(makePatch(3))
+      await new Promise<void>((r) => setTimeout(r, 20))
+
+      const s2 = broadcaster.subscribe(1)
+      const r2 = await readN(s2, 2, 100)
+      expect(r2.map((p) => p.version)).toEqual([2, 3])
+    })
+
+    it("without sinceVersion → full buffer (regression)", async () => {
+      const { stream, push } = makeControlledStream()
+      const broadcaster = createPatchesBroadcaster(stream)
+
+      broadcaster.subscribe()
+      await new Promise<void>((r) => setTimeout(r, 0))
+      push(makePatch(1))
+      push(makePatch(2))
+      await new Promise<void>((r) => setTimeout(r, 20))
+
+      const s2 = broadcaster.subscribe()
+      const r2 = await readN(s2, 2, 100)
+      expect(r2.map((p) => p.version)).toEqual([1, 2])
+    })
+
+    it("patch after subscribe arrives for filtered and unfiltered subscribers", async () => {
+      const { stream, push } = makeControlledStream()
+      const broadcaster = createPatchesBroadcaster(stream)
+
+      const filtered = broadcaster.subscribe(5)
+      const full = broadcaster.subscribe()
+      await new Promise<void>((r) => setTimeout(r, 0))
+      push(makePatch(6))
+
+      const [rf, ru] = await Promise.all([readN(filtered, 1), readN(full, 1)])
+      expect(rf[0]?.version).toBe(6)
+      expect(ru[0]?.version).toBe(6)
+    })
+
+    it("late subscriber receives recent patches from buffer when unfiltered", async () => {
       const { stream, push } = makeControlledStream()
       const broadcaster = createPatchesBroadcaster(stream)
 
@@ -246,5 +306,52 @@ describe("PatchesBroadcaster", () => {
       const late = broadcaster.subscribe()
       expect(late).toBeInstanceOf(ReadableStream)
     })
+  })
+})
+
+// ─── slice history-cursor C2: oldestBufferedVersion ──────────────────────────
+
+describe("oldestBufferedVersion (slice history-cursor C2)", () => {
+  /** נותן ל-drain() להספיק לקרוא את מה שנדחף לפני שבודקים את החוצץ. */
+  const settle = (): Promise<void> => new Promise<void>((r) => setTimeout(r, 20))
+
+  it("‏חוצץ ריק ⇒ undefined", () => {
+    const { stream } = makeControlledStream()
+    const broadcaster = createPatchesBroadcaster(stream)
+
+    expect(broadcaster.oldestBufferedVersion()).toBeUndefined()
+  })
+
+  it("‏3 patches ⇒ ה-version של הראשון", async () => {
+    const { stream, push } = makeControlledStream()
+    const broadcaster = createPatchesBroadcaster(stream)
+
+    push(makePatch(5))
+    push(makePatch(6))
+    push(makePatch(7))
+    await settle()
+
+    expect(broadcaster.oldestBufferedVersion()).toBe(5)
+  })
+
+  it("🔴 ‏מעל BUFFER_SIZE ⇒ עולה יחד עם ה-shift — זה הפער שאיש אינו רואה היום", async () => {
+    const { stream, push } = makeControlledStream()
+    const broadcaster = createPatchesBroadcaster(stream)
+
+    // 64 = BUFFER_SIZE. דוחפים 70 ⇒ ששת הראשונים מפונים.
+    for (let v = 1; v <= 70; v++) push(makePatch(v))
+    await settle()
+
+    expect(broadcaster.oldestBufferedVersion()).toBe(7)
+  })
+
+  it("‏החוצץ המלא בדיוק (BUFFER_SIZE) עדיין מתחיל בראשון", async () => {
+    const { stream, push } = makeControlledStream()
+    const broadcaster = createPatchesBroadcaster(stream)
+
+    for (let v = 1; v <= 64; v++) push(makePatch(v))
+    await settle()
+
+    expect(broadcaster.oldestBufferedVersion()).toBe(1)
   })
 })

@@ -5,8 +5,8 @@
  * מתחבר עם fetch + ReadableStream, מנתח SSE framing ידנית.
  *
  * Protocol:
- *   event: snapshot\nid: <epoch>\ndata: <JSON SessionState>\n\n  ← frame-zero (חייב להיות ראשון)
- *   event: patch\ndata: <JSON Patch>\n\n                        ← עדכונים שוטפים
+ *   event: snapshot\nid: <version>\ndata: {sessionId,version,epoch,updates[]}  ← frame-zero
+ *   event: update\nid: <version>\ndata: <JSON-RPC batch של session/update>   ← עדכונים שוטפים
  *   event: stream-alive\ndata: <_drive/streamAlive notification>\n\n  ← slice sse-liveness
  *                                                                   Commit 2: visible liveness
  *                                                                   signal (replaces the old,
@@ -24,14 +24,73 @@
  * ─── slice remote-session-view C1 (TDD) ───
  */
 
-import { type Patch, PatchSchema, type SessionState } from "@drive-coding/core/session"
-import { type } from "arktype"
+import {
+  createInitialSessionState,
+  reduce,
+  type SessionState,
+  type WireSessionUpdate,
+} from "@drive-coding/core/session"
 import { SSE_WATCHDOG_THRESHOLD_MS } from "$lib/engines/liveness-thresholds"
 import { connInfo, connWarn } from "$lib/util/conn-log"
+import { readSnapshotTimeoutMs } from "./snapshot-timeout"
 
 // ─── SSE frame parsing ────────────────────────────────────────────────────────
 
-type SSEFrame = { event: string; data: string }
+/**
+ * יחידת-המעבר על החוט — ‏slice acp-wire-session-update.
+ *
+ * ⚠️ **מערך, לא update יחיד.** מעבר-מצב אחד בשרת (patch אחד) יכול להתפצל
+ * לכמה `session/update` — למשל `update-session` עם title+commands. כולם
+ * חולקים את אותו `version`, ולכן פיצולם לפריימים נפרדים היה שובר את
+ * סינון-החפיפה (`version <= lastVersion`) שהיה מוחק את השני והשלישי.
+ * ⇒ הפריים הוא היחידה האטומית; ה-`version` שלו מגיע משורת ה-`id:`.
+ */
+export type WireUpdateBatch = { version: number; updates: WireSessionUpdate[] }
+
+/** גוף ה-snapshot (frame-zero). */
+type WireSnapshot = {
+  sessionId: string | null
+  version: number
+  updates: WireSessionUpdate[]
+}
+
+/**
+ * מחלץ את ה-updates מ-batch של JSON-RPC.
+ *
+ * ⚠️ **הוולידציה כאן רופפת במכוון, וזה לא רשלנות.** קודמתה (`PatchSchema`)
+ * יכלה להיות הדוקה כי `Patch` הוא טיפוס סגור שלנו; `session/update` הוא
+ * משטח **פתוח** — הפרוטוקול עצמו מצהיר שערכי `sessionUpdate` לא-מוכרים
+ * שמורים לווריאנטים עתידיים, וזה בדיוק מה שנושא את `plan` דרך ה-BE בלי
+ * שיבין אותו. סכימה הדוקה כאן הייתה **מוחקת** אותם — אותה מחלקת-כשל
+ * שהתיקון `opaque` נועד לסגור. ⇒ נבדק רק המסגור: מערך, ובכל איבר
+ * `params.update` שהוא אובייקט עם `sessionUpdate` מחרוזתי.
+ */
+function extractUpdates(raw: unknown): WireSessionUpdate[] | null {
+  if (!Array.isArray(raw)) return null
+  const out: WireSessionUpdate[] = []
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) return null
+    const params = (item as { params?: unknown }).params
+    if (typeof params !== "object" || params === null) return null
+    const update = (params as { update?: unknown }).update
+    if (typeof update !== "object" || update === null) return null
+    if (typeof (update as { sessionUpdate?: unknown }).sessionUpdate !== "string") return null
+    out.push(update as WireSessionUpdate)
+  }
+  return out
+}
+
+/** מקפל את ה-snapshot למצב. ה-`version` נלקח מהשרת, לא מספירת ה-updates. */
+function foldSnapshot(snap: WireSnapshot): SessionState {
+  let state = createInitialSessionState({ sessionId: snap.sessionId ?? "" })
+  for (const u of snap.updates) state = reduce(state, u).state
+  // ⚠️ **דריסה מכוונת.** `reduce` מעלה מונה מקומי לכל update, אבל ה-`version`
+  // הוא מונה של **השרת** — הוא מה שסימון-החפיפה של הלקוח נמדד מולו. ספירה
+  // מקומית הייתה מייצרת בדיוק את רגרסיית-הגרסה שבאג #41 נבנה סביבה.
+  return { ...state, sessionId: snap.sessionId, version: snap.version }
+}
+
+type SSEFrame = { event: string; data: string; id: string }
 
 /**
  * readSSEFrames — async generator that yields parsed SSE frames from a body stream.
@@ -43,6 +102,9 @@ async function* readSSEFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<
   let buffer = ""
   let currentEvent = ""
   let currentData = ""
+  // slice acp-wire-session-update: ה-`id:` נקרא עכשיו, כי הוא נושא את
+  // ה-`version` — שירד מגוף ה-patch אל שורת-המסגור. עד כה הוא פשוט נזרק.
+  let currentId = ""
 
   try {
     while (true) {
@@ -62,13 +124,16 @@ async function* readSSEFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<
           currentEvent = line.slice(6).trim()
         } else if (line.startsWith("data:")) {
           currentData += line.slice(5).trim()
+        } else if (line.startsWith("id:")) {
+          currentId = line.slice(3).trim()
         } else if (line === "") {
           // Empty line → dispatch event
           if (currentEvent && currentData) {
-            yield { event: currentEvent, data: currentData }
+            yield { event: currentEvent, data: currentData, id: currentId }
           }
           currentEvent = ""
           currentData = ""
+          currentId = ""
         }
       }
     }
@@ -82,6 +147,17 @@ async function* readSSEFrames(body: ReadableStream<Uint8Array>): AsyncGenerator<
 }
 
 // ─── SSEReader ────────────────────────────────────────────────────────────────
+
+/**
+ * The watchdog seam needs only "schedule a repeating callback, hand back
+ * something cancellable". `typeof setInterval` here is the DOM ∪ Node overload
+ * set, which no single implementation satisfies — it made the production
+ * fallback below implicitly-`any` and forced `as unknown as` on every test
+ * double. Narrow the seam to what the class actually calls.
+ */
+export type IntervalId = ReturnType<typeof setInterval>
+export type SetIntervalFn = (fn: () => void, ms: number) => IntervalId
+export type ClearIntervalFn = (id: IntervalId) => void
 
 /** Options for SSEReader constructor. */
 export type SSEReaderOptions = {
@@ -98,12 +174,12 @@ export type SSEReaderOptions = {
    * slice sse-liveness Commit 4a/4: same seam pattern as `_fetch`/`_sleep`/
    * `_now` — default = the real global, so production is unchanged.
    */
-  _setInterval?: typeof setInterval
+  _setInterval?: SetIntervalFn
   /** @internal For testing — override the silence-watchdog's timer cancel. */
-  _clearInterval?: typeof clearInterval
+  _clearInterval?: ClearIntervalFn
   /**
    * @internal For testing — override the snapshot-wait bound (default
-   * `SNAPSHOT_TIMEOUT_MS`). Deliberately a plain number, not a `_sleep`-style
+   * `SNAPSHOT_TIMEOUT_MS` in `snapshot-timeout.ts`). Deliberately a plain number, not a `_sleep`-style
    * function seam: reusing `_sleep` here would make the timeout win EVERY
    * race instantly in the many existing tests that mock `_sleep` as an
    * instant no-op (it represents backoff delay, not this). A real (but tiny,
@@ -120,17 +196,25 @@ export type SSEReaderOptions = {
 const MAX_BACKOFF_MS = 30_000
 
 /**
- * slice sse-liveness Commit 4: bounded wait for the `snapshot` frame-zero. A
- * connection that opens successfully (fetch resolves ok) but never sends
- * `snapshot` — a misbehaving proxy, or a host that accepts the request and
- * writes nothing — used to hang `#connectOnce` FOREVER: outside the patches
- * loop entirely, so the silence-watchdog below can never see it, and (for the
- * very first connection) before `#runLoop` even exists, so nothing would
- * ever retry. Unrelated to `SSE_WATCHDOG_THRESHOLD_MS` (that one bounds
- * silence on an ALREADY-open stream, after the snapshot) — this bounds the
- * initial handshake itself, so it's deliberately much shorter.
+ * ‏הגבול על המתנה ל-snapshot ‏חי ב-`snapshot-timeout.ts` ‏— ‏שם גם שני ערוצי
+ * ‏העקיפה מהדפדפן (‏`window.__dcSnapshotTimeoutMs` ‏· ‏`localStorage`) ‏והסיבה
+ * ‏שהם מוגבלים ל-`2^31-1`. ‏נקרא כאן פעם אחת, ‏בבנאי.
+ *
+ * ‏slice sse-liveness Commit 4 — ‏**‏למה הוא קיים בכלל:** ‏חיבור שנפתח בהצלחה
+ * ‏(‏ה-fetch ‏נפתר ok) ‏ואינו שולח `snapshot` ‏לעולם — ‏פרוקסי שמתנהג רע, ‏או
+ * ‏מארח שמקבל את הבקשה ואינו כותב דבר — ‏תלה את `#connectOnce` ‏**‏לנצח**:
+ * ‏מחוץ ללולאת-ה-patches ‏ולכן גלאי-השתיקה שלמטה אינו רואה אותו, ‏ובחיבור
+ * ‏הראשון גם לפני ש-`#runLoop` ‏קיים, ‏ולכן שום דבר לא היה מנסה מחדש.
+ *
+ * ‏אינו קשור ל-`SSE_WATCHDOG_THRESHOLD_MS`: ‏זה חוסם שתיקה על זרם שכבר
+ * ‏**‏פתוח**, ‏אחרי ה-snapshot; ‏הגבול הזה חוסם את לחיצת-היד עצמה, ‏ובברירת-המחדל
+ * ‏נשאר מתחתיו (60s < 75s) ‏כדי שזרם שכן נפתח יישפט ע"י הגלאי ולא ע"י הגבול.
+ *
+ * ‏🔴 ‏ברירת-המחדל הועלתה 2026-10-31 ‏מ-15s ‏ל-60s: ‏הערך הקודם ירה בפועל על
+ * ‏חיבורים תקינים (`timed out waiting for snapshot frame` ‏חזר ונשנה), ‏כלומר
+ * ‏היה קצר מזמן-ההינע האמיתי והפך שער-הגנה לכשל-שווא. ‏⚠️ ‏זמן-ההינע עצמו
+ * ‏**‏לא נמדד**; ‏60s ‏הוא 4× ‏מהקודם, ‏לא תוצאה של מדידה — ‏ומכאן ערוצי-העקיפה.
  */
-const SNAPSHOT_TIMEOUT_MS = 15_000
 
 /**
  * כמה זמן חיבור חייב לשרוד כדי שייחשב "הצלחה" לצורך איפוס ה-backoff.
@@ -152,7 +236,7 @@ const STABLE_CONNECTION_MS = 10_000
  * Usage:
  *   const reader = new SSEReader('/api/agents/a1/events', { headers: {...} })
  *   const { snapshot, patches } = await reader.connect()
- *   // patches is ReadableStream<Patch> — individual patches
+ *   // patches is ReadableStream<WireUpdateBatch> — individual patches
  *   reader.close()  // when done
  */
 export class SSEReader {
@@ -172,8 +256,8 @@ export class SSEReader {
   readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
   readonly #sleep: (ms: number) => Promise<void>
   readonly #now: () => number
-  readonly #doSetInterval: typeof setInterval
-  readonly #doClearInterval: typeof clearInterval
+  readonly #doSetInterval: SetIntervalFn
+  readonly #doClearInterval: ClearIntervalFn
   readonly #snapshotTimeoutMs: number
   #closed = false
   // calev-heavy M7: close() didn't abort the in-flight fetch — the underlying
@@ -188,7 +272,7 @@ export class SSEReader {
   // OR patch — traffic is traffic, §Commit 4 of the brief). Only meaningful
   // while `#watchdogTimer` is running (i.e. while a connection is open).
   #lastFrameAt = 0
-  #watchdogTimer: ReturnType<typeof setInterval> | null = null
+  #watchdogTimer: IntervalId | null = null
 
   constructor(url: string, opts: SSEReaderOptions = {}) {
     this.#url = url
@@ -198,7 +282,7 @@ export class SSEReader {
     this.#now = opts._now ?? (() => Date.now())
     this.#doSetInterval = opts._setInterval ?? ((fn, ms) => globalThis.setInterval(fn, ms))
     this.#doClearInterval = opts._clearInterval ?? ((id) => globalThis.clearInterval(id))
-    this.#snapshotTimeoutMs = opts._snapshotTimeoutMs ?? SNAPSHOT_TIMEOUT_MS
+    this.#snapshotTimeoutMs = opts._snapshotTimeoutMs ?? readSnapshotTimeoutMs()
   }
 
   /**
@@ -206,7 +290,7 @@ export class SSEReader {
    * Returns the initial snapshot and a long-lived patches stream.
    * The patches stream survives reconnects (automatic exponential backoff).
    */
-  async connect(): Promise<{ snapshot: SessionState; patches: ReadableStream<Patch> }> {
+  async connect(): Promise<{ snapshot: SessionState; updates: ReadableStream<WireUpdateBatch> }> {
     this.#closed = false
 
     // Initial connection — must receive snapshot as first frame
@@ -217,8 +301,8 @@ export class SSEReader {
     this.#startWatchdog()
 
     // Long-lived patches stream — drained by background loop
-    let patchCtrl!: ReadableStreamDefaultController<Patch>
-    const patches = new ReadableStream<Patch>({
+    let patchCtrl!: ReadableStreamDefaultController<WireUpdateBatch>
+    const updates = new ReadableStream<WireUpdateBatch>({
       start: (ctrl) => {
         patchCtrl = ctrl
       },
@@ -233,7 +317,7 @@ export class SSEReader {
     // Background loop: drain initial frames, then reconnect-loop
     void this.#runLoop(frames, patchCtrl)
 
-    return { snapshot, patches }
+    return { snapshot, updates }
   }
 
   /** Stop reconnect attempts, abort any in-flight request, and close the patches stream. */
@@ -280,7 +364,8 @@ export class SSEReader {
 
   /**
    * waitForSnapshot — advances past any non-snapshot frames to find the
-   * required snapshot frame-zero, bounded by `SNAPSHOT_TIMEOUT_MS` (see its
+   * required snapshot frame-zero, bounded by the value resolved in
+   * `snapshot-timeout.ts` (see its
    * doc comment for why: a connection that never sends `snapshot` used to
    * hang here forever, invisible to both the watchdog and — on the initial
    * connection — the reconnect loop).
@@ -288,7 +373,7 @@ export class SSEReader {
    * ⚠️ Deliberately uses the RAW global `setTimeout`/`clearTimeout`, not the
    * `#sleep` seam: `#sleep` is mocked as an INSTANT no-op in almost every
    * test in this file (it represents backoff delay, which tests skip) — if
-   * this raced against `this.#sleep(SNAPSHOT_TIMEOUT_MS)`, the timeout branch
+   * this raced against `this.#sleep(this.#snapshotTimeoutMs)`, the timeout branch
    * would win EVERY race immediately, breaking every existing test. The raw
    * timer is safe here because `advance` below always resolves within a few
    * microtasks in every test that isn't specifically testing this timeout
@@ -311,7 +396,7 @@ export class SSEReader {
       if (next.done || next.value.event !== "snapshot") {
         throw new Error("SSEReader: no snapshot frame received")
       }
-      return JSON.parse(next.value.data) as SessionState
+      return foldSnapshot(JSON.parse(next.value.data) as WireSnapshot)
     })()
     // Both sides get a no-op `.catch` attached IMMEDIATELY (same tick, before
     // racing) — whichever one LOSES the race may still reject later on its
@@ -336,7 +421,7 @@ export class SSEReader {
    */
   async #runLoop(
     frames: AsyncGenerator<SSEFrame>,
-    ctrl: ReadableStreamDefaultController<Patch>,
+    ctrl: ReadableStreamDefaultController<WireUpdateBatch>,
   ): Promise<void> {
     // Drain initial connection patches
     await this.#drainFrames(frames, ctrl)
@@ -440,7 +525,7 @@ export class SSEReader {
    */
   async #drainFrames(
     frames: AsyncGenerator<SSEFrame>,
-    ctrl: ReadableStreamDefaultController<Patch>,
+    ctrl: ReadableStreamDefaultController<WireUpdateBatch>,
   ): Promise<void> {
     try {
       for await (const frame of frames) {
@@ -456,7 +541,7 @@ export class SSEReader {
           this.onTakenOver?.()
           return
         }
-        if (frame.event !== "patch") continue
+        if (frame.event !== "update") continue
 
         let raw: unknown
         try {
@@ -466,17 +551,22 @@ export class SSEReader {
           continue
         }
 
-        const validated = PatchSchema(raw)
-        if (validated instanceof type.errors) {
-          // Well-formed JSON, but not a valid Patch (e.g. an `op` this build
-          // doesn't know — BE/FE version skew). Skip it — never enqueued, so
-          // its version never influences the consumer's dedup tracking.
-          console.warn(`SSEReader: invalid patch on wire, skipping — ${validated.summary}`)
+        const updates = extractUpdates(raw)
+        if (updates === null) {
+          console.warn("SSEReader: malformed session/update batch on wire, skipping")
+          continue
+        }
+        // ⚠️ ה-`version` מגיע מ-`id:` ולא מהגוף. פריים בלי `id` תקין אינו
+        // ניתן לסינון-חפיפה, ולכן הוא מסוכן יותר מפריים חסר — הוא היה
+        // נספר כ-0 ונדחה לנצח מול כל watermark. ⇒ לדלג במפורש.
+        const version = Number(frame.id)
+        if (!Number.isFinite(version)) {
+          console.warn("SSEReader: update frame without a usable id, skipping")
           continue
         }
 
         try {
-          ctrl.enqueue(validated as Patch)
+          ctrl.enqueue({ version, updates })
         } catch {
           // Controller closed by consumer — stop. slice sse-liveness Commit 4:
           // routed through #setClosed (was a bare #closed=true).
@@ -489,7 +579,7 @@ export class SSEReader {
     }
   }
 
-  #closeCtrl(ctrl: ReadableStreamDefaultController<Patch>): void {
+  #closeCtrl(ctrl: ReadableStreamDefaultController<WireUpdateBatch>): void {
     try {
       ctrl.close()
     } catch {

@@ -4,8 +4,18 @@ import { execFileSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { parseArgs } from "node:util"
+import { configDefault } from "@drive-coding/core/config/specs"
 import { buildVersion, isBinary } from "../binary.js"
+import { captureBootPatch, captureConfigInputs } from "../config/runtime-config.js"
 import { loadConfig, parseEnvFile } from "../config/load-config.js"
+
+// Peek BEFORE parseArgs. Subcommand flags (--json/--cli/--base) are unknown to
+// the server parser (strict:true); allowPositionals stays false so a stray
+// positional still prints HELP. PORT ??= "4000" must not run on this path.
+if (process.argv[2] === "agent" || process.argv[2] === "instances") {
+  const { runCli } = await import("../cli/index.js")
+  process.exit(await runCli(process.argv.slice(2)))
+}
 
 // ---------------------------------------------------------------------------
 // Help text (English only — i18n hook blocks Hebrew in code)
@@ -21,8 +31,10 @@ Options:
       --opencode-bin <bin>      Agent binary to look for       (env: OPENCODE_BIN, default: opencode)
       --fe-static-dir <dir>     Override served web-UI dir     (env: FE_STATIC_DIR)
       --cors-origins <list>     Comma-separated CORS origins   (env: CORS_ORIGINS)
+      --public-base-url <origin>  Public origin of this backend  (env: PUBLIC_BASE_URL)
       --config <path>           Config file (JSONC)            (default: ~/.config/drive-coding/config.jsonc)
       --config-json <json>      Inline JSON config (overrides --config file)
+      --secrets <path>          Secrets file (JSON)            (default: ~/.config/drive-coding/secrets.json)
       --env-file <path>         Load secrets from KEY=VALUE file (non-overriding)
       --log-level <level>       Log level (debug|info|warn|error) (env: LOG_LEVEL)
       --elevenlabs-key <key>    ElevenLabs API key             (env: ELEVENLABS_API_KEY)
@@ -31,8 +43,9 @@ Options:
   -V, --version                 Show version and exit
 
 Precedence: flag > environment variable > config file > default.
+Secrets precedence: CLI secret flag > environment variable > secrets.json.
 Secret flags (--elevenlabs-key, --gemini-key) are visible in the process list —
-prefer --env-file or environment variables for secrets.
+prefer secrets.json, --env-file, or environment variables for secrets.
 
 Examples:
   drive-coding --port 4100
@@ -53,8 +66,10 @@ try {
       "opencode-bin": { type: "string" },
       "fe-static-dir": { type: "string" },
       "cors-origins": { type: "string" },
+      "public-base-url": { type: "string" },
       config: { type: "string" },
       "config-json": { type: "string" },
+      secrets: { type: "string" },
       "env-file": { type: "string" },
       "log-level": { type: "string" },
       "elevenlabs-key": { type: "string" },
@@ -139,16 +154,33 @@ if (envFilePath !== undefined) {
 // ---------------------------------------------------------------------------
 // Step 2: loadConfig — resolve all layers, get envPatch
 // ---------------------------------------------------------------------------
-const { envPatch, warnings } = loadConfig({ argv: values, env: process.env })
+// 🔴 Snapshot BEFORE Step 3. A later reload must replay the ORIGINAL env, not
+// the one Step 3 is about to overwrite: layer precedence is file < env < flag,
+// so feeding process.env back in would let the previous run's derived values
+// beat the freshly edited config file — a reload that silently does nothing.
+// `values` is captured too because it is module-local and never exported, and
+// a reloader without it would lose `--config` / `--secrets`.
+captureConfigInputs(values)
+
+const { envPatch, warnings, errors } = loadConfig({ argv: values, env: process.env })
 
 // Print warnings (visible in logs, but not fatal).
 for (const w of warnings) {
   console.warn(w)
 }
 
+// Fatal: secret keys in config file layer — exit before writing envPatch.
+if (errors.length > 0) {
+  for (const e of errors) {
+    console.error(e)
+  }
+  process.exit(1)
+}
+
 // ---------------------------------------------------------------------------
 // Step 3: Write envPatch to process.env (these are the winning values)
 // ---------------------------------------------------------------------------
+captureBootPatch(envPatch)
 for (const [k, v] of Object.entries(envPatch)) {
   process.env[k] = v
 }
@@ -172,15 +204,15 @@ if (!isBinary()) {
   process.env.FE_STATIC_DIR ??= feBuildDir
 }
 // Binary + explicit FE_STATIC_DIR (flag/env already set above) — no further action needed.
-process.env.PORT ??= "4000"
+process.env.PORT ??= String(configDefault("port"))
 
 const port = process.env.PORT
-const host = process.env.DRIVE_CODING_HOST ?? "127.0.0.1"
+const host = process.env.DRIVE_CODING_HOST ?? configDefault("host")
 
 // Preflight: check that the default AI agent (opencode) is reachable.
 // The user may override via OPENCODE_BIN. If missing — warn but do not block
 // (they might use claude/codex which are typically invoked via npx).
-const agentBin = process.env.OPENCODE_BIN ?? "opencode"
+const agentBin = process.env.OPENCODE_BIN ?? configDefault("opencodeBin")
 try {
   // On POSIX: `which <bin>`; on Windows: `where <bin>` — both exit 0 if found.
   const isWindows = process.platform === "win32"

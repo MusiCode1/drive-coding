@@ -40,6 +40,11 @@ export type MessageKey =
   | "chat.bubble.user"
   | "chat.bubble.thought"
   | "chat.bubble.agent"
+  // ─── compact-activity ─── (slice compact-activity)
+  | "chat.activityGroup.tools"
+  | "chat.activityGroup.thoughts"
+  | "chat.activityGroup.expand"
+  | "chat.activityGroup.collapse"
   | "chat.empty"
   | "chat.error.dismiss"
   | "chat.prompt.placeholder"
@@ -57,6 +62,8 @@ export type MessageKey =
   | "mic.error.generic"
   // ─── mic retry ─── (slice sessions-inline)
   | "mic.retry"
+  // ─── mic permission UX ─── (slice mic-permission-indication)
+  | "mic.hint.needsAllow"
   // ─── voice-mode ─── (slice 3)
   | "voiceMode.status.idle"
   | "voiceMode.status.recording"
@@ -64,6 +71,7 @@ export type MessageKey =
   | "voiceMode.status.thinking"
   | "voiceMode.status.speaking"
   | "voiceMode.status.cancelling"
+  | "voiceMode.status.requesting"
   // ─── tool-bubble ─── (slice 4)
   | "chat.tool.status.pending"
   | "chat.tool.status.in_progress"
@@ -104,6 +112,17 @@ export type MessageKey =
   | "settings.beUrl.help"
   | "settings.beUrl.invalid"
   | "settings.beUrl.saved"
+  | "settings.scopePolicy.title"
+  | "settings.scopePolicy.message"
+  | "settings.scopePolicy.update"
+  | "settings.scopePolicy.close"
+  | "settings.scopePolicy.option.ask"
+  | "settings.scopePolicy.option.allow"
+  | "settings.scopePolicy.option.deny"
+  | "settings.scopePolicy.loading"
+  | "settings.scopePolicy.saving"
+  | "settings.scopePolicy.error"
+  | "settings.scopePolicy.note"
   | "settings.back"
   // ─── recordings ─── (slice 10)
   // ─── agent-options ─── (slice 23)
@@ -138,6 +157,7 @@ export type MessageKey =
   // ─── record-footer ─── (redesign-4)
   | "record.tab.record"
   | "record.tab.type"
+  | "record.tab.live"
   | "record.tab.hide"
   | "record.status.idle"
   | "record.send"
@@ -145,7 +165,25 @@ export type MessageKey =
   | "record.reconnect"
   | "record.reconnecting"
   | "record.reconnectAttempt"
+  // ─── live ─── (slice live-ears)
+  | "live.toggle.open"
+  | "live.toggle.close"
+  // ─── live-silence-cost ───
+  | "live.toggle.pause"
+  | "live.toggle.resume"
+  | "live.status.connecting"
+  | "live.ear.listening"
+  | "live.transcript.user"
+  | "live.transcript.assistant"
+  | "live.error.connect"
+  | "live.error.noApiKey"
+  | "live.error.vadLoad"
   | "mic.stop"
+  | "mic.discard"
+  // ─── speakable (slice tts-speakable-text) — מה שנאמר במקום קוד/קישור ───
+  | "speakable.codeBlock"
+  | "speakable.link"
+  | "speakable.image"
   // ─── settings-redesign ─── (redesign-3)
   | "settings.connection"
   | "settings.voiceSpeech"
@@ -175,8 +213,15 @@ export type MessageKey =
   | "sidebar.collapse"
   | "sidebar.agentOptions"
   | "sidebar.sessions"
+  // ─── compact-activity ─── (slice compact-activity)
+  | "sidebar.display"
   | "sidebar.refresh"
   | "sidebar.newSession"
+  // ─── sessions filter ─── (slice sessions-search-filter)
+  | "sidebar.sessionsSearch"
+  | "sidebar.sessionsFilterAll"
+  | "sidebar.sessionsFilterCwd"
+  | "sidebar.sessionsNoMatches"
   // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
   | "sidebar.runningOn"
   | "sheet.handle"
@@ -219,6 +264,11 @@ export type MessageKey =
   | "connect.agents.working"
   // ─── agent-last-message-ui ─── (slice agent-last-message-ui)
   | "connect.agents.lastMessage"
+  // ─── agent-tree-display ─── (slice agent-tree-display)
+  | "connect.agents.subAgentsOf"
+  | "connect.agents.childCount"
+  | "connect.agents.watcherCount"
+  | "connect.agents.openedBy"
   // ─── מסך / wake-lock ─── (slice-wake-lock)
   | "settings.screen.label"
   | "settings.toggle.keepScreenOn"
@@ -226,16 +276,30 @@ export type MessageKey =
   | "settings.chatDisplay"
   | "settings.toggle.showThoughts"
   | "settings.toggle.showTools"
+  | "settings.toggle.compactActivity"
   // ─── Enter toggle ─── (slice-enter-toggle)
   | "settings.toggle.enterToSend"
+  // slice msg-media — התווית אומרת את הסיכון, לא רק את הפיצ'ר
+  | "settings.toggle.autoLoadRemoteImages"
   // ─── content-viewer ─── (slice content-viewer)
   | "contentViewer.title"
   | "contentViewer.expand"
   | "contentViewer.close"
+  // ─── fs-file-proxy — file viewer (Commit 1) ───
+  | "contentViewer.download"
+  | "plan.file.view"
   // ─── TTS provider ─── (V4a-gemini-tts-pcm-playback)
   | "settings.ttsProvider.label"
   | "settings.ttsProvider.elevenlabs"
   | "settings.ttsProvider.gemini"
+  // ─── TTS model ─── (tts-model-choice)
+  | "settings.ttsModel.label"
+  | "settings.ttsModel.eleven_v3"
+  | "settings.ttsModel.eleven_v4"
+  | "settings.ttsModel.eleven_v4_turbo"
+  | "settings.ttsModel.gemini_3_1_flash_tts_preview"
+  | "settings.ttsModel.gemini_3_8_flash_tts"
+  | "settings.ttsModel.gemini_3_8_flash_lite_tts"
   // ─── session transport ─── (slice transport-polish C4)
   | "settings.sessionTransport.label"
   | "settings.sessionTransport.ws"
@@ -246,6 +310,7 @@ export type MessageKey =
   // ─── image-paste replay (§11) — placeholder for non-text ContentBlocks ───
   // chat.content.attachedFile: param-less (label raw from data, no interpolation needed)
   | "chat.content.attachedFile"
+  | "chat.content.loadRemoteImage"
   | "chat.content.unsupported"
   // ─── recent-projects ─── (slice connect-recent-projects)
   | "connect.recent.title"
@@ -256,6 +321,26 @@ export type MessageKey =
   | "connect.recent.collapse"
   | "connect.recent.expand"
   // ─── leave-running (slice leave-running-background) ───
+  | "session.titleLabel" // slice session-title-manual: editable session title in options panel
+  | "session.fieldsLabel" // slice session-memory: read-only agent fields in options panel
+  | "session.fieldsEmpty"
+  // ─── scope-policy-per-caller ───
+  | "session.scopePolicy.title"
+  | "session.scopePolicy.message"
+  | "session.scopePolicy.update"
+  | "session.scopePolicy.close"
+  | "session.scopePolicy.option.inherit"
+  | "session.scopePolicy.sourceLabel"
+  | "session.scopePolicy.source.agent"
+  | "session.scopePolicy.source.override"
+  | "session.scopePolicy.source.env"
+  | "session.scopePolicy.source.default"
+  | "session.scopePolicy.loading"
+  | "session.scopePolicy.saving"
+  | "session.scopePolicy.error"
+  | "session.scopePolicy.empty"
+  | "session.scopePolicy.retry"
+  | "session.scopePolicy.note"
   | "session.leaveRunning" // תווית כפתור "צא — השאר רץ" (חדש)
   | "session.closeSession" // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
   | "session.leaveWarning.title"
@@ -263,6 +348,18 @@ export type MessageKey =
   | "session.leaveWarning.confirm"
   | "session.leaveWarning.cancel"
   | "session.leaveWarning.dontShowAgain"
+  // ─── playbackControls ─── (slice B1-controls-ui)
+  | "playbackControls.stopRun"
+  | "playbackControls.stopRun.thinking"
+  | "playbackControls.stopRun.responding"
+  | "playbackControls.stopRun.callingTool"
+  | "playbackControls.stopPlayback"
+  | "playbackControls.pause"
+  | "playbackControls.resume"
+  | "playbackControls.prev"
+  | "playbackControls.next"
+  | "playbackControls.dock"
+  | "playbackControls.interrupted"
   // ─── thinking-tokens ─── (slice FEAT-thinking-live)
   | "agentOptions.thinking.label" // תווית הפקד "חשיבה" / "Thinking"
   | "agentOptions.thinking.off" // ערך כבוי
@@ -271,6 +368,7 @@ export type MessageKey =
   | "agentOptions.thinking.high" // ערך גבוה (16000)
   // ─── gemini voice picker ─── (V4b-gemini-voice-picker)
   | "settings.geminiVoice.label"
+  | "settings.liveVoice.label"
   | "settings.geminiVoice.desc.Zephyr"
   | "settings.geminiVoice.desc.Puck"
   | "settings.geminiVoice.desc.Charon"
@@ -343,6 +441,16 @@ export type MessageKey =
   | "sessionBudget.quota.used"
   | "sessionBudget.quota.of"
   | "sessionBudget.quota.resetsIn"
+  // ─── token usage persistence ─── (slice token-usage-persistence)
+  | "sessionBudget.context.compactions"
+  | "sessionBudget.context.sumHeld"
+  | "settings.tokenUsage.title"
+  | "settings.tokenUsage.loading"
+  | "settings.tokenUsage.refresh"
+  | "settings.tokenUsage.error"
+  | "settings.tokenUsage.empty"
+  | "settings.tokenUsage.compactions"
+  | "settings.tokenUsage.sumHeld"
   // ─── plan ─── (slice plan-todo-list)
   | "plan.title"
   | "plan.status.pending"
@@ -406,6 +514,143 @@ export type MessageKey =
   | "session.turnStalled"
   | "session.cloudflareRefresh"
   | "session.gone"
+  // ─── session-url (slice session-url C2) ───
+  | "sessionUrl.resolving"
+  | "sessionUrl.notFound.title"
+  | "sessionUrl.notFound.body"
+  | "sessionUrl.notFound.back"
+  | "sessionUrl.takeover.title"
+  | "sessionUrl.takeover.body"
+  | "sessionUrl.takeover.confirm"
+  | "sessionUrl.takeover.cancel"
+  // ─── sidebar-resize ───
+  | "sidebar.resizeHandle"
+  // ─── cwd-path-combo ───
+  | "connect.cwd.combo.toggle"
+  | "connect.cwd.combo.sessionCount"
+  | "connect.cwd.combo.searchPlaceholder"
+  | "connect.cwd.combo.empty"
+  | "connect.cwd.combo.loadError"
+  // ─── tool output (tool-render-fidelity) ───
+  | "chat.tool.output.exitCode"
+  | "chat.tool.output.stderr"
+  | "chat.tool.output.empty"
+  // ─── notifications ─── (slice notify-local)
+  | "notify.permission.title"
+  | "notify.permission.body"
+  | "notify.elicitation.title"
+  | "notify.elicitation.body"
+  | "notify.turnEnd.title"
+  | "notify.turnEnd.body"
+  | "settings.notifications.title"
+  | "settings.toggle.notifications"
+  | "settings.notifications.blocked"
+  | "settings.notifications.quietHint"
+  | "settings.notifications.retry"
+  // ─── dictate ─── (slice dictate-to-input)
+  | "dictate.start"
+  | "dictate.stop"
+  | "dictate.listening"
+  | "dictate.error.permission"
+  | "dictate.error.notFound"
+  | "dictate.error.transcribe"
+  | "dictate.error.generic"
+  | "dictate.transcribing"
+  | "dictate.requesting"
+  // ─── pending-capture ─── (slice voice-pending-persistence)
+  | "pendingCapture.retry"
+  | "pendingCapture.dismiss"
+  | "pendingCapture.restored"
+  // ─── session-memo ─── (slice session-memo-pad)
+  | "sessionMemo.title"
+  | "sessionMemo.open"
+  | "sessionMemo.minimize"
+  | "sessionMemo.placeholder"
+  | "settings.toggle.sessionMemo"
+  // ─── usage ─── (slice usage-per-cli)
+  | "usage.page.title"
+  | "usage.page.loading"
+  | "usage.page.refresh"
+  | "usage.page.error"
+  | "usage.page.empty"
+  | "usage.page.link"
+  | "usage.clis.cardTitle"
+  | "usage.clis.noUsageReport"
+  | "usage.clis.lastSeenPrefix"
+  | "usage.clis.lastSeenSuffix"
+  | "usage.clis.costMixed"
+  | "usage.clis.col.cli"
+  | "usage.clis.col.projects"
+  | "usage.clis.col.sessions"
+  | "usage.clis.col.turns"
+  | "usage.clis.col.peakHeld"
+  | "usage.clis.col.sumHeld"
+  | "usage.clis.col.compactions"
+  | "usage.clis.col.cost"
+  | "usage.clis.col.activity"
+  // ─── deep-link ─── (slice deep-link-new-session)
+  | "deepLink.new.starting"
+  | "deepLink.error.title"
+  | "deepLink.error.unknownCli"
+  | "deepLink.error.homeDir"
+  | "deepLink.error.back"
+  // ─── mic device ─── (slice mic-device-selection)
+  | "settings.inputDevice.label"
+  | "settings.inputDevice.default"
+  | "settings.inputDevice.grantLabels"
+  | "settings.inputDevice.missing"
+  | "settings.inputDevice.single"
+  | "settings.inputDevice.refresh"
+  // ─── drive-message ─── (slice agent-message-envelope-ui)
+  | "driveMessage.agent.label"
+  | "driveMessage.envelope.partial"
+  | "driveMessage.context.summary"
+  | "driveMessage.showSource"
+  | "driveMessage.system.alert"
+  | "driveMessage.system.turnEndedSuffix"
+  | "driveMessage.system.turnEndedError"
+  | "driveMessage.system.stallSuspected"
+  | "driveMessage.system.silentPrefix"
+  | "driveMessage.system.silentSuffix"
+  | "driveMessage.system.quoteSection"
+  | "driveMessage.system.quoteTruncated"
+  | "driveMessage.system.openChat"
+  | "driveMessage.system.details"
+  | "driveMessage.system.detail.eventKind"
+  | "driveMessage.system.detail.subjectId"
+  | "driveMessage.system.detail.at"
+  | "driveMessage.system.detail.stopReason"
+  | "driveMessage.system.detail.silentMs"
+  | "driveMessage.system.detail.error"
+  // ─── scope-prompt ─── (slice scope-prompt-detail)
+  | "scopePrompt.title"
+  | "scopePrompt.caller"
+  | "scopePrompt.target"
+  | "scopePrompt.action"
+  | "scopePrompt.verb.close"
+  | "scopePrompt.verb.patch"
+  | "scopePrompt.verb.reply"
+  | "scopePrompt.verb.send"
+  | "scopePrompt.verb.unknown"
+  | "scopePrompt.expiresIn"
+  | "scopePrompt.seconds"
+  | "scopePrompt.expired"
+  // ─── agent-voice ─── (slice codex-voice-poc — the agent's native Live)
+  | "agentVoice.useNative"
+  | "agentVoice.useNativeShort"
+  | "agentVoice.defaultVoice"
+  | "agentVoice.preview"
+  | "agentVoice.stopPreview"
+  | "agentVoice.previewFailed"
+  | "voice.bubble.you"
+  | "voice.bubble.voice"
+  | "voice.handoff.label"
+  | "voice.handoff.context"
+  | "agentVoice.connecting"
+  | "agentVoice.live"
+  | "agentVoice.error"
+  | "agentVoice.instructions"
+  | "agentVoice.permissionSpeech"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

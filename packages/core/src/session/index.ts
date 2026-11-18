@@ -5,7 +5,11 @@
  */
 
 export * from "./apply-patch"
+export * from "./carried"
 export * from "./patch-schema"
 export * from "./reduce"
+export * from "./rpc-methods"
 export * from "./stream-alive"
+export * from "./to-session-update"
 export * from "./types"
+export * from "./wire-frames"

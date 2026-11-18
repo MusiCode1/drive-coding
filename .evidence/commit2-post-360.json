@@ -1,0 +1,170 @@
+{
+  "width": 360,
+  "url": "http://localhost:4015/chat?mock=greeting",
+  "timestamp": "2026-08-27T12:29:41.327Z",
+  "count": 3,
+  "rows": [
+    {
+      "side": "end",
+      "chain": [
+        {
+          "tag": "DIV",
+          "cls": "bubble-row s-UdJ_LvxKxJCd",
+          "display": "grid",
+          "width": "328px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "pb-5 s-CjSGJDaezCG0",
+          "display": "block",
+          "width": "328px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "",
+          "display": "block",
+          "width": "328px",
+          "position": "absolute"
+        },
+        {
+          "tag": "DIV",
+          "cls": "",
+          "display": "block",
+          "width": "328px",
+          "position": "relative"
+        },
+        {
+          "tag": "DIV",
+          "cls": "flex flex-col max-w-2xl mx-auto w-full",
+          "display": "flex",
+          "width": "328px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "chat-scroll h-full overflow-y-auto px-4 pt-20 pb-10",
+          "display": "block",
+          "width": "360px",
+          "position": "static"
+        }
+      ],
+      "avatarAboveContent": true,
+      "contentInlineStart": 16,
+      "rowInlineStart": 16,
+      "inlineStartDelta": 0,
+      "sameRow": false,
+      "contentInlineStartAligned": true,
+      "rowContained": true
+    },
+    {
+      "side": "start",
+      "chain": [
+        {
+          "tag": "DIV",
+          "cls": "bubble-row s-UdJ_LvxKxJCd",
+          "display": "grid",
+          "width": "328px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "pb-5 s-CjSGJDaezCG0",
+          "display": "block",
+          "width": "328px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "",
+          "display": "block",
+          "width": "328px",
+          "position": "absolute"
+        },
+        {
+          "tag": "DIV",
+          "cls": "",
+          "display": "block",
+          "width": "328px",
+          "position": "relative"
+        },
+        {
+          "tag": "DIV",
+          "cls": "flex flex-col max-w-2xl mx-auto w-full",
+          "display": "flex",
+          "width": "328px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "chat-scroll h-full overflow-y-auto px-4 pt-20 pb-10",
+          "display": "block",
+          "width": "360px",
+          "position": "static"
+        }
+      ],
+      "avatarAboveContent": true,
+      "contentInlineStart": 16,
+      "rowInlineStart": 16,
+      "inlineStartDelta": 0,
+      "sameRow": false,
+      "contentInlineStartAligned": true,
+      "rowContained": true
+    },
+    {
+      "side": "start",
+      "chain": [
+        {
+          "tag": "DIV",
+          "cls": "bubble-row s-UdJ_LvxKxJCd",
+          "display": "grid",
+          "width": "328px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "pb-5 s-CjSGJDaezCG0",
+          "display": "block",
+          "width": "328px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "",
+          "display": "block",
+          "width": "328px",
+          "position": "absolute"
+        },
+        {
+          "tag": "DIV",
+          "cls": "",
+          "display": "block",
+          "width": "328px",
+          "position": "relative"
+        },
+        {
+          "tag": "DIV",
+          "cls": "flex flex-col max-w-2xl mx-auto w-full",
+          "display": "flex",
+          "width": "328px",
+          "position": "static"
+        },
+        {
+          "tag": "DIV",
+          "cls": "chat-scroll h-full overflow-y-auto px-4 pt-20 pb-10",
+          "display": "block",
+          "width": "360px",
+          "position": "static"
+        }
+      ],
+      "avatarAboveContent": true,
+      "contentInlineStart": 16,
+      "rowInlineStart": 16,
+      "inlineStartDelta": 0,
+      "sameRow": false,
+      "contentInlineStartAligned": true,
+      "rowContained": true
+    }
+  ]
+}

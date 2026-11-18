@@ -6,6 +6,7 @@
  *
  * ─── slice session-state-reducer C2 (TDD) ───
  */
+import { recordCarried } from "./carried"
 import type { Patch, SessionMessage, SessionState, TurnStateValue } from "./types"
 
 /** גוזר nextSeq מ-id בצורת prefix_<n> (m_3 → 4, s_0 → 1). */
@@ -50,6 +51,30 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
       }
     }
 
+    // ─── slice acp-v2-reduce: upsert של הודעה שלמה (ACP v2) ───
+    case "set-message": {
+      const idx = state.messages.findIndex((m) => m.id === patch.targetId)
+      // ⚠️ יעד שנעלם אינו שגיאה שיש לזרוק עליה — הוא no-op. אותו כלל כמו
+      // append-segment/update-tool מתחת: patch שהקדים או איחר את היעד שלו
+      // אסור לו להפיל את הזרם כולו.
+      if (idx === -1) return state
+      let nextSegSeq = state.nextSegmentSeq
+      if (patch.message.role !== "tool") {
+        for (const seg of patch.message.segments) {
+          nextSegSeq = Math.max(nextSegSeq, nextSeqFrom(seg.id))
+        }
+      }
+      const messages = [...state.messages]
+      messages[idx] = patch.message
+      return {
+        ...state,
+        version: patch.version,
+        messages,
+        nextMessageSeq: Math.max(state.nextMessageSeq, nextSeqFrom(patch.message.id)),
+        nextSegmentSeq: nextSegSeq,
+      }
+    }
+
     case "append-segment": {
       const idx = state.messages.findIndex((m) => m.id === patch.targetId)
       if (idx === -1) return state
@@ -59,6 +84,7 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
       const updatedMsg: SessionMessage = {
         ...old,
         segments: [...old.segments, patch.segment],
+        ...(patch.meta !== undefined ? { meta: { ...(old.meta ?? {}), ...patch.meta } } : {}),
       }
       const messages = [...state.messages]
       messages[idx] = updatedMsg
@@ -89,6 +115,7 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
       const updatedMsg: SessionMessage = {
         ...old,
         toolCall: { ...old.toolCall, ...patch.toolCall },
+        ...(patch.meta !== undefined ? { meta: { ...(old.meta ?? {}), ...patch.meta } } : {}),
       }
       const messages = [...state.messages]
       messages[idx] = updatedMsg
@@ -102,6 +129,8 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
         messages: patch.messages,
         nextMessageSeq: patch.nextMessageSeq,
         nextSegmentSeq: patch.nextSegmentSeq,
+        // ‏reset מאפס `messages`, ולכן כל `after` הופך לעוגן תלוי-באוויר.
+        carried: [],
       }
     }
 
@@ -115,10 +144,16 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
     }
 
     case "opaque": {
-      // 🔴 אנחנו לא יודעים מה יש בפנים, ולכן **לא נוגעים ב-state** — אבל
-      // ה-version כן מתקדם, כדי שהסדר והדדופ ימשיכו לעבוד. הצרכן שכן מבין
-      // את התוכן (למשל `reducePlan` ב-FE) מטפל בו בעצמו.
-      return { ...state, version: patch.version }
+      // 🔴 אנחנו לא **מפרשים** מה יש בפנים, ואין לזה op משלו ב-state —
+      // אבל ה-version כן מתקדם, כדי שהסדר והדדופ ימשיכו לעבוד. הצרכן שכן
+      // מבין את התוכן (למשל `reducePlan` ב-FE) מטפל בו בעצמו.
+      //
+      // ‏slice carried-snapshot C1: הרישום ל-`carried` קורה **גם כאן**, לא
+      // רק ב-`reduce`. ‏`replay.test.ts` מקבע `applyPatch(patches) ≡
+      // reduce(frames)` ב-deep-equality — אם רק `reduce` ימלא את ה-buffer,
+      // השוויון נשבר. ‏`carryKeyOf` טהור ב-update, ולכן ההכרעה כאן זהה
+      // בדיוק לזו שבצד השני; כאן המקור הוא `patch.update`.
+      return recordCarried({ ...state, version: patch.version }, patch.update)
     }
 
     default: {

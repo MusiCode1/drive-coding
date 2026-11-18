@@ -6,6 +6,7 @@
  *
  * banner — state נפרד מ-session.error (לא נוגע ב-crashReason / openedElsewhere).
  */
+import type { MachineStats } from "@drive-coding/core"
 import {
   notifySessionAttached,
   type PresenceResponse,
@@ -34,6 +35,9 @@ export type DisconnectBannerKind = PresenceBanner
 export class PresencePoller {
   /** באנר ניתוק — נפרד מ-session.error (§C4, handover decision #2). */
   banner = $state<DisconnectBannerKind | null>(null)
+
+  /** מדדי RAM/CPU מה-presence tick — slice machine-stats-in-session. */
+  machine = $state<MachineStats | null>(null)
 
   readonly #session: AgentSession
   #intervalId: ReturnType<typeof setInterval> | null = null
@@ -135,7 +139,10 @@ export class PresencePoller {
     this.#inFlight = true
     this.#abort = new AbortController()
     try {
-      const res = await postPresence(agentId, this.#abort.signal)
+      const res = await postPresence(agentId, {
+        connectionId: this.#session.connectionId,
+        signal: this.#abort?.signal,
+      })
       // ⚠️ הסדר קריטי: `agent === null` נבדק **לפני** clearBanner. הפוך היה
       // מנקה את הבאנר ואז מציב אותו מחדש — הבהוב, ובחלון שביניהם "הכל תקין".
       if (res.agent === null || res.agent === undefined) {
@@ -143,6 +150,7 @@ export class PresencePoller {
         return
       }
       this.clearBanner()
+      this.machine = res.machine
       await this.#maybeRetakeOwnership(agentId, res.agent)
     } catch (err) {
       this.#handleFailure(err)

@@ -12,18 +12,21 @@
  * prevents further requests from making it worse.
  *
  * Configuration:
- *   RSS_BUDGET_MB env var — override threshold (default: 1500 MB = 1.5 GB)
+ *   thresholdBytes — RSS budget (boot passes from config.rssBudgetMb)
  *   intervalMs — polling interval (default: 5000 ms)
  *
  * The timer is unref()d so it does not keep the process alive.
  */
 
-const DEFAULT_THRESHOLD_BYTES = 1_500 * 1024 * 1024 // 1.5 GB
+import { configDefault } from "@drive-coding/core/config/specs"
+
 const DEFAULT_INTERVAL_MS = 5_000
 
 export interface MemoryGuard {
   /** Returns true if RSS has exceeded the budget threshold. */
   overBudget(): boolean
+  /** RSS budget in megabytes (same threshold as proxy 503). */
+  rssBudgetMB(): number
   /** Stops the polling interval (call on graceful shutdown). */
   stop(): void
 }
@@ -33,10 +36,7 @@ export function createMemoryGuard(opts?: {
   intervalMs?: number
 }): MemoryGuard {
   const thresholdBytes =
-    opts?.thresholdBytes ??
-    (process.env.RSS_BUDGET_MB
-      ? Number(process.env.RSS_BUDGET_MB) * 1024 * 1024
-      : DEFAULT_THRESHOLD_BYTES)
+    opts?.thresholdBytes ?? configDefault("rssBudgetMb") * 1024 * 1024
   const intervalMs = opts?.intervalMs ?? DEFAULT_INTERVAL_MS
 
   let overBudgetFlag = false
@@ -60,6 +60,9 @@ export function createMemoryGuard(opts?: {
   return {
     overBudget(): boolean {
       return overBudgetFlag
+    },
+    rssBudgetMB(): number {
+      return Math.round(thresholdBytes / 1024 / 1024)
     },
     stop(): void {
       clearInterval(timer)

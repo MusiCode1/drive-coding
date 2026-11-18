@@ -14,6 +14,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { AgentSession } from "./agent-session.svelte"
+import { MockSessionView } from "./__fixtures__/mock-session-view.svelte"
 import { LocalSessionView } from "$lib/session/local-session-view"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
 
@@ -102,27 +103,16 @@ describe("VM + LocalSessionView integration (C4)", () => {
   })
 
   it("session update from mock → VM bubbles updated via patches", async () => {
-    let capturedCbs: AcpClientCallbacks | null = null
-    const localView = new LocalSessionView({
-      cwd: "/workspace",
-      cliKind: "claude",
-      createClient: async (cbs) => {
-        capturedCbs = cbs
-        return mock.client
-      },
+    const view = new MockSessionView()
+    view.connect("integration-session")
+    const localAgent = new AgentSession({ view })
+    localAgent._setStatusForTest("connected")
+
+    view.fireUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Integration message" },
+      messageId: "im-1",
     })
-    const localAgent = new AgentSession({ view: localView })
-
-    await localView.newSession()
-
-    // Fire a session update via the captured callbacks
-    capturedCbs!.onUpdate!({
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text: "Integration message" },
-        messageId: "im-1",
-      },
-    } as never)
 
     await delay()
 
@@ -135,33 +125,21 @@ describe("VM + LocalSessionView integration (C4)", () => {
   })
 
   it("multiple chunks group into one bubble", async () => {
-    let capturedCbs: AcpClientCallbacks | null = null
-    const localView = new LocalSessionView({
-      cwd: "/workspace",
-      cliKind: "claude",
-      createClient: async (cbs) => {
-        capturedCbs = cbs
-        return mock.client
-      },
+    const view = new MockSessionView()
+    view.connect("integration-session")
+    const localAgent = new AgentSession({ view })
+    localAgent._setStatusForTest("connected")
+
+    view.fireUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Part 1" },
+      messageId: "gm-1",
     })
-    const localAgent = new AgentSession({ view: localView })
-
-    await localView.newSession()
-
-    capturedCbs!.onUpdate!({
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text: "Part 1" },
-        messageId: "gm-1",
-      },
-    } as never)
-    capturedCbs!.onUpdate!({
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text: " Part 2" },
-        messageId: "gm-1",
-      },
-    } as never)
+    view.fireUpdate({
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: " Part 2" },
+      messageId: "gm-1",
+    })
 
     await delay()
 

@@ -5,7 +5,7 @@
  * ללא ניסיונות חוזרים, ללא וולידציית סכמה — נתיב מהיר ל-v2.
  */
 
-import type { AgentPublic } from "@drive-coding/core"
+import type { AgentPublic, MachineStats } from "@drive-coding/core"
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { beUrl } from "$lib/util/be-url"
 
@@ -85,22 +85,17 @@ export async function getAgent(
   return (await res.json()) as { agent: { cwd: string; status: string; crashReason?: string } }
 }
 
+/** notifySessionAttached — PATCH acpSessionId (+ optional cwd/replace); replaces POST …/session-attached. */
 export async function notifySessionAttached(
   agentId: string,
   sessionId: string,
-  opts?: { replace?: boolean },
+  opts?: { replace?: boolean; cwd?: string },
 ): Promise<void> {
-  await withTimeout(
-    (s) =>
-      fetch(beUrl(`/api/agents/${agentId}/session-attached`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId, ...(opts?.replace ? { replace: true } : {}) }),
-        signal: s,
-      }),
-    AGENTS_API_TIMEOUT_MS,
-    { label: "notifySessionAttached" },
-  )
+  await patchAgent(agentId, {
+    acpSessionId: sessionId,
+    ...(opts?.replace ? { replace: true } : {}),
+    ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
+  })
 }
 
 export async function deleteAgent(agentId: string): Promise<void> {
@@ -115,13 +110,25 @@ export async function deleteAgent(agentId: string): Promise<void> {
   }
 }
 
+/** PATCH body — 1:1 with `PatchAgentInput` in http-agents.ts (`replace` is control-only). */
+export type PatchAgentBody = {
+  title?: string | null
+  titleManual?: boolean
+  userNotes?: string
+  persistent?: boolean
+  acpSessionId?: string
+  status?: "ready"
+  cwd?: string
+  replace?: boolean
+}
+
 /**
- * עדכון שדות-משתמש של agent דרך PATCH גנרי (כרגע: title). best-effort אצל הקורא.
- * (slice session-title-in-process-list)
+ * עדכון גנרי של agent דרך PATCH /api/agents/:id — דלת אחת (slice agent-patch-unify).
+ * best-effort אצל הקורא (slice session-title-in-process-list — הדגם הראשון).
  */
 export async function patchAgent(
   agentId: string,
-  patch: { title?: string | null },
+  patch: PatchAgentBody,
   signal?: AbortSignal,
 ): Promise<void> {
   const res = await withTimeout(
@@ -141,23 +148,12 @@ export async function patchAgent(
   }
 }
 
-/** משנה את דגל הנעיצה (persistent) של agent. */
+/**
+ * משנה את דגל הנעיצה (persistent) של agent — שדה-משתמש, דרך PATCH הגנרי
+ * (slice agent-patch-unify, C3). מבטל את POST …/persistent — אותה חתימה ציבורית.
+ */
 export async function setAgentPersistent(agentId: string, persistent: boolean): Promise<void> {
-  const res = await withTimeout(
-    (s) =>
-      fetch(beUrl(`/api/agents/${agentId}/persistent`), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ persistent }),
-        signal: s,
-      }),
-    AGENTS_API_TIMEOUT_MS,
-    { label: "setAgentPersistent" },
-  )
-  if (!res.ok) {
-    const body = await res.text().catch(() => "")
-    throw new Error(`setAgentPersistent failed: ${res.status} ${body}`)
-  }
+  await patchAgent(agentId, { persistent })
 }
 
 /**
@@ -178,20 +174,36 @@ export type PresenceResponse = {
     lastSeenAt: number | null
     via: "ws" | "http" | null
   } | null
-  machine: unknown
+  machine: MachineStats | null
+}
+
+export const CONNECTION_ID_HEADER = "Acp-Connection-Id"
+
+export async function releaseConnection(agentId: string, connectionId: string): Promise<void> {
+  await fetch(beUrl(`/api/agents/${agentId}/connection`), {
+    method: "DELETE",
+    headers: { [CONNECTION_ID_HEADER]: connectionId },
+    keepalive: true,
+  })
 }
 
 const PRESENCE_TIMEOUT_MS = 5000
 
-export async function postPresence(agentId: string, signal?: AbortSignal): Promise<PresenceResponse> {
+export async function postPresence(
+  agentId: string,
+  opts?: { connectionId?: string; signal?: AbortSignal },
+): Promise<PresenceResponse> {
+  const headers: Record<string, string> = {}
+  if (opts?.connectionId) headers[CONNECTION_ID_HEADER] = opts.connectionId
   const res = await withTimeout(
     (s) =>
       fetch(beUrl(`/api/agents/${agentId}/presence`), {
         method: "POST",
+        headers,
         signal: s,
       }),
     PRESENCE_TIMEOUT_MS,
-    { signal, label: "postPresence" },
+    { signal: opts?.signal, label: "postPresence" },
   )
   if (!res.ok) {
     const body = await res.text().catch(() => "")

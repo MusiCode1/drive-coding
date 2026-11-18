@@ -31,7 +31,17 @@ export type BubbleBase = {
   /** מזהה הודעת ACP — null עבור בועות סינתטיות (פרומפטים של משתמש, tool calls). */
   messageId: string | null
   createdAt: number
+  /**
+   * slice codex-voice-poc — part of the agent's built-in voice conversation (from the generic
+   * `_meta["_drive/voice"]` mark). undefined = an ordinary chat message.
+   */
+  voice?: BubbleVoice
 }
+
+/** What the user or the voice said, or a request the voice handed to the agent. */
+export type BubbleVoice =
+  | { kind: "speech"; role: "user" | "assistant" }
+  | { kind: "handoff"; transcript?: string }
 
 export type UserBubble = BubbleBase & {
   kind: "user"
@@ -56,12 +66,29 @@ export type UserBubble = BubbleBase & {
    * ה-VM לא מייבא t ולא כותב מחרוזות-תצוגה — שכבת-הרכיב בלבד.
    * label: raw data (name/uri) — ללא אינטרפולציה.
    */
-  contentPlaceholders?: { kind: "resource_link" | "audio" | "resource"; label?: string }[]
+  // slice fs-file-proxy (Commit 2): הוספת uri + kind:"file" — additive, לא replacement
+  // (חוק זהב #5). label ממשיך לשמש לתצוגה (name אם קיים); uri משמש ל-fetch
+  // ב-ContentViewer (ph.uri ?? ph.label בצד הרכיב — label יכול להיות ה-uri עצמו
+  // כשאין name).
+  contentPlaceholders?: {
+    kind: "resource_link" | "audio" | "resource" | "file"
+    label?: string
+    uri?: string
+  }[]
 }
 
 export type MessageBubble = BubbleBase & {
   kind: "message"
   segments: Segment[]
+  /**
+   * tool-render-fidelity — non-text agent content (image/audio/resource).
+   * Component renders chip via t(); VM stores structural marker only.
+   */
+  contentPlaceholders?: {
+    kind: "resource_link" | "audio" | "resource" | "file" | "image"
+    label?: string
+    uri?: string
+  }[]
 }
 
 export type ThoughtBubble = BubbleBase & {
@@ -76,7 +103,12 @@ export type ToolContentTerminal = { type: "terminal"; terminalId: string }
 // data = base64 גולמי (ללא "data:" prefix) — הרינדור בונה את ה-data-URI
 export type ToolContentImage = { type: "image"; data: string; mimeType: string }
 export type ToolContentOther = { type: "other"; raw: unknown } // audio/resource/unknown
-export type ToolContent = ToolContentText | ToolContentDiff | ToolContentTerminal | ToolContentImage | ToolContentOther
+export type ToolContent =
+  | ToolContentText
+  | ToolContentDiff
+  | ToolContentTerminal
+  | ToolContentImage
+  | ToolContentOther
 
 export type ToolLocation = { path: string; line?: number }
 

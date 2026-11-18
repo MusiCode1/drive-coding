@@ -21,7 +21,7 @@ import {
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { vi } from "vitest"
 import type { SessionInfo } from "$lib/adapters/sessions"
-import type { SessionView } from "$lib/session/session-view"
+import type { SessionView, ViewEmission } from "$lib/session/session-view"
 
 export class MockSessionView implements SessionView {
   // ─── state (plain object, updated by fireUpdate) ───
@@ -32,15 +32,19 @@ export class MockSessionView implements SessionView {
   supportsSessionDelete = $state(false)
 
   // ─── patches stream ───
-  #controller: ReadableStreamDefaultController<Patch[]> | null = null
-  readonly patches: ReadableStream<Patch[]>
+  #controller: ReadableStreamDefaultController<ViewEmission> | null = null
+  readonly patches: ReadableStream<ViewEmission>
 
   // Track calls for assertions
   readonly promptMock = vi
     .fn<(content: string | PromptBlocks, meta?: Record<string, unknown>) => Promise<void>>()
     .mockResolvedValue(undefined)
   readonly cancelMock = vi.fn().mockResolvedValue(undefined)
-  readonly newSessionMock = vi.fn().mockResolvedValue(undefined)
+  readonly newSessionMock = vi
+    .fn<(cwd?: string) => Promise<void>>()
+    .mockImplementation(async () => {
+      this.state = { ...this.state, sessionId: "remote-new-sess" }
+    })
   readonly loadSessionMock = vi.fn().mockResolvedValue(undefined)
   readonly closeMock = vi.fn().mockResolvedValue(undefined)
   readonly respondMock = vi.fn().mockResolvedValue(undefined)
@@ -52,7 +56,7 @@ export class MockSessionView implements SessionView {
   readonly setSessionModelMock = vi.fn().mockResolvedValue(undefined)
 
   constructor() {
-    this.patches = new ReadableStream<Patch[]>({
+    this.patches = new ReadableStream<ViewEmission>({
       start: (controller) => {
         this.#controller = controller
       },
@@ -68,12 +72,10 @@ export class MockSessionView implements SessionView {
   fireUpdate(update: unknown): void {
     const { state, patches } = reduce(this.state, update)
     this.state = state
-    if (patches.length > 0) {
-      try {
-        this.#controller?.enqueue(patches)
-      } catch {
-        // stream closed
-      }
+    try {
+      this.#controller?.enqueue({ patches, updates: [update] })
+    } catch {
+      // stream closed
     }
   }
 
@@ -86,7 +88,7 @@ export class MockSessionView implements SessionView {
     const next = applyPatch(this.state, patch)
     if (next) this.state = next
     try {
-      this.#controller?.enqueue([patch])
+      this.#controller?.enqueue({ patches: [patch], updates: [] })
     } catch {
       // stream closed
     }
@@ -123,8 +125,8 @@ export class MockSessionView implements SessionView {
   extMethod(method: string, params: unknown): Promise<unknown> {
     return this.extMethodMock(method, params)
   }
-  newSession(): Promise<void> {
-    return this.newSessionMock()
+  newSession(cwd?: string): Promise<void> {
+    return this.newSessionMock(cwd)
   }
   loadSession(sessionId: string, cwd?: string): Promise<void> {
     return this.loadSessionMock(sessionId, cwd)

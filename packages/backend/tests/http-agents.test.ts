@@ -1,16 +1,43 @@
-import { Hono } from "hono"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+
+const { mockLogInfo } = vi.hoisted(() => ({
+  mockLogInfo: vi.fn(),
+}))
+
+vi.mock("@drive-coding/core/log", () => ({
+  createLogger: () => ({ info: mockLogInfo, warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+}))
+
+import { Hono } from "hono"
 import { createInMemoryAgentRegistry } from "../src/agents/registry"
 import type { AgentOrchestrator, CreateAndSpawnResult } from "../src/app/agent-orchestrator"
+import { closeAllAgents } from "../src/app/close-all-agents.js"
 import { registerAgentsHttp } from "../src/delivery/http-agents"
 // slice liveness C2: ה-http-cache הוא module-level — מנקים בין טסטים כדי שלא ידלוף.
 import { httpCacheInvalidateAll } from "../src/delivery/http-cache"
+import { CF_ACCESS_EMAIL_HEADER } from "../src/delivery/opened-by-email.js"
+import type { SessionHistoryStore } from "../src/history/session-history-store.js"
 
 beforeEach(() => {
   httpCacheInvalidateAll()
+  mockLogInfo.mockClear()
 })
 
-function makeApp() {
+// עזר-בדיקה: זיוף sessionHistoryStore עם ריגול — עדיף על דיסק אמיתי (D7).
+function makeFakeSessionHistoryStore(): SessionHistoryStore {
+  return {
+    recordAttach: vi.fn(),
+    hideFolder: vi.fn(() => Promise.resolve()),
+    listProjects: vi.fn(() => []),
+    listCliSessionRows: vi.fn(() => []),
+    listUsageRecords: vi.fn(() => []),
+    ingestUsageUpdate: vi.fn(),
+    onTurnEnded: vi.fn(),
+    close: vi.fn(),
+  } as unknown as SessionHistoryStore
+}
+
+function makeApp(opts?: { sessionHistoryStore?: ReturnType<typeof makeFakeSessionHistoryStore> }) {
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
 
@@ -34,11 +61,25 @@ function makeApp() {
     async deleteAndKill(id) {
       await registry.delete(id).catch(() => {})
     },
+    // Delegates to the real implementation so the route test exercises the
+    // actual bulk semantics, not a stub that always succeeds.
+    deleteAllAndKill() {
+      return closeAllAgents(
+        () => registry.list(),
+        (id) => this.deleteAndKill(id),
+      )
+    },
     getBridgePort: vi.fn(() => 7100),
   }
 
-  registerAgentsHttp(app, { registry, orchestrator })
-  return { app, registry, orchestrator }
+  const sessionHistoryStore = opts?.sessionHistoryStore ?? makeFakeSessionHistoryStore()
+  registerAgentsHttp(app, {
+    registry,
+    orchestrator,
+    sessionHistoryStore,
+    env: process.env,
+  })
+  return { app, registry, orchestrator, sessionHistoryStore }
 }
 
 describe("HTTP /api/agents", () => {
@@ -173,7 +214,12 @@ describe("HTTP /api/agents", () => {
         },
         getBridgePort: vi.fn(() => 7100),
       }
-      registerAgentsHttp(app, { registry, orchestrator })
+      registerAgentsHttp(app, {
+        registry,
+        orchestrator,
+        sessionHistoryStore: makeFakeSessionHistoryStore(),
+        env: process.env,
+      })
 
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -200,6 +246,90 @@ describe("HTTP /api/agents", () => {
       expect(res.status).toBe(201)
     })
 
+    // slice session-create-contract C1 — permissionPolicy accepted + forwarded; absence unchanged.
+    it("creates with permissionPolicy — accepted by schema and forwarded to orchestrator", async () => {
+      let received: unknown
+      const app = new Hono()
+      const registry = createInMemoryAgentRegistry()
+      const orchestrator: AgentOrchestrator = {
+        async createAndSpawn(input): Promise<CreateAndSpawnResult> {
+          received = input
+          const agent = await registry.create(input)
+          await registry.update(agent.id, { status: "ready", bridgePort: 7100 })
+          return {
+            agentId: agent.id,
+            cwd: agent.cwd,
+            cliKind: agent.cliKind,
+            wsUrl: `ws://127.0.0.1:7100/`,
+            bridgePort: 7100,
+            status: "spawning",
+          }
+        },
+        async deleteAndKill(id) {
+          await registry.delete(id).catch(() => {})
+        },
+        getBridgePort: vi.fn(() => 7100),
+      }
+      registerAgentsHttp(app, {
+        registry,
+        orchestrator,
+        sessionHistoryStore: makeFakeSessionHistoryStore(),
+        env: process.env,
+      })
+
+      const res = await app.request("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cliKind: "claude",
+          cwd: "/x",
+          permissionPolicy: "allow_once",
+        }),
+      })
+      expect(res.status).toBe(201)
+      expect((received as { permissionPolicy?: string })?.permissionPolicy).toBe("allow_once")
+    })
+
+    it("POST without permissionPolicy — same as before (regression)", async () => {
+      let received: unknown
+      const app = new Hono()
+      const registry = createInMemoryAgentRegistry()
+      const orchestrator: AgentOrchestrator = {
+        async createAndSpawn(input): Promise<CreateAndSpawnResult> {
+          received = input
+          const agent = await registry.create(input)
+          await registry.update(agent.id, { status: "ready", bridgePort: 7100 })
+          return {
+            agentId: agent.id,
+            cwd: agent.cwd,
+            cliKind: agent.cliKind,
+            wsUrl: `ws://127.0.0.1:7100/`,
+            bridgePort: 7100,
+            status: "spawning",
+          }
+        },
+        async deleteAndKill(id) {
+          await registry.delete(id).catch(() => {})
+        },
+        getBridgePort: vi.fn(() => 7100),
+      }
+      registerAgentsHttp(app, {
+        registry,
+        orchestrator,
+        sessionHistoryStore: makeFakeSessionHistoryStore(),
+        env: process.env,
+      })
+
+      const res = await app.request("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cliKind: "claude", cwd: "/x" }),
+      })
+      expect(res.status).toBe(201)
+      expect(received).toEqual(expect.objectContaining({ cliKind: "claude", cwd: "/x" }))
+      expect(received).not.toHaveProperty("permissionPolicy")
+    })
+
     it("returns 500 if orchestrator throws", async () => {
       const app = new Hono()
       const registry = createInMemoryAgentRegistry()
@@ -210,7 +340,12 @@ describe("HTTP /api/agents", () => {
         async deleteAndKill() {},
         getBridgePort: vi.fn(() => null),
       }
-      registerAgentsHttp(app, { registry, orchestrator: failingOrchestrator })
+      registerAgentsHttp(app, {
+        registry,
+        orchestrator: failingOrchestrator,
+        sessionHistoryStore: makeFakeSessionHistoryStore(),
+        env: process.env,
+      })
 
       const res = await app.request("/api/agents", {
         method: "POST",
@@ -220,6 +355,84 @@ describe("HTTP /api/agents", () => {
       expect(res.status).toBe(500)
       const body = await res.json()
       expect(body.error).toContain("bridge spawn failed")
+    })
+
+    // slice session-attribution-core C1 — fail-open header attribution (AGENTS.md silent-branch pin)
+    describe("openedByEmail from CF Access header", () => {
+      async function postAndList(
+        app: ReturnType<typeof makeApp>["app"],
+        opts: { headers?: Record<string, string>; body?: Record<string, unknown> } = {},
+      ) {
+        const res = await app.request("/api/agents", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...opts.headers,
+          },
+          body: JSON.stringify(opts.body ?? { cliKind: "opencode", cwd: "/tmp/attr" }),
+        })
+        expect(res.status).toBe(201)
+        const listRes = await app.request("/api/agents")
+        return listRes.json() as Promise<{ agents: Array<{ openedByEmail?: string }> }>
+      }
+
+      it("no header — GET omits openedByEmail and logs none", async () => {
+        const { app } = makeApp()
+        const body = await postAndList(app)
+        expect(body.agents[0]).not.toHaveProperty("openedByEmail")
+        expect(mockLogInfo).toHaveBeenCalledWith(
+          { accessEmailHeader: "none" },
+          "openedByEmail attribution",
+        )
+      })
+
+      it("empty or whitespace header — same as no header", async () => {
+        const { app } = makeApp()
+        for (const value of ["", "   "]) {
+          mockLogInfo.mockClear()
+          const body = await postAndList(app, {
+            headers: { [CF_ACCESS_EMAIL_HEADER]: value },
+          })
+          expect(body.agents.at(-1)).not.toHaveProperty("openedByEmail")
+          expect(mockLogInfo).toHaveBeenCalledWith(
+            { accessEmailHeader: "none" },
+            "openedByEmail attribution",
+          )
+        }
+      })
+
+      it("header present — stores email on agent", async () => {
+        const { app } = makeApp()
+        const body = await postAndList(app, {
+          headers: { [CF_ACCESS_EMAIL_HEADER]: "test@x.com" },
+        })
+        expect(body.agents[0]?.openedByEmail).toBe("test@x.com")
+        expect(mockLogInfo).toHaveBeenCalledWith(
+          { accessEmailHeader: CF_ACCESS_EMAIL_HEADER },
+          "openedByEmail attribution",
+        )
+      })
+
+      it("body openedByEmail without header — ignored (not from body)", async () => {
+        const { app } = makeApp()
+        const body = await postAndList(app, {
+          body: { cliKind: "opencode", cwd: "/tmp/evil", openedByEmail: "evil@x.com" },
+        })
+        expect(body.agents[0]).not.toHaveProperty("openedByEmail")
+        expect(mockLogInfo).toHaveBeenCalledWith(
+          { accessEmailHeader: "none" },
+          "openedByEmail attribution",
+        )
+      })
+
+      it("body openedByEmail with real header — value from header, not body", async () => {
+        const { app } = makeApp()
+        const body = await postAndList(app, {
+          headers: { [CF_ACCESS_EMAIL_HEADER]: "real@x.com" },
+          body: { cliKind: "opencode", cwd: "/tmp/both", openedByEmail: "evil@x.com" },
+        })
+        expect(body.agents[0]?.openedByEmail).toBe("real@x.com")
+      })
     })
   })
 
@@ -256,22 +469,24 @@ describe("HTTP /api/agents", () => {
     })
   })
 
-  describe("POST /api/agents/:id/session-attached", () => {
+  // slice agent-patch-unify C1: שני handlers ישנים (POST session-attached,
+  // POST persistent) בוטלו — הסמנטיקה שלהם הוגרה לכאן, ל-PATCH /api/agents/:id
+  // הגנרי. שינוי-מעטפת: sessionId → acpSessionId (השם שכבר קיים ב-Agent).
+  describe("PATCH /api/agents/:id — attach (migrated from POST session-attached)", () => {
     it("marks agent ready and returns { ok: true }", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       await registry.update(agent.id, { status: "starting" })
 
-      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: "sess-abc123" }),
+        body: JSON.stringify({ acpSessionId: "sess-abc123", status: "ready" }),
       })
       expect(res.status).toBe(200)
       const body = await res.json()
       expect(body).toEqual({ ok: true })
 
-      // Verify registry was updated
       const updated = await registry.get(agent.id)
       expect(updated?.status).toBe("ready")
       expect(updated?.acpSessionId).toBe("sess-abc123")
@@ -279,97 +494,84 @@ describe("HTTP /api/agents", () => {
 
     it("404 for unknown agent", async () => {
       const { app } = makeApp()
-      const res = await app.request("/api/agents/ghost/session-attached", {
-        method: "POST",
+      const res = await app.request("/api/agents/ghost", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: "s1" }),
+        body: JSON.stringify({ acpSessionId: "s1", status: "ready" }),
       })
       expect(res.status).toBe(404)
     })
 
-    it("400 if sessionId missing", async () => {
-      const { app, registry } = makeApp()
-      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
-      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      })
-      expect(res.status).toBe(400)
-    })
+    // הטסט הישן "400 if sessionId missing" (גוף {}) אינו מהגר 1:1: תחת המודל
+    // המאוחד sessionId (=acpSessionId) אינו נדרש לבדו — {} הוא no-op חוקי
+    // (כמו "omitted title" למטה). הכוונה המקורית — "נסיון-attach בלי מזהה"
+    // — מכוסה ע"י טסטי D2 (status-alone / cwd-alone) בהמשך הקובץ.
 
-    it("409 if agent already ready with different sessionId", async () => {
+    // 🔴 D3 — הטסט הקריטי: {acpSessionId} *בלי* status על agent ready עם
+    // סשן אחר → 409. השומר קורא agent.status/agent.acpSessionId, לא
+    // parsed.status/parsed.acpSessionId. קריאה הפוכה (parsed.status) הייתה
+    // מאפשרת PATCH {acpSessionId:"hijack"} לבדו (חוקי תחת D2) לדרוס בשקט.
+    it("🔴 409: acpSessionId alone (no status) on ready agent with different session — D3 reads agent.*, not parsed.*", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       await registry.update(agent.id, { status: "ready", acpSessionId: "existing-session" })
 
-      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: "different-session" }),
+        body: JSON.stringify({ acpSessionId: "different-session" }), // בכוונה בלי status
       })
       expect(res.status).toBe(409)
+
+      // הרישום נשאר ללא שינוי — השומר חסם לפני שהעדכון נגע ברישום
+      const unchanged = await registry.get(agent.id)
+      expect(unchanged?.acpSessionId).toBe("existing-session")
     })
 
-    it("idempotent: same sessionId on ready agent → 200", async () => {
+    it("idempotent: same acpSessionId (no status) on ready agent → 200", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       await registry.update(agent.id, { status: "ready", acpSessionId: "same-session" })
 
-      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: "same-session" }),
+        body: JSON.stringify({ acpSessionId: "same-session" }),
       })
       expect(res.status).toBe(200)
     })
 
-    it("409 without replace flag: guard MED-9 stays active, registry unchanged", async () => {
+    it("200 with replace:true: warm switch overwrites acpSessionId despite guard", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       await registry.update(agent.id, { status: "ready", acpSessionId: "session-A" })
 
-      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: "session-B" }), // no replace flag
-      })
-      expect(res.status).toBe(409)
-
-      // Registry must remain unchanged — staleness guard worked
-      const unchanged = await registry.get(agent.id)
-      expect(unchanged?.acpSessionId).toBe("session-A")
-    })
-
-    it("200 with replace:true: warm switch overwrites sessionId in registry", async () => {
-      const { app, registry } = makeApp()
-      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
-      await registry.update(agent.id, { status: "ready", acpSessionId: "session-A" })
-
-      const res = await app.request(`/api/agents/${agent.id}/session-attached`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: "session-B", replace: true }),
+        body: JSON.stringify({ acpSessionId: "session-B", replace: true }),
       })
       expect(res.status).toBe(200)
       const body = await res.json()
       expect(body).toEqual({ ok: true })
 
-      // Registry must be updated to the new sessionId
       const updated = await registry.get(agent.id)
       expect(updated?.acpSessionId).toBe("session-B")
       expect(updated?.status).toBe("ready")
     })
   })
 
-  // slice active-agents: POST /api/agents/:id/persistent
-  describe("POST /api/agents/:id/persistent", () => {
+  // slice agent-patch-unify C1: הסמנטיקה של POST persistent הוגרה ל-PATCH.
+  // "missing field → 400" ו-"unknown agent → 404" הישנים מתלכדים עם טסטים
+  // גנריים קיימים ("omitted title (empty body) → no-op", "404 for unknown
+  // agent" למעלה) — לא כפולים במכוון.
+  describe("PATCH /api/agents/:id — persistent (migrated from POST persistent)", () => {
     it("sets persistent: true → 200 { ok: true } and updates registry", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
 
-      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ persistent: true }),
       })
@@ -386,8 +588,8 @@ describe("HTTP /api/agents", () => {
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       await registry.update(agent.id, { persistent: true })
 
-      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ persistent: false }),
       })
@@ -400,52 +602,35 @@ describe("HTTP /api/agents", () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
 
-      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
-        method: "POST",
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ persistent: "yes" }),
       })
       expect(res.status).toBe(400)
     })
-
-    it("missing persistent field → 400", async () => {
-      const { app, registry } = makeApp()
-      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
-
-      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      })
-      expect(res.status).toBe(400)
-    })
-
-    it("invalid json → 400", async () => {
-      const { app, registry } = makeApp()
-      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
-
-      const res = await app.request(`/api/agents/${agent.id}/persistent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: "not json",
-      })
-      expect(res.status).toBe(400)
-    })
-
-    it("unknown agent → 404", async () => {
-      const { app } = makeApp()
-
-      const res = await app.request("/api/agents/ghost/persistent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ persistent: true }),
-      })
-      expect(res.status).toBe(404)
-    })
   })
 
   // slice session-title-in-process-list: PATCH /api/agents/:id (generic, whitelist: title)
   describe("PATCH /api/agents/:id", () => {
+    it("sets titleManual + title → GET reflects both (slice session-title-manual C0)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titleManual: true, title: "manual x" }),
+      })
+      expect(res.status).toBe(200)
+
+      const listRes = await app.request("/api/agents")
+      const listBody = await listRes.json()
+      const found = listBody.agents.find((a: { id: string }) => a.id === agent.id)
+      expect(found.titleManual).toBe(true)
+      expect(found.title).toBe("manual x")
+    })
+
     it("sets title → 200 {ok}, and GET /api/agents reflects it", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
@@ -465,7 +650,12 @@ describe("HTTP /api/agents", () => {
       expect(found.title).toBe("מה זה TypeScript")
     })
 
-    it("rejects unknown field (status) — whitelist protects runtime fields", async () => {
+    // 🟢 D1 — status עכשיו מוצהר בסכימה, אבל מצומצם לליטרל "ready". הטסט הזה
+    // שורד כלשונו: "crashed" נדחה (400). שים לב: גוף הבקשה הזה חסר acpSessionId,
+    // ולכן D2 (צימוד) *גם הוא* היה מחזיר 400 בפני עצמו — הטסט הזה מוגן בשתי
+    // שכבות בו-זמנית ולכן **אינו** מבחין לבדו בין M1 (D1) ל-M2 (D2). הבחנה
+    // מבודדת ל-D1 ר' בטסט הבא, שמראה acpSessionId (חוסם את D2) + status:"crashed".
+    it("rejects status:'crashed' — whitelist + D1 both reject (belt and suspenders)", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       await registry.update(agent.id, { status: "ready" })
@@ -481,6 +671,22 @@ describe("HTTP /api/agents", () => {
       const unchanged = await registry.get(agent.id)
       expect(unchanged?.status).toBe("ready")
       expect(unchanged?.title).toBeUndefined()
+    })
+
+    // 🔴 D1 מבודד מ-D2 — נמדד: גוף עם title+status בלבד (הטסט הקודם) נחסם גם
+    // ע"י D2 (חסר acpSessionId), ולכן M1 (הסרת הליטרל) אינו מפיל אותו. הטסט
+    // הזה, בדיוק כמו שורת status-bad בפרוב, מוסיף acpSessionId כדי לחסום את
+    // D2 ולבודד את D1 — זה הטסט ש-M1 באמת מפיל ברמת ה-unit (לא רק בפרוב).
+    it("🔴 rejects status:'crashed' with acpSessionId present — D1 isolated from D2 (matches probe row status-bad)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acpSessionId: "s1", status: "crashed" }),
+      })
+      expect(res.status).toBe(400)
     })
 
     it("404 for unknown agent", async () => {
@@ -533,6 +739,167 @@ describe("HTTP /api/agents", () => {
       const updated = await registry.get(agent.id)
       expect(updated?.title).toBe("keep me")
     })
+
+    it("sets userNotes → GET reflects it (slice session-memory C0)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userNotes: "session note" }),
+      })
+      expect(res.status).toBe(200)
+
+      const listRes = await app.request("/api/agents")
+      const listBody = await listRes.json()
+      const found = listBody.agents.find((a: { id: string }) => a.id === agent.id)
+      expect(found.userNotes).toBe("session note")
+    })
+
+    it("rejects PATCH sessionFields → 400 (slice session-memory C0)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionFields: { a: "1" } }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    // מחלקה 3 — "לעולם-לא-מ-HTTP": onUndeclaredKey("reject") נדחית גם אחרי
+    // הצטרפות השדות האופציונליים החדשים. (M6 מסירה את השכבה הזו.)
+    it.each([
+      ["bridgePort", { bridgePort: 9999 }],
+      ["crashReason", { crashReason: "x" }],
+      ["id", { id: "other" }],
+    ])("rejects undeclared field %s → 400 (class-3 whitelist)", async (_label, extra) => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(extra),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    // D2 — צימוד: status/cwd בלי acpSessionId → 400. הבדיקה חייבת לרוץ *לפני*
+    // registry.get — אחרת agent לא-קיים יחזיר 404 במקום 400 (§3.5 סדר-הבדיקות).
+    it("status alone (no acpSessionId) → 400 (D2 coupling)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ready" }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    it("cwd alone (no acpSessionId) → 400 (D2 coupling)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd: "/tmp" }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    // D5 — cwd עובר validateCwd, בדיוק כמו ב-POST /api/agents. נתיב יחסי לא-חוקי.
+    it("invalid cwd → 400 (D5 validateCwd)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acpSessionId: "s1", cwd: "relative/not/absolute" }),
+      })
+      expect(res.status).toBe(400)
+    })
+
+    // 🔴 D4 — שכבה (ב) היא extract *ושומר-undefined*. PATCH {title} על agent
+    // ready עם acpSessionId+cwd קיימים לא יכול למחוק אותם — registry.update
+    // מבצע spread בלי סינון, ולכן { cwd: undefined } היה מוחק בשקט.
+    it("🔴 PATCH {title} alone does not erase status/acpSessionId/cwd (D4 undefined-guard)", async () => {
+      const { app, registry } = makeApp()
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/original" })
+      await registry.update(agent.id, {
+        status: "ready",
+        acpSessionId: "sess-keep",
+        cwd: "/original",
+      })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "x" }),
+      })
+      expect(res.status).toBe(200)
+
+      const updated = await registry.get(agent.id)
+      expect(updated?.title).toBe("x")
+      expect(updated?.status).toBe("ready")
+      expect(updated?.acpSessionId).toBe("sess-keep")
+      expect(updated?.cwd).toBe("/original")
+    })
+
+    // D7 — תופעות-projectsRegistry מותנות בנוכחות acpSessionId (עובדת-חיבור).
+    // PATCH {title} בלבד לא אמור לרשום פרויקט או לדרוס lastSessionId.
+    it("PATCH {title} alone does not touch sessionHistoryStore (D7 conditional side-effects)", async () => {
+      const sessionHistoryStore = makeFakeSessionHistoryStore()
+      const { app, registry } = makeApp({ sessionHistoryStore })
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      await registry.update(agent.id, { status: "ready", acpSessionId: "sess-1" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "x" }),
+      })
+      expect(res.status).toBe(200)
+      expect(sessionHistoryStore.recordAttach).not.toHaveBeenCalled()
+    })
+
+    // חלק ב של הפרוב: attach מלא עם cwd → 200, agent.cwd משתנה, ו-sessionHistoryStore
+    // רושם תחת ה-cwd *החדש* (לא הישן) — זו שרשרת ה-cwd שכל הסלייס נבנה סביבה.
+    it("full attach (acpSessionId+status+cwd) → 200, agent.cwd updated, sessionHistoryStore recorded under new cwd", async () => {
+      const sessionHistoryStore = makeFakeSessionHistoryStore()
+      const { app, registry } = makeApp({ sessionHistoryStore })
+      const agent = await registry.create({ cliKind: "opencode", cwd: "/tmp/probe-dirA" })
+
+      const res = await app.request(`/api/agents/${agent.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          acpSessionId: "sess-from-dirB",
+          status: "ready",
+          cwd: "/tmp/probe-dirB",
+        }),
+      })
+      expect(res.status).toBe(200)
+
+      const updated = await registry.get(agent.id)
+      expect(updated?.cwd).toBe("/tmp/probe-dirB")
+      expect(updated?.status).toBe("ready")
+      expect(updated?.acpSessionId).toBe("sess-from-dirB")
+
+      expect(sessionHistoryStore.recordAttach).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cwd: "/tmp/probe-dirB",
+          acpSessionId: "sess-from-dirB",
+          cliKind: "opencode",
+        }),
+      )
+    })
   })
 
   // slice active-agents: GET /api/agents enriched with pid + attached via bridgeManager mock
@@ -564,11 +931,19 @@ describe("HTTP /api/agents", () => {
           attached: true,
           busy: false,
           lastMessageAt: null,
+          lastSeenAt: null,
           via: "ws" as const,
         })),
+        getConnectionCount: vi.fn(() => 1),
       }
 
-      registerAgentsHttp(app, { registry, orchestrator, bridgeManager })
+      registerAgentsHttp(app, {
+        registry,
+        orchestrator,
+        bridgeManager,
+        sessionHistoryStore: makeFakeSessionHistoryStore(),
+        env: process.env,
+      })
 
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })
       const res = await app.request("/api/agents")
@@ -595,5 +970,50 @@ describe("HTTP /api/agents", () => {
       expect(body.agents[0].lastMessageAt).toBeNull()
       expect(body.agents[0].attachedVia).toBeUndefined()
     })
+  })
+})
+
+describe("DELETE /api/agents (bulk)", () => {
+  it("🔴 ends every agent and reports them by id", async () => {
+    const { app } = makeApp()
+    for (const _ of [1, 2, 3]) {
+      await app.request("/api/agents", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cliKind: "opencode", cwd: "/tmp" }),
+      })
+    }
+
+    const res = await app.request("/api/agents", { method: "DELETE" })
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { closed: string[]; failed: unknown[] }
+    expect(body.closed).toHaveLength(3)
+    expect(body.failed).toEqual([])
+
+    const after = (await (await app.request("/api/agents")).json()) as { agents: unknown[] }
+    expect(after.agents).toEqual([])
+  })
+
+  it("an empty registry answers 200 with nothing closed, not 404", async () => {
+    const { app } = makeApp()
+    const res = await app.request("/api/agents", { method: "DELETE" })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ closed: [], failed: [] })
+  })
+
+  it("🔴 the bulk route does not shadow DELETE of a single agent", async () => {
+    // Hono matches in order; registering `:id` first would swallow `/api/agents`,
+    // and registering the bulk route without care could swallow the specific one.
+    const { app } = makeApp()
+    const created = (await (
+      await app.request("/api/agents", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ cliKind: "opencode", cwd: "/tmp" }),
+      })
+    ).json()) as { agentId: string }
+
+    const one = await app.request(`/api/agents/${created.agentId}`, { method: "DELETE" })
+    expect(one.status).toBe(204)
   })
 })

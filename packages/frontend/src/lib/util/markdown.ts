@@ -2,30 +2,28 @@
  * markdown.ts — renderMarkdown ל-HTML מחוטא, עם רינדור KaTeX (LaTeX math)
  *               + צביעת syntax (code-highlight, slice-code-syntax-highlight).
  *
- * ── Pipeline (four-pass) ────────────────────────────────────────────────────
- * renderMarkdown(text):
- *   1. parseToHtml(text) [markdown-parse.ts] — מנרמל bidi, marked.parse עם 4 extensions:
- *        tokenizer מזהה $$..$$  \[..\]  $.$  \(..\)  (block לפני inline)
- *        renderer.code קורא highlightCode → שומר HTML ב-currentMap[katexCount..] → מחזיר BLOCK_SENTINEL
- *        renderer katex: קורא katex.renderToString → שומר HTML ב-currentMap[0..n-1] → מחזיר BLOCK/INLINE_SENTINEL
- *        placeholder = sentinels PUA (U+E000/E001) — שורדים marked+DOMPurify כטקסט.
- *      → { html: markdownHtml, katexFragments (indexes 0..n), codeFragments (indexes n..) }
- *   2. DOMPurify.sanitize(markdownHtml, MARKDOWN_ALLOW) — allowlist שמרני, ללא span/style/class.
- *      ה-sentinels = טקסט → שורדים. <span style> גולמי של מודל → נמחק. ← הלב האבטחתי.
- *   3a. כל KaTeX HTML ב-katexFragments: DOMPurify.sanitize(katexHtml, KATEX_ALLOW) — allowlist נדיב.
- *   3b. כל code HTML ב-codeFragments: DOMPurify.sanitize(codeHtml, CODE_ALLOW) — allowlist צר (span+class).
- *   4. החלף sentinels ב-cleanKatex[i] + cleanCode[i] → תוצאה סופית.
+ * ── Pipeline (five-pass) ────────────────────────────────────────────────────
+ * renderMarkdown(text, opts?):
+ *   1. parseToHtml(text, opts) [markdown-parse.ts] — marked.parse + renderer.image/code/katex:
+ *        renderer.image → decideImageSrc → storeImagePlaceholder (BLOCK_SENTINEL) or canonical text
+ *      → { html, katexFragments, codeFragments, imageFragments, fragmentKinds }
+ *   2. DOMPurify.sanitize(markdownHtml, MARKDOWN_ALLOW) — allowlist שמרני, ללא span/style/class/img.
+ *      raw <img> from model → stripped. Only our fragments become images (pass-3c).
+ *   3a. KaTeX → KATEX_ALLOW
+ *   3b. code → CODE_ALLOW
+ *   3c. image → IMG_ALLOW (img + src/alt/title only)
+ *   4. Replace sentinels via fragmentKinds[] (ki/ci/ii counters).
  *
  * ── Storage architecture ─────────────────────────────────────────────────────
  * currentMap[i] = כל ה-fragments (KaTeX + code) בסדר גלובלי (לפי סדר הופעה בטקסט).
- * fragmentKinds[i] = "katex" | "code" — מסווג כל index; עמיד לסדר (code-first-then-katex).
+ * fragmentKinds[i] = "katex" | "code" | "image" — מסווג כל index; עמיד לסדר.
  * ⚠️ U+E002 נמחק ע"י DOMPurify — לכן code fragments משתמשים ב-BLOCK_SENTINEL (U+E000).
  *
  * ── Security invariant ──────────────────────────────────────────────────────
  *  `style` מותר רק ב-KATEX_ALLOW כי ה-input הוא KaTeX generated (trust:false).
  *  `class` מותר רק ב-CODE_ALLOW (מסלול hljs) + KATEX_ALLOW — לא ב-MARKDOWN_ALLOW.
- *  MARKDOWN_ALLOW לעולם בלי span/style/class — secure by construction נגד
- *  overlay-phishing מ-prompt-injection (המודל פולט <span style="position:fixed">).
+ *  MARKDOWN_ALLOW לעולם בלי span/style/class/img — raw <img> from model stays blocked.
+ *  Images enter only via isolated pass-3c (IMG_ALLOW) on fragments we built in renderer.image.
  *  CODE_ALLOW: pre/code/span + class בלבד (ללא style) — hljs פולט class-only, מאומת אמפירית.
  *
  * ── SSR ─────────────────────────────────────────────────────────────────────
@@ -35,7 +33,9 @@
  */
 
 import DOMPurify from "dompurify"
-import { BLOCK_SENTINEL, INLINE_SENTINEL, parseToHtml } from "./markdown-parse"
+import { BLOCK_SENTINEL, INLINE_SENTINEL, parseToHtml, type MarkdownRenderOptions } from "./markdown-parse"
+
+export type { MarkdownRenderOptions }
 
 // ─── Re-export normalizeInvisibles לנוחות הטסטים ────────────────────────────
 export { normalizeInvisibles } from "./markdown-parse"
@@ -157,6 +157,10 @@ const KATEX_ATTR = [
 const CODE_TAGS = ["pre", "code", "span"]
 const CODE_ATTR = ["class"]
 
+// IMG_ALLOW: images from renderer.image only — img + src/alt/title.
+const IMG_TAGS = ["img"]
+const IMG_ATTR = ["src", "alt", "title"]
+
 // ─── DOMPurify hook (נרשם פעם אחת ברמת מודול) ────────────────────────────────
 if (typeof document !== "undefined") {
   DOMPurify.addHook("afterSanitizeAttributes", (node) => {
@@ -177,21 +181,27 @@ if (typeof document !== "undefined") {
  * מרנדר Markdown ל-HTML מחוטא, עם תמיכה ב-KaTeX LaTeX + syntax highlighting.
  * בטוח לשימוש עם {@html} בתוך קומפוננטות Svelte.
  */
-export function renderMarkdown(text: string): string {
+export function renderMarkdown(text: string, opts?: MarkdownRenderOptions): string {
   if (text.length === 0) return ""
 
-  // Pass 1: parseToHtml → { html, katexFragments, codeFragments, fragmentKinds }
-  // fragmentKinds[] מסווג כל global index כ-"katex" או "code" — עמיד לסדר.
-  const { html: markdownHtml, katexFragments, codeFragments, fragmentKinds } = parseToHtml(text)
+  const {
+    html: markdownHtml,
+    katexFragments,
+    codeFragments,
+    imageFragments,
+    fragmentKinds,
+  } = parseToHtml(text, opts)
 
   // SSR path — שחזר fragments לפי global index (לא מחייב DOMPurify)
   if (typeof document === "undefined") {
-    // בנה allFragments לפי global index בעזרת fragmentKinds
     let ki = 0
     let ci = 0
-    const allFragments = fragmentKinds.map((kind) =>
-      kind === "katex" ? (katexFragments[ki++] ?? "") : (codeFragments[ci++] ?? ""),
-    )
+    let ii = 0
+    const allFragments = fragmentKinds.map((kind) => {
+      if (kind === "katex") return katexFragments[ki++] ?? ""
+      if (kind === "code") return codeFragments[ci++] ?? ""
+      return imageFragments[ii++] ?? ""
+    })
     return replacePlaceholders(markdownHtml, allFragments)
   }
 
@@ -220,14 +230,24 @@ export function renderMarkdown(text: string): string {
     }),
   )
 
+  // Pass 3c: sanitize image fragments — img + src/alt/title only
+  const cleanImage = imageFragments.map((imageHtml) =>
+    DOMPurify.sanitize(imageHtml, {
+      ALLOWED_TAGS: IMG_TAGS,
+      ALLOWED_ATTR: IMG_ATTR,
+      ALLOW_DATA_ATTR: false,
+    }),
+  )
+
   // Pass 4: replace sentinels
-  // allClean[] נבנה לפי global index בעזרת fragmentKinds — עמיד לסדר (F1 fix).
-  // code-first-then-katex ו-katex-first-then-code מיופו נכון לפי sentinel index.
   let ki = 0
   let ci = 0
-  const allClean = fragmentKinds.map((kind) =>
-    kind === "katex" ? (cleanKatex[ki++] ?? "") : (cleanCode[ci++] ?? ""),
-  )
+  let ii = 0
+  const allClean = fragmentKinds.map((kind) => {
+    if (kind === "katex") return cleanKatex[ki++] ?? ""
+    if (kind === "code") return cleanCode[ci++] ?? ""
+    return cleanImage[ii++] ?? ""
+  })
   return replacePlaceholders(cleanMarkdown, allClean)
 }
 

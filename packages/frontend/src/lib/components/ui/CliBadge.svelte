@@ -15,24 +15,14 @@
  *
  * §9 Q2: אין ולידציית-אורך ל-displayName בסכימה — המיטיגציה כאן: max-width +
  * text-overflow:ellipsis על התווית.
- *
- * לוגו (slice cli-logo-serving): `logo` הוא prop אופציונלי — קורא שלא מעביר אותו
- * מקבל מונוגרמה תמיד (fail-safe, לא כשל שקט של "בלי כלום"). כשקיים, `<img>` מוגש
- * מ-`/api/cli-logo/:id` (id-keyed, ר' §3 בבריף) דרך `beUrl()` — לא נתיב-שורש קשיח,
- * כי בפריסת CF Pages ה-BE יושב על origin אחר ונתיב קשיח ייכשל תמיד. `onerror` →
- * `failed=true` → נפילה חזרה למונוגרמה, בלי שגיאה גלויה למשתמש.
- *
- * לוגו מרוחק (Commit 3, בקשת משתמשת): אם `logo` הוא URL (`http://`/`https://`,
- * `isRemoteLogo()`) — הדפדפן מושך אותו **ישירות** (`<img src={logo}>`), לא דרך
- * ה-BE. ה-BE לעולם לא מושך URL מרוחק מטעם ה-client — זה משטח-SSRF.
  */
-import { beUrl } from "$lib/util/be-url"
 import {
   cliColorHue,
   cliDisplayName,
   cliLogoKey,
   cliMonogram,
-  isRemoteLogo,
+  isTintableLogo,
+  resolveCliLogoUrl,
 } from "$lib/util/cli-display"
 
 interface Props {
@@ -51,16 +41,9 @@ const monogram = $derived(cliMonogram(label))
 const hue = $derived(cliColorHue(id))
 const monogramBg = $derived(`color-mix(in srgb, hsl(${hue} 70% 55%) 22%, transparent)`)
 const monogramFg = $derived(`hsl(${hue} 70% 45%)`)
-// 🔴 logo מרוחק (http/https, slice cli-logo-serving Commit 3) → הדפדפן מושך
-// ישירות מה-URL. logo מקומי (נתיב-קובץ) → דרך ה-BE (id-keyed, §3 בבריף). ה-BE
-// **אף פעם** לא נוגע ב-URLs מרוחקים — אחרת ה-endpoint הופך ל-proxy עם משטח-SSRF.
-const logoUrl = $derived(
-  logo ? (isRemoteLogo(logo) ? logo : beUrl(`/api/cli-logo/${id}`)) : undefined,
-)
+const logoUrl = $derived(logo ? resolveCliLogoUrl(id, logo) : undefined)
 
-// 🔴 `failed` חייב להתאפס כש-id/logo משתנים — אחרת אחרי החלפת CLI שבור אחד,
-// הנפילה-למונוגרמה "דבקה" גם ל-CLI הבא (לא רק לזה שבאמת נכשל). cliLogoKey
-// יוצר מפתח יציב מ-(id,logo); ה-$effect רץ בכל שינוי שלו ומאפס את failed.
+// 🔴 `failed` חייב להתאפס כש-id/logo משתנים
 const logoKey = $derived(cliLogoKey(id, logo))
 let failed = $state(false)
 $effect(() => {
@@ -69,30 +52,39 @@ $effect(() => {
 })
 </script>
 
-{#if variant === "badge"}
-  <span class="cli-badge">
-    {#if logoUrl && !failed}
-      <img
-        class="cli-badge-monogram"
-        src={logoUrl}
-        alt=""
-        onerror={() => (failed = true)}
-      />
-    {:else}
-      <span class="cli-badge-monogram" style="background:{monogramBg}; color:{monogramFg}"
-        >{monogram}</span
-      >
-    {/if}
-    <span class="cli-badge-label" dir="auto">{label}</span>
-  </span>
-{:else if variant === "icon"}
+{#snippet logoMark()}
   {#if logoUrl && !failed}
-    <img class="cli-badge-monogram" src={logoUrl} alt="" onerror={() => (failed = true)} />
+    {#if logo && isTintableLogo(logo)}
+      <span
+        class="cli-badge-monogram cli-badge-logo-tint"
+        style="--logo-mask: url('{logoUrl}')"
+        aria-hidden="true"
+      >
+        <img
+          class="cli-badge-logo-probe"
+          src={logoUrl}
+          alt=""
+          aria-hidden="true"
+          onerror={() => (failed = true)}
+        />
+      </span>
+    {:else}
+      <img class="cli-badge-monogram" src={logoUrl} alt="" onerror={() => (failed = true)} />
+    {/if}
   {:else}
     <span class="cli-badge-monogram" style="background:{monogramBg}; color:{monogramFg}"
       >{monogram}</span
     >
   {/if}
+{/snippet}
+
+{#if variant === "badge"}
+  <span class="cli-badge">
+    {@render logoMark()}
+    <span class="cli-badge-label" dir="auto">{label}</span>
+  </span>
+{:else if variant === "icon"}
+  {@render logoMark()}
 {:else}
   <span dir="auto">{label}</span>
 {/if}
@@ -137,6 +129,30 @@ $effect(() => {
      היחיד — קובץ ה-fixture הוא 64px, בלי זה התמונה הייתה שוברת את ה-badge. */
   img.cli-badge-monogram {
     object-fit: contain;
+  }
+
+  /* Static monochrome logos: mask + currentColor tracks --fg (icon variant too). */
+  .cli-badge-logo-tint {
+    position: relative;
+    color: var(--fg);
+    background-color: currentColor;
+    mask-image: var(--logo-mask);
+    -webkit-mask-image: var(--logo-mask);
+    mask-size: contain;
+    -webkit-mask-size: contain;
+    mask-repeat: no-repeat;
+    -webkit-mask-repeat: no-repeat;
+    mask-position: center;
+    -webkit-mask-position: center;
+  }
+
+  .cli-badge-logo-probe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    pointer-events: none;
   }
 
   /* §9 Q2 — מיטיגציה לשם ארוך: אין ולידציית-אורך בסכימה, אז חיתוך זול פה. */

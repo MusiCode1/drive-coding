@@ -37,10 +37,7 @@ const NOOP_SESSION: WireSession = { record() {}, close() {} }
  * @param opts.dir   תיקיית יעד, או null ל-no-op מוחלט (WIRE_RECORD לא מוגדר).
  * @param opts.now   מקור ts (להזרקה בטסטים). default: Date.now.
  */
-export function createWireRecorder(opts: {
-  dir: string | null
-  now?: () => number
-}): WireRecorder {
+export function createWireRecorder(opts: { dir: string | null; now?: () => number }): WireRecorder {
   const now = opts.now ?? (() => Date.now())
   if (opts.dir === null) {
     return { open: () => NOOP_SESSION }

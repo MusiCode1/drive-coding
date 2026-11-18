@@ -9,6 +9,8 @@
 import type { AgentPublic } from "@drive-coding/core"
 import { listAgents, deleteAgent, setAgentPersistent } from "$lib/adapters/agents-api"
 
+export type AgentGroup = { root: AgentPublic; children: AgentPublic[] }
+
 export class ActiveAgents {
   agents = $state<AgentPublic[]>([])
   loading = $state(false)
@@ -34,5 +36,55 @@ export class ActiveAgents {
   kill = async (id: string): Promise<void> => {
     await deleteAgent(id)
     await this.refresh()
+  }
+
+  /** slice agent-tree-display: קיבוץ סוכני-משנה תחת ההורה (רמה אחת, §3 בבריף). */
+  get grouped(): AgentGroup[] {
+    const agents = this.agents
+    const agentIds = new Set(agents.map((a) => a.id))
+
+    const childrenByParent = new Map<string, AgentPublic[]>()
+    for (const agent of agents) {
+      const parentId = agent.parentAgentId
+      if (parentId !== undefined && parentId !== agent.id) {
+        const siblings = childrenByParent.get(parentId) ?? []
+        siblings.push(agent)
+        childrenByParent.set(parentId, siblings)
+      }
+    }
+
+    const roots: AgentPublic[] = []
+    for (const agent of agents) {
+      const parentId = agent.parentAgentId
+      if (
+        parentId === undefined ||
+        parentId === agent.id ||
+        !agentIds.has(parentId)
+      ) {
+        roots.push(agent)
+      }
+    }
+
+    const claimed: AgentPublic[] = []
+    for (const root of roots) {
+      const children = childrenByParent.get(root.id)
+      if (children) claimed.push(...children)
+    }
+
+    const accounted = new Set<string>()
+    for (const root of roots) accounted.add(root.id)
+    for (const child of claimed) accounted.add(child.id)
+
+    const leftover = agents.filter((a) => !accounted.has(a.id))
+
+    const grouped: AgentGroup[] = roots.map((root) => ({
+      root,
+      children: childrenByParent.get(root.id) ?? [],
+    }))
+    for (const agent of leftover) {
+      grouped.push({ root: agent, children: [] })
+    }
+
+    return grouped
   }
 }

@@ -83,7 +83,7 @@ $effect(() => {
         data-index={i}
         aria-selected={i === selectedIndex}
         dir="ltr"
-        class="w-full text-left px-3 py-2 text-sm flex flex-col gap-0.5"
+        class="w-full text-start px-3 py-2 text-sm flex flex-col gap-0.5"
         style={i === selectedIndex ? "background:color-mix(in srgb, var(--accent) 18%, transparent)" : ""}
         onclick={() => onselect(cmd)}
       >

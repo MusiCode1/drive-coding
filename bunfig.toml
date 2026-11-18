@@ -1,0 +1,19 @@
+# bunfig מקומי — מנתק את הפרויקט מה-store הגלובלי של bun.
+#
+# הרקע: ~/.bunfig.toml הגלובלי מגדיר linker="isolated" + globalStore=true, כלומר
+# node_modules/.bun מסמלק אל ~/.bun/install/cache/links/. כשהמטמון הגלובלי נגזם
+# (לחץ-דיסק במכונה), הסימלינקים בכל העצים תלויים בבת-אחת וכל spawn חדש קורס
+# (למשל ENOENT על pino). ראו החקירה 2026-09-21.
+#
+# הפתרון (מאומת אמפירית, אותו filesystem):
+#   globalStore=false  → ה-store יושב בתוך node_modules/.bun כתיקיות אמיתיות,
+#                        לא כסימלינק לגלובלי → גזירת המטמון לא שוברת את הפרויקט.
+#   backend="hardlink" → הקבצים חולקים inode עם מטמון-ההורדה (ניטרלי-דיסק),
+#                        ושורדים מחיקת-מטמון דרך hardlink refcount.
+#   linker="isolated"  → נשמר כמו הקונפיג הגלובלי (בלי שינוי dependency-resolution).
+#
+# הפעלה: דורש `bun install` (לפרוס מחדש את node_modules) + restart ל-BE.
+[install]
+linker = "isolated"
+globalStore = false
+backend = "hardlink"

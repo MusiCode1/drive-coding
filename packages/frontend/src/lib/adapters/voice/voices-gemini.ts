@@ -20,6 +20,9 @@ export interface GeminiVoice {
 /** ברירת מחדל — זהה לקבוע שהיה ב-resolveTts לפני V4b. */
 export const DEFAULT_GEMINI_VOICE = "Kore"
 
+/** ברירת מחדל ל-Live secretary — נפרד מ-TTS (מלכודת Kore↔Kore). */
+export const DEFAULT_LIVE_VOICE = "Puck"
+
 /**
  * 30 קולות prebuilt של Gemini TTS.
  * מקור: ai.google.dev/gemini-api/docs/speech-generation (אומת 2026-06-29).

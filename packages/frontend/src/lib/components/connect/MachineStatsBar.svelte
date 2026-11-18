@@ -1,9 +1,10 @@
 <script lang="ts">
 /**
- * MachineStatsBar — מחוון RAM/CPU קומפקטי בראש "תהליכים פעילים".
+ * MachineStatsBar — מחוון RAM/CPU קומפקטי.
  *
- * רכיב מצגת טהור (props בלבד, אין fetch/state כאן — ה-fetch ב-ActiveProcessesPanel
- * דרך getMachineStats() על אותו poll קיים, 12s). null → לא מציג כלום (לא "0%").
+ * רכיב מצגת טהור (props בלבד, אין fetch/state כאן). null → לא מציג כלום (לא "0%").
+ * צרכנים: ActiveProcessesPanel (מסך חיבור, /api/diag) ו-SessionOptionsPanel
+ * (בתוך סשן, presence poller.machine).
  *
  * ─── system ─── (slice-be-machine-stats Commit 3)
  */

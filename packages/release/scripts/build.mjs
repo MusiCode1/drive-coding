@@ -43,6 +43,8 @@ const backendBinEntry = path.join(repoRoot, "packages", "backend", "src", "bin",
 
 const releaseFrontendDist = path.join(releaseDir, "frontend-dist")
 const releasePlugins = path.join(releaseDir, "plugins")
+const releaseDocsAgents = path.join(releaseDir, "docs-agents")
+const repoDocsAgents = path.join(repoRoot, "docs", "agents")
 const releaseDist = path.join(releaseDir, "dist")
 const releaseBinOut = path.join(releaseDist, "drive-coding.js")
 
@@ -59,8 +61,20 @@ const KNOWN_PM = ["bun", "pnpm", "npm", "yarn"]
 const detected = (await detect())?.name
 const pm = KNOWN_PM.includes(detected) ? detected : "bun"
 console.log(`[build] Step 1: building frontend (pm: ${pm})…`)
+// FE_ENV is pinned to "prod" and NOT inherited. Measured 2026-08-27: the shell that
+// ran this build had FE_ENV=preview (it belongs to the drive-coding-dev systemd unit),
+// so the published 0.34.0 shipped `<title>Preview · Drive Coding</title>`, source maps,
+// and the __dc playback debug panel ENABLED (vite.config.ts: DC_ENABLED = FE_ENV !== "prod").
+// A published package must never depend on the publisher's environment.
 const [feCmd, feArgs] = runFilterArgs("@drive-coding/frontend", "build", pm)
-runPm(feCmd, feArgs, { cwd: repoRoot, stdio: "inherit" })
+// NOTE: FE_TITLE / FE_PREVIEW_LABEL must be DELETED, not set to "". vite.config.ts reads
+// `process.env.FE_TITLE ?? <default>` — `??` does not treat "" as absent, so an empty
+// string wins and the title becomes literally empty. Measured: the Step 2c assertion
+// caught exactly that on the first run.
+const feEnv = { ...process.env, FE_ENV: "prod", FE_SOURCEMAP: "false" }
+delete feEnv.FE_TITLE
+delete feEnv.FE_PREVIEW_LABEL
+runPm(feCmd, feArgs, { cwd: repoRoot, stdio: "inherit", env: feEnv })
 
 // Step 2: Copy frontend/build → release/frontend-dist
 console.log("[build] Step 2: copying frontend-dist…")
@@ -75,10 +89,75 @@ if (existsSync(releaseFixtures)) {
   console.log("[build] Step 2b: stripped DEV fixtures from release frontend-dist")
 }
 
+// Step 2c: assert the release copy is a PROD build. These two checks are the gate for
+// the FE_ENV leak above — both were RED on the 0.34.0 artifact.
+const indexHtml = readFileSync(path.join(releaseFrontendDist, "index.html"), "utf8")
+const titleMatch = indexHtml.match(/<title>([^<]*)<\/title>/)
+if (titleMatch?.[1]?.trim() !== "Drive Coding") {
+  throw new Error(
+    `[build] FE_ENV leak: expected <title>Drive Coding</title>, got <title>${titleMatch?.[1] ?? "?"}</title>`,
+  )
+}
+// ⚠️ "zero occurrences of the debug panel" is NOT achievable, and must not be forced:
+// +layout.svelte gates it on `__DC_ENABLED__ || dcOptIn`, and the code comment states
+// the runtime opt-in is needed *precisely in production* (field bugs that never
+// reproduce in dev). So the panel stays in the bundle — what matters is that it is
+// DISABLED by default. That is measurable, and it is exactly what broke in 0.34.0:
+//   leaked build : localStorage.getItem("__dc"),RP()          ← comparison dropped,
+//                                                               branch always taken
+//   prod build   : localStorage.getItem("__dc")==="1";fe&&RP() ← conditional survives
+const OPT_IN_GUARD = 'getItem("__dc")==="1"'
+const jsFiles = []
+const walk = (dir) => {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name)
+    if (e.isDirectory()) walk(full)
+    else if (e.name.endsWith(".js")) jsFiles.push(full)
+  }
+}
+walk(releaseFrontendDist)
+if (!jsFiles.some((f) => readFileSync(f, "utf8").includes(OPT_IN_GUARD))) {
+  throw new Error(
+    `[build] debug surface is ENABLED by default: the ${OPT_IN_GUARD} guard was tree-shaken away, ` +
+      "which means __DC_ENABLED__ was baked true (FE_ENV was not prod).",
+  )
+}
+const maps = []
+const walkMaps = (dir) => {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name)
+    if (e.isDirectory()) walkMaps(full)
+    else if (e.name.endsWith(".map")) maps.push(e.name)
+  }
+}
+walkMaps(releaseFrontendDist)
+if (maps.length > 0) throw new Error(`[build] source maps leaked into frontend-dist: ${maps.length}`)
+
+console.log("[build] Step 2c: prod assertions OK — clean title, no debug surface")
+
 // Step 3: Copy backend/plugins → release/plugins
 console.log("[build] Step 3: copying plugins…")
 rmSync(releasePlugins, { recursive: true, force: true })
 cpSync(backendPlugins, releasePlugins, { recursive: true })
+
+// Step 3b: Copy docs/agents → release/docs-agents (npm bundle path for agent docs).
+console.log("[build] Step 3b: copying docs-agents…")
+rmSync(releaseDocsAgents, { recursive: true, force: true })
+cpSync(repoDocsAgents, releaseDocsAgents, { recursive: true })
+const docsIndexPath = path.join(releaseDocsAgents, "index.json")
+if (!existsSync(docsIndexPath)) {
+  throw new Error("[build] docs-agents/index.json missing after copy")
+}
+const docsIndex = JSON.parse(readFileSync(docsIndexPath, "utf8"))
+const expectedDocCount = readdirSync(releaseDocsAgents).filter(
+  (name) => name.endsWith(".md") && name !== "index.md",
+).length
+if (!Array.isArray(docsIndex.docs) || docsIndex.docs.length !== expectedDocCount) {
+  throw new Error(
+    `[build] docs-agents/index.json expected ${expectedDocCount} docs, got ${docsIndex.docs?.length ?? "?"}`,
+  )
+}
+console.log(`[build] Step 3b: docs-agents OK — ${expectedDocCount} documents`)
 
 // Step 4: Bundle backend bin with `bun build --target=node` (core + provider-contract inline).
 // --target=node → a Node-runnable bundle so `npx drive-coding` works, not only `bunx`.

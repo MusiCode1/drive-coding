@@ -188,7 +188,9 @@ function main() {
   }
 
   if (badFiles.length > 0) {
-    process.stderr.write("Physical direction classes/properties found (use logical equivalents):\n\n")
+    process.stderr.write(
+      "Physical direction classes/properties found (use logical equivalents):\n\n",
+    )
     for (const [absPath, violations] of badFiles) {
       const rel = relative(REPO_ROOT, absPath).split("\\").join("/")
       process.stderr.write(`  ${rel}\n`)
@@ -197,9 +199,7 @@ function main() {
       }
       process.stderr.write("\n")
     }
-    process.stderr.write(
-      `✗ ${badFiles.length} file(s), ${totalViolations} violation(s).\n\n`,
-    )
+    process.stderr.write(`✗ ${badFiles.length} file(s), ${totalViolations} violation(s).\n\n`)
     process.stderr.write(
       "Fix: replace physical classes (pl-*, pr-*, ml-*, mr-*, border-l/r-*, rounded-l/r-*)\n",
     )

@@ -9,7 +9,7 @@
  *   - SSE response headers (Content-Type: text/event-stream)
  *   - snapshot as first frame (event: snapshot)
  *   - patches streamed as subsequent frames (event: patch)
- *   - register-then-snapshot order (subscribe before snapshot)
+ *   - register-then-snapshot order (snapshot read before filtered subscribe)
  *   - client disconnect → broadcaster.unsubscribe called
  */
 
@@ -19,9 +19,11 @@ import {
   STREAM_ALIVE_INTERVAL_MS,
   StreamAliveNotification,
 } from "@drive-coding/core/session"
+import { addSink, type LogEntry } from "@drive-coding/core/log"
 import { type } from "arktype"
 import { Hono } from "hono"
 import { describe, expect, it, vi } from "vitest"
+import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
 import { createPatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
@@ -47,12 +49,18 @@ function makeMockHost(state: SessionState): ExtendedSessionHost {
     setConfigOption: vi.fn().mockResolvedValue(undefined),
     setSessionModel: vi.fn().mockResolvedValue(undefined),
     extMethod: vi.fn().mockResolvedValue({}),
+    emitExtNotification: vi.fn(),
     respondPermission: vi.fn(),
     respondElicitation: vi.fn(),
+    isScopeRequest: () => false,
+    requestScopePermission: vi.fn().mockResolvedValue("deny"),
     listSessions: vi.fn().mockResolvedValue({}),
     deleteSession: vi.fn().mockResolvedValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),
     agentCapabilities: {},
+    getTurnStartedAt: () => 0,
+    getStallReported: () => false,
+    markStallReported: () => {},
   }
 }
 
@@ -65,6 +73,9 @@ function makeMockBroadcaster(patchStream?: ReadableStream<Patch>): PatchesBroadc
     subscribe: subscribeFn,
     unsubscribe: unsubscribeFn,
     close: closeFn,
+    // slice history-cursor C2 — ברירת-מחדל "חוצץ ריק": השומר שותק, ולכן כל
+    // הטסטים שקדמו לסלייס רואים בדיוק את מה שראו קודם.
+    oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
   }
 }
 
@@ -89,9 +100,38 @@ function makeMockRegistry(
     unregisterHost: vi.fn(),
     notifySessionAttached: vi.fn().mockResolvedValue(undefined),
     getCwd: vi.fn().mockReturnValue(undefined),
+    getCliKind: vi.fn(),
     getEpoch: vi.fn().mockReturnValue(0),
-    touchOwner: vi.fn(),
+    touchConnection: vi.fn(),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
+    getConnectionCount: vi.fn().mockReturnValue(0),
+    stop: vi.fn(),
+  }
+}
+
+function makeMockConnectionRegistry(): ConnectionRegistry {
+  return {
+    addConnection: vi.fn(),
+    removeConnection: vi.fn(),
+    touchConnection: vi.fn(),
+    clearAllConnections: vi.fn(),
+    getConnectionCount: vi.fn(() => 0),
+    connect: vi.fn(),
+    get: vi.fn(),
+    getCwd: vi.fn(),
+    getCharter: vi.fn(() => undefined),
+    consumeCharter: vi.fn(() => undefined),
+    getCliKind: vi.fn(),
+    list: vi.fn(() => []),
+    isAttached: vi.fn(() => false),
+    getEpoch: vi.fn(() => 0),
+    isOwnedByWs: vi.fn(() => false),
+    getRuntimeInfo: vi.fn(() => null),
+    getLastSeenAt: vi.fn(() => null),
+    listHttpConnectionIds: vi.fn(() => []),
+    close: vi.fn(),
+    onCrash: vi.fn(() => () => {}),
+    setWsSocketChecker: vi.fn(),
   }
 }
 
@@ -160,7 +200,7 @@ function makeRawSseReader(response: Response) {
 
 function makeApp(registry: AgentSessionRegistry, opts?: RegisterEventsRouteOptions): Hono {
   const app = new Hono()
-  registerEventsRoute(app, registry, opts)
+  registerEventsRoute(app, registry, makeMockConnectionRegistry(), opts)
   return app
 }
 
@@ -234,20 +274,21 @@ describe("GET /api/agents/:id/events", () => {
     })
   })
 
-  describe("register-then-snapshot: subscribe before snapshot", () => {
-    it("calls broadcaster.subscribe before reading host.state (snapshot)", async () => {
+  describe("snapshot-then-filtered-subscribe", () => {
+    it("reads host.state before subscribe, passes snapshot.version, with no await between", async () => {
       const callOrder: string[] = []
-      const state = makeMockState({ title: "Test Session" })
+      const state = makeMockState({ title: "Test Session", version: 7 })
 
-      // Track call order via custom getters
       const subscribeStream = new ReadableStream<Patch>({ start() {} })
       const broadcaster: PatchesBroadcaster = {
-        subscribe: vi.fn().mockImplementation(() => {
-          callOrder.push("subscribe")
+        subscribe: vi.fn().mockImplementation((sinceVersion?: number) => {
+          callOrder.push(`subscribe:${sinceVersion ?? "all"}`)
           return subscribeStream
         }),
         unsubscribe: vi.fn(),
         close: vi.fn(),
+        // slice history-cursor C2: חבר חדש בחוזה PatchesBroadcaster.
+        oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
       }
 
       const host: ExtendedSessionHost = {
@@ -264,25 +305,31 @@ describe("GET /api/agents/:id/events", () => {
         setConfigOption: vi.fn().mockResolvedValue(undefined),
         setSessionModel: vi.fn().mockResolvedValue(undefined),
         extMethod: vi.fn().mockResolvedValue({}),
+        emitExtNotification: vi.fn(),
         respondPermission: vi.fn(),
         respondElicitation: vi.fn(),
+        isScopeRequest: () => false,
+        requestScopePermission: vi.fn().mockResolvedValue("deny"),
         listSessions: vi.fn().mockResolvedValue({}),
         deleteSession: vi.fn().mockResolvedValue(undefined),
         dispose: vi.fn().mockResolvedValue(undefined),
         agentCapabilities: {},
+        getTurnStartedAt: () => 0,
+        getStallReported: () => false,
+        markStallReported: () => {},
       }
 
       const registry = makeMockRegistry({ host, broadcaster })
       const app = makeApp(registry)
 
       const res = await app.request("/api/agents/agent-1/events")
-      // Read at least 1 event (the snapshot) to ensure route executed
       await readSseEvents(res, 1, 200)
 
-      const subscribeIdx = callOrder.indexOf("subscribe")
-      const stateIdx = callOrder.indexOf("read-state")
-      expect(subscribeIdx).toBeGreaterThanOrEqual(0)
-      expect(stateIdx).toBeGreaterThan(subscribeIdx) // subscribe BEFORE snapshot
+      const readIdx = callOrder.indexOf("read-state")
+      const subscribeIdx = callOrder.indexOf("subscribe:7")
+      expect(readIdx).toBeGreaterThanOrEqual(0)
+      expect(subscribeIdx).toBeGreaterThan(readIdx)
+      expect(broadcaster.subscribe).toHaveBeenCalledWith(7)
     })
   })
 
@@ -306,8 +353,15 @@ describe("GET /api/agents/:id/events", () => {
       const dataLine = first.split("\n").find((l) => l.startsWith("data: "))
       expect(dataLine).toBeDefined()
       const json = JSON.parse(dataLine!.slice("data: ".length))
-      expect(json.title).toBe("Hello World")
+      // ─── slice acp-wire-session-update ───
+      // ה-snapshot אינו `SessionState` גולמי יותר אלא **רצף `session/update`**.
+      // ‏`version` נשאר בשורש (הוא מונה-תעבורה, לא מצב-סשן); `title` נוסע
+      // בתוך `session_info_update` — כלומר כפי שהפרוטוקול מבטא אותו.
       expect(json.version).toBe(5)
+      const info = (json.updates as Array<Record<string, unknown>>).find(
+        (u) => u.sessionUpdate === "session_info_update",
+      )
+      expect(info?.title).toBe("Hello World")
     })
   })
 
@@ -337,12 +391,22 @@ describe("GET /api/agents/:id/events", () => {
       const events = await readSseEvents(res, 2, 300)
       expect(events.length).toBeGreaterThanOrEqual(2)
 
-      const patchEvent = events.find((e) => e.includes("event: patch"))
-      expect(patchEvent).toBeDefined()
-      const dataLine = patchEvent!.split("\n").find((l) => l.startsWith("data: "))
-      const json = JSON.parse(dataLine!.slice("data: ".length))
-      expect(json.version).toBe(1)
-      expect(json.op).toBe("update-session")
+      // ─── slice acp-wire-session-update ───
+      // הפריים הוא `event: update`, ה-`version` יושב ב-`id:`, וה-`data` הוא
+      // **batch של JSON-RPC** — patch אחד יכול להתפצל לכמה `session/update`.
+      const updateEvent = events.find((e) => e.includes("event: update"))
+      expect(updateEvent).toBeDefined()
+      expect(updateEvent).toContain("id: 1")
+      const dataLine = updateEvent!.split("\n").find((l) => l.startsWith("data: "))
+      const batch = JSON.parse(dataLine!.slice("data: ".length)) as Array<{
+        jsonrpc: string
+        method: string
+        params: { update: { sessionUpdate: string; title?: string } }
+      }>
+      expect(batch[0]!.jsonrpc).toBe("2.0")
+      expect(batch[0]!.method).toBe("session/update")
+      expect(batch[0]!.params.update.sessionUpdate).toBe("session_info_update")
+      expect(batch[0]!.params.update.title).toBe("Updated")
     })
   })
 })
@@ -406,7 +470,11 @@ describe("GET /api/agents/:id/events — ownership-handoff C3", () => {
       expect(events.length).toBeGreaterThanOrEqual(1)
       const first = events[0]!
       expect(first).toContain("event: snapshot")
-      expect(first).toContain("id: 3")
+      // ⚠️ ה-`id:` הוא ה-**version** ולא ה-epoch. שני מונים שונים: ה-epoch
+      // אומר *מי מחזיק בזרם*, וה-version אומר *איפה אנחנו ברצף* — ורק השני
+      // הוא מה ש-`Last-Event-ID` יוכל להמשיך ממנו. ה-epoch עבר לגוף ההודעה.
+      const epochData = first.split("\n").find((l) => l.startsWith("data: "))!
+      expect(JSON.parse(epochData.slice("data: ".length)).epoch).toBe(3)
     })
   })
 
@@ -696,5 +764,159 @@ describe("keepalive timer (slice host-result-reason C2 — no real-time wait)", 
     expect(res.status).toBe(200)
 
     sse.cancel()
+  })
+})
+
+// ─── slice history-cursor C2: שומר-הפער ──────────────────────────────────────
+//
+// 🔴 **AGENTS.md: "a fail-open path is not implemented until its silence is
+// pinned".** השומר הזה מדווח ואינו משנה התנהגות, כלומר הוא בדיוק הצורה
+// המסוכנת: שתיקה של מנגנון בריא ושתיקה של מנגנון מת נראות זהות. ⇒ **שני**
+// הענפים נבדקים — שותק כשאין פער, ו**יורה** כשמזריקים אחד.
+//
+// מה שהוא אוכף הוא ההנחה המתועדת ב-events.ts: "No await between — host.state
+// and subscribe() are both synchronous". אם בין השניים ייפלטו ויפונו patches,
+// ‏`subscribe(snapshot.version)` יחזיר פריימים שמתחילים אחרי הפער והלקוח לא
+// יראה סימן.
+
+describe("שומר-הפער — oldestBufferedVersion מול snapshot.version (slice history-cursor C2)", () => {
+  /** אוסף את שורות ה-warn של ה-namespace הזה בלבד. */
+  function captureWarns(): { warns: LogEntry[]; stop: () => void } {
+    const warns: LogEntry[] = []
+    const stop = addSink((e) => {
+      if (e.level === "warn" && e.ns === "backend.session-host.events") warns.push(e)
+    })
+    return { warns, stop }
+  }
+
+  /** broadcaster מוק שה-oldestBufferedVersion שלו מוכתב מבחוץ. */
+  function broadcasterWithOldest(oldest: number | undefined): PatchesBroadcaster {
+    return { ...makeMockBroadcaster(), oldestBufferedVersion: vi.fn().mockReturnValue(oldest) }
+  }
+
+  async function run(broadcaster: PatchesBroadcaster, version: number): Promise<string[]> {
+    const host = makeMockHost(makeMockState({ version, title: "כותרת" }))
+    const registry = makeMockRegistry({ host, broadcaster })
+    const res = await makeApp(registry).request("/api/agents/agent-1/events")
+    return readSseEvents(res, 1, 200)
+  }
+
+  it("🔴 ‏פער מוזרק (oldest = snapshot.version + 5) — השומר **יורה**, warn אחד עם שני המספרים", async () => {
+    const { warns, stop } = captureWarns()
+    try {
+      await run(broadcasterWithOldest(15), 10)
+    } finally {
+      stop()
+    }
+
+    expect(warns).toHaveLength(1)
+    expect(warns[0]!.fields).toMatchObject({ snapshotVersion: 10, oldestBufferedVersion: 15 })
+  })
+
+  it("‏מסלול תקין, **חוצץ לא-ריק** — השומר שותק, וההשוואה רצה על מספר אמיתי", async () => {
+    // 🔴 חוצץ ריק כאן היה מקרה `undefined` מחופש: הענף הראשון של השומר היה
+    // חוסם, וההשוואה שאנחנו רוצים לקבע לא הייתה רצה כלל. ⇒ broadcaster
+    // **אמיתי** עם patches בחוצץ, ו-snapshot.version שמכסה אותם.
+    const { stream, push } = (() => {
+      let ctrl!: ReadableStreamDefaultController<Patch>
+      const s = new ReadableStream<Patch>({
+        start(c) {
+          ctrl = c
+        },
+      })
+      return { stream: s, push: (p: Patch) => ctrl.enqueue(p) }
+    })()
+    const broadcaster = createPatchesBroadcaster(stream)
+    push({ version: 3, op: "update-session", changes: { title: "a" } })
+    push({ version: 4, op: "update-session", changes: { title: "b" } })
+    await new Promise((r) => setTimeout(r, 20))
+
+    // החוצץ מתחיל ב-3, ה-snapshot ב-9 ⇒ oldest <= snapshot.version, מספר אמיתי.
+    expect(broadcaster.oldestBufferedVersion()).toBe(3)
+
+    const { warns, stop } = captureWarns()
+    try {
+      const events = await run(broadcaster, 9)
+      expect(events[0]).toContain("event: snapshot")
+    } finally {
+      stop()
+    }
+
+    expect(warns).toHaveLength(0)
+  })
+
+  it("‏oldestBufferedVersion מחזיר undefined — שותק", async () => {
+    const { warns, stop } = captureWarns()
+    try {
+      await run(broadcasterWithOldest(undefined), 10)
+    } finally {
+      stop()
+    }
+
+    expect(warns).toHaveLength(0)
+  })
+
+  it("‏oldest === snapshot.version + 1 — שותק, זה המצב התקין ולא פער", async () => {
+    const { warns, stop } = captureWarns()
+    try {
+      await run(broadcasterWithOldest(11), 10)
+    } finally {
+      stop()
+    }
+
+    expect(warns).toHaveLength(0)
+  })
+
+  it("‏oldest === snapshot.version — שותק (החוצץ מכיל את ה-snapshot עצמו)", async () => {
+    const { warns, stop } = captureWarns()
+    try {
+      await run(broadcasterWithOldest(10), 10)
+    } finally {
+      stop()
+    }
+
+    expect(warns).toHaveLength(0)
+  })
+
+  it("🔴 ‏השומר **מדווח בלבד** — הבתים על החוט זהים עם פער ובלעדיו", async () => {
+    const { stop } = captureWarns()
+    try {
+      const withGap = await run(broadcasterWithOldest(15), 10)
+      const without = await run(broadcasterWithOldest(10), 10)
+      expect(withGap).toEqual(without)
+    } finally {
+      stop()
+    }
+  })
+
+  it("‏oldestBufferedVersion נקרא **אחרי** ה-subscribe, לא בינו לבין ה-snapshot", async () => {
+    // §4.4: `snapshot` ו-`subscribe` נשארים צמודים. הסדר הזה הוא ההנחה
+    // שהשומר אמור לאמת — קריאה שמפרידה ביניהם שוברת בדיוק את מה שנבדק.
+    const order: string[] = []
+    const base = makeMockBroadcaster()
+    const broadcaster: PatchesBroadcaster = {
+      ...base,
+      subscribe: vi.fn((v?: number) => {
+        order.push(`subscribe:${v}`)
+        return base.subscribe(v)
+      }),
+      oldestBufferedVersion: vi.fn(() => {
+        order.push("oldest")
+        return undefined
+      }),
+    }
+    const state = makeMockState({ version: 10 })
+    const host: ExtendedSessionHost = {
+      ...makeMockHost(state),
+      get state() {
+        order.push("read-state")
+        return state
+      },
+    }
+    const registry = makeMockRegistry({ host, broadcaster })
+    const res = await makeApp(registry).request("/api/agents/agent-1/events")
+    await readSseEvents(res, 1, 200)
+
+    expect(order.slice(0, 3)).toEqual(["read-state", "subscribe:10", "oldest"])
   })
 })

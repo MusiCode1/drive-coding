@@ -1,6 +1,6 @@
 {
   "name": "@drive-coding/core",
-  "version": "0.25.0",
+  "version": "0.37.1",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -25,7 +25,11 @@
     "./session": "./src/session/index.ts",
     "./config/*": "./src/config/*.ts",
     "./tts/*": "./src/tts/*.ts",
-    "./usage/*": "./src/usage/*.ts"
+    "./usage/*": "./src/usage/*.ts",
+    "./types/permission": "./src/types/permission.ts",
+    "./types/scope-prompt": "./src/types/scope-prompt.ts",
+    "./session/testing": "./src/session/__testing__/wire-fixtures.ts",
+    "./docs": "./src/docs/index.ts"
   },
   "scripts": {
     "build": "tsc --build",

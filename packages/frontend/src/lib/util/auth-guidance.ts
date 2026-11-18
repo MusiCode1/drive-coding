@@ -22,11 +22,24 @@ export type AuthMethodDisplay =
   | { kind: "terminal"; id: string; name: string; description?: string }
   | { kind: "agent"; id: string; name: string; description?: string }
 
+/**
+ * `env_var` left the SDK's AuthMethod type in 1.4.0, but agents built on older SDKs still send it
+ * on the wire — so it stays accepted here, typed locally.
+ */
+type EnvVarAuthMethod = {
+  type: "env_var"
+  id: string
+  name: string
+  description?: string | null
+  vars: { name: string }[]
+  link?: string | null
+}
+
 function nullableToUndefined(v: string | null | undefined): string | undefined {
   return v ?? undefined
 }
 
-export function describeAuthMethod(m: AuthMethod): AuthMethodDisplay {
+export function describeAuthMethod(m: AuthMethod | EnvVarAuthMethod): AuthMethodDisplay {
   if ("type" in m && m.type === "env_var") {
     return {
       kind: "env_var",

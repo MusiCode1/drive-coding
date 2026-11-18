@@ -13,30 +13,54 @@
  * ─── slice/subagent-transcript-render (Commit 1) — ענף tool מתפצל ל-SubagentBubble/ToolBubble ───
  * prop `depth` — מונע recursion runaway ב-Task-בתוך-Task (SubagentBubble מעביר depth+1;
  * מעבר ל-MAX_NEST_DEPTH מרונדר Task מקונן כ-ToolBubble שטוח, בלי transcript מקונן).
+ *
+ * ─── slice/bubble-alignment-rail (Commit 2) — BubbleRow wraps entire switch ───
+ *
+ * ─── slice codex-voice-poc — voice-conversation messages (`bubble.voice`) take their own
+ *     placement and render as VoiceSpeechBubble / VoiceHandoffBubble ───
  */
 import type { Bubble } from "$lib/types/bubble"
+import { isScopeExpiredToolCall } from "$lib/types/scope-prompt-view"
+import BubbleRow from "./bubbles/BubbleRow.svelte"
 import { isSubagentTask } from "./bubbles/bubble-rendering"
-import UserBubble from "./bubbles/UserBubble.svelte"
+import { bubbleAvatarKind, bubbleSide, voicePlacement } from "./bubbles/bubble-row"
 import MessageBubble from "./bubbles/MessageBubble.svelte"
+import ScopeExpiredNotice from "./bubbles/ScopeExpiredNotice.svelte"
+import SubagentBubble from "./bubbles/SubagentBubble.svelte"
 import ThoughtBubble from "./bubbles/ThoughtBubble.svelte"
 import ToolBubble from "./bubbles/ToolBubble.svelte"
-import SubagentBubble from "./bubbles/SubagentBubble.svelte"
+import UserBubble from "./bubbles/UserBubble.svelte"
+import VoiceHandoffBubble from "./bubbles/VoiceHandoffBubble.svelte"
+import VoiceSpeechBubble from "./bubbles/VoiceSpeechBubble.svelte"
 
 const MAX_NEST_DEPTH = 1
 
 let { bubble, depth = 0 }: { bubble: Bubble; depth?: number } = $props()
+const placement = $derived(
+  bubble.voice
+    ? voicePlacement(bubble.voice)
+    : { side: bubbleSide(bubble.kind), avatar: bubbleAvatarKind(bubble.kind) },
+)
 </script>
 
-{#if bubble.kind === "user"}
-  <UserBubble {bubble} />
-{:else if bubble.kind === "message"}
-  <MessageBubble {bubble} />
-{:else if bubble.kind === "thought"}
-  <ThoughtBubble {bubble} />
-{:else if bubble.kind === "tool"}
-  {#if isSubagentTask(bubble) && depth < MAX_NEST_DEPTH}
-    <SubagentBubble {bubble} {depth} />
-  {:else}
-    <ToolBubble {bubble} />
+<BubbleRow side={placement.side} avatar={placement.avatar}>
+  {#if bubble.kind === "user" && bubble.voice?.kind === "handoff"}
+    <VoiceHandoffBubble {bubble} />
+  {:else if (bubble.kind === "user" || bubble.kind === "message") && bubble.voice?.kind === "speech"}
+    <VoiceSpeechBubble {bubble} />
+  {:else if bubble.kind === "user"}
+    <UserBubble {bubble} />
+  {:else if bubble.kind === "message"}
+    <MessageBubble {bubble} />
+  {:else if bubble.kind === "thought"}
+    <ThoughtBubble {bubble} />
+  {:else if bubble.kind === "tool" && isScopeExpiredToolCall(bubble.toolCall)}
+    <ScopeExpiredNotice {bubble} />
+  {:else if bubble.kind === "tool"}
+    {#if isSubagentTask(bubble) && depth < MAX_NEST_DEPTH}
+      <SubagentBubble {bubble} {depth} />
+    {:else}
+      <ToolBubble {bubble} />
+    {/if}
   {/if}
-{/if}
+</BubbleRow>

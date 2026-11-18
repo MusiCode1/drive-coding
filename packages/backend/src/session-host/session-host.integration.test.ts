@@ -348,7 +348,7 @@ describe("createSessionHostFromConnection", () => {
   })
 
   describe("elicitation requests → PendingRequests", () => {
-    it("onCreateElicitation defaults to cancel when not responded", async () => {
+    it("onCreateElicitation defaults to decline when not responded", async () => {
       vi.useFakeTimers()
       const { callbacks } = await setup(100, 100) // elicitationTimeoutMs=100
 
@@ -363,7 +363,7 @@ describe("createSessionHostFromConnection", () => {
       vi.useRealTimers()
 
       const response = await responsePromise
-      expect(response.action).toBe("cancel")
+      expect(response.action).toBe("decline")
     })
   })
 
@@ -516,7 +516,7 @@ describe("createSessionHostFromConnection", () => {
       vi.useRealTimers()
 
       const response = await responsePromise
-      expect(response.action).toBe("cancel")
+      expect(response.action).toBe("decline")
       expect(host.state.pending.elicitation).toBeNull()
     })
 
@@ -1120,6 +1120,33 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     expect(host.state.messages).toHaveLength(1)
   })
 
+  it("newSession warm: reset clears messages; success clears title; failure restores sessionId", async () => {
+    const { host, mockClient, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" }) // cold → s1 (no reset patches)
+
+    callbacks.onUpdate(chunkOf("s1", "old history"))
+    expect(host.state.messages).toHaveLength(1)
+    await readOnePatch(host.patches)
+
+    ;(mockClient.newSession as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      sessionId: "s-new",
+      configOptions: [],
+    })
+    const result = await host.newSession({ cwd: "/a" })
+    expect(result.sessionId).toBe("s-new")
+    expect(host.state.sessionId).toBe("s-new")
+    expect(host.state.messages).toEqual([])
+    expect(host.state.title).toBe("")
+
+    // Failure path: restore previous sessionId
+    ;(mockClient.newSession as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("cli newSession failed"),
+    )
+    await expect(host.newSession({ cwd: "/a" })).rejects.toThrow("cli newSession failed")
+    expect(host.state.sessionId).toBe("s-new")
+    expect(host.state.turnState).toBe("idle")
+  })
+
   it("turnSeq++: a turn active at switch time that ends afterwards does NOT land applyTurnEnd/lastTurnError on the new session", async () => {
     const { host, conn, mockClient } = await setup()
     await host.newSession({ cwd: "/a" })
@@ -1336,7 +1363,11 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockResolvedValue({ sessionId: "s2" })
     await host.loadSession({ cwd: "/custom/dir", sessionId: "s2" })
 
-    expect(mockClient.loadSession).toHaveBeenCalledWith({ cwd: "/custom/dir", sessionId: "s2" })
+    expect(mockClient.loadSession).toHaveBeenCalledWith({
+      cwd: "/custom/dir",
+      sessionId: "s2",
+      mcpServers: [],
+    })
   })
 })
 
@@ -1959,5 +1990,32 @@ describe("quota via state channel (http-state-gaps C3)", () => {
 
     const afterTurn = extMethod.mock.calls.filter((c) => c[0] === "_drive/getQuota").length
     expect(afterTurn).toBeGreaterThan(afterFirst) // ⚠️ לא דוכא
+  })
+})
+
+describe("agent-charter C2 — transformPromptForAcp", () => {
+  it("prepends charter to ACP content once; user bubble stays clean", async () => {
+    const { conn } = makeMockConnection()
+    const mockClient = makeMockAcpClient()
+    let consumed = false
+    const host = await createSessionHostFromConnection(conn, {
+      transformPromptForAcp: (content) => {
+        if (consumed) return content
+        consumed = true
+        return typeof content === "string" ? `CHARTER\n\n${content}` : content
+      },
+      _createAcpClient: async () => mockClient,
+    })
+
+    await host.prompt("s1", "hello")
+    expect(mockClient.prompt).toHaveBeenCalledWith("s1", "CHARTER\n\nhello")
+    const msg = host.state.messages[0]
+    expect(msg?.role).toBe("user")
+    if (msg?.role === "user") {
+      expect(msg.segments[0]?.text).toBe("hello")
+    }
+
+    await host.prompt("s1", "again")
+    expect(mockClient.prompt).toHaveBeenLastCalledWith("s1", "again")
   })
 })

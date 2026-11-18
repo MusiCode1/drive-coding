@@ -19,10 +19,7 @@ export type ProviderAuth = { name: string; value: string }
  *
  * IMPORTANT: never log the returned value — it contains a secret key.
  */
-export function resolveProviderAuth(
-  provider: string,
-  env: NodeJS.ProcessEnv,
-): ProviderAuth | null {
+export function resolveProviderAuth(provider: string, env: NodeJS.ProcessEnv): ProviderAuth | null {
   if (provider === "elevenlabs") {
     const key = env["ELEVENLABS_API_KEY"]
     if (!key) return null

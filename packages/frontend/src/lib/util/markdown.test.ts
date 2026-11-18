@@ -310,4 +310,77 @@ describe("renderMarkdown", () => {
     expect(out).toContain('dir="rtl"')
     expect(out).not.toContain('<p dir="auto">')
   })
+
+  // ─── slice msg-media: markdown images (Commit 1) ─────────────────────────────
+
+  it("local absolute image → proxy img with alt", () => {
+    const out = renderMarkdown("![alt text](/tmp/p/x.png)")
+    expect(out).toContain("<img")
+    expect(out).toContain(
+      `/api/fs/file?uri=${encodeURIComponent("file:///tmp/p/x.png")}`,
+    )
+    expect(out).toContain('alt="alt text"')
+  })
+
+  it("local relative image with cwd → proxy img", () => {
+    const out = renderMarkdown("![a](x.png)", { cwd: "/tmp/p" })
+    expect(out).toContain(
+      `/api/fs/file?uri=${encodeURIComponent("file:///tmp/p/x.png")}`,
+    )
+  })
+
+  it("local relative image without cwd → source text, no img", () => {
+    const out = renderMarkdown("![a](x.png)")
+    expect(out).not.toContain("<img")
+    expect(out).toContain("![a](x.png)")
+  })
+
+  it("remote https image → no img, no evil src", () => {
+    const out = renderMarkdown("![a](https://evil.example/x.png?d=1)")
+    expect(out).not.toContain("<img")
+    expect(out).not.toMatch(/src\s*=\s*["'][^"']*evil/)
+  })
+
+  it("raw model img https → stripped (raw door closed)", () => {
+    const out = renderMarkdown('<img src="https://evil.example/beacon.png">')
+    expect(out).not.toContain("<img")
+  })
+
+  it("raw model img local → stripped even with cwd", () => {
+    const out = renderMarkdown('<img src="out.png">', { cwd: "/tmp/p" })
+    expect(out).not.toContain("<img")
+  })
+
+  it("data:image/png → img with data src", () => {
+    const out = renderMarkdown("![a](data:image/png;base64,iVBORw0KGgo=)")
+    expect(out).toContain("<img")
+    expect(out).toContain("data:image/png")
+  })
+
+  it("data:text/html → no img", () => {
+    const out = renderMarkdown("![a](data:text/html;base64,PHN2Zz4=)")
+    expect(out).not.toContain("<img")
+  })
+
+  it("protocol-relative //host → no img, no evil in src", () => {
+    const out = renderMarkdown("![a](//evil.example/x.png)", { cwd: "/t" })
+    expect(out).not.toContain("<img")
+    expect(out).not.toMatch(/src\s*=\s*["'][^"']*evil/)
+  })
+
+  it("image + code block + inline math → all three render", () => {
+    const out = renderMarkdown(
+      "![img](/tmp/p/x.png)\n\n```ts\nconst z = 1\n```\n\n$q$",
+      { cwd: "/tmp/p" },
+    )
+    expect(out).toContain("<img")
+    expect(out).toContain("<pre>")
+    expect(out).toContain("katex")
+  })
+
+  it("image inside inline code stays as code text", () => {
+    const out = renderMarkdown("`![c](c.png)`")
+    expect(out).toContain("<code>![c](c.png)</code>")
+    expect(out).not.toContain('<img src=')
+  })
 })

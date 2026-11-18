@@ -21,7 +21,10 @@ import {
 
 type FixtureEntry = { channel: string; frame: { method?: string; params?: unknown } }
 
-const fixturePath = new URL("./__fixtures__/subagent-task-single.json", import.meta.url)
+const fixturePath = new URL(
+  "../../../../core/tests/fixtures/subagent-task-single.json",
+  import.meta.url,
+)
 const fixture: FixtureEntry[] = JSON.parse(readFileSync(fixturePath, "utf-8"))
 
 /** כל ה-params הגולמיים (frame.params) של הודעות _claude/sdkMessage, בסדר-הופעה. */

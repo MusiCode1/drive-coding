@@ -64,7 +64,9 @@ let announced = false
 
 console.log(`\nwatchdog → ${HEALTH}   (Ctrl+C to stop · anomaly-only log → ${LOG})\n`)
 console.log("  time      rtt     loop-max  loop-mean  BE-rss   heap     agents      status")
-console.log("  --------  ------  --------  ---------  -------  -------  ----------  -------------------------")
+console.log(
+  "  --------  ------  --------  ---------  -------  -------  ----------  -------------------------",
+)
 
 async function tick() {
   const r = await poll()
@@ -72,7 +74,9 @@ async function tick() {
 
   if (!r.ok) {
     streak++
-    log(`  ${t}   --      --        --         --       --       --          ⛔ NO RESPONSE (frozen/down)`)
+    log(
+      `  ${t}   --      --        --         --       --       --          ⛔ NO RESPONSE (frozen/down)`,
+    )
     if (streak >= STALL_STREAK && !announced) {
       announced = true
       log(`\n  🔴 endpoint silent ~${streak}s — event-loop FROZEN or BE dead. THIS is the hang.`)
