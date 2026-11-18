@@ -1,0 +1,307 @@
+/*
+ * design v2 tokens (branch design/unslop-mocks) — scoped to .dv2 so the live app is untouched.
+ * Colors come from the existing [data-palette] ramps; this layer only adds scale and semantics.
+ */
+.dv2 {
+  /* type scale: 12 / 13 / 15 / 17 / 22 / 28 */
+  --t-xs: 0.75rem;
+  --t-sm: 0.8125rem;
+  --t-md: 0.9375rem;
+  --t-lg: 1.0625rem;
+  --t-xl: 1.375rem;
+  --t-2xl: 1.75rem;
+  /* radii: control · card · sheet */
+  --r-c: 10px;
+  --r-k: 14px;
+  --r-s: 22px;
+  /* spacing: 4px grid */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  /* semantic status colors, derived from palette roles */
+  --ok: color-mix(in srgb, var(--speaking) 35%, #7fbf8a);
+  --warn: color-mix(in srgb, var(--accent) 30%, #e0a458);
+  --bad: var(--recording);
+  --busy: color-mix(in srgb, var(--speaking) 70%, var(--fg) 30%);
+  --surface-1: var(--bg-elev);
+  --surface-2: var(--bg-card);
+  --surface-3: color-mix(in srgb, var(--bg-card) 80%, var(--fg) 6%);
+  --line: var(--border);
+  --line-2: var(--border-str);
+  --on-accent: color-mix(in srgb, var(--bg) 85%, #000);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur-1: 140ms;
+  --dur-2: 240ms;
+  --mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+
+  font-family: var(--font);
+  font-size: var(--t-md);
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+.dv2 *,
+.dv2 *::before,
+.dv2 *::after {
+  box-sizing: border-box;
+}
+.dv2 button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* shared atoms */
+.dv2 .label {
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+.dv2 .muted {
+  color: var(--fg-muted);
+}
+.dv2 .dim {
+  color: var(--fg-dim);
+}
+.dv2 .num {
+  font-variant-numeric: tabular-nums;
+}
+.dv2 .ib {
+  inline-size: 36px;
+  block-size: 36px;
+  border-radius: var(--r-c);
+  display: inline-grid;
+  place-items: center;
+  color: var(--fg-muted);
+  flex-shrink: 0;
+  transition:
+    background-color var(--dur-1) var(--ease),
+    color var(--dur-1) var(--ease);
+}
+.dv2 .ib:hover {
+  background: var(--surface-2);
+  color: var(--fg);
+}
+.dv2 .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  block-size: 32px;
+  padding-inline: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  font-size: var(--t-sm);
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+.dv2 .chip.primary {
+  background: var(--surface-3);
+  border-color: transparent;
+  color: var(--fg);
+}
+.dv2 .chip.danger {
+  color: var(--bad);
+  border-color: color-mix(in srgb, var(--bad) 35%, transparent);
+}
+.dv2 .field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-block-size: 46px;
+  padding-inline: 12px;
+  border-radius: var(--r-c);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: var(--t-md);
+  color: var(--fg);
+}
+.dv2 .field .v {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dv2 .field .ph {
+  color: var(--fg-muted);
+}
+.dv2 .btn {
+  block-size: 52px;
+  inline-size: 100%;
+  border-radius: var(--r-c);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  font-size: var(--t-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.dv2 .seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--r-c);
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+}
+.dv2 .seg > * {
+  flex: 1;
+  text-align: center;
+  padding-block: 7px;
+  border-radius: 7px;
+  font-size: var(--t-sm);
+  color: var(--fg-muted);
+}
+.dv2 .seg > .on {
+  background: var(--surface-3);
+  color: var(--fg);
+}
+.dv2 .sw {
+  inline-size: 44px;
+  block-size: 26px;
+  border-radius: 13px;
+  background: var(--line-2);
+  position: relative;
+  flex-shrink: 0;
+}
+.dv2 .sw::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 3px;
+  inset-inline-start: 3px;
+  inline-size: 20px;
+  block-size: 20px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+  transition: inset-inline-start var(--dur-2) var(--ease);
+}
+.dv2 .sw.on {
+  background: var(--accent);
+}
+.dv2 .sw.on::after {
+  inset-inline-start: 21px;
+  background: var(--fg);
+}
+.dv2 .meter .top {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--t-xs);
+  color: var(--fg-muted);
+}
+.dv2 .meter .top b {
+  font-weight: 500;
+  color: var(--fg-dim);
+}
+.dv2 .meter .bar {
+  block-size: 3px;
+  background: var(--line-2);
+  border-radius: 2px;
+  margin-block-start: 6px;
+}
+.dv2 .meter .bar i {
+  display: block;
+  block-size: 100%;
+  border-radius: 2px;
+  background: var(--fg-dim);
+}
+.dv2 .meter.hot .top b {
+  color: var(--warn);
+}
+.dv2 .meter.hot .bar i {
+  background: var(--warn);
+}
+.dv2 .group h3 {
+  font-size: var(--t-sm);
+  font-weight: 600;
+  color: var(--fg-muted);
+  margin: 0 0 2px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.dv2 .row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-block-size: 52px;
+  padding-block: 6px;
+  border-block-end: 1px solid var(--line);
+}
+.dv2 .row:last-child {
+  border-block-end: 0;
+}
+.dv2 .row .t {
+  flex: 1;
+  font-size: var(--t-md);
+}
+.dv2 .row .t small {
+  display: block;
+  font-size: var(--t-xs);
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+.dv2 .row .v {
+  font-size: var(--t-md);
+  color: var(--fg-dim);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.dv2 .row.stack {
+  display: block;
+  padding-block: 10px;
+}
+.dv2 .note {
+  font-size: var(--t-xs);
+  color: var(--fg-muted);
+  line-height: 1.5;
+  margin-block-start: 8px;
+}
+.dv2 code,
+.dv2 .mono {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.dv2 .dot {
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex-shrink: 0;
+}
+.dv2 .dot.busy {
+  background: var(--busy);
+}
+.dv2 .dot.off {
+  background: var(--fg-muted);
+}
+
+/* the one pulse in the app: the active mic ring */
+@keyframes dv2-ring {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ring, var(--accent)) 35%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 12px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* biome-ignore lint/complexity/noImportantStyles: reduced-motion must override every component rule */
+  .dv2 * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

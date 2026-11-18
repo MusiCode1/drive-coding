@@ -1,0 +1,494 @@
+{
+  "copy": {
+    "brand": "drive-coding",
+    "language": "עברית",
+    "connectTitle": "חבר ל־CLI agent",
+    "connectHint": "המשך סשן פעיל, או בחר תיקייה וסוכן לסשן חדש.",
+    "machine": {
+      "memory": "זיכרון",
+      "cpu": "מעבד"
+    },
+    "active": "תהליכים פעילים",
+    "activeEmpty": "אין תהליכים פעילים",
+    "reconnect": "התחבר מחדש",
+    "takeOver": "השתלט",
+    "kill": "הרוג",
+    "killConfirm": "בטוח?",
+    "working": "עובד…",
+    "idle": "ממתין",
+    "watchers": "צופים",
+    "children": "סוכני משנה",
+    "openElsewhere": "פתוח במכשיר אחר",
+    "details": "פרטים",
+    "recent": "תיקיות אחרונות",
+    "remove": "הסר מהרשימה",
+    "refresh": "רענן",
+    "collapse": "כווץ",
+    "worktree": "worktree",
+    "newSession": "סשן חדש",
+    "cli": "CLI",
+    "cliChecking": "בודק זמינות…",
+    "notInstalled": "לא מותקן",
+    "cwd": "תיקיית עבודה",
+    "browse": "בחר תיקייה",
+    "connect": "חבר",
+    "connecting": "מתחבר…",
+    "loadingSession": "טוען סשן…",
+    "errorPrefix": "החיבור נכשל",
+    "authHint": "הסוכן דורש התחברות. הרץ את פקודת ההתחברות של ה־CLI במכונה ונסה שוב.",
+    "tryAgain": "נסה שוב",
+    "menu": "תפריט",
+    "context": "הקשר",
+    "you": "אני",
+    "heard": "נשמע",
+    "agent": "סוכן",
+    "thinking": "חשיבה",
+    "plan": "תוכנית",
+    "of": "מתוך",
+    "input": "קלט",
+    "output": "פלט",
+    "newMessages": "הודעות חדשות",
+    "copy": "העתק",
+    "expand": "הגדל",
+    "status": {
+      "idle": "לחץ להקלטה",
+      "recording": "מקליט…",
+      "transcribing": "מתמלל…",
+      "thinking": "חושב…",
+      "tool": "מריץ כלי…",
+      "speaking": "מדבר…"
+    },
+    "tabs": {
+      "record": "הקלטה",
+      "type": "הקלדה",
+      "live": "לייב",
+      "hidden": "מוסתר"
+    },
+    "discard": "בטל",
+    "stopRun": "עצור ריצה",
+    "interrupt": "הקש כדי לקטוע",
+    "placeholder": "כתוב prompt…",
+    "addImage": "הוסף תמונה",
+    "dictate": "הכתבה",
+    "send": "שלח",
+    "playback": "בקרת השמעה",
+    "prev": "קודם",
+    "pause": "השהה",
+    "next": "הבא",
+    "stopPlayback": "עצור השמעה",
+    "mute": "השתק שמע",
+    "unmute": "הפעל שמע",
+    "liveOn": "שיחה חיה פעילה",
+    "liveClose": "סגור שיחה חיה",
+    "reconnecting": "מתחבר מחדש…",
+    "attempt": "ניסיון",
+    "permTitle": "הסוכן מבקש להריץ פקודה",
+    "permAllowOnce": "אשר פעם אחת",
+    "permAllowAlways": "אשר תמיד",
+    "permDeny": "דחה",
+    "permTimeout": "נדחה אוטומטית בעוד",
+    "seconds": "שנ׳",
+    "emptyChat": "דבר או כתוב כדי להתחיל",
+    "micPermission": "הגישה למיקרופון עדיין לא אושרה. הלחיצה הראשונה תבקש אישור.",
+    "panel": "פאנל סשן",
+    "closeProcess": "כבה לגמרי",
+    "leaveRunning": "צא — השאר רץ",
+    "settings": "הגדרות",
+    "title": "כותרת",
+    "fields": "שדות",
+    "noFields": "אין שדות",
+    "display": "תצוגה",
+    "compact": "קריאה נקייה",
+    "showThoughts": "הצג מחשבות",
+    "showTools": "הצג כלים",
+    "agentOptions": "אפשרויות סוכן",
+    "runningOn": "פועל על",
+    "mode": "מצב",
+    "model": "מודל",
+    "effort": "מאמץ",
+    "agentPerms": "אישורים לסוכן הזה",
+    "agentPermsNote": "חל על כתיבות מחוץ לעץ הסוכן שלך. אין כאן הגנת אבטחה, רק נראות והתנהגות צפויה.",
+    "permSend": "שליחת הודעות",
+    "permChange": "שינוי סוכן אחר",
+    "permClose": "סגירת סוכן אחר",
+    "inherit": "יורש",
+    "allow": "לאשר",
+    "ask": "לשאול",
+    "deny": "לדחות",
+    "projectPrompt": "פרומפט מערכת לפרויקט",
+    "projectPromptPh": "לדוגמה: תמיד ענה בקצרה, ופתח כל תשובה בעברית…",
+    "projectPromptNote": "מתווסף להוראות ברירת המחדל של הסוכן. השינוי חל מהסשן הבא.",
+    "sessions": "סשנים",
+    "searchTitles": "חיפוש בכותרות…",
+    "allSessions": "כל השיחות",
+    "thisFolder": "רק התיקייה הזו",
+    "advanced": "מתקדם",
+    "more": "עוד",
+    "settingsTitle": "הגדרות",
+    "appearance": "מראה",
+    "uiLanguage": "שפת ממשק",
+    "theme": "ערכת נושא",
+    "voice": "קול ודיבור",
+    "ttsProvider": "ספק TTS",
+    "ttsModel": "מודל TTS",
+    "ttsVoice": "קול",
+    "speakThoughts": "הקראת מחשבות המודל",
+    "narrateTools": "קריינות פעולות",
+    "translateThoughts": "תרגום מחשבות לעברית",
+    "carMode": "מצב רכב",
+    "carModeNote": "Play באוזניות הבלוטות׳ מתחיל הקלטה",
+    "mic": "מיקרופון",
+    "micDefault": "ברירת מחדל של המערכת",
+    "ttsStatus": "מצב TTS",
+    "quota": "מכסת ElevenLabs",
+    "used": "נוצל",
+    "estCost": "עלות משוערת",
+    "cache": "מטמון",
+    "tokenUsage": "שימוש הקשר",
+    "usageLink": "צריכה לפי CLI",
+    "compactions": "דחיסות",
+    "heldBefore": "סך שהוחזק לפני דחיסה",
+    "screen": "מסך והתראות",
+    "keepOn": "השאר מסך דלוק",
+    "notifications": "התראות כשהטאב מוסתר",
+    "chatDisplay": "תצוגת צ׳אט",
+    "enterSends": "Enter שולח הודעה",
+    "memo": "פתק ממו בסשן",
+    "remoteImages": "טען תמונות מרוחקות אוטומטית",
+    "remoteImagesNote": "הדפדפן יפנה לכל כתובת שהסוכן פלט, וכך עלול לחשוף אותך.",
+    "crossAgent": "אישורים בין סוכנים",
+    "crossAgentNote": "נשמר בשרת עד הפעלה מחדש; חל על כל הסוכנים.",
+    "connection": "חיבור",
+    "beUrl": "כתובת השרת",
+    "beUrlNote": "השאר ריק במצב פיתוח.",
+    "transport": "טרנספורט סשן",
+    "version": "גרסה",
+    "reset": "איפוס",
+    "saveOpen": "שמור ופתח",
+    "usageTitle": "צריכה לפי CLI",
+    "ttsUsage": "שימוש ב־TTS מאז ההפעלה",
+    "contextByCli": "שימוש הקשר לפי CLI",
+    "projects": "פרויקטים",
+    "sessionsCol": "סשנים",
+    "turns": "תורות",
+    "peak": "שיא",
+    "cost": "עלות",
+    "lastActive": "פעילות אחרונה",
+    "folders": "תיקיות",
+    "notReported": "הספק אינו מדווח"
+  },
+  "data": {
+    "machine": {
+      "memUsed": "6.1",
+      "memTotal": "7.8",
+      "memPct": 78,
+      "cpuPct": 100
+    },
+    "processes": [
+      {
+        "title": "תיקון עצירת הניגון אחרי התחברות מחדש",
+        "cli": "Claude Code",
+        "folder": "voice-app",
+        "busy": true,
+        "attached": false,
+        "watchers": 1,
+        "children": 0,
+        "ago": "לפני 12 שניות"
+      },
+      {
+        "title": "סקירת עיצוב מסך החיבור",
+        "cli": "Codex",
+        "folder": "web-shell",
+        "busy": false,
+        "attached": true,
+        "watchers": 1,
+        "children": 2,
+        "ago": "לפני 8 דקות"
+      },
+      {
+        "title": "כתיבת טסטים לתור ההשמעה",
+        "cli": "Cursor",
+        "folder": "voice-app",
+        "busy": false,
+        "attached": false,
+        "watchers": 0,
+        "children": 0,
+        "ago": "לפני 47 דקות"
+      }
+    ],
+    "recents": [
+      {
+        "name": "voice-app",
+        "parent": "~/projects",
+        "cli": "Claude Code",
+        "ago": "לפני 12 שניות",
+        "worktree": false
+      },
+      {
+        "name": "web-shell",
+        "parent": "~/projects",
+        "cli": "Codex",
+        "ago": "לפני 8 דקות",
+        "worktree": false
+      },
+      {
+        "name": "playlist-reconnect",
+        "parent": "voice-app",
+        "cli": "Claude Code",
+        "ago": "לפני 3 שעות",
+        "worktree": true
+      },
+      {
+        "name": "notes",
+        "parent": "~/projects",
+        "cli": "Cursor",
+        "ago": "לפני 2 ימים",
+        "worktree": false
+      }
+    ],
+    "clis": [
+      {
+        "name": "Claude Code",
+        "available": true
+      },
+      {
+        "name": "Codex",
+        "available": true
+      },
+      {
+        "name": "Cursor",
+        "available": true
+      },
+      {
+        "name": "Gemini CLI",
+        "available": false
+      },
+      {
+        "name": "OpenCode",
+        "available": true
+      }
+    ],
+    "cwd": "~/projects/voice-app",
+    "error": "הסוכן החזיר שגיאת התחברות (401).",
+    "session": {
+      "title": "תיקון עצירת הניגון אחרי התחברות מחדש",
+      "cli": "Claude Code",
+      "folder": "voice-app",
+      "contextPct": 34
+    },
+    "userText": "למה הניגון נעצר אחרי שהטלפון מתחבר מחדש?",
+    "thought": "צריך לבדוק איפה הסמן של רשימת ההשמעה מתאפס, ואם יש מסלול שמדלג על האיפוס בהתחברות מחדש.",
+    "tools": [
+      {
+        "kind": "search",
+        "label": "חיפוש ‎cursor‎ בתיקיית playback",
+        "meta": "6 תוצאות",
+        "state": "done"
+      },
+      {
+        "kind": "read",
+        "label": "קריאת playlist.ts",
+        "meta": "212 שורות",
+        "state": "done"
+      },
+      {
+        "kind": "edit",
+        "label": "עריכת playlist.ts",
+        "meta": "מריץ…",
+        "state": "run"
+      }
+    ],
+    "toolCmd": "rg -n cursor src/playback",
+    "toolOut": "src/playback/playlist.ts:41:  cursor = 0\nsrc/playback/playlist.ts:88:  if (cursor >= items.length) park()\nsrc/playback/reconnect.ts:17:  // TODO reset cursor",
+    "agentP1": "הסמן נשאר חונה בסוף הרשימה. כשהחיבור חוזר אף אחד לא מזיז אותו, ולכן הפריט הבא לא מתחיל.",
+    "agentP2": "אני מאפס אותו ב־onReconnect ומוסיף לזה טסט רגרסיה.",
+    "table": [["קובץ", "שינוי"], ["playlist.ts", "איפוס הסמן"], ["playlist.test.ts", "טסט חדש"]],
+    "code": "function onReconnect() {\n  playlist.resetCursor()\n  playlist.resume()\n}",
+    "planItems": [
+      {
+        "text": "למצוא איפה הסמן חונה",
+        "state": "done"
+      },
+      {
+        "text": "לאפס את הסמן בהתחברות מחדש",
+        "state": "now"
+      },
+      {
+        "text": "להוסיף טסט רגרסיה",
+        "state": "todo"
+      }
+    ],
+    "permCmd": "bun test src/playback",
+    "playbackPos": "2 מתוך 4",
+    "reconnectAttempt": 3,
+    "fields": [
+      {
+        "k": "ענף",
+        "v": "fix/playlist"
+      },
+      {
+        "k": "PR",
+        "v": "#128"
+      }
+    ],
+    "modeVal": "שאל לפני שינוי",
+    "modelVal": "ברירת מחדל",
+    "effortVal": "בינוני",
+    "sessions": [
+      {
+        "title": "תיקון עצירת הניגון אחרי התחברות מחדש",
+        "folder": "voice-app",
+        "when": "עכשיו",
+        "current": true
+      },
+      {
+        "title": "סקירת עיצוב מסך החיבור",
+        "folder": "web-shell",
+        "when": "לפני 8 דקות"
+      },
+      {
+        "title": "כתיבת טסטים לתור ההשמעה",
+        "folder": "voice-app",
+        "when": "אתמול"
+      },
+      {
+        "title": "ניקוי תלויות ישנות",
+        "folder": "notes",
+        "when": "לפני 3 ימים"
+      }
+    ],
+    "settings": {
+      "provider": "ElevenLabs",
+      "ttsModel": "Eleven v3",
+      "voice": "Sarah",
+      "voiceNote": "בוגר, מרגיע",
+      "quotaPct": 62,
+      "costs": "ElevenLabs ‎$4.10 · Gemini ‎$0.30 · מטמון 38%",
+      "compactions": "3 · 412K",
+      "version": "0.49.1"
+    },
+    "usage": {
+      "quotaUsed": "6,200",
+      "quotaLimit": "10,000",
+      "quotaPct": 62,
+      "tts": [
+        {
+          "name": "ElevenLabs",
+          "line": "36,800 תווים · ‎$4.10"
+        },
+        {
+          "name": "Gemini",
+          "line": "12,900 טוקני קלט · ‎$0.30"
+        }
+      ],
+      "rows": [
+        {
+          "cli": "Claude Code",
+          "folders": 14,
+          "sessions": 41,
+          "turns": 380,
+          "peak": "171K",
+          "cost": "‎$212",
+          "last": "היום, 00:28"
+        },
+        {
+          "cli": "Codex",
+          "folders": 9,
+          "sessions": 22,
+          "turns": 190,
+          "peak": "96K",
+          "cost": "—",
+          "last": "אתמול, 23:38"
+        },
+        {
+          "cli": "Cursor",
+          "folders": 5,
+          "sessions": 7,
+          "turns": 0,
+          "peak": "—",
+          "cost": "—",
+          "last": "לפני 3 ימים",
+          "notReported": true
+        }
+      ]
+    }
+  },
+  "gallery": {
+    "title": "drive-coding — מוקאפים (unslop)",
+    "intro": "ההצעה מרונדרת ב־SvelteKit האמיתי, עם הגופן, ה־RTL וערכות הצבע של האפליקציה. כל הנתונים סינתטיים. אפשר לפתוח כל מסך בגודל מלא ולגלול בו.",
+    "screens": {
+      "connect": "חיבור",
+      "chat": "צ׳אט",
+      "panel": "פאנל סשן",
+      "settings": "הגדרות",
+      "usage": "צריכה"
+    },
+    "states": {
+      "default": "רגיל",
+      "empty": "ריק",
+      "connecting": "מתחבר",
+      "error": "שגיאה",
+      "conversation": "שיחה, כלי רץ",
+      "speaking": "הסוכן מדבר",
+      "permission": "בקשת הרשאה",
+      "reconnecting": "מתחבר מחדש",
+      "typing": "לשונית הקלדה",
+      "live": "לשונית לייב",
+      "hidden": "לשונית מוסתר"
+    },
+    "devices": {
+      "phone": "טלפון",
+      "tablet": "טאבלט",
+      "desktop": "דסקטופ",
+      "all": "הכול"
+    },
+    "screenLbl": "מסך",
+    "stateLbl": "מצב",
+    "deviceLbl": "מכשיר",
+    "langLbl": "שפה",
+    "paletteLbl": "ערכת צבע",
+    "proposed": "הצעה",
+    "current": "היום",
+    "showCurrent": "הצג את המצב היום",
+    "noCurrent": "אין צילום של היום למסך הזה: הצילומים כוללים סשנים ונתונים אישיים, ולכן לא נכללו בכתובת ציבורית.",
+    "openFull": "פתח בגודל מלא",
+    "changed": "מה השתנה",
+    "notes": {
+      "connect": [
+        "בטלפון: כותרת, תהליכים פעילים, תיקיות אחרונות ואז הטופס; כפתור החיבור נשאר צמוד לתחתית.",
+        "בטאבלט ובדסקטופ: שתי עמודות. הטופס בצד ההתחלה ונשאר במקום, הרשימות בצד השני.",
+        "כל תהליך: כותרת, CLI · תיקייה · זמן, ופעולות עם תווית: התחבר מחדש או השתלט, והרוג בצד.",
+        "pid, hash ונתיב מלא ירדו מהשורה הראשית.",
+        "שפה כ־chip בראש המסך. תיקיות worktree מסומנות כך, בלי hash.",
+        "שורת העומס היא שני מדים; רק ערך חם צבוע (פותר גם את באג #107)."
+      ],
+      "chat": [
+        "הכותרת: כותרת הסשן, CLI · תיקייה, ומד הקשר כטבעת קטנה.",
+        "כלים בשורה אחת על פס, עם קלט ופלט בפתיחה. בלי גדר Markdown גלויה (באג #108).",
+        "תור שנאמר בקול מסומן \"נשמע\". עיגולי האייקון ליד כל הודעה ירדו.",
+        "ליד המיקרופון: בטל ועצור ריצה עם תווית. ארבע הלשוניות נשארו, עם שם.",
+        "בקשת הרשאה היא כרטיס בתוך הזרם, עם ספירה לאחור גלויה.",
+        "הצבע החזק היחיד הוא מצב הקול; פעימה אחת בלבד, על המיקרופון כשהסוכן מדבר."
+      ],
+      "panel": [
+        "ארבע פעולות הסשן עם תווית: כבה לגמרי (בצבע סכנה), צא — השאר רץ, השתק, הגדרות.",
+        "מתגי התצוגה הם שורות עם שם, לא שלושה אייקונים.",
+        "אפשרויות הסוכן כשורות בחירה; Fast mode, Ultracode וסוכן תחת \"מתקדם\".",
+        "אישורים לסוכן כבוררי מקטעים במקום שלוש רשימות נפתחות.",
+        "בטלפון ה־sheet, בטאבלט מגירה בצד, בדסקטופ סרגל צד קבוע."
+      ],
+      "settings": [
+        "כל הכרטיסים של היום נשארו, מקובצים לשבע קבוצות.",
+        "שורות במקום קופסה בתוך קופסה; ערכת נושא בעיגולי צבע.",
+        "בדסקטופ תוכן עניינים בצד; בטלפון רשימה אחת.",
+        "מתג כבוי אפור לגמרי, כך שדלוק וכבוי לא נראים דומה.",
+        "נתוני TTS כמד ושורת עלות, לא טקסט monospace גולמי."
+      ],
+      "usage": [
+        "בטלפון כרטיס לכל CLI במקום טבלה רחבה שנשברת.",
+        "מטאבלט ומעלה טבלה אמיתית, בלי שבירת שורות ובלי עמודה חתוכה.",
+        "ספק שאינו מדווח מקבל שורה אחת שאומרת זאת, במקום מקפים."
+      ]
+    }
+  }
+}

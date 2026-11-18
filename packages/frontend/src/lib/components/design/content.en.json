@@ -1,0 +1,498 @@
+{
+  "copy": {
+    "brand": "drive-coding",
+    "language": "English",
+    "connectTitle": "Connect to a CLI agent",
+    "connectHint": "Resume a running session, or pick a folder and an agent to start a new one.",
+    "machine": {
+      "memory": "Memory",
+      "cpu": "CPU"
+    },
+    "active": "Active processes",
+    "activeEmpty": "No active processes",
+    "reconnect": "Reconnect",
+    "takeOver": "Take over",
+    "kill": "Kill",
+    "killConfirm": "Sure?",
+    "working": "Working…",
+    "idle": "Idle",
+    "watchers": "watching",
+    "children": "sub-agents",
+    "openElsewhere": "Open on another device",
+    "details": "Details",
+    "recent": "Recent folders",
+    "remove": "Remove from list",
+    "refresh": "Refresh",
+    "collapse": "Collapse",
+    "worktree": "worktree",
+    "newSession": "New session",
+    "cli": "CLI",
+    "cliChecking": "Checking availability…",
+    "notInstalled": "Not installed",
+    "cwd": "Working directory",
+    "browse": "Choose folder",
+    "connect": "Connect",
+    "connecting": "Connecting…",
+    "loadingSession": "Loading session…",
+    "errorPrefix": "Couldn't connect",
+    "authHint": "The agent needs you to sign in. Run the CLI's login command on the machine, then try again.",
+    "tryAgain": "Try again",
+    "menu": "Menu",
+    "context": "Context",
+    "you": "Me",
+    "heard": "Heard",
+    "agent": "Agent",
+    "thinking": "Thinking",
+    "plan": "Plan",
+    "of": "of",
+    "input": "Input",
+    "output": "Output",
+    "newMessages": "New messages",
+    "copy": "Copy",
+    "expand": "Expand",
+    "status": {
+      "idle": "Tap to record",
+      "recording": "Recording…",
+      "transcribing": "Transcribing…",
+      "thinking": "Thinking…",
+      "tool": "Running a tool…",
+      "speaking": "Speaking…"
+    },
+    "tabs": {
+      "record": "Record",
+      "type": "Type",
+      "live": "Live",
+      "hidden": "Hidden"
+    },
+    "discard": "Discard",
+    "stopRun": "Stop run",
+    "interrupt": "tap to interrupt",
+    "placeholder": "Write a prompt…",
+    "addImage": "Add image",
+    "dictate": "Dictate",
+    "send": "Send",
+    "playback": "Playback",
+    "prev": "Previous",
+    "pause": "Pause",
+    "next": "Next",
+    "stopPlayback": "Stop playback",
+    "mute": "Mute audio",
+    "unmute": "Unmute audio",
+    "liveOn": "Live conversation on",
+    "liveClose": "End live conversation",
+    "reconnecting": "Reconnecting…",
+    "attempt": "attempt",
+    "permTitle": "The agent wants to run a command",
+    "permAllowOnce": "Allow once",
+    "permAllowAlways": "Always allow",
+    "permDeny": "Deny",
+    "permTimeout": "Auto-denied in",
+    "seconds": "s",
+    "emptyChat": "Speak or type to start",
+    "micPermission": "Microphone access isn't granted yet. The first tap will ask for it.",
+    "panel": "Session panel",
+    "closeProcess": "Shut down",
+    "leaveRunning": "Leave running",
+    "settings": "Settings",
+    "title": "Title",
+    "fields": "Fields",
+    "noFields": "No fields",
+    "display": "Display",
+    "compact": "Clean reading",
+    "showThoughts": "Show thoughts",
+    "showTools": "Show tools",
+    "agentOptions": "Agent options",
+    "runningOn": "Running on",
+    "mode": "Mode",
+    "model": "Model",
+    "effort": "Effort",
+    "agentPerms": "Permissions for this agent",
+    "agentPermsNote": "Applies to writes outside your agent tree. Not a security boundary, only visibility and predictable behavior.",
+    "permSend": "Send messages",
+    "permChange": "Change another agent",
+    "permClose": "Close another agent",
+    "inherit": "Inherit",
+    "allow": "Allow",
+    "ask": "Ask",
+    "deny": "Deny",
+    "projectPrompt": "Project system prompt",
+    "projectPromptPh": "For example: always answer briefly…",
+    "projectPromptNote": "Added to the agent's default instructions. Takes effect from the next session.",
+    "sessions": "Sessions",
+    "searchTitles": "Search titles…",
+    "allSessions": "All sessions",
+    "thisFolder": "This folder only",
+    "advanced": "Advanced",
+    "more": "More",
+    "settingsTitle": "Settings",
+    "appearance": "Appearance",
+    "uiLanguage": "Interface language",
+    "theme": "Theme",
+    "voice": "Voice and speech",
+    "ttsProvider": "TTS provider",
+    "ttsModel": "TTS model",
+    "ttsVoice": "Voice",
+    "speakThoughts": "Read model thoughts aloud",
+    "narrateTools": "Narrate tool actions",
+    "translateThoughts": "Translate thoughts to Hebrew",
+    "carMode": "Car mode",
+    "carModeNote": "Bluetooth Play starts recording",
+    "mic": "Microphone",
+    "micDefault": "System default",
+    "ttsStatus": "TTS status",
+    "quota": "ElevenLabs quota",
+    "used": "used",
+    "estCost": "Estimated cost",
+    "cache": "Cache",
+    "tokenUsage": "Context usage",
+    "usageLink": "Usage by CLI",
+    "compactions": "Compactions",
+    "heldBefore": "Held before compaction",
+    "screen": "Screen and notifications",
+    "keepOn": "Keep screen on",
+    "notifications": "Notify when the tab is hidden",
+    "chatDisplay": "Chat display",
+    "enterSends": "Enter sends",
+    "memo": "Session memo pad",
+    "remoteImages": "Load remote images automatically",
+    "remoteImagesNote": "The browser will request any address the agent prints, which can expose you.",
+    "crossAgent": "Cross-agent permissions",
+    "crossAgentNote": "Kept on the server until restart; applies to all agents.",
+    "connection": "Connection",
+    "beUrl": "Server URL",
+    "beUrlNote": "Leave empty in development.",
+    "transport": "Session transport",
+    "version": "Version",
+    "reset": "Reset",
+    "saveOpen": "Save and open",
+    "usageTitle": "Usage by CLI",
+    "ttsUsage": "TTS usage since start",
+    "contextByCli": "Context usage by CLI",
+    "projects": "Projects",
+    "sessionsCol": "Sessions",
+    "turns": "Turns",
+    "peak": "Peak",
+    "cost": "Cost",
+    "lastActive": "Last active",
+    "folders": "folders",
+    "notReported": "Not reported by the provider"
+  },
+  "data": {
+    "machine": {
+      "memUsed": "6.1",
+      "memTotal": "7.8",
+      "memPct": 78,
+      "cpuPct": 100
+    },
+    "processes": [
+      {
+        "title": "Fix playback stopping after reconnect",
+        "cli": "Claude Code",
+        "folder": "voice-app",
+        "busy": true,
+        "attached": false,
+        "watchers": 1,
+        "children": 0,
+        "ago": "12 seconds ago"
+      },
+      {
+        "title": "Review the connect screen design",
+        "cli": "Codex",
+        "folder": "web-shell",
+        "busy": false,
+        "attached": true,
+        "watchers": 1,
+        "children": 2,
+        "ago": "8 minutes ago"
+      },
+      {
+        "title": "Write tests for the playback queue",
+        "cli": "Cursor",
+        "folder": "voice-app",
+        "busy": false,
+        "attached": false,
+        "watchers": 0,
+        "children": 0,
+        "ago": "47 minutes ago"
+      }
+    ],
+    "recents": [
+      {
+        "name": "voice-app",
+        "parent": "~/projects",
+        "cli": "Claude Code",
+        "ago": "12 seconds ago",
+        "worktree": false
+      },
+      {
+        "name": "web-shell",
+        "parent": "~/projects",
+        "cli": "Codex",
+        "ago": "8 minutes ago",
+        "worktree": false
+      },
+      {
+        "name": "playlist-reconnect",
+        "parent": "voice-app",
+        "cli": "Claude Code",
+        "ago": "3 hours ago",
+        "worktree": true
+      },
+      {
+        "name": "notes",
+        "parent": "~/projects",
+        "cli": "Cursor",
+        "ago": "2 days ago",
+        "worktree": false
+      }
+    ],
+    "clis": [
+      {
+        "name": "Claude Code",
+        "available": true
+      },
+      {
+        "name": "Codex",
+        "available": true
+      },
+      {
+        "name": "Cursor",
+        "available": true
+      },
+      {
+        "name": "Gemini CLI",
+        "available": false
+      },
+      {
+        "name": "OpenCode",
+        "available": true
+      }
+    ],
+    "cwd": "~/projects/voice-app",
+    "error": "The agent returned an authentication error (401).",
+    "session": {
+      "title": "Fix playback stopping after reconnect",
+      "cli": "Claude Code",
+      "folder": "voice-app",
+      "contextPct": 34
+    },
+    "userText": "Why does playback stop after the phone reconnects?",
+    "thought": "Check where the playlist cursor resets, and whether any path skips the reset on reconnect.",
+    "tools": [
+      {
+        "kind": "search",
+        "label": "Searched cursor in playback",
+        "meta": "6 hits",
+        "state": "done"
+      },
+      {
+        "kind": "read",
+        "label": "Read playlist.ts",
+        "meta": "212 lines",
+        "state": "done"
+      },
+      {
+        "kind": "edit",
+        "label": "Editing playlist.ts",
+        "meta": "running…",
+        "state": "run"
+      }
+    ],
+    "toolCmd": "rg -n cursor src/playback",
+    "toolOut": "src/playback/playlist.ts:41:  cursor = 0\nsrc/playback/playlist.ts:88:  if (cursor >= items.length) park()\nsrc/playback/reconnect.ts:17:  // TODO reset cursor",
+    "agentP1": "The cursor stays parked at the end of the list. When the connection comes back nothing moves it, so the next item never starts.",
+    "agentP2": "I'm resetting it in onReconnect and adding a regression test.",
+    "table": [
+      ["File", "Change"],
+      ["playlist.ts", "Reset cursor"],
+      ["playlist.test.ts", "New test"]
+    ],
+    "code": "function onReconnect() {\n  playlist.resetCursor()\n  playlist.resume()\n}",
+    "planItems": [
+      {
+        "text": "Find where the cursor parks",
+        "state": "done"
+      },
+      {
+        "text": "Reset the cursor on reconnect",
+        "state": "now"
+      },
+      {
+        "text": "Add a regression test",
+        "state": "todo"
+      }
+    ],
+    "permCmd": "bun test src/playback",
+    "playbackPos": "2 of 4",
+    "reconnectAttempt": 3,
+    "fields": [
+      {
+        "k": "Branch",
+        "v": "fix/playlist"
+      },
+      {
+        "k": "PR",
+        "v": "#128"
+      }
+    ],
+    "modeVal": "Ask before changes",
+    "modelVal": "Default",
+    "effortVal": "Medium",
+    "sessions": [
+      {
+        "title": "Fix playback stopping after reconnect",
+        "folder": "voice-app",
+        "when": "now",
+        "current": true
+      },
+      {
+        "title": "Review the connect screen design",
+        "folder": "web-shell",
+        "when": "8 minutes ago"
+      },
+      {
+        "title": "Write tests for the playback queue",
+        "folder": "voice-app",
+        "when": "yesterday"
+      },
+      {
+        "title": "Clean up old dependencies",
+        "folder": "notes",
+        "when": "3 days ago"
+      }
+    ],
+    "settings": {
+      "provider": "ElevenLabs",
+      "ttsModel": "Eleven v3",
+      "voice": "Sarah",
+      "voiceNote": "mature, reassuring",
+      "quotaPct": 62,
+      "costs": "ElevenLabs $4.10 · Gemini $0.30 · cache 38%",
+      "compactions": "3 · 412K",
+      "version": "0.49.1"
+    },
+    "usage": {
+      "quotaUsed": "6,200",
+      "quotaLimit": "10,000",
+      "quotaPct": 62,
+      "tts": [
+        {
+          "name": "ElevenLabs",
+          "line": "36,800 chars · $4.10"
+        },
+        {
+          "name": "Gemini",
+          "line": "12,900 input tokens · $0.30"
+        }
+      ],
+      "rows": [
+        {
+          "cli": "Claude Code",
+          "folders": 14,
+          "sessions": 41,
+          "turns": 380,
+          "peak": "171K",
+          "cost": "$212",
+          "last": "today, 00:28"
+        },
+        {
+          "cli": "Codex",
+          "folders": 9,
+          "sessions": 22,
+          "turns": 190,
+          "peak": "96K",
+          "cost": "—",
+          "last": "yesterday, 23:38"
+        },
+        {
+          "cli": "Cursor",
+          "folders": 5,
+          "sessions": 7,
+          "turns": 0,
+          "peak": "—",
+          "cost": "—",
+          "last": "3 days ago",
+          "notReported": true
+        }
+      ]
+    }
+  },
+  "gallery": {
+    "title": "drive-coding — mockups (unslop)",
+    "intro": "The proposal renders in the real SvelteKit app, with its font, RTL and palettes. All data is synthetic. Open any screen at full size to scroll it.",
+    "screens": {
+      "connect": "Connect",
+      "chat": "Chat",
+      "panel": "Session panel",
+      "settings": "Settings",
+      "usage": "Usage"
+    },
+    "states": {
+      "default": "Default",
+      "empty": "Empty",
+      "connecting": "Connecting",
+      "error": "Error",
+      "conversation": "Conversation, tool running",
+      "speaking": "Agent speaking",
+      "permission": "Permission request",
+      "reconnecting": "Reconnecting",
+      "typing": "Type tab",
+      "live": "Live tab",
+      "hidden": "Hidden tab"
+    },
+    "devices": {
+      "phone": "Phone",
+      "tablet": "Tablet",
+      "desktop": "Desktop",
+      "all": "All"
+    },
+    "screenLbl": "Screen",
+    "stateLbl": "State",
+    "deviceLbl": "Device",
+    "langLbl": "Language",
+    "paletteLbl": "Palette",
+    "proposed": "Proposed",
+    "current": "Today",
+    "showCurrent": "Show today's screen",
+    "noCurrent": "No screenshot of today for this screen: they contain personal sessions and data, so they are not on a public URL.",
+    "openFull": "Open full size",
+    "changed": "What changed",
+    "notes": {
+      "connect": [
+        "בטלפון: כותרת, תהליכים פעילים, תיקיות אחרונות ואז הטופס; כפתור החיבור נשאר צמוד לתחתית.",
+        "בטאבלט ובדסקטופ: שתי עמודות. הטופס בצד ההתחלה ונשאר במקום, הרשימות בצד השני.",
+        "כל תהליך: כותרת, CLI · תיקייה · זמן, ופעולות עם תווית: התחבר מחדש או השתלט, והרוג בצד.",
+        "pid, hash ונתיב מלא ירדו מהשורה הראשית.",
+        "שפה כ־chip בראש המסך. תיקיות worktree מסומנות כך, בלי hash.",
+        "שורת העומס היא שני מדים; רק ערך חם צבוע (פותר גם את באג #107)."
+      ],
+      "chat": [
+        "הכותרת: כותרת הסשן, CLI · תיקייה, ומד הקשר כטבעת קטנה.",
+        "כלים בשורה אחת על פס, עם קלט ופלט בפתיחה. בלי גדר Markdown גלויה (באג #108).",
+        "תור שנאמר בקול מסומן \"נשמע\". עיגולי האייקון ליד כל הודעה ירדו.",
+        "ליד המיקרופון: בטל ועצור ריצה עם תווית. ארבע הלשוניות נשארו, עם שם.",
+        "בקשת הרשאה היא כרטיס בתוך הזרם, עם ספירה לאחור גלויה.",
+        "הצבע החזק היחיד הוא מצב הקול; פעימה אחת בלבד, על המיקרופון כשהסוכן מדבר."
+      ],
+      "panel": [
+        "ארבע פעולות הסשן עם תווית: כבה לגמרי (בצבע סכנה), צא — השאר רץ, השתק, הגדרות.",
+        "מתגי התצוגה הם שורות עם שם, לא שלושה אייקונים.",
+        "אפשרויות הסוכן כשורות בחירה; Fast mode, Ultracode וסוכן תחת \"מתקדם\".",
+        "אישורים לסוכן כבוררי מקטעים במקום שלוש רשימות נפתחות.",
+        "בטלפון ה־sheet, בטאבלט מגירה בצד, בדסקטופ סרגל צד קבוע."
+      ],
+      "settings": [
+        "כל הכרטיסים של היום נשארו, מקובצים לשבע קבוצות.",
+        "שורות במקום קופסה בתוך קופסה; ערכת נושא בעיגולי צבע.",
+        "בדסקטופ תוכן עניינים בצד; בטלפון רשימה אחת.",
+        "מתג כבוי אפור לגמרי, כך שדלוק וכבוי לא נראים דומה.",
+        "נתוני TTS כמד ושורת עלות, לא טקסט monospace גולמי."
+      ],
+      "usage": [
+        "בטלפון כרטיס לכל CLI במקום טבלה רחבה שנשברת.",
+        "מטאבלט ומעלה טבלה אמיתית, בלי שבירת שורות ובלי עמודה חתוכה.",
+        "ספק שאינו מדווח מקבל שורה אחת שאומרת זאת, במקום מקפים."
+      ]
+    }
+  }
+}
