@@ -1117,10 +1117,11 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
       op: "update-session",
       changes: { turnState: "idle", lastTurnError: null },
     })
-    expect(host.state.messages).toHaveLength(1)
+    expect(host.state.messages).toMatchObject([{ segments: [{ text: "new history" }] }])
+    expect(await drainBuffered(host.patches)).toEqual([])
   })
 
-  it("newSession warm: reset clears messages; success clears title; failure restores sessionId", async () => {
+  it("newSession warm: reset clears messages; success clears title; failure restores sessionId and transcript", async () => {
     const { host, mockClient, callbacks } = await setup()
     await host.newSession({ cwd: "/a" }) // cold → s1 (no reset patches)
 
@@ -1138,12 +1139,21 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     expect(host.state.messages).toEqual([])
     expect(host.state.title).toBe("")
 
-    // Failure path: restore previous sessionId
+    callbacks.onUpdate(chunkOf("s-new", "retained history"))
+    const before = host.state
+    expect(before.messages).toHaveLength(1)
+    await drainBuffered(host.patches)
+
+    // Failure path: restore previous sessionId and transcript.
     ;(mockClient.newSession as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error("cli newSession failed"),
     )
     await expect(host.newSession({ cwd: "/a" })).rejects.toThrow("cli newSession failed")
     expect(host.state.sessionId).toBe("s-new")
+    expect(host.state.messages).toEqual(before.messages)
+    const emitted = await drainBuffered(host.patches)
+    expect(emitted.map((patch) => patch.op)).toEqual(["reset", "reset", "update-session"])
+    expect(emitted[1]).toMatchObject({ messages: before.messages })
     expect(host.state.turnState).toBe("idle")
   })
 
@@ -1319,8 +1329,14 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
   })
 
   it("failure: sessionId rolls back, a SECOND reset is emitted, versions stay monotonic (watermark simulation), and the error is rethrown", async () => {
-    const { host, conn, mockClient, callbacks } = await setup()
+    const { host, mockClient, callbacks } = await setup()
     await host.newSession({ cwd: "/a" }) // A = "s1"
+    callbacks.onUpdate(chunkOf("s1", "retained history"))
+    callbacks.onUpdate(notif("s1", { sessionUpdate: "plan", entries: [] }))
+    await drainBuffered(host.patches)
+    const before = host.state
+    expect(before.messages).toHaveLength(1)
+    expect(before.carried).toHaveLength(1)
 
     const loadError = Object.assign(new Error("session not found"), { code: -32000 })
     ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockRejectedValue(loadError)
@@ -1333,9 +1349,12 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
 
     await expect(switchPromise).rejects.toBe(loadError) // the error is rethrown
 
-    // sessionId rolled back; state emptied + idle (second reset + idle patch)
+    // Restore the snapshot and discard the partial replay.
     expect(host.state.sessionId).toBe("s1")
-    expect(host.state.messages).toEqual([])
+    expect(host.state.messages).toEqual(before.messages)
+    expect(host.state.carried).toEqual(before.carried)
+    expect(host.state.nextMessageSeq).toBe(before.nextMessageSeq)
+    expect(host.state.nextSegmentSeq).toBe(before.nextSegmentSeq)
     expect(host.state.turnState).toBe("idle")
 
     // Monotonicity — watermark simulation: NO emitted patch may sit at/below the
@@ -1353,6 +1372,60 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
       "add-message",
       "reset",
       "update-session",
+    ])
+    expect(emitted[2]).toMatchObject({ messages: before.messages, carried: before.carried })
+  })
+
+  it("failed load preserves a transcript of 336 messages", async () => {
+    const { host, mockClient, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" })
+    for (let i = 0; i < 336; i++) {
+      callbacks.onUpdate(
+        notif("s1", {
+          sessionUpdate: "agent_message",
+          messageId: `message-${i}`,
+          content: [{ type: "text", text: `history ${i}` }],
+        }),
+      )
+    }
+    const before = host.state.messages
+    expect(before).toHaveLength(336)
+    mockClient.loadSession = vi.fn().mockRejectedValue(new Error("load failed"))
+
+    await expect(host.loadSession({ cwd: "/b", sessionId: "s2" })).rejects.toThrow("load failed")
+
+    expect(host.state.messages).toEqual(before)
+  })
+
+  it("rejects a same-session load during a turn without changing state or invalidating the turn", async () => {
+    const { host, mockClient, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" })
+    const pending = deferred<void>()
+    mockClient.prompt = vi.fn().mockReturnValue(pending.promise)
+    const prompt = host.prompt("s1", "in-flight turn")
+    callbacks.onUpdate(chunkOf("s1", "response started"))
+    const before = host.state
+    expect(before.turnState).toBe("responding")
+    await drainBuffered(host.patches)
+
+    try {
+      await expect(host.loadSession({ cwd: "/a", sessionId: "s1" })).rejects.toMatchObject({
+        name: "SessionBusyError",
+      })
+      expect(mockClient.loadSession).not.toHaveBeenCalled()
+      expect(host.state).toBe(before)
+      expect(await drainBuffered(host.patches)).toEqual([])
+    } finally {
+      pending.resolve(undefined)
+      await prompt
+    }
+    // Completion takes effect only if turnSeq was left intact.
+    expect(host.state.turnState).toBe("idle")
+    expect(await drainBuffered(host.patches)).toEqual([
+      expect.objectContaining({
+        op: "update-session",
+        changes: expect.objectContaining({ turnState: "idle" }),
+      }),
     ])
   })
 
@@ -1703,6 +1776,7 @@ describe("loadSession (http-state-gaps C2)", () => {
       configOptions: staleOptions,
     })
     await host.loadSession({ cwd: "/test", sessionId: "session-A" })
+    expect(mockClient.loadSession).toHaveBeenCalledOnce()
 
     // Existing (auto) survives — load returned stale (manual) but same session
     expect(host.state.configOptions.find((o) => o.id === "mode")?.currentValue).toBe("auto")
