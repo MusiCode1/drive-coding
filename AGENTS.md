@@ -74,6 +74,20 @@ The current slice roadmap is `docs-for-llm/frontend/slices.md`.
 - No `any` — use `unknown` + ArkType to refine.
 - No deep `null` — `T | undefined` or Option pattern.
 
+### 🔴 A policy decision is not made until a linter enforces it
+
+User decision, 2026-11-20: *every policy decision is recorded as a linter.* A rule that
+lives only in prose — a size cap, an import boundary, a closed list of extension points,
+"the FE does not report derived metadata" — is a wish. Text that forbids does not enforce.
+
+⇒ **When a plan or brief states a policy, the same slice adds the check that fails on a
+violation** (a script, a test, or a `size-budgets.json` entry), wired into a gate that
+actually runs (`pre-commit`, `pre-push`, or the package test suite). Each check ships with
+a **negative control** — a fixture that violates the rule and must turn the check red —
+otherwise a green result may only mean "not checked" (see the next section, and
+"green that means unchecked" below). Prior art: `acp-wire/src/browser-entry.test.ts`,
+the import allowlist test of `session-host/session-switch.ts`, `lint-file-size.mjs`.
+
 ### 🔴 A fail-open path is not implemented until its silence is pinned
 
 Fail-open is the right default for anything that must not block the user — hooks,
