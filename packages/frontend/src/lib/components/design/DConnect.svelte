@@ -1,40 +1,39 @@
 <script lang="ts">
-import ChevronDown from "@lucide/svelte/icons/chevron-down"
-import Eye from "@lucide/svelte/icons/eye"
-import FolderIcon from "@lucide/svelte/icons/folder"
-import FolderOpen from "@lucide/svelte/icons/folder-open"
-import GitBranch from "@lucide/svelte/icons/git-branch"
-import Globe from "@lucide/svelte/icons/globe"
-import Loader from "@lucide/svelte/icons/loader-circle"
-import Mic from "@lucide/svelte/icons/mic"
-import Power from "@lucide/svelte/icons/power"
-import RefreshCw from "@lucide/svelte/icons/refresh-cw"
-import Search from "@lucide/svelte/icons/search"
-import TerminalIcon from "@lucide/svelte/icons/square-terminal"
-import Alert from "@lucide/svelte/icons/triangle-alert"
-import Users from "@lucide/svelte/icons/users"
-import X from "@lucide/svelte/icons/x"
+import CliMark from "./CliMark.svelte"
 import type { DesignContent } from "./content"
+import * as I from "./icons"
+import type { ConnectActions } from "./proto"
+import { ConnectUi, connectLists, PROC_PEEK, RECENT_PEEK } from "./ui-state.svelte"
 
-let { content, state: view }: { content: DesignContent; state: string } = $props()
+let {
+  content,
+  state: view,
+  cli,
+  cwd,
+  on = {},
+}: {
+  content: DesignContent
+  state: string
+  cli?: string
+  cwd?: string
+  on?: ConnectActions
+} = $props()
 const c = $derived(content.copy)
 const d = $derived(content.data)
-const procs = $derived(view === "empty" ? [] : d.processes)
-const PROC_PEEK = 3
-const RECENT_PEEK = 5
-// UI-only toggles; the gallery reloads the iframe when `state` changes, so the initial value is enough.
-let allProcs = $state(false)
-let allRecents = $state(false)
-const expanded = $derived(view === "expanded")
-const procsShown = $derived(allProcs || expanded ? procs : procs.slice(0, PROC_PEEK))
-const recentsShown = $derived(allRecents || expanded ? d.recents : d.recents.slice(0, RECENT_PEEK))
-const recentsOpen = $derived(allRecents || expanded)
+const live = $derived(on.connect !== undefined)
+const ui = new ConnectUi()
+const L = $derived(connectLists(d, view, ui))
+const promptText = $derived(live ? ui.prompt : view === "prompt" ? d.userText : "")
+const confirmIdx = $derived(live ? ui.confirmKill : 2)
 </script>
 
 <div class="connect">
   <header class="topbar">
     <span class="brand"><span class="mark"></span><span class="ltr">{c.brand}</span></span>
-    <span class="chip"><Globe size={15} />{c.language}<ChevronDown size={15} /></span>
+    <span class="top-acts">
+      <button class="chip" onclick={() => on.openPopup?.("langSelect")}><I.Globe size={15} />{c.language}<I.ChevronDown size={15} /></button>
+      <button class="ib" aria-label={c.settings} onclick={() => on.settings?.()}><I.SettingsIcon size={18} /></button>
+    </span>
   </header>
 
   <div class="cols">
@@ -43,30 +42,34 @@ const recentsOpen = $derived(allRecents || expanded)
       <p class="hint">{c.connectHint}</p>
 
       <div class="form">
-        <div class="fl first"><span>{c.promptLabel}</span></div>
-        <div class="field prompt" class:filled={view === "prompt"}>
-          <span class="v ptext" class:ph={view !== "prompt"}>{view === "prompt" ? d.userText : c.promptPh}</span>
-          <button class="ib" aria-label={c.dictate}><Mic size={18} /></button>
-        </div>
-        <div class="fl"><span>{c.cli}</span><button class="ib" aria-label={c.refresh}><RefreshCw size={16} /></button></div>
-        <div class="field"><TerminalIcon size={18} class="muted" /><span class="v">{d.clis[0]?.name}</span><ChevronDown size={18} class="muted" /></div>
+        <div class="fl first"><span>{c.cli}</span><button class="ib" aria-label={c.refresh}><I.RefreshCw size={16} /></button></div>
+        <button class="field pick" onclick={() => on.openPopup?.("select")}><CliMark name={cli ?? d.clis[0]?.name ?? ""} size={20} /><span class="v">{cli ?? d.clis[0]?.name}</span><I.ChevronDown size={18} class="muted" /></button>
         <div class="fl"><span>{c.cwd}</span></div>
         <div class="field cwd">
-          <button class="ib" aria-label={c.browse}><FolderOpen size={18} /></button>
-          <span class="v mono-path">{d.cwd}</span>
-          <ChevronDown size={18} class="muted" />
+          <button class="ib" aria-label={c.browse} onclick={() => on.openPopup?.("folderPicker")}><I.FolderOpen size={18} /></button>
+          <button class="v mono-path" onclick={() => on.openPopup?.("cwdCombo")}>{cwd ?? d.cwd}</button>
+          <button class="ib" aria-label={c.recent} onclick={() => on.openPopup?.("cwdCombo")}><I.ChevronDown size={18} /></button>
+        </div>
+        <div class="fl"><span>{c.promptLabel}</span></div>
+        <div class="field prompt" class:filled={promptText !== ""}>
+          {#if live}
+            <textarea class="v ptext" rows="3" placeholder={c.promptPh} bind:value={ui.prompt}></textarea>
+          {:else}
+            <span class="v ptext" class:ph={promptText === ""}>{promptText || c.promptPh}</span>
+          {/if}
+          <button class="ib" aria-label={c.dictate} onclick={() => live && (ui.prompt = d.userText)}><I.Mic size={18} /></button>
         </div>
         {#if view === "error"}
           <div class="error" role="alert">
-            <Alert size={18} />
+            <I.Alert size={18} />
             <div><b>{c.errorPrefix}</b><p>{d.error}</p><p class="dim">{c.authHint}</p></div>
           </div>
         {/if}
       </div>
 
       <div class="cta">
-        <button class="btn" disabled={view === "connecting"}>
-          {#if view === "connecting"}<Loader size={18} class="spin" />{c.connecting}{:else if view === "error"}{c.tryAgain}{:else if view === "prompt"}{c.startWithPrompt}{:else}{c.connect}{/if}
+        <button class="btn" disabled={view === "connecting"} onclick={() => on.connect?.(ui.prompt)}>
+          {#if view === "connecting"}<I.Loader size={18} class="spin" />{c.connecting}{:else if view === "error"}{c.tryAgain}{:else if promptText !== ""}{c.startWithPrompt}{:else}{c.connect}{/if}
         </button>
       </div>
     </section>
@@ -74,70 +77,72 @@ const recentsOpen = $derived(allRecents || expanded)
     <section class="list-col">
       <div class="sec">
         <div class="sec-h">
-          <span class="label">{c.active}{#if procs.length} · <span class="num">{procs.length}</span>{/if}</span>
-          <button class="ib" aria-label={c.refresh}><RefreshCw size={16} /></button>
+          <span class="label">{c.active}{#if L.procs.length} · <span class="num">{L.procs.length}</span>{/if}</span>
+          <button class="ib" aria-label={c.refresh}><I.RefreshCw size={16} /></button>
         </div>
         <div class="load">
           <div class="meter"><div class="top"><span>{c.machine.memory}</span><b class="num ltr">{d.machine.memUsed} / {d.machine.memTotal} GB</b></div><div class="bar"><i style="inline-size:{d.machine.memPct}%"></i></div></div>
           <div class="meter hot"><div class="top"><span>{c.machine.cpu}</span><b class="num ltr">{d.machine.cpuPct}%</b></div><div class="bar"><i style="inline-size:{d.machine.cpuPct}%"></i></div></div>
         </div>
-        {#if procs.length === 0}
+        {#if L.procs.length === 0}
           <p class="empty">{c.activeEmpty}</p>
         {/if}
-        {#each procsShown as p, i (i)}
-          <article class="proc" class:first={i === 0} class:confirm={i === 2}>
-            <button class="hit" aria-label="{c.reconnect}: {p.title}"></button>
+        {#each L.procsShown as p, i (p.i)}
+          <article class="proc" class:first={i === 0} class:confirm={confirmIdx === (live ? p.i : i)}>
+            <button class="hit" aria-label="{c.reconnect}: {p.title}" onclick={() => on.reconnect?.(p.i)}></button>
             <div class="l1">
               <span class="dot" class:busy={p.busy}></span><b>{p.title}</b>
-              <button class="kill" aria-label="{c.killNamed} {p.title}"><Power size={14} />{i === 2 ? c.killConfirm : c.kill}</button>
+              <button class="kill" aria-label="{c.killNamed} {p.title}" onclick={() => ui.kill(p.i, live)}><I.Power size={14} />{confirmIdx === (live ? p.i : i) ? c.killConfirm : c.kill}</button>
             </div>
-            <div class="l2"><span>{p.cli}</span><span>·</span><span class="ltr">{p.folder}</span><span>·</span><span>{p.ago}</span>{#if p.busy}<span class="busy">{c.working}</span>{/if}</div>
+            <div class="l2"><span class="cli"><CliMark name={p.cli} size={14} />{p.cli}</span><span>·</span><span class="ltr">{p.folder}</span><span>·</span><span>{p.ago}</span>{#if p.busy}<span class="busy">{c.working}</span>{/if}</div>
             {#if p.connections || p.children}
               <div class="l3">
-                {#if p.connections}<span><Eye size={13} />{p.connections} {c.connections}</span>{/if}
-                {#if p.children}<span><Users size={13} />{p.children} {c.children}</span>{/if}
+                {#if p.connections}<span><I.Eye size={13} />{p.connections} {c.connections}</span>{/if}
+                {#if p.children}<span><I.Users size={13} />{p.children} {c.children}</span>{/if}
               </div>
             {/if}
           </article>
         {/each}
-        {#if procs.length > PROC_PEEK}
-          <button class="more" onclick={() => (allProcs = !allProcs)}>{allProcs || expanded ? c.showLess : `${c.showMore} ${procs.length - PROC_PEEK}`}</button>
+        {#if L.procs.length > PROC_PEEK}
+          <button class="more" onclick={() => (ui.allProcs = !ui.allProcs)}>{L.procsOpen ? c.showLess : `${c.showMore} ${L.procs.length - PROC_PEEK}`}</button>
         {/if}
       </div>
 
       <div class="sec">
         <div class="sec-h">
-          <span class="label">{c.recent} · <span class="num">{d.recents.length}</span></span>
-          <button class="ib" aria-label={c.refresh}><RefreshCw size={16} /></button>
+          <span class="label">{c.recent} · <span class="num">{L.recents.length}</span></span>
+          <button class="ib" aria-label={c.refresh}><I.RefreshCw size={16} /></button>
         </div>
-        {#if recentsOpen}
-          <div class="field search"><Search size={15} class="muted" /><span class="v ph">{c.searchFolders}</span></div>
+        {#if L.recentsOpen}
+          <div class="field search"><I.Search size={15} class="muted" /><span class="v ph">{c.searchFolders}</span></div>
         {/if}
-        {#each recentsShown as r, i (i)}
+        {#each L.recentsShown as r, i (r.i)}
           <div class="item" class:sel={i === 0}>
-            <span class="glyph">{#if r.worktree}<GitBranch size={18} />{:else}<FolderIcon size={18} />{/if}</span>
+            <span class="glyph">{#if r.worktree}<I.GitBranch size={18} />{:else}<I.FolderIcon size={18} />{/if}</span>
             <span class="body">
               <span class="name ltr">{r.name}</span>
-              <span class="meta">{#if r.worktree}<span class="tag">{c.worktree}</span><span class="ltr">{r.parent}</span>·{/if}<span>{r.cli}</span>·<span>{r.ago}</span></span>
+              <span class="meta">{#if r.worktree}<span class="tag">{c.worktree}</span><span class="ltr">{r.parent}</span>·{/if}<span class="cli"><CliMark name={r.cli} size={12} />{r.cli}</span>·<span>{r.ago}</span></span>
             </span>
-            <button class="ib" aria-label={c.remove}><X size={16} /></button>
+            <button class="ib" aria-label={c.remove} onclick={() => ui.remove(r.i, live)}><I.X size={16} /></button>
           </div>
         {/each}
-        {#if d.recents.length > RECENT_PEEK}
-          <button class="more" onclick={() => (allRecents = !allRecents)}>{recentsOpen ? c.showLess : `${c.showAll} (${d.recents.length})`}</button>
+        {#if L.recents.length > RECENT_PEEK}
+          <button class="more" onclick={() => (ui.allRecents = !ui.allRecents)}>{L.recentsOpen ? c.showLess : `${c.showAll} (${L.recents.length})`}</button>
         {/if}
       </div>
     </section>
   </div>
 
   {#if view === "connecting"}
-    <div class="veil"><div class="veil-card"><Loader size={28} class="spin" />{c.loadingSession}</div></div>
+    <div class="veil"><div class="veil-card"><I.Loader size={28} class="spin" />{c.loadingSession}</div></div>
   {/if}
 </div>
 
 <style>
   .connect { min-block-size: 100dvh; display: flex; flex-direction: column; position: relative; }
   .topbar { display: flex; align-items: center; justify-content: space-between; padding: 48px 20px 0; max-inline-size: 1120px; inline-size: 100%; margin-inline: auto; }
+  .cli { display: inline-flex; align-items: center; gap: 5px; }
+  .top-acts { display: flex; align-items: center; gap: 4px; }
   .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: var(--t-lg); }
   .mark { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--accent); }
   .ltr { direction: ltr; unicode-bidi: isolate; }
@@ -146,7 +151,7 @@ const recentsOpen = $derived(allRecents || expanded)
   h1 { font-size: var(--t-xl); font-weight: 600; margin: 20px 20px 0; order: 0; }
   .hint { margin: 4px 20px 0; color: var(--fg-dim); font-size: var(--t-sm); order: 0; }
   .list-col { order: 2; }
-  .form { order: 1; padding: 20px; border-block-start: 1px solid var(--line); margin-block-start: 12px; }
+  .form { order: 1; padding: 20px; margin-block-start: 4px; }
   .cta { order: 3; z-index: 3; position: sticky; inset-block-end: 0; padding: 14px 20px 24px; background: var(--bg); border-block-start: 1px solid var(--line); margin-block-start: auto; }
   .fl { display: flex; align-items: center; justify-content: space-between; font-size: var(--t-sm); color: var(--fg-dim); margin: 14px 2px 6px; min-block-size: 24px; }
   .fl:first-child, .fl.first { margin-block-start: 0; }
@@ -159,6 +164,13 @@ const recentsOpen = $derived(allRecents || expanded)
   .error { display: flex; gap: 10px; margin-block-start: 16px; padding: 12px; border-radius: var(--r-k); color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); border: 1px solid color-mix(in srgb, var(--bad) 30%, transparent); }
   .error b { display: block; } .error p { margin: 2px 0 0; font-size: var(--t-sm); }
   .sec { padding: 20px 20px 0; }
+  /* section divider */
+  .sec + .sec { margin-block-start: 20px; border-block-start: 1px solid var(--line-2); }
+  .list-col { border-block-start: 1px solid var(--line-2); margin-block-start: 8px; }
+  .pick { inline-size: 100%; text-align: start; cursor: pointer; }
+  .cwd .v { text-align: end; cursor: pointer; }
+  textarea.ptext { flex: 1; resize: none; background: none; border: 0; color: var(--fg); font: inherit; font-size: var(--t-md); outline: none; padding: 0; }
+  textarea.ptext::placeholder { color: var(--fg-muted); font-size: var(--t-sm); }
   .sec-h { display: flex; align-items: center; justify-content: space-between; margin-block-end: 6px; }
   .load { display: flex; gap: 16px; margin-block: 2px 4px; }
   .load .meter { flex: 1; }
@@ -206,5 +218,6 @@ const recentsOpen = $derived(allRecents || expanded)
     .cta { position: static; padding: 16px 0 0; border: 0; background: none; }
     .sec { padding-inline: 0; }
     .sec:first-child { padding-block-start: 28px; }
+    .list-col { border: 0; margin: 0; }
   }
 </style>

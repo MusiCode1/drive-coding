@@ -1,18 +1,19 @@
 <script lang="ts">
-import ChevronRight from "@lucide/svelte/icons/chevron-right"
-import RefreshCw from "@lucide/svelte/icons/refresh-cw"
+import CliMark from "./CliMark.svelte"
 import type { DesignContent } from "./content"
+import * as I from "./icons"
+import type { NavActions } from "./proto"
 
-let { content }: { content: DesignContent } = $props()
+let { content, on = {} }: { content: DesignContent; on?: NavActions } = $props()
 const c = $derived(content.copy)
 const u = $derived(content.data.usage)
 </script>
 
 <div class="usage">
   <header class="head">
-    <button class="ib" aria-label={c.settingsTitle}><ChevronRight size={20} class="flip-back" /></button>
+    <button class="ib" aria-label={c.settingsTitle} onclick={() => on.back?.()}><I.ChevronRight size={20} class="flip-back" /></button>
     <h1>{c.usageTitle}</h1>
-    <button class="ib" aria-label={c.refresh}><RefreshCw size={16} /></button>
+    <button class="ib" aria-label={c.refresh}><I.RefreshCw size={16} /></button>
   </header>
 
   <section class="card">
@@ -27,7 +28,7 @@ const u = $derived(content.data.usage)
     <div class="cards">
       {#each u.rows as r (r.cli)}
         <article class="cli">
-          <div class="cli-h"><b>{r.cli}</b><span class="muted">{r.last}</span></div>
+          <div class="cli-h"><b class="cn"><CliMark name={r.cli} size={16} />{r.cli}</b><span class="muted">{r.last}</span></div>
           {#if r.notReported}
             <p class="muted small">{c.notReported}</p>
           {:else}
@@ -46,7 +47,7 @@ const u = $derived(content.data.usage)
       <thead><tr><th>CLI</th><th>{c.projects}</th><th>{c.sessionsCol}</th><th>{c.turns}</th><th>{c.peak}</th><th>{c.cost}</th><th>{c.lastActive}</th></tr></thead>
       <tbody>
         {#each u.rows as r (r.cli)}
-          <tr><td><b>{r.cli}</b></td><td class="num">{r.folders} {c.folders}</td>
+          <tr><td><b class="cn"><CliMark name={r.cli} size={16} />{r.cli}</b></td><td class="num">{r.folders} {c.folders}</td>
             {#if r.notReported}<td colspan="4" class="muted">{c.notReported}</td>{:else}<td class="num">{r.sessions}</td><td class="num">{r.turns}</td><td class="num">{r.peak}</td><td class="num">{r.cost}</td>{/if}
             <td class="muted">{r.last}</td></tr>
         {/each}
@@ -66,6 +67,7 @@ const u = $derived(content.data.usage)
   .tts div { display: flex; justify-content: space-between; gap: 12px; }
   .tts span { color: var(--fg-dim); }
   .cards { display: flex; flex-direction: column; gap: 10px; }
+  .cn { display: inline-flex; align-items: center; gap: 6px; }
   .cli { padding: 12px; border-radius: var(--r-c); background: var(--surface-2); }
   .cli-h { display: flex; justify-content: space-between; font-size: var(--t-sm); }
   dl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0 0; }

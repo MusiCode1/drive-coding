@@ -221,7 +221,10 @@
       "elicitOther": "Other…",
       "elicitSubmit": "Send answer",
       "elicitDecline": "Skip"
-    }
+    },
+    "closeSession": "Close session",
+    "closeConfirm": "Sure? Tap again",
+    "closeShort": "Close"
   },
   "data": {
     "machine": {
@@ -882,6 +885,7 @@
         "שאלה מהסוכן: sheet עם אפשרויות כשורות בחירה ותשובה חופשית.",
         "אזהרת \"צא — השאר רץ\" לא מופיעה ב־HTTP, כמו בקוד היום, ולכן אין לה עיצוב חדש."
       ]
-    }
+    },
+    "protoLink": "Open the clickable prototype"
   }
 }

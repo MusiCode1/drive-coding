@@ -49,6 +49,7 @@ function scaleFor(dev: DesignDevice): number {
   <header>
     <h1>{g.title}</h1>
     <p class="dim">{g.intro}</p>
+    <a class="proto-link" href="/design/proto?lang={lang}&palette={palette}" target="_blank" rel="noopener">{g.protoLink}</a>
   </header>
 
   <div class="bar">
@@ -89,6 +90,7 @@ function scaleFor(dev: DesignDevice): number {
   .gallery { block-size: 100dvh; overflow: auto; padding: 24px 20px 48px; }
   header { max-inline-size: 900px; }
   h1 { font-size: var(--t-xl); margin: 0; }
+  .proto-link { display: inline-flex; margin-block-start: 12px; padding: 10px 16px; border-radius: var(--r-c); background: var(--accent); color: var(--on-accent); font-weight: 600; text-decoration: none; }
   header p { margin: 6px 0 0; font-size: var(--t-sm); }
   .bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-block: 20px; position: sticky; inset-block-start: -24px; padding-block: 10px; background: var(--bg); z-index: 1; }
   .bar button { padding-inline: 10px; }
