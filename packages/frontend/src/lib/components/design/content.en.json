@@ -224,7 +224,10 @@
     },
     "closeSession": "Close session",
     "closeConfirm": "Sure? Tap again",
-    "closeShort": "Close"
+    "closeShort": "Close",
+    "rawOutput": "Raw output",
+    "copied": "Copied",
+    "playMsg": "Play"
   },
   "data": {
     "machine": {
@@ -572,21 +575,31 @@
     "tools": [
       {
         "kind": "search",
-        "label": "Searched cursor in playback",
+        "label": "cursor src/playback/playlist.ts",
         "meta": "6 hits",
-        "state": "done"
+        "state": "done",
+        "src": "Grep → pattern + basename"
       },
       {
         "kind": "read",
-        "label": "Read playlist.ts",
+        "label": "Read src/playback/playlist.ts",
         "meta": "212 lines",
-        "state": "done"
+        "state": "done",
+        "src": "human title"
+      },
+      {
+        "kind": "execute",
+        "label": "Check that the tests pass",
+        "meta": "exit 1",
+        "state": "failed",
+        "src": "rawInput.description"
       },
       {
         "kind": "edit",
-        "label": "Editing playlist.ts",
+        "label": "Edit src/playback/playlist.ts",
         "meta": "running…",
-        "state": "run"
+        "state": "run",
+        "src": "human title"
       }
     ],
     "toolCmd": "rg -n cursor src/playback",
@@ -785,7 +798,9 @@
       }
     ],
     "dirs": ["Academy", "agents", "backups", "bin", "notes", "projects", "scripts", "templates"],
-    "branches": ["fix/playlist", "main", "edge"]
+    "branches": ["fix/playlist", "main", "edge"],
+    "rawOut": "{\n  \"exitCode\": 0,\n  \"stdout\": \"src/playback/playlist.ts:41: cursor = 0\\n…\"\n}",
+    "time": "00:28"
   },
   "gallery": {
     "title": "drive-coding — mockups (unslop)",

@@ -36,6 +36,7 @@
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --dur-1: 140ms;
   --dur-2: 240ms;
+  --code-bg: color-mix(in srgb, var(--bg) 70%, #000);
   --mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
 
   font-family: var(--font);
@@ -190,7 +191,7 @@
 }
 .dv2 .sw.on::after {
   inset-inline-start: 21px;
-  background: var(--fg);
+  background: #fff;
 }
 .dv2 .meter .top {
   display: flex;
@@ -304,4 +305,50 @@
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* syntax highlighting — same .hljs-* → --hl-* mapping as chat/bubbles/MarkdownContent */
+.dv2 .hljs-keyword,
+.dv2 .hljs-built_in {
+  color: var(--hl-keyword);
+}
+.dv2 .hljs-string,
+.dv2 .hljs-template-string,
+.dv2 .hljs-regexp {
+  color: var(--hl-string);
+}
+.dv2 .hljs-comment,
+.dv2 .hljs-quote {
+  color: var(--hl-comment);
+  font-style: italic;
+}
+.dv2 .hljs-number,
+.dv2 .hljs-literal {
+  color: var(--hl-number);
+}
+.dv2 .hljs-title,
+.dv2 .hljs-title\.function_,
+.dv2 .hljs-title\.class_ {
+  color: var(--hl-func);
+}
+.dv2 .hljs-type {
+  color: var(--hl-type);
+}
+.dv2 .hljs-attr,
+.dv2 .hljs-attribute,
+.dv2 .hljs-property {
+  color: var(--hl-attr);
+}
+.dv2 .hljs-name,
+.dv2 .hljs-tag {
+  color: var(--hl-tag);
+}
+.dv2 .hljs-meta {
+  color: var(--hl-meta);
+}
+
+/* daylight: code sits on a warm light panel, not a dark slab */
+.dv2[data-palette="daylight"],
+[data-palette="daylight"] .dv2 {
+  --code-bg: #efe9e1;
 }

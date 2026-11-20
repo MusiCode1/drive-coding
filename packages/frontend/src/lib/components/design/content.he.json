@@ -224,7 +224,10 @@
     },
     "closeSession": "סגור סשן",
     "closeConfirm": "בטוח? לחץ שוב",
-    "closeShort": "סגור"
+    "closeShort": "סגור",
+    "rawOutput": "פלט גולמי",
+    "copied": "הועתק",
+    "playMsg": "השמע"
   },
   "data": {
     "machine": {
@@ -572,21 +575,31 @@
     "tools": [
       {
         "kind": "search",
-        "label": "חיפוש ‎cursor‎ בתיקיית playback",
+        "label": "cursor src/playback/playlist.ts",
         "meta": "6 תוצאות",
-        "state": "done"
+        "state": "done",
+        "src": "Grep → pattern + basename"
       },
       {
         "kind": "read",
-        "label": "קריאת playlist.ts",
+        "label": "Read src/playback/playlist.ts",
         "meta": "212 שורות",
-        "state": "done"
+        "state": "done",
+        "src": "human title"
+      },
+      {
+        "kind": "execute",
+        "label": "בדיקה שהטסטים עוברים",
+        "meta": "exit 1",
+        "state": "failed",
+        "src": "rawInput.description"
       },
       {
         "kind": "edit",
-        "label": "עריכת playlist.ts",
+        "label": "Edit src/playback/playlist.ts",
         "meta": "מריץ…",
-        "state": "run"
+        "state": "run",
+        "src": "human title"
       }
     ],
     "toolCmd": "rg -n cursor src/playback",
@@ -781,7 +794,9 @@
       }
     ],
     "dirs": ["Academy", "agents", "backups", "bin", "notes", "projects", "scripts", "templates"],
-    "branches": ["fix/playlist", "main", "edge"]
+    "branches": ["fix/playlist", "main", "edge"],
+    "rawOut": "{\n  \"exitCode\": 0,\n  \"stdout\": \"src/playback/playlist.ts:41: cursor = 0\\n…\"\n}",
+    "time": "00:28"
   },
   "gallery": {
     "title": "drive-coding — מוקאפים (unslop)",

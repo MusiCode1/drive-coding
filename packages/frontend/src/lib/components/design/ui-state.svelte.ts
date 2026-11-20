@@ -26,6 +26,19 @@ export function chatFlags(view: string, tabProp?: string) {
 
 export class ChatUi {
   draft = $state("")
+  #dragY: number | null = null
+  /** sheet handle: drag up opens, drag down closes, a tap toggles (like BottomSheet's peek↔full) */
+  gripDown(e: PointerEvent) {
+    this.#dragY = e.clientY
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+  gripUp(e: PointerEvent, open: boolean, on: ChatActions) {
+    if (this.#dragY === null) return
+    const dy = e.clientY - this.#dragY
+    this.#dragY = null
+    if (dy < -24 || (Math.abs(dy) <= 24 && !open)) on.openPanel?.()
+    else if (dy > 24 || (Math.abs(dy) <= 24 && open)) on.closePanel?.()
+  }
   confirmClose = $state(false)
   close(panelOn: PanelActions) {
     if (!this.confirmClose) {

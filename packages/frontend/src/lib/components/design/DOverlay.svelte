@@ -155,7 +155,7 @@ const options = $derived(
   .hid { display: flex; align-items: center; gap: 10px; font-size: var(--t-sm); color: var(--fg-dim); }
   .dock-perm { position: absolute; inset-inline: 0; inset-block-end: 0; padding: 16px 20px 24px; background: var(--surface-1); border-block-start: 2px solid var(--accent); border-radius: var(--r-s) var(--r-s) 0 0; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.4); }
   .pm-h { display: flex; align-items: center; gap: 8px; font-size: var(--t-lg); }
-  pre { margin: 0; padding: 10px 12px; border-radius: var(--r-c); background: color-mix(in srgb, var(--bg) 70%, #000); font-family: var(--mono); font-size: 13px; direction: ltr; text-align: left; color: var(--fg); overflow: auto; }
+  pre { margin: 0; padding: 10px 12px; border-radius: var(--r-c); background: var(--code-bg); font-family: var(--mono); font-size: 13px; direction: ltr; text-align: left; color: var(--fg); overflow: auto; }
   .spoken { margin: 0; font-size: var(--t-sm); color: var(--fg-muted); }
   .pm-a { display: flex; flex-direction: column; gap: 8px; }
   .big { block-size: 52px; border-radius: var(--r-c); border: 1px solid var(--line-2); font-size: var(--t-md); font-weight: 600; }

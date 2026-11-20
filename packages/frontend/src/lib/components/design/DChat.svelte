@@ -1,4 +1,5 @@
 <script lang="ts">
+import { highlightCode } from "$lib/util/code-highlight"
 import CliMark from "./CliMark.svelte"
 import type { DesignContent } from "./content"
 import DSessionPanel from "./DSessionPanel.svelte"
@@ -33,7 +34,13 @@ const ui = new ChatUi()
 const c = $derived(content.copy)
 const d = $derived(content.data)
 const { tab, speaking, recording, transcribing, idle, empty } = $derived(chatFlags(view, tabProp))
-const toolIcon = { search: I.Search, read: I.FileText, edit: I.Pencil } as const
+const toolIcon = {
+  search: I.Search,
+  read: I.FileText,
+  edit: I.Pencil,
+  execute: I.TerminalIcon,
+} as const
+const codeHtml = $derived(highlightCode(d.code, "typescript"))
 </script>
 
 <div class="chat" class:panel-open={panelOpen}>
@@ -61,11 +68,12 @@ const toolIcon = { search: I.Search, read: I.FileText, edit: I.Pencil } as const
             {#each d.tools as tl, i (i)}
               {@const Icon = toolIcon[tl.kind as keyof typeof toolIcon]}
               <div class="tool" class:run={tl.state === "run" && view !== "speaking"} class:open={i === 0}>
-                <div class="tool-h"><Icon size={15} /><span class="lbl">{tl.label}</span><span class="st">{tl.state === "run" && view === "speaking" ? "" : tl.meta}</span>{#if tl.state === "done" || view === "speaking"}<I.Check size={14} class="ok" />{/if}</div>
+                <div class="tool-h"><span class="sd {tl.state === 'run' && view === 'speaking' ? 'done' : tl.state}"></span><Icon size={15} /><span class="lbl"><bdi>{tl.label}</bdi></span><span class="st" class:fail={tl.state === "failed"}>{tl.state === "run" && view === "speaking" ? "" : tl.meta}</span></div>
                 {#if i === 0}
                   <div class="tool-b">
                     <div class="io"><span class="k">{c.input}</span><pre class="cmd"><span class="pr">$</span> {d.toolCmd}</pre></div>
                     <div class="io"><span class="k">{c.output}<span class="tb"><button class="ib" aria-label={c.copy}><I.Copy size={14} /></button><button class="ib" aria-label={c.expand} onclick={() => on.openPopup?.("viewer")}><I.Maximize size={14} /></button></span></span><pre>{d.toolOut}</pre></div>
+                    <details class="raw"><summary>{c.rawOutput}</summary><pre>{d.rawOut}</pre></details>
                   </div>
                 {/if}
               </div>
@@ -73,13 +81,14 @@ const toolIcon = { search: I.Search, read: I.FileText, edit: I.Pencil } as const
           </div>
 
           <div class="agent">
-            <p>{d.agentP1}</p>
+            <p>{d.agentP1.split("playlist.ts")[0]}<a class="flink" href="#file">playlist.ts</a>{d.agentP1.split("playlist.ts").slice(1).join("playlist.ts")}</p>
             <table>
               <thead><tr>{#each d.table[0] as h (h)}<th>{h}</th>{/each}</tr></thead>
               <tbody>{#each d.table.slice(1) as r (r[0])}<tr><td class="ltr-cell"><code>{r[0]}</code></td><td>{r[1]}</td></tr>{/each}</tbody>
             </table>
-            <pre class="code">{d.code}</pre>
+            <div class="codeblock"><pre class="code"><code>{@html codeHtml}</code></pre><button class="ib copy" aria-label={c.copy}><I.Copy size={14} /></button></div>
             <p>{d.agentP2}</p>
+            <div class="msg-a"><span class="time num">{d.time}</span><button class="ib" aria-label={c.copy}><I.Copy size={14} /></button><button class="ib" aria-label={c.expand}><I.Maximize size={14} /></button><button class="ib" aria-label={c.playMsg}><I.Volume size={14} /></button></div>
           </div>
 
           <div class="plan">
@@ -104,13 +113,13 @@ const toolIcon = { search: I.Search, read: I.FileText, edit: I.Pencil } as const
     </div>
 
     {#if speaking && tab !== "hidden"}
-      <div class="dock" aria-label={c.playback}>
+      <div class="dock" dir="ltr" aria-label={c.playback}>
+        <button class="ib" aria-label={c.stopPlayback} onclick={() => on.stopPlayback?.()}><I.Square size={15} /></button>
         <button class="ib" aria-label={c.prev}><I.SkipBack size={15} /></button>
         <button class="ib" aria-label={c.pause}><I.Pause size={15} /></button>
         <button class="ib" aria-label={c.next}><I.SkipForward size={15} /></button>
-        <span class="what">{c.playback} · {d.playbackPos}</span>
-        <button class="ib" aria-label={c.stopPlayback} onclick={() => on.stopPlayback?.()}><I.Square size={14} /></button>
-        <button class="ib" aria-label={c.mute} onclick={() => panelOn.toggleMute?.()}>{#if muted}<I.VolumeX size={15} />{:else}<I.Volume size={15} />{/if}</button>
+        <span class="what" dir="auto">{c.playback} · {d.playbackPos}</span>
+        <button class="ib" aria-label={c.mute} aria-pressed={muted} onclick={() => panelOn.toggleMute?.()}>{#if muted}<I.VolumeX size={15} />{:else}<I.Volume size={15} />{/if}</button>
       </div>
     {/if}
 
@@ -129,7 +138,7 @@ const toolIcon = { search: I.Search, read: I.FileText, edit: I.Pencil } as const
 
       {#if tab === "record" || tab === "live"}
         <div class="mic-row">
-          <div class="side-w">{#if recording || !idle}<button class="side" aria-label={c.discard} onclick={() => on.discard?.()}><I.X size={18} /></button><span>{c.discard}</span>{/if}</div>
+          <div class="side-w">{#if recording}<button class="side" aria-label={c.discard} onclick={() => on.discard?.()}><I.X size={18} /></button><span>{c.discard}</span>{/if}</div>
           <button class="mic" class:speak={speaking} class:rec={recording} class:busy={!speaking && !idle && !recording} class:live={tab === "live"} aria-label={c.status.idle} onclick={() => on.mic?.()}>
             {#if speaking}<I.Volume size={34} strokeWidth={1.6} />{:else if tab === "live"}<I.Radio size={34} strokeWidth={1.6} />{:else}<I.Mic size={34} strokeWidth={1.6} />{/if}
           </button>
@@ -138,7 +147,7 @@ const toolIcon = { search: I.Search, read: I.FileText, edit: I.Pencil } as const
       {:else if tab === "type"}
         <div class="type">
           <div class="field area">{#if on.send}<textarea rows="3" placeholder={c.placeholder} bind:value={ui.draft} oninput={() => on.slashInput?.(ui.draft)}></textarea>{:else}<span class="ph">{c.placeholder}</span>{/if}</div>
-          <div class="type-a"><button class="ib" aria-label={c.addImage}><I.ImagePlus size={18} /></button><button class="ib" aria-label={c.dictate} onclick={() => (ui.draft = d.userText)}><I.Mic size={18} /></button><span class="sp"></span><button class="chip send" onclick={() => ui.send(on)}><I.Send size={15} />{c.send}</button></div>
+          <div class="type-a"><button class="ib" aria-label={c.addImage}><I.ImagePlus size={18} /></button><button class="ib" aria-label={c.dictate} onclick={() => (ui.draft = d.userText)}><I.Mic size={18} /></button><span class="sp"></span><button class="chip stop-t" disabled={idle || recording || transcribing} aria-label={c.stopRun} onclick={() => on.stopRun?.()}><I.Square size={14} /></button><button class="chip send" onclick={() => ui.send(on)}><I.Send size={15} />{c.send}</button></div>
         </div>
       {/if}
 
@@ -148,12 +157,12 @@ const toolIcon = { search: I.Search, read: I.FileText, edit: I.Pencil } as const
         <button class:on={tab === "live"} onclick={() => on.setTab?.("live")}><I.Radio size={15} />{c.tabs.live}</button>
         <button class:on={tab === "hidden"} onclick={() => on.setTab?.("hidden")}><I.EyeOff size={15} />{c.tabs.hidden}</button>
       </nav>
-      <button class="grip" aria-label={c.panel} onclick={() => on.openPanel?.()}></button>
+      <button class="grip" aria-label={c.panel} onpointerdown={(e) => ui.gripDown(e)} onpointerup={(e) => ui.gripUp(e, panelOpen, on)}></button>
     </footer>
   </div>
 
   <aside class="side-panel" aria-label={c.panel}>
-    <span class="grip top"></span>
+    <button class="grip top" aria-label={c.panel} onpointerdown={(e) => ui.gripDown(e)} onpointerup={(e) => ui.gripUp(e, panelOpen, on)}></button>
     <DSessionPanel {content} on={panelOn} {muted} />
   </aside>
   <button class="scrim" aria-label={c.panel} onclick={() => on.closePanel?.()}></button>
@@ -189,13 +198,29 @@ const toolIcon = { search: I.Search, read: I.FileText, edit: I.Pencil } as const
   .tool-h :global(svg) { color: var(--fg-muted); flex-shrink: 0; }
   .lbl { flex: 1; min-inline-size: 0; }
   .st { font-size: var(--t-xs); color: var(--fg-muted); }
+  .sd { inline-size: 7px; block-size: 7px; border-radius: 50%; flex-shrink: 0; background: var(--fg-muted); }
+  .sd.done { background: var(--ok); } .sd.failed { background: var(--bad); } .sd.run { background: var(--busy); animation: dv2-ring 1.4s var(--ease) infinite; --ring: var(--busy); }
+  .st.fail { color: var(--bad); }
+  .raw summary { cursor: pointer; font-size: var(--t-xs); color: var(--fg-muted); list-style: none; }
+  .raw summary::before { content: "› "; }
+  .raw pre { margin-block-start: 6px; }
+  .codeblock { position: relative; margin-block-start: 10px; }
+  .codeblock .code { margin: 0; }
+  .codeblock code { font-size: inherit; }
+  .codeblock .copy { position: absolute; inset-block-start: 4px; inset-inline-end: 4px; opacity: 0; }
+  .codeblock:hover .copy, .codeblock:focus-within .copy { opacity: 1; }
+  @media (hover: none) { .codeblock .copy { opacity: 0.7; } }
+  .flink { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; direction: ltr; unicode-bidi: isolate; }
+  .msg-a { display: flex; align-items: center; gap: 2px; margin-block-start: 8px; color: var(--fg-muted); }
+  .msg-a .time { font-size: var(--t-xs); margin-inline-end: 6px; direction: ltr; }
+  .msg-a .ib { inline-size: 30px; block-size: 30px; }
   .tool.run .tool-h { color: var(--fg); }
   .tool.run .st { color: var(--busy); }
   :global(.dv2 .ok) { color: var(--ok) !important; }
   .tool-b { margin: 4px 0 6px; display: flex; flex-direction: column; gap: 8px; }
   .io { position: relative; }
   .k { display: flex; align-items: center; min-block-size: 28px; font-size: var(--t-xs); color: var(--fg-muted); margin-block-end: 2px; }
-  pre { max-inline-size: 100%; margin: 0; padding: 10px 12px; border-radius: var(--r-c); background: color-mix(in srgb, var(--bg) 70%, #000); font-family: var(--mono); font-size: 12.5px; line-height: 1.6; direction: ltr; text-align: left; overflow: auto; color: var(--fg-dim); white-space: pre; }
+  pre { max-inline-size: 100%; margin: 0; padding: 10px 12px; border-radius: var(--r-c); background: var(--code-bg); font-family: var(--mono); font-size: 12.5px; line-height: 1.6; direction: ltr; text-align: left; overflow: auto; color: var(--fg-dim); white-space: pre; }
   .cmd { color: var(--fg); } .pr { color: var(--fg-muted); }
   .tb { display: flex; margin-inline-start: auto; } .tb .ib { inline-size: 28px; block-size: 28px; }
   .agent p { margin: 0; line-height: 1.6; }
@@ -239,11 +264,13 @@ const toolIcon = { search: I.Search, read: I.FileText, edit: I.Pencil } as const
   .type { inline-size: 100%; max-inline-size: 760px; display: flex; flex-direction: column; gap: 6px; }
   .field.area { min-block-size: 84px; align-items: flex-start; padding-block: 10px; }
   .type-a { display: flex; align-items: center; gap: 4px; }
+  .stop-t { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); block-size: 36px; }
+  .stop-t:disabled { opacity: 0.35; cursor: default; }
   .send { background: var(--accent); color: var(--on-accent); border-color: transparent; block-size: 36px; }
   .tabs { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface-1); border: 1px solid var(--line); }
-  .tabs button { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px; font-size: var(--t-sm); color: var(--fg-muted); }
+  .tabs button { min-block-size: 44px; display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px; font-size: var(--t-sm); color: var(--fg-muted); }
   .tabs button.on { background: var(--surface-3); color: var(--fg); }
-  .grip { inline-size: 36px; block-size: 4px; border-radius: 2px; background: var(--line-2); padding: 0; box-sizing: content-box; border-block: 8px solid transparent; background-clip: padding-box; }
+  .grip { touch-action: none; cursor: grab; inline-size: 36px; block-size: 4px; border-radius: 2px; background: var(--line-2); padding: 0; box-sizing: content-box; border-block: 8px solid transparent; background-clip: padding-box; }
   .mic.rec { background: var(--recording); --ring: var(--recording); animation: dv2-ring 1.2s var(--ease) infinite; }
   .dot.rec { background: var(--recording); }
   .field.area textarea { flex: 1; align-self: stretch; resize: none; background: none; border: 0; outline: none; color: var(--fg); font: inherit; padding: 0; }

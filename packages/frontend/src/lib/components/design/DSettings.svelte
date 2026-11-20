@@ -125,7 +125,8 @@ const sections = $derived([
   .save { background: var(--accent); color: var(--on-accent); border-color: transparent; }
   @media (min-width: 768px) {
     .head { padding: 32px 24px 0; }
-    .groups { max-inline-size: 640px; }
+    .groups { max-inline-size: 640px; margin-inline: auto; inline-size: 100%; }
+    .head { max-inline-size: 640px; padding-inline: 0; }
     .group + .group { border-block-start: 1px solid var(--line); }
     .group { margin-block-start: 16px; padding: 16px 20px 8px; border: 1px solid var(--line); border-radius: var(--r-k); background: var(--surface-1); }
     .layout { padding-inline: 24px; }
@@ -133,6 +134,7 @@ const sections = $derived([
   }
   @media (min-width: 1024px) {
     .layout { display: grid; grid-template-columns: 220px 1fr; gap: 40px; }
+    .head { max-inline-size: 1040px; padding-inline: 24px; }
     .toc { display: flex; flex-direction: column; gap: 2px; position: sticky; inset-block-start: 24px; align-self: start; margin-block-start: 16px; }
     .toc span { padding: 8px 12px; border-radius: var(--r-c); color: var(--fg-dim); font-size: var(--t-sm); }
     .toc span.on { background: var(--surface-2); color: var(--fg); }
