@@ -9,6 +9,7 @@ import "$lib/components/design/tokens.css"
 import { type DesignLang, type DesignScreen, designContent } from "$lib/components/design/content"
 import DChat from "$lib/components/design/DChat.svelte"
 import DConnect from "$lib/components/design/DConnect.svelte"
+import DPopups from "$lib/components/design/DPopups.svelte"
 import DSettings from "$lib/components/design/DSettings.svelte"
 import DUsage from "$lib/components/design/DUsage.svelte"
 
@@ -27,6 +28,8 @@ const content = $derived(designContent(lang))
     <DChat {content} {state} />
   {:else if screen === "panel"}
     <DChat {content} state="conversation" panelOpen />
+  {:else if screen === "popups"}
+    <DPopups {content} {state} />
   {:else if screen === "settings"}
     <DSettings {content} {palette} />
   {:else}

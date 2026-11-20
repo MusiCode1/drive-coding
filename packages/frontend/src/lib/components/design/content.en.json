@@ -182,7 +182,46 @@
     "searchFolders": "Search folders…",
     "tapToConnect": "Tap a card to connect",
     "tapToTakeOver": "Tap to take over",
-    "killNamed": "Kill"
+    "killNamed": "Kill",
+    "connections": "connected",
+    "promptLabel": "What should it do?",
+    "promptPh": "Write or dictate the task now. It is sent to the agent as soon as the session opens.",
+    "startWithPrompt": "Start with this task",
+    "pop": {
+      "folderTitle": "Choose a folder",
+      "home": "Home",
+      "projects": "Projects",
+      "recentShort": "Recent",
+      "filter": "Filter this folder…",
+      "hidden": "Show hidden folders",
+      "up": "Up one folder",
+      "chooseThis": "Choose",
+      "close": "Close",
+      "comboHint": "Recent folders",
+      "sessionsN": "sessions",
+      "selectTitle": "Choose a CLI",
+      "permTitle": "The agent wants to write a file",
+      "permWhat": "Write",
+      "permOnce": "Allow once",
+      "permAlways": "Always allow this tool",
+      "permDeny": "Deny",
+      "permSpoken": "Read aloud. You can answer by voice: \"allow\" or \"deny\".",
+      "budgetTitle": "Session budget",
+      "contextUsed": "Context used",
+      "costSoFar": "Cost so far",
+      "compactionsN": "Compactions",
+      "quotaTitle": "Quota",
+      "resets": "Resets in 3 hours",
+      "slashFilter": "Commands",
+      "viewerTitle": "Output: rg -n cursor",
+      "copy": "Copy",
+      "wrap": "Wrap lines",
+      "elicitTitle": "The agent asks",
+      "elicitQ": "Which branch should the fix go to?",
+      "elicitOther": "Other…",
+      "elicitSubmit": "Send answer",
+      "elicitDecline": "Skip"
+    }
   },
   "data": {
     "machine": {
@@ -197,100 +236,90 @@
         "cli": "Claude Code",
         "folder": "voice-app",
         "busy": true,
-        "attached": false,
-        "watchers": 1,
         "children": 0,
-        "ago": "12 seconds ago"
+        "ago": "12 seconds ago",
+        "connections": 2
       },
       {
         "title": "Review the connect screen design",
         "cli": "Codex",
         "folder": "web-shell",
         "busy": false,
-        "attached": true,
-        "watchers": 1,
         "children": 2,
-        "ago": "2 minutes ago"
+        "ago": "2 minutes ago",
+        "connections": 1
       },
       {
         "title": "Write tests for the playback queue",
         "cli": "Cursor",
         "folder": "notes",
         "busy": false,
-        "attached": false,
-        "watchers": 0,
         "children": 0,
-        "ago": "8 minutes ago"
+        "ago": "8 minutes ago",
+        "connections": 0
       },
       {
         "title": "Clean up old dependencies",
         "cli": "OpenCode",
         "folder": "api-server",
         "busy": true,
-        "attached": false,
-        "watchers": 0,
         "children": 0,
-        "ago": "47 minutes ago"
+        "ago": "47 minutes ago",
+        "connections": 0
       },
       {
         "title": "Move settings to Svelte 5",
         "cli": "Claude Code",
         "folder": "design-system",
         "busy": false,
-        "attached": false,
-        "watchers": 0,
         "children": 0,
-        "ago": "1 hour ago"
+        "ago": "1 hour ago",
+        "connections": 0
       },
       {
         "title": "Chat scroll bug",
         "cli": "Codex",
         "folder": "mobile-client",
         "busy": false,
-        "attached": false,
-        "watchers": 0,
         "children": 0,
-        "ago": "2 hours ago"
+        "ago": "2 hours ago",
+        "connections": 3
       },
       {
         "title": "Add search to the session list",
         "cli": "Cursor",
         "folder": "infra",
         "busy": false,
-        "attached": true,
-        "watchers": 1,
         "children": 0,
-        "ago": "3 hours ago"
+        "ago": "3 hours ago",
+        "connections": 1
       },
       {
         "title": "Speed up first load",
         "cli": "OpenCode",
         "folder": "docs-site",
         "busy": false,
-        "attached": false,
-        "watchers": 0,
         "children": 0,
-        "ago": "5 hours ago"
+        "ago": "5 hours ago",
+        "connections": 0
       },
       {
         "title": "Translate missing strings",
         "cli": "Claude Code",
         "folder": "cli-tools",
         "busy": false,
-        "attached": false,
-        "watchers": 0,
         "children": 0,
-        "ago": "yesterday"
+        "ago": "yesterday",
+        "connections": 0
       },
       {
         "title": "Check a backend memory leak",
         "cli": "Codex",
         "folder": "data-pipeline",
         "busy": false,
-        "attached": false,
-        "watchers": 0,
         "children": 0,
-        "ago": "2 days ago"
+        "ago": "2 days ago",
+        "connections": 0
       }
     ],
     "recents": [
@@ -729,7 +758,31 @@
           "notReported": true
         }
       ]
-    }
+    },
+    "slash": [
+      {
+        "cmd": "/review",
+        "desc": "Review the branch changes"
+      },
+      {
+        "cmd": "/run",
+        "desc": "Run the app to check a change"
+      },
+      {
+        "cmd": "/bug",
+        "desc": "Log a bug while working"
+      },
+      {
+        "cmd": "/commit",
+        "desc": "Commit approved changes"
+      },
+      {
+        "cmd": "/resume",
+        "desc": "Resume a previous session"
+      }
+    ],
+    "dirs": ["Academy", "agents", "backups", "bin", "notes", "projects", "scripts", "templates"],
+    "branches": ["fix/playlist", "main", "edge"]
   },
   "gallery": {
     "title": "drive-coding — mockups (unslop)",
@@ -739,7 +792,8 @@
       "chat": "Chat",
       "panel": "Session panel",
       "settings": "Settings",
-      "usage": "Usage"
+      "usage": "Usage",
+      "popups": "Popups"
     },
     "states": {
       "default": "Default",
@@ -753,7 +807,15 @@
       "typing": "Type tab",
       "live": "Live tab",
       "hidden": "Hidden tab",
-      "expanded": "Lists expanded"
+      "expanded": "Lists expanded",
+      "folderPicker": "Folder picker",
+      "cwdCombo": "Folder list in field",
+      "select": "Picker (CLI)",
+      "budget": "Session budget",
+      "slash": "Command menu",
+      "viewer": "Output viewer",
+      "elicit": "Agent question",
+      "prompt": "With prompt"
     },
     "devices": {
       "phone": "Phone",
@@ -774,12 +836,13 @@
     "changed": "What changed",
     "notes": {
       "connect": [
-        "כרטיס תהליך שלם הוא לחיצה אחת: מתחבר מחדש, או משתלט כשהסשן פתוח במכשיר אחר. בתוך הכרטיס יש רק כפתור הריגה.",
+        "כרטיס תהליך שלם הוא לחיצה אחת שמתחברת. אין השתלטות: כמה מכשירים יכולים להיות מחוברים יחד, והכרטיס מראה כמה. בתוך הכרטיס יש רק כפתור הריגה.",
         "רשימות בלי גלילה פנימית: 3 תהליכים ו\"עוד N\", 5 תיקיות ו\"הצג הכול\" עם חיפוש.",
-        "בטלפון הטופס והכפתור נשארים קרובים; בטאבלט ובדסקטופ הטופס בעמודה נפרדת ותמיד גלוי.",
+        "בטלפון הטופס (משימה, CLI ותיקייה) בא ראשון, והתהליכים והתיקיות מתחתיו; הכפתור צמוד לתחתית. בטאבלט ובדסקטופ הטופס בעמודה נפרדת ותמיד גלוי.",
         "כל תהליך: כותרת, CLI · תיקייה · זמן. pid, hash ונתיב מלא ירדו מהשורה הראשית.",
         "שפה כ־chip בראש המסך. תיקיות worktree מסומנות כך, בלי hash.",
-        "שורת העומס היא שני מדים; רק ערך חם צבוע (פותר גם את באג #107)."
+        "שורת העומס היא שני מדים; רק ערך חם צבוע (פותר גם את באג #107).",
+        "מצב \"עם פרומפט\": שדה משימה במסך החיבור. כשהוא מלא, הכפתור הופך ל\"התחל עם המשימה\" והטקסט נשלח מיד כשהסשן נפתח."
       ],
       "chat": [
         "הכותרת: כותרת הסשן, CLI · תיקייה, ומד הקשר כטבעת קטנה.",
@@ -807,6 +870,17 @@
         "בטלפון כרטיס לכל CLI במקום טבלה רחבה שנשברת.",
         "מטאבלט ומעלה טבלה אמיתית, בלי שבירת שורות ובלי עמודה חתוכה.",
         "ספק שאינו מדווח מקבל שורה אחת שאומרת זאת, במקום מקפים."
+      ],
+      "popups": [
+        "בחירת תיקייה: מסך מלא בטלפון, שורות במקום כרטיס לכל תיקייה, קיצורים (בית, פרויקטים, אחרונות), סינון בתוך התיקייה, ופירורי לחם רגילים במקום monospace כתום.",
+        "רשימת התיקיות בשדה נפתחת צמודה לשדה, עם שם, תיקיית אב, זמן ומספר סשנים; הנתיב נחתך מההתחלה כך שהשם תמיד גלוי.",
+        "בוררים (CLI, שפה, מודל): sheet מלמטה בטלפון, טקסט מיושר להתחלה, אייקון בהתחלה וסימון בסוף; פריט לא מותקן מושבת עם הסבר.",
+        "בקשת הרשאה: היום הכרטיס נחתך מאחורי אזור הלשוניות, גם בהקלטה. בהצעה היא תופסת את מקום אזור המיקרופון, עם שלושה כפתורים גדולים וספירה לאחור, ותמיד גלויה.",
+        "תקציב סשן: חלון צמוד לטבעת, עם מספרים מבודדים (בלי היפוך של $ ו־K).",
+        "תפריט פקודות: ברוחב השדה, פקודה ותיאור מיושרים להתחלה, והאות שהוקלדה מודגשת.",
+        "מציג פלט: מסך מלא עם כותרת, העתקה וגלישת שורות.",
+        "שאלה מהסוכן: sheet עם אפשרויות כשורות בחירה ותשובה חופשית.",
+        "אזהרת \"צא — השאר רץ\" לא מופיעה ב־HTTP, כמו בקוד היום, ולכן אין לה עיצוב חדש."
       ]
     }
   }

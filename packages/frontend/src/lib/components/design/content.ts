@@ -8,11 +8,11 @@ import he from "./content.he.json"
 export type DesignContent = typeof he
 export type DesignLang = "he" | "en"
 
-export const SCREENS = ["connect", "chat", "panel", "settings", "usage"] as const
+export const SCREENS = ["connect", "chat", "panel", "popups", "settings", "usage"] as const
 export type DesignScreen = (typeof SCREENS)[number]
 
 export const STATES: Record<DesignScreen, readonly string[]> = {
-  connect: ["default", "expanded", "empty", "connecting", "error"],
+  connect: ["default", "prompt", "expanded", "empty", "connecting", "error"],
   chat: [
     "conversation",
     "speaking",
@@ -24,6 +24,16 @@ export const STATES: Record<DesignScreen, readonly string[]> = {
     "hidden",
   ],
   panel: ["default"],
+  popups: [
+    "folderPicker",
+    "cwdCombo",
+    "select",
+    "permission",
+    "budget",
+    "slash",
+    "viewer",
+    "elicit",
+  ],
   settings: ["default"],
   usage: ["default"],
 }

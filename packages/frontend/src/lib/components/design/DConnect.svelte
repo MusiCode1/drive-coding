@@ -5,8 +5,8 @@ import FolderIcon from "@lucide/svelte/icons/folder"
 import FolderOpen from "@lucide/svelte/icons/folder-open"
 import GitBranch from "@lucide/svelte/icons/git-branch"
 import Globe from "@lucide/svelte/icons/globe"
-import Hand from "@lucide/svelte/icons/hand"
 import Loader from "@lucide/svelte/icons/loader-circle"
+import Mic from "@lucide/svelte/icons/mic"
 import Power from "@lucide/svelte/icons/power"
 import RefreshCw from "@lucide/svelte/icons/refresh-cw"
 import Search from "@lucide/svelte/icons/search"
@@ -43,6 +43,11 @@ const recentsOpen = $derived(allRecents || expanded)
       <p class="hint">{c.connectHint}</p>
 
       <div class="form">
+        <div class="fl first"><span>{c.promptLabel}</span></div>
+        <div class="field prompt" class:filled={view === "prompt"}>
+          <span class="v ptext" class:ph={view !== "prompt"}>{view === "prompt" ? d.userText : c.promptPh}</span>
+          <button class="ib" aria-label={c.dictate}><Mic size={18} /></button>
+        </div>
         <div class="fl"><span>{c.cli}</span><button class="ib" aria-label={c.refresh}><RefreshCw size={16} /></button></div>
         <div class="field"><TerminalIcon size={18} class="muted" /><span class="v">{d.clis[0]?.name}</span><ChevronDown size={18} class="muted" /></div>
         <div class="fl"><span>{c.cwd}</span></div>
@@ -61,7 +66,7 @@ const recentsOpen = $derived(allRecents || expanded)
 
       <div class="cta">
         <button class="btn" disabled={view === "connecting"}>
-          {#if view === "connecting"}<Loader size={18} class="spin" />{c.connecting}{:else}{view === "error" ? c.tryAgain : c.connect}{/if}
+          {#if view === "connecting"}<Loader size={18} class="spin" />{c.connecting}{:else if view === "error"}{c.tryAgain}{:else if view === "prompt"}{c.startWithPrompt}{:else}{c.connect}{/if}
         </button>
       </div>
     </section>
@@ -81,16 +86,15 @@ const recentsOpen = $derived(allRecents || expanded)
         {/if}
         {#each procsShown as p, i (i)}
           <article class="proc" class:first={i === 0} class:confirm={i === 2}>
-            <button class="hit" aria-label="{p.attached ? c.takeOver : c.reconnect}: {p.title}"></button>
+            <button class="hit" aria-label="{c.reconnect}: {p.title}"></button>
             <div class="l1">
               <span class="dot" class:busy={p.busy}></span><b>{p.title}</b>
               <button class="kill" aria-label="{c.killNamed} {p.title}"><Power size={14} />{i === 2 ? c.killConfirm : c.kill}</button>
             </div>
             <div class="l2"><span>{p.cli}</span><span>·</span><span class="ltr">{p.folder}</span><span>·</span><span>{p.ago}</span>{#if p.busy}<span class="busy">{c.working}</span>{/if}</div>
-            {#if p.attached || p.watchers || p.children}
+            {#if p.connections || p.children}
               <div class="l3">
-                {#if p.attached}<span class="tag take"><Hand size={12} />{c.openElsewhere} · {c.tapToTakeOver}</span>{/if}
-                {#if p.watchers}<span><Eye size={13} />{p.watchers} {c.watchers}</span>{/if}
+                {#if p.connections}<span><Eye size={13} />{p.connections} {c.connections}</span>{/if}
                 {#if p.children}<span><Users size={13} />{p.children} {c.children}</span>{/if}
               </div>
             {/if}
@@ -141,11 +145,15 @@ const recentsOpen = $derived(allRecents || expanded)
   .form-col { display: contents; }
   h1 { font-size: var(--t-xl); font-weight: 600; margin: 20px 20px 0; order: 0; }
   .hint { margin: 4px 20px 0; color: var(--fg-dim); font-size: var(--t-sm); order: 0; }
-  .list-col { order: 1; }
-  .form { order: 2; padding: 20px; border-block-start: 1px solid var(--line); margin-block-start: 12px; }
-  .cta { order: 3; position: sticky; inset-block-end: 0; padding: 14px 20px 24px; background: var(--bg); border-block-start: 1px solid var(--line); margin-block-start: auto; }
+  .list-col { order: 2; }
+  .form { order: 1; padding: 20px; border-block-start: 1px solid var(--line); margin-block-start: 12px; }
+  .cta { order: 3; z-index: 3; position: sticky; inset-block-end: 0; padding: 14px 20px 24px; background: var(--bg); border-block-start: 1px solid var(--line); margin-block-start: auto; }
   .fl { display: flex; align-items: center; justify-content: space-between; font-size: var(--t-sm); color: var(--fg-dim); margin: 14px 2px 6px; min-block-size: 24px; }
-  .fl:first-child { margin-block-start: 0; }
+  .fl:first-child, .fl.first { margin-block-start: 0; }
+  .prompt { align-items: flex-start; min-block-size: 76px; padding-block: 10px; padding-inline-end: 4px; }
+  .field.prompt .v.ptext { overflow: visible; text-overflow: clip; white-space: normal; font-size: var(--t-sm); line-height: 1.5; }
+  .prompt.filled .ptext { font-size: var(--t-md); }
+  .prompt .ib { margin-block-start: -6px; }
   .cwd { padding-inline-start: 4px; }
   .mono-path { direction: ltr; text-align: end; }
   .error { display: flex; gap: 10px; margin-block-start: 16px; padding: 12px; border-radius: var(--r-k); color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); border: 1px solid color-mix(in srgb, var(--bad) 30%, transparent); }
@@ -163,7 +171,6 @@ const recentsOpen = $derived(allRecents || expanded)
   .kill { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 5px; block-size: 30px; padding-inline: 10px; border-radius: 8px; font-size: var(--t-xs); color: var(--fg-muted); border: 1px solid transparent; flex-shrink: 0; }
   .kill:hover { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
   .proc.confirm .kill { color: var(--on-accent); background: var(--bad); }
-  .tag.take { display: inline-flex; align-items: center; gap: 4px; color: var(--fg); }
   .more { margin-block-start: 10px; block-size: 36px; padding-inline: 12px; border-radius: var(--r-c); font-size: var(--t-sm); color: var(--accent); }
   .more:hover { background: var(--surface-2); }
   .search { min-block-size: 40px; margin-block: 2px 4px; font-size: var(--t-sm); }
