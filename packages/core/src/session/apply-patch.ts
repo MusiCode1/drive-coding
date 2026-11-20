@@ -129,8 +129,7 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
         messages: patch.messages,
         nextMessageSeq: patch.nextMessageSeq,
         nextSegmentSeq: patch.nextSegmentSeq,
-        // ‏reset מאפס `messages`, ולכן כל `after` הופך לעוגן תלוי-באוויר.
-        carried: [],
+        carried: patch.carried ?? [],
       }
     }
 

@@ -775,10 +775,8 @@ function reduceRecognized(
   }
 
   if (sessionUpdate === "_drive/reset") {
-    // ל-ACP אין מקבילה: שם החלפת-סשן היא חיבור חדש. אצלנו הזרם שורד את
-    // ההחלפה ולכן היא חייבת לנסוע בו. אין מטען — שני מוקדי-הפליטה ב-
-    // `session-host.ts` (796, 847) פולטים `messages: []` תמיד, כלומר
-    // reset הוא **ניקוי** ולא החלפה, ומה שאחריו בונה מחדש.
+    // ACP switches sessions on a new connection. Our stream stays open, so
+    // this update clears the old transcript before any replay in the batch.
     const newVersion = state.version + 1
     return {
       state: {
