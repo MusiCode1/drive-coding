@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from "vitest"
 import { A1_TS, CONVERSATION } from "./__testing__/conversation.js"
+import { applyPatch } from "./apply-patch.js"
 import { reduce } from "./reduce.js"
 import {
   findMessageIndex,
@@ -19,7 +20,7 @@ import {
   stateToSessionUpdates,
   type WireSessionUpdate,
 } from "./to-session-update.js"
-import type { SessionState } from "./types.js"
+import type { Patch, SessionState } from "./types.js"
 import { createInitialSessionState } from "./types.js"
 
 const mk = (): SessionState => createInitialSessionState({ sessionId: "s-1" })
@@ -60,6 +61,44 @@ function meaningful(s: SessionState) {
     ),
   }
 }
+
+describe("session reset", () => {
+  const empty: Extract<Patch, { op: "reset" }> = {
+    version: 1,
+    op: "reset",
+    messages: [],
+    nextMessageSeq: 0,
+    nextSegmentSeq: 0,
+  }
+
+  it("restores carried updates and clears them on an ordinary reset", () => {
+    const original = play([{ sessionUpdate: "plan", entries: [] }])
+    const reset = { ...empty, carried: original.carried ?? [] }
+    expect(original.carried).toHaveLength(1)
+    expect(applyPatch(mk(), reset).carried).toEqual(original.carried)
+    expect(applyPatch(original, empty).carried).toEqual([])
+  })
+
+  it("replays a reset with content, including session metadata", () => {
+    const original = play([...CONVERSATION, { sessionUpdate: "plan", entries: [] }])
+    const reset = {
+      ...empty,
+      messages: original.messages,
+      nextMessageSeq: original.nextMessageSeq,
+      nextSegmentSeq: original.nextSegmentSeq,
+      carried: original.carried ?? [],
+    }
+    const receiver = play([
+      { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "partial replay" } },
+    ])
+    const restored = play(patchToSessionUpdates(original, reset), receiver)
+    expect(meaningful(restored)).toEqual(meaningful(original))
+  })
+
+  it("encodes an empty reset as a single control update", () => {
+    expect(patchToSessionUpdates(mk(), empty)).toEqual([{ sessionUpdate: "_drive/reset" }])
+  })
+})
 
 describe("snapshot round-trip — nothing may vanish", () => {
   it("state → updates → state reproduces every meaningful field", () => {

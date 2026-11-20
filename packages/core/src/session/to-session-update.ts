@@ -270,8 +270,11 @@ export function patchToSessionUpdates(state: SessionState, patch: Patch): WireSe
 
     // ‏`reset` הוא החלפת-הסשן, ואין לו מקבילה: ‏ACP פותר את זה בחיבור חדש.
     // אצלנו הזרם שורד את ההחלפה, ולכן היא חייבת לנסוע בו.
-    case "reset":
-      return [{ sessionUpdate: "_drive/reset" }]
+    case "reset": {
+      const reset: WireSessionUpdate = { sessionUpdate: "_drive/reset" }
+      if (!patch.messages.length && !patch.carried?.length) return [reset]
+      return [reset, ...stateToSessionUpdates(state)]
+    }
 
     default:
       // ⚠️ ה-switch ממצה את הטיפוס, ולכן זו שורה שאינה אמורה לרוץ — אבל

@@ -1,4 +1,5 @@
 /**
+ * @vitest-environment jsdom
  * frame-ingest-parity.test.svelte.ts — gates G1–G6 for frame-ingest + meta-passthrough.
  *
  * Three feeds of the same recorded conversation (ACP session/update + _claude/sdkMessage):
@@ -11,6 +12,7 @@
  */
 
 import { readFileSync } from "node:fs"
+import { URL as NodeURL } from "node:url"
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import {
   applyPatch,
@@ -18,11 +20,20 @@ import {
   type Patch,
   patchToSessionUpdates,
   reduce,
+  serializeFrame,
+  snapshotFrame,
   type SessionState,
+  type SseFrame,
+  updateFrame,
   type WireSessionUpdate,
 } from "@drive-coding/core/session"
+import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import type { AcpClient } from "@drive-coding/provider/client"
+import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
+import type { AudioSink } from "$lib/engines/audio-sink"
+import { RemoteSessionView } from "$lib/session/remote-session-view"
 import type { SessionView, ViewEmission } from "$lib/session/session-view"
 import type { WireUpdateBatch } from "$lib/session/sse-reader"
 import type { Bubble } from "$lib/types/bubble"
@@ -35,7 +46,7 @@ type FixtureEntry = {
   frame: { method?: string; params?: unknown }
 }
 
-const fixturePath = new URL(
+const fixturePath = new NodeURL(
   "../../../../core/tests/fixtures/subagent-task-single.json",
   import.meta.url,
 )
@@ -282,6 +293,10 @@ vi.mock("$lib/adapters/sessions", () => ({
   normalizeSessionInfo: vi.fn((x: unknown) => x),
 }))
 
+vi.mock("./speaker-fetch-job", () => ({
+  executeSpeakerFetchJob: vi.fn().mockResolvedValue({ kind: "abandoned" }),
+}))
+
 vi.mock("$lib/adapters/ext", () => ({
   createExtClient: vi.fn(() => ({
     setThinkingTokens: vi.fn().mockResolvedValue(undefined),
@@ -293,6 +308,8 @@ let uuidCounter = 0
 vi.stubGlobal("crypto", { randomUUID: () => `test-uuid-${uuidCounter++}` })
 
 import { AgentSession } from "./agent-session.svelte"
+import { Settings } from "./settings.svelte"
+import { Speaker } from "./speaker.svelte"
 
 // ─── feed runners ───────────────────────────────────────────────────────────
 
@@ -388,5 +405,146 @@ describe("frame-ingest parity gate", () => {
     expect(httpTask?.kind === "tool" && httpTask.toolCall.task).toEqual(
       wsTask?.kind === "tool" ? wsTask.toolCall.task : undefined,
     )
+  })
+})
+
+describe("failed session switch over HTTP", () => {
+  const historyText = "This historical answer must stay silent on restore."
+  const liveText = "This new reply must be spoken after the restoration."
+  const partialText = "Discard this partial replay from the failed session."
+
+  function message(messageId: string, text: string) {
+    return { sessionUpdate: "agent_message", messageId, content: [{ type: "text", text }] }
+  }
+
+  function createSpeaker(session: AgentSession) {
+    const settings = new Settings()
+    settings.muted = false
+    const sink: AudioSink = {
+      prepareSegment: vi.fn(async () => {}),
+      play: vi.fn(async () => {}),
+      cancel: vi.fn(),
+      clear: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+    }
+    return new Speaker({
+      session,
+      settings,
+      playlist: new AudioPlaylist(sink),
+      audioStream: sink,
+      orderAlloc: new OrderAllocator(),
+    })
+  }
+
+  it.each([
+    { label: "restores text and tool bubbles", withSpeaker: false },
+    { label: "does not enqueue restored history for speech after the RPC returns", withSpeaker: true },
+  ])("$label", async ({ withSpeaker }) => {
+    let state = createInitialSessionState({ sessionId: "original" })
+    for (const update of [
+      message("history", historyText),
+      { sessionUpdate: "tool_call", toolCallId: "lookup", title: "Lookup", status: "completed" },
+    ]) {
+      state = reduce(state, update).state
+    }
+    state = { ...state, status: "connected", turnState: "idle" }
+    const before = state
+    const encoder = new TextEncoder()
+    const sse = new TransformStream<Uint8Array>()
+    const writer = sse.writable.getWriter()
+    const send = (frame: SseFrame) => writer.write(encoder.encode(serializeFrame(frame)))
+    const rpc = Promise.withResolvers<Response>()
+    const view = new RemoteSessionView("restore-test", "http://be.local", {
+      _fetch: async (url) =>
+        url.endsWith("/events")
+          ? new Response(sse.readable, { headers: { "Content-Type": "text/event-stream" } })
+          : rpc.promise,
+    })
+    const connecting = view.connect()
+    await send(snapshotFrame(before))
+    await connecting
+    const agent = new AgentSession({ view })
+    agent._setStatusForTest("connected")
+    const speaker = withSpeaker ? createSpeaker(agent) : undefined
+
+    async function patch(p: Patch) {
+      state = applyPatch(state, p)
+      const frame = updateFrame(state, p)
+      if (!frame) throw new Error(`Expected wire update for ${p.op}`)
+      await send(frame)
+    }
+
+    async function append(update: ReturnType<typeof message>) {
+      const { patches } = reduce(state, update)
+      expect(patches).toHaveLength(1)
+      for (const p of patches) await patch(p)
+    }
+
+    try {
+      await vi.waitFor(() => expect(agent.bubbles).toHaveLength(2))
+      const shapes = flatShapes(agent.bubbles)
+      const texts = flatMessageTexts(agent.bubbles)
+      const tools = toolShapes(agent.bubbles)
+      expect(texts).toEqual([historyText])
+      expect(tools).toMatchObject([{ toolCallId: "lookup" }])
+      expect(speaker?.debugInfo().recent ?? []).toEqual([])
+
+      const switching = agent.switchSession({ sessionId: "failed", cwd: "/test", cliKind: "claude" })
+      expect(agent.isLoadingHistory).toBe(true)
+      await patch({
+        op: "reset",
+        version: state.version + 1,
+        messages: [],
+        nextMessageSeq: 0,
+        nextSegmentSeq: 0,
+      })
+      await vi.waitFor(() => expect(agent.bubbles).toHaveLength(0))
+      state = { ...state, sessionId: "failed" }
+      await append(message("partial", partialText))
+      await vi.waitFor(() => expect(flatMessageTexts(agent.bubbles)).toEqual([partialText]))
+      await tick()
+      expect(speaker?.debugInfo().recent ?? []).toEqual([])
+
+      rpc.resolve(Response.json({ error: "load failed", code: -32002 }, { status: 502 }))
+      await switching
+      expect(agent.isLoadingHistory).toBe(false)
+      state = { ...state, sessionId: before.sessionId }
+      await patch({
+        op: "reset",
+        version: state.version + 1,
+        messages: before.messages,
+        nextMessageSeq: before.nextMessageSeq,
+        nextSegmentSeq: before.nextSegmentSeq,
+      })
+      await patch({
+        op: "update-session",
+        version: state.version + 1,
+        changes: { turnState: "idle" },
+      })
+      await vi.waitFor(() => {
+        expect(flatMessageTexts(agent.bubbles)).toEqual(texts)
+        expect(agent.turnState).toBe("idle")
+      })
+      expect(flatShapes(agent.bubbles)).toEqual(shapes)
+      expect(toolShapes(agent.bubbles)).toEqual(tools)
+
+      if (speaker) {
+        await tick()
+        const restoredRecent = speaker.debugInfo().recent
+        await append(message("live", liveText))
+        await patch({
+          op: "update-session",
+          version: state.version + 1,
+          changes: { turnState: "idle" },
+        })
+        await vi.waitFor(() => expect(speaker.debugInfo().recent).toContain(liveText))
+        expect(restoredRecent).toEqual([])
+        expect(speaker.debugInfo().recent).toEqual([liveText])
+      }
+    } finally {
+      speaker?.destroy()
+      await view.close()
+    }
   })
 })

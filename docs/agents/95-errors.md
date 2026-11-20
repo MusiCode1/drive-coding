@@ -9,8 +9,8 @@ read_when:
 tags: [errors, rpc]
 surface: [http, mcp]
 stability: stable
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.10.2
+updated: 2026-11-20
 ---
 
 # Errors
@@ -28,6 +28,7 @@ Use status code **and body shape** — many endpoints share **404** with differe
 | **400** | Bad JSON, invalid params, invalid **`waitMs`**: a non-integer, or an integer **outside 1..60000** (**no clamp**) — note **`0` / absent** is the **202** fire-and-forget path, not an error | Fix request; do not retry identical payload. |
 | **404** | No session host / connection for this agent | Agent record may still exist in registry — list agents vs host routes. |
 | **503** | Host result **`evict-timeout`** (transient ownership eviction) | Retry SSE/RPC; different from permanent missing agent. |
+| **409** + `code: "session_busy"` | `session/load` targets the current session while its turn is active | Wait for the turn to reach `idle` before reloading. |
 | **502** | Upstream ACP/session RPC failed on blocking management calls | Inspect `error` / `code` body. |
 
 ## SSE `GET /api/agents/:id/events`

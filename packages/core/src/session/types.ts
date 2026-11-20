@@ -281,6 +281,7 @@ export type Patch =
       version: number
       op: "reset"
       messages: SessionMessage[]
+      carried?: CarriedUpdate[]
       nextMessageSeq: number
       nextSegmentSeq: number
     }
