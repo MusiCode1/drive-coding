@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.10.1",
+  "docsVersion": "1.10.2",
   "docs": [
     {
       "id": "orientation",
@@ -138,7 +138,7 @@
       "tags": ["output", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.10.2",
       "routes": [
         "GET /api/agents/:id/history",
         "GET /api/agents/:id/events",
@@ -232,7 +232,7 @@
       "tags": ["rpc", "session"],
       "surface": ["http"],
       "stability": "transitional",
-      "docs_version": "1.10.0",
+      "docs_version": "1.10.2",
       "routes": ["POST /api/agents/:id/rpc"],
       "mcp_tools": [],
       "path": "docs/agents/50-rpc.md",
@@ -428,7 +428,7 @@
       "tags": ["errors", "rpc"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.10.2",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/95-errors.md",

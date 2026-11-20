@@ -36,6 +36,7 @@ import type { PatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
 import type { ExtendedSessionHost } from "../session-host.js"
 import { createSessionHost } from "../session-host.js"
+import { SessionBusyError } from "../session-switch.js"
 import { registerRpcRoute } from "./rpc.js"
 
 // ── mock helpers ──────────────────────────────────────────────────────────────
@@ -700,6 +701,23 @@ describe("POST /api/agents/:id/rpc", () => {
       const res = await postRpc(app, "agent-1", { method: "loadSession", params: { cwd: "/x" } })
       expect(res.status).toBe(400)
       expect(host.loadSession).not.toHaveBeenCalled()
+    })
+
+    it("returns 409 when reloading the current session during a turn", async () => {
+      const host = makeMockHost(makeMockState())
+      const error = new SessionBusyError("Current session is busy")
+      vi.mocked(host.loadSession).mockRejectedValue(error)
+      const registry = makeMockRegistry(host, makeMockBroadcaster())
+      const app = makeApp(registry)
+
+      const res = await postRpc(app, "agent-1", {
+        method: "session/load",
+        params: { sessionId: "s1", cwd: "/test" },
+      })
+
+      expect(res.status).toBe(409)
+      expect(await res.json()).toEqual({ error: error.message, code: "session_busy" })
+      expect(registry.notifySessionAttached).not.toHaveBeenCalled()
     })
 
     it("host.loadSession rejecting → 502 with {error, code}; notifySessionAttached NOT called", async () => {

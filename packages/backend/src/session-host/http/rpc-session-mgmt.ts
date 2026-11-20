@@ -10,6 +10,7 @@ import { getSelfBaseUrl } from "../../instances.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import type { ExtendedSessionHost } from "../session-host.js"
 import { buildSessionInitBase } from "../session-meta.js"
+import { SessionBusyError } from "../session-switch.js"
 import { codeOf, messageOf } from "./rpc-respond-wait.js"
 
 const log = createLogger("backend.session-host.rpc")
@@ -80,6 +81,9 @@ export async function tryDispatchBlockingSessionRpc(
         }
         return c.json({ sessionId: r.sessionId, version: host.state.version }, 200)
       } catch (e) {
+        if (e instanceof SessionBusyError) {
+          return c.json({ error: e.message, code: "session_busy" }, 409)
+        }
         const code = codeOf(e)
         return c.json(
           code === undefined ? { error: messageOf(e) } : { error: messageOf(e), code },

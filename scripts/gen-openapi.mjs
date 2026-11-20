@@ -228,6 +228,18 @@ const SPECIAL = {
       },
       400: jsonErrorResponse("Invalid JSON, params, method, or waitMs"),
       404: jsonErrorResponse("Agent connection not found"),
+      409: {
+        description: "session/load targets the current session while a turn is active",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: { error: { type: "string" }, code: { const: "session_busy" } },
+              required: ["error", "code"],
+            },
+          },
+        },
+      },
       503: jsonErrorResponse("Host evict timeout (transient)"),
     },
   },
