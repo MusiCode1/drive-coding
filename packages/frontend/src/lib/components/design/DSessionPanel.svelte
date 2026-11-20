@@ -16,6 +16,9 @@ import type { DesignContent } from "./content"
 let { content }: { content: DesignContent } = $props()
 const c = $derived(content.copy)
 const d = $derived(content.data)
+const SESSION_PEEK = 5
+let allSessions = $state(false)
+const sessionsShown = $derived(allSessions ? d.sessions : d.sessions.slice(0, SESSION_PEEK))
 </script>
 
 <div class="panel">
@@ -72,10 +75,11 @@ const d = $derived(content.data)
     <div class="field small"><Search size={15} class="muted" /><span class="v ph">{c.searchTitles}</span></div>
     <div class="seg mt"><span class="on">{c.allSessions}</span><span>{c.thisFolder}</span></div>
     <ul class="sess">
-      {#each d.sessions as s (s.title)}
+      {#each sessionsShown as s (s.title)}
         <li class:cur={s.current}><b>{s.title}</b><span><span class="ltr">{s.folder}</span> · {s.when}</span></li>
       {/each}
     </ul>
+    {#if d.sessions.length > SESSION_PEEK}<button class="more" onclick={() => (allSessions = !allSessions)}>{allSessions ? c.showLess : `${c.showMore} ${d.sessions.length - SESSION_PEEK}`}</button>{/if}
   </div>
 </div>
 
@@ -106,5 +110,7 @@ const d = $derived(content.data)
   .sess li b { font-weight: 500; font-size: var(--t-sm); }
   .sess li span { font-size: var(--t-xs); color: var(--fg-muted); }
   .sess li.cur::before { content: ""; position: absolute; inset-inline-start: 0; inset-block: 10px; inline-size: 3px; border-radius: 2px; background: var(--accent); }
+  .more { margin-block-start: 8px; block-size: 36px; padding-inline: 12px; border-radius: var(--r-c); font-size: var(--t-sm); color: var(--accent); }
+  .more:hover { background: var(--surface-2); }
   .last { padding-block-end: 24px; }
 </style>

@@ -175,7 +175,14 @@
     "cost": "עלות",
     "lastActive": "פעילות אחרונה",
     "folders": "תיקיות",
-    "notReported": "הספק אינו מדווח"
+    "notReported": "הספק אינו מדווח",
+    "showMore": "עוד",
+    "showAll": "הצג הכול",
+    "showLess": "הצג פחות",
+    "searchFolders": "חיפוש תיקייה…",
+    "tapToConnect": "הקש על כרטיס כדי להתחבר",
+    "tapToTakeOver": "הקש כדי להשתלט",
+    "killNamed": "הרוג את"
   },
   "data": {
     "machine": {
@@ -203,17 +210,87 @@
         "attached": true,
         "watchers": 1,
         "children": 2,
-        "ago": "לפני 8 דקות"
+        "ago": "לפני 2 דקות"
       },
       {
         "title": "כתיבת טסטים לתור ההשמעה",
         "cli": "Cursor",
-        "folder": "voice-app",
+        "folder": "notes",
         "busy": false,
         "attached": false,
         "watchers": 0,
         "children": 0,
+        "ago": "לפני 8 דקות"
+      },
+      {
+        "title": "ניקוי תלויות ישנות",
+        "cli": "OpenCode",
+        "folder": "api-server",
+        "busy": true,
+        "attached": false,
+        "watchers": 0,
+        "children": 0,
         "ago": "לפני 47 דקות"
+      },
+      {
+        "title": "מעבר ל־Svelte 5 במסך ההגדרות",
+        "cli": "Claude Code",
+        "folder": "design-system",
+        "busy": false,
+        "attached": false,
+        "watchers": 0,
+        "children": 0,
+        "ago": "לפני שעה"
+      },
+      {
+        "title": "באג בגלילה של הצ׳אט",
+        "cli": "Codex",
+        "folder": "mobile-client",
+        "busy": false,
+        "attached": false,
+        "watchers": 0,
+        "children": 0,
+        "ago": "לפני 2 שעות"
+      },
+      {
+        "title": "הוספת חיפוש לרשימת הסשנים",
+        "cli": "Cursor",
+        "folder": "infra",
+        "busy": false,
+        "attached": true,
+        "watchers": 1,
+        "children": 0,
+        "ago": "לפני 3 שעות"
+      },
+      {
+        "title": "שיפור זמן הטעינה הראשונה",
+        "cli": "OpenCode",
+        "folder": "docs-site",
+        "busy": false,
+        "attached": false,
+        "watchers": 0,
+        "children": 0,
+        "ago": "לפני 5 שעות"
+      },
+      {
+        "title": "תרגום מחרוזות חסרות",
+        "cli": "Claude Code",
+        "folder": "cli-tools",
+        "busy": false,
+        "attached": false,
+        "watchers": 0,
+        "children": 0,
+        "ago": "אתמול"
+      },
+      {
+        "title": "בדיקת זליגת זיכרון ב־backend",
+        "cli": "Codex",
+        "folder": "data-pipeline",
+        "busy": false,
+        "attached": false,
+        "watchers": 0,
+        "children": 0,
+        "ago": "לפני יומיים"
       }
     ],
     "recents": [
@@ -228,21 +305,203 @@
         "name": "web-shell",
         "parent": "~/projects",
         "cli": "Codex",
-        "ago": "לפני 8 דקות",
+        "ago": "לפני 12 שניות",
         "worktree": false
-      },
-      {
-        "name": "playlist-reconnect",
-        "parent": "voice-app",
-        "cli": "Claude Code",
-        "ago": "לפני 3 שעות",
-        "worktree": true
       },
       {
         "name": "notes",
         "parent": "~/projects",
         "cli": "Cursor",
-        "ago": "לפני 2 ימים",
+        "ago": "לפני 2 דקות",
+        "worktree": false
+      },
+      {
+        "name": "api-server",
+        "parent": "~/projects",
+        "cli": "OpenCode",
+        "ago": "לפני 2 דקות",
+        "worktree": false
+      },
+      {
+        "name": "playlist-reconnect",
+        "parent": "design-system",
+        "cli": "Claude Code",
+        "ago": "לפני 8 דקות",
+        "worktree": true
+      },
+      {
+        "name": "mobile-client",
+        "parent": "~/projects",
+        "cli": "Codex",
+        "ago": "לפני 8 דקות",
+        "worktree": false
+      },
+      {
+        "name": "infra",
+        "parent": "~/projects",
+        "cli": "Cursor",
+        "ago": "לפני 21 דקות",
+        "worktree": false
+      },
+      {
+        "name": "docs-site",
+        "parent": "~/projects",
+        "cli": "OpenCode",
+        "ago": "לפני 21 דקות",
+        "worktree": false
+      },
+      {
+        "name": "cli-tools",
+        "parent": "~/projects",
+        "cli": "Claude Code",
+        "ago": "לפני 47 דקות",
+        "worktree": false
+      },
+      {
+        "name": "data-pipeline",
+        "parent": "~/projects",
+        "cli": "Codex",
+        "ago": "לפני 47 דקות",
+        "worktree": false
+      },
+      {
+        "name": "rtl-tables",
+        "parent": "voice-app",
+        "cli": "Cursor",
+        "ago": "לפני שעה",
+        "worktree": true
+      },
+      {
+        "name": "web-shell-11",
+        "parent": "~/projects",
+        "cli": "OpenCode",
+        "ago": "לפני שעה",
+        "worktree": false
+      },
+      {
+        "name": "notes-12",
+        "parent": "~/projects",
+        "cli": "Claude Code",
+        "ago": "לפני 2 שעות",
+        "worktree": false
+      },
+      {
+        "name": "api-server-13",
+        "parent": "~/projects",
+        "cli": "Codex",
+        "ago": "לפני 2 שעות",
+        "worktree": false
+      },
+      {
+        "name": "design-system-14",
+        "parent": "~/projects",
+        "cli": "Cursor",
+        "ago": "לפני 3 שעות",
+        "worktree": false
+      },
+      {
+        "name": "mobile-client-15",
+        "parent": "~/projects",
+        "cli": "OpenCode",
+        "ago": "לפני 3 שעות",
+        "worktree": false
+      },
+      {
+        "name": "perm-flow",
+        "parent": "infra",
+        "cli": "Claude Code",
+        "ago": "לפני 5 שעות",
+        "worktree": true
+      },
+      {
+        "name": "docs-site-17",
+        "parent": "~/projects",
+        "cli": "Codex",
+        "ago": "לפני 5 שעות",
+        "worktree": false
+      },
+      {
+        "name": "cli-tools-18",
+        "parent": "~/projects",
+        "cli": "Cursor",
+        "ago": "אתמול",
+        "worktree": false
+      },
+      {
+        "name": "data-pipeline-19",
+        "parent": "~/projects",
+        "cli": "OpenCode",
+        "ago": "אתמול",
+        "worktree": false
+      },
+      {
+        "name": "voice-app-20",
+        "parent": "~/projects",
+        "cli": "Claude Code",
+        "ago": "לפני יומיים",
+        "worktree": false
+      },
+      {
+        "name": "web-shell-21",
+        "parent": "~/projects",
+        "cli": "Codex",
+        "ago": "לפני יומיים",
+        "worktree": false
+      },
+      {
+        "name": "search-sessions",
+        "parent": "notes",
+        "cli": "Cursor",
+        "ago": "לפני 3 ימים",
+        "worktree": true
+      },
+      {
+        "name": "api-server-23",
+        "parent": "~/projects",
+        "cli": "OpenCode",
+        "ago": "לפני 3 ימים",
+        "worktree": false
+      },
+      {
+        "name": "design-system-24",
+        "parent": "~/projects",
+        "cli": "Claude Code",
+        "ago": "לפני שבוע",
+        "worktree": false
+      },
+      {
+        "name": "mobile-client-25",
+        "parent": "~/projects",
+        "cli": "Codex",
+        "ago": "לפני שבוע",
+        "worktree": false
+      },
+      {
+        "name": "infra-26",
+        "parent": "~/projects",
+        "cli": "Cursor",
+        "ago": "לפני שבועיים",
+        "worktree": false
+      },
+      {
+        "name": "docs-site-27",
+        "parent": "~/projects",
+        "cli": "OpenCode",
+        "ago": "לפני שבועיים",
+        "worktree": false
+      },
+      {
+        "name": "car-mode",
+        "parent": "cli-tools",
+        "cli": "Claude Code",
+        "ago": "לפני שבועיים",
+        "worktree": true
+      },
+      {
+        "name": "data-pipeline-29",
+        "parent": "~/projects",
+        "cli": "Codex",
+        "ago": "לפני שבועיים",
         "worktree": false
       }
     ],
@@ -348,13 +607,68 @@
       },
       {
         "title": "כתיבת טסטים לתור ההשמעה",
-        "folder": "voice-app",
-        "when": "אתמול"
+        "folder": "notes",
+        "when": "לפני שעה"
       },
       {
         "title": "ניקוי תלויות ישנות",
-        "folder": "notes",
+        "folder": "api-server",
+        "when": "אתמול"
+      },
+      {
+        "title": "מעבר ל־Svelte 5 במסך ההגדרות",
+        "folder": "design-system",
+        "when": "אתמול"
+      },
+      {
+        "title": "באג בגלילה של הצ׳אט",
+        "folder": "mobile-client",
+        "when": "לפני יומיים"
+      },
+      {
+        "title": "הוספת חיפוש לרשימת הסשנים",
+        "folder": "infra",
         "when": "לפני 3 ימים"
+      },
+      {
+        "title": "שיפור זמן הטעינה הראשונה",
+        "folder": "docs-site",
+        "when": "לפני 4 ימים"
+      },
+      {
+        "title": "תרגום מחרוזות חסרות",
+        "folder": "cli-tools",
+        "when": "לפני שבוע"
+      },
+      {
+        "title": "בדיקת זליגת זיכרון ב־backend",
+        "folder": "data-pipeline",
+        "when": "לפני שבוע"
+      },
+      {
+        "title": "שכתוב מנגנון ההרשאות",
+        "folder": "voice-app",
+        "when": "לפני שבועיים"
+      },
+      {
+        "title": "תיעוד ה־API של הסשנים",
+        "folder": "web-shell",
+        "when": "לפני שבועיים"
+      },
+      {
+        "title": "תיקון RTL בטבלאות",
+        "folder": "notes",
+        "when": "לפני 3 שבועות"
+      },
+      {
+        "title": "מצב רכב: כפתור Play",
+        "folder": "api-server",
+        "when": "לפני חודש"
+      },
+      {
+        "title": "סנכרון כותרות בין מכשירים",
+        "folder": "design-system",
+        "when": "לפני חודש"
       }
     ],
     "settings": {
@@ -434,7 +748,8 @@
       "reconnecting": "מתחבר מחדש",
       "typing": "לשונית הקלדה",
       "live": "לשונית לייב",
-      "hidden": "לשונית מוסתר"
+      "hidden": "לשונית מוסתר",
+      "expanded": "רשימות פתוחות"
     },
     "devices": {
       "phone": "טלפון",
@@ -455,10 +770,10 @@
     "changed": "מה השתנה",
     "notes": {
       "connect": [
-        "בטלפון: כותרת, תהליכים פעילים, תיקיות אחרונות ואז הטופס; כפתור החיבור נשאר צמוד לתחתית.",
-        "בטאבלט ובדסקטופ: שתי עמודות. הטופס בצד ההתחלה ונשאר במקום, הרשימות בצד השני.",
-        "כל תהליך: כותרת, CLI · תיקייה · זמן, ופעולות עם תווית: התחבר מחדש או השתלט, והרוג בצד.",
-        "pid, hash ונתיב מלא ירדו מהשורה הראשית.",
+        "כרטיס תהליך שלם הוא לחיצה אחת: מתחבר מחדש, או משתלט כשהסשן פתוח במכשיר אחר. בתוך הכרטיס יש רק כפתור הריגה.",
+        "רשימות בלי גלילה פנימית: 3 תהליכים ו\"עוד N\", 5 תיקיות ו\"הצג הכול\" עם חיפוש.",
+        "בטלפון הטופס והכפתור נשארים קרובים; בטאבלט ובדסקטופ הטופס בעמודה נפרדת ותמיד גלוי.",
+        "כל תהליך: כותרת, CLI · תיקייה · זמן. pid, hash ונתיב מלא ירדו מהשורה הראשית.",
         "שפה כ־chip בראש המסך. תיקיות worktree מסומנות כך, בלי hash.",
         "שורת העומס היא שני מדים; רק ערך חם צבוע (פותר גם את באג #107)."
       ],
@@ -475,7 +790,7 @@
         "מתגי התצוגה הם שורות עם שם, לא שלושה אייקונים.",
         "אפשרויות הסוכן כשורות בחירה; Fast mode, Ultracode וסוכן תחת \"מתקדם\".",
         "אישורים לסוכן כבוררי מקטעים במקום שלוש רשימות נפתחות.",
-        "בטלפון ה־sheet, בטאבלט מגירה בצד, בדסקטופ סרגל צד קבוע."
+        "רשימת הסשנים: 5 ראשונים ו\"הצג עוד\", עם חיפוש וסינון. בטלפון sheet, בטאבלט מגירה, בדסקטופ סרגל צד."
       ],
       "settings": [
         "כל הכרטיסים של היום נשארו, מקובצים לשבע קבוצות.",

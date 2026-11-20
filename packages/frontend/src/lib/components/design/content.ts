@@ -12,7 +12,7 @@ export const SCREENS = ["connect", "chat", "panel", "settings", "usage"] as cons
 export type DesignScreen = (typeof SCREENS)[number]
 
 export const STATES: Record<DesignScreen, readonly string[]> = {
-  connect: ["default", "empty", "connecting", "error"],
+  connect: ["default", "expanded", "empty", "connecting", "error"],
   chat: [
     "conversation",
     "speaking",
