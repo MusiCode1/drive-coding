@@ -19,7 +19,7 @@
  * a `break` would fall through to the shared `return c.json({version}, 202)`
  * and break the contract. Management methods ignore `waitMs` silently (valid or invalid).
  *   - session/list   → 200 {sessions, sessionCapabilities} | 502 {error, code?}
- *   - session/load   → 200 {sessionId, version} | 400 (bad params / no cwd) | 409 (session_busy) | 502
+ *   - session/load   → 200 {sessionId, version} | 400 (bad params / no cwd) | 409 (session_busy: any load during turn) | 502
  *   - session/new    → 200 {sessionId, version} | 400 (no cwd) | 502
  *   - session/delete → 200 {ok:true} | 200 {ok:false, unsupported:true} (-32601) | 502
  *

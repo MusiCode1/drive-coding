@@ -229,7 +229,7 @@ const SPECIAL = {
       400: jsonErrorResponse("Invalid JSON, params, method, or waitMs"),
       404: jsonErrorResponse("Agent connection not found"),
       409: {
-        description: "session/load targets the current session while a turn is active",
+        description: "any session/load while a turn is active",
         content: {
           "application/json": {
             schema: {
