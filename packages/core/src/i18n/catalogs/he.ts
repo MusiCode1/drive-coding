@@ -506,6 +506,10 @@ export const he: Catalog = {
     "סשן זה מחובר כבר ממכשיר או טאב אחר. להתחבר כאן ינתק את החיבור הקיים.",
   "sessionUrl.takeover.confirm": "התחבר בכל זאת",
   "sessionUrl.takeover.cancel": "ביטול",
+  "sessionUrl.busy.title": "תור רץ בסשן הזה",
+  "sessionUrl.busy.body":
+    "אי אפשר לעבור לסשן אחר בזמן שהסוכן עובד. חכה לסיום התור, או עצור אותו, ונסה שוב.",
+  "sessionUrl.busy.back": "חזרה לסשן",
   // ─── agent-patch-unify C4: ממצא 3 — newSession ב-remote אינו נתמך ─── (הודעה בלבד, בלי ניווט)
   // ─── sidebar-resize ───
   "sidebar.resizeHandle": "גרור לשינוי רוחב",

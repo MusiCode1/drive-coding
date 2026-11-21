@@ -45,6 +45,7 @@ type MockSession = {
   sessionId: string | null
   agentId: string | null
   error: string | null
+  turnState: string
   sessionsCache: MockSessionsCache
   listSessions: ReturnType<typeof vi.fn>
   switchSession: ReturnType<typeof vi.fn>
@@ -73,6 +74,7 @@ function makeSession(overrides: Partial<MockSession> = {}): MockSession {
     sessionId: null,
     agentId: null,
     error: null,
+    turnState: "idle",
     sessionsCache: { sessions: [], error: null, ...cacheOverride },
     listSessions: vi.fn(async () => {}),
     switchSession: vi.fn(async () => {}),
@@ -133,6 +135,25 @@ describe("openSessionUrl", () => {
         settings: { sessionTransport: null } as never,
       }),
     ).toBe("connected")
+  })
+
+  it("returns busy when connected tab has active turn", async () => {
+    const session = makeSession({
+      status: "connected",
+      cliKind: "claude",
+      sessionId: "sess-a",
+      turnState: "responding",
+    })
+    expect(
+      await openSessionUrl({
+        cliKind: "claude",
+        sessionId: "sess-b",
+        session: session as never,
+        settings: { sessionTransport: null } as never,
+      }),
+    ).toBe("busy")
+    expect(session.listSessions).not.toHaveBeenCalled()
+    expect(session.switchSession).not.toHaveBeenCalled()
   })
 
   it("switches session when connected to same cliKind", async () => {

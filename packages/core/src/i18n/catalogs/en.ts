@@ -513,6 +513,10 @@ export const en: Catalog = {
     "This session is already connected from another device or tab. Connecting here will disconnect it.",
   "sessionUrl.takeover.confirm": "Connect anyway",
   "sessionUrl.takeover.cancel": "Cancel",
+  "sessionUrl.busy.title": "A turn is running",
+  "sessionUrl.busy.body":
+    "You can't switch sessions while the agent is working. Wait for the turn to finish, or stop it, then try again.",
+  "sessionUrl.busy.back": "Back to session",
   // ─── agent-patch-unify C4: finding 3 — newSession over remote is not supported yet ─── (message only, no navigation)
   // ─── sidebar-resize ───
   "sidebar.resizeHandle": "Drag to resize width",

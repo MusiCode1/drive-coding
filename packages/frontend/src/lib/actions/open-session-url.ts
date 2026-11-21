@@ -18,7 +18,7 @@ import type { Settings } from "$lib/view-models/settings.svelte"
 import { openSessionCold } from "./open-session-cold.js"
 import { connectionFailed } from "./session-connection.js"
 
-export type OpenSessionOutcome = "connected" | "not-found" | "needs-takeover" | "error"
+export type OpenSessionOutcome = "connected" | "not-found" | "needs-takeover" | "busy" | "error"
 
 const OWNED_AGENT_KEY = "dc.ownedAgentId"
 
@@ -50,6 +50,7 @@ export async function openSessionUrl(params: {
   }
 
   if (session.status === "connected" && session.cliKind === cliKind) {
+    if (session.turnState !== "idle") return "busy"
     await session.listSessions(true)
     if (session.sessionsCache.error !== null) return "error"
 
