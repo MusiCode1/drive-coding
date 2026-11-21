@@ -1,7 +1,7 @@
 /**
  * connection.ts — DELETE /api/agents/:id/connection (slice connection-set C0).
  *
- * Removes one viewer row from the connection set. Does NOT kill the agent,
+ * Releases one viewer and removes its row from the connection set. Does NOT kill the agent,
  * close the broadcaster, or unregister the session host.
  */
 
@@ -10,6 +10,7 @@ import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import { readConnectionId } from "./connection-id.js"
 
 export type ConnectionRouteOpts = {
+  beforeRemoveConnection?: (agentId: string, connectionId: string) => void
   closeLiveSocket?: (agentId: string, connectionId: string) => void
 }
 
@@ -27,6 +28,7 @@ export function registerConnectionRoute(
 
     const connectionId = readConnectionId(c)
     if (connectionId !== undefined) {
+      opts.beforeRemoveConnection?.(agentId, connectionId)
       connectionRegistry.removeConnection(agentId, connectionId)
       opts.closeLiveSocket?.(agentId, connectionId)
     }

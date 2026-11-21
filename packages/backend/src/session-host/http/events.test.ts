@@ -13,17 +13,21 @@
  *   - client disconnect → broadcaster.unsubscribe called
  */
 
+import { addSink, type LogEntry } from "@drive-coding/core/log"
 import type { Patch, SessionState } from "@drive-coding/core/session"
 import {
   createInitialSessionState,
   STREAM_ALIVE_INTERVAL_MS,
   StreamAliveNotification,
 } from "@drive-coding/core/session"
-import { addSink, type LogEntry } from "@drive-coding/core/log"
 import { type } from "arktype"
 import { Hono } from "hono"
 import { describe, expect, it, vi } from "vitest"
-import type { ConnectionRegistry } from "../../acp/connection-registry.js"
+import { type ConnectionRegistry, createConnectionRegistry } from "../../acp/connection-registry.js"
+import * as providerConnection from "../../acp/open-connection.js"
+import { createInMemoryAgentRegistry } from "../../agents/registry.js"
+import type { BootDeps } from "../../boot/deps.js"
+import { createWsStack } from "../../boot/ws.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
 import { createPatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
@@ -918,5 +922,86 @@ describe("שומר-הפער — oldestBufferedVersion מול snapshot.version (s
     await readSseEvents(res, 1, 200)
 
     expect(order.slice(0, 3)).toEqual(["read-state", "subscribe:10", "oldest"])
+  })
+})
+
+describe("DELETE connection with live SSE viewers", () => {
+  it("ends only the selected stream and preserves its replacement when the old stream drains", async () => {
+    const app = new Hono()
+    const host = makeMockHost(makeMockState())
+    const broadcaster = createPatchesBroadcaster(host.patches)
+    const agentSessionRegistry = makeMockRegistry({ host, broadcaster })
+    const connectionRegistry = createConnectionRegistry()
+    const registry = createInMemoryAgentRegistry()
+    const { id } = await registry.create({ cwd: process.cwd(), cliKind: "claude" })
+    const open = vi.spyOn(providerConnection, "openProviderConnection").mockResolvedValue({
+      capabilities: {},
+      close: vi.fn().mockResolvedValue(undefined),
+      onFrame: () => () => {},
+      onCrash: () => () => {},
+    } as unknown as Awaited<ReturnType<typeof providerConnection.openProviderConnection>>)
+    const keepalive = vi.fn()
+    let timer = 0
+    registerEventsRoute(app, agentSessionRegistry, connectionRegistry, {
+      _setInterval: (() => ++timer) as unknown as typeof setInterval,
+      _clearInterval: keepalive,
+    })
+    createWsStack().wireRoutes(app, {
+      connectionRegistry,
+      agentSessionRegistry,
+      registry,
+      orchestrator: {} as BootDeps["orchestrator"],
+    } as BootDeps)
+    const get = (connectionId: string) =>
+      app.request(`/api/agents/${id}/events?connectionId=${connectionId}`)
+    const detach = (connectionId: string) =>
+      app.request(`/api/agents/${id}/connection?connectionId=${connectionId}`, { method: "DELETE" })
+
+    try {
+      await connectionRegistry.connect(id, "claude", { cwd: process.cwd() })
+      const first = await get("first")
+      const second = await get("second")
+      const firstBody = first.text()
+      expect((await detach("first")).status).toBe(204)
+      const deadline = AbortSignal.timeout(500)
+      const text = await Promise.race([
+        firstBody,
+        new Promise<never>((_, reject) =>
+          deadline.addEventListener("abort", () =>
+            reject(new Error("SSE did not end after DELETE")),
+          ),
+        ),
+      ])
+      expect(text).toContain("event: snapshot")
+      expect(keepalive).toHaveBeenCalledExactlyOnceWith(1)
+      expect(connectionRegistry.getConnectionCount(id)).toBe(1)
+      expect(agentSessionRegistry.unregisterHost).not.toHaveBeenCalled()
+      expect((await detach("unknown")).status).toBe(204)
+      expect(connectionRegistry.getConnectionCount(id)).toBe(1)
+
+      // Keep the old snapshot write blocked while opening a replacement.
+      const old = await get("first")
+      expect((await detach("first")).status).toBe(204)
+      const replacement = await get("first")
+      const newStream = connectionRegistry
+        .listHttpConnectionIds(id)
+        .find((row) => row.connectionId === "first")?.stream
+      expect(newStream).toBeDefined()
+      expect(await old.text()).toContain("event: snapshot")
+      expect(connectionRegistry.listHttpConnectionIds(id)).toContainEqual(
+        expect.objectContaining({ connectionId: "first", stream: newStream }),
+      )
+      expect(keepalive.mock.calls.map(([id]) => id)).toEqual([1, 3])
+      expect(connectionRegistry.getConnectionCount(id)).toBe(2)
+
+      const remaining = [second.text(), replacement.text()]
+      await detach("second")
+      await detach("first")
+      await Promise.all(remaining)
+    } finally {
+      broadcaster.close()
+      await connectionRegistry.close(id)
+      open.mockRestore()
+    }
   })
 })

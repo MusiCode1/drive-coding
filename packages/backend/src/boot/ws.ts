@@ -12,6 +12,7 @@ import { createAgentWsHandler } from "../delivery/ws-agent.js"
 import { createEchoWsHandler } from "../delivery/ws-echo.js"
 import { SCOPE_DENIED_BODY, whenScopedWriteAllowed } from "../scope-write.js"
 import { registerConnectionRoute } from "../session-host/http/index.js"
+import type { PatchesBroadcaster } from "../session-host/patches-broadcaster.js"
 import type { BootDeps } from "./deps.js"
 
 const log = createLogger("backend.server")
@@ -67,6 +68,16 @@ export function createWsStack(): WsStack {
       })
     })
     registerConnectionRoute(app, connectionRegistry, {
+      beforeRemoveConnection(agentId, connectionId) {
+        const row = connectionRegistry
+          .listHttpConnectionIds(agentId)
+          .find((candidate) => candidate.connectionId === connectionId)
+        if (row?.stream !== undefined) {
+          agentSessionRegistry
+            .getBroadcaster(agentId)
+            ?.unsubscribe(row.stream as Parameters<PatchesBroadcaster["unsubscribe"]>[0])
+        }
+      },
       closeLiveSocket: agentWs.closeLiveSocket,
     })
 
