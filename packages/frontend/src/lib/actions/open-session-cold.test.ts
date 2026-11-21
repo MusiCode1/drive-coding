@@ -5,9 +5,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { openSessionCold } from "./open-session-cold.js"
 
-const findSessionCwdMock = vi.fn<
-  (cliKind: string, sessionId: string) => Promise<{ cwd: string; lastSeenAt: number } | null>
->()
+const findSessionCwdMock =
+  vi.fn<
+    (cliKind: string, sessionId: string) => Promise<{ cwd: string; lastSeenAt: number } | null>
+  >()
 
 vi.mock("$lib/adapters/session-lookup", () => ({
   findSessionCwd: (cliKind: string, sessionId: string) => findSessionCwdMock(cliKind, sessionId),

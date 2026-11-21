@@ -8,14 +8,15 @@ import type { SessionInfo } from "$lib/adapters/sessions"
 import { openSessionUrl } from "./open-session-url.js"
 
 const listAgentsMock = vi.fn<() => Promise<AgentPublic[]>>()
-const openSessionColdMock = vi.fn<
-  (params: {
-    cliKind: string
-    sessionId: string
-    session: unknown
-    settings: unknown
-  }) => Promise<string>
->()
+const openSessionColdMock =
+  vi.fn<
+    (params: {
+      cliKind: string
+      sessionId: string
+      session: unknown
+      settings: unknown
+    }) => Promise<string>
+  >()
 
 vi.mock("$lib/adapters/agents-api", () => ({
   listAgents: () => listAgentsMock(),

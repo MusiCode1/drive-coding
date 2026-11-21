@@ -24,9 +24,7 @@ describe("sessionPath", () => {
 
   it("encodes sessionId containing slashes (pi file path)", () => {
     const path = sessionPath("pi", PI_SESSION_ID)
-    expect(path).toBe(
-      `/chat/pi/${encodeURIComponent(PI_SESSION_ID)}`,
-    )
+    expect(path).toBe(`/chat/pi/${encodeURIComponent(PI_SESSION_ID)}`)
     expect(path).toContain("%2F")
   })
 

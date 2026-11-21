@@ -55,14 +55,7 @@ describe("openapi and RPC doc coupling", () => {
     const keys = (method: string, path: string) =>
       Object.keys(spec.paths[path]?.[method]?.responses ?? {}).sort()
 
-    expect(keys("post", "/api/agents/:id/rpc")).toEqual([
-      "200",
-      "202",
-      "400",
-      "404",
-      "409",
-      "503",
-    ])
+    expect(keys("post", "/api/agents/:id/rpc")).toEqual(["200", "202", "400", "404", "409", "503"])
     expect(keys("post", "/api/agents/:id/subscribe")).toEqual(["204", "400", "404"])
     expect(keys("post", "/api/agents")).toEqual(["201", "400", "500"])
     expect(keys("delete", "/api/agents/:id")).toEqual(["204", "404"])
