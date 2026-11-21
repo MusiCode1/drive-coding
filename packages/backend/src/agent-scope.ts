@@ -21,6 +21,7 @@
  */
 
 import { createHmac, randomBytes } from "node:crypto"
+import { isMessageGrantVerb } from "@drive-coding/core/schemas/scope-policy"
 
 /** Single grep term for the stance above. Referenced from every derived module. */
 export const NOT_A_SECURITY_BOUNDARY =
@@ -115,7 +116,7 @@ export function subtreeIds(
 const allowAlwaysGrants = new Set<string>()
 
 function grantKey(callerId: string, targetId: string, verb: string): string {
-  return `${callerId}\0${targetId}\0${verb}`
+  return `${callerId}\0${targetId}\0${isMessageGrantVerb(verb) ? "message" : verb}`
 }
 
 /** Records an allow_always grant for subsequent authorizeWrite checks. */

@@ -128,19 +128,23 @@ export function resolveScopePolicySource(input: {
   return globalSource
 }
 
+/** Verbs that share a permanent messaging grant and are eligible for reply grants. */
+const messageGrantVerbs = new Set<string>(["send", RPC_METHODS.prompt, RPC_METHODS.cancel])
+
+export function isMessageGrantVerb(verb: string): boolean {
+  return messageGrantVerbs.has(verb)
+}
+
 export function classifyScopeAction(verb: string): ScopeAction | undefined {
   const canonical = canonicalRpcMethod(verb)
+  if (isMessageGrantVerb(canonical ?? verb) || verb === "subscribe") return "message"
   if (canonical !== undefined) {
     if (canonical === RPC_METHODS.listSessions) return undefined
     if (canonical === RPC_METHODS.extMethod) return undefined
-    if (canonical === RPC_METHODS.prompt) return "message"
     if (canonical === RPC_METHODS.deleteSession) return "close"
     return "update"
   }
   switch (verb) {
-    case "subscribe":
-    case "send":
-      return "message"
     case "close":
       return "close"
     case "detach":

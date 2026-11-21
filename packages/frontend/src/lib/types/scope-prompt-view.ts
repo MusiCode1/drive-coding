@@ -1,4 +1,5 @@
 import type { MessageKey } from "@drive-coding/core/i18n"
+import { isMessageGrantVerb } from "@drive-coding/core/schemas/scope-policy"
 import {
   SCOPE_PROMPT_META_KEY,
   type ScopePromptDetail,
@@ -58,6 +59,9 @@ export function scopeDetailRows(
     },
     { label: t("scopePrompt.action"), value: verbLabel },
   ]
+  if (isMessageGrantVerb(detail.verb)) {
+    rows.push({ label: t("scopePrompt.allowAlways"), value: t("scopePrompt.messageGrant") })
+  }
   if (detail.verb === "subscribe" && typeof detail.watched === "string") {
     rows.push({ label: t("scopePrompt.watched"), value: detail.watched })
     rows.push({

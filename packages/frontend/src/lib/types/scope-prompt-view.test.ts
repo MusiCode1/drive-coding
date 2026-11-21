@@ -82,6 +82,22 @@ describe("scopeDetailRows", () => {
     })
   })
 
+  it.each(["send", "session/prompt", "session/cancel"])(
+    "shows shared messaging grant for %s",
+    (verb) => {
+      expect(scopeDetailRows({ ...detail, verb }, t)).toContainEqual({
+        label: "scopePrompt.allowAlways",
+        value: "scopePrompt.messageGrant",
+      })
+    },
+  )
+
+  it.each(["patch", "subscribe"])("omits the messaging grant for %s", (verb) => {
+    expect(scopeDetailRows({ ...detail, verb }, t)).not.toContainEqual(
+      expect.objectContaining({ value: "scopePrompt.messageGrant" }),
+    )
+  })
+
   it("adds countdown row when expiresAtMs is set", () => {
     const rows = scopeDetailRows({ ...detail, expiresAtMs: 1_700_000_000_000 }, t)
     expect(rows).toHaveLength(4)

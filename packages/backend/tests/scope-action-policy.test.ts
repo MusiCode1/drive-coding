@@ -12,7 +12,9 @@ import { Hono } from "hono"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { AGENT_ID_HEADER } from "../src/agent-identity.js"
 import {
+  authorizeWrite,
   issueToken,
+  recordAllowAlwaysGrant,
   resetAllowAlwaysGrantsForTests,
   resetScopeSecretForTests,
   SCOPE_HEADER,
@@ -298,6 +300,48 @@ describe("scope action policy C1", () => {
     expect(rpc.status).toBe(403)
   })
 
+  it.each([
+    { message: "allow" as const, status: 202 },
+    { message: "deny" as const, status: 403 },
+  ])("cancel follows the message policy ($message)", async ({ message, status }) => {
+    const { app, registry } = await makePolicyApp()
+    setScopePolicyOverride({ message, update: "deny" })
+    const a = await registry.create({ cliKind: "cursor", cwd: "/a" })
+    const b = await registry.create({ cliKind: "cursor", cwd: "/b" })
+    const response = await app.request(`/api/agents/${b.id}/rpc`, {
+      method: "POST",
+      headers: { [SCOPE_HEADER]: issueToken(a.id), "Content-Type": "application/json" },
+      body: JSON.stringify({ method: RPC_METHODS.cancel, params: { sessionId: "s1" } }),
+    })
+    expect(response.status).toBe(status)
+    if (status === 403) expect(await response.json()).toEqual(SCOPE_DENIED_BODY)
+  })
+
+  it("shares only messaging grants across send, prompt and cancel", async () => {
+    const token = issueToken("caller")
+    const allowed = (verb: string, targetId = "target") =>
+      authorizeWrite({
+        token,
+        verb,
+        targetId,
+        agents: [],
+        onEscalate: async () => "deny",
+      })
+
+    recordAllowAlwaysGrant("caller", "target", "send")
+    expect(await allowed(RPC_METHODS.prompt)).toBe("allow")
+    expect(await allowed(RPC_METHODS.cancel)).toBe("allow")
+    expect(await allowed("subscribe")).toBe("deny")
+    expect(await allowed("send", "other")).toBe("deny")
+
+    recordAllowAlwaysGrant("caller", "other", "subscribe")
+    expect(await allowed("send", "other")).toBe("deny")
+    recordAllowAlwaysGrant("caller", "target", "patch")
+    expect(await allowed("patch")).toBe("allow")
+    expect(await allowed("reply")).toBe("deny")
+    expect(await allowed("detach")).toBe("deny")
+  })
+
   it("ext RPC stays ask when all selectors allow", async () => {
     const { app, registry, agentSessionRegistry } = await makePolicyApp()
     setScopePolicyOverride({ message: "allow", update: "allow", close: "allow" })
@@ -533,5 +577,4 @@ describe("scope action policy C1", () => {
     expect(res.status).toBe(403)
     expect(createSpy).not.toHaveBeenCalled()
   })
-
 })

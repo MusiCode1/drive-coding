@@ -629,6 +629,7 @@ export type MessageKey =
   | "scopePrompt.action"
   | "scopePrompt.watched"
   | "scopePrompt.subscribeGrant"
+  | "scopePrompt.messageGrant"
   | "scopePrompt.allowAlways"
   | "scopePrompt.verb.subscribe"
   | "scopePrompt.verb.detach"
