@@ -8,9 +8,26 @@ import type { SessionInfo } from "$lib/adapters/sessions"
 import { openSessionUrl } from "./open-session-url.js"
 
 const listAgentsMock = vi.fn<() => Promise<AgentPublic[]>>()
+const openSessionColdMock = vi.fn<
+  (params: {
+    cliKind: string
+    sessionId: string
+    session: unknown
+    settings: unknown
+  }) => Promise<string>
+>()
 
 vi.mock("$lib/adapters/agents-api", () => ({
   listAgents: () => listAgentsMock(),
+}))
+
+vi.mock("./open-session-cold.js", () => ({
+  openSessionCold: (params: {
+    cliKind: string
+    sessionId: string
+    session: unknown
+    settings: unknown
+  }) => openSessionColdMock(params),
 }))
 
 vi.mock("$env/dynamic/public", () => ({
@@ -70,6 +87,7 @@ const stores = new Map<string, string>()
 beforeEach(() => {
   stores.clear()
   listAgentsMock.mockReset()
+  openSessionColdMock.mockReset()
   vi.stubGlobal("location", { search: "" })
   vi.stubGlobal("sessionStorage", {
     getItem: vi.fn((k: string) => stores.get(k) ?? null),
@@ -225,82 +243,24 @@ describe("openSessionUrl", () => {
     ).toBe("error")
   })
 
-  it("returns not-found when no host agent exists", async () => {
+  it("delegates to openSessionCold when pick is none", async () => {
     listAgentsMock.mockResolvedValue([])
+    openSessionColdMock.mockResolvedValue("not-found")
     const session = makeSession()
+    const settings = { sessionTransport: null } as never
     expect(
       await openSessionUrl({
         cliKind: "claude",
         sessionId: "sess-x",
         session: session as never,
-        settings: { sessionTransport: null } as never,
+        settings,
       }),
     ).toBe("not-found")
-  })
-
-  it("returns not-found for warm pick when target session missing from list", async () => {
-    listAgentsMock.mockResolvedValue([
-      makeAgent({
-        id: "00000000-0000-4000-8000-000000000001",
-        acpSessionId: "other-session",
-      }),
-    ])
-    const session = makeSession()
-    session.attachToLiveAgent.mockImplementation(async () => {
-      session.status = "connected"
-    })
-
-    expect(
-      await openSessionUrl({
-        cliKind: "claude",
-        sessionId: "sess-target",
-        session: session as never,
-        settings: { sessionTransport: null } as never,
-      }),
-    ).toBe("not-found")
-    expect(session.attachToLiveAgent).toHaveBeenCalled()
-    expect(session.listSessions).toHaveBeenCalledWith(true)
-  })
-
-  it("warm pick attaches then switchSession to target", async () => {
-    listAgentsMock.mockResolvedValue([
-      makeAgent({
-        id: "00000000-0000-4000-8000-000000000012",
-        acpSessionId: "other-session",
-      }),
-    ])
-    const session = makeSession({
-      sessionsCache: {
-        sessions: [{ sessionId: "sess-target", cwd: "/other", title: "T", updatedAt: "" }],
-        error: null,
-      },
-    })
-    session.attachToLiveAgent.mockImplementation(async () => {
-      session.status = "connected"
-    })
-    session.switchSession.mockImplementation(async () => {
-      session.sessionId = "sess-target"
-    })
-
-    expect(
-      await openSessionUrl({
-        cliKind: "claude",
-        sessionId: "sess-target",
-        session: session as never,
-        settings: { sessionTransport: null } as never,
-      }),
-    ).toBe("connected")
-    expect(session.attachToLiveAgent).toHaveBeenCalledWith({
-      agentId: "00000000-0000-4000-8000-000000000012",
-      sessionId: "other-session",
-      cwd: "/tmp",
+    expect(openSessionColdMock).toHaveBeenCalledWith({
       cliKind: "claude",
-    })
-    expect(session.switchSession).toHaveBeenCalledWith({
-      sessionId: "sess-target",
-      cwd: "/other",
-      cliKind: "claude",
-      title: "T",
+      sessionId: "sess-x",
+      session,
+      settings,
     })
   })
 

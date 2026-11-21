@@ -21,10 +21,7 @@ export function sessionPathWithTransport(
   return transport === "http" ? `${base}?sessionTransport=http` : base
 }
 
-export type SessionHostPick =
-  | { kind: "exact"; agent: AgentPublic }
-  | { kind: "warm"; agent: AgentPublic }
-  | { kind: "none" }
+export type SessionHostPick = { kind: "exact"; agent: AgentPublic } | { kind: "none" }
 
 export function pickSessionHost(
   agents: readonly AgentPublic[],
@@ -33,26 +30,11 @@ export function pickSessionHost(
 ): SessionHostPick {
   const candidates = agents.filter(
     (a) =>
-      a.cliKind === cliKind &&
-      a.status !== "crashed" &&
-      a.status !== "closed" &&
-      !!a.acpSessionId,
+      a.cliKind === cliKind && a.status !== "crashed" && a.status !== "closed" && !!a.acpSessionId,
   )
 
   const exact = candidates.find((a) => a.acpSessionId === sessionId)
   if (exact) return { kind: "exact", agent: exact }
 
-  if (candidates.length === 0) return { kind: "none" }
-
-  const sorted = [...candidates].sort((a, b) => {
-    const aAttached = a.attached === true ? 1 : 0
-    const bAttached = b.attached === true ? 1 : 0
-    if (aAttached !== bAttached) return aAttached - bAttached
-
-    const aTime = a.lastMessageAt ?? 0
-    const bTime = b.lastMessageAt ?? 0
-    return bTime - aTime
-  })
-
-  return { kind: "warm", agent: sorted[0]! }
+  return { kind: "none" }
 }
