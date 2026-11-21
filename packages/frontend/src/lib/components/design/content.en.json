@@ -227,7 +227,51 @@
     "closeShort": "Close",
     "rawOutput": "Raw output",
     "copied": "Copied",
-    "playMsg": "Play"
+    "playMsg": "Play",
+    "rich": {
+      "thoughtLabel": "Thought",
+      "thought": "Check where the playlist cursor resets, and whether any path skips the reset on reconnect.",
+      "groupSummary": "5 actions · 2 thoughts",
+      "groupLast": "Edit src/playback/playlist.ts",
+      "subTitle": "Explore",
+      "subPrompt": "Find every place the cursor changes",
+      "subStatus": "Completed",
+      "subTools": ["Grep cursor src/", "Read src/playback/reconnect.ts"],
+      "subSummary": "Found three places; only `playlist.ts` resets the cursor.",
+      "attachText": "Here's the screenshot from the phone",
+      "attachCaption": "Screenshot",
+      "fromAgent": "Message from ",
+      "fromName": "Review the connect screen design",
+      "fromBody": "Review done. The notes are in `docs/review.md`.",
+      "showSource": "Show source",
+      "expired": "Auto-denied — nobody answered",
+      "expiredDetail": "Change another agent · web-shell",
+      "planFile": "Plan file",
+      "planFileName": "plan-playlist.md",
+      "view": "View",
+      "status": "Responding…",
+      "voiceYou": "You",
+      "voiceVoice": "Voice",
+      "voiceUser": "Check why playback stops",
+      "voiceAgent": "Checking now. The cursor seems to stay at the end of the list.",
+      "handoff": "Handed to the agent",
+      "handoffReq": "Fix the cursor reset and add a test",
+      "context": "Context",
+      "pendingTitle": "Recording waiting",
+      "pendingBody": "Transcription failed on a network error. The recording was saved.",
+      "retry": "Try again",
+      "dismiss": "Dismiss",
+      "denied": "Microphone access was denied. Allow it in the browser settings.",
+      "liveListening": "Listening…",
+      "liveYou": "Me",
+      "liveAgent": "Agent",
+      "liveL1": "How are the tests?",
+      "liveL2": "Two pass, one fails on the cursor reset.",
+      "liveVoice": "Puck",
+      "liveNative": "Codex native Live",
+      "pause": "Pause",
+      "closeLive": "End live conversation"
+    }
   },
   "data": {
     "machine": {
@@ -800,7 +844,9 @@
     "dirs": ["Academy", "agents", "backups", "bin", "notes", "projects", "scripts", "templates"],
     "branches": ["fix/playlist", "main", "edge"],
     "rawOut": "{\n  \"exitCode\": 0,\n  \"stdout\": \"src/playback/playlist.ts:41: cursor = 0\\n…\"\n}",
-    "time": "00:28"
+    "time": "00:28",
+    "agentMd": "The cursor stays parked at the end of the list in `/home/demo/projects/voice-app/src/playback/playlist.ts`. When the connection comes back nothing moves it, so the next item never starts.\n\n| File | Change |\n|---|---|\n| `playlist.ts` | Reset cursor |\n| `playlist.test.ts` | New test |\n\n```ts\nfunction onReconnect(): void {\n  playlist.resetCursor() // start from the parked item\n  playlist.resume()\n}\n```\n\nThe maximum wait is $t_{max} = n \\cdot \\Delta t$, where $n$ is the number of attempts.\n\n```mermaid\nflowchart LR\n  A[reconnect] --> B{cursor parked?}\n  B -->|yes| C[reset]\n  B -->|no| D[resume]\n  C --> D\n```\n\nI'm resetting it in `onReconnect` and adding a regression test.",
+    "cwdAbs": "/home/demo/projects/voice-app"
   },
   "gallery": {
     "title": "drive-coding — mockups (unslop)",
@@ -833,7 +879,12 @@
       "slash": "Command menu",
       "viewer": "Output viewer",
       "elicit": "Agent question",
-      "prompt": "With prompt"
+      "prompt": "With prompt",
+      "rich": "Rich content",
+      "voice": "Voice bubbles (Codex)",
+      "pending": "Pending recording",
+      "micDenied": "Mic denied",
+      "idle": "After a turn"
     },
     "devices": {
       "phone": "Phone",

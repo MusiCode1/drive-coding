@@ -1,7 +1,9 @@
 <script lang="ts">
-import { highlightCode } from "$lib/util/code-highlight"
+import MarkdownContent from "$lib/components/chat/bubbles/MarkdownContent.svelte"
 import CliMark from "./CliMark.svelte"
 import type { DesignContent } from "./content"
+import DFeedRich from "./DFeedRich.svelte"
+import DFootExtras from "./DFootExtras.svelte"
 import DSessionPanel from "./DSessionPanel.svelte"
 import * as I from "./icons"
 import type { ChatActions, PanelActions } from "./proto"
@@ -40,7 +42,6 @@ const toolIcon = {
   edit: I.Pencil,
   execute: I.TerminalIcon,
 } as const
-const codeHtml = $derived(highlightCode(d.code, "typescript"))
 </script>
 
 <div class="chat" class:panel-open={panelOpen}>
@@ -59,7 +60,10 @@ const codeHtml = $derived(highlightCode(d.code, "typescript"))
       <div class="col">
         {#if empty}
           <p class="empty">{c.emptyChat}</p>
+        {:else if view === "voice"}
+          <DFeedRich {content} {view} />
         {:else}
+          {#if view === "rich"}<DFeedRich {content} {view} />{/if}
           <div class="you"><span class="via"><I.Mic size={12} />{c.heard}</span>{userText ?? d.userText}</div>
 
           <details class="thought"><summary>{c.thinking}</summary><p>{d.thought}</p></details>
@@ -81,13 +85,11 @@ const codeHtml = $derived(highlightCode(d.code, "typescript"))
           </div>
 
           <div class="agent">
-            <p>{d.agentP1.split("playlist.ts")[0]}<a class="flink" href="#file">playlist.ts</a>{d.agentP1.split("playlist.ts").slice(1).join("playlist.ts")}</p>
-            <table>
-              <thead><tr>{#each d.table[0] as h (h)}<th>{h}</th>{/each}</tr></thead>
-              <tbody>{#each d.table.slice(1) as r (r[0])}<tr><td class="ltr-cell"><code>{r[0]}</code></td><td>{r[1]}</td></tr>{/each}</tbody>
-            </table>
-            <div class="codeblock"><pre class="code"><code>{@html codeHtml}</code></pre><button class="ib copy" aria-label={c.copy}><I.Copy size={14} /></button></div>
-            <p>{d.agentP2}</p>
+            <MarkdownContent
+              text={d.agentMd}
+              fileLinks={{ cwd: d.cwdAbs, onOpen: () => on.openPopup?.("viewer"), absoluteOnly: true }}
+              onExpand={() => on.openPopup?.("viewer")}
+            />
             <div class="msg-a"><span class="time num">{d.time}</span><button class="ib" aria-label={c.copy}><I.Copy size={14} /></button><button class="ib" aria-label={c.expand}><I.Maximize size={14} /></button><button class="ib" aria-label={c.playMsg}><I.Volume size={14} /></button></div>
           </div>
 
@@ -136,11 +138,12 @@ const codeHtml = $derived(highlightCode(d.code, "typescript"))
         </div>
       {/if}
 
+      <DFootExtras {content} {view} {tab} />
       {#if tab === "record" || tab === "live"}
         <div class="mic-row">
           <div class="side-w">{#if recording}<button class="side" aria-label={c.discard} onclick={() => on.discard?.()}><I.X size={18} /></button><span>{c.discard}</span>{/if}</div>
           <button class="mic" class:speak={speaking} class:rec={recording} class:busy={!speaking && !idle && !recording} class:live={tab === "live"} aria-label={c.status.idle} onclick={() => on.mic?.()}>
-            {#if speaking}<I.Volume size={34} strokeWidth={1.6} />{:else if tab === "live"}<I.Radio size={34} strokeWidth={1.6} />{:else}<I.Mic size={34} strokeWidth={1.6} />{/if}
+            {#if speaking}<I.Volume size={34} strokeWidth={1.6} />{:else if view === "micDenied"}<I.MicOff size={34} strokeWidth={1.6} />{:else if tab === "live"}<I.Radio size={34} strokeWidth={1.6} />{:else}<I.Mic size={34} strokeWidth={1.6} />{/if}
           </button>
           <div class="side-w">{#if !idle && !recording && !transcribing}<button class="side stop" aria-label={c.stopRun} onclick={() => on.stopRun?.()}><I.Square size={16} /></button><span>{c.stopRun}</span>{/if}</div>
         </div>
@@ -204,12 +207,6 @@ const codeHtml = $derived(highlightCode(d.code, "typescript"))
   .raw summary { cursor: pointer; font-size: var(--t-xs); color: var(--fg-muted); list-style: none; }
   .raw summary::before { content: "› "; }
   .raw pre { margin-block-start: 6px; }
-  .codeblock { position: relative; margin-block-start: 10px; }
-  .codeblock .code { margin: 0; }
-  .codeblock code { font-size: inherit; }
-  .codeblock .copy { position: absolute; inset-block-start: 4px; inset-inline-end: 4px; opacity: 0; }
-  .codeblock:hover .copy, .codeblock:focus-within .copy { opacity: 1; }
-  @media (hover: none) { .codeblock .copy { opacity: 0.7; } }
   .flink { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; direction: ltr; unicode-bidi: isolate; }
   .msg-a { display: flex; align-items: center; gap: 2px; margin-block-start: 8px; color: var(--fg-muted); }
   .msg-a .time { font-size: var(--t-xs); margin-inline-end: 6px; direction: ltr; }
@@ -223,12 +220,6 @@ const codeHtml = $derived(highlightCode(d.code, "typescript"))
   pre { max-inline-size: 100%; margin: 0; padding: 10px 12px; border-radius: var(--r-c); background: var(--code-bg); font-family: var(--mono); font-size: 12.5px; line-height: 1.6; direction: ltr; text-align: left; overflow: auto; color: var(--fg-dim); white-space: pre; }
   .cmd { color: var(--fg); } .pr { color: var(--fg-muted); }
   .tb { display: flex; margin-inline-start: auto; } .tb .ib { inline-size: 28px; block-size: 28px; }
-  .agent p { margin: 0; line-height: 1.6; }
-  .agent p + * , .agent * + p { margin-block-start: 10px; }
-  table { border-collapse: collapse; font-size: var(--t-sm); margin-block-start: 10px; }
-  th, td { text-align: start; padding: 6px 12px; border-block-end: 1px solid var(--line); }
-  th { color: var(--fg-muted); font-weight: 600; }
-  .code { margin-block-start: 10px; }
   .plan { background: var(--surface-1); border: 1px solid var(--line); border-radius: var(--r-k); padding: 10px 14px; }
   .plan h4 { margin: 0; font-size: var(--t-sm); color: var(--fg-dim); display: flex; justify-content: space-between; }
   .plan ul { list-style: none; margin: 6px 0 0; padding: 0; }

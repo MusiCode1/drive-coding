@@ -19,7 +19,7 @@ export function chatFlags(view: string, tabProp?: string) {
     speaking: view === "speaking" || view === "live",
     recording: view === "recording",
     transcribing: view === "transcribing",
-    idle: view === "empty" || view === "idle",
+    idle: ["empty", "idle", "rich", "voice", "pending", "micDenied"].includes(view),
     empty: view === "empty" || view === "recording" || view === "transcribing",
   }
 }

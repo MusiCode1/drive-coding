@@ -227,7 +227,51 @@
     "closeShort": "סגור",
     "rawOutput": "פלט גולמי",
     "copied": "הועתק",
-    "playMsg": "השמע"
+    "playMsg": "השמע",
+    "rich": {
+      "thoughtLabel": "מחשבה",
+      "thought": "צריך לבדוק איפה הסמן של רשימת ההשמעה מתאפס, ואם יש מסלול שמדלג על האיפוס בהתחברות מחדש.",
+      "groupSummary": "5 פעולות · 2 מחשבות",
+      "groupLast": "Edit src/playback/playlist.ts",
+      "subTitle": "Explore",
+      "subPrompt": "מצא את כל המקומות שבהם הסמן משתנה",
+      "subStatus": "הושלם",
+      "subTools": ["Grep cursor src/", "Read src/playback/reconnect.ts"],
+      "subSummary": "נמצאו שלושה מקומות; רק `playlist.ts` מאפס את הסמן.",
+      "attachText": "זה צילום המסך מהטלפון",
+      "attachCaption": "צילום מסך",
+      "fromAgent": "הודעה מ־",
+      "fromName": "סקירת עיצוב מסך החיבור",
+      "fromBody": "סיימתי את הסקירה. הקבצים נמצאים ב־`docs/review.md`.",
+      "showSource": "הצג מקור",
+      "expired": "נדחה אוטומטית — איש לא ענה",
+      "expiredDetail": "שינוי סוכן אחר · web-shell",
+      "planFile": "קובץ תוכנית",
+      "planFileName": "plan-playlist.md",
+      "view": "צפה",
+      "status": "מגיב…",
+      "voiceYou": "אתה",
+      "voiceVoice": "קול",
+      "voiceUser": "תבדוק למה הניגון נעצר",
+      "voiceAgent": "בודק עכשיו. נראה שהסמן נשאר בסוף הרשימה.",
+      "handoff": "הועבר לסוכן",
+      "handoffReq": "לתקן את איפוס הסמן ולהוסיף טסט",
+      "context": "הקשר",
+      "pendingTitle": "הקלטה ממתינה",
+      "pendingBody": "התמלול נכשל בגלל בעיית רשת. ההקלטה נשמרה.",
+      "retry": "נסה שוב",
+      "dismiss": "סגור",
+      "denied": "הגישה למיקרופון נדחתה. אפשר גישה בהגדרות הדפדפן.",
+      "liveListening": "מקשיב…",
+      "liveYou": "אני",
+      "liveAgent": "סוכן",
+      "liveL1": "מה מצב הטסטים?",
+      "liveL2": "שניים עוברים, אחד נכשל על איפוס הסמן.",
+      "liveVoice": "Puck",
+      "liveNative": "Live מובנה של Codex",
+      "pause": "השהה",
+      "closeLive": "סגור שיחה חיה"
+    }
   },
   "data": {
     "machine": {
@@ -796,7 +840,9 @@
     "dirs": ["Academy", "agents", "backups", "bin", "notes", "projects", "scripts", "templates"],
     "branches": ["fix/playlist", "main", "edge"],
     "rawOut": "{\n  \"exitCode\": 0,\n  \"stdout\": \"src/playback/playlist.ts:41: cursor = 0\\n…\"\n}",
-    "time": "00:28"
+    "time": "00:28",
+    "agentMd": "הסמן נשאר חונה בסוף הרשימה ב־`/home/demo/projects/voice-app/src/playback/playlist.ts`. כשהחיבור חוזר אף אחד לא מזיז אותו, ולכן הפריט הבא לא מתחיל.\n\n| קובץ | שינוי |\n|---|---|\n| `playlist.ts` | איפוס הסמן |\n| `playlist.test.ts` | טסט חדש |\n\n```ts\nfunction onReconnect(): void {\n  playlist.resetCursor() // start from the parked item\n  playlist.resume()\n}\n```\n\nזמן ההמתנה המקסימלי הוא $t_{max} = n \\cdot \\Delta t$, כש־$n$ הוא מספר הניסיונות.\n\n```mermaid\nflowchart LR\n  A[reconnect] --> B{cursor parked?}\n  B -->|yes| C[reset]\n  B -->|no| D[resume]\n  C --> D\n```\n\nאני מאפס אותו ב־`onReconnect` ומוסיף טסט רגרסיה.",
+    "cwdAbs": "/home/demo/projects/voice-app"
   },
   "gallery": {
     "title": "drive-coding — מוקאפים (unslop)",
@@ -829,7 +875,12 @@
       "slash": "תפריט פקודות",
       "viewer": "מציג פלט",
       "elicit": "שאלה מהסוכן",
-      "prompt": "עם פרומפט"
+      "prompt": "עם פרומפט",
+      "rich": "תוכן עשיר",
+      "voice": "בועות קול (Codex)",
+      "pending": "הקלטה ממתינה",
+      "micDenied": "מיקרופון חסום",
+      "idle": "אחרי תור"
     },
     "devices": {
       "phone": "טלפון",
