@@ -31,15 +31,15 @@ describe("openapi and RPC doc coupling", () => {
     expect(mentioned).toHaveLength(10)
   })
 
-  it("openapi.json carries 41 HTTP operations", () => {
+  it("openapi.json carries 42 HTTP operations", () => {
     const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8")) as {
       paths?: Record<string, Record<string, unknown>>
     }
     const ops = Object.values(spec.paths ?? {}).flatMap((item) =>
       Object.keys(item).filter((k) => !k.startsWith("x-") && k !== "parameters"),
     )
-    // 41 since 261db514 (13/10/2026): GET + PATCH /api/scope-policy
-    expect(ops).toHaveLength(41)
+    // 42 since fix-session-url-hijack C1: GET /api/sessions/:cliKind/:sessionId
+    expect(ops).toHaveLength(42)
   })
 
   it("McpToolName union has thirteen members (includes notify_parent)", () => {

@@ -14,10 +14,11 @@ routes:
   - GET /api/fs/file
   - GET /api/projects
   - DELETE /api/projects
+  - GET /api/sessions/:cliKind/:sessionId
   - GET /api/recordings/:id
   - POST /api/recordings
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.2.1
+updated: 2026-11-21
 ---
 
 # Files, projects, and recordings
@@ -66,6 +67,15 @@ Directory listing under an allowed root.
 | `GET /api/projects` | `200` | `http-history.ts:33` |
 | `DELETE /api/projects` | `400` without `cwd` | `http-history.ts:42` |
 | `DELETE /api/projects` | `204` empty | `http-history.ts:44` |
+
+## Session lookup (history)
+
+Resolves a session’s working directory from the SQLite history store — used by the chat UI when opening a deep link with no live agent holder.
+
+| Route | Status | When | Anchor |
+|-------|--------|------|--------|
+| `GET /api/sessions/:cliKind/:sessionId` | `200` | `{ cwd, lastSeenAt }` | `http-session-lookup.ts` |
+| `GET /api/sessions/:cliKind/:sessionId` | `404` | `{ error: "unknown session" }` | `http-session-lookup.ts` |
 
 ## Recordings
 

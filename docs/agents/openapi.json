@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.10.2",
+    "version": "1.10.3",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
@@ -1048,6 +1048,61 @@
           },
           "500": {
             "description": "Cannot read directory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/:cliKind/:sessionId": {
+      "get": {
+        "operationId": "get_api_sessions_cliKind_sessionId",
+        "summary": "GET /api/sessions/:cliKind/:sessionId",
+        "parameters": [
+          {
+            "name": "cliKind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session cwd and lastSeenAt from history store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cwd": {
+                      "type": "string"
+                    },
+                    "lastSeenAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": ["cwd", "lastSeenAt"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "unknown session",
             "content": {
               "application/json": {
                 "schema": {

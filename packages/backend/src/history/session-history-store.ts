@@ -68,6 +68,7 @@ export type SessionHistoryStore = {
   listUsageRecords(opts?: { cwd?: string; limit?: number }): TokenUsageRecord[]
   listProjects(opts?: { includeHidden?: boolean }): ProjectRow[]
   listCliSessionRows(opts?: { cwd?: string }): CliSessionRow[]
+  findSession(cliKind: string, acpSessionId: string): { cwd: string; lastSeenAt: number } | null
   close(): void
 }
 
@@ -191,6 +192,16 @@ function createSessionHistoryStoreFromDb(db: SqliteDb): SessionHistoryStore {
 
     listProjects(opts) {
       return listProjectsFromDb(db, opts)
+    },
+
+    findSession(cliKind, acpSessionId) {
+      const row = db
+        .prepare(
+          "SELECT cwd, lastSeenAt FROM sessions WHERE cliKind = ? AND acpSessionId = ? LIMIT 1",
+        )
+        .get<{ cwd: string; lastSeenAt: number }>(cliKind, acpSessionId)
+      if (row == null) return null
+      return { cwd: row.cwd, lastSeenAt: row.lastSeenAt }
     },
 
     listCliSessionRows(opts) {
