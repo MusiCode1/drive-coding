@@ -16,8 +16,8 @@ mcp_tools:
   - session_open
   - notify_parent
   - session_surface
-docs_version: 1.10.1
-updated: 2026-11-18
+docs_version: 1.10.3
+updated: 2026-11-21
 ---
 
 # Subagents
@@ -63,17 +63,18 @@ user typed the message.
 
 HTTP alternative for event delivery: **`POST /api/agents/:id/subscribe`** (documented in `97-transports`).
 
-## Closing agents — no cascade
+## Closing agents
 
-**Closing a parent does not close its children.** Each child must be **`session_close`** / **`DELETE /api/agents/:id`** on its own id.
+`session_close` and `DELETE /api/agents/:id` close one agent. Children stay open.
 
-- **`DELETE /api/agents/:id`** → `deleteAndKill` removes **one** agent id (`http-agents.ts:148-154` → orchestrator).
-- **`DELETE /api/agents`** (no id) → **`deleteAllAndKill`** — fleet wipe, **not** a parent/child cascade (`http-agents.ts:145`).
+`DELETE /api/agents` returns a report with `closed` and `failed` arrays. A valid scoped
+token limits the operation to the caller and its descendants and adds
+`skipped: [{ id, reason: "scope" }]` for agents outside that subtree. With a master
+token or no token, it attempts to close every agent and omits `skipped`.
 
-| Route | Status | Anchor |
-|-------|--------|--------|
-| `DELETE /api/agents` | `200` JSON summary | `http-agents.ts:145` |
-| `DELETE /api/agents/:id` | `204` empty body | `http-agents.ts:154` |
-| `DELETE /api/agents/:id` | `404` when no agent with that id exists in the registry | `http-agents.ts:150-151` |
-
-Do not describe recursive or cascade deletion; it is not implemented in `deleteAndKill`.
+| Route | Status |
+|-------|--------|
+| `DELETE /api/agents` | `200` with per-agent results |
+| `DELETE /api/agents` | `403` with `scope-denied` for an invalid token |
+| `DELETE /api/agents/:id` | `204` after closing the agent |
+| `DELETE /api/agents/:id` | `404` when the agent is absent |
