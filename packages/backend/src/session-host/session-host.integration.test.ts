@@ -1046,6 +1046,16 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     })
   }
 
+  function endTurnIdle(callbacks: AcpClientCallbacks, sessionId: string): void {
+    callbacks.onUpdate?.(
+      notif(sessionId, {
+        sessionUpdate: "state_update",
+        state: "idle",
+        stopReason: "end_turn",
+      }),
+    )
+  }
+
   function permParams(sessionId: string): Parameters<
     NonNullable<AcpClientCallbacks["onRequestPermission"]>
   >[0] {
@@ -1093,6 +1103,8 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     callbacks.onUpdate(chunkOf("s1", "old history"))
     expect(host.state.messages).toHaveLength(1)
     await readOnePatch(host.patches) // drain the seeded add-message
+    endTurnIdle(callbacks, "s1")
+    await drainBuffered(host.patches)
 
     const dLoad = deferred<{ sessionId: string }>()
     ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockImplementation(() => dLoad.promise)
@@ -1359,6 +1371,8 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     callbacks.onUpdate(chunkOf("s1", "retained history"))
     callbacks.onUpdate(notif("s1", { sessionUpdate: "plan", entries: [] }))
     await drainBuffered(host.patches)
+    endTurnIdle(callbacks, "s1")
+    await drainBuffered(host.patches)
     const before = host.state
     expect(before.messages).toHaveLength(1)
     expect(before.carried).toHaveLength(1)
@@ -1415,6 +1429,8 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     }
     const before = host.state.messages
     expect(before).toHaveLength(336)
+    endTurnIdle(callbacks, "s1")
+    await drainBuffered(host.patches)
     mockClient.loadSession = vi.fn().mockRejectedValue(new Error("load failed"))
 
     await expect(host.loadSession({ cwd: "/b", sessionId: "s2" })).rejects.toThrow("load failed")
