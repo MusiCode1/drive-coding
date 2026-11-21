@@ -3,6 +3,7 @@ import CliMark from "./CliMark.svelte"
 import type { DesignContent } from "./content"
 import * as I from "./icons"
 import { mockControls, type PanelActions } from "./proto"
+import { SessionListUi } from "./ui-state.svelte"
 
 let {
   content,
@@ -12,8 +13,9 @@ let {
 const c = $derived(content.copy)
 const d = $derived(content.data)
 const SESSION_PEEK = 5
-let allSessions = $state(false)
-const sessionsShown = $derived(allSessions ? d.sessions : d.sessions.slice(0, SESSION_PEEK))
+const list = new SessionListUi()
+const sessions = $derived(d.sessions.filter((s) => !list.deleted.includes(s.id)))
+const sessionsShown = $derived(list.all ? sessions : sessions.slice(0, SESSION_PEEK))
 </script>
 
 <div class="panel" use:mockControls>
@@ -72,10 +74,14 @@ const sessionsShown = $derived(allSessions ? d.sessions : d.sessions.slice(0, SE
     <div class="seg mt"><span class="on">{c.allSessions}</span><span>{c.thisFolder}</span></div>
     <ul class="sess">
       {#each sessionsShown as s (s.title)}
-        <li class:cur={s.current}><b>{s.title}</b><span><span class="ltr">{s.folder}</span> · {s.when}</span></li>
+        <li class:cur={s.current}>
+          <span class="sx"><b>{s.title}</b><span><span class="ltr">{s.folder}</span> · {s.when}</span></span>
+          <button class="ib sm" aria-label={c.copyId} title={s.id} onclick={() => list.copy(s.id)}>{#if list.copied === s.id}<I.Check size={14} class="okc" />{:else}<I.Copy size={14} />{/if}</button>
+          {#if !s.current}<button class="del" class:confirm={list.confirmDel === s.id} aria-label={c.deleteSession} onclick={() => list.del(s.id)}>{#if list.confirmDel === s.id}{c.sure}{:else}<I.Trash size={14} />{/if}</button>{/if}
+        </li>
       {/each}
     </ul>
-    {#if d.sessions.length > SESSION_PEEK}<button class="more" onclick={() => (allSessions = !allSessions)}>{allSessions ? c.showLess : `${c.showMore} ${d.sessions.length - SESSION_PEEK}`}</button>{/if}
+    {#if sessions.length > SESSION_PEEK}<button class="more" onclick={() => (list.all = !list.all)}>{list.all ? c.showLess : `${c.showMore} ${sessions.length - SESSION_PEEK}`}</button>{/if}
   </div>
 </div>
 
@@ -103,7 +109,13 @@ const sessionsShown = $derived(allSessions ? d.sessions : d.sessions.slice(0, SE
   .accent { color: var(--accent); }
   .mt { margin-block-start: 8px; }
   .sess { list-style: none; margin: 6px 0 0; padding: 0; }
-  .sess li { display: flex; flex-direction: column; padding: 9px 0 9px; padding-inline-start: 12px; border-block-end: 1px solid var(--line); position: relative; }
+  .sess li { display: flex; align-items: center; gap: 4px; padding: 9px 0 9px; padding-inline-start: 12px; border-block-end: 1px solid var(--line); position: relative; }
+  .sx { flex: 1; min-inline-size: 0; display: flex; flex-direction: column; }
+  .ib.sm { inline-size: 30px; block-size: 30px; }
+  :global(.dv2 .okc) { color: var(--ok); }
+  .del { display: inline-grid; place-items: center; min-inline-size: 30px; block-size: 30px; padding-inline: 6px; border-radius: 8px; color: var(--fg-muted); font-size: var(--t-xs); }
+  .del:hover { color: var(--bad); }
+  .del.confirm { background: var(--bad); color: var(--on-accent); }
   .sess li b { font-weight: 500; font-size: var(--t-sm); }
   .sess li span { font-size: var(--t-xs); color: var(--fg-muted); }
   .sess li.cur::before { content: ""; position: absolute; inset-inline-start: 0; inset-block: 10px; inline-size: 3px; border-radius: 2px; background: var(--accent); }

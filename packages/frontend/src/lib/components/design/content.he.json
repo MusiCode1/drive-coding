@@ -217,10 +217,17 @@
       "copy": "העתק",
       "wrap": "גלישת שורות",
       "elicitTitle": "הסוכן שואל",
-      "elicitQ": "לאיזה ענף לדחוף את התיקון?",
+      "elicitQ": "לפני שאני דוחף את התיקון, כמה פרטים:",
       "elicitOther": "אחר…",
       "elicitSubmit": "שלח תשובה",
-      "elicitDecline": "דלג"
+      "elicitDecline": "דלג",
+      "fBranch": "ענף יעד",
+      "fBranchDesc": "לאן לדחוף",
+      "fTitle": "כותרת ה־PR",
+      "fRetries": "מספר ניסיונות חיבור",
+      "fDraft": "לפתוח כטיוטה",
+      "required": "שדה חובה",
+      "elicitCancel": "בטל"
     },
     "closeSession": "סגור סשן",
     "closeConfirm": "בטוח? לחץ שוב",
@@ -271,7 +278,17 @@
       "liveNative": "Live מובנה של Codex",
       "pause": "השהה",
       "closeLive": "סגור שיחה חיה"
-    }
+    },
+    "subAgentsOf": "סוכני משנה של",
+    "copyId": "העתק מזהה סשן",
+    "copiedId": "הועתק",
+    "deleteSession": "מחק סשן",
+    "sure": "בטוח?",
+    "authHow": "איך להתחבר עם",
+    "authSet": "הגדר:",
+    "authTerminal": "או הרץ במכונה:",
+    "authDocs": "תיעוד",
+    "resizeSidebar": "גרור לשינוי רוחב"
   },
   "data": {
     "machine": {
@@ -297,7 +314,19 @@
         "busy": false,
         "children": 2,
         "ago": "לפני 2 דקות",
-        "connections": 1
+        "connections": 1,
+        "kids": [
+          {
+            "title": "Explore: איפה הסמן משתנה",
+            "cli": "Codex",
+            "busy": true
+          },
+          {
+            "title": "Plan: אסטרטגיית טסטים",
+            "cli": "Codex",
+            "busy": false
+          }
+        ]
       },
       {
         "title": "כתיבת טסטים לתור ההשמעה",
@@ -687,77 +716,92 @@
         "title": "תיקון עצירת הניגון אחרי התחברות מחדש",
         "folder": "voice-app",
         "when": "עכשיו",
-        "current": true
+        "current": true,
+        "id": "8f3a1c2e"
       },
       {
         "title": "סקירת עיצוב מסך החיבור",
         "folder": "web-shell",
-        "when": "לפני 8 דקות"
+        "when": "לפני 8 דקות",
+        "id": "b71d09aa"
       },
       {
         "title": "כתיבת טסטים לתור ההשמעה",
         "folder": "notes",
-        "when": "לפני שעה"
+        "when": "לפני שעה",
+        "id": "4c2e9f10"
       },
       {
         "title": "ניקוי תלויות ישנות",
         "folder": "api-server",
-        "when": "אתמול"
+        "when": "אתמול",
+        "id": "e0a7b355"
       },
       {
         "title": "מעבר ל־Svelte 5 במסך ההגדרות",
         "folder": "design-system",
-        "when": "אתמול"
+        "when": "אתמול",
+        "id": "91fd2c6b"
       },
       {
         "title": "באג בגלילה של הצ׳אט",
         "folder": "mobile-client",
-        "when": "לפני יומיים"
+        "when": "לפני יומיים",
+        "id": "2b8e4d71"
       },
       {
         "title": "הוספת חיפוש לרשימת הסשנים",
         "folder": "infra",
-        "when": "לפני 3 ימים"
+        "when": "לפני 3 ימים",
+        "id": "c9a0e1f4"
       },
       {
         "title": "שיפור זמן הטעינה הראשונה",
         "folder": "docs-site",
-        "when": "לפני 4 ימים"
+        "when": "לפני 4 ימים",
+        "id": "5d6f8a2b"
       },
       {
         "title": "תרגום מחרוזות חסרות",
         "folder": "cli-tools",
-        "when": "לפני שבוע"
+        "when": "לפני שבוע",
+        "id": "a3b4c5d6"
       },
       {
         "title": "בדיקת זליגת זיכרון ב־backend",
         "folder": "data-pipeline",
-        "when": "לפני שבוע"
+        "when": "לפני שבוע",
+        "id": "f1e2d3c4"
       },
       {
         "title": "שכתוב מנגנון ההרשאות",
         "folder": "voice-app",
-        "when": "לפני שבועיים"
+        "when": "לפני שבועיים",
+        "id": "07b9e8d2"
       },
       {
         "title": "תיעוד ה־API של הסשנים",
         "folder": "web-shell",
-        "when": "לפני שבועיים"
+        "when": "לפני שבועיים",
+        "id": "6e5f4a3b"
       },
       {
         "title": "תיקון RTL בטבלאות",
         "folder": "notes",
-        "when": "לפני 3 שבועות"
+        "when": "לפני 3 שבועות",
+        "id": "d2c1b0a9"
       },
       {
         "title": "מצב רכב: כפתור Play",
         "folder": "api-server",
-        "when": "לפני חודש"
+        "when": "לפני חודש",
+        "id": "3f4e5d6c"
       },
       {
         "title": "סנכרון כותרות בין מכשירים",
         "folder": "design-system",
-        "when": "לפני חודש"
+        "when": "לפני חודש",
+        "id": "8a9b0c1d"
       }
     ],
     "settings": {
@@ -842,7 +886,13 @@
     "rawOut": "{\n  \"exitCode\": 0,\n  \"stdout\": \"src/playback/playlist.ts:41: cursor = 0\\n…\"\n}",
     "time": "00:28",
     "agentMd": "הסמן נשאר חונה בסוף הרשימה ב־`/home/demo/projects/voice-app/src/playback/playlist.ts`. כשהחיבור חוזר אף אחד לא מזיז אותו, ולכן הפריט הבא לא מתחיל.\n\n| קובץ | שינוי |\n|---|---|\n| `playlist.ts` | איפוס הסמן |\n| `playlist.test.ts` | טסט חדש |\n\n```ts\nfunction onReconnect(): void {\n  playlist.resetCursor() // start from the parked item\n  playlist.resume()\n}\n```\n\nזמן ההמתנה המקסימלי הוא $t_{max} = n \\cdot \\Delta t$, כש־$n$ הוא מספר הניסיונות.\n\n```mermaid\nflowchart LR\n  A[reconnect] --> B{cursor parked?}\n  B -->|yes| C[reset]\n  B -->|no| D[resume]\n  C --> D\n```\n\nאני מאפס אותו ב־`onReconnect` ומוסיף טסט רגרסיה.",
-    "cwdAbs": "/home/demo/projects/voice-app"
+    "cwdAbs": "/home/demo/projects/voice-app",
+    "prTitle": "Fix playlist cursor after reconnect",
+    "auth": {
+      "cli": "Codex",
+      "env": ["OPENAI_API_KEY"],
+      "cmd": "codex login"
+    }
   },
   "gallery": {
     "title": "drive-coding — מוקאפים (unslop)",

@@ -93,3 +93,51 @@ export function connectLists(d: DesignContent["data"], view: string, ui: Connect
     recentsShown: recentsOpen ? recents : recents.slice(0, RECENT_PEEK),
   }
 }
+
+/** Session rows in the panel: copy id (✓ for 2s) and delete with a two-tap confirm (3s). */
+export class SessionListUi {
+  all = $state(false)
+  copied = $state<string | null>(null)
+  confirmDel = $state<string | null>(null)
+  deleted = $state<string[]>([])
+  #t: ReturnType<typeof setTimeout> | undefined
+  copy(id: string) {
+    this.copied = id
+    try {
+      void navigator.clipboard?.writeText(id).catch(() => {})
+    } catch {
+      // clipboard unavailable (insecure context / permissions) — the ✓ still shows
+    }
+    clearTimeout(this.#t)
+    this.#t = setTimeout(() => (this.copied = null), 2000)
+  }
+  del(id: string) {
+    if (this.confirmDel === id) {
+      this.deleted = [...this.deleted, id]
+      this.confirmDel = null
+      return
+    }
+    this.confirmDel = id
+    clearTimeout(this.#t)
+    this.#t = setTimeout(() => (this.confirmDel = null), 3000)
+  }
+}
+
+/** Desktop sidebar width: 14–32rem, default 18rem, drag direction flips in RTL (like util/sidebar-width). */
+export class SidebarUi {
+  rem = $state(18)
+  #start: { x: number; rem: number } | null = null
+  down(e: PointerEvent) {
+    this.#start = { x: e.clientX, rem: this.rem }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }
+  move(e: PointerEvent, rtl: boolean) {
+    if (!this.#start) return
+    const px = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+    const delta = ((e.clientX - this.#start.x) / px) * (rtl ? -1 : 1)
+    this.rem = Math.min(32, Math.max(14, this.#start.rem + delta))
+  }
+  up() {
+    this.#start = null
+  }
+}

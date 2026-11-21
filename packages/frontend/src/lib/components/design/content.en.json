@@ -217,10 +217,17 @@
       "copy": "Copy",
       "wrap": "Wrap lines",
       "elicitTitle": "The agent asks",
-      "elicitQ": "Which branch should the fix go to?",
+      "elicitQ": "Before I push the fix, a few details:",
       "elicitOther": "Other…",
       "elicitSubmit": "Send answer",
-      "elicitDecline": "Skip"
+      "elicitDecline": "Skip",
+      "fBranch": "Target branch",
+      "fBranchDesc": "Where to push",
+      "fTitle": "PR title",
+      "fRetries": "Connection retries",
+      "fDraft": "Open as draft",
+      "required": "Required",
+      "elicitCancel": "Cancel"
     },
     "closeSession": "Close session",
     "closeConfirm": "Sure? Tap again",
@@ -271,7 +278,17 @@
       "liveNative": "Codex native Live",
       "pause": "Pause",
       "closeLive": "End live conversation"
-    }
+    },
+    "subAgentsOf": "Sub-agents of",
+    "copyId": "Copy session id",
+    "copiedId": "Copied",
+    "deleteSession": "Delete session",
+    "sure": "Sure?",
+    "authHow": "How to sign in with",
+    "authSet": "Set:",
+    "authTerminal": "Or run on the machine:",
+    "authDocs": "Docs",
+    "resizeSidebar": "Drag to resize"
   },
   "data": {
     "machine": {
@@ -297,7 +314,19 @@
         "busy": false,
         "children": 2,
         "ago": "2 minutes ago",
-        "connections": 1
+        "connections": 1,
+        "kids": [
+          {
+            "title": "Explore: where the cursor changes",
+            "cli": "Codex",
+            "busy": true
+          },
+          {
+            "title": "Plan: test strategy",
+            "cli": "Codex",
+            "busy": false
+          }
+        ]
       },
       {
         "title": "Write tests for the playback queue",
@@ -691,77 +720,92 @@
         "title": "Fix playback stopping after reconnect",
         "folder": "voice-app",
         "when": "now",
-        "current": true
+        "current": true,
+        "id": "8f3a1c2e"
       },
       {
         "title": "Review the connect screen design",
         "folder": "web-shell",
-        "when": "8 minutes ago"
+        "when": "8 minutes ago",
+        "id": "b71d09aa"
       },
       {
         "title": "Write tests for the playback queue",
         "folder": "notes",
-        "when": "1 hour ago"
+        "when": "1 hour ago",
+        "id": "4c2e9f10"
       },
       {
         "title": "Clean up old dependencies",
         "folder": "api-server",
-        "when": "yesterday"
+        "when": "yesterday",
+        "id": "e0a7b355"
       },
       {
         "title": "Move settings to Svelte 5",
         "folder": "design-system",
-        "when": "yesterday"
+        "when": "yesterday",
+        "id": "91fd2c6b"
       },
       {
         "title": "Chat scroll bug",
         "folder": "mobile-client",
-        "when": "2 days ago"
+        "when": "2 days ago",
+        "id": "2b8e4d71"
       },
       {
         "title": "Add search to the session list",
         "folder": "infra",
-        "when": "3 days ago"
+        "when": "3 days ago",
+        "id": "c9a0e1f4"
       },
       {
         "title": "Speed up first load",
         "folder": "docs-site",
-        "when": "4 days ago"
+        "when": "4 days ago",
+        "id": "5d6f8a2b"
       },
       {
         "title": "Translate missing strings",
         "folder": "cli-tools",
-        "when": "last week"
+        "when": "last week",
+        "id": "a3b4c5d6"
       },
       {
         "title": "Check a backend memory leak",
         "folder": "data-pipeline",
-        "when": "last week"
+        "when": "last week",
+        "id": "f1e2d3c4"
       },
       {
         "title": "Rewrite the permission flow",
         "folder": "voice-app",
-        "when": "2 weeks ago"
+        "when": "2 weeks ago",
+        "id": "07b9e8d2"
       },
       {
         "title": "Document the sessions API",
         "folder": "web-shell",
-        "when": "2 weeks ago"
+        "when": "2 weeks ago",
+        "id": "6e5f4a3b"
       },
       {
         "title": "Fix RTL in tables",
         "folder": "notes",
-        "when": "3 weeks ago"
+        "when": "3 weeks ago",
+        "id": "d2c1b0a9"
       },
       {
         "title": "Car mode: Play button",
         "folder": "api-server",
-        "when": "last month"
+        "when": "last month",
+        "id": "3f4e5d6c"
       },
       {
         "title": "Sync titles across devices",
         "folder": "design-system",
-        "when": "last month"
+        "when": "last month",
+        "id": "8a9b0c1d"
       }
     ],
     "settings": {
@@ -846,7 +890,13 @@
     "rawOut": "{\n  \"exitCode\": 0,\n  \"stdout\": \"src/playback/playlist.ts:41: cursor = 0\\n…\"\n}",
     "time": "00:28",
     "agentMd": "The cursor stays parked at the end of the list in `/home/demo/projects/voice-app/src/playback/playlist.ts`. When the connection comes back nothing moves it, so the next item never starts.\n\n| File | Change |\n|---|---|\n| `playlist.ts` | Reset cursor |\n| `playlist.test.ts` | New test |\n\n```ts\nfunction onReconnect(): void {\n  playlist.resetCursor() // start from the parked item\n  playlist.resume()\n}\n```\n\nThe maximum wait is $t_{max} = n \\cdot \\Delta t$, where $n$ is the number of attempts.\n\n```mermaid\nflowchart LR\n  A[reconnect] --> B{cursor parked?}\n  B -->|yes| C[reset]\n  B -->|no| D[resume]\n  C --> D\n```\n\nI'm resetting it in `onReconnect` and adding a regression test.",
-    "cwdAbs": "/home/demo/projects/voice-app"
+    "cwdAbs": "/home/demo/projects/voice-app",
+    "prTitle": "Fix playlist cursor after reconnect",
+    "auth": {
+      "cli": "Codex",
+      "env": ["OPENAI_API_KEY"],
+      "cmd": "codex login"
+    }
   },
   "gallery": {
     "title": "drive-coding — mockups (unslop)",

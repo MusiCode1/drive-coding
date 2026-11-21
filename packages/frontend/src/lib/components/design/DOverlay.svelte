@@ -1,6 +1,7 @@
 <script lang="ts">
 import CliMark from "./CliMark.svelte"
 import { type DesignContent, designContent } from "./content"
+import DElicit from "./DElicit.svelte"
 import * as I from "./icons"
 import type { PopupKind, PopupPick } from "./proto"
 
@@ -18,7 +19,6 @@ const p = $derived(content.copy.pop)
 const d = $derived(content.data)
 const view = $derived(kind === "langSelect" ? "select" : kind)
 let crumbs = $state<string[]>(["home", "user"])
-let other = $state("")
 function pick(value: string) {
   on.pick?.({ kind, value })
 }
@@ -109,15 +109,7 @@ const options = $derived(
 {d.toolOut}</pre>
     </div>
   {:else if view === "elicit"}
-    <div class="sheet" role="dialog" aria-label={p.elicitTitle}>
-      <header class="sh-h"><h2><I.MessageQuestion size={18} />{p.elicitTitle}</h2><button class="ib" aria-label={p.close} onclick={close}><I.X size={20} /></button></header>
-      <p class="q">{p.elicitQ}</p>
-      <ul class="rows radio">
-        {#each d.branches as b, i (b)}<li class:sel={other === "" ? i === 0 : false}><button class="li-btn" onclick={() => pick(b)}><span class="rd"></span><span class="ltr name">{b}</span></button></li>{/each}
-        <li class:sel={other !== ""}><span class="rd"></span><input class="other" placeholder={p.elicitOther} bind:value={other} /></li>
-      </ul>
-      <footer class="sh-f row-f"><button class="chip" onclick={() => pick("")}>{p.elicitDecline}</button><button class="btn" onclick={() => pick(other || d.branches[0] || "")}>{p.elicitSubmit}</button></footer>
-    </div>
+    <DElicit {content} onPick={(v) => pick(v)} onClose={close} />
   {/if}
 
 <style>
@@ -126,7 +118,6 @@ const options = $derived(
   .li-btn { display: flex; align-items: center; gap: 12px; inline-size: 100%; min-block-size: 50px; text-align: start; color: inherit; }
   .li-btn:disabled { cursor: not-allowed; }
   .crumbs button { color: var(--fg-dim); } .crumbs button.cur { color: var(--fg); font-weight: 700; }
-  .other { flex: 1; background: none; border: 0; outline: none; color: var(--fg); font: inherit; }
   .sl { inline-size: 100%; text-align: start; }
   .sheet, .pop, .dock-perm { z-index: 5; }
   .ltr { direction: ltr; unicode-bidi: isolate; }
@@ -150,8 +141,6 @@ const options = $derived(
   .rows li.off { opacity: 0.5; }
   :global(.dv2 .acc) { color: var(--accent); }
   .sh-f { display: flex; flex-direction: column; gap: 12px; padding-block-start: 8px; border-block-start: 1px solid var(--line); }
-  .row-f { flex-direction: row; align-items: center; }
-  .row-f .btn { flex: 1; }
   .hid { display: flex; align-items: center; gap: 10px; font-size: var(--t-sm); color: var(--fg-dim); }
   .dock-perm { position: absolute; inset-inline: 0; inset-block-end: 0; padding: 16px 20px 24px; background: var(--surface-1); border-block-start: 2px solid var(--accent); border-radius: var(--r-s) var(--r-s) 0 0; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 -12px 32px rgba(0, 0, 0, 0.4); }
   .pm-h { display: flex; align-items: center; gap: 8px; font-size: var(--t-lg); }
@@ -177,10 +166,6 @@ const options = $derived(
   .sl code b { color: var(--accent); }
   .sl span { font-size: var(--t-xs); color: var(--fg-muted); }
   .out { flex: 1; white-space: pre; }
-  .q { margin: 0; font-size: var(--t-lg); }
-  .radio li { cursor: pointer; }
-  .rd { inline-size: 18px; block-size: 18px; border-radius: 50%; border: 2px solid var(--line-2); flex-shrink: 0; }
-  .radio li.sel .rd { border-color: var(--accent); box-shadow: inset 0 0 0 4px var(--surface-1); background: var(--accent); }
   .ph { color: var(--fg-muted); }
   @media (min-width: 768px) {
     .sheet { inset: auto; inset-block-start: 50%; inset-inline-start: 50%; transform: translate(-50%, -50%); inline-size: 520px; max-block-size: 80%; border-radius: var(--r-s); border: 1px solid var(--line-2); }

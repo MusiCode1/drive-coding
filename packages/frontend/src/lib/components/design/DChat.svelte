@@ -7,7 +7,7 @@ import DFootExtras from "./DFootExtras.svelte"
 import DSessionPanel from "./DSessionPanel.svelte"
 import * as I from "./icons"
 import type { ChatActions, PanelActions } from "./proto"
-import { ChatUi, chatFlags } from "./ui-state.svelte"
+import { ChatUi, chatFlags, SidebarUi } from "./ui-state.svelte"
 
 let {
   content,
@@ -33,6 +33,7 @@ let {
   panelOn?: PanelActions
 } = $props()
 const ui = new ChatUi()
+const sb = new SidebarUi()
 const c = $derived(content.copy)
 const d = $derived(content.data)
 const { tab, speaking, recording, transcribing, idle, empty } = $derived(chatFlags(view, tabProp))
@@ -164,7 +165,8 @@ const toolIcon = {
     </footer>
   </div>
 
-  <aside class="side-panel" aria-label={c.panel}>
+  <aside class="side-panel" aria-label={c.panel} style="--sbw:{sb.rem}rem">
+    <div class="sb-resize" role="separator" aria-orientation="vertical" aria-label={c.resizeSidebar} onpointerdown={(e) => sb.down(e)} onpointermove={(e) => sb.move(e, (e.currentTarget as HTMLElement).closest("[dir]")?.getAttribute("dir") === "rtl")} onpointerup={() => sb.up()}></div>
     <button class="grip top" aria-label={c.panel} onpointerdown={(e) => ui.gripDown(e)} onpointerup={(e) => ui.gripUp(e, panelOpen, on)}></button>
     <DSessionPanel {content} on={panelOn} {muted} />
   </aside>
@@ -267,6 +269,12 @@ const toolIcon = {
   .field.area textarea { flex: 1; align-self: stretch; resize: none; background: none; border: 0; outline: none; color: var(--fg); font: inherit; padding: 0; }
   .side-panel { display: none; }
   .scrim { display: none; }
+  .sb-resize { display: none; }
+  @media (min-width: 1024px) {
+    .sb-resize { display: block; position: absolute; inset-block: 0; inset-inline-end: -4px; inline-size: 8px; cursor: col-resize; touch-action: none; z-index: 2; }
+    .sb-resize::after { content: ""; position: absolute; inset-block: 50% auto; inset-inline-start: 3px; inline-size: 2px; block-size: 36px; transform: translateY(-50%); border-radius: 1px; background: var(--line-2); }
+    .sb-resize:hover::after { background: var(--accent); }
+  }
 
   /* phone + tablet: panel is a bottom sheet */
   @media (max-width: 1023px) {
@@ -282,7 +290,7 @@ const toolIcon = {
   /* desktop: panel is a sidebar */
   @media (min-width: 1024px) {
     .menu { display: inline-grid; }
-    .side-panel { order: -1; display: block; inline-size: 340px; flex-shrink: 0; overflow: auto; padding: 16px 20px 0; background: var(--surface-1); border-inline-end: 1px solid var(--line); }
+    .side-panel { order: -1; display: block; position: relative; inline-size: var(--sbw, 18rem); flex-shrink: 0; overflow: auto; padding: 16px 20px 0; background: var(--surface-1); border-inline-end: 1px solid var(--line); }
     .grip { display: none; }
     .hbar { padding-inline: 20px; }
   }

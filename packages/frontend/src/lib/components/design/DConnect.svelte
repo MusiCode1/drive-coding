@@ -62,7 +62,14 @@ const confirmIdx = $derived(live ? ui.confirmKill : 2)
         {#if view === "error"}
           <div class="error" role="alert">
             <I.Alert size={18} />
-            <div><b>{c.errorPrefix}</b><p>{d.error}</p><p class="dim">{c.authHint}</p></div>
+            <div>
+              <b>{c.errorPrefix}</b><p>{d.error}</p>
+              <div class="auth">
+                <p class="ah"><span>{c.authHow}</span> <span class="cli"><CliMark name={d.auth.cli} size={14} />{d.auth.cli}</span></p>
+                <p>{c.authSet} {#each d.auth.env as v (v)}<code>{v}</code>{/each} · <a href="#docs" target="_blank" rel="noopener noreferrer">{c.authDocs}</a></p>
+                <p>{c.authTerminal} <code>{d.auth.cmd}</code></p>
+              </div>
+            </div>
           </div>
         {/if}
       </div>
@@ -102,6 +109,13 @@ const confirmIdx = $derived(live ? ui.confirmKill : 2)
               </div>
             {/if}
           </article>
+          {#if "kids" in p && p.kids}
+            <ul class="kids" aria-label="{c.subAgentsOf} {p.title}">
+              {#each p.kids as k (k.title)}
+                <li><span class="dot" class:busy={k.busy}></span><span class="kt"><bdi>{k.title}</bdi></span><span class="cli"><CliMark name={k.cli} size={12} />{k.cli}</span></li>
+              {/each}
+            </ul>
+          {/if}
         {/each}
         {#if L.procs.length > PROC_PEEK}
           <button class="more" onclick={() => (ui.allProcs = !ui.allProcs)}>{L.procsOpen ? c.showLess : `${c.showMore} ${L.procs.length - PROC_PEEK}`}</button>
@@ -142,6 +156,16 @@ const confirmIdx = $derived(live ? ui.confirmKill : 2)
   .connect { min-block-size: 100dvh; display: flex; flex-direction: column; position: relative; }
   .topbar { display: flex; align-items: center; justify-content: space-between; padding: 48px 20px 0; max-inline-size: 1120px; inline-size: 100%; margin-inline: auto; }
   .cli { display: inline-flex; align-items: center; gap: 5px; }
+  .kids { list-style: none; margin: 0 0 0 0; padding: 0; padding-inline-start: 22px; position: relative; }
+  .kids::before { content: ""; position: absolute; inset-inline-start: 12px; inset-block: 0 18px; border-inline-start: 1px solid var(--line-2); }
+  .kids li { position: relative; display: flex; align-items: center; gap: 8px; min-block-size: 40px; font-size: var(--t-sm); color: var(--fg-dim); }
+  .kids li::before { content: ""; position: absolute; inset-inline-start: -10px; inline-size: 8px; border-block-start: 1px solid var(--line-2); }
+  .kt { flex: 1; min-inline-size: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+  .auth { margin-block-start: 10px; padding-block-start: 10px; border-block-start: 1px solid color-mix(in srgb, var(--bad) 25%, transparent); color: var(--fg); }
+  .auth p { margin: 4px 0 0; font-size: var(--t-sm); }
+  .auth .ah { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .auth code { margin-inline-end: 4px; }
+  .auth a { color: var(--accent); }
   .top-acts { display: flex; align-items: center; gap: 4px; }
   .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: var(--t-lg); }
   .mark { inline-size: 8px; block-size: 8px; border-radius: 50%; background: var(--accent); }
