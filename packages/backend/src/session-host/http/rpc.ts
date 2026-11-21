@@ -56,6 +56,7 @@ import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import { AGENT_ID_HEADER } from "../../agent-identity.js"
+import { readScopeToken } from "../../scope-write.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import { dispatchRpcPrompt, PromptParams, resolveCallerSenderForPrompt } from "./rpc-prompt.js"
 import { respondRpcWait } from "./rpc-respond-wait.js"
@@ -146,6 +147,7 @@ export function registerRpcRoute(
             p.meta,
             waitMs,
             callerSender,
+            { token: readScopeToken((name) => c.req.header(name)), targetId: agentId },
           )
           if (outcome.kind === "accepted") break
           return c.json(outcome.body, outcome.status)
