@@ -19,7 +19,9 @@ const detail = {
   targetShortId: "bbbbbb",
 }
 
-function params(over: Partial<PermissionParams["toolCall"]> & { toolCallId: string }): PermissionParams {
+function params(
+  over: Partial<PermissionParams["toolCall"]> & { toolCallId: string },
+): PermissionParams {
   return {
     sessionId: "s1",
     toolCall: {
@@ -67,6 +69,17 @@ describe("scopeDetailRows", () => {
     const rows = scopeDetailRows({ ...detail, verb: "session/prompt" }, t)
     const action = rows.find((r) => r.label === "scopePrompt.action")
     expect(action?.kind !== "countdown" && action?.value).toBe("session/prompt")
+  })
+
+  it("shows the watched session and the full subscription grant scope", () => {
+    const translate = (key: string) =>
+      key === "scopePrompt.subscribeGrant" ? "{caller} can subscribe {target} to any session" : key
+    const rows = scopeDetailRows({ ...detail, verb: "subscribe", watched: "C" }, translate)
+    expect(rows).toContainEqual({ label: "scopePrompt.watched", value: "C" })
+    expect(rows).toContainEqual({
+      label: "scopePrompt.allowAlways",
+      value: "A can subscribe B to any session",
+    })
   })
 
   it("adds countdown row when expiresAtMs is set", () => {

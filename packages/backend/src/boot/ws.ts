@@ -7,9 +7,10 @@ import { createLogger } from "@drive-coding/core/log"
 import type { ServerType } from "@hono/node-server"
 import type { Hono } from "hono"
 import { WebSocket, WebSocketServer } from "ws"
+import { safeUrlPathname } from "../delivery/url-safe.js"
 import { createAgentWsHandler } from "../delivery/ws-agent.js"
 import { createEchoWsHandler } from "../delivery/ws-echo.js"
-import { safeUrlPathname } from "../delivery/url-safe.js"
+import { SCOPE_DENIED_BODY, whenScopedWriteAllowed } from "../scope-write.js"
 import { registerConnectionRoute } from "../session-host/http/index.js"
 import type { BootDeps } from "./deps.js"
 
@@ -53,6 +54,18 @@ export function createWsStack(): WsStack {
       evictionController,
     })
     const onAgentConnect = agentWs.onConnect
+    app.use("/api/agents/:id/connection", (c, next) => {
+      if (c.req.method !== "DELETE") return next()
+      return whenScopedWriteAllowed((name) => c.req.header(name), {
+        targetId: c.req.param("id"),
+        verb: "detach",
+        registry: deps.registry,
+        sessionRegistry: agentSessionRegistry,
+      }).then(async (allowed) => {
+        if (allowed) return next()
+        return c.json(SCOPE_DENIED_BODY, 403)
+      })
+    })
     registerConnectionRoute(app, connectionRegistry, {
       closeLiveSocket: agentWs.closeLiveSocket,
     })

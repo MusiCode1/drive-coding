@@ -33,6 +33,8 @@ const VERB_KEYS: Record<string, MessageKey> = {
   patch: "scopePrompt.verb.patch",
   reply: "scopePrompt.verb.reply",
   send: "scopePrompt.verb.send",
+  subscribe: "scopePrompt.verb.subscribe",
+  detach: "scopePrompt.verb.detach",
 }
 
 export type ScopeDetailRow =
@@ -56,6 +58,15 @@ export function scopeDetailRows(
     },
     { label: t("scopePrompt.action"), value: verbLabel },
   ]
+  if (detail.verb === "subscribe" && typeof detail.watched === "string") {
+    rows.push({ label: t("scopePrompt.watched"), value: detail.watched })
+    rows.push({
+      label: t("scopePrompt.allowAlways"),
+      value: t("scopePrompt.subscribeGrant").replace(/\{(caller|target)\}/g, (_, party) =>
+        party === "caller" ? detail.caller : detail.target,
+      ),
+    })
+  }
   if (detail.expiresAtMs !== undefined) {
     rows.push({
       label: t("scopePrompt.expiresIn"),
@@ -66,17 +77,11 @@ export function scopeDetailRows(
   return rows
 }
 
-export function isScopeExpiredToolCall(tc: {
-  name?: string
-  toolCallId?: string
-}): boolean {
+export function isScopeExpiredToolCall(tc: { name?: string; toolCallId?: string }): boolean {
   return tc.name === "scope-expired"
 }
 
-export function scopeExpiredRows(
-  args: unknown,
-  t: (key: MessageKey) => string,
-): ScopeDetailRow[] {
+export function scopeExpiredRows(args: unknown, t: (key: MessageKey) => string): ScopeDetailRow[] {
   if (!isScopePromptDetail(args)) return []
   return scopeDetailRows(args, t).filter((row) => row.kind !== "countdown")
 }

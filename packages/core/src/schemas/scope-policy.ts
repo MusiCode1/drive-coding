@@ -91,13 +91,17 @@ export function parseScopePolicyValue(raw: string | undefined): ScopePolicy | un
 export function hasScopePolicyPatchKey(
   policies: typeof ScopePolicyPatchPoliciesSchema.infer,
 ): boolean {
-  return policies.message !== undefined || policies.update !== undefined || policies.close !== undefined
+  return (
+    policies.message !== undefined || policies.update !== undefined || policies.close !== undefined
+  )
 }
 
 export function hasScopePolicyPerAgentPatchKey(
   policies: typeof ScopePolicyPerAgentPatchPoliciesSchema.infer,
 ): boolean {
-  return policies.message !== undefined || policies.update !== undefined || policies.close !== undefined
+  return (
+    policies.message !== undefined || policies.update !== undefined || policies.close !== undefined
+  )
 }
 
 /** Pure merge for escalation steps 4–6 (deny wins; per-caller wins over global). */
@@ -134,10 +138,12 @@ export function classifyScopeAction(verb: string): ScopeAction | undefined {
     return "update"
   }
   switch (verb) {
+    case "subscribe":
     case "send":
       return "message"
     case "close":
       return "close"
+    case "detach":
     case "patch":
     case "reply":
       return "update"
