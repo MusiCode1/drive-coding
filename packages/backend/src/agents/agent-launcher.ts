@@ -42,6 +42,12 @@ import { fileURLToPath } from "node:url"
 import { createLogger } from "@drive-coding/core/log"
 import { agentSocketPath, probeAgentSocket, type SocketProbe } from "./agent-sockets.js"
 
+import {
+  encodeSidecarAgentEnv,
+  SIDECAR_AGENT_ENV,
+  SIDECAR_LAUNCH_ENV_LIMIT,
+} from "./sidecar-agent-env.js"
+
 const log = createLogger("backend.agents.launcher")
 
 /** Unit name for an agent. Stable, so a later `systemctl stop` can find it. */
@@ -94,6 +100,7 @@ export type LaunchOpts = {
   cwd: string
   modelOverride?: string | null
   socketDir: string
+  agentEnv?: Record<string, string>
   env?: NodeJS.ProcessEnv
 }
 
@@ -151,6 +158,11 @@ export async function launchOrAttachAgent(opts: LaunchOpts): Promise<LaunchResul
     return { kind: "failed", socket, reason: `cannot confirm the socket is free: ${detail}` }
   }
 
+  const payload = opts.agentEnv === undefined ? undefined : encodeSidecarAgentEnv(opts.agentEnv)
+  if (payload !== undefined && payload.length > SIDECAR_LAUNCH_ENV_LIMIT) {
+    return { kind: "failed", socket, reason: "sidecar agent env too large" }
+  }
+
   const argv = buildSidecarArgv(opts, socket)
   // process.execPath is the interpreter running the backend (bun), by absolute
   // path — which the unit's minimal PATH could not have found by name.
@@ -167,7 +179,7 @@ export async function launchOrAttachAgent(opts: LaunchOpts): Promise<LaunchResul
     const child = spawn(interpreter, argv, {
       detached: true,
       stdio: "ignore",
-      env: { ...env },
+      env: { ...env, [SIDECAR_AGENT_ENV]: payload },
     })
     child.unref()
     return { kind: "launched", socket, unit: null }
@@ -180,13 +192,20 @@ export async function launchOrAttachAgent(opts: LaunchOpts): Promise<LaunchResul
     if (value !== undefined) setenv.push(`--setenv=${key}=${value}`)
   }
 
+  if (payload !== undefined) setenv.push(`--setenv=${SIDECAR_AGENT_ENV}=${payload}`)
+
   const res = spawnSync(
     "systemd-run",
     ["--user", `--unit=${unit}`, "--collect", "--quiet", ...setenv, interpreter, ...argv],
     { encoding: "utf8" },
   )
   if (res.status !== 0) {
-    const reason = (res.stderr ?? "").trim() || `systemd-run exited ${res.status}`
+    // Spawn errors can carry the complete argv in spawnargs. Keep only diagnostics.
+    const failure = res.error as NodeJS.ErrnoException | undefined
+    const detail = failure
+      ? `${failure.syscall ?? "systemd-run"}: ${failure.code ?? "spawn failed"}`
+      : (res.stderr ?? "").trim() || `systemd-run exited ${res.status}`
+    const reason = payload === undefined ? detail : detail.replaceAll(payload, "<redacted>")
     log.warn({ agentId: opts.agentId, reason }, "systemd-run failed")
     return { kind: "failed", socket, reason }
   }

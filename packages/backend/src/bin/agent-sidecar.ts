@@ -44,12 +44,15 @@ import { dirname } from "node:path"
 import { listenUnix } from "@drive-coding/acp-wire/node"
 import { createLogger, initLogger, parseEnvConfig } from "@drive-coding/core/log"
 import { removeAgentFiles, writeAgentMeta } from "../agents/agent-sockets.js"
+import { consumeSidecarAgentEnv } from "../agents/sidecar-agent-env.js"
 import {
   createBackend,
   defaultModeFor,
   lineSplitter,
   type SidecarMode,
 } from "../agents/sidecar-backend.js"
+
+const agentEnv = import.meta.main ? consumeSidecarAgentEnv(process.env) : undefined
 
 initLogger(parseEnvConfig())
 const log = createLogger("sidecar")
@@ -61,6 +64,7 @@ type Args = {
   socket: string
   modelOverride: string | null
   mode: SidecarMode | undefined
+  agentEnv?: Record<string, string>
 }
 
 /** Minimal `--key value` parsing — no dependency, and the caller is our launcher. */
@@ -180,7 +184,7 @@ export async function runSidecar(args: Args): Promise<void> {
 
 // import.meta.main is false when the module is imported by a test.
 if (import.meta.main) {
-  runSidecar(parseSidecarArgs(process.argv.slice(2))).catch((err: unknown) => {
+  runSidecar({ ...parseSidecarArgs(process.argv.slice(2)), agentEnv }).catch((err: unknown) => {
     log.error({ err }, "sidecar failed to start")
     process.exit(1)
   })

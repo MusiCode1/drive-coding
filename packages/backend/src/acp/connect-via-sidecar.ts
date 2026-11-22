@@ -95,6 +95,7 @@ export async function connectViaSidecar(
     modelOverride: opts.modelOverride ?? null,
     socketDir,
     env,
+    agentEnv: opts.agentEnv,
   })
   if (launched.kind === "failed") {
     throw new Error(`sidecar launch failed for ${agentId}: ${launched.reason}`)
