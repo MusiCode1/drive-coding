@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.10.2",
+  "docsVersion": "1.10.3",
   "docs": [
     {
       "id": "orientation",
@@ -260,7 +260,7 @@
       "tags": ["identity"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.10.1",
+      "docs_version": "1.10.3",
       "routes": ["POST /api/agents/:id/reply", "GET /api/scope-policy", "PATCH /api/scope-policy"],
       "mcp_tools": ["session_whoami"],
       "path": "docs/agents/60-identity-and-scopes.md",
@@ -272,6 +272,8 @@
         "HTTP status — `POST /api/agents/:id/reply`",
         "Not a security boundary",
         "Scope action policy (message / update / close)",
+        "Permanent grants and reply grants",
+        "Agent HTTP write routes",
         "HTTP API"
       ]
     },
@@ -287,7 +289,7 @@
       "tags": ["subagents", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.10.1",
+      "docs_version": "1.10.3",
       "routes": ["GET /api/agent-prompt", "DELETE /api/agents"],
       "mcp_tools": ["session_open", "notify_parent", "session_surface"],
       "path": "docs/agents/70-subagents.md",
@@ -297,7 +299,7 @@
         "Knowing you are a child",
         "Surface prompt injection",
         "notify_parent",
-        "Closing agents — no cascade"
+        "Closing agents"
       ]
     },
     {
@@ -478,7 +480,7 @@
       "tags": ["transports"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.10.1",
+      "docs_version": "1.10.3",
       "routes": [
         "GET /api/mcp",
         "POST /api/mcp",

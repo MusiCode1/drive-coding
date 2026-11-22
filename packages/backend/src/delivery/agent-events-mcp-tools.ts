@@ -4,18 +4,19 @@
 
 import {
   AgentNotifyParentInput,
+  type AgentRegistry,
   AgentSubscribeInput,
   MCP_NOTIFY_PARENT_META,
   MCP_TOOL_META,
-  type AgentRegistry,
 } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
-import type { AgentSessionRegistry } from "../session-host/registry.js"
+import { checkScopedWrite, SCOPE_DENIED_BODY } from "../scope-write.js"
 import type { AgentEventBus } from "../session-host/agent-events.js"
-import type { McpRequestContext } from "./http-mcp.js"
+import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { senderFromRecord, wrapAgentText } from "./drive-message-source.js"
+import type { McpRequestContext } from "./http-mcp.js"
 
 const log = createLogger("backend.mcp.agent-events")
 
@@ -78,18 +79,24 @@ export function registerAgentEventMcpTools(
       if (!target) return jsonError("agent not found")
 
       const subscriberId =
-        input.subscriber !== undefined && input.subscriber !== ""
-          ? input.subscriber
-          : callerAgentId
+        input.subscriber !== undefined && input.subscriber !== "" ? input.subscriber : callerAgentId
       if (!subscriberId) {
-        return jsonError(
-          `subscriber required — pass subscriber or ${AGENT_ID_HEADER} header`,
-        )
+        return jsonError(`subscriber required — pass subscriber or ${AGENT_ID_HEADER} header`)
       }
-      deps.eventBus.subscribe(input.agent, subscriberId, {
-        includeLastAssistantText: input.includeLastAssistantText === true,
+      return checkScopedWrite({
+        token: ctx.scopeToken,
+        targetId: subscriberId,
+        watchedId: input.agent,
+        verb: "subscribe",
+        registry: deps.registry,
+        sessionRegistry: deps.agentSessionRegistry,
+      }).then((allowed) => {
+        if (!allowed) return jsonError(JSON.stringify(SCOPE_DENIED_BODY))
+        deps.eventBus.subscribe(input.agent, subscriberId, {
+          includeLastAssistantText: input.includeLastAssistantText === true,
+        })
+        return jsonResult({ ok: true, agent: input.agent, subscriber: subscriberId })
       })
-      return jsonResult({ ok: true, agent: input.agent, subscriber: subscriberId })
     },
   )
 

@@ -1,8 +1,11 @@
 import { type AgentRegistry, toAgentPublic } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import type { Hono } from "hono"
+import { isMaster, subtreeIds, verifyToken } from "../agent-scope.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
+import { closeAllAgents } from "../app/close-all-agents.js"
 import type { SessionHistoryStore } from "../history/session-history-store.js"
+import { readScopeToken, SCOPE_DENIED_BODY } from "../scope-write.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
 import { registerAgentsPatchHttp } from "./http-agents-patch.js"
 import { httpCacheGet, httpCacheSet } from "./http-cache.js"
@@ -121,7 +124,24 @@ export function registerAgentsHttp(
    * status stays 200 even with failures — the operation ran; the body is the
    * result.
    */
-  app.delete("/api/agents", (c) => deps.orchestrator.deleteAllAndKill().then((r) => c.json(r, 200)))
+  app.delete("/api/agents", async (c): Promise<Response> => {
+    const token = readScopeToken((name) => c.req.header(name))
+    if (!token || isMaster(token)) {
+      return deps.orchestrator.deleteAllAndKill().then((result) => c.json(result, 200))
+    }
+    const caller = verifyToken(token)
+    if (!caller) return c.json(SCOPE_DENIED_BODY, 403)
+    return deps.registry.list().then<Response>((agents) => {
+      const subtree = subtreeIds(agents, caller.agentId)
+      const skipped = agents
+        .filter(({ id }) => !subtree.has(id))
+        .map(({ id }) => ({ id, reason: "scope" as const }))
+      return closeAllAgents(
+        () => Promise.resolve(agents.filter(({ id }) => subtree.has(id))),
+        (id) => deps.orchestrator.deleteAndKill(id),
+      ).then((result) => c.json({ ...result, skipped }, 200))
+    })
+  })
 
   // DELETE /api/agents/:id — מחיקה דרך orchestrator
   app.delete("/api/agents/:id", async (c) => {

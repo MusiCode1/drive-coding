@@ -2,12 +2,12 @@
  * agent-events-boot.ts — boot wiring for agent event bus (slice be-events-subscribe).
  */
 
-import type { Hono } from "hono"
 import type { AgentRegistry } from "@drive-coding/core"
+import type { Hono } from "hono"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import type { AgentEventBus } from "../session-host/agent-events.js"
-import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { createTurnEndedEmitter } from "../session-host/agent-events-turn.js"
+import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { wireAgentEventDelivery } from "./agent-events-deliver.js"
 import { registerAgentEventsHttp } from "./agent-events-http.js"
 import { wrapOrchestratorWithAgentEvents } from "./agent-events-orchestrator.js"
@@ -29,7 +29,7 @@ export function bootAgentEvents(
     agentSessionRegistry: AgentSessionRegistry
   },
 ): AgentEventsBoot {
-  registerAgentEventsHttp(app, { registry: deps.registry, eventBus: deps.eventBus })
+  registerAgentEventsHttp(app, deps)
   const orchestrator = wrapOrchestratorWithAgentEvents(deps.orchestrator, deps.eventBus)
   wireAgentEventDelivery({
     eventBus: deps.eventBus,

@@ -30,6 +30,7 @@ export function readScopeToken(
 export type ScopedWriteDeps = {
   token: string | undefined
   targetId: string
+  watchedId?: string
   verb: string
   registry: AgentRegistry
   sessionRegistry: AgentSessionRegistry
@@ -87,6 +88,7 @@ async function escalateScopePermission(
     callerId: verified.agentId,
     targetId,
     verb,
+    watchedId: deps.watchedId,
     agents: parties,
   })
 

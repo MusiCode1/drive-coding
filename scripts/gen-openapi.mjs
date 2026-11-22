@@ -184,6 +184,42 @@ const SPECIAL = {
       500: jsonErrorResponse("Agent spawn failed"),
     },
   },
+  "delete /api/agents": {
+    responses: {
+      200: {
+        description: "Bulk close results. Scoped tokens select the caller's subtree.",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              required: ["closed", "failed"],
+              properties: {
+                closed: { type: "array", items: { type: "string" } },
+                failed: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: ["id", "error"],
+                    properties: { id: { type: "string" }, error: { type: "string" } },
+                  },
+                },
+                skipped: {
+                  type: "array",
+                  description: "Agents outside the selected subtree. Present for scoped tokens.",
+                  items: {
+                    type: "object",
+                    required: ["id", "reason"],
+                    properties: { id: { type: "string" }, reason: { const: "scope" } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      403: jsonErrorResponse("Invalid scope token"),
+    },
+  },
   "delete /api/agents/:id": {
     responses: {
       ...noContentResponse("Agent removed"),
@@ -198,6 +234,7 @@ const SPECIAL = {
     responses: {
       ...noContentResponse("Subscription registered"),
       400: jsonErrorResponse("Invalid JSON or subscribe body"),
+      403: jsonErrorResponse("Subscriber scope denied"),
       404: jsonErrorResponse("Agent not found"),
     },
   },
@@ -391,7 +428,8 @@ const SPECIAL = {
   },
   "delete /api/agents/:id/connection": {
     responses: {
-      ...noContentResponse("Connection row removed"),
+      ...noContentResponse("Viewer connection released"),
+      403: jsonErrorResponse("Viewer detach scope denied"),
       404: { description: "No connection registry for agent" },
     },
   },
