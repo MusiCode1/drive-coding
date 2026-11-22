@@ -41,7 +41,6 @@ import { spawn, spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { createLogger } from "@drive-coding/core/log"
 import { agentSocketPath, probeAgentSocket, type SocketProbe } from "./agent-sockets.js"
-
 import {
   encodeSidecarAgentEnv,
   SIDECAR_AGENT_ENV,
@@ -101,6 +100,7 @@ export type LaunchOpts = {
   modelOverride?: string | null
   socketDir: string
   agentEnv?: Record<string, string>
+  intent?: "attachOnly"
   env?: NodeJS.ProcessEnv
 }
 
@@ -109,6 +109,7 @@ export type LaunchResult =
   | { kind: "attached"; socket: string; probe: SocketProbe }
   /** A new sidecar was started. `unit` is null on the non-systemd fallback. */
   | { kind: "launched"; socket: string; unit: string | null }
+  | { kind: "gone"; socket: string }
   | { kind: "failed"; socket: string; reason: string }
 
 function buildSidecarArgv(opts: LaunchOpts, socket: string): string[] {
@@ -157,6 +158,8 @@ export async function launchOrAttachAgent(opts: LaunchOpts): Promise<LaunchResul
         : `probe failed (${probe.code ?? "no code"})`
     return { kind: "failed", socket, reason: `cannot confirm the socket is free: ${detail}` }
   }
+
+  if (opts.intent === "attachOnly") return { kind: "gone", socket }
 
   const payload = opts.agentEnv === undefined ? undefined : encodeSidecarAgentEnv(opts.agentEnv)
   if (payload !== undefined && payload.length > SIDECAR_LAUNCH_ENV_LIMIT) {

@@ -8,6 +8,7 @@
  * and then failed the moment anything touched it.
  */
 
+import { spawn, spawnSync } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { createServer, type Server } from "node:net"
 import { tmpdir } from "node:os"
@@ -15,10 +16,21 @@ import { join } from "node:path"
 import { decodePing, encodePong } from "@drive-coding/acp-wire"
 import type { Agent } from "@drive-coding/core"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { createConnectionRegistry } from "../src/acp/connection-registry.js"
 import { agentSocketPath } from "../src/agents/agent-sockets.js"
 import { readAgentStore, writeAgentStore } from "../src/agents/agents-store.js"
 import { createPersistentAgentRegistry } from "../src/agents/persistent-registry.js"
 import { restorePersistedAgents } from "../src/agents/restore-agents.js"
+
+vi.mock(import("node:child_process"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  spawn: vi.fn(() => {
+    throw new Error("unexpected spawn during restore")
+  }),
+  spawnSync: vi.fn(() => {
+    throw new Error("unexpected systemd-run during restore")
+  }),
+}))
 
 const dirs: string[] = []
 const servers: Server[] = []
@@ -61,6 +73,8 @@ function registryWithRow(over: Partial<Agent> = {}) {
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.clearAllMocks()
   for (const s of servers) s.close()
   servers.length = 0
   for (const d of dirs) rmSync(d, { recursive: true, force: true })
@@ -100,7 +114,7 @@ describe("restorePersistedAgents", () => {
     expect(live[0]?.createdAt).toBe("2026-09-08T10:00:00.000Z")
     expect(live[0]?.acpSessionId).toBe("sess-9")
     // 🔴 …and the connection, without which the row is an entry that errors.
-    expect(connect).toHaveBeenCalledWith(ID, "cursor", { cwd: "/tmp" })
+    expect(connect).toHaveBeenCalledWith(ID, "cursor", { cwd: "/tmp", intent: "attachOnly" })
     expect(readAgentStore(file)).toHaveLength(1)
   })
 
@@ -196,7 +210,7 @@ describe("restorePersistedAgents", () => {
       }),
     ).resolves.toBeUndefined()
     expect(connect).toHaveBeenCalledOnce()
-    expect(await registry.list()).toHaveLength(1)
+    expect(await registry.get(ID)).toMatchObject({ status: "starting" })
   })
 
   it("works without a connection registry — restore is still valid on its own", async () => {
@@ -205,6 +219,55 @@ describe("restorePersistedAgents", () => {
       restorePersistedAgents({ registry, env: { AGENT_SIDECAR: "" } }),
     ).resolves.toBeUndefined()
     expect(await registry.list()).toEqual([])
+  })
+
+  it("marks a sidecar that vanishes between adoption and attach as crashed without launching", async () => {
+    const socketDir = tmpDir()
+    const server = await liveSidecar(agentSocketPath(socketDir, ID))
+    const { file, registry } = registryWithRow({ acpSessionId: "old-session" })
+    const acpSessionIds = new Map<string, string>()
+    vi.stubEnv("AGENT_SIDECAR", "cursor")
+    vi.stubEnv("DC_DEPLOYMENT_DIR", socketDir)
+    const connections = createConnectionRegistry()
+    const connect = connections.connect.bind(connections)
+    vi.spyOn(connections, "connect").mockImplementation(async (...args) => {
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()))
+      })
+      return connect(...args)
+    })
+    const close = vi.spyOn(connections, "close")
+
+    await restorePersistedAgents({ registry, connections, socketDir, acpSessionIds })
+    const crash = { status: "crashed", crashReason: "sidecar gone before restore attach" }
+    expect(await registry.get(ID)).toMatchObject(crash)
+    expect(readAgentStore(file)[0]).toMatchObject(crash)
+    expect(acpSessionIds.has(ID)).toBe(false)
+    expect(connections.get(ID)).toBeUndefined()
+    expect(spawn).not.toHaveBeenCalled()
+    expect(spawnSync).not.toHaveBeenCalled()
+    expect(close).not.toHaveBeenCalled()
+  })
+
+  it("registers a surviving sidecar in the real connection registry without closing it", async () => {
+    const socketDir = tmpDir()
+    await liveSidecar(agentSocketPath(socketDir, ID))
+    const { registry } = registryWithRow({ acpSessionId: "still-live" })
+    const acpSessionIds = new Map<string, string>()
+    vi.stubEnv("AGENT_SIDECAR", "cursor")
+    vi.stubEnv("DC_DEPLOYMENT_DIR", socketDir)
+    const connections = createConnectionRegistry()
+    const close = vi.spyOn(connections, "close")
+    try {
+      await restorePersistedAgents({ registry, connections, socketDir, acpSessionIds })
+      expect(connections.get(ID)).toBeDefined()
+      expect(acpSessionIds.get(ID)).toBe("still-live")
+      expect(close).not.toHaveBeenCalled()
+      expect(spawn).not.toHaveBeenCalled()
+      expect(spawnSync).not.toHaveBeenCalled()
+    } finally {
+      await connections.close(ID)
+    }
   })
 
   it("a stale socket file is not mistaken for a live agent", async () => {

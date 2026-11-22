@@ -24,7 +24,7 @@ import {
   connectSpawn,
 } from "@drive-coding/provider/connection"
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
-import { connectViaSidecar, sidecarKinds } from "./connect-via-sidecar.js"
+import { connectViaSidecar, type SidecarConnectOpts, sidecarKinds } from "./connect-via-sidecar.js"
 
 const cfgLog = createLogger("backend.acp.config")
 
@@ -54,7 +54,7 @@ export function overrideHasEnv(kind: string): boolean {
 export async function openProviderConnection(
   agentId: string,
   cliKind: SpawnBridgeInput["cliKind"],
-  opts: ConnectOpts,
+  opts: SidecarConnectOpts,
 ): Promise<ProviderConnection> {
   if (sidecarKinds().has(cliKind)) {
     return connectViaSidecar(agentId, cliKind, opts)

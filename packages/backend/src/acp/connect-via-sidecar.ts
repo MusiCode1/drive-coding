@@ -30,7 +30,7 @@ import { createLogger } from "@drive-coding/core/log"
 import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/connection"
 import { connectSidecar } from "@drive-coding/provider/connection"
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
-import { launchOrAttachAgent } from "../agents/agent-launcher.js"
+import { type LaunchOpts, launchOrAttachAgent } from "../agents/agent-launcher.js"
 import { probeAgentSocket } from "../agents/agent-sockets.js"
 import { deploymentDir, ensureDeploymentDir } from "../agents/deployment-dir.js"
 
@@ -74,6 +74,14 @@ export function socketDirForEnv(env: NodeJS.ProcessEnv = process.env): string {
   return deploymentDir(env, configDefault("port"))
 }
 
+export type SidecarConnectOpts = ConnectOpts & Pick<LaunchOpts, "intent">
+
+export class RestoreSidecarGone extends Error {
+  constructor() {
+    super("sidecar gone before restore attach")
+  }
+}
+
 /**
  * Launch (or attach to) the agent's sidecar and return a ProviderConnection.
  *
@@ -84,7 +92,7 @@ export function socketDirForEnv(env: NodeJS.ProcessEnv = process.env): string {
 export async function connectViaSidecar(
   agentId: string,
   cliKind: SpawnBridgeInput["cliKind"],
-  opts: ConnectOpts,
+  opts: SidecarConnectOpts,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ProviderConnection> {
   const socketDir = ensureDeploymentDir(socketDirForEnv(env))
@@ -96,7 +104,9 @@ export async function connectViaSidecar(
     socketDir,
     env,
     agentEnv: opts.agentEnv,
+    intent: opts.intent,
   })
+  if (launched.kind === "gone") throw new RestoreSidecarGone()
   if (launched.kind === "failed") {
     throw new Error(`sidecar launch failed for ${agentId}: ${launched.reason}`)
   }

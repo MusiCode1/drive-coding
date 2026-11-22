@@ -119,6 +119,19 @@ describe("sidecar launch env", () => {
     expect(mocks.spawnSync).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ["absent", "gone"],
+    ["stale", "gone"],
+    ["wedged", "failed"],
+    ["unknown", "failed"],
+  ])("never launches on attachOnly when the probe is %s", async (state, kind) => {
+    mocks.probe.mockResolvedValue({ state })
+    const result = await launchOrAttachAgent({ ...baseOpts, intent: "attachOnly" })
+    expect(result.kind).toBe(kind)
+    expect(mocks.spawn).not.toHaveBeenCalled()
+    expect(mocks.spawnSync).not.toHaveBeenCalled()
+  })
+
   it("attaches without handing any payload to an existing sidecar", async () => {
     mocks.probe.mockResolvedValue({ state: "alive" })
     const result = await launchOrAttachAgent({ ...baseOpts, agentEnv: payload })
