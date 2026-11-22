@@ -95,6 +95,7 @@ export async function runSidecar(args: Args): Promise<void> {
     cwd: args.cwd,
     agentId: args.agentId,
     modelOverride: args.modelOverride,
+    agentEnv: args.agentEnv,
     mode,
   })
   log.info({ agentId: args.agentId, cliKind: args.cliKind, mode }, "backend ready")
