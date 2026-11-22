@@ -18,7 +18,12 @@ vi.mock("@drive-coding/provider/connection", () => ({
   connectCodexInProcess: mocks.connectCodex,
 }))
 
-import { createBackend } from "../src/agents/sidecar-backend.js"
+import {
+  createBackend,
+  defaultModeFor,
+  HOSTABLE,
+  SIDECAR_BACKENDS,
+} from "../src/agents/sidecar-backend.js"
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -27,6 +32,14 @@ afterEach(() => {
 
 const opts = { cwd: "/tmp", agentId: "synthetic", modelOverride: null }
 const agentEnv = { REINSERTED: "agent", OVERRIDDEN: "agent", CLI_SPECS_JSON: "agent-only" }
+
+it("covers exactly the hosted adapters and sidecar dispatch modes", () => {
+  expect(Object.keys(HOSTABLE).sort()).toEqual(["claude", "codex"])
+  expect(Object.keys(SIDECAR_BACKENDS).sort()).toEqual(["hosted", "pipe"])
+  expect(defaultModeFor("claude")).toBe("hosted")
+  expect(defaultModeFor("codex")).toBe("hosted")
+  expect(defaultModeFor("cursor")).toBe("pipe")
+})
 
 it("applies the pipe payload after CLI spec unsets and overrides", async () => {
   vi.stubEnv("REINSERTED", "server")

@@ -15,7 +15,7 @@ vi.mock("../src/agents/agent-sockets.js", () => ({
 }))
 
 import { buildAgentIdentityEnv } from "../src/agent-identity.js"
-import { launchOrAttachAgent } from "../src/agents/agent-launcher.js"
+import { FORWARDED_ENV, launchOrAttachAgent } from "../src/agents/agent-launcher.js"
 import { consumeSidecarAgentEnv } from "../src/agents/sidecar-agent-env.js"
 import { buildChildBaseEnv } from "../src/app/agent-orchestrator.js"
 
@@ -38,6 +38,22 @@ function launchWithSystemd(result: { status: number | null; stderr?: string; err
 afterEach(() => vi.resetAllMocks())
 
 describe("sidecar launch env", () => {
+  it("pins the complete systemd control-environment allowlist", () => {
+    expect([...FORWARDED_ENV].sort()).toEqual([
+      "CLI_SPECS_FILE",
+      "CLI_SPECS_JSON",
+      "HOME",
+      "LOG_FORMAT",
+      "LOG_LEVEL",
+      "LOG_NS",
+      "OPENCODE_ARGS",
+      "OPENCODE_BIN",
+      "PATH",
+      "XDG_CONFIG_HOME",
+      "XDG_RUNTIME_DIR",
+    ])
+  })
+
   it.skipIf(process.platform !== "linux")(
     "passes only allowlisted control env and the payload as systemd arguments",
     async () => {

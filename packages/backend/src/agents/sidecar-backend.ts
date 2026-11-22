@@ -42,7 +42,7 @@ import {
 const log = createLogger("sidecar.backend")
 
 /** Adapters this process can host directly, keeping the `_drive/*` methods. */
-const HOSTABLE: Record<
+export const HOSTABLE: Record<
   string,
   (opts: Pick<ConnectOpts, "cwd" | "modelOverride" | "agentEnv">) => Promise<ProviderConnection>
 > = {
@@ -54,7 +54,7 @@ export type SidecarMode = "pipe" | "hosted"
 
 /** Hosted when we can — it is the only mode that keeps every method working. */
 export function defaultModeFor(cliKind: string): SidecarMode {
-  return cliKind in HOSTABLE ? "hosted" : "pipe"
+  return Object.hasOwn(HOSTABLE, cliKind) ? "hosted" : "pipe"
 }
 
 export type AgentBackend = {
@@ -141,7 +141,8 @@ export function pipeBackend(opts: BackendOpts): AgentBackend {
 /** hosted mode: run the provider's adapter here, keeping every ACP method. */
 export async function hostedBackend(opts: BackendOpts): Promise<AgentBackend> {
   const connect = HOSTABLE[opts.cliKind]
-  if (connect === undefined) throw new Error(`sidecar: ${opts.cliKind} cannot be hosted in-process`)
+  if (!Object.hasOwn(HOSTABLE, opts.cliKind) || connect === undefined)
+    throw new Error(`sidecar: ${opts.cliKind} cannot be hosted in-process`)
   const conn = await connect({
     cwd: opts.cwd,
     modelOverride: opts.modelOverride,
@@ -174,9 +175,11 @@ export async function hostedBackend(opts: BackendOpts): Promise<AgentBackend> {
   }
 }
 
+export const SIDECAR_BACKENDS = { hosted: hostedBackend, pipe: pipeBackend }
+
 export async function createBackend(
   opts: BackendOpts & { mode?: SidecarMode },
 ): Promise<AgentBackend> {
   const mode = opts.mode ?? defaultModeFor(opts.cliKind)
-  return mode === "hosted" ? hostedBackend(opts) : pipeBackend(opts)
+  return SIDECAR_BACKENDS[mode](opts)
 }

@@ -44,6 +44,17 @@ export function overrideHasEnv(kind: string): boolean {
   return o?.setEnv !== undefined || o?.unsetEnv !== undefined
 }
 
+export type ProviderRoute = "sidecar" | "inProcess" | "spawn"
+
+export function selectProviderRoute(cliKind: SpawnBridgeInput["cliKind"]): ProviderRoute {
+  if (sidecarKinds().has(cliKind)) return "sidecar"
+  return Object.hasOwn(IN_PROCESS_CONNECTORS, cliKind) ? "inProcess" : "spawn"
+}
+
+function assertNever(route: never): never {
+  throw new Error(`unhandled provider route: ${route}`)
+}
+
 /**
  * Open a connection to `agentId`'s agent, by whichever route applies.
  *
@@ -56,13 +67,20 @@ export async function openProviderConnection(
   cliKind: SpawnBridgeInput["cliKind"],
   opts: SidecarConnectOpts,
 ): Promise<ProviderConnection> {
-  if (sidecarKinds().has(cliKind)) {
-    return connectViaSidecar(agentId, cliKind, opts)
+  const route = selectProviderRoute(cliKind)
+  switch (route) {
+    case "sidecar":
+      return connectViaSidecar(agentId, cliKind, opts)
+    case "spawn":
+      return connectSpawn(cliKind, opts)
+    case "inProcess":
+      return connectHosted(cliKind as keyof typeof IN_PROCESS_CONNECTORS, opts)
+    default:
+      return assertNever(route)
   }
+}
 
-  const inProcess = IN_PROCESS_CONNECTORS[cliKind as keyof typeof IN_PROCESS_CONNECTORS]
-  if (inProcess === undefined) return connectSpawn(cliKind, opts)
-
+function connectHosted(cliKind: keyof typeof IN_PROCESS_CONNECTORS, opts: ConnectOpts) {
   // These two overrides look like they should work for an in-process adapter and
   // do not: the binary is never spawned by us, and the adapter reads this
   // process's env, not one we shape. Warned rather than ignored in silence.
@@ -75,5 +93,5 @@ export async function openProviderConnection(
       "cli-specs override env vars are not supported by the in-process bridge",
     )
   }
-  return inProcess(opts)
+  return IN_PROCESS_CONNECTORS[cliKind](opts)
 }
