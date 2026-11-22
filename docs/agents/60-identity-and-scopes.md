@@ -1,9 +1,10 @@
 ---
 id: identity
 title: Agent identity and scoped writes
-summary: Who you are on this backend, what DC_TOKEN does, and why it is not a security boundary.
+summary: Agent identity, environment passed to tools, and scope tokens for writes.
 read_when:
   - You need to know your agent id or scope token at runtime
+  - You need to pass environment variables to an agent or understand sidecar restore
   - A write to another agent was denied or you must answer a scope permission prompt
   - You are reviewing whether scoped writes protect against malicious agents
 tags: [identity]
@@ -15,8 +16,8 @@ routes:
   - PATCH /api/scope-policy
 mcp_tools:
   - session_whoami
-docs_version: 1.10.3
-updated: 2026-11-21
+docs_version: 1.10.4
+updated: 2026-11-23
 ---
 
 # Agent identity and scoped writes
@@ -25,7 +26,7 @@ updated: 2026-11-21
 
 Your agent id travels on two channels (`agent-identity.ts:24-27`, `agent-identity.ts:33-50`):
 
-- **Environment:** `DRIVE_CODING_AGENT_ID` on spawned CLI processes.
+- **Environment:** `DRIVE_CODING_AGENT_ID` in the CLI and its tools.
 - **HTTP/MCP header:** `X-Drive-Coding-Agent` on requests to this backend.
 
 MCP **session_whoami** (no parameters) reads the id from the `X-Drive-Coding-Agent` header
@@ -34,6 +35,28 @@ returns `agent`, `cliKind`, `cwd`, `hasParent`, `sessionId`, your note and field
 `backend` block (`pid`, `port`, `version`, `uptimeSec`, `publicBaseUrl`, memory budget) and a
 `runtime` block (CLI `pid`, `attached`, `busy`, `via`, child memory — Linux only; elsewhere
 `memory` is `null`). It is discovery, not authentication.
+
+## Agent environment
+
+Every launch route supplies `DRIVE_CODING_AGENT_ID`, `DC_TOKEN`, `DC_BASE`, and
+`DRIVE_CODING_BASE` to the agent's tools. This covers direct spawn, in-process
+adapters, and both pipe and hosted sidecars. For Codex, the values reach the
+long-running `codex app-server`, including its replacements after recovery.
+The backend sets both base variables to its loopback URL.
+
+Pass a string-to-string `env` map to `POST /api/agents` or MCP **session_open**
+to supply additional values. The backend's identity and base values take
+precedence over matching caller keys.
+
+Sidecar requests accept up to 60 KiB (61,440 bytes) of base64-encoded UTF-8
+JSON environment, including the base and parent fields added by MCP. The
+launch payload has a 64 KiB (65,536-byte) limit including server-added keys.
+Oversized sidecar requests return HTTP 400 or an MCP tool error before
+creating an agent.
+
+On backend restart, restore attaches to surviving sidecars with the
+environment they received at launch. If a sidecar disappears before the
+restore attach, the backend marks that agent as crashed.
 
 ## Scope token
 
