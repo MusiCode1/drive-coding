@@ -10,8 +10,15 @@ tags: [rpc, session]
 surface: [http]
 stability: transitional
 routes: [POST /api/agents/:id/rpc]
-docs_version: 1.6.0
-updated: 2026-10-13
+ext_methods:
+  - _drive/setThinkingTokens
+  - _drive/getQuota
+  - _drive/voice/start
+  - _drive/voice/stop
+  - _drive/voice/listVoices
+  - _drive/voice/speak
+docs_version: 1.10.4
+updated: 2026-11-20
 ---
 
 # Agent session RPC
@@ -37,6 +44,44 @@ Legacy aliases (for example `prompt` instead of `session/prompt`) may still be a
 | `_drive/ext` | Extension dispatch (`params.method`, optional `params.params`). |
 | `_drive/set_session_model` | Legacy model override (`params.model`) — prefer config options when available. |
 
+## Extensions (`_drive/ext`)
+
+`_drive/ext` carries drive-coding's own methods to the agent's provider:
+`{ "method": "_drive/ext", "params": { "method": "<extension>", "params": { … } }, "waitMs": … }`.
+The contract of each one — params and result — is one registry, `extMethods` in
+`packages/provider/src/extensions/schema.ts`. The backend passes `params` through unchanged,
+so send exactly that shape. Pass `waitMs` to get the answer: `200`
+`{ ok: true, result }`, or `{ ok: false, error }` when the provider failed or rejected it.
+Without `waitMs` the call is fire-and-forget (`202`).
+
+Each extension is gated by a flag in the session's `capabilities` (in `session_state` and
+`GET /api/agents/:id/state`). Call it only when the flag is `true` — a provider without it does
+not implement the method.
+
+| Extension | Capability | Params → result | What it does |
+|---|---|---|---|
+| `_drive/setThinkingTokens` | `thinkingTokens` | `{ sessionId, n: number \| null }` → `{ ok: true }` | Caps the model's thinking budget; `null` removes the cap. |
+| `_drive/getQuota` | `usage` | `{ sessionId }` → `{ snapshot }` | The account's usage windows. `snapshot` is `null` when no limit is visible yet — still a supported answer. Otherwise `{ provider, plan?, windows[] }`, each window `{ id, period, consumption, resetsAtMs }`: `period` is `{ kind: "rolling", durationSeconds }` or `{ kind: "calendar", unit }`; `consumption` is `{ kind: "percentage", usedPct }` or `{ kind: "absolute", used, limit, unit }`. |
+| `_drive/voice/start` | `voice` | `{ sessionId, sdp, instructions?, voice? }` → `{ sdp }` | Starts the agent's own realtime voice for the session (below). |
+| `_drive/voice/stop` | `voice` | `{ sessionId }` → `{}` | Ends it. |
+| `_drive/voice/listVoices` | `voice` | `{ sessionId }` → `{ voices, default, details? }` | Voice ids, the one used when none is chosen, and per-voice `{ description?, accent?, previewUrl? }` (`previewUrl` is a short public sample clip). |
+| `_drive/voice/speak` | `voice` | `{ sessionId, text }` → `{}` | Makes the voice say `text` now (e.g. that an approval waits on screen). |
+
+### The agent's own voice (`_drive/voice/*`)
+
+Some providers have a realtime voice of their own; today that is **Codex** (`voice: true`),
+through its app-server realtime API (GPT-Live). It needs Codex CLI **0.167 or newer** and
+runs on the ChatGPT account Codex is signed in with — no API key.
+
+The caller is the WebRTC peer: it captures the microphone, plays the voice, and opens an
+`oai-events` data channel; drive-coding only relays the SDP. Create the offer, send it as
+`sdp` to `_drive/voice/start`, and apply the returned `sdp` as the answer. `instructions`
+steer the voice; `voice` is one of `listVoices` (omit for the default).
+
+The voice talks with the user and hands work to the agent. Both show up in the chat as
+messages marked `_meta["_drive/voice"]` — see `45-render-contract`. Between the agent's turns
+the session reports `idle`, so a voice reply does not look like a running turn.
+
 ## `waitMs` and blocking
 
 Six methods honor optional top-level `waitMs` (1–60000) on the HTTP handler (`session-host/http/rpc.ts:67-74`):
@@ -47,7 +92,7 @@ Without `waitMs` (or `0`), those six return **`202`** with `{ version }` only (`
 With valid `waitMs`, the handler waits and returns **`200`** result bodies (or **`200`** `{ ok: false, timedOut: true }` on timeout — `rpc.ts:211-212`, `rpc.ts:137-139`).
 Invalid `waitMs` on those six → **`400`** `{ error: "invalid waitMs" }` (`rpc.ts:189-190`).
 
-Management methods (`session/list`, `session/load`, `session/new`, `session/delete`) **ignore** `waitMs` and always return their own **`200`** / **`400`** / **`502`** bodies (`rpc.ts:17-24`, `rpc.ts:303-415`).
+Management methods (`session/list`, `session/load`, `session/new`, `session/delete`) **ignore** `waitMs` and return method-specific status codes. Any **`session/load`** while a turn is active returns **`409`** with `{ error, code: "session_busy" }`. The active turn continues. **`session/new`** is still allowed during a turn.
 
 ## HTTP status codes
 
@@ -61,6 +106,7 @@ Management methods (`session/list`, `session/load`, `session/new`, `session/dele
 | `400` | `load`/`new` without cwd | `rpc.ts:338`, `rpc.ts:375` |
 | `202` | Fire-and-forget success for the six wait-capable methods | `rpc.ts:425` |
 | `200` | Blocking wait results, management results, or `-32601` degradations | `rpc.ts:211-231`, `rpc.ts:303-415` |
+| `409` | Any `session/load` while a turn is active | `rpc-session-mgmt.ts` |
 | `502` | Upstream/session errors on management calls | `rpc.ts:328-331`, `rpc.ts:365-367`, etc. |
 
 Scoped writes may deny before dispatch — see `60-identity-and-scopes`.

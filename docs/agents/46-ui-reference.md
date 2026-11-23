@@ -10,8 +10,8 @@ tags: [ui]
 surface: [ui]
 stability: transitional
 routes: []
-docs_version: 1.5.0
-updated: 2026-10-11
+docs_version: 1.10.0
+updated: 2026-11-18
 ---
 
 # UI reference
@@ -115,6 +115,14 @@ the current session alongside message history.
   during an actual recording was **not** observed here.)
 - In **Type** mode: **Add image**, **Dictate**, combobox **Type a prompt…**, **Send**,
   **Stop run** (enabled/disabled depends on turn state).
+- In **Live** mode: the large **Live conversation** button, and beside it the voice settings:
+  - a **Codex** chip (accessible name **Codex built-in Live**) — only when the session's agent
+    is Codex; pressed = Live uses Codex's own voice instead of Gemini;
+  - a voice chip (accessible name **Live conversation voice**) that opens a list of voices.
+    With Codex each row shows accent and description and has **Play sample — <voice>**
+    (turns into **Stop sample** while it plays); tapping a row picks that voice.
+  - While Live is on: **Pause** / **Resume** and **Close live**; with Codex's voice the label
+    reads **The agent's voice is on**.
 
 **Side panel (session chrome)** — on desktop width, a **Collapse panel** handle and:
 

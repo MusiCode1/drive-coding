@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.9.1",
+  "docsVersion": "1.10.5",
   "docs": [
     {
       "id": "orientation",
@@ -12,9 +12,9 @@
       "tags": ["orientation"],
       "surface": ["http", "mcp", "cli"],
       "stability": "stable",
-      "docs_version": "1.2.0",
-      "routes": [],
-      "mcp_tools": [],
+      "docs_version": "1.10.0",
+      "routes": ["GET /api/docs", "GET /api/docs/:id", "GET /api/openapi.json"],
+      "mcp_tools": ["docs_get"],
       "path": "docs/agents/00-orientation.md",
       "headings": [
         "Orientation",
@@ -23,6 +23,7 @@
         "How to choose in practice",
         "MCP limits (stateless)",
         "Security posture (orientation only)",
+        "Reading these docs at runtime",
         "Where to read next"
       ]
     },
@@ -64,7 +65,7 @@
       "tags": ["session", "ownership", "turnstate"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.6.0",
+      "docs_version": "1.10.0",
       "routes": [
         "GET /api/agents",
         "POST /api/agents",
@@ -78,7 +79,10 @@
         "session_open",
         "session_send",
         "session_state",
-        "session_close"
+        "session_close",
+        "session_note_set",
+        "session_field_set",
+        "session_field_delete"
       ],
       "path": "docs/agents/20-session-lifecycle.md",
       "headings": [
@@ -90,6 +94,7 @@
         "Ownership and liveness (HTTP session host)",
         "Identity header",
         "Inbound prompt envelope (receiver)",
+        "Session memory — your own note and fields",
         "Configure during lifecycle",
         "CLI equivalents",
         "Limits (MCP)"
@@ -133,7 +138,7 @@
       "tags": ["output", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.10.4",
       "routes": [
         "GET /api/agents/:id/history",
         "GET /api/agents/:id/events",
@@ -165,7 +170,7 @@
       "tags": ["render", "output", "ui"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.7.1",
+      "docs_version": "1.10.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/45-render-contract.md",
@@ -183,6 +188,7 @@
         "Code and math",
         "BIDI",
         "resource_link / plan files",
+        "Voice-conversation messages (`_meta[\"_drive/voice\"]`)",
         "What does not work",
         "Quick checklist"
       ]
@@ -199,7 +205,7 @@
       "tags": ["ui"],
       "surface": ["ui"],
       "stability": "transitional",
-      "docs_version": "1.5.0",
+      "docs_version": "1.10.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/46-ui-reference.md",
@@ -226,13 +232,15 @@
       "tags": ["rpc", "session"],
       "surface": ["http"],
       "stability": "transitional",
-      "docs_version": "1.6.0",
+      "docs_version": "1.10.4",
       "routes": ["POST /api/agents/:id/rpc"],
       "mcp_tools": [],
       "path": "docs/agents/50-rpc.md",
       "headings": [
         "Agent session RPC",
         "Methods",
+        "Extensions (`_drive/ext`)",
+        "The agent's own voice (`_drive/voice/*`)",
         "`waitMs` and blocking",
         "HTTP status codes",
         "Envelope on `session/prompt`",
@@ -243,27 +251,31 @@
     {
       "id": "identity",
       "title": "Agent identity and scoped writes",
-      "summary": "Who you are on this backend, what DC_TOKEN does, and why it is not a security boundary.",
+      "summary": "Agent identity, environment passed to tools, and scope tokens for writes.",
       "read_when": [
         "You need to know your agent id or scope token at runtime",
+        "You need to pass environment variables to an agent or understand sidecar restore",
         "A write to another agent was denied or you must answer a scope permission prompt",
         "You are reviewing whether scoped writes protect against malicious agents"
       ],
       "tags": ["identity"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.7.0",
+      "docs_version": "1.10.5",
       "routes": ["POST /api/agents/:id/reply", "GET /api/scope-policy", "PATCH /api/scope-policy"],
-      "mcp_tools": [],
+      "mcp_tools": ["session_whoami"],
       "path": "docs/agents/60-identity-and-scopes.md",
       "headings": [
         "Agent identity and scoped writes",
         "Who you are",
+        "Agent environment",
         "Scope token",
         "What scoped writes protect",
         "HTTP status — `POST /api/agents/:id/reply`",
         "Not a security boundary",
         "Scope action policy (message / update / close)",
+        "Permanent grants and reply grants",
+        "Agent HTTP write routes",
         "HTTP API"
       ]
     },
@@ -279,9 +291,9 @@
       "tags": ["subagents", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.6.0",
+      "docs_version": "1.10.3",
       "routes": ["GET /api/agent-prompt", "DELETE /api/agents"],
-      "mcp_tools": ["session_open", "notify_parent"],
+      "mcp_tools": ["session_open", "notify_parent", "session_surface"],
       "path": "docs/agents/70-subagents.md",
       "headings": [
         "Subagents",
@@ -289,7 +301,7 @@
         "Knowing you are a child",
         "Surface prompt injection",
         "notify_parent",
-        "Closing agents — no cascade"
+        "Closing agents"
       ]
     },
     {
@@ -327,12 +339,13 @@
       "tags": ["files", "output"],
       "surface": ["http"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.2.1",
       "routes": [
         "GET /api/fs/browse",
         "GET /api/fs/file",
         "GET /api/projects",
         "DELETE /api/projects",
+        "GET /api/sessions/:cliKind/:sessionId",
         "GET /api/recordings/:id",
         "POST /api/recordings"
       ],
@@ -344,6 +357,7 @@
         "GET /api/fs/file",
         "GET /api/fs/browse",
         "Projects",
+        "Session lookup (history)",
         "Recordings"
       ]
     },
@@ -359,7 +373,7 @@
       "tags": ["voice"],
       "surface": ["http"],
       "stability": "transitional",
-      "docs_version": "1.2.0",
+      "docs_version": "1.10.0",
       "routes": ["GET /api/tts/capabilities", "POST /api/voice/live/token"],
       "mcp_tools": [],
       "path": "docs/agents/91-voice.md",
@@ -367,6 +381,7 @@
         "Voice",
         "GET /api/tts/capabilities",
         "POST /api/voice/live/token",
+        "The agent's own voice",
         "Upstream proxies (prose only)"
       ]
     },
@@ -419,7 +434,7 @@
       "tags": ["errors", "rpc"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.10.4",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/95-errors.md",
@@ -469,7 +484,7 @@
       "tags": ["transports"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.10.3",
       "routes": [
         "GET /api/mcp",
         "POST /api/mcp",
@@ -477,13 +492,14 @@
         "POST /api/agents/:id/subscribe",
         "DELETE /api/agents/:id/connection"
       ],
-      "mcp_tools": [],
+      "mcp_tools": ["session_subscribe"],
       "path": "docs/agents/97-transports.md",
       "headings": [
         "Transports",
         "Stateless HTTP",
         "SSE — turn and session events",
         "HTTP subscribe (agent events bus)",
+        "The same bus over MCP — `session_subscribe`",
         "MCP Streamable HTTP — `/api/mcp`",
         "WebSocket (browser FE)",
         "DELETE /api/agents/:id/connection"

@@ -14,10 +14,9 @@ import {
 } from "./drive-message-envelope.js"
 
 const here = dirname(fileURLToPath(import.meta.url))
-const fixtureDir = join(
-  here,
-  "../../../../docs-for-llm/investigations/agent-message-envelope/proof/fixtures",
-)
+// Copies of the investigation's proof fixtures (synthetic). They used to be read from
+// docs-for-llm/, a link to a private repo, so the test failed on any clone without it.
+const fixtureDir = join(here, "__fixtures__/drive-message-envelope")
 
 function readFixture(name: string): string {
   return readFileSync(join(fixtureDir, name), "utf8")

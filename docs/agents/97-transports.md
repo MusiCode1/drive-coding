@@ -15,8 +15,10 @@ routes:
   - DELETE /api/mcp
   - POST /api/agents/:id/subscribe
   - DELETE /api/agents/:id/connection
-docs_version: 1.2.0
-updated: 2026-09-28
+mcp_tools:
+  - session_subscribe
+docs_version: 1.10.3
+updated: 2026-11-21
 ---
 
 # Transports
@@ -39,7 +41,22 @@ Plain request/response is the default agent surface. There is **no server→clie
 |--------|------|--------|
 | `404` | Unknown target agent | `agent-events-http.ts:18` |
 | `400` | Invalid JSON or body | `agent-events-http.ts:24`, `agent-events-http.ts:28` |
-| `204` | Subscribed | `agent-events-http.ts:33` |
+| `403` | Subscriber scope denied | `agent-events-http.ts` |
+| `204` | Subscribed | `agent-events-http.ts` |
+
+### The same bus over MCP — `session_subscribe`
+
+`session_subscribe` `{ agent, subscriber?, includeLastAssistantText? }` registers `subscriber`
+(default: your `X-Drive-Coding-Agent`) for the target `agent`'s events and returns
+`{ ok: true, agent, subscriber }`. An unknown target, or no subscriber and no header, is an
+error. Scoped writes are checked against the effective subscriber as described in
+`60-identity-and-scopes`. Repeating the same options leaves the subscription unchanged.
+New options update it.
+
+Events arrive in the subscriber's own session as a system envelope (`45-render-contract`):
+`<event-kind>turn-ended</event-kind>` when a turn ends — not that the task is done — and
+`<event-kind>stall-suspected</event-kind>` when a turn looks stuck, a suspicion only. With
+`includeLastAssistantText`, turn-ended carries a truncated preview of the agent's last reply.
 
 ## MCP Streamable HTTP — `/api/mcp`
 
@@ -57,9 +74,11 @@ Prefer MCP for **`session_*`** tools when your CLI already speaks MCP; prefer HT
 
 ## DELETE /api/agents/:id/connection
 
-Drops one viewer connection row; **does not** kill the agent or session host (`connection.ts:4-6`, `connection.ts:21-34`).
+Releases the selected viewer connection and ends its SSE stream if present. The
+agent, session host, and other viewers stay active (`boot/ws.ts`, `connection.ts`).
 
 | Status | When | Anchor |
 |--------|------|--------|
 | `404` | No connection registry for agent | `connection.ts:25` |
-| `204` | Removed (or no-op when connection id absent) | `connection.ts:34` |
+| `403` | Viewer detach denied by scope policy | `boot/ws.ts` |
+| `204` | Viewer released or connection id absent or unknown | `connection.ts` |

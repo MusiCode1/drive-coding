@@ -184,6 +184,42 @@ const SPECIAL = {
       500: jsonErrorResponse("Agent spawn failed"),
     },
   },
+  "delete /api/agents": {
+    responses: {
+      200: {
+        description: "Bulk close results. Scoped tokens select the caller's subtree.",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              required: ["closed", "failed"],
+              properties: {
+                closed: { type: "array", items: { type: "string" } },
+                failed: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    required: ["id", "error"],
+                    properties: { id: { type: "string" }, error: { type: "string" } },
+                  },
+                },
+                skipped: {
+                  type: "array",
+                  description: "Agents outside the selected subtree. Present for scoped tokens.",
+                  items: {
+                    type: "object",
+                    required: ["id", "reason"],
+                    properties: { id: { type: "string" }, reason: { const: "scope" } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      403: jsonErrorResponse("Invalid scope token"),
+    },
+  },
   "delete /api/agents/:id": {
     responses: {
       ...noContentResponse("Agent removed"),
@@ -198,6 +234,7 @@ const SPECIAL = {
     responses: {
       ...noContentResponse("Subscription registered"),
       400: jsonErrorResponse("Invalid JSON or subscribe body"),
+      403: jsonErrorResponse("Subscriber scope denied"),
       404: jsonErrorResponse("Agent not found"),
     },
   },
@@ -228,6 +265,18 @@ const SPECIAL = {
       },
       400: jsonErrorResponse("Invalid JSON, params, method, or waitMs"),
       404: jsonErrorResponse("Agent connection not found"),
+      409: {
+        description: "any session/load while a turn is active",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: { error: { type: "string" }, code: { const: "session_busy" } },
+              required: ["error", "code"],
+            },
+          },
+        },
+      },
       503: jsonErrorResponse("Host evict timeout (transient)"),
     },
   },
@@ -289,6 +338,26 @@ const SPECIAL = {
     responses: {
       ...noContentResponse("Project history cleared"),
       400: jsonErrorResponse("cwd required"),
+    },
+  },
+  "get /api/sessions/:cliKind/:sessionId": {
+    responses: {
+      200: {
+        description: "Session cwd and lastSeenAt from history store",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                cwd: { type: "string" },
+                lastSeenAt: { type: "number" },
+              },
+              required: ["cwd", "lastSeenAt"],
+            },
+          },
+        },
+      },
+      404: jsonErrorResponse("unknown session"),
     },
   },
   "get /api/fs/file": {
@@ -379,7 +448,8 @@ const SPECIAL = {
   },
   "delete /api/agents/:id/connection": {
     responses: {
-      ...noContentResponse("Connection row removed"),
+      ...noContentResponse("Viewer connection released"),
+      403: jsonErrorResponse("Viewer detach scope denied"),
       404: { description: "No connection registry for agent" },
     },
   },
@@ -463,8 +533,8 @@ if (!docsVersion) {
 }
 
 const { paths, count } = buildPaths()
-if (count !== 41) {
-  console.error(`🔴 expected 41 documentable operations, got ${count}`)
+if (count !== 42) {
+  console.error(`🔴 expected 42 documentable operations, got ${count}`)
   process.exit(1)
 }
 

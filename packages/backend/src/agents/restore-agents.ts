@@ -12,13 +12,17 @@
 
 import type { CliKind } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
-import { sidecarKinds, socketDirForEnv } from "../acp/connect-via-sidecar.js"
+import { RestoreSidecarGone, sidecarKinds, socketDirForEnv } from "../acp/connect-via-sidecar.js"
 import { adoptLiveAgents } from "./adopt-live-agents.js"
 import type { PersistentAgentRegistry } from "./persistent-registry.js"
 
 /** The slice of the connection registry this step needs. */
 export type ReattachTarget = {
-  connect(agentId: string, cliKind: CliKind, opts: { cwd: string }): Promise<unknown>
+  connect(
+    agentId: string,
+    cliKind: CliKind,
+    opts: { cwd: string; intent: "attachOnly" },
+  ): Promise<unknown>
 }
 
 const log = createLogger("backend.agents.restore")
@@ -89,12 +93,30 @@ export async function restorePersistedAgents(opts: RestoreOpts): Promise<void> {
   }
 
   if (connections === undefined) return
+  const gone = new Map<string, string>()
   for (const agent of adopted) {
     try {
-      await connections.connect(agent.id, agent.cliKind as CliKind, { cwd: agent.cwd })
+      await connections.connect(agent.id, agent.cliKind as CliKind, {
+        cwd: agent.cwd,
+        intent: "attachOnly",
+      })
       log.info({ agentId: agent.id }, "reattached connection")
     } catch (err) {
+      if (err instanceof RestoreSidecarGone) {
+        gone.set(agent.id, err.message)
+        opts.acpSessionIds?.delete(agent.id)
+      }
       log.warn({ err, agentId: agent.id }, "reattach failed — row kept, connection missing")
     }
+  }
+  if (gone.size > 0) {
+    // Preserve the uncertain rows already retained on disk when recording crashes.
+    const live = (await registry.list()).map((agent) => {
+      const crashReason = gone.get(agent.id)
+      return crashReason === undefined
+        ? agent
+        : { ...agent, status: "crashed" as const, crashReason }
+    })
+    await registry.restore(live, retained)
   }
 }

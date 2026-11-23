@@ -83,3 +83,19 @@ export function renderLlmsTxt(entries) {
   ]
   return lines.join("\n")
 }
+
+/** Repo path of the `_drive/*` extension registry (`extMethods`). */
+export const EXT_METHODS_PATH = "packages/provider/src/extensions/schema.ts"
+
+/**
+ * Method names of `export const extMethods = { … } as const` — the keys at the object's first
+ * level (`"_drive/…": {`). Returns [] when the registry is not found.
+ */
+export function extMethodNamesFromText(text) {
+  const start = text.indexOf("export const extMethods")
+  if (start === -1) return []
+  const tail = text.slice(start)
+  const end = tail.indexOf("} as const")
+  const block = end === -1 ? tail : tail.slice(0, end)
+  return [...block.matchAll(/^ {2}"(_drive\/[^"]+)": \{/gm)].map((m) => m[1])
+}

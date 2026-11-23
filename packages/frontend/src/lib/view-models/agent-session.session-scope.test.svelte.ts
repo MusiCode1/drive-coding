@@ -80,7 +80,7 @@ function seedSessionA(session: AgentSession): void {
   session.contextUsage = {
     usedTokens: 1,
     maxTokens: 100,
-  } as AgentSession["contextUsage"]
+  } as unknown as AgentSession["contextUsage"]
   session.quota = { provider: "test", windows: [] }
   session.quotaLoading = true
 }
@@ -234,8 +234,9 @@ describe("AgentSession session-scope boundary", () => {
   it("switchSession (remote) resets scoped fields on session identity change (§4.2א #6)", async () => {
     const view = new MockSessionView()
     view.connect("sess-a")
-    view.loadSessionMock.mockImplementation(async (sessionId: string, cwd?: string) => {
-      view.state = { ...view.state, sessionId, cwd: cwd ?? view.state.cwd }
+    // SessionState carries no cwd — only the session identity changes here.
+    view.loadSessionMock.mockImplementation(async (sessionId: string) => {
+      view.state = { ...view.state, sessionId }
     })
 
     const agent = new AgentSession({ view })

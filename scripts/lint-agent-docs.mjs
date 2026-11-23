@@ -13,12 +13,20 @@
 //   8. mcp_tools: subset of McpToolName union
 //   9. front-matter `id` is unique across docs/agents/*.md
 //  10. llms.txt matches regenerate (same as check 4 for index.json)
+//  11. ext_methods: subset of the `_drive/*` extension registry (extMethods)
 //
 // Exit 0 = clean, 1 = violations. Zero dependencies (pure node).
 
 import fs from "node:fs"
 import path from "node:path"
-import { headings, listDocFiles, readDoc, renderLlmsTxt } from "./agent-docs-lib.mjs"
+import {
+  EXT_METHODS_PATH,
+  extMethodNamesFromText,
+  headings,
+  listDocFiles,
+  readDoc,
+  renderLlmsTxt,
+} from "./agent-docs-lib.mjs"
 import { docVersionWithinCap } from "./docs-version-semver.mjs"
 import { extractOperations } from "./lint-api-documented.mjs"
 
@@ -64,7 +72,7 @@ const REQUIRED = [
   "docs_version",
   "updated",
 ]
-const OPTIONAL = ["routes", "mcp_tools"]
+const OPTIONAL = ["routes", "mcp_tools", "ext_methods"]
 const STABILITY = ["stable", "transitional", "experimental"]
 // Any script outside Basic Latin + punctuation. Hebrew lives in U+0590–U+05FF.
 const NON_LATIN = /[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}]/u
@@ -123,6 +131,16 @@ try {
 } catch (e) {
   fail("packages/core/src/schemas/mcp-docs.ts", e.message)
   mcpVocab = new Set()
+}
+
+let extVocab
+try {
+  const names = extMethodNamesFromText(fs.readFileSync(path.join(root, EXT_METHODS_PATH), "utf8"))
+  if (names.length === 0) throw new Error("no extMethods keys parsed")
+  extVocab = new Set(names)
+} catch (e) {
+  fail(EXT_METHODS_PATH, e.message)
+  extVocab = new Set()
 }
 
 const entries = []
@@ -197,6 +215,16 @@ for (const name of files) {
     }
     if (!mcpVocab.has(tool))
       fail(doc.rel, `mcp_tools item ${JSON.stringify(tool)} is not a known MCP tool name`)
+  }
+
+  // 11 — ext_methods: subset of the extension registry.
+  for (const method of Array.isArray(fm.ext_methods) ? fm.ext_methods : []) {
+    if (typeof method !== "string") {
+      fail(doc.rel, "`ext_methods` items must be strings")
+      continue
+    }
+    if (!extVocab.has(method))
+      fail(doc.rel, `ext_methods item ${JSON.stringify(method)} is not a known extension method`)
   }
 
   // 9 — duplicate id (checked after loop via map).

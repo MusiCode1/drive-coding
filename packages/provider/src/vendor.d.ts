@@ -10,6 +10,7 @@ declare module "@musicode1/codex-acp/lib" {
 
   export interface StartAcpServerOptions {
     codexPath?: string
+    env?: Record<string, string>
     config?: unknown
     modelProvider?: string
     defaultAuthRequest?: unknown

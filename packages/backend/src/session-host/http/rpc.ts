@@ -15,11 +15,11 @@
  *   Invalid waitMs on these methods → 400 {error}. Above 60000 / non-integer / negative → 400 (not clamp).
  *
  * Blocking methods with a REAL result (slice remote-session-mgmt C3) — the FE
- * needs the list/confirmation. Each case below returns EXPLICITLY (200/400/502):
+ * needs the list/confirmation. Each case below returns EXPLICITLY (200/400/409/502):
  * a `break` would fall through to the shared `return c.json({version}, 202)`
  * and break the contract. Management methods ignore `waitMs` silently (valid or invalid).
  *   - session/list   → 200 {sessions, sessionCapabilities} | 502 {error, code?}
- *   - session/load   → 200 {sessionId, version} | 400 (bad params / no cwd) | 502
+ *   - session/load   → 200 {sessionId, version} | 400 (bad params / no cwd) | 409 (session_busy: any load during turn) | 502
  *   - session/new    → 200 {sessionId, version} | 400 (no cwd) | 502
  *   - session/delete → 200 {ok:true} | 200 {ok:false, unsupported:true} (-32601) | 502
  *
@@ -56,6 +56,7 @@ import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import { AGENT_ID_HEADER } from "../../agent-identity.js"
+import { readScopeToken } from "../../scope-write.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import { dispatchRpcPrompt, PromptParams, resolveCallerSenderForPrompt } from "./rpc-prompt.js"
 import { respondRpcWait } from "./rpc-respond-wait.js"
@@ -146,6 +147,7 @@ export function registerRpcRoute(
             p.meta,
             waitMs,
             callerSender,
+            { token: readScopeToken((name) => c.req.header(name)), targetId: agentId },
           )
           if (outcome.kind === "accepted") break
           return c.json(outcome.body, outcome.status)

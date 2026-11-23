@@ -60,6 +60,7 @@ type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
 import { createTurnLifecycleHandlers, type TurnTimingHost } from "./turn-lifecycle.js"
 import { msgOf } from "./error-message.js"
 import { createPendingRequests } from "./pending-requests.js"
+import { createSessionSwitch } from "./session-switch.js"
 import { attachScopePermission, type ScopePermissionHost } from "./session-host-scope.js"
 
 // ─── C2: createSessionHost ───────────────────────────────────────────────────
@@ -293,12 +294,9 @@ export type SessionHostFromConnOptions = {
  */
 export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & TurnTimingHost & ScopePermissionHost & {
   /**
-   * slice remote-session-mgmt C2: loadSession as a SWITCH (not a bare delegate).
-   * Order: turnSeq++ → pending cleanup → full-state reset → sessionId flip
-   * (BEFORE the await) → await client.loadSession. Success: one update-session
-   * {configOptions?, turnState:"idle", lastTurnError:null}. Failure: rollback
-   * sessionId ONLY + a second monotonic reset + idle + rethrow (❌ no snapshot
-   * restore — versions never rewind; see C2 step 8).
+   * Switch sessions, resetting and flipping the session ID before CLI replay.
+   * Failure restores the previous transcript with a fresh reset and rethrows.
+   * Reload of the current session requires an idle turn.
    */
   loadSession(opts: {
     cwd: string
@@ -684,71 +682,21 @@ export async function createSessionHostFromConnection(
     }
   }
 
-  // ─── session switch preamble (shared by newSession + loadSession) ───
-  //  1. turnSeq++ + cancelledTurn=-1 — invalidate outgoing turns.
-  //  2. Pending cleanup — cancelled defaults before reset.
-  //  3. Reset via applyPatch + emit (❌ no manual version bump).
-  // ⚠️ Steps 1+3 MUST stay synchronous with the caller's sessionId flip when
-  // there is no pending — `await` of a helper always yields one microtask and
-  // would let old-session tails / permissions land before the flip (C2 tests).
-  // Failure path (rollbackSessionSwitch): sessionId only + second monotonic
-  // reset + idle — ❌ no snapshot restore (versions never rewind).
-  function beginSessionSwitchInvalidate(): void {
-    turnLifecycle.turnSeq++
-    turnLifecycle.cancelledTurn = -1
-    quotaGeneration++
-  }
-
-  /** Returns true if a microtask flush is required before reset. */
-  function cancelOpenPendingSync(): boolean {
-    const openPermission = currentState.pending.permission
-    const openElicitation = currentState.pending.elicitation
-    if (openPermission) {
-      permPending.respond(openPermission.requestId, { outcome: { outcome: "cancelled" } })
-    }
-    if (openElicitation) {
-      elicitPending.respond(openElicitation.requestId, { action: "cancel" })
-    }
-    return Boolean(openPermission || openElicitation)
-  }
-
-  function emitSessionSwitchReset(): {
-    oldSessionId: string | null
-    preResetConfigOptions: SessionConfigOption[]
-  } {
-    const oldSessionId = currentState.sessionId
-    const preResetConfigOptions = currentState.configOptions
-    const resetPatch: Patch = {
-      op: "reset",
-      version: currentState.version + 1,
-      messages: [],
-      nextMessageSeq: 0,
-      nextSegmentSeq: 0,
-    }
-    currentState = applyPatch(currentState, resetPatch)
-    emitPatches([resetPatch])
-    return { oldSessionId, preResetConfigOptions }
-  }
-
-  function rollbackSessionSwitch(oldSessionId: string | null): void {
-    currentState = { ...currentState, sessionId: oldSessionId }
-    const resetPatch2: Patch = {
-      op: "reset",
-      version: currentState.version + 1,
-      messages: [],
-      nextMessageSeq: 0,
-      nextSegmentSeq: 0,
-    }
-    currentState = applyPatch(currentState, resetPatch2)
-    emitPatches([resetPatch2])
-    const idlePatch: Patch = {
-      op: "update-session",
-      version: currentState.version + 1,
-      changes: { turnState: "idle" },
-    }
-    currentState = applyPatch(currentState, idlePatch)
-    emitPatches([idlePatch])
-  }
+  const sessionSwitch = createSessionSwitch({
+    get state() {
+      return currentState
+    },
+    set state(state) {
+      currentState = state
+    },
+    bumpQuotaGeneration: () => {
+      quotaGeneration++
+    },
+    turnLifecycle,
+    permPending,
+    elicitPending,
+    emitPatches,
+  })
 
   // ── ExtendedSessionHost ───────────────────────────────────────────────────
 
@@ -839,14 +787,14 @@ export async function createSessionHostFromConnection(
         return result
       }
 
-      beginSessionSwitchInvalidate()
-      if (cancelOpenPendingSync()) {
+      sessionSwitch.beginSessionSwitchInvalidate()
+      if (sessionSwitch.cancelOpenPendingSync()) {
         // One microtask: let handlers' finally (clearPendingRequest + emit) land
         // before the reset. ❌ Do not await when there is no pending — that would
         // yield and let old-session tails land before the sessionId flip.
         await Promise.resolve()
       }
-      const { oldSessionId } = emitSessionSwitchReset()
+      const { oldSessionId, snapshot } = sessionSwitch.emitSessionSwitchReset()
       // Sentinel ≠ any real ACP sessionId → handleUpdate drops outgoing tails.
       // null would pass the filter (host-with-no-session pass-through) and re-fill.
       currentState = { ...currentState, sessionId: "__drive_switching__" }
@@ -874,26 +822,23 @@ export async function createSessionHostFromConnection(
         startQuotaFetch(result.sessionId)
         return result
       } catch (err) {
-        rollbackSessionSwitch(oldSessionId)
+        sessionSwitch.rollbackSessionSwitch(oldSessionId, snapshot)
         throw err
       }
     },
 
-    // ─── slice remote-session-mgmt C2: loadSession as a SWITCH ───
-    // Mandatory order (brief C2): prepareSessionSwitch (1–3) → flip sessionId
-    // BEFORE await (4) → await client.loadSession (6) → success update-session
-    // (7) / rollbackSessionSwitch (8). See prepareSessionSwitch comment above.
     async loadSession(opts: {
       cwd: string
       sessionId: string
       _meta?: Record<string, unknown>
     } & SessionMcpOpts): Promise<{ sessionId: string; version: number }> {
       if (disposed) throw new Error("SessionHost disposed")
-      beginSessionSwitchInvalidate()
-      if (cancelOpenPendingSync()) {
+      sessionSwitch.assertCanLoad(opts.sessionId)
+      sessionSwitch.beginSessionSwitchInvalidate()
+      if (sessionSwitch.cancelOpenPendingSync()) {
         await Promise.resolve()
       }
-      const { oldSessionId, preResetConfigOptions } = emitSessionSwitchReset()
+      const { oldSessionId, preResetConfigOptions, snapshot } = sessionSwitch.emitSessionSwitchReset()
 
       // 4. Flip sessionId BEFORE the await — otherwise the step-5 filter would
       //    drop the new session's replay (arriving during the await; streamHistory
@@ -939,8 +884,7 @@ export async function createSessionHostFromConnection(
         startQuotaFetch(opts.sessionId)
         return { sessionId: opts.sessionId, version: currentState.version }
       } catch (err) {
-        // 8. Failure — rollback sessionId only + second monotonic reset + idle.
-        rollbackSessionSwitch(oldSessionId)
+        sessionSwitch.rollbackSessionSwitch(oldSessionId, snapshot)
         throw err
       }
     },

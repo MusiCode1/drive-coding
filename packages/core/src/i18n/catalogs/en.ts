@@ -105,7 +105,7 @@ export const en: Catalog = {
   "settings.beUrl.invalid": "Invalid URL",
   "settings.beUrl.saved": "Saved ✓",
   "settings.scopePolicy.title": "Cross-agent approvals",
-  "settings.scopePolicy.message": "Send messages",
+  "settings.scopePolicy.message": "Send messages and cancel turns",
   "settings.scopePolicy.update": "Change another agent",
   "settings.scopePolicy.close": "Close another agent",
   "settings.scopePolicy.option.ask": "Ask",
@@ -311,7 +311,7 @@ export const en: Catalog = {
   "session.fieldsEmpty": "No fields",
   // ─── scope-policy-per-caller ───
   "session.scopePolicy.title": "Approvals for this agent",
-  "session.scopePolicy.message": "Send messages",
+  "session.scopePolicy.message": "Send messages and cancel turns",
   "session.scopePolicy.update": "Change another agent",
   "session.scopePolicy.close": "Close another agent",
   "session.scopePolicy.option.inherit": "Inherit global",
@@ -513,6 +513,10 @@ export const en: Catalog = {
     "This session is already connected from another device or tab. Connecting here will disconnect it.",
   "sessionUrl.takeover.confirm": "Connect anyway",
   "sessionUrl.takeover.cancel": "Cancel",
+  "sessionUrl.busy.title": "A turn is running",
+  "sessionUrl.busy.body":
+    "You can't switch sessions while the agent is working. Wait for the turn to finish, or stop it, then try again.",
+  "sessionUrl.busy.back": "Back to session",
   // ─── agent-patch-unify C4: finding 3 — newSession over remote is not supported yet ─── (message only, no navigation)
   // ─── sidebar-resize ───
   "sidebar.resizeHandle": "Drag to resize width",
@@ -626,6 +630,12 @@ export const en: Catalog = {
   "scopePrompt.title": "Write request to another session",
   "scopePrompt.caller": "Requester",
   "scopePrompt.target": "Target session",
+  "scopePrompt.watched": "Watched session",
+  "scopePrompt.messageGrant": "Allows sending messages and canceling turns for this session",
+  "scopePrompt.subscribeGrant": "{caller} can subscribe {target} to events from any session",
+  "scopePrompt.allowAlways": "Always allow",
+  "scopePrompt.verb.subscribe": "Subscribe to events",
+  "scopePrompt.verb.detach": "Detach viewer",
   "scopePrompt.action": "Action",
   "scopePrompt.verb.close": "Close session",
   "scopePrompt.verb.patch": "Update session details",
@@ -635,4 +645,22 @@ export const en: Catalog = {
   "scopePrompt.expiresIn": "Auto-denies in",
   "scopePrompt.seconds": "sec",
   "scopePrompt.expired": "Automatically denied — no one responded",
+  // agent-voice
+  "agentVoice.useNative": "Codex built-in Live",
+  "agentVoice.useNativeShort": "Codex",
+  "agentVoice.defaultVoice": "The agent's default",
+  "agentVoice.preview": "Play sample",
+  "agentVoice.stopPreview": "Stop sample",
+  "agentVoice.previewFailed": "The sample did not play:",
+  "voice.bubble.you": "You",
+  "voice.bubble.voice": "Voice",
+  "voice.handoff.label": "Handed to the agent:",
+  "voice.handoff.context": "Conversation context",
+  "agentVoice.connecting": "Connecting the agent's voice…",
+  "agentVoice.live": "The agent's voice is on",
+  "agentVoice.error": "The agent's voice failed:",
+  "agentVoice.instructions":
+    "You are a voice assistant talking to the user. The agent does all the real work. Delegate every request that needs facts about files, code, the computer or the task. While a delegation is pending you may only say that you are checking. Never state numbers, file contents or results before the agent's answer has arrived. When it arrives, convey it faithfully and briefly, without changing numbers or names. If you are told the agent is waiting for approval, tell the user right away.",
+  "agentVoice.permissionSpeech":
+    "The agent is waiting for your approval, which can't be given by voice. Approve or deny on screen:",
 }

@@ -31,7 +31,17 @@ export type BubbleBase = {
   /** מזהה הודעת ACP — null עבור בועות סינתטיות (פרומפטים של משתמש, tool calls). */
   messageId: string | null
   createdAt: number
+  /**
+   * slice codex-voice-poc — part of the agent's built-in voice conversation (from the generic
+   * `_meta["_drive/voice"]` mark). undefined = an ordinary chat message.
+   */
+  voice?: BubbleVoice
 }
+
+/** What the user or the voice said, or a request the voice handed to the agent. */
+export type BubbleVoice =
+  | { kind: "speech"; role: "user" | "assistant" }
+  | { kind: "handoff"; transcript?: string }
 
 export type UserBubble = BubbleBase & {
   kind: "user"

@@ -4,7 +4,7 @@
  */
 export function settingBackedOpen(read: () => boolean): {
   get value(): boolean
-  set value(v: boolean): void
+  set value(v: boolean)
 } {
   let open = $state(read())
   $effect(() => {

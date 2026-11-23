@@ -98,6 +98,15 @@ function withPendingTs(msg: SessionMessage, state: SessionState): SessionMessage
   return ts === undefined ? msg : { ...msg, timestamp: ts }
 }
 
+/**
+ * A voice-conversation message (`_meta["_drive/voice"]`, set by a provider whose agent has its own
+ * realtime voice) is the user talking with that voice — not a turn of the agent. It must not move
+ * the turn state, or the session looks busy after every spoken reply (and after replaying them).
+ */
+function isVoiceMessage(meta: Record<string, unknown> | undefined): boolean {
+  return meta?.["_drive/voice"] !== undefined
+}
+
 function handleTextChunk(
   state: SessionState,
   role: "user" | "thought" | "assistant",
@@ -143,8 +152,13 @@ function handleTextChunk(
   const newVersion = state.version + 1
 
   // C1: derive turnState from content role (user_message_chunk = replay, no change)
-  const newTurnState =
-    role === "thought" ? "thinking" : role === "assistant" ? "responding" : state.turnState
+  const newTurnState = isVoiceMessage(meta)
+    ? state.turnState
+    : role === "thought"
+      ? "thinking"
+      : role === "assistant"
+        ? "responding"
+        : state.turnState
 
   if (canGroupWith(last, role, messageId)) {
     // append-segment
@@ -462,8 +476,13 @@ function handleWholeMessage(
 
   const idx = state.messages.findIndex((m) => m.role === role && m.messageId === messageId)
   const newVersion = state.version + 1
-  const turnState: TurnStateValue =
-    role === "thought" ? "thinking" : role === "assistant" ? "responding" : state.turnState
+  const turnState: TurnStateValue = isVoiceMessage(metaOf(u))
+    ? state.turnState
+    : role === "thought"
+      ? "thinking"
+      : role === "assistant"
+        ? "responding"
+        : state.turnState
 
   // segment יחיד: ההודעה השלמה **היא** הכיווץ. פיצול-מחדש ל-chunks היה
   // ממציא גבולות שהספק מעולם לא שלח.
@@ -756,10 +775,8 @@ function reduceRecognized(
   }
 
   if (sessionUpdate === "_drive/reset") {
-    // ל-ACP אין מקבילה: שם החלפת-סשן היא חיבור חדש. אצלנו הזרם שורד את
-    // ההחלפה ולכן היא חייבת לנסוע בו. אין מטען — שני מוקדי-הפליטה ב-
-    // `session-host.ts` (796, 847) פולטים `messages: []` תמיד, כלומר
-    // reset הוא **ניקוי** ולא החלפה, ומה שאחריו בונה מחדש.
+    // ACP switches sessions on a new connection. Our stream stays open, so
+    // this update clears the old transcript before any replay in the batch.
     const newVersion = state.version + 1
     return {
       state: {
@@ -792,19 +809,41 @@ function reduceRecognized(
 
   // ─── C1: metadata handlers ───
 
-  // session_info_update → update title
+  // session_info_update → update title; `_meta["_drive/turnState"]: "idle"` also ends the turn.
+  //
+  // ⚠️ The turn-end mark rides a standard ACP update on purpose. A provider whose agent works
+  // between prompts (a voice hand-off runs as a turn no prompt owns, so no prompt response ends
+  // it) needs a way to say "idle". A `state_update` line is not ACP v1: the SDK on the backend
+  // rejects it ("Invalid params") before it reaches this reducer — measured 18/11/2026, a Codex
+  // session stayed "responding" forever. `_meta` on `session_info_update` passes the SDK.
   if (sessionUpdate === "session_info_update") {
     const title = u.title
     const meta = metaOf(u)
-    if (title === undefined) return { state, patches: [] } // keep-on-undefined
-    const newTitle = title === null ? "" : typeof title === "string" ? title : state.title
-    if (newTitle === state.title && title !== null) return { state, patches: [] }
+    const endsTurn = meta?.["_drive/turnState"] === "idle" && state.turnState !== "idle"
+    const newTitle =
+      title === undefined // keep-on-undefined
+        ? state.title
+        : title === null
+          ? ""
+          : typeof title === "string"
+            ? title
+            : state.title
+    const titleChanges = title !== undefined && !(newTitle === state.title && title !== null)
+    if (!titleChanges && !endsTurn) return { state, patches: [] }
     const newVersion = state.version + 1
-    const newState: SessionState = { ...state, version: newVersion, title: newTitle }
+    const newState: SessionState = {
+      ...state,
+      version: newVersion,
+      title: newTitle,
+      ...(endsTurn ? { turnState: "idle" as const } : {}),
+    }
     const patch: Patch = {
       version: newVersion,
       op: "update-session",
-      changes: { title: newTitle },
+      changes: {
+        ...(titleChanges ? { title: newTitle } : {}),
+        ...(endsTurn ? { turnState: "idle" as const } : {}),
+      },
       ...(meta !== undefined ? { meta } : {}),
     }
     return { state: newState, patches: [patch] }

@@ -67,6 +67,7 @@ export const PatchSchema = type({
     version: "number",
     op: "'reset'",
     messages: SessionMessageSchema.array(),
+    "carried?": type({ key: "string", after: "string | null", update: "unknown" }).array(),
     nextMessageSeq: "number",
     nextSegmentSeq: "number",
   })

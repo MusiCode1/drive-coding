@@ -12,6 +12,7 @@ import {
 import { createLogger } from "@drive-coding/core/log"
 import { RPC_METHODS } from "@drive-coding/core/session"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
+import { recordPromptDispatch } from "../agent-scope.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import type { ScopeEnforcementDeps } from "../bind-scope-enforcement.js"
 import { guardMcpWrite } from "../bind-scope-enforcement.js"
@@ -137,9 +138,11 @@ export function registerMcpWriteTools(
         }
 
         const promptContent = wrapPromptContent(sender, input.prompt)
+        const from = input.noWait === true ? 0 : host.state.messages.length
+        recordPromptDispatch(scopeToken, input.agent)
+        const promptWork = host.prompt(sessionId, promptContent)
 
         if (input.noWait === true) {
-          const promptWork = host.prompt(sessionId, promptContent)
           void promptWork.catch((e) => {
             log.warn({ err: e }, "prompt turn failed")
           })
@@ -147,8 +150,6 @@ export function registerMcpWriteTools(
         }
 
         const timeoutMs = (input.timeoutSec ?? SESSION_SEND_TIMEOUT_SEC) * 1000
-        const from = host.state.messages.length
-        const promptWork = host.prompt(sessionId, promptContent)
         const raced = await raceKeepRunning(promptWork, timeoutMs, (e) => {
           log.warn({ err: e }, "prompt turn failed")
         })

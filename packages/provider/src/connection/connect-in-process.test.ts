@@ -60,6 +60,31 @@ describe("connectInProcess — structural (no real claude session)", () => {
     }
   })
 
+  it("sends the per-agent env through the Claude session metadata", async () => {
+    const agentEnv = { BDS_SLICE: "claude-probe" }
+    const newSession = vi.spyOn(ClaudeAcpAgent.prototype, "newSession").mockResolvedValue({
+      sessionId: "synthetic-session",
+    })
+    const conn = await connectInProcess({ cwd: process.cwd(), agentEnv })
+    try {
+      conn.wire.write(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "session/new",
+          params: { cwd: process.cwd(), mcpServers: [] },
+        }),
+      )
+      await vi.waitFor(() => expect(newSession).toHaveBeenCalledOnce())
+      expect(newSession.mock.calls[0]?.[0]._meta).toMatchObject({
+        claudeCode: { options: { env: agentEnv } },
+      })
+    } finally {
+      await conn.close()
+      newSession.mockRestore()
+    }
+  })
+
   it("capabilities includes rename=true and thinkingTokens=true", async () => {
     const conn = await connectInProcess({ cwd: process.cwd() })
     try {

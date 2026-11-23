@@ -31,14 +31,15 @@ describe("openapi and RPC doc coupling", () => {
     expect(mentioned).toHaveLength(10)
   })
 
-  it("openapi.json carries 39 HTTP operations", () => {
+  it("openapi.json carries 42 HTTP operations", () => {
     const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8")) as {
       paths?: Record<string, Record<string, unknown>>
     }
     const ops = Object.values(spec.paths ?? {}).flatMap((item) =>
       Object.keys(item).filter((k) => !k.startsWith("x-") && k !== "parameters"),
     )
-    expect(ops).toHaveLength(39)
+    // 42 since fix-session-url-hijack C1: GET /api/sessions/:cliKind/:sessionId
+    expect(ops).toHaveLength(42)
   })
 
   it("McpToolName union has thirteen members (includes notify_parent)", () => {
@@ -54,7 +55,7 @@ describe("openapi and RPC doc coupling", () => {
     const keys = (method: string, path: string) =>
       Object.keys(spec.paths[path]?.[method]?.responses ?? {}).sort()
 
-    expect(keys("post", "/api/agents/:id/rpc")).toEqual(["200", "202", "400", "404", "503"])
+    expect(keys("post", "/api/agents/:id/rpc")).toEqual(["200", "202", "400", "404", "409", "503"])
     expect(keys("post", "/api/agents/:id/subscribe")).toEqual(["204", "400", "404"])
     expect(keys("post", "/api/agents")).toEqual(["201", "400", "500"])
     expect(keys("delete", "/api/agents/:id")).toEqual(["204", "404"])

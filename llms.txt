@@ -10,7 +10,7 @@ Agent-facing documentation for drive-coding HTTP, MCP, and session lifecycle.
 - [Render contract — what your output can display](docs/agents/45-render-contract.md): What the drive-coding UI renders from agent output, and what it will not render.
 - [UI reference — screens and controls](docs/agents/46-ui-reference.md): Where settings and session controls live in the drive-coding web app, with on-screen labels an agent can quote back to the user.
 - [Agent session RPC — POST /api/agents/:id/rpc](docs/agents/50-rpc.md): JSON-RPC-style methods on a live agent session (prompt, cancel, session management, and drive-coding extensions).
-- [Agent identity and scoped writes](docs/agents/60-identity-and-scopes.md): Who you are on this backend, what DC_TOKEN does, and why it is not a security boundary.
+- [Agent identity and scoped writes](docs/agents/60-identity-and-scopes.md): Agent identity, environment passed to tools, and scope tokens for writes.
 - [Subagents — spawn, parent identity, notify_parent](docs/agents/70-subagents.md): Open child agents, detect when you are a child, report to the parent, and what closing does not do.
 - [CLI providers — registry and availability](docs/agents/80-providers.md): Which CLI kinds exist, how overrides merge, and how to detect installed binaries on this host.
 - [Files, projects, and recordings](docs/agents/90-files-and-media.md): Browse local paths, serve file bytes to the browser, and store short audio recordings.

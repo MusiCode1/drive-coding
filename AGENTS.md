@@ -74,6 +74,20 @@ The current slice roadmap is `docs-for-llm/frontend/slices.md`.
 - No `any` — use `unknown` + ArkType to refine.
 - No deep `null` — `T | undefined` or Option pattern.
 
+### 🔴 A policy decision is not made until a linter enforces it
+
+User decision, 2026-11-20: *every policy decision is recorded as a linter.* A rule that
+lives only in prose — a size cap, an import boundary, a closed list of extension points,
+"the FE does not report derived metadata" — is a wish. Text that forbids does not enforce.
+
+⇒ **When a plan or brief states a policy, the same slice adds the check that fails on a
+violation** (a script, a test, or a `size-budgets.json` entry), wired into a gate that
+actually runs (`pre-commit`, `pre-push`, or the package test suite). Each check ships with
+a **negative control** — a fixture that violates the rule and must turn the check red —
+otherwise a green result may only mean "not checked" (see the next section, and
+"green that means unchecked" below). Prior art: `acp-wire/src/browser-entry.test.ts`,
+the import allowlist test of `session-host/session-switch.ts`, `lint-file-size.mjs`.
+
 ### 🔴 A fail-open path is not implemented until its silence is pinned
 
 Fail-open is the right default for anything that must not block the user — hooks,
@@ -518,9 +532,18 @@ specific commit (rare): `git commit --no-verify`.
 When the size ratchet passes (`lint-file-size.mjs` exit 0), `pre-push` also runs
 `node scripts/lint-docs-fresh.mjs`. It compares the **push range** (stdin from
 git, or `merge-base` with upstream, or unpushed commits on the branch) against
-agent-docs surfaces: HTTP route registration, MCP tools, render contract, new FE
-pages, config keys, `DOCS_VERSION` vs edited `docs/agents/*.md`, and
-`99-known-issues.md` vs the private bug register.
+agent-docs surfaces: HTTP route registration, MCP tools, `_drive/*` extensions
+(`extMethods` in `packages/provider/src/extensions/schema.ts` → a doc's `ext_methods:`),
+render contract, new FE pages, config keys, `DOCS_VERSION` vs edited `docs/agents/*.md`,
+and `99-known-issues.md` vs the private bug register.
+
+**Before a release, run it over the whole release range** — a push only checks its own
+commits, so a gap that built up across many pushes stays green push by push. Measured
+2026-11-18: three MCP tools had been undocumented for two months, invisible to every push.
+
+```bash
+node scripts/lint-docs-fresh.mjs --range origin/dev..HEAD < /dev/null   # needs docs-for-llm/
+```
 
 The gate is **fail-open**: missing `docs-for-llm/`, a non-git tree, or an
 unresolvable range exits 0 with no output. Any internal error also exits 0.

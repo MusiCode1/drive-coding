@@ -24,9 +24,7 @@ import KeyboardIcon from "@lucide/svelte/icons/keyboard"
 import RadioIcon from "@lucide/svelte/icons/radio"
 import EyeOffIcon from "@lucide/svelte/icons/eye-off"
 import MicLarge from "./MicLarge.svelte"
-import LiveToggle from "./LiveToggle.svelte"
-import LiveTranscript from "./LiveTranscript.svelte"
-import GeminiVoicePicker from "./GeminiVoicePicker.svelte"
+import LivePane from "./LivePane.svelte"
 import PlaybackControls from "./PlaybackControls.svelte"
 import TypeArea from "./TypeArea.svelte"
 import { getI18n, getLive, getResponsive, getSession, getSettings, getUiShell } from "$lib/context"
@@ -147,20 +145,7 @@ function switchInputMode(mode: InputMode): void {
         class:is-active={uiShell.inputMode === "live"}
       >
         <div class="record-pane-inner flex flex-col items-center gap-3 w-full">
-          <LiveTranscript />
-          {#if !live.isOpen}
-            <label class="flex w-full max-w-xs flex-col gap-1.5">
-              <span class="text-[13px] text-center" style="color:var(--fg-dim)"
-                >{t("settings.liveVoice.label")}</span
-              >
-              <GeminiVoicePicker
-                value={settings.liveVoice}
-                labelKey="settings.liveVoice.label"
-                onchange={(v) => settings.setLiveVoice(v)}
-              />
-            </label>
-          {/if}
-          <LiveToggle />
+          <LivePane />
         </div>
       </div>
     </div>

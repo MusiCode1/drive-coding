@@ -2,15 +2,21 @@
  * agent-events-http.ts — HTTP routes for agent event subscriptions (slice be-events-subscribe).
  */
 
-import { AgentSubscribeBody } from "@drive-coding/core"
 import type { AgentRegistry } from "@drive-coding/core"
+import { AgentSubscribeBody } from "@drive-coding/core"
 import { type } from "arktype"
 import type { Hono } from "hono"
+import { SCOPE_DENIED_BODY, whenScopedWriteAllowed } from "../scope-write.js"
 import type { AgentEventBus } from "../session-host/agent-events.js"
+import type { AgentSessionRegistry } from "../session-host/registry.js"
 
 export function registerAgentEventsHttp(
   app: Hono,
-  deps: { registry: AgentRegistry; eventBus: AgentEventBus },
+  deps: {
+    registry: AgentRegistry
+    eventBus: AgentEventBus
+    agentSessionRegistry: AgentSessionRegistry
+  },
 ): void {
   app.post("/api/agents/:id/subscribe", async (c) => {
     const targetId = c.req.param("id")
@@ -27,10 +33,19 @@ export function registerAgentEventsHttp(
     if (parsed instanceof type.errors) {
       return c.json({ error: parsed.summary }, 400)
     }
-    deps.eventBus.subscribe(targetId, parsed.subscriberAgentId, {
-      includeLastAssistantText: parsed.includeLastAssistantText === true,
+    return whenScopedWriteAllowed((name) => c.req.header(name), {
+      targetId: parsed.subscriberAgentId,
+      watchedId: targetId,
+      verb: "subscribe",
+      registry: deps.registry,
+      sessionRegistry: deps.agentSessionRegistry,
+    }).then((allowed) => {
+      if (!allowed) return c.json(SCOPE_DENIED_BODY, 403)
+      deps.eventBus.subscribe(targetId, parsed.subscriberAgentId, {
+        includeLastAssistantText: parsed.includeLastAssistantText === true,
+      })
+      return c.body(null, 204)
     })
-    return c.body(null, 204)
   })
 }
 

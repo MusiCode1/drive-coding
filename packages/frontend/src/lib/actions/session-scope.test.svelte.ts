@@ -18,7 +18,10 @@ import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
 import { bindSessionScope } from "./session-scope"
 
-vi.mock("$lib/adapters/voice/tts-resolve", () => ({
+// Keep the module's real exports (settings-persistence imports its default model ids) and
+// replace only resolveTts — a factory with resolveTts alone crashed the import chain.
+vi.mock("$lib/adapters/voice/tts-resolve", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("$lib/adapters/voice/tts-resolve")>()),
   resolveTts: vi.fn(() => ({
     provider: { format: "pcm" as const, synthesize: vi.fn() },
     voiceId: "v",

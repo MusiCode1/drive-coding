@@ -6,6 +6,7 @@ import type { AgentRegistry } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
+import { recordPromptDispatch } from "../../agent-scope.js"
 import {
   type ResolvedSender,
   senderFromRecord,
@@ -58,17 +59,18 @@ export async function dispatchRpcPrompt(
   meta: Record<string, unknown> | undefined,
   waitMs: number | null,
   sender: ResolvedSender | undefined,
+  scope: { token: string | undefined; targetId: string },
 ): Promise<RpcPromptOutcome> {
   const wrapped = wrapPromptContent(sender, content)
+  const from = waitMs === null ? 0 : host.state.messages.length
+  recordPromptDispatch(scope.token, scope.targetId)
+  const promptWork = host.prompt(sessionId, wrapped, meta)
   if (waitMs === null) {
-    const promptWork = host.prompt(sessionId, wrapped, meta)
     void promptWork.catch((e) => {
       log.warn({ err: e }, "prompt turn failed")
     })
     return { kind: "accepted" }
   }
-  const from = host.state.messages.length
-  const promptWork = host.prompt(sessionId, wrapped, meta)
   const raced = await raceKeepRunning(promptWork, waitMs, (e) => {
     log.warn({ err: e }, "prompt turn failed")
   })

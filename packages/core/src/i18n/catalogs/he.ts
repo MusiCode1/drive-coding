@@ -100,7 +100,7 @@ export const he: Catalog = {
   "settings.beUrl.invalid": "כתובת לא תקינה",
   "settings.beUrl.saved": "נשמר ✓",
   "settings.scopePolicy.title": "אישורים בין סוכנים",
-  "settings.scopePolicy.message": "שליחת הודעות",
+  "settings.scopePolicy.message": "שליחת הודעות וביטול תור",
   "settings.scopePolicy.update": "שינוי סוכן אחר",
   "settings.scopePolicy.close": "סגירת סוכן אחר",
   "settings.scopePolicy.option.ask": "לשאול",
@@ -306,7 +306,7 @@ export const he: Catalog = {
   "session.fieldsEmpty": "אין שדות",
   // ─── scope-policy-per-caller ───
   "session.scopePolicy.title": "אישורים לסוכן הזה",
-  "session.scopePolicy.message": "שליחת הודעות",
+  "session.scopePolicy.message": "שליחת הודעות וביטול תור",
   "session.scopePolicy.update": "שינוי סוכן אחר",
   "session.scopePolicy.close": "סגירת סוכן אחר",
   "session.scopePolicy.option.inherit": "יורש מהגלובלי",
@@ -506,6 +506,10 @@ export const he: Catalog = {
     "סשן זה מחובר כבר ממכשיר או טאב אחר. להתחבר כאן ינתק את החיבור הקיים.",
   "sessionUrl.takeover.confirm": "התחבר בכל זאת",
   "sessionUrl.takeover.cancel": "ביטול",
+  "sessionUrl.busy.title": "תור רץ בסשן הזה",
+  "sessionUrl.busy.body":
+    "אי אפשר לעבור לסשן אחר בזמן שהסוכן עובד. חכה לסיום התור, או עצור אותו, ונסה שוב.",
+  "sessionUrl.busy.back": "חזרה לסשן",
   // ─── agent-patch-unify C4: ממצא 3 — newSession ב-remote אינו נתמך ─── (הודעה בלבד, בלי ניווט)
   // ─── sidebar-resize ───
   "sidebar.resizeHandle": "גרור לשינוי רוחב",
@@ -617,6 +621,12 @@ export const he: Catalog = {
   "scopePrompt.title": "בקשת כתיבה לסשן אחר",
   "scopePrompt.caller": "מבקש",
   "scopePrompt.target": "סשן היעד",
+  "scopePrompt.watched": "אירועים של",
+  "scopePrompt.messageGrant": "אישור קבוע חל על שליחת הודעות וביטול תור לסוכן הזה",
+  "scopePrompt.subscribeGrant": "{caller} יוכל לרשום את {target} לאירועים של כל סוכן",
+  "scopePrompt.allowAlways": "אישור קבוע",
+  "scopePrompt.verb.subscribe": "רישום לאירועים",
+  "scopePrompt.verb.detach": "ניתוק צופה",
   "scopePrompt.action": "פעולה",
   "scopePrompt.verb.close": "סגירת הסשן",
   "scopePrompt.verb.patch": "עדכון פרטי הסשן",
@@ -626,4 +636,21 @@ export const he: Catalog = {
   "scopePrompt.expiresIn": "נדחה אוטומטית בעוד",
   "scopePrompt.seconds": "שנ'",
   "scopePrompt.expired": "נדחה אוטומטית — איש לא ענה",
+  // agent-voice
+  "agentVoice.useNative": "Live מובנה של Codex",
+  "agentVoice.useNativeShort": "Codex",
+  "agentVoice.defaultVoice": "ברירת המחדל של הסוכן",
+  "agentVoice.preview": "השמע דוגמה",
+  "agentVoice.stopPreview": "עצור דוגמה",
+  "agentVoice.previewFailed": "הדוגמה לא הושמעה:",
+  "voice.bubble.you": "אתה",
+  "voice.bubble.voice": "הקול",
+  "voice.handoff.label": "הועבר לסוכן:",
+  "voice.handoff.context": "הקשר השיחה",
+  "agentVoice.connecting": "מתחבר לקול של הסוכן…",
+  "agentVoice.live": "הקול של הסוכן פעיל",
+  "agentVoice.error": "הקול של הסוכן נכשל:",
+  "agentVoice.instructions":
+    "אתה עוזר קולי שמדבר עם המשתמש בעברית. הסוכן עושה את כל העבודה האמיתית. העבר אליו כל בקשה שדורשת עובדות על קבצים, קוד, המחשב או המשימה. כל עוד העברה ממתינה, מותר לך רק לומר שאתה בודק. לעולם אל תמסור מספרים, תוכן קבצים או תוצאות לפני שהתשובה של הסוכן הגיעה. כשהתשובה מגיעה, מסור אותה בנאמנות ובקצרה, בלי לשנות מספרים או שמות. אם נאמר לך שהסוכן מחכה לאישור, אמור זאת למשתמש מיד.",
+  "agentVoice.permissionSpeech": "הסוכן מחכה לאישור שלך ואי אפשר לאשר בקול. אשר או דחה במסך:",
 }

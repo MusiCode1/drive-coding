@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -485,14 +485,14 @@ describe("lint-docs-fresh on slice worktree", () => {
     expect(r.stderr).toBe("")
   })
 
-  it("wide range skips four known-undocumented surfaces with notice", () => {
+  it("wide range is clean with nothing skipped (KNOWN_UNDOCUMENTED emptied 2026-11-18)", () => {
     if (!existsSync(path.join(REPO, "docs-for-llm"))) return
     const { fails, undocumentedSkipped } = runFreshnessChecks(REPO, "092439d8..HEAD")
     expect(fails).toHaveLength(0)
-    expect(undocumentedSkipped).toBe(4)
+    expect(undocumentedSkipped).toBe(0)
     const r = runCli(REPO, ["--range", "092439d8..HEAD"])
     expect(r.code).toBe(0)
-    expect(r.stdout).toContain("4 known-undocumented surface(s) skipped")
+    expect(r.stdout).not.toContain("known-undocumented")
     expect(r.stderr).toBe("")
   })
 })
@@ -554,5 +554,48 @@ export { app }
     const { fails } = runFreshnessChecks(lab, lastRange(lab))
     expect(fails.some((f) => f.includes("no document declares GET /api/new-route"))).toBe(true)
     expect(fails.some((f) => f.includes("missing operation"))).toBe(false)
+  })
+})
+
+describe("_drive/* extensions need an owning document", () => {
+  const REGISTRY = "packages/provider/src/extensions/schema.ts"
+  const registry = (names) =>
+    `export const extMethods = {\n${names.map((n) => `  "${n}": {\n    params: x,\n  },\n`).join("")}} as const\n`
+
+  beforeEach(() => {
+    seedDocsTree(lab)
+    mkdirSync(path.join(lab, "packages/provider/src/extensions"), { recursive: true })
+    writeFileSync(path.join(lab, REGISTRY), registry(["_drive/old"]), "utf8")
+    gitInitCommit(lab, "base")
+  })
+
+  it("15 — a new extension with no document declaring it fails", () => {
+    writeFileSync(path.join(lab, REGISTRY), registry(["_drive/old", "_drive/new"]), "utf8")
+    execFileSync("git", ["add", "."], { cwd: lab })
+    execFileSync("git", ["commit", "-m", "ext"], { cwd: lab })
+    const { fails } = runFreshnessChecks(lab, lastRange(lab))
+    expect(fails).toContain(
+      'no document declares extension "_drive/new" in its front matter `ext_methods:`',
+    )
+    // an extension that existed before the range is not this range's debt
+    expect(fails.some((f) => f.includes('"_drive/old"'))).toBe(false)
+  })
+
+  it("16 — declaring it under ext_methods: clears the finding", () => {
+    writeFileSync(path.join(lab, REGISTRY), registry(["_drive/old", "_drive/new"]), "utf8")
+    writeOwnerStub(lab, "50-rpc.md", "rpc")
+    const doc = path.join(lab, "docs/agents/50-rpc.md")
+    writeFileSync(
+      doc,
+      readFileSync(doc, "utf8").replace(
+        "docs_version:",
+        "ext_methods: [_drive/new]\ndocs_version:",
+      ),
+      "utf8",
+    )
+    execFileSync("git", ["add", "."], { cwd: lab })
+    execFileSync("git", ["commit", "-m", "ext+doc"], { cwd: lab })
+    const { fails } = runFreshnessChecks(lab, lastRange(lab))
+    expect(fails.some((f) => f.includes("_drive/new"))).toBe(false)
   })
 })

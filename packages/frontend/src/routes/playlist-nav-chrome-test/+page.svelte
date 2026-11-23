@@ -173,11 +173,6 @@
     })
   })
 
-  declare global {
-    interface Window {
-      __playlistNavChrome?: { result: HarnessResult }
-    }
-  }
 </script>
 
 <main class="p-4 font-mono text-sm max-w-xl">

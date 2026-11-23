@@ -15,8 +15,8 @@ routes:
   - GET /api/agents/:id/state
   - POST /api/agents/:id/rpc
 mcp_tools: [session_send, session_state]
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.10.4
+updated: 2026-11-20
 ---
 
 # Reading output
@@ -100,8 +100,8 @@ Invalid **`waitMs`** (non-integer, negative, **> 60000**) → **400** — not cl
 
 **Cancel** with wait: **`ok: true` means "sent"**, not "executed".
 
-Blocking session management RPCs (`session/list`, `session/load`, …) return explicit **200/400/502**
-and ignore `waitMs`.
+Blocking session management RPCs (`session/list`, `session/load`, …) ignore `waitMs` and return method-specific statuses (**200**, **400**, or **502**).
+During an active turn, any **`session/load`** returns **409** with `code: "session_busy"`. The turn continues.
 
 See **`95-errors`** for 404 vs 503 on RPC.
 

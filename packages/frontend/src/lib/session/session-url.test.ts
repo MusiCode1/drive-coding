@@ -24,9 +24,7 @@ describe("sessionPath", () => {
 
   it("encodes sessionId containing slashes (pi file path)", () => {
     const path = sessionPath("pi", PI_SESSION_ID)
-    expect(path).toBe(
-      `/chat/pi/${encodeURIComponent(PI_SESSION_ID)}`,
-    )
+    expect(path).toBe(`/chat/pi/${encodeURIComponent(PI_SESSION_ID)}`)
     expect(path).toContain("%2F")
   })
 
@@ -114,7 +112,7 @@ describe("pickSessionHost", () => {
     expect(pickSessionHost([agent], "claude", "sess-a")).toEqual({ kind: "none" })
   })
 
-  it("returns warm with unattached preferred over attached", () => {
+  it("returns none when only agents hold other sessions (connected)", () => {
     const attached = makeAgent({
       id: "00000000-0000-4000-8000-000000000006",
       acpSessionId: "other",
@@ -127,27 +125,16 @@ describe("pickSessionHost", () => {
       attached: false,
       lastMessageAt: 100,
     })
-    expect(pickSessionHost([attached, free], "claude", "target")).toEqual({
-      kind: "warm",
-      agent: free,
-    })
+    expect(pickSessionHost([attached, free], "claude", "target")).toEqual({ kind: "none" })
   })
 
-  it("returns warm with highest lastMessageAt when same attachment", () => {
-    const older = makeAgent({
-      id: "00000000-0000-4000-8000-000000000008",
-      acpSessionId: "old",
-      lastMessageAt: 100,
-    })
+  it("returns none for single agent holding another session", () => {
     const newer = makeAgent({
       id: "00000000-0000-4000-8000-000000000009",
       acpSessionId: "new",
       lastMessageAt: 500,
     })
-    expect(pickSessionHost([older, newer], "claude", "target")).toEqual({
-      kind: "warm",
-      agent: newer,
-    })
+    expect(pickSessionHost([newer], "claude", "target")).toEqual({ kind: "none" })
   })
 
   it("finds exact match for pi session path", () => {

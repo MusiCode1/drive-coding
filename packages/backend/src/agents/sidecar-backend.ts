@@ -24,16 +24,16 @@
  * mode buys isolation instead, which is the trade the acp-bridge-worker
  * pre-brief weighed for a worker and resolved the same way.
  *
- * ⚠️ Either way the per-agent environment problem is solved, because the sidecar
- * is its own process. That was the original motivation for that pre-brief, and
- * it falls out of moving the adapter out of the backend rather than out of any
- * choice made here.
+ * The launcher supplies per-agent environment separately from the sidecar's
+ * control environment. Pipe mode applies it at spawn and hosted mode passes
+ * it to the provider adapter.
  */
 
 import { spawn } from "node:child_process"
 import { createLogger } from "@drive-coding/core/log"
 import { getCliCommand, getCliSpec, resolveVendoredAcpBridge } from "@drive-coding/provider/config"
 import {
+  type ConnectOpts,
   connectCodexInProcess,
   connectInProcess,
   type ProviderConnection,
@@ -42,9 +42,9 @@ import {
 const log = createLogger("sidecar.backend")
 
 /** Adapters this process can host directly, keeping the `_drive/*` methods. */
-const HOSTABLE: Record<
+export const HOSTABLE: Record<
   string,
-  (opts: { cwd: string; modelOverride?: string | null }) => Promise<ProviderConnection>
+  (opts: Pick<ConnectOpts, "cwd" | "modelOverride" | "agentEnv">) => Promise<ProviderConnection>
 > = {
   claude: connectInProcess,
   codex: connectCodexInProcess,
@@ -54,7 +54,7 @@ export type SidecarMode = "pipe" | "hosted"
 
 /** Hosted when we can — it is the only mode that keeps every method working. */
 export function defaultModeFor(cliKind: string): SidecarMode {
-  return cliKind in HOSTABLE ? "hosted" : "pipe"
+  return Object.hasOwn(HOSTABLE, cliKind) ? "hosted" : "pipe"
 }
 
 export type AgentBackend = {
@@ -83,13 +83,16 @@ export function lineSplitter(onLine: (line: string) => void): (chunk: string) =>
   }
 }
 
-/** pipe mode: spawn the CLI and forward bytes both ways. */
-export function pipeBackend(opts: {
+type BackendOpts = {
   cliKind: string
   cwd: string
   agentId: string
   modelOverride: string | null
-}): AgentBackend {
+  agentEnv?: Record<string, string>
+}
+
+/** pipe mode: spawn the CLI and forward bytes both ways. */
+export function pipeBackend(opts: BackendOpts): AgentBackend {
   // The bundled ACP bridge beats the spec's `npx …@latest` — see acp-bridge.ts.
   const cli =
     resolveVendoredAcpBridge(opts.cliKind) ?? getCliCommand(opts.cliKind, opts.modelOverride)
@@ -103,7 +106,7 @@ export function pipeBackend(opts: {
 
   const child = spawn(cli.bin, [...cli.args], {
     cwd: opts.cwd,
-    env,
+    env: { ...env, ...opts.agentEnv },
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   })
@@ -136,15 +139,15 @@ export function pipeBackend(opts: {
 }
 
 /** hosted mode: run the provider's adapter here, keeping every ACP method. */
-export async function hostedBackend(opts: {
-  cliKind: string
-  cwd: string
-  agentId: string
-  modelOverride: string | null
-}): Promise<AgentBackend> {
+export async function hostedBackend(opts: BackendOpts): Promise<AgentBackend> {
   const connect = HOSTABLE[opts.cliKind]
-  if (connect === undefined) throw new Error(`sidecar: ${opts.cliKind} cannot be hosted in-process`)
-  const conn = await connect({ cwd: opts.cwd, modelOverride: opts.modelOverride })
+  if (!Object.hasOwn(HOSTABLE, opts.cliKind) || connect === undefined)
+    throw new Error(`sidecar: ${opts.cliKind} cannot be hosted in-process`)
+  const conn = await connect({
+    cwd: opts.cwd,
+    modelOverride: opts.modelOverride,
+    agentEnv: opts.agentEnv,
+  })
   log.info({ cliKind: opts.cliKind }, "hosted backend started")
 
   const exitCbs: Array<(code: number | null) => void> = []
@@ -172,13 +175,11 @@ export async function hostedBackend(opts: {
   }
 }
 
-export async function createBackend(opts: {
-  cliKind: string
-  cwd: string
-  agentId: string
-  modelOverride: string | null
-  mode?: SidecarMode
-}): Promise<AgentBackend> {
+export const SIDECAR_BACKENDS = { hosted: hostedBackend, pipe: pipeBackend }
+
+export async function createBackend(
+  opts: BackendOpts & { mode?: SidecarMode },
+): Promise<AgentBackend> {
   const mode = opts.mode ?? defaultModeFor(opts.cliKind)
-  return mode === "hosted" ? hostedBackend(opts) : pipeBackend(opts)
+  return SIDECAR_BACKENDS[mode](opts)
 }

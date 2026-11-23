@@ -1,7 +1,7 @@
 /**
  * codex-acp-startup.ts — prepare codex ACP config (preserve developer_instructions) and start server.
  *
- * Async work lives here so connect-codex-in-process stays sync (lint impurity / no await).
+ * Async work lives here so the codex in-process connection (providers/codex/connect-in-process.ts) stays sync (lint impurity / no await).
  */
 
 import { type ChildProcess, spawn } from "node:child_process"
@@ -151,6 +151,7 @@ export function startCodexAcp(deps: {
   cwd: string
   codexPath?: string
   instructions?: string
+  env?: Record<string, string>
   isClosed: () => boolean
   onStartupError: (err: unknown) => void
 }): void {
@@ -170,7 +171,10 @@ export function startCodexAcp(deps: {
         const ourChars = ours.length
         const composedChars = composed?.length ?? 0
         const preserved = existingChars > 0
-        log.info({ existingChars, ourChars, composedChars, preserved }, "codex developer_instructions prepared")
+        log.info(
+          { existingChars, ourChars, composedChars, preserved },
+          "codex developer_instructions prepared",
+        )
         if (composed !== undefined) {
           config = { developer_instructions: composed }
         }
@@ -181,6 +185,7 @@ export function startCodexAcp(deps: {
       startAcpServer(deps.serverIn, deps.serverOut, {
         codexPath: deps.codexPath,
         config,
+        env: deps.env,
       })
     } catch (err) {
       log.warn({ err }, "codex ACP startup failed")

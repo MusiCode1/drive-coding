@@ -8,8 +8,14 @@ read_when:
 tags: [orientation]
 surface: [http, mcp, cli]
 stability: stable
-docs_version: 1.2.0
-updated: 2026-09-28
+routes:
+  - GET /api/docs
+  - GET /api/docs/:id
+  - GET /api/openapi.json
+mcp_tools:
+  - docs_get
+docs_version: 1.10.0
+updated: 2026-11-18
 ---
 
 # Orientation
@@ -65,6 +71,21 @@ to client. After `session_send` with `noWait`, poll `session_state` or use HTTP 
 There is **no authentication layer** on these APIs in the default deployment — treat
 network access as trust-boundary. Scoped writes for spawned agents are a **guard rail
 against accidents**, not a security boundary (details in stage-3 scope docs).
+
+## Reading these docs at runtime
+
+These documents ship with the backend, so an agent without the repository can read them
+over the same channels it already uses:
+
+| Channel | Call | Returns |
+|---|---|---|
+| HTTP | `GET /api/docs` | The catalog as JSON: a version block (`appVersion`, `docsVersion`, `routeCount`, `generatedAt`) and `docs[]` — each entry's `id`, `title`, `summary`, `read_when`, `tags` |
+| HTTP | `GET /api/docs/:id` | One document as `text/markdown`, with `X-Drive-Coding-App-Version`, `-Docs-Version`, `-Route-Count` and `-Generated-At` headers. Unknown id → `404` `{ "error": … }` |
+| HTTP | `GET /api/openapi.json` | The OpenAPI spec of the HTTP surface, with the same version block under `x-drive-coding` |
+| MCP | `docs_get` | `{ id }` → that document's markdown · `{ tags }` → index entries whose tags intersect · `{ query }` → index entries matching a case-insensitive substring of id, title, summary, `read_when` or headings · no arguments → the whole catalog. An unknown id is an error that lists the known ids. No identity header needed. |
+| MCP resources | `drive-coding://docs/index` · `drive-coding://docs/openapi.json` · `drive-coding://docs/<id>` | The same content as resources |
+
+Start from the catalog and open only the documents whose `read_when` matches your task.
 
 ## Where to read next
 

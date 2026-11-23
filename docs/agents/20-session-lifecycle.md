@@ -22,8 +22,11 @@ mcp_tools:
   - session_send
   - session_state
   - session_close
-docs_version: 1.6.0
-updated: 2026-10-13
+  - session_note_set
+  - session_field_set
+  - session_field_delete
+docs_version: 1.10.0
+updated: 2026-11-18
 ---
 
 # Session lifecycle
@@ -141,6 +144,30 @@ returns your id and runtime envelope — the server does not guess from env alon
 valid v1 envelope. Tags inside prose or examples are **not** detected as envelopes. A **complete**
 valid envelope pasted as the whole message parses the same way — still **not** proof of identity
 or user approval. The UI may show envelope XML as plain text today — see `render-contract`.
+
+## Session memory — your own note and fields
+
+Three MCP tools let an agent keep memory on **its own** agent record, so it outlives a
+compaction or a reconnect. They take no agent id: the caller is identified by the
+`X-Drive-Coding-Agent` header only, and a call without it (or with an unregistered id) is an
+error. Each returns `{ "ok": true }`.
+
+| Tool | Input | Effect |
+|---|---|---|
+| `session_note_set` | `{ text }` | Replaces the whole note (`userNotes`). |
+| `session_field_set` | `{ key, value }` | Sets one entry of `sessionFields` (string → string); other keys are kept. |
+| `session_field_delete` | `{ key }` | Removes one entry; deleting a missing key is still `ok`. |
+
+Keys are trimmed; an empty key is rejected. Where the memory shows up:
+
+- in the agent's public record — `session_list`, `GET /api/agents/:id` (`userNotes`,
+  `sessionFields`) — and in `session_whoami`;
+- in the UI: the note as the session memo, the fields in the side panel's **Fields** list;
+- in the agent's own surface prompt (hook, `GET /api/agent-prompt`, `session_surface`), as a
+  `# Session memory` section with `## Notes` and `## Fields` — so the agent reads it back.
+
+The user can edit the note from the UI too (`PATCH /api/agents/:id` accepts `userNotes`), so
+treat it as shared, not private to the agent.
 
 ## Configure during lifecycle
 

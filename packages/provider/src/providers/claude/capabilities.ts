@@ -47,5 +47,6 @@ export function mapClaudeCapabilities(raw: unknown): NormalizedCapabilities {
     image: false,
     // claude injects opts.systemPrompt via _meta.systemPrompt.append (connect-in-process.ts)
     systemPrompt: "native",
+    voice: false,
   }
 }

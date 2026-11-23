@@ -12,8 +12,8 @@ stability: transitional
 routes:
   - GET /api/tts/capabilities
   - POST /api/voice/live/token
-docs_version: 1.2.0
-updated: 2026-09-28
+docs_version: 1.10.0
+updated: 2026-11-18
 ---
 
 # Voice
@@ -39,6 +39,13 @@ Mints a short-lived token for Gemini live voice (`http-live-token.ts:40`).
 | `503` | `{ error: "no-api-key" }` — GEMINI key missing on BE | `http-live-token.ts:55` |
 | `502` | `{ error: "token-mint-failed" }` | `http-live-token.ts:87` |
 | `200` | Token payload | `http-live-token.ts:96` |
+
+## The agent's own voice
+
+Gemini Live (the token above) is one engine for the UI's **Live** mode. When the session's
+agent has a realtime voice of its own — `capabilities.voice`, today Codex — Live can use that
+instead, with no backend key: it is driven through the session's `_drive/voice/*` extensions,
+documented in `50-rpc`.
 
 ## Upstream proxies (prose only)
 

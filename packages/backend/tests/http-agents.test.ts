@@ -33,11 +33,15 @@ function makeFakeSessionHistoryStore(): SessionHistoryStore {
     listUsageRecords: vi.fn(() => []),
     ingestUsageUpdate: vi.fn(),
     onTurnEnded: vi.fn(),
+    findSession: vi.fn(() => null),
     close: vi.fn(),
   } as unknown as SessionHistoryStore
 }
 
-function makeApp(opts?: { sessionHistoryStore?: ReturnType<typeof makeFakeSessionHistoryStore> }) {
+function makeApp(opts?: {
+  sessionHistoryStore?: ReturnType<typeof makeFakeSessionHistoryStore>
+  sidecar?: string
+}) {
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
 
@@ -77,7 +81,7 @@ function makeApp(opts?: { sessionHistoryStore?: ReturnType<typeof makeFakeSessio
     registry,
     orchestrator,
     sessionHistoryStore,
-    env: process.env,
+    env: { ...process.env, AGENT_SIDECAR: opts?.sidecar },
   })
   return { app, registry, orchestrator, sessionHistoryStore }
 }
@@ -115,6 +119,28 @@ describe("HTTP /api/agents", () => {
   })
 
   describe("POST /api/agents", () => {
+    it.each([
+      ["sidecar at the boundary", "cursor", "cursor", 46_066, 201],
+      ["sidecar over the boundary", "cursor", "cursor", 46_067, 400],
+      ["ordinary spawn", "cursor", "", 46_067, 201],
+      ["in-process", "codex", "cursor", 46_067, 201],
+    ])("applies the encoded env limit to %s", async (_name, cliKind, sidecar, length, status) => {
+      const { app, registry } = makeApp({ sidecar })
+      const res = await app.request("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cliKind, cwd: "/tmp", env: { PADDING: "x".repeat(length) } }),
+      })
+      expect(res.status).toBe(status)
+      const rows = await registry.list()
+      if (status === 400) {
+        expect(await res.json()).toEqual({ error: "agent env too large: 61444 > 61440 (encoded)" })
+        expect(rows).toEqual([])
+      } else {
+        expect(rows).toHaveLength(1)
+      }
+    })
+
     it("creates with valid input — returns CreateAndSpawnResult", async () => {
       const { app } = makeApp()
       const res = await app.request("/api/agents", {

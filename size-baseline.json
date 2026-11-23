@@ -38,10 +38,10 @@
       "codeLines": 143
     },
     "packages/backend/src/acp/connection-registry.ts": {
-      "metric": 349,
+      "metric": 341,
       "impurity": 6,
       "class": "mixed",
-      "codeLines": 287
+      "codeLines": 279
     },
     "packages/backend/src/agents/registry.ts": {
       "metric": 64,
@@ -362,10 +362,10 @@
       "codeLines": 261
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 1039,
+      "metric": 983,
       "impurity": 22,
       "class": "scattered",
-      "codeLines": 672
+      "codeLines": 637
     },
     "packages/backend/src/session-host/turn-lifecycle.ts": {
       "metric": 93,
@@ -452,10 +452,10 @@
       "codeLines": 44
     },
     "packages/frontend/src/lib/actions/open-session-url.ts": {
-      "metric": 129,
-      "impurity": 9,
+      "metric": 124,
+      "impurity": 7,
       "class": "mixed",
-      "codeLines": 111
+      "codeLines": 98
     },
     "packages/frontend/src/lib/adapters/agents-api.ts": {
       "metric": 213,
@@ -626,10 +626,10 @@
       "codeLines": 199
     },
     "packages/frontend/src/lib/components/chat/RecordFooter.svelte": {
-      "metric": 63,
+      "metric": 61,
       "impurity": 0,
       "class": "pure",
-      "codeLines": 166
+      "codeLines": 151
     },
     "packages/frontend/src/lib/components/chat/SlashCommandMenu.svelte": {
       "metric": 64,
@@ -1082,10 +1082,10 @@
       "codeLines": 164
     },
     "packages/frontend/src/routes/+layout.svelte": {
-      "metric": 333,
+      "metric": 314,
       "impurity": 10,
       "class": "mixed",
-      "codeLines": 226
+      "codeLines": 211
     },
     "packages/frontend/src/routes/+page.svelte": {
       "metric": 405,
@@ -1134,12 +1134,6 @@
       "impurity": 7,
       "class": "mixed",
       "codeLines": 257
-    },
-    "packages/provider/src/connection/connect-codex-in-process.ts": {
-      "metric": 282,
-      "impurity": 6,
-      "class": "mixed",
-      "codeLines": 172
     },
     "packages/provider/src/connection/connect-in-process.ts": {
       "metric": 422,
@@ -1196,10 +1190,10 @@
       "codeLines": 228
     },
     "packages/frontend/src/routes/playlist-nav-chrome-test/+page.svelte": {
-      "metric": 194,
+      "metric": 189,
       "impurity": 20,
       "class": "mixed",
-      "codeLines": 158
+      "codeLines": 153
     }
   }
 }

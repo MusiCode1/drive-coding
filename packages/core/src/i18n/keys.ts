@@ -523,6 +523,9 @@ export type MessageKey =
   | "sessionUrl.takeover.body"
   | "sessionUrl.takeover.confirm"
   | "sessionUrl.takeover.cancel"
+  | "sessionUrl.busy.title"
+  | "sessionUrl.busy.body"
+  | "sessionUrl.busy.back"
   // ─── sidebar-resize ───
   | "sidebar.resizeHandle"
   // ─── cwd-path-combo ───
@@ -627,6 +630,12 @@ export type MessageKey =
   | "scopePrompt.caller"
   | "scopePrompt.target"
   | "scopePrompt.action"
+  | "scopePrompt.watched"
+  | "scopePrompt.subscribeGrant"
+  | "scopePrompt.messageGrant"
+  | "scopePrompt.allowAlways"
+  | "scopePrompt.verb.subscribe"
+  | "scopePrompt.verb.detach"
   | "scopePrompt.verb.close"
   | "scopePrompt.verb.patch"
   | "scopePrompt.verb.reply"
@@ -635,6 +644,22 @@ export type MessageKey =
   | "scopePrompt.expiresIn"
   | "scopePrompt.seconds"
   | "scopePrompt.expired"
+  // ─── agent-voice ─── (slice codex-voice-poc — the agent's native Live)
+  | "agentVoice.useNative"
+  | "agentVoice.useNativeShort"
+  | "agentVoice.defaultVoice"
+  | "agentVoice.preview"
+  | "agentVoice.stopPreview"
+  | "agentVoice.previewFailed"
+  | "voice.bubble.you"
+  | "voice.bubble.voice"
+  | "voice.handoff.label"
+  | "voice.handoff.context"
+  | "agentVoice.connecting"
+  | "agentVoice.live"
+  | "agentVoice.error"
+  | "agentVoice.instructions"
+  | "agentVoice.permissionSpeech"
 
 /**
  * MessageValue — מחרוזת או פונקציה להודעות ממופרמטרות.

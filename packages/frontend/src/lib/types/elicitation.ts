@@ -72,7 +72,9 @@ function propTitle(prop: ElicitationPropertySchema): string | null | undefined {
 }
 
 function propDescription(prop: ElicitationPropertySchema): string | undefined {
-  return "description" in prop && typeof prop.description === "string" ? prop.description : undefined
+  return "description" in prop && typeof prop.description === "string"
+    ? prop.description
+    : undefined
 }
 
 function mapProperty(
@@ -109,7 +111,7 @@ function mapProperty(
 function mapEnumOptions(
   enumValues: ReadonlyArray<string> | null | undefined,
   oneOf:
-    | ReadonlyArray<{ const: string; title: string; description?: string }>
+    | ReadonlyArray<{ const: string; title: string; description?: string | null }>
     | null
     | undefined,
 ): ElicitationFieldOption[] | undefined {

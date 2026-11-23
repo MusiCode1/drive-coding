@@ -25,31 +25,32 @@ import {
   toAgentPublic,
 } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
+import { getCliSpec } from "@drive-coding/provider/config"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
-import { getCliSpec } from "@drive-coding/provider/config"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import { z } from "zod"
-import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
-import { senderFromRecord } from "./drive-message-source.js"
-import { readScopeToken, stripScopePendingFromState } from "../scope-write.js"
-import { registerMcpWriteTools } from "./mcp-write-tools.js"
+import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { resolveAppVersion } from "../app-version.js"
-import type { AgentSessionRegistry } from "../session-host/registry.js"
+import { readScopeToken, stripScopePendingFromState } from "../scope-write.js"
 import type { AgentEventBus } from "../session-host/agent-events.js"
+import type { AgentSessionRegistry } from "../session-host/registry.js"
 import {
   applyNotifyOnDoneToOpenBody,
   registerAgentEventMcpTools,
 } from "./agent-events-mcp-tools.js"
-import { registerSessionSurfaceMcpTool } from "./session-surface-mcp-tool.js"
-import { registerSessionMemoryMcpTools } from "./session-memory-mcp-tools.js"
-import { registerSessionWhoamiMcpTool } from "./session-whoami-mcp-tool.js"
-import { registerAgentDocsMcp } from "./docs-mcp.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
+import { registerAgentDocsMcp } from "./docs-mcp.js"
+import { senderFromRecord } from "./drive-message-source.js"
+import { registerMcpWriteTools } from "./mcp-write-tools.js"
 import { defaultPublicUrl, loopbackBaseUrl, type UrlConfig } from "./public-url.js"
+import { registerSessionMemoryMcpTools } from "./session-memory-mcp-tools.js"
 import { applySessionOpenCreateFields } from "./session-open-body.js"
+import { withSessionOpenRollback } from "./session-open-rollback.js"
+import { registerSessionSurfaceMcpTool } from "./session-surface-mcp-tool.js"
+import { registerSessionWhoamiMcpTool } from "./session-whoami-mcp-tool.js"
 
 const log = createLogger("backend.mcp")
 
@@ -270,33 +271,34 @@ function createSessionBusMcpServer(
       if (!parsed.ok) return jsonError(parsed.error.body.error)
 
       const created = await deps.orchestrator.createAndSpawn(parsed.value)
-      const hostResult = await deps.agentSessionRegistry.getOrCreateHost(created.agentId)
-      if (!hostResult.ok) {
-        return jsonError(`session host did not start: ${hostResult.reason}`)
-      }
-      const sessionId = await waitForSessionId(
-        deps.agentSessionRegistry,
-        created.agentId,
-        SESSION_OPEN_TIMEOUT_MS,
-      )
-      if (sessionId === undefined) {
-        return jsonError("session did not come up within 30s")
-      }
-      const host = deps.agentSessionRegistry.getHost(created.agentId)
-      return jsonResult({
-        agent: created.agentId,
-        sessionId,
-        url: `${chatBase}/chat/${input.cli}/${sessionId}?sessionTransport=http`,
-        cli: cliMeta(input.cli, deps.env),
-        modes: host?.state.modes,
-        configOptions: host?.state.configOptions,
-        hint: MCP_CONFIGURE_HINT,
+      return withSessionOpenRollback(deps, created.agentId, async () => {
+        const hostResult = await deps.agentSessionRegistry.getOrCreateHost(created.agentId)
+        if (!hostResult.ok) {
+          throw new Error(`session host did not start: ${hostResult.reason}`)
+        }
+        const sessionId = await waitForSessionId(
+          deps.agentSessionRegistry,
+          created.agentId,
+          SESSION_OPEN_TIMEOUT_MS,
+        )
+        if (sessionId === undefined) {
+          throw new Error("session did not come up within 30s")
+        }
+        const host = deps.agentSessionRegistry.getHost(created.agentId)
+        return jsonResult({
+          agent: created.agentId,
+          sessionId,
+          url: `${chatBase}/chat/${input.cli}/${sessionId}?sessionTransport=http`,
+          cli: cliMeta(input.cli, deps.env),
+          modes: host?.state.modes,
+          configOptions: host?.state.configOptions,
+          hint: MCP_CONFIGURE_HINT,
+        })
       })
     },
   )
 
-  const callerSender =
-    callerAgentId && callerRecord ? senderFromRecord(callerRecord) : undefined
+  const callerSender = callerAgentId && callerRecord ? senderFromRecord(callerRecord) : undefined
   registerMcpWriteTools(
     server,
     registerArkTool,
@@ -331,7 +333,11 @@ function createSessionBusMcpServer(
   if (deps.eventBus) {
     registerAgentEventMcpTools(
       server,
-      { registry: deps.registry, agentSessionRegistry: deps.agentSessionRegistry, eventBus: deps.eventBus },
+      {
+        registry: deps.registry,
+        agentSessionRegistry: deps.agentSessionRegistry,
+        eventBus: deps.eventBus,
+      },
       ctx,
       callerRecord,
       registerArkTool,
@@ -367,11 +373,7 @@ export function registerMcpHttp(app: Hono, deps: McpHttpDeps): void {
       enableJsonResponse: true,
     })
     const scopeToken = readScopeToken((name) => c.req.header(name))
-    const server = createSessionBusMcpServer(
-      deps,
-      { callerAgentId, scopeToken },
-      callerRecord,
-    )
+    const server = createSessionBusMcpServer(deps, { callerAgentId, scopeToken }, callerRecord)
     await server.connect(transport)
     try {
       return await transport.handleRequest(c.req.raw)

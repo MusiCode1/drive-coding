@@ -7,10 +7,11 @@
     "license": "Apache-2.0"
   },
   "codex": {
-    "filename": "agentclientprotocol-codex-acp-2.5.0.tgz",
-    "commit": "d17fc9554a93fe8498fdb3d63c6f17389adbd98a",
-    "sha256": "9d8b103e29211b63bc8e767f18bc51d047327218165e4e64798d169e61663eb2",
+    "filename": "agentclientprotocol-codex-acp-2.5.0-dc.4.tgz",
+    "commit": "f18d0ef4048610ff7aebc4fa6f1e6ef01caf29a9",
+    "sha256": "f8b08d539ef3d6d8097dfe002d05522659f128e11c0d54dc25c99778e1b6874d",
     "repository": "https://github.com/MusiCode1/codex-acp",
-    "license": "Apache-2.0"
+    "license": "Apache-2.0",
+    "branch": "dc/agent-env"
   }
 }

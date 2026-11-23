@@ -73,6 +73,41 @@ export const extMethods = {
     // top-level result is always an object — never a bare `null` (brief §2, §6 risk table).
     result: type({ snapshot: QuotaSnapshot.or("null") }),
   },
+  // ─── voice (agent's own realtime voice front-end, WebRTC) ───────────────
+  // Provider-agnostic: the client holds the peer (mic, speaker, data channel) and
+  // exchanges SDP through the session. Gated by `capabilities.voice`.
+  "_drive/voice/start": {
+    params: type({
+      sessionId: "string",
+      sdp: "string > 0",
+      "instructions?": "string",
+      "voice?": "string",
+    }),
+    result: type({ sdp: "string > 0" }),
+  },
+  "_drive/voice/stop": {
+    params: type({ sessionId: "string" }),
+    result: type({}),
+  },
+  /**
+   * Voices the provider's voice can use, and the one it picks when none is chosen. `details`
+   * (optional, per voice id) carries what the provider knows: description, accent, sample clip.
+   */
+  "_drive/voice/listVoices": {
+    params: type({ sessionId: "string" }),
+    result: type({
+      voices: "string[]",
+      default: "string",
+      "details?": type({
+        "[string]": { "description?": "string", "accent?": "string", "previewUrl?": "string" },
+      }),
+    }),
+  },
+  /** Make the voice say something now (e.g. "approval needed on screen"). */
+  "_drive/voice/speak": {
+    params: type({ sessionId: "string", text: "string > 0" }),
+    result: type({}),
+  },
   // Future: compact / setMcpServers / commands — add here
 } as const
 

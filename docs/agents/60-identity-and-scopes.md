@@ -1,9 +1,10 @@
 ---
 id: identity
 title: Agent identity and scoped writes
-summary: Who you are on this backend, what DC_TOKEN does, and why it is not a security boundary.
+summary: Agent identity, environment passed to tools, and scope tokens for writes.
 read_when:
   - You need to know your agent id or scope token at runtime
+  - You need to pass environment variables to an agent or understand sidecar restore
   - A write to another agent was denied or you must answer a scope permission prompt
   - You are reviewing whether scoped writes protect against malicious agents
 tags: [identity]
@@ -13,8 +14,10 @@ routes:
   - POST /api/agents/:id/reply
   - GET /api/scope-policy
   - PATCH /api/scope-policy
-docs_version: 1.7.0
-updated: 2026-10-13
+mcp_tools:
+  - session_whoami
+docs_version: 1.10.5
+updated: 2026-11-23
 ---
 
 # Agent identity and scoped writes
@@ -23,10 +26,37 @@ updated: 2026-10-13
 
 Your agent id travels on two channels (`agent-identity.ts:24-27`, `agent-identity.ts:33-50`):
 
-- **Environment:** `DRIVE_CODING_AGENT_ID` on spawned CLI processes.
+- **Environment:** `DRIVE_CODING_AGENT_ID` in the CLI and its tools.
 - **HTTP/MCP header:** `X-Drive-Coding-Agent` on requests to this backend.
 
-MCP **session_whoami** returns the same id when the header or env is set.
+MCP **session_whoami** (no parameters) reads the id from the `X-Drive-Coding-Agent` header
+only — it never guesses from the environment, and a missing or unknown header is an error. It
+returns `agent`, `cliKind`, `cwd`, `hasParent`, `sessionId`, your note and fields if set, a
+`backend` block (`pid`, `port`, `version`, `uptimeSec`, `publicBaseUrl`, memory budget) and a
+`runtime` block (CLI `pid`, `attached`, `busy`, `via`, child memory — Linux only; elsewhere
+`memory` is `null`). It is discovery, not authentication.
+
+## Agent environment
+
+Every launch route supplies `DRIVE_CODING_AGENT_ID`, `DC_TOKEN`, `DC_BASE`, and
+`DRIVE_CODING_BASE` to the agent's tools. This covers direct spawn, in-process
+adapters, and both pipe and hosted sidecars. For Codex, the values reach the
+long-running `codex app-server`, including its replacements after recovery.
+The backend sets both base variables to its loopback URL.
+
+Pass a string-to-string `env` map to `POST /api/agents` or MCP **session_open**
+to supply additional values. The backend's identity and base values take
+precedence over matching caller keys.
+
+Sidecar requests accept up to 60 KiB (61,440 bytes) of base64-encoded UTF-8
+JSON environment, including the base and parent fields added by MCP. The
+launch payload has a 64 KiB (65,536-byte) limit including server-added keys.
+Oversized sidecar requests return HTTP 400 or an MCP tool error before
+creating an agent.
+
+On backend restart, restore attaches to surviving sidecars with the
+environment they received at launch. If a sidecar disappears before the
+restore attach, the backend marks that agent as crashed.
 
 ## Scope token
 
@@ -39,12 +69,12 @@ Your **subtree** is the set of agent ids reachable via `parentAgentId` links, in
 
 ## What scoped writes protect
 
-`authorizeWrite()` (`agent-scope.ts:161-177`) is the single gate for dangerous writes (close, prompt, reconfigure) on **another** agent's session. It allows when:
+Scoped writes to one session use `authorizeWrite()` in `agent-scope.ts`. It allows when:
 
-- No token was sent → **`"allow"`** (`agent-scope.ts:164`).
+- No token was sent → **`"allow"`**.
 - Token is master key → allow.
 - Target id is inside the caller's subtree → allow.
-- Caller has a prior **allow_always** grant → allow.
+- Caller has a prior **allow_always** grant or an applicable reply grant → allow.
 - Otherwise → **`onEscalate`** asks the caller's session for permission (`scope-write.ts:37-75`).
 
 When escalation succeeds, the user (or parent agent) answers through **`POST /api/agents/:id/reply`** with a permission result (`reply.ts:40-67`).
@@ -80,11 +110,42 @@ Three independent global selectors — **`ask`**, **`allow`**, or **`deny`** —
 
 | Group | Examples |
 |-------|----------|
-| **message** | MCP `session_send`, RPC `session/prompt` |
-| **update** | HTTP `PATCH`, `POST …/reply`, RPC config/session control methods |
+| **message** | MCP `session_send`, RPC `session/prompt` and `session/cancel`, subscriptions |
+| **update** | HTTP `PATCH`, `POST …/reply`, viewer detach, RPC config/session control methods |
 | **close** | HTTP `DELETE` agent, MCP `session_close`, RPC `session/delete` |
 
 Unclassified RPC (e.g. `_drive/ext`) always **`ask`** on escalation even when all selectors are **`allow`**.
+
+### Permanent grants and reply grants
+
+A permanent grant for `send`, `session/prompt`, or `session/cancel` covers all three
+actions for the same caller and target. Other permanent grants apply to their own verb.
+
+When a caller with a valid scoped agent token dispatches a prompt through MCP
+`session_send` or RPC `session/prompt`, the recipient can send, prompt, or cancel a turn
+on that caller. The grant starts at dispatch. It still applies if the provider later
+rejects the prompt, and either agent's normal closure removes it. It applies only to
+that pair and those three actions. Cancellation, system notifications, `notify_parent`,
+and sends without a scoped agent token do not create it.
+
+### Agent HTTP write routes
+
+| Write | Scope decision |
+|-------|----------------|
+| `POST /api/agents` | Creation is exempt |
+| `DELETE /api/agents` | A valid scoped token closes its subtree and reports other agents in `skipped`. An invalid token returns `403` before closing any agent. With a master token or no token, the result is `{ closed, failed }` for the full fleet. |
+| `DELETE /api/agents/:id` | Close policy for the target |
+| `PATCH /api/agents/:id` | Update policy for the target |
+| `DELETE /api/agents/:id/connection` | Update policy for the target with the separate `detach` verb |
+| `POST /api/agents/:id/presence` | Viewer heartbeat is exempt |
+| `POST /api/agents/:id/reply` | Update policy for the target |
+| `POST /api/agents/:id/rpc` | Policy for the RPC action. The read-only `session/list` is exempt. |
+| `POST /api/agents/:id/subscribe` | Message policy for the subscriber |
+
+HTTP subscribe and MCP `session_subscribe` check the effective subscriber. A permanent
+`subscribe` grant lets the caller register that subscriber for events from any session.
+The prompt identifies both the subscriber and the watched session. `notifyOnDone` on
+agent creation currently registers without a subscriber scope decision.
 
 ### HTTP API
 

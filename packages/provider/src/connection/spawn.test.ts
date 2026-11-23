@@ -11,11 +11,11 @@
  *   - pid is populated after spawn
  */
 
+import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import type { ChildProcessWithoutNullStreams } from "node:child_process"
 import { connectSpawn } from "./spawn.js"
 import type { ProviderConnection } from "./types.js"
 
@@ -72,6 +72,31 @@ afterEach(async () => {
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 describe("connectSpawn — ProviderConnection primitive", () => {
+  it("passes the shaped env to the spawned CLI process", async () => {
+    const script = writeTmpScript(
+      "agent-env",
+      `
+process.stdin.once("data", () => {
+  console.log(JSON.stringify({match: process.env.BDS_SLICE === "spawn-probe"}));
+});
+`,
+    )
+    const cleanup = useScript(script)
+    try {
+      const conn = await connectSpawn("opencode", {
+        cwd: os.tmpdir(),
+        shapeEnv: (_cliKind, env) => ({ ...env, BDS_SLICE: "spawn-probe" }),
+      })
+      openConnections.push(conn)
+      const result = new Promise<string>((resolve) => conn.wire.onLine(resolve))
+      conn.wire.write("{}")
+      await expect(result).resolves.toBe('{"match":true}')
+    } finally {
+      cleanup()
+      fs.rmSync(script, { force: true })
+    }
+  })
+
   it("ext is undefined (spawn-native)", async () => {
     // alive script — stays open
     const script = writeTmpScript("alive-ext", "setInterval(() => {}, 99999);\n")
