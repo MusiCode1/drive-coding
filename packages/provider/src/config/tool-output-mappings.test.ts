@@ -9,11 +9,11 @@ describe("tool-output-mappings defaults", () => {
     const defaults = getDefaultMappingsForTest()
     expect(defaults.codex).toEqual({
       verifiedAgainst: {
-        bridge: "@musicode1/codex-acp",
-        version: "1.0.2",
+        bridge: "@agentclientprotocol/codex-acp",
+        version: "2.5.0",
       },
       fields: {
-        text: [["formatted_output"], ["result", "content", 0, "text"]],
+        text: [["result", "content", 0, "text"]],
         exitCode: [["exit_code"]],
       },
     })

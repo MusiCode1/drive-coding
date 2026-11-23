@@ -218,7 +218,7 @@ describe("GET /api/cli-availability — toolOutputMappings projection", () => {
 
     expect(body.toolOutputMappings).toBeDefined()
     const mappings = body.toolOutputMappings as Record<string, Record<string, unknown>>
-    expect(mappings.codex?.text).toEqual([["formatted_output"], ["result", "content", 0, "text"]])
+    expect(mappings.codex?.text).toEqual([["result", "content", 0, "text"]])
     expect(mappings.codex?.exitCode).toEqual([["exit_code"]])
     expect(serialized).not.toContain("verifiedAgainst")
     expect(serialized).not.toContain("setEnv")
