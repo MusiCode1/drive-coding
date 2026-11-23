@@ -1119,6 +1119,61 @@
         }
       }
     },
+    "/api/sessions/:cliKind/:sessionId": {
+      "get": {
+        "operationId": "get_api_sessions_cliKind_sessionId",
+        "summary": "GET /api/sessions/:cliKind/:sessionId",
+        "parameters": [
+          {
+            "name": "cliKind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session cwd and lastSeenAt from history store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cwd": {
+                      "type": "string"
+                    },
+                    "lastSeenAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": ["cwd", "lastSeenAt"]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "unknown session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/cli-availability": {
       "get": {
         "operationId": "get_api_cli_availability",
@@ -1333,7 +1388,7 @@
             }
           },
           "409": {
-            "description": "session/load targets the current session while a turn is active",
+            "description": "any session/load while a turn is active",
             "content": {
               "application/json": {
                 "schema": {

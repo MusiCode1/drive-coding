@@ -452,10 +452,10 @@
       "codeLines": 44
     },
     "packages/frontend/src/lib/actions/open-session-url.ts": {
-      "metric": 129,
-      "impurity": 9,
+      "metric": 124,
+      "impurity": 7,
       "class": "mixed",
-      "codeLines": 111
+      "codeLines": 98
     },
     "packages/frontend/src/lib/adapters/agents-api.ts": {
       "metric": 213,

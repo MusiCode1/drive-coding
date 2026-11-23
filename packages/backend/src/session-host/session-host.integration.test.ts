@@ -1046,6 +1046,16 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     })
   }
 
+  function endTurnIdle(callbacks: AcpClientCallbacks, sessionId: string): void {
+    callbacks.onUpdate?.(
+      notif(sessionId, {
+        sessionUpdate: "state_update",
+        state: "idle",
+        stopReason: "end_turn",
+      }),
+    )
+  }
+
   function permParams(sessionId: string): Parameters<
     NonNullable<AcpClientCallbacks["onRequestPermission"]>
   >[0] {
@@ -1093,6 +1103,8 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     callbacks.onUpdate(chunkOf("s1", "old history"))
     expect(host.state.messages).toHaveLength(1)
     await readOnePatch(host.patches) // drain the seeded add-message
+    endTurnIdle(callbacks, "s1")
+    await drainBuffered(host.patches)
 
     const dLoad = deferred<{ sessionId: string }>()
     ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockImplementation(() => dLoad.promise)
@@ -1157,7 +1169,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     expect(host.state.turnState).toBe("idle")
   })
 
-  it("turnSeq++: a turn active at switch time that ends afterwards does NOT land applyTurnEnd/lastTurnError on the new session", async () => {
+  it("turnSeq++: a turn active at newSession time that ends afterwards does NOT land applyTurnEnd/lastTurnError on the new session", async () => {
     const { host, conn, mockClient } = await setup()
     await host.newSession({ cwd: "/a" })
 
@@ -1166,11 +1178,11 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     const promptPromise = host.prompt("s1", "in-flight turn")
     expect(host.state.turnState).toBe("waiting")
 
-    const dLoad = deferred<{ sessionId: string }>()
-    ;(mockClient.loadSession as ReturnType<typeof vi.fn>).mockImplementation(() => dLoad.promise)
-    const switchPromise = host.loadSession({ cwd: "/b", sessionId: "s2" })
+    const dNew = deferred<{ sessionId: string }>()
+    ;(mockClient.newSession as ReturnType<typeof vi.fn>).mockImplementation(() => dNew.promise)
+    const switchPromise = host.newSession({ cwd: "/b" })
 
-    dLoad.resolve({ sessionId: "s2" })
+    dNew.resolve({ sessionId: "s-new" })
     await switchPromise
     expect(host.state.turnState).toBe("idle") // from the success patch
 
@@ -1181,6 +1193,31 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     expect(host.state.version).toBe(versionAfterSwitch) // no applyTurnEnd landed
     expect(host.state.turnState).toBe("idle")
     expect(host.state.lastTurnError).toBeNull() // the old turn's error did not land
+  })
+
+  it("rejects loading a different session during a turn without changing state or calling the client", async () => {
+    const { host, mockClient, callbacks } = await setup()
+    await host.newSession({ cwd: "/a" })
+    const pending = deferred<void>()
+    mockClient.prompt = vi.fn().mockReturnValue(pending.promise)
+    const prompt = host.prompt("s1", "in-flight turn")
+    callbacks.onUpdate(chunkOf("s1", "response started"))
+    const before = host.state
+    expect(before.turnState).toBe("responding")
+    await drainBuffered(host.patches)
+
+    try {
+      await expect(host.loadSession({ cwd: "/b", sessionId: "s2" })).rejects.toMatchObject({
+        name: "SessionBusyError",
+      })
+      expect(mockClient.loadSession).not.toHaveBeenCalled()
+      expect(host.state).toBe(before)
+      expect(await drainBuffered(host.patches)).toEqual([])
+    } finally {
+      pending.resolve(undefined)
+      await prompt
+    }
+    expect(host.state.turnState).toBe("idle")
   })
 
   it("sessionId filter: old-session updates during the await are dropped; new-session replay enters", async () => {
@@ -1334,6 +1371,8 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     callbacks.onUpdate(chunkOf("s1", "retained history"))
     callbacks.onUpdate(notif("s1", { sessionUpdate: "plan", entries: [] }))
     await drainBuffered(host.patches)
+    endTurnIdle(callbacks, "s1")
+    await drainBuffered(host.patches)
     const before = host.state
     expect(before.messages).toHaveLength(1)
     expect(before.carried).toHaveLength(1)
@@ -1390,6 +1429,8 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     }
     const before = host.state.messages
     expect(before).toHaveLength(336)
+    endTurnIdle(callbacks, "s1")
+    await drainBuffered(host.patches)
     mockClient.loadSession = vi.fn().mockRejectedValue(new Error("load failed"))
 
     await expect(host.loadSession({ cwd: "/b", sessionId: "s2" })).rejects.toThrow("load failed")
@@ -1397,7 +1438,7 @@ describe("createSessionHostFromConnection — remote-session-mgmt C2: loadSessio
     expect(host.state.messages).toEqual(before)
   })
 
-  it("rejects a same-session load during a turn without changing state or invalidating the turn", async () => {
+  it("rejects any session load during a turn without changing state or invalidating the turn", async () => {
     const { host, mockClient, callbacks } = await setup()
     await host.newSession({ cwd: "/a" })
     const pending = deferred<void>()

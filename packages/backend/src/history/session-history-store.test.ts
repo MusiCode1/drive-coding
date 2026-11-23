@@ -239,6 +239,38 @@ describe("createSessionHistoryStore", () => {
     s.close()
   })
 
+  it("findSession returns cwd after recordAttach", async () => {
+    const s = await openStore()
+    s.recordAttach({
+      agentId: "a1",
+      cliKind: "claude",
+      cwd: "/proj/a",
+      acpSessionId: "sid-1",
+      now: 5_000,
+    })
+    expect(s.findSession("claude", "sid-1")).toEqual({ cwd: "/proj/a", lastSeenAt: 5_000 })
+    s.close()
+  })
+
+  it("findSession returns null for different cliKind", async () => {
+    const s = await openStore()
+    s.recordAttach({
+      agentId: "a1",
+      cliKind: "claude",
+      cwd: "/proj",
+      acpSessionId: "same-id",
+      now: 1,
+    })
+    expect(s.findSession("opencode", "same-id")).toBeNull()
+    s.close()
+  })
+
+  it("findSession returns null when session does not exist", async () => {
+    const s = await openStore()
+    expect(s.findSession("claude", "missing")).toBeNull()
+    s.close()
+  })
+
   it("stores titleManual as 0/1 CHECK", async () => {
     const s = await openStore()
     s.close()

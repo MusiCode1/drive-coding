@@ -5,9 +5,10 @@
 import { untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { page } from "$app/state"
+import { type OpenSessionOutcome, openSessionUrl } from "$lib/actions/open-session-url"
 import ChatScreen from "$lib/components/chat/ChatScreen.svelte"
-import { openSessionUrl, type OpenSessionOutcome } from "$lib/actions/open-session-url"
 import { getI18n, getSession, getSettings } from "$lib/context"
+import { sessionPathWithTransport } from "$lib/session/session-url"
 
 const session = getSession()
 const settings = getSettings()
@@ -59,6 +60,20 @@ async function confirmTakeover() {
 function goHome() {
   goto("/")
 }
+
+function goBack() {
+  if (session.sessionId !== null && session.cliKind) {
+    goto(
+      sessionPathWithTransport(
+        session.cliKind,
+        session.sessionId,
+        session.isRemoteView ? "http" : "ws",
+      ),
+    )
+    return
+  }
+  goto("/")
+}
 </script>
 
 {#if outcome === "connected"}
@@ -85,6 +100,19 @@ function goHome() {
         {t("sessionUrl.takeover.confirm")}
       </button>
     </div>
+  </main>
+{:else if outcome === "busy"}
+  <main class="min-h-dvh flex flex-col items-center justify-center gap-4 p-6 text-center">
+    <h1 class="text-lg font-medium">{t("sessionUrl.busy.title")}</h1>
+    <p class="text-sm text-[var(--fg-dim)] max-w-md">{t("sessionUrl.busy.body")}</p>
+    <button
+      type="button"
+      class="px-4 py-2 rounded-lg border text-sm"
+      style="border-color:var(--border)"
+      onclick={goBack}
+    >
+      {t("sessionUrl.busy.back")}
+    </button>
   </main>
 {:else if outcome === "not-found" || outcome === "error"}
   <main class="min-h-dvh flex flex-col items-center justify-center gap-4 p-6 text-center">

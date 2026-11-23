@@ -17,7 +17,7 @@ ext_methods:
   - _drive/voice/stop
   - _drive/voice/listVoices
   - _drive/voice/speak
-docs_version: 1.10.2
+docs_version: 1.10.4
 updated: 2026-11-20
 ---
 
@@ -92,7 +92,7 @@ Without `waitMs` (or `0`), those six return **`202`** with `{ version }` only (`
 With valid `waitMs`, the handler waits and returns **`200`** result bodies (or **`200`** `{ ok: false, timedOut: true }` on timeout — `rpc.ts:211-212`, `rpc.ts:137-139`).
 Invalid `waitMs` on those six → **`400`** `{ error: "invalid waitMs" }` (`rpc.ts:189-190`).
 
-Management methods (`session/list`, `session/load`, `session/new`, `session/delete`) **ignore** `waitMs` and return method-specific status codes. Reloading the current session during an active turn returns **`409`** with `{ error, code: "session_busy" }`. The active turn continues.
+Management methods (`session/list`, `session/load`, `session/new`, `session/delete`) **ignore** `waitMs` and return method-specific status codes. Any **`session/load`** while a turn is active returns **`409`** with `{ error, code: "session_busy" }`. The active turn continues. **`session/new`** is still allowed during a turn.
 
 ## HTTP status codes
 
@@ -106,7 +106,7 @@ Management methods (`session/list`, `session/load`, `session/new`, `session/dele
 | `400` | `load`/`new` without cwd | `rpc.ts:338`, `rpc.ts:375` |
 | `202` | Fire-and-forget success for the six wait-capable methods | `rpc.ts:425` |
 | `200` | Blocking wait results, management results, or `-32601` degradations | `rpc.ts:211-231`, `rpc.ts:303-415` |
-| `409` | `session/load` targets the current session while its turn is active | `rpc-session-mgmt.ts` |
+| `409` | Any `session/load` while a turn is active | `rpc-session-mgmt.ts` |
 | `502` | Upstream/session errors on management calls | `rpc.ts:328-331`, `rpc.ts:365-367`, etc. |
 
 Scoped writes may deny before dispatch — see `60-identity-and-scopes`.

@@ -12,15 +12,16 @@
  * ─── slice view-switch C3-ז: נקודות ההזרקה של sessionTransport ─── (additive)
  * ❌ אל תפזר `if (transport === "http")` מחוץ לנקודות אלה — כל הניתוב האחר ב-VM
  * הוא לפי `#view !== null`, לא לפי הדגל (הדגל בנקודה אחת).
- * נקודות: connect-agent.ts · handleReconnect (+page.svelte) · open-session-url.ts
+ * נקודות: connect-agent.ts · handleReconnect (+page.svelte) · open-session-url.ts · open-session-cold.ts
+ * (מקור אמת לרשימה: transport-points.test.ts)
  */
 
 import { goto } from "$app/navigation"
 import { env } from "$env/dynamic/public"
 import { readSessionTransport } from "$lib/session/session-transport-read"
 import { sessionPath } from "$lib/session/session-url"
-import { formatAcpError } from "$lib/view-models/format-acp-error"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
+import { formatAcpError } from "$lib/view-models/format-acp-error"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
 export async function connectAgent(params: {

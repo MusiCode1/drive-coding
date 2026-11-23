@@ -138,7 +138,7 @@
       "tags": ["output", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.10.2",
+      "docs_version": "1.10.4",
       "routes": [
         "GET /api/agents/:id/history",
         "GET /api/agents/:id/events",
@@ -232,7 +232,7 @@
       "tags": ["rpc", "session"],
       "surface": ["http"],
       "stability": "transitional",
-      "docs_version": "1.10.2",
+      "docs_version": "1.10.4",
       "routes": ["POST /api/agents/:id/rpc"],
       "mcp_tools": [],
       "path": "docs/agents/50-rpc.md",
@@ -339,12 +339,13 @@
       "tags": ["files", "output"],
       "surface": ["http"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.2.1",
       "routes": [
         "GET /api/fs/browse",
         "GET /api/fs/file",
         "GET /api/projects",
         "DELETE /api/projects",
+        "GET /api/sessions/:cliKind/:sessionId",
         "GET /api/recordings/:id",
         "POST /api/recordings"
       ],
@@ -356,6 +357,7 @@
         "GET /api/fs/file",
         "GET /api/fs/browse",
         "Projects",
+        "Session lookup (history)",
         "Recordings"
       ]
     },
@@ -432,7 +434,7 @@
       "tags": ["errors", "rpc"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.10.2",
+      "docs_version": "1.10.4",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/95-errors.md",

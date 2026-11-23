@@ -11,12 +11,14 @@ import { env } from "$env/dynamic/public"
 import { listAgents } from "$lib/adapters/agents-api"
 import { readSessionTransport } from "$lib/session/session-transport-read"
 import { pickSessionHost } from "$lib/session/session-url"
-import type { ManualTitleInput } from "$lib/view-models/agent-session-manual-title"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
+import type { ManualTitleInput } from "$lib/view-models/agent-session-manual-title"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
 import type { Settings } from "$lib/view-models/settings.svelte"
+import { openSessionCold } from "./open-session-cold.js"
+import { connectionFailed } from "./session-connection.js"
 
-export type OpenSessionOutcome = "connected" | "not-found" | "needs-takeover" | "error"
+export type OpenSessionOutcome = "connected" | "not-found" | "needs-takeover" | "busy" | "error"
 
 const OWNED_AGENT_KEY = "dc.ownedAgentId"
 
@@ -29,10 +31,6 @@ export function sessionAttachExtras(agent: AgentPublic): ManualTitleInput {
   if (agent.userNotes !== undefined) out.userNotes = agent.userNotes
   if (agent.sessionFields !== undefined) out.sessionFields = agent.sessionFields
   return out
-}
-
-function connectionFailed(session: AgentSession): boolean {
-  return session.status !== "connected" || session.error !== null
 }
 
 export async function openSessionUrl(params: {
@@ -52,6 +50,7 @@ export async function openSessionUrl(params: {
   }
 
   if (session.status === "connected" && session.cliKind === cliKind) {
+    if (session.turnState !== "idle") return "busy"
     await session.listSessions(true)
     if (session.sessionsCache.error !== null) return "error"
 
@@ -76,7 +75,7 @@ export async function openSessionUrl(params: {
   const agents = await listAgents()
   const pick = pickSessionHost(agents, cliKind, sessionId)
 
-  if (pick.kind === "none") return "not-found"
+  if (pick.kind === "none") return openSessionCold({ cliKind, sessionId, session, settings })
 
   const agent = pick.agent
 
@@ -96,8 +95,7 @@ export async function openSessionUrl(params: {
     stored: settings.sessionTransport,
   })
 
-  const attachSessionId = pick.kind === "exact" ? sessionId : agent.acpSessionId
-  if (!attachSessionId) return "not-found"
+  const attachSessionId = sessionId
 
   try {
     if (transport === "http") {
@@ -122,27 +120,6 @@ export async function openSessionUrl(params: {
   }
 
   if (connectionFailed(session)) return "error"
-
-  if (pick.kind === "warm") {
-    await session.listSessions(true)
-    if (session.sessionsCache.error !== null) return "error"
-
-    const info = session.sessionsCache.sessions.find((s) => s.sessionId === sessionId)
-    if (!info) return "not-found"
-
-    try {
-      await session.switchSession({
-        sessionId,
-        cwd: info.cwd,
-        cliKind,
-        title: info.title,
-      })
-    } catch {
-      return "error"
-    }
-
-    if (connectionFailed(session)) return "error"
-  }
 
   return "connected"
 }
