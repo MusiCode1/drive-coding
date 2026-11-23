@@ -1,11 +1,12 @@
 ---
 id: reading-output
 title: Reading output — history, SSE, state, and RPC waits
-summary: How to read agent messages and turn progress after noWait sends, without holding a stream open forever.
+summary: How to read agent messages, turn progress, and canonical tool output through state, history, and SSE.
 read_when:
   - You sent a prompt with noWait and now need the agent's reply
   - You must follow a long turn without holding a stream open
   - You have a message id and want only what came after it
+  - You need to reconstruct a tool's output from live updates or a snapshot
 tags: [output, session]
 surface: [http, mcp]
 stability: stable
@@ -15,8 +16,8 @@ routes:
   - GET /api/agents/:id/state
   - POST /api/agents/:id/rpc
 mcp_tools: [session_send, session_state]
-docs_version: 1.10.4
-updated: 2026-11-20
+docs_version: 1.10.6
+updated: 2026-11-24
 ---
 
 # Reading output
@@ -85,6 +86,28 @@ Status codes:
 - **409** — `?epoch=` lower than current epoch (stale reconnect) **before** attach.
 
 Design: subscribe after snapshot so replay excludes patches already in frame-zero.
+
+## Canonical tool output
+
+On the HTTP session transport, the session host can normalize output from a CLI
+with configured tool output rules. In `GET /state`, a tool message can carry
+`toolCall.output` with optional `text`, `stdout`, `stderr`, `error`, `exitCode`,
+`isError`, and `truncated` fields. The host uses `toolCall.outputRank` internally
+to track which source produced each field.
+
+On live SSE updates, the corresponding change is in
+`_meta["_drive/toolOutput"]`. Apply its optional `set` first and then concatenate
+the strings in its optional `append` onto their respective fields. Start an
+absent field at the empty string. Each text field keeps its last 65,536
+UTF-16 code units. An oversized `set` arrives capped, while an `append` carries
+the received chunk. Preserve `truncated: true` once the cap is exceeded or the
+delta specifies it.
+
+In the SSE snapshot, `GET /history`, and the update that creates a tool, the
+same metadata key uses `set` for the full canonical values and includes
+`truncated: true` when applicable. Source ranks stay in server state. The original
+`rawOutput` remains available. The host resolves the configuration at
+creation, so changes apply to new hosts.
 
 ## RPC with wait (`POST /api/agents/:id/rpc`)
 
