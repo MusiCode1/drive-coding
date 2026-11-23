@@ -362,10 +362,10 @@
       "codeLines": 261
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 983,
+      "metric": 937,
       "impurity": 22,
       "class": "scattered",
-      "codeLines": 637
+      "codeLines": 603
     },
     "packages/backend/src/session-host/turn-lifecycle.ts": {
       "metric": 93,

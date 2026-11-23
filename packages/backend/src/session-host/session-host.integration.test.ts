@@ -18,7 +18,15 @@
 
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { Patch } from "@drive-coding/core/session"
-import { applyPatch } from "@drive-coding/core/session"
+import {
+  applyPatch,
+  createInitialSessionState,
+  patchToSessionUpdates,
+  reduce,
+  snapshotPayload,
+  TOOL_OUTPUT_META_KEY,
+  type ToolOutputRules,
+} from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
@@ -169,6 +177,7 @@ async function setup(
   elicitationTimeoutMs = 5000,
   clientOverrides: Partial<AcpClient> = {},
   connCapabilities?: unknown,
+  toolOutputRules?: ToolOutputRules,
 ) {
   const { conn, _triggerLine, _triggerCrash } = makeMockConnection(connCapabilities)
   let capturedCallbacks: AcpClientCallbacks | undefined
@@ -178,6 +187,7 @@ async function setup(
   const host = await createSessionHostFromConnection(conn, {
     permissionTimeoutMs,
     elicitationTimeoutMs,
+    toolOutputRules,
     _createAcpClient: async (transport: AcpTransport, callbacks: AcpClientCallbacks) => {
       capturedTransport = transport
       capturedCallbacks = callbacks
@@ -227,6 +237,47 @@ describe("createSessionHostFromConnection", () => {
   })
 
   describe("state updates via onUpdate", () => {
+    it("streams canonical tool output and produces the same output in the snapshot", async () => {
+      const { host, callbacks } = await setup(undefined, undefined, {}, undefined, {
+        fields: {
+          text: [{ from: "meta", key: "terminal_output_delta", path: ["data"] }],
+          exitCode: [{ from: "meta", key: "terminal_exit", path: ["exit_code"] }],
+        },
+        metaKeys: {
+          terminal_info: "replace",
+          terminal_output_delta: "append",
+          terminal_exit: "replace",
+        },
+      })
+      const toolCallId = "exec-fixture"
+      const update = { sessionUpdate: "tool_call_update", toolCallId }
+      const raw = [
+        { sessionUpdate: "tool_call", toolCallId, kind: "execute", _meta: { terminal_info: {} } },
+        { ...update, _meta: { terminal_output_delta: { data: "one\n" } } },
+        { ...update, _meta: { terminal_output_delta: { data: "two\n" } } },
+        { ...update, status: "failed", _meta: { terminal_exit: { exit_code: 3 } } },
+      ]
+      try {
+        const wire = []
+        for (const frame of raw) {
+          callbacks.onUpdate(makeSessionNotification(frame))
+          wire.push(...patchToSessionUpdates(host.state, await readOnePatch(host.patches)))
+        }
+        expect(wire[1]?._meta).toMatchObject({ [TOOL_OUTPUT_META_KEY]: { set: { text: "one\n" } } })
+        expect(wire[2]?._meta).toMatchObject({ [TOOL_OUTPUT_META_KEY]: { append: { text: "two\n" } } })
+        expect(JSON.stringify(wire)).not.toContain("terminal_output_delta")
+        const output = { text: "one\ntwo\n", exitCode: 3 }
+        expect(host.state.messages[0]).toMatchObject({ toolCall: { output } })
+        const snapshot = snapshotPayload(host.state).updates.reduce(
+          (state, frame) => reduce(state, frame).state,
+          createInitialSessionState({ sessionId: "s1" }),
+        )
+        expect(snapshot.messages[0]).toMatchObject({ toolCall: { output } })
+      } finally {
+        await host.dispose()
+      }
+    })
+
     it("session_info_update → title changes in host.state", async () => {
       const { host, conn, callbacks } = await setup()
 

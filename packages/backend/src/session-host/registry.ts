@@ -48,7 +48,7 @@ import { buildAgentEventHostOpts } from "./agent-events-registry-opts.js"
 import { startAgentStallSweep } from "./agent-events-stall-sweep.js"
 import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
 import { initSession } from "./session-init.js"
-import { makePromptCharterHook } from "./session-host-charter.js"
+import { makeAgentHostCliOpts } from "./session-host-cli-opts.js"
 
 const log = createLogger("backend.session-host.registry")
 
@@ -366,7 +366,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     // host.dispose() to remove the crash subscription and close the patches stream.
     // slice agent-charter C2: always wire charter prepend (cold session_open too).
     const hostOpts = {
-      transformPromptForAcp: makePromptCharterHook(connectionRegistry, agentId),
+      ...makeAgentHostCliOpts(connectionRegistry, agentId),
       ...buildAgentEventHostOpts({
         agentId, cwd, acpSessionId, permissionPolicy, closeOnTurnEnd,
         onScheduleCloseOnTurnEnd, onTurnEnded,

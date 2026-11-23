@@ -29,7 +29,7 @@ import type {
   RequestPermissionResponse,
   SessionNotification,
 } from "@agentclientprotocol/sdk"
-import type { Patch, SessionConfigOption, SessionState } from "@drive-coding/core/session"
+import type { Patch, SessionConfigOption, SessionState, ToolOutputRules } from "@drive-coding/core/session"
 import { defaultRequestTimeouts } from "./request-timeout.js"
 import {
   applyPatch,
@@ -61,6 +61,7 @@ import { createTurnLifecycleHandlers, type TurnTimingHost } from "./turn-lifecyc
 import { msgOf } from "./error-message.js"
 import { createPendingRequests } from "./pending-requests.js"
 import { createSessionSwitch } from "./session-switch.js"
+import { createPatchChannel, createUpdateIngest } from "./session-host-ingest.js"
 import { attachScopePermission, type ScopePermissionHost } from "./session-host-scope.js"
 
 // ─── C2: createSessionHost ───────────────────────────────────────────────────
@@ -245,6 +246,7 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
 // ─── C4: createSessionHostFromConnection ─────────────────────────────────────
 
 export type SessionHostFromConnOptions = {
+  toolOutputRules?: ToolOutputRules
   /** ACP initialize timeout (passed to createAcpClient). */
   initTimeoutMs?: number
   /** requestPermission timeout; null = none. Default: PERMISSION_TIMEOUT_MS env. */
@@ -397,69 +399,28 @@ export async function createSessionHostFromConnection(
     warmReattach,
     _createAcpClient = createAcpClient,
     transformPromptForAcp,
+    toolOutputRules,
   } = opts
 
   // Internal mutable state (same pattern as createSessionHost)
   let currentState: SessionState = createInitialSessionState({ sessionId: null })
-  let patchController: ReadableStreamDefaultController<Patch> | null = null
+  const { stream: patchStream, emit: emitPatches, close: closePatches } = createPatchChannel()
 
   // slice handoff-foundations C1: disposed flag — once set, all I/O is rejected.
   let disposed = false
-
-  const patchStream = new ReadableStream<Patch>({
-    start(controller) {
-      patchController = controller
-    },
-    cancel() {
-      patchController = null
-    },
-  })
-
-  function emitPatches(patches: Patch[]): void {
-    if (!patchController) return
-    for (const p of patches) {
-      try {
-        patchController.enqueue(p)
-      } catch {
-        // controller closed — ignore
-      }
-    }
-  }
-
-  function handleUpdate(notification: SessionNotification): void {
-    // slice handoff-foundations C1: no updates after dispose
-    if (disposed) return
-    // ─── slice remote-session-mgmt C2 step 5: sessionId filter ───
-    // During a switch (loadSession) the flip already points currentState at the
-    // NEW session before the await, so the new session's replay passes (B===B)
-    // while the outgoing session's tails are dropped (A≠B). Defensive fallbacks:
-    // a notification lacking sessionId (required per SDK types.gen.d.ts:3409) or
-    // a host with no session yet (currentState.sessionId===null) passes through.
-    const sid = notification.sessionId as string | undefined
-    if (sid !== undefined && currentState.sessionId !== null && sid !== currentState.sessionId) {
-      return
-    }
-    const result = reduce(currentState, notification.update)
-    currentState = result.state
-    emitPatches(result.patches)
-  }
-
-  function handleExtNotification(method: string, params: Record<string, unknown>): void {
-    if (disposed) return
-    const result = reduce(currentState, {
-      sessionUpdate: "_drive/ext_notification",
-      method,
-      params,
-    })
-    currentState = result.state
-    emitPatches(result.patches)
-  }
 
   /** מיישם {state,patches} על currentState + פולט — עוזר-IO מקומי. */
   function emit(r: { state: SessionState; patches: Patch[] }): void {
     currentState = r.state
     emitPatches(r.patches)
   }
+
+  const { handleUpdate, handleExtNotification } = createUpdateIngest({
+    isDisposed: () => disposed,
+    getState: () => currentState,
+    emit,
+    toolOutputRules,
+  })
 
   // ── C3: turn boundaries ─────────────────────────────────────────────────
   const { turn: turnLifecycle, emitTurnEnd, maybeScheduleCloseOnTurnEnd, stampTurnStart, turnHostMethods } =
@@ -672,14 +633,7 @@ export async function createSessionHostFromConnection(
     await new Promise<void>((r) => setTimeout(r, 0))
     transport.close()
     // Terminate the patches stream — readers get done=true.
-    if (patchController) {
-      try {
-        patchController.close()
-      } catch {
-        // already closed
-      }
-      patchController = null
-    }
+    closePatches()
   }
 
   const sessionSwitch = createSessionSwitch({
