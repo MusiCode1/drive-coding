@@ -19,7 +19,6 @@
  */
 import type { Bubble } from "$lib/types/bubble"
 import { isScopeExpiredToolCall } from "$lib/types/scope-prompt-view"
-import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
 import BubbleRow from "./bubbles/BubbleRow.svelte"
 import { isSubagentTask } from "./bubbles/bubble-rendering"
 import { bubbleAvatarKind, bubbleSide, voicePlacement } from "./bubbles/bubble-row"
@@ -37,11 +36,9 @@ const MAX_NEST_DEPTH = 1
 let {
   bubble,
   depth = 0,
-  outputMapping,
 }: {
   bubble: Bubble
   depth?: number
-  outputMapping?: ToolOutputFieldPaths
 } = $props()
 const placement = $derived(
   bubble.voice
@@ -65,9 +62,9 @@ const placement = $derived(
     <ScopeExpiredNotice {bubble} />
   {:else if bubble.kind === "tool"}
     {#if isSubagentTask(bubble) && depth < MAX_NEST_DEPTH}
-      <SubagentBubble {bubble} {depth} {outputMapping} />
+      <SubagentBubble {bubble} {depth} />
     {:else}
-      <ToolBubble {bubble} {outputMapping} />
+      <ToolBubble {bubble} />
     {/if}
   {/if}
 </BubbleRow>

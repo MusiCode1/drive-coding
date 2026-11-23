@@ -53,7 +53,6 @@ describe("CliAvailability.load() — success", () => {
         // kind שאינו ב-CLI_KINDS (מהקונפ') — מדמה את הרג'יסטרי האפקטיבי מה-BE
         pi: { found: false, source: "not-found" },
       },
-      toolOutputMappings: { codex: { text: [["formatted_output"]] } },
     })
     const vm = new CliAvailability()
 
@@ -62,7 +61,6 @@ describe("CliAvailability.load() — success", () => {
     expect(vm.available).toEqual(["opencode", "cursor"])
     expect(vm.loading).toBe(false)
     expect(vm.error).toBeNull()
-    expect(vm.toolOutputMappings).toEqual({ codex: { text: [["formatted_output"]] } })
   })
 
   it("registry = Object.keys(details) — כולל kind שאינו ב-CLI_KINDS", async () => {
@@ -73,7 +71,6 @@ describe("CliAvailability.load() — success", () => {
         cursor: { found: true, source: "path" },
         pi: { found: false, source: "not-found" },
       },
-      toolOutputMappings: {},
     })
     const vm = new CliAvailability()
 
@@ -86,7 +83,7 @@ describe("CliAvailability.load() — success", () => {
     const details = Object.fromEntries(
       CLI_KINDS.map((k) => [k, { found: false, source: "not-found" }]),
     )
-    mockFetch.mockResolvedValue({ available: [], details, toolOutputMappings: {} })
+    mockFetch.mockResolvedValue({ available: [], details })
     const vm = new CliAvailability()
 
     await vm.load()
@@ -94,48 +91,6 @@ describe("CliAvailability.load() — success", () => {
     expect(vm.available).toEqual([])
     expect(vm.error).toBeNull()
     expect(vm.registry).toEqual([...CLI_KINDS])
-  })
-})
-
-describe("CliAvailability — toolOutputMappings", () => {
-  it("load failure resets toolOutputMappings to {}", async () => {
-    mockFetch.mockRejectedValue(new Error("fail"))
-    const vm = new CliAvailability()
-    await vm.load()
-    expect(vm.toolOutputMappings).toEqual({})
-  })
-
-  it("reload failure keeps previous toolOutputMappings", async () => {
-    mockFetch.mockResolvedValueOnce({
-      available: ["codex"],
-      details: { codex: { found: true, source: "path" } },
-      toolOutputMappings: { codex: { text: [["a"]] } },
-    })
-    const vm = new CliAvailability()
-    await vm.load()
-    expect(vm.toolOutputMappings).toEqual({ codex: { text: [["a"]] } })
-
-    mockFetch.mockRejectedValueOnce(new Error("reload fail"))
-    await vm.reload()
-    expect(vm.toolOutputMappings).toEqual({ codex: { text: [["a"]] } })
-  })
-
-  it("reload success replaces toolOutputMappings", async () => {
-    mockFetch.mockResolvedValueOnce({
-      available: [],
-      details: {},
-      toolOutputMappings: { codex: { text: [["old"]] } },
-    })
-    const vm = new CliAvailability()
-    await vm.load()
-
-    mockFetch.mockResolvedValueOnce({
-      available: [],
-      details: {},
-      toolOutputMappings: { codex: { text: [["new"]] } },
-    })
-    await vm.reload()
-    expect(vm.toolOutputMappings).toEqual({ codex: { text: [["new"]] } })
   })
 })
 
@@ -172,7 +127,6 @@ describe("CliAvailability.ready", () => {
     mockFetch.mockResolvedValue({
       available: ["opencode"],
       details: { opencode: { found: true, source: "path" } },
-      toolOutputMappings: {},
     })
     const vm = new CliAvailability()
 

@@ -17,14 +17,12 @@ import { onMount } from "svelte"
 import BubbleRenderer from "$lib/components/chat/BubbleRenderer.svelte"
 import { getChatScroll, getI18n } from "$lib/context"
 import type { ToolBubble } from "$lib/types/bubble"
-import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
 import MarkdownContent from "./MarkdownContent.svelte"
 
 let {
   bubble,
   depth = 0,
-  outputMapping,
-}: { bubble: ToolBubble; depth?: number; outputMapping?: ToolOutputFieldPaths } = $props()
+}: { bubble: ToolBubble; depth?: number } = $props()
 
 const t = getI18n().t
 
@@ -74,7 +72,7 @@ const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
 
       <div class="transcript-region border-t px-3 py-2" style="border-color:var(--border)">
         {#each frames as sf (sf.id)}
-          <BubbleRenderer bubble={sf} depth={depth + 1} {outputMapping} />
+          <BubbleRenderer bubble={sf} depth={depth + 1} />
         {/each}
         <!-- finding #6 — כפיית reactivity על מערך subFrames (object-replacement של B1) -->
         <span class="hidden">{frames.length}</span>

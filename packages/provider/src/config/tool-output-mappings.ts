@@ -7,7 +7,6 @@ import {
   META_ROOT,
   TOOL_OUTPUT_FIELDS,
   type ToolOutputField,
-  type ToolOutputMappingsProjection,
   type ToolOutputMetaKeys,
   type VerifiedAgainst,
 } from "./tool-output-field-types.js"
@@ -23,7 +22,6 @@ export {
   type ToolOutputField,
   type ToolOutputFieldPaths,
   type ToolOutputMappingOverride,
-  type ToolOutputMappingsProjection,
   type VerifiedAgainst,
 } from "./tool-output-field-types.js"
 
@@ -163,22 +161,6 @@ export function getToolOutputRules(
       `[tool-output-mappings] override["${cliKind}"].fields.${field}: invalid ${META_ROOT} path ${pathText}`,
     )
   })
-}
-
-export function getToolOutputMappingsProjection(
-  env?: NodeJS.ProcessEnv,
-): ToolOutputMappingsProjection {
-  const effective = getEffectiveToolOutputMappings(env)
-  return Object.fromEntries(
-    Object.entries(effective).map(([kind, mapping]) => {
-      const fields: Partial<Record<ToolOutputField, JsonPath[]>> = {}
-      for (const field of TOOL_OUTPUT_FIELDS) {
-        const rawPaths = mapping.fields[field]?.filter((path) => !path.includes(META_ROOT))
-        if (rawPaths?.length) fields[field] = rawPaths
-      }
-      return [kind, fields]
-    }),
-  )
 }
 
 /** @internal — tests only */

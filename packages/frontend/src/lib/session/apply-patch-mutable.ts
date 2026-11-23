@@ -53,6 +53,7 @@ function sessionMsgToBubble(msg: SessionMessage, mappers: PatchMappers): Bubble 
         status: msg.toolCall.status,
         title: msg.toolCall.title,
         result: msg.toolCall.result,
+        ...(msg.toolCall.output !== undefined && { output: msg.toolCall.output }),
         content:
           msg.toolCall.content != null ? mappers.mapToolContent(msg.toolCall.content) : undefined,
         locations:
@@ -133,6 +134,7 @@ export function applyPatchMutable(
           ...(patch.toolCall.status !== undefined && { status: patch.toolCall.status }),
           ...(patch.toolCall.args !== undefined && { args: patch.toolCall.args }),
           ...(patch.toolCall.result !== undefined && { result: patch.toolCall.result }),
+          ...(patch.toolCall.output !== undefined && { output: patch.toolCall.output }),
           ...(patch.toolCall.kind !== undefined && { kind: patch.toolCall.kind }),
           ...(patch.toolCall.title !== undefined && { title: patch.toolCall.title }),
           ...(patch.toolCall.content !== undefined && {

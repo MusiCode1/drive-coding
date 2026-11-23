@@ -521,6 +521,7 @@ export const he: Catalog = {
   "connect.cwd.combo.loadError": "טעינת התיקיות נכשלה",
   // ─── tool output (tool-render-fidelity) ───
   "chat.tool.output.exitCode": "קוד יציאה",
+  "chat.tool.output.truncatedHead": "תחילת הפלט נחתכה — מוצג סופו",
   "chat.tool.output.stderr": "stderr",
   "chat.tool.output.empty": "אין פלט",
   // ─── notifications ─── (slice notify-local)

@@ -35,12 +35,10 @@ export type {
   ToolOutputField,
   ToolOutputFieldPaths,
   ToolOutputMappingOverride,
-  ToolOutputMappingsProjection,
   VerifiedAgainst,
 } from "./tool-output-mappings.js"
 export {
   getEffectiveToolOutputMappings,
-  getToolOutputMappingsProjection,
   getToolOutputRules,
   TOOL_OUTPUT_FIELDS,
 } from "./tool-output-mappings.js"

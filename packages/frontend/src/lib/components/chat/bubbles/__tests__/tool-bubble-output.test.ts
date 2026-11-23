@@ -2,12 +2,7 @@
 import { flushSync, mount, unmount } from "svelte"
 import { afterEach, describe, expect, it } from "vitest"
 import type { ToolBubble as ToolBubbleType } from "$lib/types/bubble"
-import ToolBubbleHarness from "./tool-bubble-output-mapping-harness.svelte"
-
-const CODEX_MAPPING = {
-  text: [["formatted_output"], ["result", "content", 0, "text"]],
-  exitCode: [["exit_code"]],
-} as const
+import ToolBubbleHarness from "./tool-bubble-output-harness.svelte"
 
 let target: HTMLDivElement | null = null
 let app: object | null = null
@@ -32,13 +27,14 @@ function makeCodexToolBubble(overrides?: Partial<ToolBubbleType["toolCall"]>): T
       status: "completed",
       args: {},
       result: { formatted_output: "hello codex", exit_code: 0 },
+      output: { text: "hello codex", exitCode: 0 },
       ...overrides,
     },
   }
 }
 
-describe("ToolBubble — mapped Codex output", () => {
-  it("shows formatted_output once in result body, not in raw details count", () => {
+describe("ToolBubble — canonical output", () => {
+  it("shows canonical text once in the result body with raw details available", () => {
     target = document.createElement("div")
     document.body.appendChild(target)
 
@@ -46,7 +42,6 @@ describe("ToolBubble — mapped Codex output", () => {
       target,
       props: {
         bubble: makeCodexToolBubble(),
-        outputMapping: CODEX_MAPPING,
       },
     })
     flushSync()
@@ -60,7 +55,7 @@ describe("ToolBubble — mapped Codex output", () => {
     expect(bodyText.match(/hello codex/g)?.length).toBe(1)
   })
 
-  it("shows exit code chip for mapped exit_code", () => {
+  it("shows the canonical exit code chip", () => {
     target = document.createElement("div")
     document.body.appendChild(target)
 
@@ -68,7 +63,6 @@ describe("ToolBubble — mapped Codex output", () => {
       target,
       props: {
         bubble: makeCodexToolBubble(),
-        outputMapping: CODEX_MAPPING,
       },
     })
     flushSync()
@@ -88,7 +82,6 @@ describe("ToolBubble — mapped Codex output", () => {
         bubble: makeCodexToolBubble({
           content: [{ type: "text", text: "rich only" }],
         }),
-        outputMapping: CODEX_MAPPING,
       },
     })
     flushSync()
@@ -103,3 +96,28 @@ describe("ToolBubble — mapped Codex output", () => {
     expect(richTexts.filter((t) => t === "hello codex")).toHaveLength(0)
   })
 })
+
+it.each([true, undefined] as const)(
+  "shows the truncation notice only for a truncated result (%s)",
+  (truncated) => {
+    target = document.createElement("div")
+    document.body.appendChild(target)
+    app = mount(ToolBubbleHarness, {
+      target,
+      props: {
+        bubble: makeCodexToolBubble({
+          result: undefined,
+          output: { text: "tail", exitCode: 3, truncated },
+        }),
+      },
+    })
+    flushSync()
+
+    expect(target.querySelector(".tool-text-wrapper pre")?.textContent).toBe("tail")
+    expect(target.querySelector(".exit-chip")?.textContent).toContain("3")
+    expect(target.querySelector(".output-truncated")?.textContent).toBe(
+      truncated ? "chat.tool.output.truncatedHead" : undefined,
+    )
+    expect(target.querySelector(".raw-output")).toBeNull()
+  },
+)

@@ -16,21 +16,19 @@ import Maximize2Icon from "@lucide/svelte/icons/maximize-2"
 import { onMount } from "svelte"
 import { getChatScroll, getContentViewer, getI18n, getSettings } from "$lib/context"
 import type { ToolBubble } from "$lib/types/bubble"
-import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
 import { normalizeToolCall } from "$lib/util/tool-call-view"
 import { formatLocation, prettyJson } from "$lib/util/tool-format"
 import { settingBackedOpen } from "./setting-backed-open.svelte"
 import ToolKindIcon from "./ToolKindIcon.svelte"
 
-let { bubble, outputMapping }: { bubble: ToolBubble; outputMapping?: ToolOutputFieldPaths } =
-  $props()
+let { bubble }: { bubble: ToolBubble } = $props()
 const t = getI18n().t
 const settings = getSettings()
 // content-viewer: כפתור expand על text + click על image → lightbox
 const viewer = getContentViewer()
 
 const tc = $derived(bubble.toolCall)
-const view = $derived(normalizeToolCall(tc, { narration: tc.narration, outputMapping }))
+const view = $derived(normalizeToolCall(tc, { narration: tc.narration }))
 const hasContent = $derived(view.richContent.some((c) => c.type !== "terminal")) // bugs/86
 const outputView = $derived(view.output)
 const showNormalizedOutput = $derived(!hasContent && outputView.kind !== "empty")
@@ -230,6 +228,8 @@ function asFencedCode(text: string): string {
             </div>
           {/if}
         {/if}
+
+        {#if showNormalizedOutput && "truncated" in outputView && outputView.truncated}<div class="output-truncated text-[11px] opacity-70" dir="auto">{t("chat.tool.output.truncatedHead")}</div>{/if}
 
         <!-- raw output peek (hidden when json fallback already shown in body) -->
         {#if showRawOutput}

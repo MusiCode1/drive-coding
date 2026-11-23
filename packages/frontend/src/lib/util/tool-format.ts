@@ -1,5 +1,5 @@
+import type { ToolOutput } from "@drive-coding/core/session"
 import type { ToolLocation } from "$lib/types/bubble"
-import type { JsonPath, ToolOutputFieldPaths } from "$lib/types/tool-output"
 
 export type ToolInputView =
   | { kind: "command"; command: string; description?: string }
@@ -98,86 +98,14 @@ export function formatLocation(loc: ToolLocation): string {
 
 export type ToolOutputView =
   | { kind: "empty" }
-  | { kind: "text"; text: string; exitCode?: number }
-  | { kind: "terminal"; stdout: string; stderr: string; exitCode: number }
-  | { kind: "error"; message: string }
+  | { kind: "text"; text: string; exitCode?: number; truncated?: true }
+  | { kind: "terminal"; stdout: string; stderr: string; exitCode: number; truncated?: true }
+  | { kind: "error"; message: string; truncated?: true }
   | { kind: "stat"; stats: { key: string; value: string }[] }
   | { kind: "json"; json: string }
 
-type MappedScalars = {
-  text?: string
-  stdout?: string
-  stderr?: string
-  error?: string
-  exitCode?: number
-  isError?: boolean
-}
-
-function followPath(raw: unknown, path: JsonPath): unknown | undefined {
-  let current: unknown = raw
-  for (const segment of path) {
-    if (typeof segment === "string") {
-      if (!isRecord(current)) return undefined
-      if (!Object.hasOwn(current, segment)) return undefined
-      current = current[segment]
-      continue
-    }
-    if (!Array.isArray(current)) return undefined
-    if (!Number.isInteger(segment) || segment < 0) return undefined
-    if (!Object.hasOwn(current, segment)) return undefined
-    current = current[segment]
-  }
-  return current
-}
-
-function extractMappedField(
-  raw: unknown,
-  paths: readonly JsonPath[] | undefined,
-  kind: "string",
-): string | undefined
-function extractMappedField(
-  raw: unknown,
-  paths: readonly JsonPath[] | undefined,
-  kind: "number",
-): number | undefined
-function extractMappedField(
-  raw: unknown,
-  paths: readonly JsonPath[] | undefined,
-  kind: "boolean",
-): boolean | undefined
-function extractMappedField(
-  raw: unknown,
-  paths: readonly JsonPath[] | undefined,
-  kind: "string" | "number" | "boolean",
-): string | number | boolean | undefined {
-  if (!paths) return undefined
-  for (const path of paths) {
-    const value = followPath(raw, path)
-    if (kind === "string" && typeof value === "string") return value
-    if (kind === "number" && typeof value === "number" && Number.isFinite(value)) return value
-    if (kind === "boolean" && typeof value === "boolean") return value
-  }
-  return undefined
-}
-
-function extractMappedScalars(raw: unknown, mapping: ToolOutputFieldPaths): MappedScalars {
-  const result: MappedScalars = {}
-  const text = extractMappedField(raw, mapping.text, "string")
-  if (text !== undefined) result.text = text
-  const stdout = extractMappedField(raw, mapping.stdout, "string")
-  if (stdout !== undefined) result.stdout = stdout
-  const stderr = extractMappedField(raw, mapping.stderr, "string")
-  if (stderr !== undefined) result.stderr = stderr
-  const error = extractMappedField(raw, mapping.error, "string")
-  if (error !== undefined) result.error = error
-  const exitCode = extractMappedField(raw, mapping.exitCode, "number")
-  if (exitCode !== undefined) result.exitCode = exitCode
-  const isError = extractMappedField(raw, mapping.isError, "boolean")
-  if (isError !== undefined) result.isError = isError
-  return result
-}
-
-function viewFromMappedScalars(raw: unknown, mapped: MappedScalars): ToolOutputView | undefined {
+function viewFromMappedScalars(raw: unknown, mapped: ToolOutput): ToolOutputView | undefined {
+  const truncation = mapped.truncated ? { truncated: mapped.truncated } : {}
   if (
     mapped.exitCode !== undefined &&
     (mapped.stdout !== undefined || mapped.stderr !== undefined)
@@ -187,40 +115,31 @@ function viewFromMappedScalars(raw: unknown, mapped: MappedScalars): ToolOutputV
       stdout: mapped.stdout ?? "",
       stderr: mapped.stderr ?? "",
       exitCode: mapped.exitCode,
+      ...truncation,
     }
   }
 
   if (mapped.error !== undefined) {
-    return { kind: "error", message: mapped.error }
+    return { kind: "error", message: mapped.error, ...truncation }
   }
 
   if (mapped.isError === true) {
     const message =
       mapped.text !== undefined && mapped.text.length > 0 ? mapped.text : prettyJson(raw)
-    return { kind: "error", message }
+    return { kind: "error", message, ...truncation }
   }
 
   if (mapped.text !== undefined) {
-    const view: { kind: "text"; text: string; exitCode?: number } = {
+    const view: { kind: "text"; text: string; exitCode?: number; truncated?: true } = {
       kind: "text",
       text: mapped.text,
+      ...truncation,
     }
     if (mapped.exitCode !== undefined) view.exitCode = mapped.exitCode
     return view
   }
 
   return undefined
-}
-
-function normalizeToolOutputMapped(
-  rawOutput: unknown,
-  mapping: ToolOutputFieldPaths,
-): ToolOutputView | undefined {
-  if (rawOutput === undefined || rawOutput === null || rawOutput === "") {
-    return { kind: "empty" }
-  }
-  const mapped = extractMappedScalars(rawOutput, mapping)
-  return viewFromMappedScalars(rawOutput, mapped)
 }
 
 function isFlatScalarObject(obj: Record<string, unknown>): boolean {
@@ -328,13 +247,7 @@ export function normalizeToolOutputGeneric(rawOutput: unknown): ToolOutputView {
   return { kind: "json", json: prettyJson(rawOutput) }
 }
 
-export function normalizeToolOutput(
-  rawOutput: unknown,
-  mapping?: ToolOutputFieldPaths,
-): ToolOutputView {
-  if (mapping !== undefined && Object.keys(mapping).length > 0) {
-    const mappedView = normalizeToolOutputMapped(rawOutput, mapping)
-    if (mappedView !== undefined) return mappedView
-  }
-  return normalizeToolOutputGeneric(rawOutput)
+export function normalizeToolOutput(rawOutput: unknown, output?: ToolOutput): ToolOutputView {
+  const canonical = output === undefined ? undefined : viewFromMappedScalars(rawOutput, output)
+  return canonical ?? normalizeToolOutputGeneric(rawOutput)
 }

@@ -27,5 +27,3 @@ export type DefaultToolOutputMapping = {
 export type EffectiveToolOutputMapping = Omit<DefaultToolOutputMapping, "verifiedAgainst"> & {
   readonly verifiedAgainst?: VerifiedAgainst
 }
-
-export type ToolOutputMappingsProjection = Readonly<Record<string, ToolOutputFieldPaths>>

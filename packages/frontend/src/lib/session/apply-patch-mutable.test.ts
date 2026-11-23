@@ -15,6 +15,7 @@ import {
   createInitialSessionState,
   reduce,
   stateToSessionUpdates,
+  TOOL_OUTPUT_META_KEY,
 } from "@drive-coding/core/session"
 import { describe, expect, it } from "vitest"
 import type {
@@ -468,4 +469,24 @@ describe("createdAt שורד reload — snapshot של הליבה → bubbles", (
     expect(assistant?.createdAt).toBe(Date.parse(ts))
     expect(assistant?.createdAt).not.toBe(0)
   })
+})
+
+it("copies canonical tool output when creating or updating a bubble", () => {
+  const bubbles: Bubble[] = []
+  const mappers = { mapToolContent: stubMapToolContent, mapLocations: stubMapLocations }
+  const initial = createInitialSessionState({ sessionId: "output" })
+  const create = reduce(initial, {
+    sessionUpdate: "tool_call_update",
+    toolCallId: "shell",
+    _meta: { [TOOL_OUTPUT_META_KEY]: { set: { text: "first" } } },
+  })
+  applyPatchMutable(bubbles, create.patches, mappers)
+  expect(bubbles[0]).toMatchObject({ toolCall: { output: { text: "first" } } })
+  const update = reduce(create.state, {
+    sessionUpdate: "tool_call_update",
+    toolCallId: "shell",
+    _meta: { [TOOL_OUTPUT_META_KEY]: { append: { text: " tail" }, set: { exitCode: 3 }, truncated: true } },
+  })
+  applyPatchMutable(bubbles, update.patches, mappers)
+  expect(bubbles[0]).toMatchObject({ toolCall: { output: { text: "first tail", exitCode: 3, truncated: true } } })
 })

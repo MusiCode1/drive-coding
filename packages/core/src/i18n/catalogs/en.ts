@@ -528,6 +528,7 @@ export const en: Catalog = {
   "connect.cwd.combo.loadError": "Failed to load folders",
   // ─── tool output (tool-render-fidelity) ───
   "chat.tool.output.exitCode": "Exit code",
+  "chat.tool.output.truncatedHead": "Beginning of output truncated — showing the end",
   "chat.tool.output.stderr": "stderr",
   "chat.tool.output.empty": "No output",
   // ─── notifications ─── (slice notify-local)

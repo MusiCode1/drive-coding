@@ -536,6 +536,7 @@ export type MessageKey =
   | "connect.cwd.combo.loadError"
   // ─── tool output (tool-render-fidelity) ───
   | "chat.tool.output.exitCode"
+  | "chat.tool.output.truncatedHead"
   | "chat.tool.output.stderr"
   | "chat.tool.output.empty"
   // ─── notifications ─── (slice notify-local)

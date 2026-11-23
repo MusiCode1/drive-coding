@@ -16,6 +16,7 @@
  * `subFrames`); מה שאסור הוא להוסיף אותם אד-הוק כתחליף לחשיבה על המודל.
  */
 
+import type { ToolOutput } from "@drive-coding/core/session"
 export type Segment = {
   id: string
   text: string
@@ -147,6 +148,7 @@ export type ToolCall = {
   kind?: string
   /** פלט גולמי שהוחזר על ידי הכלי (מתוך ACP rawOutput). */
   result?: unknown
+  output?: ToolOutput
   // ─── slice 16 (ACP content) ───
   content?: ToolContent[]
   locations?: ToolLocation[]

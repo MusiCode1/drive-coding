@@ -8,7 +8,6 @@
 import ChevronRightIcon from "@lucide/svelte/icons/chevron-right"
 import { getChatScroll, getI18n } from "$lib/context"
 import type { Bubble } from "$lib/types/bubble"
-import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
 import { stableBubbleKey } from "$lib/util/bubble-key"
 import BubbleRenderer from "../BubbleRenderer.svelte"
 import {
@@ -23,12 +22,10 @@ let {
   bubbles,
   allBubbles,
   depth = 0,
-  outputMapping,
 }: {
   bubbles: Bubble[]
   allBubbles: readonly Bubble[]
   depth?: number
-  outputMapping?: ToolOutputFieldPaths
 } = $props()
 
 const t = getI18n().t
@@ -90,7 +87,7 @@ function toggleOpen(): void {
   {#if open}
     <div class="activity-group-body flex flex-col gap-5 pt-5">
       {#each bubbles as b (stableBubbleKey(b, allBubbles))}
-        <BubbleRenderer bubble={b} {depth} {outputMapping} />
+        <BubbleRenderer bubble={b} {depth} />
       {/each}
     </div>
   {/if}

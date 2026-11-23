@@ -275,158 +275,46 @@ describe("normalizeToolOutput", () => {
   })
 })
 
-const CODEX_MAPPING = {
-  text: [["formatted_output"], ["result", "content", 0, "text"]],
-  exitCode: [["exit_code"]],
-} as const
-
-describe("normalizeToolOutput — mapped paths", () => {
-  it("Codex formatted_output + exit_code → text + exitCode", () => {
-    expect(normalizeToolOutput({ formatted_output: "ok", exit_code: 0 }, CODEX_MAPPING)).toEqual({
+describe("normalizeToolOutput — canonical values", () => {
+  it("renders canonical text and exit code without raw output", () => {
+    expect(normalizeToolOutput(undefined, { text: "command tail", exitCode: 3 })).toEqual({
       kind: "text",
-      text: "ok",
-      exitCode: 0,
+      text: "command tail",
+      exitCode: 3,
     })
   })
 
-  it("Codex nested result.content[0].text with error:null → text, not error null", () => {
-    expect(
-      normalizeToolOutput(
-        {
-          error: null,
-          result: { content: [{ type: "string", text: "nested" }] },
-        },
-        CODEX_MAPPING,
-      ),
-    ).toEqual({ kind: "text", text: "nested", exitCode: undefined })
-  })
-
-  it("missing key on first path, second path wins", () => {
-    const mapping = { text: [["missing"], ["formatted_output"]] } as const
-    expect(normalizeToolOutput({ formatted_output: "win" }, mapping)).toEqual({
+  it("preserves truncation on text, terminal and error views", () => {
+    expect(normalizeToolOutput(null, { text: "tail", truncated: true })).toEqual({
       kind: "text",
-      text: "win",
+      text: "tail",
+      truncated: true,
     })
-  })
-
-  it("wrong-type value on first path, second path wins for text", () => {
-    const mapping = { text: [["n"], ["t"]] } as const
-    expect(normalizeToolOutput({ n: 5, t: "ok" }, mapping)).toEqual({
-      kind: "text",
-      text: "ok",
-    })
-  })
-
-  it("string at mapped exitCode path is rejected", () => {
-    const mapping = { exitCode: [["s"]], text: [["s"]] } as const
-    expect(normalizeToolOutput({ s: "0" }, mapping)).toEqual({
-      kind: "text",
-      text: "0",
-    })
-  })
-
-  it("non-boolean at mapped isError path tries next path", () => {
-    const mapping = { isError: [["flag"], ["ok"]], text: [["msg"]] } as const
-    expect(normalizeToolOutput({ flag: 0, ok: true, msg: "bad" }, mapping)).toEqual({
-      kind: "error",
-      message: "bad",
-    })
-  })
-
-  it("missing object key tries next path", () => {
-    const mapping = { text: [["no_such"], ["formatted_output"]] } as const
-    expect(normalizeToolOutput({ formatted_output: "y" }, mapping)).toEqual({
-      kind: "text",
-      text: "y",
-    })
-  })
-
-  it("array index out of range falls through", () => {
-    const mapping = { text: [["items", 99, "x"], ["formatted_output"]] } as const
-    expect(normalizeToolOutput({ formatted_output: "z" }, mapping)).toEqual({
-      kind: "text",
-      text: "z",
-    })
-  })
-
-  it("inherited property is not accessible", () => {
-    const proto = { inherited: "nope" }
-    const raw = Object.create(proto) as Record<string, unknown>
-    raw.formatted_output = "own"
-    const mapping = { text: [["inherited"], ["formatted_output"]] } as const
-    expect(normalizeToolOutput(raw, mapping)).toEqual({ kind: "text", text: "own" })
-  })
-
-  it("string segment on array rejects path", () => {
-    const mapping = { text: [["0"]] } as const
-    expect(normalizeToolOutput(["a"], mapping)).toEqual({ kind: "json", json: prettyJson(["a"]) })
-  })
-
-  it("exitCode + text without stdout/stderr → text + exitCode, not terminal", () => {
-    expect(normalizeToolOutput({ formatted_output: "t", exit_code: 2 }, CODEX_MAPPING)).toEqual({
-      kind: "text",
-      text: "t",
-      exitCode: 2,
-    })
-  })
-
-  it("exitCode + stdout/stderr → terminal", () => {
-    const mapping = {
-      exitCode: [["exitCode"]],
-      stdout: [["stdout"]],
-      stderr: [["stderr"]],
-    } as const
-    expect(normalizeToolOutput({ exitCode: 1, stdout: "out", stderr: "err" }, mapping)).toEqual({
+    expect(normalizeToolOutput(null, { stdout: "tail", exitCode: 0, truncated: true })).toEqual({
       kind: "terminal",
-      stdout: "out",
-      stderr: "err",
-      exitCode: 1,
+      stdout: "tail",
+      stderr: "",
+      exitCode: 0,
+      truncated: true,
     })
-  })
-
-  it("mapped error string → error view", () => {
-    const mapping = { error: [["message"]] } as const
-    expect(normalizeToolOutput({ message: "fail" }, mapping)).toEqual({
+    expect(normalizeToolOutput(null, { error: "tail", truncated: true })).toEqual({
       kind: "error",
-      message: "fail",
+      message: "tail",
+      truncated: true,
     })
   })
 
-  it("isError:true + mapped text → error with text", () => {
-    const mapping = { isError: [["isError"]], text: [["content"]] } as const
-    expect(normalizeToolOutput({ isError: true, content: "bad" }, mapping)).toEqual({
+  it("shows an error derived from canonical text", () => {
+    expect(normalizeToolOutput(undefined, { text: "failed", isError: true })).toEqual({
       kind: "error",
-      message: "bad",
+      message: "failed",
     })
   })
 
-  it("isError:true without extracted text → error with prettyJson(raw)", () => {
-    const mapping = { isError: [["isError"]], text: [["missing"]] } as const
-    const raw = { isError: true, code: 1 }
-    expect(normalizeToolOutput(raw, mapping)).toEqual({
-      kind: "error",
-      message: prettyJson(raw),
-    })
-  })
-
-  it("partial mapping with only exitCode falls back to generic", () => {
-    const mapping = { exitCode: [["exit_code"]] } as const
-    expect(normalizeToolOutput({ formatted_output: "ok", exit_code: 0 }, mapping)).toEqual({
-      kind: "stat",
-      stats: [
-        { key: "formatted_output", value: "ok" },
-        { key: "exit_code", value: "0" },
-      ],
-    })
-  })
-
-  it("without mapping matches prior generic behavior for Codex stat shape", () => {
-    expect(normalizeToolOutput({ formatted_output: "ok", exit_code: 0 })).toEqual({
-      kind: "stat",
-      stats: [
-        { key: "formatted_output", value: "ok" },
-        { key: "exit_code", value: "0" },
-      ],
-    })
+  it("falls through to the generic view if canonical fields do not describe a view", () => {
+    const raw = { exit_code: 1 }
+    const expected = { kind: "stat", stats: [{ key: "exit_code", value: "1" }] }
+    expect(normalizeToolOutput(raw, { exitCode: 1 })).toEqual(expected)
+    expect(normalizeToolOutput(raw)).toEqual(expected)
   })
 })

@@ -72,14 +72,6 @@ describe("Codex canonical output contract", () => {
     expect(toolOutput?.fields.text).toContainEqual({ from: "raw", path: ["formatted_output"] })
   })
 
-  it("preserves the interim raw path projection", async () => {
-    const { getToolOutputMappingsProjection } = await import("./tool-output-mappings.js")
-    expect(getToolOutputMappingsProjection().codex).toEqual({
-      text: [["result", "content", 0, "text"], ["formatted_output"]],
-      exitCode: [["exit_code"]],
-    })
-  })
-
   it("checks classification of measured keys and provenance with negative controls", async () => {
     const { getToolOutputRules } = await import("./tool-output-mappings.js")
     const { codex: observed } = JSON.parse(

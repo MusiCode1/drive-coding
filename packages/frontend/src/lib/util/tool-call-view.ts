@@ -1,5 +1,4 @@
 import type { ToolCall, ToolContent, ToolLocation } from "$lib/types/bubble"
-import type { ToolOutputFieldPaths } from "$lib/types/tool-output"
 import {
   formatToolInput,
   normalizeToolOutput,
@@ -31,7 +30,6 @@ export type ToolCallView = {
 
 export type NormalizeToolContext = {
   narration?: string
-  outputMapping?: ToolOutputFieldPaths
 }
 
 const GENERIC_TITLES = new Set([
@@ -160,7 +158,7 @@ export function pickSummary(
 
 export function normalizeToolCall(tc: ToolCall, ctx?: NormalizeToolContext): ToolCallView {
   const input = formatToolInput(tc.args)
-  const output = normalizeToolOutput(tc.result, ctx?.outputMapping)
+  const output = normalizeToolOutput(tc.result, tc.output)
   const richContent = tc.content ?? []
   const locations = tc.locations ?? []
   const { summary, summarySource } = pickSummary(tc, input, ctx)
