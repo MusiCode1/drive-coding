@@ -10,19 +10,12 @@
  * from set size; `via` derives from row transports (ws wins over http).
  */
 
-import type { CliKind } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
-import { loadCliSpecsOverride } from "@drive-coding/provider/config"
-import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/connection"
-import {
-  connectCodexInProcess,
-  connectInProcess,
-  connectSpawn,
-  decodeWireLine,
-} from "@drive-coding/provider/connection"
+import { decodeWireLine, type ProviderConnection } from "@drive-coding/provider/connection"
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
 import { httpCacheInvalidateAll } from "../delivery/http-cache.js"
 import type { WireRecorder, WireSession } from "../delivery/wire-recorder.js"
+import type { SidecarConnectOpts } from "./connect-via-sidecar.js"
 import {
   connCharterAtConnect,
   consumeConnCharter,
@@ -32,7 +25,6 @@ import { deriveLastSeenAt, deriveVia, syncAttached } from "./connection-registry
 import { openProviderConnection } from "./open-connection.js"
 
 const wireLog = createLogger("backend.acp.wire")
-const cfgLog = createLogger("backend.acp.config")
 
 export type ConnectionVia = "ws" | "http"
 
@@ -59,7 +51,7 @@ export type ConnectionRegistry = {
   connect(
     agentId: string,
     cliKind: SpawnBridgeInput["cliKind"],
-    opts: ConnectOpts,
+    opts: SidecarConnectOpts,
   ): Promise<ProviderConnection>
 
   get(agentId: string): ProviderConnection | undefined

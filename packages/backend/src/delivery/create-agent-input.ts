@@ -8,6 +8,8 @@
 import { CliId, type CreateAgentInput, PermissionPolicy, validateCwd } from "@drive-coding/core"
 import { getCliSpec, getEffectiveCliKinds } from "@drive-coding/provider/config"
 import { type } from "arktype"
+import { sidecarKinds } from "../acp/connect-via-sidecar.js"
+import { encodeSidecarAgentEnv, SIDECAR_INPUT_ENV_LIMIT } from "../agents/sidecar-agent-env.js"
 import type { CreateAndSpawnInput } from "../app/agent-orchestrator.js"
 
 /**
@@ -61,6 +63,19 @@ export function parseCreateAgentBody(
     return {
       ok: false,
       error: { status: 400, body: { error: `invalid cwd: ${e.kind}`, detail: e } },
+    }
+  }
+
+  if (parsed.env !== undefined && sidecarKinds(env).has(parsed.cliKind)) {
+    const size = encodeSidecarAgentEnv(parsed.env).length
+    if (size > SIDECAR_INPUT_ENV_LIMIT) {
+      return {
+        ok: false,
+        error: {
+          status: 400,
+          body: { error: `agent env too large: ${size} > ${SIDECAR_INPUT_ENV_LIMIT} (encoded)` },
+        },
+      }
     }
   }
 

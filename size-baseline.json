@@ -38,10 +38,10 @@
       "codeLines": 143
     },
     "packages/backend/src/acp/connection-registry.ts": {
-      "metric": 349,
+      "metric": 341,
       "impurity": 6,
       "class": "mixed",
-      "codeLines": 287
+      "codeLines": 279
     },
     "packages/backend/src/agents/registry.ts": {
       "metric": 64,

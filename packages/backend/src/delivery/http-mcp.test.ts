@@ -142,12 +142,13 @@ function makeOrchestrator(registry: AgentRegistry): AgentOrchestrator {
   }
 }
 
-function makeApp(opts?: { mcpHttp?: string }) {
+function makeApp(opts?: { mcpHttp?: string; sidecar?: string }) {
   // Hermetic: without this, displayName comes from the machine's ~/.config/drive-coding/cli-specs.jsonc
   // (measured 18/11/2026: a configured machine returned its own display name and failed the test).
   const env: NodeJS.ProcessEnv = {
     CLI_SPECS_FILE: "/nonexistent/drive-coding-test/cli-specs.jsonc",
   }
+  env.AGENT_SIDECAR = opts?.sidecar
   if (opts?.mcpHttp !== undefined) env.MCP_HTTP = opts.mcpHttp
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
@@ -410,6 +411,29 @@ describe("session_open / session_close (slice session-bus-mcp C1)", () => {
         permissionPolicy: "allow_once",
       }),
     )
+  })
+
+  it("counts the MCP base and parent against the sidecar env limit before creating an agent", async () => {
+    const { app, orchestrator, registry } = makeApp({ sidecar: "cursor" })
+    const client = await connectClient(app)
+    try {
+      const result = await client.callTool({
+        name: "session_open",
+        arguments: {
+          cli: "cursor",
+          cwd: "/tmp",
+          env: { PADDING: "x".repeat(46_000) },
+          base: "http://127.0.0.1:4000",
+          parent: "synthetic-parent",
+        },
+      })
+      expect(isToolError(result)).toBe(true)
+      expect(toolText(result)).toMatch(/^agent env too large: \d+ > 61440 \(encoded\)$/)
+      expect(orchestrator.createAndSpawn).not.toHaveBeenCalled()
+      expect(await registry.list()).toEqual([])
+    } finally {
+      await client.close()
+    }
   })
 
   it("session_open passes env and parent through to createAndSpawn", async () => {

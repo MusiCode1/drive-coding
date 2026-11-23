@@ -22,15 +22,15 @@
 
 import { PassThrough } from "node:stream"
 import { extractPromptCaps } from "@drive-coding/core/acp/extract-prompt-caps"
-import { resolveCodexPath } from "./codex-path.js"
-import { createCodexVoiceStreams } from "./voice-streams.js"
+import { staticCapsFor } from "../../connection/capabilities-static.js"
+import { startCodexAcp } from "../../connection/codex-acp-startup.js"
+import type { ConnectOpts, ProviderConnection, WireFrame } from "../../connection/types.js"
 import { createTurnTracker } from "../../shared/turn-tracker.js"
 import { decodeWireLine } from "../../shared/wire-decode.js"
 import type { BridgeCrashInfo } from "../../spawn/index.js"
 import type { NormalizedCapabilities } from "../../types.js"
-import { staticCapsFor } from "../../connection/capabilities-static.js"
-import { startCodexAcp } from "../../connection/codex-acp-startup.js"
-import type { ConnectOpts, ProviderConnection, WireFrame } from "../../connection/types.js"
+import { resolveCodexPath } from "./codex-path.js"
+import { createCodexVoiceStreams } from "./voice-streams.js"
 
 export { resolveCodexPath }
 
@@ -143,6 +143,7 @@ export async function connectCodexInProcess(opts: ConnectOpts): Promise<Provider
     cwd: opts.cwd,
     codexPath,
     instructions,
+    env: opts.agentEnv,
     isClosed: () => closed,
     onStartupError: (err) => {
       emitCrash({
