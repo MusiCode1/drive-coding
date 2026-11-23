@@ -21,6 +21,7 @@
  */
 
 import { createHmac, randomBytes } from "node:crypto"
+import { isMessageGrantVerb } from "@drive-coding/core/schemas/scope-policy"
 
 /** Single grep term for the stance above. Referenced from every derived module. */
 export const NOT_A_SECURITY_BOUNDARY =
@@ -113,9 +114,28 @@ export function subtreeIds(
 }
 
 const allowAlwaysGrants = new Set<string>()
+const replyGrants = new Set<string>()
+const closingAgents = new Set<string>()
+
+/** Tombstone kept until restart so a late dispatch cannot restore a grant. */
+export function markClosing(agentId: string): void {
+  closingAgents.add(agentId)
+}
+
+/** Grants the recipient permission to reply to the sender. */
+export function recordReplyGrant(recipientId: string, senderId: string): void {
+  if (closingAgents.has(recipientId) || closingAgents.has(senderId)) return
+  replyGrants.add(grantKey(recipientId, senderId, "send"))
+}
+
+export function recordPromptDispatch(token: string | undefined, recipientId: string): void {
+  if (!token || isMaster(token)) return
+  const caller = verifyToken(token)
+  if (caller) recordReplyGrant(recipientId, caller.agentId)
+}
 
 function grantKey(callerId: string, targetId: string, verb: string): string {
-  return `${callerId}\0${targetId}\0${verb}`
+  return `${callerId}\0${targetId}\0${isMessageGrantVerb(verb) ? "message" : verb}`
 }
 
 /** Records an allow_always grant for subsequent authorizeWrite checks. */
@@ -130,15 +150,19 @@ export function hasAllowAlwaysGrant(callerId: string, targetId: string, verb: st
 /** Test hook — clears allow_always grants. */
 export function resetAllowAlwaysGrantsForTests(): void {
   allowAlwaysGrants.clear()
+  replyGrants.clear()
+  closingAgents.clear()
 }
 
-/** Drops allow_always grants where callerId or targetId matches (slice scope-accident-proofing C3). */
+/** Drops permanent and reply grants on either side of a closed session. */
 export function clearGrantsFor(agentId: string): void {
-  for (const key of [...allowAlwaysGrants]) {
-    const sep = key.indexOf("\0")
-    const callerId = key.slice(0, sep)
-    const targetId = key.slice(sep + 1, key.indexOf("\0", sep + 1))
-    if (callerId === agentId || targetId === agentId) allowAlwaysGrants.delete(key)
+  for (const grants of [allowAlwaysGrants, replyGrants]) {
+    for (const key of grants) {
+      const sep = key.indexOf("\0")
+      const callerId = key.slice(0, sep)
+      const targetId = key.slice(sep + 1, key.indexOf("\0", sep + 1))
+      if (callerId === agentId || targetId === agentId) grants.delete(key)
+    }
   }
 }
 
@@ -169,6 +193,8 @@ export async function authorizeWrite(input: AuthorizeWriteInput): Promise<"allow
 
   const callerId = verified.agentId
   if (hasAllowAlwaysGrant(callerId, targetId, verb)) return "allow"
+  if (isMessageGrantVerb(verb) && replyGrants.has(grantKey(callerId, targetId, verb)))
+    return "allow"
 
   const subtree = subtreeIds(agents, callerId)
   if (subtree.has(targetId)) return "allow"

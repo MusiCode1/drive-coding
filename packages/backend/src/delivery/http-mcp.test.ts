@@ -309,6 +309,64 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
   })
 })
 
+describe("session_open rollback after spawn", () => {
+  it.each([
+    { mode: "host unavailable", cause: "session host did not start: not-found" },
+    { mode: "timeout", cause: "session did not come up within 30s" },
+    { mode: "host throws", cause: "handshake failed" },
+    { mode: "record remains", cause: "handshake failed", status: "Agent close failed" },
+    { mode: "close throws", cause: "handshake failed", status: "Agent close failed" },
+    { mode: "lookup throws", cause: "handshake failed", status: "Agent close status unknown" },
+  ])("keeps the original error and verifies rollback ($mode)", async ({ mode, cause, status }) => {
+    const { app, registry, orchestrator, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    const close = vi.mocked(orchestrator.deleteAndKill)
+    let id = ""
+    let now = Date.now()
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now)
+    vi.mocked(agentSessionRegistry.getOrCreateHost).mockImplementation(async (agentId) => {
+      id = agentId
+      if (mode === "host unavailable") return { ok: false, reason: "not-found" }
+      if (mode === "timeout") {
+        // Advance the polling clock only when the waiter looks up the host.
+        vi.mocked(agentSessionRegistry.getHost).mockImplementationOnce(() => {
+          now += 31_000
+          return undefined
+        })
+        return { ok: true, entry: {} as never }
+      }
+      throw new Error(cause)
+    })
+    if (mode === "record remains") close.mockResolvedValueOnce(undefined)
+    if (mode === "close throws") close.mockRejectedValueOnce(new Error("close unavailable"))
+    if (mode === "lookup throws") {
+      vi.spyOn(registry, "get").mockRejectedValueOnce(new Error("lookup unavailable"))
+    }
+
+    try {
+      const result = await client.callTool({
+        name: "session_open",
+        arguments: { cli: "cursor", cwd: process.cwd() },
+      })
+      expect(isToolError(result)).toBe(true)
+      expect(id).not.toBe("")
+      expect(close).toHaveBeenCalledExactlyOnceWith(id)
+      expect(toolText(result)).toContain(cause)
+      expect(toolText(result)).toContain(status ?? "Agent removed")
+      expect(toolText(result)).toContain(`agent=${id}`)
+      if (!status) {
+        expect(toolText(result)).toContain("process termination was not verified")
+        expect(await registry.get(id)).toBeNull()
+      } else if (mode !== "lookup throws") {
+        expect(await registry.get(id)).not.toBeNull()
+      }
+    } finally {
+      clock.mockRestore()
+      await client.close()
+    }
+  })
+})
+
 describe("session_open / session_close (slice session-bus-mcp C1)", () => {
   it("session_open maps cli→cliKind, waits for sessionId, returns url", async () => {
     const { app, orchestrator } = makeApp()

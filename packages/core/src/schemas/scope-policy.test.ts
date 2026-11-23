@@ -2,20 +2,20 @@
  * scope-policy.test.ts — classifier + env parse (C1 TDD).
  */
 
+import { type } from "arktype"
 import { describe, expect, it } from "vitest"
 import { configDefault } from "../config/specs.js"
 import { RPC_METHODS } from "../session/rpc-methods.js"
-import { type } from "arktype"
 import {
   classifyScopeAction,
   parseScopePolicyValue,
   readScopePolicyFromEnv,
   resolveScopePolicy,
   resolveScopePolicySource,
-  ScopePolicyPerAgentPatchBodySchema,
-  ScopePolicyPatchBodySchema,
-  ScopePolicySnapshotSchema,
   type ScopePolicy,
+  ScopePolicyPatchBodySchema,
+  ScopePolicyPerAgentPatchBodySchema,
+  ScopePolicySnapshotSchema,
 } from "./scope-policy.js"
 
 describe("classifyScopeAction", () => {
@@ -25,12 +25,24 @@ describe("classifyScopeAction", () => {
     expect(classifyScopeAction("prompt")).toBe("message")
   })
 
+  it.each([
+    ["session/prompt", "session/cancel"],
+    ["send", "session/cancel"],
+    ["prompt", "cancel"],
+  ])("maps %s and %s to the same message policy", (first, second) => {
+    expect(classifyScopeAction(first)).toBe("message")
+    expect(classifyScopeAction(second)).toBe(classifyScopeAction(first))
+  })
+
+  it("keeps update outside the send and cancel policy", () => {
+    expect(classifyScopeAction("patch")).not.toBe(classifyScopeAction("send"))
+  })
+
   it("maps update verbs", () => {
     expect(classifyScopeAction("patch")).toBe("update")
     expect(classifyScopeAction("reply")).toBe("update")
     expect(classifyScopeAction(RPC_METHODS.setConfigOption)).toBe("update")
     expect(classifyScopeAction(RPC_METHODS.extMethod)).toBeUndefined()
-    expect(classifyScopeAction(RPC_METHODS.cancel)).toBe("update")
   })
 
   it("maps close verbs", () => {

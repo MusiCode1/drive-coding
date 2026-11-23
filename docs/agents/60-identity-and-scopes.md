@@ -15,8 +15,8 @@ routes:
   - PATCH /api/scope-policy
 mcp_tools:
   - session_whoami
-docs_version: 1.10.1
-updated: 2026-11-18
+docs_version: 1.10.3
+updated: 2026-11-21
 ---
 
 # Agent identity and scoped writes
@@ -46,12 +46,12 @@ Your **subtree** is the set of agent ids reachable via `parentAgentId` links, in
 
 ## What scoped writes protect
 
-`authorizeWrite()` (`agent-scope.ts:161-177`) is the single gate for dangerous writes (close, prompt, reconfigure) on **another** agent's session. It allows when:
+Scoped writes to one session use `authorizeWrite()` in `agent-scope.ts`. It allows when:
 
-- No token was sent → **`"allow"`** (`agent-scope.ts:164`).
+- No token was sent → **`"allow"`**.
 - Token is master key → allow.
 - Target id is inside the caller's subtree → allow.
-- Caller has a prior **allow_always** grant → allow.
+- Caller has a prior **allow_always** grant or an applicable reply grant → allow.
 - Otherwise → **`onEscalate`** asks the caller's session for permission (`scope-write.ts:37-75`).
 
 When escalation succeeds, the user (or parent agent) answers through **`POST /api/agents/:id/reply`** with a permission result (`reply.ts:40-67`).
@@ -87,11 +87,42 @@ Three independent global selectors — **`ask`**, **`allow`**, or **`deny`** —
 
 | Group | Examples |
 |-------|----------|
-| **message** | MCP `session_send`, RPC `session/prompt` |
-| **update** | HTTP `PATCH`, `POST …/reply`, RPC config/session control methods |
+| **message** | MCP `session_send`, RPC `session/prompt` and `session/cancel`, subscriptions |
+| **update** | HTTP `PATCH`, `POST …/reply`, viewer detach, RPC config/session control methods |
 | **close** | HTTP `DELETE` agent, MCP `session_close`, RPC `session/delete` |
 
 Unclassified RPC (e.g. `_drive/ext`) always **`ask`** on escalation even when all selectors are **`allow`**.
+
+### Permanent grants and reply grants
+
+A permanent grant for `send`, `session/prompt`, or `session/cancel` covers all three
+actions for the same caller and target. Other permanent grants apply to their own verb.
+
+When a caller with a valid scoped agent token dispatches a prompt through MCP
+`session_send` or RPC `session/prompt`, the recipient can send, prompt, or cancel a turn
+on that caller. The grant starts at dispatch. It still applies if the provider later
+rejects the prompt, and either agent's normal closure removes it. It applies only to
+that pair and those three actions. Cancellation, system notifications, `notify_parent`,
+and sends without a scoped agent token do not create it.
+
+### Agent HTTP write routes
+
+| Write | Scope decision |
+|-------|----------------|
+| `POST /api/agents` | Creation is exempt |
+| `DELETE /api/agents` | A valid scoped token closes its subtree and reports other agents in `skipped`. An invalid token returns `403` before closing any agent. With a master token or no token, the result is `{ closed, failed }` for the full fleet. |
+| `DELETE /api/agents/:id` | Close policy for the target |
+| `PATCH /api/agents/:id` | Update policy for the target |
+| `DELETE /api/agents/:id/connection` | Update policy for the target with the separate `detach` verb |
+| `POST /api/agents/:id/presence` | Viewer heartbeat is exempt |
+| `POST /api/agents/:id/reply` | Update policy for the target |
+| `POST /api/agents/:id/rpc` | Policy for the RPC action. The read-only `session/list` is exempt. |
+| `POST /api/agents/:id/subscribe` | Message policy for the subscriber |
+
+HTTP subscribe and MCP `session_subscribe` check the effective subscriber. A permanent
+`subscribe` grant lets the caller register that subscriber for events from any session.
+The prompt identifies both the subscriber and the watched session. `notifyOnDone` on
+agent creation currently registers without a subscriber scope decision.
 
 ### HTTP API
 

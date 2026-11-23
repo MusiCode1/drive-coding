@@ -91,13 +91,17 @@ export function parseScopePolicyValue(raw: string | undefined): ScopePolicy | un
 export function hasScopePolicyPatchKey(
   policies: typeof ScopePolicyPatchPoliciesSchema.infer,
 ): boolean {
-  return policies.message !== undefined || policies.update !== undefined || policies.close !== undefined
+  return (
+    policies.message !== undefined || policies.update !== undefined || policies.close !== undefined
+  )
 }
 
 export function hasScopePolicyPerAgentPatchKey(
   policies: typeof ScopePolicyPerAgentPatchPoliciesSchema.infer,
 ): boolean {
-  return policies.message !== undefined || policies.update !== undefined || policies.close !== undefined
+  return (
+    policies.message !== undefined || policies.update !== undefined || policies.close !== undefined
+  )
 }
 
 /** Pure merge for escalation steps 4–6 (deny wins; per-caller wins over global). */
@@ -124,20 +128,26 @@ export function resolveScopePolicySource(input: {
   return globalSource
 }
 
+/** Verbs that share a permanent messaging grant and are eligible for reply grants. */
+const messageGrantVerbs = new Set<string>(["send", RPC_METHODS.prompt, RPC_METHODS.cancel])
+
+export function isMessageGrantVerb(verb: string): boolean {
+  return messageGrantVerbs.has(verb)
+}
+
 export function classifyScopeAction(verb: string): ScopeAction | undefined {
   const canonical = canonicalRpcMethod(verb)
+  if (isMessageGrantVerb(canonical ?? verb) || verb === "subscribe") return "message"
   if (canonical !== undefined) {
     if (canonical === RPC_METHODS.listSessions) return undefined
     if (canonical === RPC_METHODS.extMethod) return undefined
-    if (canonical === RPC_METHODS.prompt) return "message"
     if (canonical === RPC_METHODS.deleteSession) return "close"
     return "update"
   }
   switch (verb) {
-    case "send":
-      return "message"
     case "close":
       return "close"
+    case "detach":
     case "patch":
     case "reply":
       return "update"

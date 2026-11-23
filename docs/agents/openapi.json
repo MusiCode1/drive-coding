@@ -681,6 +681,16 @@
               }
             }
           },
+          "403": {
+            "description": "Subscriber scope denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Agent not found",
             "content": {
@@ -790,7 +800,57 @@
         "summary": "DELETE /api/agents",
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Bulk close results. Scoped tokens select the caller's subtree.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["closed", "failed"],
+                  "properties": {
+                    "closed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "failed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "error"],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "skipped": {
+                      "type": "array",
+                      "description": "Agents outside the selected subtree. Present for scoped tokens.",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "reason"],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "const": "scope"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid scope token",
             "content": {
               "application/json": {
                 "schema": {
@@ -1492,7 +1552,17 @@
         ],
         "responses": {
           "204": {
-            "description": "Connection row removed"
+            "description": "Viewer connection released"
+          },
+          "403": {
+            "description": "Viewer detach scope denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
           },
           "404": {
             "description": "No connection registry for agent"
