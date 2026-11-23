@@ -10,7 +10,7 @@ describe("tool-output-mappings defaults", () => {
     expect(defaults.codex).toEqual({
       verifiedAgainst: {
         bridge: "@agentclientprotocol/codex-acp",
-        version: "2.5.0",
+        version: "2.5.0-dc.4",
       },
       fields: {
         text: [["result", "content", 0, "text"]],

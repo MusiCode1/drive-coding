@@ -1,19 +1,21 @@
 /**
  * Provider projection → FE normalization contract (tool-output-field-mappings).
- * Codex 2.5.0 rawOutput paths only. Command text lives in terminal_output_delta,
- * which this mapping does not reach.
+ * Codex 2.5.0-dc.4 rawOutput paths for the standard ACP client.
+ * Shell text arrives separately in _meta.terminal_output_delta.
  */
 
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { getToolOutputMappingsProjection } from "@drive-coding/provider/config"
-import { describe, expect, it } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { normalizeToolOutput } from "./tool-format"
 
 describe("tool output field mappings end-to-end contract", () => {
-  it("codex projection reads the 2.5.0 rawOutput shapes", () => {
-    process.env.CLI_SPECS_FILE = "NO_OVERRIDE_FILE_CONTRACT_TEST"
+  afterEach(() => vi.unstubAllEnvs())
+
+  it("codex projection reads MCP text and handles shell exit metadata without text", () => {
+    vi.stubEnv("CLI_SPECS_FILE", "NO_OVERRIDE_FILE_CONTRACT_TEST")
     const mapping = getToolOutputMappingsProjection(process.env).codex
     expect(mapping).toEqual({
       text: [["result", "content", 0, "text"]],
@@ -29,14 +31,15 @@ describe("tool output field mappings end-to-end contract", () => {
       kind: "stat",
       stats: [{ key: "exit_code", value: "0" }],
     })
+    expect(normalizeToolOutput(undefined, mapping)).toEqual({ kind: "empty" })
   })
 
-  it("static defaults record the 2.5.0 bridge and drop formatted_output", () => {
+  it("static defaults identify the packaged Codex bridge", () => {
     const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../../../../..")
     const jsonPath = join(repoRoot, "packages/provider/src/config/tool-output-mappings.json")
     const json = readFileSync(jsonPath, "utf8")
     expect(json).toContain("@agentclientprotocol/codex-acp")
-    expect(json).toContain("2.5.0")
+    expect(json).toContain('"2.5.0-dc.4"')
     expect(json).not.toContain("formatted_output")
   })
 })
