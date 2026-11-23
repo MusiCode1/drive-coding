@@ -17,9 +17,9 @@ export class SessionBusyError extends Error {
 }
 
 export function createSessionSwitch(deps: SessionSwitchDeps) {
-  function assertCanLoad(sessionId: string): void {
-    if (sessionId === deps.state.sessionId && deps.state.turnState !== "idle") {
-      throw new SessionBusyError("Cannot reload the current session while a turn is active")
+  function assertCanLoad(_sessionId: string): void {
+    if (deps.state.turnState !== "idle") {
+      throw new SessionBusyError("Cannot load a session while a turn is active")
     }
   }
 

@@ -33,6 +33,7 @@ import { registerHttpOptions } from "../delivery/http-options.js"
 import { registerProxyHttp } from "../delivery/http-proxy.js"
 import { registerReloadConfigHttp } from "../delivery/http-reload-config.js"
 import { registerHttpScopePolicy } from "../delivery/http-scope-policy.js"
+import { registerSessionLookupHttp } from "../delivery/http-session-lookup.js"
 import { registerTokenUsageHttp } from "../delivery/http-token-usage.js"
 import { registerTtsCapabilitiesHttp } from "../delivery/http-tts-capabilities.js"
 import { registerUsageHttp } from "../delivery/http-usage.js"
@@ -113,6 +114,7 @@ export async function buildApp(
 
   registerUsageHttp(app, { usageStore })
   registerTokenUsageHttp(app, { tokenUsageStore })
+  registerSessionLookupHttp(app, { sessionHistoryStore })
   registerCliUsageHttp(app, { sessionHistoryStore })
   registerCliAvailabilityHttp(app, env)
 

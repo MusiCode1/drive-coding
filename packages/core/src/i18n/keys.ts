@@ -523,6 +523,9 @@ export type MessageKey =
   | "sessionUrl.takeover.body"
   | "sessionUrl.takeover.confirm"
   | "sessionUrl.takeover.cancel"
+  | "sessionUrl.busy.title"
+  | "sessionUrl.busy.body"
+  | "sessionUrl.busy.back"
   // ─── sidebar-resize ───
   | "sidebar.resizeHandle"
   // ─── cwd-path-combo ───

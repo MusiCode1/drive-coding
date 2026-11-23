@@ -266,7 +266,7 @@ const SPECIAL = {
       400: jsonErrorResponse("Invalid JSON, params, method, or waitMs"),
       404: jsonErrorResponse("Agent connection not found"),
       409: {
-        description: "session/load targets the current session while a turn is active",
+        description: "any session/load while a turn is active",
         content: {
           "application/json": {
             schema: {
@@ -338,6 +338,26 @@ const SPECIAL = {
     responses: {
       ...noContentResponse("Project history cleared"),
       400: jsonErrorResponse("cwd required"),
+    },
+  },
+  "get /api/sessions/:cliKind/:sessionId": {
+    responses: {
+      200: {
+        description: "Session cwd and lastSeenAt from history store",
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                cwd: { type: "string" },
+                lastSeenAt: { type: "number" },
+              },
+              required: ["cwd", "lastSeenAt"],
+            },
+          },
+        },
+      },
+      404: jsonErrorResponse("unknown session"),
     },
   },
   "get /api/fs/file": {
@@ -513,8 +533,8 @@ if (!docsVersion) {
 }
 
 const { paths, count } = buildPaths()
-if (count !== 41) {
-  console.error(`🔴 expected 41 documentable operations, got ${count}`)
+if (count !== 42) {
+  console.error(`🔴 expected 42 documentable operations, got ${count}`)
   process.exit(1)
 }
 

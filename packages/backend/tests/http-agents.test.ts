@@ -33,6 +33,7 @@ function makeFakeSessionHistoryStore(): SessionHistoryStore {
     listUsageRecords: vi.fn(() => []),
     ingestUsageUpdate: vi.fn(),
     onTurnEnded: vi.fn(),
+    findSession: vi.fn(() => null),
     close: vi.fn(),
   } as unknown as SessionHistoryStore
 }
