@@ -1,3 +1,4 @@
+import type { ToolMetaKeyMode } from "@drive-coding/core/session"
 import {
   type JsonPath,
   type JsonPathSegment,
@@ -5,90 +6,112 @@ import {
   type ToolOutputField,
   type ToolOutputFieldPaths,
   type ToolOutputMappingOverride,
+  type ToolOutputMetaKeys,
 } from "./tool-output-field-types.js"
 
-const CANONICAL_FIELD_SET = new Set<string>(TOOL_OUTPUT_FIELDS)
+type Invalid = (reason: string) => void
 
-function isToolOutputField(key: string): key is ToolOutputField {
-  return CANONICAL_FIELD_SET.has(key)
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function validateJsonPathSegment(
-  segment: unknown,
-  kind: string,
-  context: string,
-): JsonPathSegment | null {
-  if (typeof segment === "string") {
-    if (segment.length === 0) {
-      console.warn(
-        `[cli-config-file] override["${kind}"].toolOutput.${context}: path segment must be non-empty string — skipping path`,
-      )
-      return null
-    }
-    return segment
-  }
-  if (typeof segment === "number" && Number.isInteger(segment) && segment >= 0) {
-    return segment
-  }
-  console.warn(
-    `[cli-config-file] override["${kind}"].toolOutput.${context}: path segment must be non-empty string or non-negative integer — skipping path`,
-  )
-  return null
+function validateNote(obj: Record<string, unknown>, context: string, invalid: Invalid): void {
+  if ("note" in obj && typeof obj.note !== "string") invalid(`${context}.note must be a string`)
 }
 
-function validateJsonPath(path: unknown, kind: string, field: string): JsonPath | null {
-  if (!Array.isArray(path) || path.length === 0) {
-    console.warn(
-      `[cli-config-file] override["${kind}"].toolOutput.fields["${field}"]: path must be a non-empty array — skipping path`,
-    )
-    return null
-  }
-  const segments: JsonPathSegment[] = []
-  for (const segment of path) {
-    const validated = validateJsonPathSegment(segment, kind, `fields["${field}"]`)
-    if (validated === null) return null
-    segments.push(validated)
-  }
-  return segments
+function isPathSegment(value: unknown): value is JsonPathSegment {
+  return typeof value === "string"
+    ? value.length > 0
+    : typeof value === "number" && Number.isInteger(value) && value >= 0
 }
 
-export function validateFieldPathsFromOverride(
-  raw: unknown,
-  kind: string,
-  strict: boolean,
-): ToolOutputFieldPaths | null {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    const msg = `override["${kind}"].toolOutput.fields must be an object`
-    if (strict) throw new Error(`[tool-output-mappings] ${msg}`)
-    console.warn(`[cli-config-file] ${msg} — skipping toolOutput`)
-    return null
+function parsePath(raw: unknown, context: string, invalid: Invalid): JsonPath | undefined {
+  if (isRecord(raw)) {
+    validateNote(raw, context, invalid)
+    raw = raw.path
   }
-  const obj = raw as Record<string, unknown>
-  const result: Partial<Record<ToolOutputField, JsonPath[]>> = {}
+  if (Array.isArray(raw) && raw.length > 0 && raw.every(isPathSegment)) return raw
+  invalid(`${context} must be a non-empty path of strings or non-negative integers`)
+  return undefined
+}
 
-  for (const [field, paths] of Object.entries(obj)) {
-    if (!isToolOutputField(field)) {
-      console.warn(
-        `[cli-config-file] override["${kind}"].toolOutput.fields: unknown field "${field}" — skipping field`,
-      )
+function parseFields(raw: unknown, invalid: Invalid): ToolOutputFieldPaths | undefined {
+  if (raw === undefined) return undefined
+  if (!isRecord(raw)) {
+    invalid("fields must be an object")
+    return undefined
+  }
+  const fields: Partial<Record<ToolOutputField, JsonPath[]>> = {}
+  for (const [key, value] of Object.entries(raw)) {
+    const field = TOOL_OUTPUT_FIELDS.find((field) => field === key)
+    if (!field) {
+      invalid(`fields: unknown field "${key}"`)
       continue
+    }
+    const context = `fields.${field}`
+    let paths = value
+    if (isRecord(value)) {
+      validateNote(value, context, invalid)
+      paths = value.paths
     }
     if (!Array.isArray(paths) || paths.length === 0) {
-      console.warn(
-        `[cli-config-file] override["${kind}"].toolOutput.fields["${field}"]: must be a non-empty array of paths — skipping field`,
-      )
+      invalid(`${context} must contain a non-empty list of paths`)
       continue
     }
-    const validatedPaths: JsonPath[] = []
-    for (const path of paths) {
-      const validated = validateJsonPath(path, kind, field)
-      if (validated !== null) validatedPaths.push(validated)
-    }
-    if (validatedPaths.length > 0) {
-      result[field] = validatedPaths
-    }
+    const valid = paths.flatMap((path, index) => {
+      const parsed = parsePath(path, `${context}[${index}]`, invalid)
+      return parsed === undefined ? [] : [parsed]
+    })
+    if (valid.length > 0) fields[field] = valid
   }
-  return result
+  return Object.keys(fields).length > 0 ? fields : undefined
+}
+
+function parseMetaKeys(raw: unknown, invalid: Invalid): ToolOutputMetaKeys | undefined {
+  if (raw === undefined) return undefined
+  if (!isRecord(raw)) {
+    invalid("metaKeys must be an object")
+    return undefined
+  }
+  const entries: [string, ToolMetaKeyMode][] = []
+  for (const [key, value] of Object.entries(raw)) {
+    const context = `metaKeys.${key}`
+    if (isRecord(value)) validateNote(value, context, invalid)
+    const mode = isRecord(value) ? value.mode : value
+    if (
+      key.length === 0 ||
+      (isRecord(value) && Object.keys(value).some((key) => key !== "mode" && key !== "note"))
+    ) {
+      invalid(`${context} must have a non-empty key and contain only a mode and optional note`)
+      continue
+    }
+    if (mode !== "append" && mode !== "replace" && mode !== "ignore") {
+      invalid(`${context} must classify the key as append, replace or ignore`)
+      continue
+    }
+    entries.push([key, mode])
+  }
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
+/** Normalizes the configured shapes and leaves cross-field validation to the merged rules. */
+export function parseToolOutputMapping(
+  raw: unknown,
+  invalid: Invalid,
+): ToolOutputMappingOverride | undefined {
+  if (!isRecord(raw)) {
+    invalid("must be an object")
+    return undefined
+  }
+  validateNote(raw, "toolOutput", invalid)
+  const fields = parseFields(raw.fields, invalid)
+  const metaKeys = parseMetaKeys(raw.metaKeys, invalid)
+  if (!fields && !metaKeys) {
+    if (raw.fields === undefined && raw.metaKeys === undefined)
+      invalid("must include fields or metaKeys")
+    return undefined
+  }
+  return { ...(fields ? { fields } : {}), ...(metaKeys ? { metaKeys } : {}) }
 }
 
 /** Fail-open parser for cli-specs override `toolOutput` block. */
@@ -97,22 +120,7 @@ export function parseToolOutputOverride(
   raw: unknown,
 ): ToolOutputMappingOverride | undefined {
   if (raw === undefined) return undefined
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    console.warn(
-      `[cli-config-file] override["${kind}"].toolOutput must be an object — skipping field`,
-    )
-    return undefined
-  }
-  const obj = raw as Record<string, unknown>
-  if (!("fields" in obj)) {
-    console.warn(
-      `[cli-config-file] override["${kind}"].toolOutput must include fields — skipping field`,
-    )
-    return undefined
-  }
-  const fields = validateFieldPathsFromOverride(obj.fields, kind, false)
-  if (fields === null || Object.keys(fields).length === 0) {
-    return undefined
-  }
-  return { fields }
+  return parseToolOutputMapping(raw, (reason) => {
+    console.warn(`[cli-config-file] override["${kind}"].toolOutput: ${reason}`)
+  })
 }

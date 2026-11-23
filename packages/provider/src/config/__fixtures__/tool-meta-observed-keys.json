@@ -1,0 +1,15 @@
+{
+  "codex": {
+    "bridge": "@agentclientprotocol/codex-acp",
+    "version": "2.5.0-dc.4",
+    "keys": [
+      "is_mcp_tool_call",
+      "mcp_output_delta",
+      "terminal_exit",
+      "terminal_info",
+      "terminal_output",
+      "terminal_output_delta"
+    ],
+    "source": "Three ACP wire recordings for 2.5.0, measured 2026-11-23. AcpToolCallRenderer at f18d0ef in the packaged 2.5.0-dc.4 bridge adds terminal_output and mcp_output_delta to the observed set."
+  }
+}

@@ -4,9 +4,35 @@
       "bridge": "@agentclientprotocol/codex-acp",
       "version": "2.5.0-dc.4"
     },
+    "note": "Verified 2026-11-23 against 2.5.0 wire recordings and AcpToolCallRenderer at f18d0ef. Terminal shell text arrives in tool metadata without rawOutput. ClientCapabilities.terminalOutputKey selects the key based on client capabilities.",
+    "metaKeys": {
+      "terminal_output_delta": "append",
+      "terminal_output": {
+        "mode": "append",
+        "note": "Used when the client advertises terminal_output."
+      },
+      "mcp_output_delta": {
+        "mode": "replace",
+        "note": "Contains the complete trimmed progress message from McpToolReporter.progress."
+      },
+      "terminal_info": "replace",
+      "terminal_exit": "replace",
+      "is_mcp_tool_call": "replace"
+    },
     "fields": {
-      "text": [["result", "content", 0, "text"]],
-      "exitCode": [["exit_code"]]
+      "text": [
+        ["$meta", "terminal_output_delta", "data"],
+        ["$meta", "terminal_output", "data"],
+        ["result", "content", 0, "text"],
+        {
+          "path": ["formatted_output"],
+          "note": "Legacy pinned bridge: @agentclientprotocol/codex-acp 0.0.20–1.13.x (84eceb1 through removal in 966a544), also measured in @musicode1/codex-acp 1.0.2 (c5fbbb5c)."
+        }
+      ],
+      "exitCode": {
+        "paths": [["$meta", "terminal_exit", "exit_code"], ["exit_code"]],
+        "note": "The raw exit_code comes from commandEndRawOutput for commands without a terminal."
+      }
     }
   }
 }

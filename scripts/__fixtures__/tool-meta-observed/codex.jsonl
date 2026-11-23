@@ -1,0 +1,4 @@
+{"raw":"{\"id\":0,\"result\":{\"agentInfo\":{\"name\":\"fixture-bridge\",\"version\":\"1.0.0\"}}}"}
+{"raw":"{\"method\":\"session/update\",\"params\":{\"update\":{\"sessionUpdate\":\"tool_call\",\"_meta\":{\"stable\":1}}}}"}
+{"raw":"{\"method\":\"session/update\",\"params\":{\"update\":{\"sessionUpdate\":\"tool_call_update\",\"_meta\":{\"stable\":2,\"stream\":{\"data\":\"synthetic private text\"}}}}}"}
+{"raw":"{\"method\":\"session/update\",\"params\":{\"update\":{\"sessionUpdate\":\"agent_message_chunk\",\"_meta\":{\"unrelated\":true}}}}"}

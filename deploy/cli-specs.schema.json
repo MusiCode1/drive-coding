@@ -66,7 +66,7 @@
         },
         "toolOutput": {
           "$ref": "#/definitions/toolOutputOverride",
-          "description": "Per-CLI raw tool output field paths for FE normalization. Merged with built-in defaults from provider; only fields are projected to the frontend."
+          "description": "Per-CLI tool output paths and metadata classifications. The backend merges these with the packaged defaults."
         }
       },
       "additionalProperties": false
@@ -79,35 +79,88 @@
       "type": "array",
       "minItems": 1,
       "items": { "$ref": "#/definitions/toolOutputPathSegment" },
-      "description": "Non-empty ordered path into raw tool output JSON."
+      "description": "Non-empty ordered path into raw tool output. For a metadata source, use $meta as the first segment, followed by a classified key and the path within its value."
     },
     "toolOutputPathList": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/definitions/toolOutputPath" },
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/toolOutputPath" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path"],
+            "properties": {
+              "path": { "$ref": "#/definitions/toolOutputPath" },
+              "note": { "type": "string" }
+            }
+          }
+        ]
+      },
       "description": "Alternative paths tried in order until one yields the expected type."
+    },
+    "toolOutputField": {
+      "oneOf": [
+        { "$ref": "#/definitions/toolOutputPathList" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["paths"],
+          "properties": {
+            "paths": { "$ref": "#/definitions/toolOutputPathList" },
+            "note": { "type": "string" }
+          }
+        }
+      ]
     },
     "toolOutputFields": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "text": { "$ref": "#/definitions/toolOutputPathList" },
-        "exitCode": { "$ref": "#/definitions/toolOutputPathList" },
-        "stdout": { "$ref": "#/definitions/toolOutputPathList" },
-        "stderr": { "$ref": "#/definitions/toolOutputPathList" },
-        "error": { "$ref": "#/definitions/toolOutputPathList" },
-        "isError": { "$ref": "#/definitions/toolOutputPathList" }
+        "text": { "$ref": "#/definitions/toolOutputField" },
+        "exitCode": { "$ref": "#/definitions/toolOutputField" },
+        "stdout": { "$ref": "#/definitions/toolOutputField" },
+        "stderr": { "$ref": "#/definitions/toolOutputField" },
+        "error": { "$ref": "#/definitions/toolOutputField" },
+        "isError": { "$ref": "#/definitions/toolOutputField" }
       },
       "description": "Canonical tool output fields and their path lists."
+    },
+    "toolOutputMetaMode": {
+      "enum": ["append", "replace", "ignore"]
+    },
+    "toolOutputMetaKeys": {
+      "type": "object",
+      "propertyNames": { "minLength": 1 },
+      "additionalProperties": {
+        "oneOf": [
+          { "$ref": "#/definitions/toolOutputMetaMode" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mode"],
+            "properties": {
+              "mode": { "$ref": "#/definitions/toolOutputMetaMode" },
+              "note": { "type": "string" }
+            }
+          }
+        ]
+      }
     },
     "toolOutputOverride": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fields"],
+      "anyOf": [
+        { "required": ["fields"], "properties": { "fields": { "minProperties": 1 } } },
+        { "required": ["metaKeys"], "properties": { "metaKeys": { "minProperties": 1 } } }
+      ],
       "properties": {
-        "fields": { "$ref": "#/definitions/toolOutputFields" }
+        "fields": { "$ref": "#/definitions/toolOutputFields" },
+        "metaKeys": { "$ref": "#/definitions/toolOutputMetaKeys" },
+        "note": { "type": "string" }
       },
-      "description": "Override for tool output field paths (fields only; no provenance)."
+      "description": "Override for tool output field paths, metadata classifications, or both."
     }
   }
 }

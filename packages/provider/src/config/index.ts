@@ -41,5 +41,6 @@ export type {
 export {
   getEffectiveToolOutputMappings,
   getToolOutputMappingsProjection,
+  getToolOutputRules,
   TOOL_OUTPUT_FIELDS,
 } from "./tool-output-mappings.js"

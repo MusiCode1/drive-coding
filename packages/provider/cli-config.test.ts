@@ -746,7 +746,10 @@ describe("tool output mappings merge (cli-config integration)", () => {
   it("default Codex mapping without override", async () => {
     const { getEffectiveToolOutputMappings } = await import("./src/config/tool-output-mappings.js")
     const effective = getEffectiveToolOutputMappings()
-    expect(effective.codex?.fields.exitCode).toEqual([["exit_code"]])
+    expect(effective.codex?.fields.exitCode).toEqual([
+      ["$meta", "terminal_exit", "exit_code"],
+      ["exit_code"],
+    ])
   })
 
   it("partial override replaces text paths only", async () => {
@@ -773,7 +776,10 @@ describe("tool output mappings merge (cli-config integration)", () => {
       )
       const effective = getEffectiveToolOutputMappings()
       expect(effective.codex?.fields.text).toEqual([["override_text"]])
-      expect(effective.codex?.fields.exitCode).toEqual([["exit_code"]])
+      expect(effective.codex?.fields.exitCode).toEqual([
+        ["$meta", "terminal_exit", "exit_code"],
+        ["exit_code"],
+      ])
     } finally {
       fs.unlinkSync(filePath)
     }

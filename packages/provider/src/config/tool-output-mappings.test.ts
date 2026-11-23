@@ -12,9 +12,22 @@ describe("tool-output-mappings defaults", () => {
         bridge: "@agentclientprotocol/codex-acp",
         version: "2.5.0-dc.4",
       },
+      metaKeys: {
+        terminal_output_delta: "append",
+        terminal_output: "append",
+        mcp_output_delta: "replace",
+        terminal_info: "replace",
+        terminal_exit: "replace",
+        is_mcp_tool_call: "replace",
+      },
       fields: {
-        text: [["result", "content", 0, "text"]],
-        exitCode: [["exit_code"]],
+        text: [
+          ["$meta", "terminal_output_delta", "data"],
+          ["$meta", "terminal_output", "data"],
+          ["result", "content", 0, "text"],
+          ["formatted_output"],
+        ],
+        exitCode: [["$meta", "terminal_exit", "exit_code"], ["exit_code"]],
       },
     })
     expect(defaults.claude).toBeUndefined()
@@ -71,7 +84,10 @@ describe("getEffectiveToolOutputMappings", () => {
     const { getEffectiveToolOutputMappings } = await import("./tool-output-mappings.js")
     const effective = getEffectiveToolOutputMappings()
     expect(effective.codex?.fields.text).toEqual([["only_text"]])
-    expect(effective.codex?.fields.exitCode).toEqual([["exit_code"]])
+    expect(effective.codex?.fields.exitCode).toEqual([
+      ["$meta", "terminal_exit", "exit_code"],
+      ["exit_code"],
+    ])
   })
 
   it("new CLI gets mapping without verifiedAgainst", async () => {
