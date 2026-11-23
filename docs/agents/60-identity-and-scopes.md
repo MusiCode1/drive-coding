@@ -16,7 +16,7 @@ routes:
   - PATCH /api/scope-policy
 mcp_tools:
   - session_whoami
-docs_version: 1.10.4
+docs_version: 1.10.5
 updated: 2026-11-23
 ---
 
