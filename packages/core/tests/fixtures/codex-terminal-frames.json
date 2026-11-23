@@ -1,0 +1,46 @@
+[
+  {
+    "sessionUpdate": "tool_call",
+    "toolCallId": "exec-fixture",
+    "kind": "execute",
+    "title": "Synthetic terminal",
+    "status": "in_progress",
+    "content": [{ "type": "terminal", "terminalId": "exec-fixture" }],
+    "_meta": { "terminal_info": { "terminal_id": "exec-fixture" } }
+  },
+  {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "exec-fixture",
+    "_meta": { "terminal_output_delta": { "terminal_id": "exec-fixture", "data": "line one\n" } }
+  },
+  {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "exec-fixture",
+    "_meta": {
+      "terminal_output_delta": { "terminal_id": "exec-fixture", "data": "line two\n" },
+      "synthetic_unknown": { "fixture": true }
+    }
+  },
+  {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "exec-fixture",
+    "status": "failed",
+    "_meta": { "terminal_exit": { "terminal_id": "exec-fixture", "exit_code": 3, "signal": null } }
+  },
+  {
+    "sessionUpdate": "tool_call",
+    "toolCallId": "mcp-fixture",
+    "title": "Synthetic MCP tool",
+    "status": "pending",
+    "_meta": { "is_mcp_tool_call": true }
+  },
+  {
+    "sessionUpdate": "tool_call_update",
+    "toolCallId": "mcp-fixture",
+    "status": "completed",
+    "rawOutput": {
+      "error": null,
+      "result": { "content": [{ "type": "text", "text": "MCP result" }] }
+    }
+  }
+]

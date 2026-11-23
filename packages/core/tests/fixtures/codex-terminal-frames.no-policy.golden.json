@@ -1,0 +1,186 @@
+{
+  "state": {
+    "version": 6,
+    "sessionId": "codex-terminal-fixture",
+    "messages": [
+      {
+        "id": "m_0",
+        "role": "tool",
+        "messageId": null,
+        "toolCall": {
+          "toolCallId": "exec-fixture",
+          "name": "execute",
+          "kind": "execute",
+          "args": {},
+          "status": "failed",
+          "title": "Synthetic terminal",
+          "content": [
+            {
+              "type": "terminal",
+              "terminalId": "exec-fixture"
+            }
+          ]
+        },
+        "meta": {
+          "terminal_info": {
+            "terminal_id": "exec-fixture"
+          }
+        }
+      },
+      {
+        "id": "m_1",
+        "role": "tool",
+        "messageId": null,
+        "toolCall": {
+          "toolCallId": "mcp-fixture",
+          "name": "Synthetic MCP tool",
+          "args": {},
+          "status": "completed",
+          "title": "Synthetic MCP tool",
+          "result": {
+            "error": null,
+            "result": {
+              "content": [
+                {
+                  "type": "text",
+                  "text": "MCP result"
+                }
+              ]
+            }
+          }
+        },
+        "meta": {
+          "is_mcp_tool_call": true
+        }
+      }
+    ],
+    "nextMessageSeq": 2,
+    "nextSegmentSeq": 0,
+    "messageTimestamps": {},
+    "status": "idle",
+    "turnState": "calling-tool",
+    "pending": {
+      "permission": null,
+      "elicitation": null
+    },
+    "capabilities": null,
+    "modes": null,
+    "configOptions": [],
+    "contextUsage": null,
+    "quota": null,
+    "title": "",
+    "commands": [],
+    "lastTurnError": null,
+    "carried": []
+  },
+  "patches": [
+    {
+      "version": 1,
+      "op": "add-message",
+      "message": {
+        "id": "m_0",
+        "role": "tool",
+        "messageId": null,
+        "toolCall": {
+          "toolCallId": "exec-fixture",
+          "name": "execute",
+          "kind": "execute",
+          "args": {},
+          "status": "in_progress",
+          "title": "Synthetic terminal",
+          "content": [
+            {
+              "type": "terminal",
+              "terminalId": "exec-fixture"
+            }
+          ]
+        },
+        "meta": {
+          "terminal_info": {
+            "terminal_id": "exec-fixture"
+          }
+        }
+      }
+    },
+    {
+      "version": 2,
+      "op": "update-tool",
+      "targetId": "m_0",
+      "toolCall": {},
+      "meta": {
+        "terminal_output_delta": {
+          "terminal_id": "exec-fixture",
+          "data": "line one\n"
+        }
+      }
+    },
+    {
+      "version": 3,
+      "op": "update-tool",
+      "targetId": "m_0",
+      "toolCall": {},
+      "meta": {
+        "terminal_output_delta": {
+          "terminal_id": "exec-fixture",
+          "data": "line two\n"
+        },
+        "synthetic_unknown": {
+          "fixture": true
+        }
+      }
+    },
+    {
+      "version": 4,
+      "op": "update-tool",
+      "targetId": "m_0",
+      "toolCall": {
+        "status": "failed"
+      },
+      "meta": {
+        "terminal_exit": {
+          "terminal_id": "exec-fixture",
+          "exit_code": 3,
+          "signal": null
+        }
+      }
+    },
+    {
+      "version": 5,
+      "op": "add-message",
+      "message": {
+        "id": "m_1",
+        "role": "tool",
+        "messageId": null,
+        "toolCall": {
+          "toolCallId": "mcp-fixture",
+          "name": "Synthetic MCP tool",
+          "args": {},
+          "status": "pending",
+          "title": "Synthetic MCP tool"
+        },
+        "meta": {
+          "is_mcp_tool_call": true
+        }
+      }
+    },
+    {
+      "version": 6,
+      "op": "update-tool",
+      "targetId": "m_1",
+      "toolCall": {
+        "status": "completed",
+        "result": {
+          "error": null,
+          "result": {
+            "content": [
+              {
+                "type": "text",
+                "text": "MCP result"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
