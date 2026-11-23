@@ -17,6 +17,7 @@ import type {
   SessionConfigOption,
 } from "@agentclientprotocol/sdk"
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
+import type { ToolOutput, ToolOutputDelta, ToolOutputField } from "./tool-output"
 
 // ─── Re-exports from ACP SDK (used in SessionState fields) ───
 // ─── Re-export from provider (used in SessionState.quota) ───
@@ -96,6 +97,9 @@ export type SessionToolCall = {
   status: "pending" | "in_progress" | "completed" | "failed"
   title?: string
   result?: unknown
+  output?: ToolOutput
+  /** Internal source priority for each field, never emitted as a wire update. */
+  outputRank?: Partial<Record<ToolOutputField, number>>
   /** raw content — מיפוי ל-ToolContent[] נעשה ב-FE */
   content?: unknown[]
   locations?: unknown[]
@@ -275,6 +279,7 @@ export type Patch =
       op: "update-tool"
       targetId: string
       toolCall: Partial<SessionToolCall>
+      outputDelta?: ToolOutputDelta
       meta?: Record<string, unknown>
     }
   | {

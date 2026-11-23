@@ -18,6 +18,7 @@
  * התיאור הנכון של הפער, לא כיסוי עליו.
  */
 
+import { TOOL_OUTPUT_META_KEY, type ToolOutputDelta } from "./tool-output"
 import type { Patch, SessionMessage, SessionState } from "./types"
 
 /** פריים כפי שהוא נוסע על החוט. `unknown` בשדות — הצרכן הוא `reduce`. */
@@ -69,6 +70,10 @@ function mergeMeta(
   return Object.keys(merged).length > 0 ? merged : undefined
 }
 
+function toolOutputMeta(delta: ToolOutputDelta | undefined): Record<string, unknown> | undefined {
+  return delta === undefined ? undefined : { [TOOL_OUTPUT_META_KEY]: delta }
+}
+
 const CHUNK_KIND = {
   user: "user_message_chunk",
   thought: "agent_thought_chunk",
@@ -85,6 +90,11 @@ const WHOLE_KIND = {
 function messageToUpdate(m: SessionMessage): WireSessionUpdate {
   if (m.role === "tool") {
     const tc = m.toolCall
+    let meta = m.meta
+    if (tc.output !== undefined) {
+      const { truncated, ...set } = tc.output
+      meta = mergeMeta(meta, toolOutputMeta({ set, ...(truncated ? { truncated } : {}) }))
+    }
     return {
       sessionUpdate: "tool_call_update",
       toolCallId: tc.toolCallId,
@@ -95,7 +105,7 @@ function messageToUpdate(m: SessionMessage): WireSessionUpdate {
       ...(tc.result !== undefined ? { rawOutput: tc.result } : {}),
       ...(tc.content !== undefined ? { content: tc.content } : {}),
       ...(tc.locations !== undefined ? { locations: tc.locations } : {}),
-      ...(m.meta !== undefined ? { _meta: m.meta } : {}),
+      ...(meta !== undefined ? { _meta: meta } : {}),
     }
   }
   const content: unknown[] = []
@@ -237,7 +247,7 @@ export function patchToSessionUpdates(state: SessionState, patch: Patch): WireSe
       const target = state.messages.find((m) => m.id === patch.targetId)
       if (!target || target.role !== "tool") return []
       const tc = patch.toolCall
-      const outMeta = mergeMeta(target.meta, patch.meta)
+      const outMeta = mergeMeta(target.meta, patch.meta, toolOutputMeta(patch.outputDelta))
       return [
         {
           sessionUpdate: "tool_call_update",

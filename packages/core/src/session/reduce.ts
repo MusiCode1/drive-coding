@@ -8,6 +8,15 @@
  * ─── slice session-state-reducer C1 (TDD) ───
  */
 import { recordCarried } from "./carried"
+import {
+  applyToolOutputDelta,
+  deriveToolOutputDelta,
+  parseToolOutputDelta,
+  type ReduceOptions,
+  TOOL_OUTPUT_META_KEY,
+  type ToolOutputDelta,
+  type ToolOutputRules,
+} from "./tool-output"
 import type {
   Patch,
   SessionMessage,
@@ -58,6 +67,43 @@ function metaOf(u: Record<string, unknown>): Record<string, unknown> | undefined
     return m as Record<string, unknown>
   }
   return undefined
+}
+
+function readToolUpdate(
+  update: Record<string, unknown>,
+  rules: ToolOutputRules | undefined,
+  previous?: SessionToolCall,
+): {
+  meta?: Record<string, unknown>
+  outputFields?: Pick<SessionToolCall, "output" | "outputRank">
+  delta?: ToolOutputDelta
+} {
+  const rawMeta = metaOf(update)
+  const canonical = rawMeta !== undefined && Object.hasOwn(rawMeta, TOOL_OUTPUT_META_KEY)
+  let meta = rawMeta
+  if (rawMeta && (canonical || rules)) {
+    const entries = Object.entries(rawMeta)
+    const kept = entries.filter(
+      ([key]) => key !== TOOL_OUTPUT_META_KEY && rules?.metaKeys[key] !== "append",
+    )
+    if (kept.length !== entries.length) meta = kept.length ? Object.fromEntries(kept) : undefined
+  }
+  if (canonical) {
+    const delta = parseToolOutputDelta(rawMeta?.[TOOL_OUTPUT_META_KEY])
+    if (!delta) return { meta }
+    return { meta, delta, outputFields: { output: applyToolOutputDelta(previous?.output, delta) } }
+  }
+  if (!rules) return { meta }
+  const { delta, output, rank } = deriveToolOutputDelta(
+    { output: previous?.output, rank: previous?.outputRank },
+    {
+      hasRawOutput: Object.hasOwn(update, "rawOutput"),
+      rawOutput: update.rawOutput,
+      meta: rawMeta,
+    },
+    rules,
+  )
+  return delta ? { meta, delta, outputFields: { output, outputRank: rank } } : { meta }
 }
 
 // ─── אסטרטגיית קיבוץ (מ-#appendChunk) ───
@@ -228,6 +274,7 @@ function handleTextChunk(
 function handleToolCall(
   state: SessionState,
   update: Record<string, unknown>,
+  rules: ToolOutputRules | undefined,
 ): { state: SessionState; patches: Patch[] } {
   const toolCallId = update.toolCallId
   if (typeof toolCallId !== "string") return { state, patches: [] }
@@ -240,7 +287,7 @@ function handleToolCall(
   const existingIdx = state.messages.findIndex(
     (m) => m.role === "tool" && m.toolCall.toolCallId === toolCallId,
   )
-  if (existingIdx !== -1) return handleToolCallUpdate(state, update)
+  if (existingIdx !== -1) return handleToolCallUpdate(state, update, rules)
 
   const name =
     typeof update.kind === "string"
@@ -249,6 +296,7 @@ function handleToolCall(
         ? update.title
         : "tool"
 
+  const { meta, outputFields } = readToolUpdate(update, rules)
   const toolCall: SessionToolCall = {
     toolCallId,
     name,
@@ -266,10 +314,10 @@ function handleToolCall(
     content: Array.isArray(update.content) && update.content !== null ? update.content : undefined,
     locations:
       Array.isArray(update.locations) && update.locations !== null ? update.locations : undefined,
+    ...outputFields,
   }
 
   const msgId = nextMsgId(state.nextMessageSeq)
-  const meta = metaOf(update)
   const msg: SessionMessage = {
     id: msgId,
     role: "tool",
@@ -296,6 +344,7 @@ function handleToolCall(
 function handleToolCallUpdate(
   state: SessionState,
   update: Record<string, unknown>,
+  rules: ToolOutputRules | undefined,
 ): { state: SessionState; patches: Patch[] } {
   const toolCallId = update.toolCallId
   if (typeof toolCallId !== "string") return { state, patches: [] }
@@ -314,12 +363,13 @@ function handleToolCallUpdate(
   //
   // ⚠️ אין כאן רקורסיה אינסופית: `handleToolCall` מנתב חזרה לכאן רק כשהוא
   // **מצא** את הכלי, וכאן מנתבים אליו רק כשלא נמצא. כל מסלול צועד פעם אחת.
-  if (idx === -1) return handleToolCall(state, update)
+  if (idx === -1) return handleToolCall(state, update, rules)
 
   const old = state.messages[idx] as SessionMessage & { role: "tool" }
 
   // Build partial toolCall (only provided fields)
-  const partial: Partial<SessionToolCall> = {}
+  const { meta, outputFields, delta } = readToolUpdate(update, rules, old.toolCall)
+  const partial: Partial<SessionToolCall> = { ...outputFields }
   if (update.status !== undefined) {
     if (
       update.status === "pending" ||
@@ -358,12 +408,12 @@ function handleToolCallUpdate(
   messages[idx] = updatedMsg
 
   const newVersion = state.version + 1
-  const meta = metaOf(update)
   const patch: Patch = {
     version: newVersion,
     op: "update-tool",
     targetId: old.id,
     toolCall: partial,
+    ...(delta !== undefined ? { outputDelta: delta } : {}),
     ...(meta !== undefined ? { meta } : {}),
   }
 
@@ -708,6 +758,7 @@ function opaquePatch(state: SessionState, u: unknown): { state: SessionState; pa
 function reduceRecognized(
   state: SessionState,
   ev: unknown,
+  options?: ReduceOptions,
 ): { state: SessionState; patches: Patch[] } {
   if (typeof ev !== "object" || ev === null) return { state, patches: [] }
   const u = ev as Record<string, unknown>
@@ -796,10 +847,10 @@ function reduceRecognized(
 
   // tool
   if (sessionUpdate === "tool_call") {
-    return handleToolCall(state, u)
+    return handleToolCall(state, u, options?.toolOutput)
   }
   if (sessionUpdate === "tool_call_update") {
-    return handleToolCallUpdate(state, u)
+    return handleToolCallUpdate(state, u, options?.toolOutput)
   }
 
   // ─── ACP v2: פריט-תוכן לכלי ───
@@ -975,10 +1026,11 @@ function reduceRecognized(
 export function reduce(
   state: SessionState,
   ev: unknown,
+  options?: ReduceOptions,
 ): { state: SessionState; patches: Patch[] } {
   if (typeof ev !== "object" || ev === null) return { state, patches: [] }
   const u = ev as Record<string, unknown>
-  const result = reduceRecognized(state, ev)
+  const result = reduceRecognized(state, ev, options)
   if (result.patches.length === 0 && metaOf(u) !== undefined) {
     return opaquePatch(state, u)
   }

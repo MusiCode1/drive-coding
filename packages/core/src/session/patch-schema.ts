@@ -61,6 +61,7 @@ export const PatchSchema = type({
     op: "'update-tool'",
     targetId: "string",
     toolCall: "object",
+    "outputDelta?": "object",
     "meta?": "object",
   })
   .or({
