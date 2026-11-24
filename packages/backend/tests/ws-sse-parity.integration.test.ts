@@ -165,7 +165,6 @@ async function setup(opts: { snapshotState?: SessionState; authError?: Error } =
       }
       stack.stop()
       stack.sessionWss.close()
-      stack.agentWss.close()
       stack.echoWss.close()
       await agentSessionRegistry.getHost(agentId)?.dispose()
       agentSessionRegistry.unregisterHost(agentId)

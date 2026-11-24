@@ -6,7 +6,7 @@
  *
  * Receives connectionRegistry in constructor — used to look up ProviderConnection
  * by agentId (connection not found → getOrCreateHost resolves {ok:false, reason:"not-found"};
- * slice host-result-reason C1 — see HostResult below for all four failure reasons).
+ * see HostResult for the failure reasons).
  *
  * Ownership:
  *   - Registry creates one PatchesBroadcaster per host
@@ -74,17 +74,7 @@ export type HostEntry = {
   broadcaster: PatchesBroadcaster
 }
 
-/**
- * slice host-result-reason C1: why getOrCreateHost could not return a live
- * HostEntry. Four sources previously collapsed into a single `undefined`
- * (doCreate: no connection / WS-owned without an evictionController / eviction
- * timed out; getOrCreateHost's own liveness check: connection died after the
- * host was created) — and callers translated ALL four to 404 ("agent is
- * gone"). Three of the four ARE final (not-found / ws-owned / conn-dead). Only
- * `evict-timeout` is transient (a stuck WS tab, not a dead agent) — callers
- * map it to 503 instead.
- */
-export type HostFailureReason = "not-found" | "conn-dead" | "ws-owned" | "evict-timeout"
+export type HostFailureReason = "not-found" | "conn-dead"
 
 export type HostResult = { ok: true; entry: HostEntry } | { ok: false; reason: HostFailureReason }
 
@@ -96,20 +86,10 @@ export type AgentSessionRegistry = {
   getHost(agentId: string): ExtendedSessionHost | undefined
 
   /**
-   * slice handoff-foundations C3: is the agentId "held" — either a host is
-   * already registered (map.has) OR a creation is in-flight (inFlight.has).
-   * Visible to WS so it can reject during the creation window, closing the
-   * race where WS calls getHost (which only checks map) and gets undefined
-   * while doCreate is between the first await and map.set.
-   */
-  isHeld(agentId: string): boolean
-  /**
    * getOrCreateHost — async lazy creation.
    * - If host already exists → returns {ok: true, entry: {host, broadcaster}}
    * - If connection not found in connectionRegistry → {ok: false, reason: "not-found"}
    * - If the existing host's connection died → {ok: false, reason: "conn-dead"}
-   * - If WS owns the wire (no evictionController) → {ok: false, reason: "ws-owned"}
-   * - If eviction of the WS owner timed out → {ok: false, reason: "evict-timeout"}
    * - Otherwise: creates host + broadcaster, registers them, returns {ok: true, entry}
    */
   getOrCreateHost(agentId: string): Promise<HostResult>
@@ -191,14 +171,6 @@ type AgentSessionRegistryDeps = {
    */
   onSessionAttached?: OnSessionAttached
   /**
-   * slice ownership-handoff C4: eviction controller — evicts active WS before
-   * HTTP host creation, waits for full detach (unsub + unsubCrash).
-   * Optional — without it, WS-owned agents return undefined (pre-C4 behavior).
-   */
-  evictionController?: {
-    evictAndWait(agentId: string, code: number, timeoutMs?: number): Promise<void>
-  }
-  /**
    * slice ownership-handoff C4: resolve acpSessionId for warm reattach.
    * Returns the current ACP session ID for an agent, or undefined for cold start.
    * Injected from server.ts via AgentOrchestrator/AgentRegistry.
@@ -246,7 +218,6 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     connectionRegistry,
     _createHostFn = (conn, opts) => createSessionHostFromConnection(conn, opts),
     _createBroadcasterFn = (patches) => createPatchesBroadcaster(patches),
-    evictionController,
     getAcpSessionId,
     getPermissionPolicy,
     getCloseOnTurnEnd,
@@ -278,27 +249,6 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     const conn = connectionRegistry.get(agentId)
     if (!conn) return { ok: false, reason: "not-found" }
 
-    // slice ownership-truth C2: guard — WS owns the wire.
-    // slice ownership-handoff C4: when evictionController is available, evict the
-    // WS and wait for full detach before proceeding (HTTP takeover).
-    // Without evictionController (pre-C4 or tests): still refuse.
-    if (connectionRegistry.isOwnedByWs(agentId)) {
-      if (!evictionController) {
-        log.warn({ agentId }, "agent is owned by WS — refusing to create a session host")
-        return { ok: false, reason: "ws-owned" }
-      }
-      log.info({ agentId }, "agent owned by WS — evicting for HTTP takeover")
-      try {
-        await evictionController.evictAndWait(agentId, 4409)
-      } catch (err) {
-        // slice host-result-reason C1: eviction timed out or WS failed to detach —
-        // cannot take the wire safely. This is TRANSIENT (a stuck WS tab), not a
-        // dead agent — callers map it to 503, not 404.
-        log.error({ err, agentId }, "evictAndWait failed — refusing host creation")
-        return { ok: false, reason: "evict-timeout" }
-      }
-    }
-
     // calev-heavy round 2 finding #5: cwd is validated BEFORE creating the host +
     // broadcaster. The old order created a real ACP host (and a broadcaster that
     // had already started draining host.patches) on the missing-cwd path, then
@@ -313,8 +263,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
     }
 
     // slice ownership-handoff C4: resolve acpSessionId for warm reattach.
-    // If the agent has an active ACP session (was WS-owned), use warm path
-    // (createAttachedAcpClient + loadSession) instead of cold (createAcpClient + newSession).
+    // Load the agent's existing ACP session when an ID is available.
     const acpSessionId = getAcpSessionId?.(agentId)
     const permissionPolicy = await getPermissionPolicy?.(agentId)
     const closeOnTurnEndRaw = getCloseOnTurnEnd?.(agentId)
@@ -392,8 +341,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       return { ok: true, entry }
     } catch (err) {
       // slice handoff-foundations C3: rollback — dispose the orphan host so its
-      // crash subscription is removed and patches stream is terminated. Without
-      // this, WS could attach to the wire while the orphan host is still listening.
+      // crash subscription is removed and its patches stream ends before retry.
       await host.dispose()
       throw err
     }
@@ -404,11 +352,6 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       return map.get(agentId)?.host
     },
 
-    // slice handoff-foundations C3: visible to WS so it can reject during
-    // the creation window (between the first await and map.set).
-    isHeld(agentId: string): boolean {
-      return map.has(agentId) || inFlight.has(agentId)
-    },
     async getOrCreateHost(agentId: string): Promise<HostResult> {
       // Return existing entry if already created
       const existing = map.get(agentId)
@@ -438,14 +381,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       return map.get(agentId)?.broadcaster
     },
 
-    // 🔴 slice sse-liveness Commit 3: MUST stay synchronous (`: void`, no
-    // `await`). This is called from ws-agent.ts in a zero-await window between
-    // `host.dispose()` and `markAttached` (the epoch bump that signals
-    // takeover) — Commit 3ב locks that exact ordering with a real broadcaster.
-    // If this became `async`, the caller would need to `await` it, opening an
-    // await gap right there and silently breaking `taken-over` (the SSE route
-    // would read the OLD epoch before it's bumped). `broadcaster.close()`
-    // closes every subscriber controller synchronously — no `await` needed.
+    // Close the broadcaster synchronously so all subscribers end during unregister.
     unregisterHost(agentId: string): void {
       connectionRegistry.clearAllConnections(agentId)
       const entry = map.get(agentId)

@@ -100,7 +100,6 @@ function makeMockRegistry(
       : { ok: false, reason: "not-found" }
   return {
     getHost: vi.fn().mockReturnValue(host),
-    isHeld: vi.fn().mockReturnValue(Boolean(host)),
     getOrCreateHost: vi.fn().mockResolvedValue(result),
     getBroadcaster: vi.fn().mockReturnValue(broadcaster),
     unregisterHost: vi.fn(),
@@ -172,41 +171,20 @@ describe("POST /api/agents/:id/rpc", () => {
     })
   })
 
-  // ─── slice host-result-reason C1: evict-timeout is TRANSIENT → 503, not 404 ───
-  describe("503 when eviction of a stuck WS owner times out", () => {
-    it("returns 503 (not 404) when getOrCreateHost resolves {ok:false, reason:'evict-timeout'}", async () => {
-      const registry = makeMockRegistry()
+  it("returns 404 for not-found and conn-dead", async () => {
+    const registry = makeMockRegistry()
+    for (const reason of ["not-found", "conn-dead"] as const) {
       ;(registry.getOrCreateHost as ReturnType<typeof vi.fn>).mockResolvedValue({
         ok: false,
-        reason: "evict-timeout",
+        reason,
       })
       const app = makeApp(registry)
-
-      const res = await postRpc(app, "stuck-agent", {
+      const res = await postRpc(app, "some-agent", {
         method: "cancel",
         params: { sessionId: "s1" },
       })
-      expect(res.status).toBe(503)
-    })
-
-    // slice host-result-reason C1 §6 DoD 4 — mutation check: reverting the
-    // `result.reason === "evict-timeout" ? 503 : 404` mapping to a flat `404`
-    // turns this assertion red (documented, not committed).
-    it("still returns 404 for the three FINAL reasons (not-found/conn-dead/ws-owned) — unchanged", async () => {
-      const registry = makeMockRegistry()
-      for (const reason of ["not-found", "conn-dead", "ws-owned"] as const) {
-        ;(registry.getOrCreateHost as ReturnType<typeof vi.fn>).mockResolvedValue({
-          ok: false,
-          reason,
-        })
-        const app = makeApp(registry)
-        const res = await postRpc(app, "some-agent", {
-          method: "cancel",
-          params: { sessionId: "s1" },
-        })
-        expect(res.status).toBe(404)
-      }
-    })
+      expect(res.status).toBe(404)
+    }
   })
 
   describe("202 Accepted with version", () => {

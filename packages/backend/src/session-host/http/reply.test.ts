@@ -68,7 +68,6 @@ function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
     : { ok: false, reason: "not-found" }
   return {
     getHost: vi.fn().mockReturnValue(host),
-    isHeld: vi.fn().mockReturnValue(Boolean(host)),
     getOrCreateHost: vi.fn().mockResolvedValue(result),
     getCwd: vi.fn(),
     getCliKind: vi.fn(),

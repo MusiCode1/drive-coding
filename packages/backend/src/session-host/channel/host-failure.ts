@@ -1,10 +1,9 @@
 import type { ChannelResponse } from "@drive-coding/core/session"
 import type { HostResult } from "../registry.js"
 
-export function hostFailureResponse(result: Extract<HostResult, { ok: false }>): ChannelResponse {
-  // Eviction timeout is transient (a stuck WS tab). The other failures are final.
-  const status = result.reason === "evict-timeout" ? 503 : 404
-  return { status, body: { error: "Agent connection not found" } }
+export function hostFailureResponse(_result: Extract<HostResult, { ok: false }>): ChannelResponse {
+  // Both a missing connection and a dead connection end the request with 404.
+  return { status: 404, body: { error: "Agent connection not found" } }
 }
 
 export function hostThrowResponse(err: unknown): ChannelResponse | undefined {

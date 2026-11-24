@@ -66,15 +66,8 @@ export function createAndRegisterSessionHostHttp(
     agentRegistry: AgentRegistry
     onSessionAttached?: OnSessionAttached
     /**
-     * slice ownership-handoff C4: eviction controller for HTTP→WS takeover.
-     * Injected from server.ts; allows registry to evict an active WS before
-     * creating an HTTP host on the same agent.
-     */
-    evictionController?: Parameters<typeof createAgentSessionRegistry>[0]["evictionController"]
-    /**
      * slice ownership-handoff C4: resolve acpSessionId for warm reattach.
-     * Injected from server.ts via AgentRegistry; allows HTTP host to loadSession
-     * instead of newSession when taking over from a WS-owned agent.
+     * Injected via AgentRegistry to load an existing ACP session when creating a host.
      */
     getAcpSessionId?: (agentId: string) => string | undefined
     /**
@@ -107,7 +100,6 @@ export function createAndRegisterSessionHostHttp(
     connectionRegistry,
     env: opts.env,
     onSessionAttached: opts.onSessionAttached,
-    evictionController: opts.evictionController,
     getAcpSessionId: opts.getAcpSessionId,
     getPermissionPolicy: opts.getPermissionPolicy,
     getCloseOnTurnEnd: opts.getCloseOnTurnEnd,

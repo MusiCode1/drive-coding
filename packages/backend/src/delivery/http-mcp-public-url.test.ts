@@ -18,7 +18,6 @@ function makeStubSessionRegistry(): AgentSessionRegistry {
     getHost: vi.fn((id: string) => ({
       state: { sessionId: `sess-${id}`, turnState: "idle", modes: {}, configOptions: [] },
     })),
-    isHeld: vi.fn(() => false),
     getOrCreateHost: vi.fn(async (id: string) => ({
       ok: true,
       entry: {

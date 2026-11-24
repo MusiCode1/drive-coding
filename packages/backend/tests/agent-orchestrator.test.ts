@@ -153,11 +153,9 @@ function makeConnectionRegistry(
     getConnectionCount: vi.fn(() => 0),
     isAttached: vi.fn(() => false),
     getEpoch: vi.fn(() => 0),
-    isOwnedByWs: vi.fn(() => false),
     getRuntimeInfo: vi.fn(() => null),
     getLastSeenAt: vi.fn(() => null),
     listHttpConnectionIds: vi.fn(() => []),
-    setWsSocketChecker: vi.fn(),
     close: closeMock,
     onCrash(handler) {
       crashHandler = handler

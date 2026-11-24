@@ -58,7 +58,6 @@ async function makePolicyApp() {
     getCharter: vi.fn(() => undefined),
     consumeCharter: vi.fn(() => undefined),
     getCliKind: vi.fn(() => "cursor"),
-    isOwnedByWs: vi.fn(() => false),
     getOwner: vi.fn(() => ({ via: "http" as const })),
     getLastSeenAt: vi.fn(() => Date.now()),
     getEpoch: vi.fn(() => 0),

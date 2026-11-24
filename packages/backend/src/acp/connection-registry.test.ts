@@ -146,16 +146,6 @@ describe("connection-registry — connection set", () => {
     await reg.close("a7")
   })
 
-  it("isOwnedByWs uses injected checker, not the set", async () => {
-    const reg = createConnectionRegistry({ isWsSocketActive: () => false })
-    await reg.connect("a8", "opencode", { cwd: os.tmpdir() })
-    reg.addConnection("a8", "w1", "ws")
-    expect(reg.isOwnedByWs("a8")).toBe(false)
-    reg.setWsSocketChecker(() => true)
-    expect(reg.isOwnedByWs("a8")).toBe(true)
-    await reg.close("a8")
-  })
-
   it("touchConnection no-op when row missing", async () => {
     const reg = createConnectionRegistry()
     await reg.connect("a9", "opencode", { cwd: os.tmpdir() })

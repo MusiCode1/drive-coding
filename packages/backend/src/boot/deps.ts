@@ -17,7 +17,6 @@ import {
 import { shutdownAgents } from "../agents/shutdown-policy.js"
 import { type AgentOrchestrator, createAgentOrchestrator } from "../app/agent-orchestrator.js"
 import { createRecordingsStore } from "../app/recordings-store.js"
-import { createEvictionController } from "../delivery/eviction-controller.js"
 import { createMemoryGuard, type MemoryGuard } from "../delivery/memory-guard.js"
 import { createWireRecorder } from "../delivery/wire-recorder.js"
 import { asTokenUsageStore } from "../history/session-history-as-token-usage.js"
@@ -50,7 +49,6 @@ export type BootDeps = {
   wireRecorder: ReturnType<typeof createWireRecorder>
   connectionRegistry: ReturnType<typeof createConnectionRegistry>
   recordingsStore: ReturnType<typeof createRecordingsStore>
-  evictionController: ReturnType<typeof createEvictionController>
   acpSessionIdCache: Map<string, string>
   agentSessionRegistry: AgentSessionRegistry
   agentEventBus: AgentEventBus
@@ -78,7 +76,6 @@ export async function createDeps(
   const wireRecorder = createWireRecorder({ dir: wireRecorderDir(config) })
   const connectionRegistry = createConnectionRegistry({ wireRecorder })
   const recordingsStore = createRecordingsStore(ensureStateSubdir("recordings"))
-  const evictionController = createEvictionController()
   const acpSessionIdCache = new Map<string, string>()
 
   const orchestratorRef: { current: AgentOrchestrator | null } = { current: null }
@@ -98,7 +95,6 @@ export async function createDeps(
     sessionHistoryStore,
     agentEventBus,
     getOrchestrator: () => orchestratorRef.current,
-    evictionController,
   })
   const eventOnTurnEnded = sessionHostRegistryOpts.onTurnEnded
 
@@ -156,7 +152,6 @@ export async function createDeps(
     wireRecorder,
     connectionRegistry,
     recordingsStore,
-    evictionController,
     acpSessionIdCache,
     agentSessionRegistry,
     agentEventBus,

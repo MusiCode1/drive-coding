@@ -63,7 +63,6 @@ async function makeGateServer() {
     getCharter: vi.fn(() => undefined),
     consumeCharter: vi.fn(() => undefined),
     getCliKind: vi.fn(() => "cursor"),
-    isOwnedByWs: vi.fn(() => false),
     getLastSeenAt: vi.fn(() => Date.now()),
     getEpoch: vi.fn(() => 0),
     getRuntimeInfo: vi.fn(() => ({
@@ -81,7 +80,6 @@ async function makeGateServer() {
     getConnectionCount: vi.fn(() => 1),
     listHttpConnectionIds: vi.fn(() => []),
     isAttached: vi.fn(() => true),
-    setWsSocketChecker: vi.fn(),
   }
 
   const agentSessionRegistry = createAgentSessionRegistry({

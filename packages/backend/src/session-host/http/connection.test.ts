@@ -24,14 +24,12 @@ function makeReg(overrides: Partial<ConnectionRegistry> = {}): ConnectionRegistr
     list: vi.fn(() => []),
     isAttached: vi.fn(() => false),
     getEpoch: vi.fn(() => 0),
-    isOwnedByWs: vi.fn(() => false),
     getRuntimeInfo: vi.fn(() => null),
     getLastSeenAt: vi.fn(() => null),
     listHttpConnectionIds: vi.fn(() => []),
     listViewerRows: vi.fn(() => []),
     close: vi.fn(),
     onCrash: vi.fn(() => () => {}),
-    setWsSocketChecker: vi.fn(),
     ...overrides,
   }
 }
@@ -49,9 +47,8 @@ describe("DELETE /api/agents/:id/connection", () => {
   it("returns 204 and removes row when header present", async () => {
     const removeConnection = vi.fn()
     const reg = makeReg({ removeConnection })
-    const closeLiveSocket = vi.fn()
     const app = new Hono()
-    registerConnectionRoute(app, reg, { closeLiveSocket })
+    registerConnectionRoute(app, reg)
 
     const res = await app.request("/api/agents/agent-1/connection", {
       method: "DELETE",
@@ -60,7 +57,6 @@ describe("DELETE /api/agents/:id/connection", () => {
 
     expect(res.status).toBe(204)
     expect(removeConnection).toHaveBeenCalledWith("agent-1", "conn-a")
-    expect(closeLiveSocket).toHaveBeenCalledWith("agent-1", "conn-a")
   })
 
   it("returns 204 no-op when header missing on registered agent", async () => {

@@ -74,7 +74,6 @@ export async function startBackendServer(): Promise<void> {
       sig,
       disposables,
       echoWss: ws.echoWss,
-      agentWss: ws.agentWss,
       sessionWss: ws.sessionWss,
       stopWs: ws.stop,
       httpServer,

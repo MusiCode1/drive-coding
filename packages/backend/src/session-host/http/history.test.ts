@@ -84,7 +84,6 @@ function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
     : { ok: false, reason: "not-found" }
   return {
     getHost: vi.fn().mockReturnValue(host),
-    isHeld: vi.fn().mockReturnValue(Boolean(host)),
     // 🔴 מרגל, לא מילוי — ר' הערת-הראש: בלעדיו האסרציה מאדימה כ-TypeError,
     // ולא "עוברת בשקט" כפי שהבריף הניח.
     getOrCreateHost: vi.fn().mockResolvedValue(result),

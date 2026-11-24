@@ -16,7 +16,6 @@ beforeEach(() => {
 function makeMockRegistry(): AgentSessionRegistry {
   return {
     getHost: vi.fn().mockReturnValue(undefined),
-    isHeld: vi.fn().mockReturnValue(false),
     getOrCreateHost: vi.fn().mockResolvedValue({ ok: false, reason: "not-found" }),
     getBroadcaster: vi.fn().mockReturnValue(undefined),
     unregisterHost: vi.fn(),

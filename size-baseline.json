@@ -38,10 +38,10 @@
       "codeLines": 143
     },
     "packages/backend/src/acp/connection-registry.ts": {
-      "metric": 341,
+      "metric": 340,
       "impurity": 6,
       "class": "mixed",
-      "codeLines": 279
+      "codeLines": 281
     },
     "packages/backend/src/agents/registry.ts": {
       "metric": 64,
@@ -145,12 +145,6 @@
       "class": "mixed",
       "codeLines": 19
     },
-    "packages/backend/src/delivery/eviction-controller.ts": {
-      "metric": 100,
-      "impurity": 1,
-      "class": "mixed",
-      "codeLines": 54
-    },
     "packages/backend/src/delivery/http-agent-prompt.ts": {
       "metric": 55,
       "impurity": 1,
@@ -247,12 +241,6 @@
       "class": "mixed",
       "codeLines": 55
     },
-    "packages/backend/src/delivery/ws-agent.ts": {
-      "metric": 193,
-      "impurity": 7,
-      "class": "mixed",
-      "codeLines": 157
-    },
     "packages/backend/src/delivery/ws-echo.ts": {
       "metric": 47,
       "impurity": 1,
@@ -344,10 +332,10 @@
       "codeLines": 58
     },
     "packages/backend/src/session-host/registry.ts": {
-      "metric": 484,
-      "impurity": 8,
+      "metric": 420,
+      "impurity": 7,
       "class": "mixed",
-      "codeLines": 235
+      "codeLines": 214
     },
     "packages/backend/src/session-host/session-host.ts": {
       "metric": 898,

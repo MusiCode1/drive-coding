@@ -11,7 +11,6 @@ import { readConnectionId } from "./connection-id.js"
 
 export type ConnectionRouteOpts = {
   beforeRemoveConnection?: (agentId: string, connectionId: string) => void
-  closeLiveSocket?: (agentId: string, connectionId: string) => void
 }
 
 export function registerConnectionRoute(
@@ -30,7 +29,6 @@ export function registerConnectionRoute(
     if (connectionId !== undefined) {
       opts.beforeRemoveConnection?.(agentId, connectionId)
       connectionRegistry.removeConnection(agentId, connectionId)
-      opts.closeLiveSocket?.(agentId, connectionId)
     }
 
     return c.body(null, 204)

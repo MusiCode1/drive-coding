@@ -13,7 +13,6 @@ export type ShutdownOpts = {
   sig: string
   disposables: Disposable[]
   echoWss: WebSocketServer
-  agentWss: WebSocketServer
   sessionWss: WebSocketServer
   stopWs: () => void
   httpServer: ServerType
@@ -41,7 +40,6 @@ export async function gracefulShutdown(opts: ShutdownOpts): Promise<void> {
       await Promise.resolve(d.dispose({ sig: opts.sig }))
     }
     opts.echoWss.close()
-    opts.agentWss.close()
     await new Promise<void>((r) => opts.httpServer.close(() => r()))
   } catch (e) {
     procLog.error({ err: e }, "error during shutdown")

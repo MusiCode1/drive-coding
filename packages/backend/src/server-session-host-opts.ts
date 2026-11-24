@@ -21,7 +21,6 @@ export function createSessionHostRegistryOpts(deps: {
   acpSessionIdCache: Map<string, string>
   agentEventBus: AgentEventBus
   getOrchestrator: () => AgentOrchestrator | null
-  evictionController: Parameters<typeof createAgentSessionRegistry>[0]["evictionController"]
 }) {
   return {
     agentRegistry: deps.registry,
@@ -30,7 +29,6 @@ export function createSessionHostRegistryOpts(deps: {
       sessionHistoryStore: deps.sessionHistoryStore,
       acpSessionIdCache: deps.acpSessionIdCache,
     }),
-    evictionController: deps.evictionController,
     getAcpSessionId: (agentId: string) => deps.acpSessionIdCache.get(agentId),
     getPermissionPolicy: async (agentId: string) => {
       const agent = await deps.registry.get(agentId)

@@ -86,10 +86,7 @@ describe("dispatchRpcBody", () => {
     expect(getOrCreateHost).not.toHaveBeenCalled()
   })
 
-  it.each([
-    ["not-found", 404],
-    ["evict-timeout", 503],
-  ] as const)("maps host failure %s to %i", async (reason, status) => {
+  it.each([["not-found", 404]] as const)("maps host failure %s to %i", async (reason, status) => {
     const { deps, getOrCreateHost } = setup()
     getOrCreateHost.mockResolvedValue({ ok: false, reason })
     expect(await dispatchRpcBody(deps, "agent", { method: "session/list" }, caller)).toEqual({

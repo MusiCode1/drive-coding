@@ -5,7 +5,6 @@
  *
  * Tests:
  *   - 404 if connection not found (registry.getOrCreateHost → {ok:false, reason})
- *   - 503 if the failure reason is "evict-timeout" (transient — slice host-result-reason C1)
  *   - SSE response headers (Content-Type: text/event-stream)
  *   - snapshot as first frame (event: snapshot)
  *   - patches streamed as subsequent frames (event: patch)
@@ -98,7 +97,6 @@ function makeMockRegistry(
 
   return {
     getHost: vi.fn().mockReturnValue(host),
-    isHeld: vi.fn().mockReturnValue(Boolean(host)),
     getOrCreateHost: vi.fn().mockResolvedValue(result),
     getBroadcaster: vi.fn().mockReturnValue(broadcaster),
     unregisterHost: vi.fn(),
@@ -129,14 +127,12 @@ function makeMockConnectionRegistry(): ConnectionRegistry {
     list: vi.fn(() => []),
     isAttached: vi.fn(() => false),
     getEpoch: vi.fn(() => 0),
-    isOwnedByWs: vi.fn(() => false),
     getRuntimeInfo: vi.fn(() => null),
     getLastSeenAt: vi.fn(() => null),
     listHttpConnectionIds: vi.fn(() => []),
     listViewerRows: vi.fn(() => []),
     close: vi.fn(),
     onCrash: vi.fn(() => () => {}),
-    setWsSocketChecker: vi.fn(),
   }
 }
 
@@ -222,36 +218,17 @@ describe("GET /api/agents/:id/events", () => {
     })
   })
 
-  // ─── slice host-result-reason C1: evict-timeout is TRANSIENT → 503, not 404 ───
-  describe("503 when eviction of a stuck WS owner times out", () => {
-    it("returns 503 (not 404) when getOrCreateHost resolves {ok:false, reason:'evict-timeout'}", async () => {
-      const registry = makeMockRegistry()
+  it("returns 404 for not-found and conn-dead", async () => {
+    const registry = makeMockRegistry()
+    for (const reason of ["not-found", "conn-dead"] as const) {
       ;(registry.getOrCreateHost as ReturnType<typeof vi.fn>).mockResolvedValue({
         ok: false,
-        reason: "evict-timeout",
+        reason,
       })
       const app = makeApp(registry)
-
-      const res = await app.request("/api/agents/stuck-agent/events")
-      expect(res.status).toBe(503)
-    })
-
-    // slice host-result-reason C1 §6 DoD 4 — mutation check: mapping evict-timeout
-    // back to 404 must fail this test. Documented (not committed) in the brief
-    // report: reverting `result.reason === "evict-timeout" ? 503 : 404` to a
-    // flat `404` turns this assertion red.
-    it("still returns 404 for the three FINAL reasons (not-found/conn-dead/ws-owned) — unchanged", async () => {
-      const registry = makeMockRegistry()
-      for (const reason of ["not-found", "conn-dead", "ws-owned"] as const) {
-        ;(registry.getOrCreateHost as ReturnType<typeof vi.fn>).mockResolvedValue({
-          ok: false,
-          reason,
-        })
-        const app = makeApp(registry)
-        const res = await app.request("/api/agents/some-agent/events")
-        expect(res.status).toBe(404)
-      }
-    })
+      const res = await app.request("/api/agents/some-agent/events")
+      expect(res.status).toBe(404)
+    }
   })
 
   describe("SSE response setup", () => {

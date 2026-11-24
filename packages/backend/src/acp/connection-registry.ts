@@ -76,7 +76,6 @@ export type ConnectionRegistry = {
 
   isAttached(agentId: string): boolean
   getEpoch(agentId: string): number
-  isOwnedByWs(agentId: string): boolean
 
   getRuntimeInfo(agentId: string): {
     pid: number | null
@@ -99,17 +98,12 @@ export type ConnectionRegistry = {
   onCrash(
     cb: (agentId: string, info: import("@drive-coding/provider/spawn").BridgeCrashInfo) => void,
   ): () => void
-
-  /** slice connection-set C1: injected from ws-agent — activeFeWs.has, not the set. */
-  setWsSocketChecker(checker: (agentId: string) => boolean): void
 }
 
 export function createConnectionRegistry(opts?: {
   wireRecorder?: WireRecorder
-  isWsSocketActive?: (agentId: string) => boolean
 }): ConnectionRegistry {
   const wireRecorder = opts?.wireRecorder
-  let wsSocketChecker = opts?.isWsSocketActive ?? (() => false)
   const map = new Map<string, ConnEntry>()
   const crashListeners = new Set<
     (agentId: string, info: import("@drive-coding/provider/spawn").BridgeCrashInfo) => void
@@ -131,10 +125,6 @@ export function createConnectionRegistry(opts?: {
   }
 
   return {
-    setWsSocketChecker(checker) {
-      wsSocketChecker = checker
-    },
-
     async connect(agentId, cliKind, connectOpts) {
       if (map.has(agentId)) {
         throw new Error(`connection-registry: agentId already live: ${agentId}`)
@@ -285,10 +275,6 @@ export function createConnectionRegistry(opts?: {
 
     getEpoch(agentId) {
       return map.get(agentId)?.ownershipEpoch ?? 0
-    },
-
-    isOwnedByWs(agentId) {
-      return wsSocketChecker(agentId)
     },
 
     getLastSeenAt(agentId) {

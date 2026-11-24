@@ -125,7 +125,6 @@ function makeStatefulConnectionRegistry(conn: ProviderConnection, cwd: string): 
     getConnectionCount: vi.fn(() => rows.size),
     isAttached: vi.fn(() => rows.size > 0),
     getEpoch: vi.fn(() => epoch),
-    isOwnedByWs: vi.fn(() => false),
     getRuntimeInfo: vi.fn(() => null),
     getLastSeenAt: vi.fn(() => {
       if (rows.size === 0) return null
@@ -143,7 +142,6 @@ function makeStatefulConnectionRegistry(conn: ProviderConnection, cwd: string): 
     ),
     close: vi.fn().mockResolvedValue(undefined),
     onCrash: vi.fn(() => () => {}),
-    setWsSocketChecker: vi.fn(),
   } as unknown as ConnectionRegistry
 }
 

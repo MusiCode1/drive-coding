@@ -145,18 +145,15 @@ async function setup(): Promise<{
     list: vi.fn(() => []),
     isAttached: vi.fn(() => false),
     getEpoch: vi.fn(() => 0),
-    isOwnedByWs: vi.fn(() => false),
     getRuntimeInfo: vi.fn(() => null),
     getLastSeenAt: vi.fn(() => null),
     listHttpConnectionIds: vi.fn(() => []),
     close: vi.fn(),
     onCrash: vi.fn(() => () => {}),
-    setWsSocketChecker: vi.fn(),
   } as unknown as ConnectionRegistry
 
   const registry: AgentSessionRegistry = {
     getHost: (id) => (id === AGENT_ID ? host : undefined),
-    isHeld: (id) => id === AGENT_ID,
     getOrCreateHost: async (id) =>
       id === AGENT_ID ? { ok: true, entry: { host, broadcaster } } : { ok: false, reason: "not-found" },
     getBroadcaster: (id) => (id === AGENT_ID ? broadcaster : undefined),

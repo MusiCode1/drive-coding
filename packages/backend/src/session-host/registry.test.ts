@@ -130,12 +130,10 @@ function makeMockConnectionRegistry(
     ),
     isAttached: vi.fn(() => rows.size > 0),
     getEpoch: vi.fn().mockReturnValue(0),
-    isOwnedByWs: vi.fn().mockReturnValue(false),
     getRuntimeInfo: vi.fn().mockReturnValue(null),
     getCliKind: vi.fn().mockReturnValue("opencode"),
     close: vi.fn().mockResolvedValue(undefined),
     onCrash: vi.fn(() => () => {}),
-    setWsSocketChecker: vi.fn(),
   } as unknown as ConnectionRegistry
 }
 
@@ -508,7 +506,7 @@ describe("AgentSessionRegistry", () => {
         })
 
         await registry.getOrCreateHost("agent-1")
-        expect(registry.isHeld("agent-1")).toBe(true)
+        expect(registry.getHost("agent-1")).toBeDefined()
 
         await vi.advanceTimersByTimeAsync(300)
 
@@ -1271,90 +1269,20 @@ describe("AgentSessionRegistry", () => {
     })
   })
 
-  // ─── slice remote-warm-reconnect C2: guard host→WS ─────────────────────────
+  it("creates a host normally when the agent is not attached (regression)", async () => {
+    const conn = makeMockConnection()
+    const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ false)
+    const mockHost = makeMockHost()
 
-  describe("attached-agent refusal (slice remote-warm-reconnect C2)", () => {
-    it("refuses to create a host for a WS-owned agent (WS holds the wire) — reason:'ws-owned'", async () => {
-      const conn = makeMockConnection()
-      const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ false)
-      ;(connectionRegistry.isOwnedByWs as ReturnType<typeof vi.fn>).mockReturnValue(true)
-      const createHostFn = vi.fn().mockResolvedValue(makeMockHost())
-
-      const registry = createAgentSessionRegistry({
-        connectionRegistry,
-        _createHostFn: createHostFn,
-        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
-      })
-
-      const result = await registry.getOrCreateHost("agent-1")
-
-      // slice host-result-reason C1: no evictionController injected here — the
-      // final ("no takeover possible") ws-owned reason, mapped to 404 by callers.
-      expect(result).toEqual({ ok: false, reason: "ws-owned" })
-      expect(createHostFn).not.toHaveBeenCalled() // host לא נוצר בכלל
-      expect(registry.getHost("agent-1")).toBeUndefined()
+    const registry = createAgentSessionRegistry({
+      connectionRegistry,
+      _createHostFn: vi.fn().mockResolvedValue(mockHost),
+      _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
     })
 
-    it("creates a host normally when the agent is not attached (regression)", async () => {
-      const conn = makeMockConnection()
-      const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ false)
-      const mockHost = makeMockHost()
+    const result = await registry.getOrCreateHost("agent-1")
 
-      const registry = createAgentSessionRegistry({
-        connectionRegistry,
-        _createHostFn: vi.fn().mockResolvedValue(mockHost),
-        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
-      })
-
-      const result = await registry.getOrCreateHost("agent-1")
-
-      expect(unwrap(result).host).toBe(mockHost)
-    })
-  })
-
-  // ─── slice host-result-reason C1: evict-timeout is TRANSIENT, distinct from ws-owned ───
-
-  describe("evict-timeout (slice host-result-reason C1)", () => {
-    it("evictAndWait rejecting → {ok:false, reason:'evict-timeout'} (NOT ws-owned, NOT 404-equivalent)", async () => {
-      const conn = makeMockConnection()
-      const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ false)
-      ;(connectionRegistry.isOwnedByWs as ReturnType<typeof vi.fn>).mockReturnValue(true)
-      const createHostFn = vi.fn().mockResolvedValue(makeMockHost())
-      const evictAndWait = vi.fn().mockRejectedValue(new Error("evict timed out"))
-
-      const registry = createAgentSessionRegistry({
-        connectionRegistry,
-        _createHostFn: createHostFn,
-        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
-        evictionController: { evictAndWait },
-      })
-
-      const result = await registry.getOrCreateHost("agent-1")
-
-      expect(result).toEqual({ ok: false, reason: "evict-timeout" })
-      expect(evictAndWait).toHaveBeenCalledWith("agent-1", 4409)
-      expect(createHostFn).not.toHaveBeenCalled() // never got past the failed eviction
-    })
-
-    it("evictAndWait resolving → HTTP takeover proceeds normally (regression: injecting the controller does not break the happy path)", async () => {
-      const conn = makeMockConnection()
-      const connectionRegistry = makeMockConnectionRegistry(conn, /* attached */ false)
-      ;(connectionRegistry.isOwnedByWs as ReturnType<typeof vi.fn>).mockReturnValue(true)
-      const mockHost = makeMockHost()
-      const evictAndWait = vi.fn().mockResolvedValue(undefined)
-
-      const registry = createAgentSessionRegistry({
-        connectionRegistry,
-        _createHostFn: vi.fn().mockResolvedValue(mockHost),
-        _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
-        evictionController: { evictAndWait },
-      })
-
-      const result = await registry.getOrCreateHost("agent-1")
-
-      expect(evictAndWait).toHaveBeenCalledWith("agent-1", 4409)
-      expect(unwrap(result).host).toBe(mockHost)
-    })
+    expect(unwrap(result).host).toBe(mockHost)
   })
 
   // ─── slice remote-warm-reconnect C2b: liveness (אין hosts יתומים) ──────────
@@ -1378,7 +1306,7 @@ describe("AgentSessionRegistry", () => {
       // ה-connection מת (crash/DELETE) — connectionRegistry.get מחזיר undefined
       ;(connectionRegistry.get as ReturnType<typeof vi.fn>).mockReturnValue(undefined)
 
-      // slice host-result-reason C1: FINAL — reason:"conn-dead", never evict-timeout
+      // slice host-result-reason C1: The saved host no longer has a connection.
       await expect(registry.getOrCreateHost("agent-1")).resolves.toEqual({
         ok: false,
         reason: "conn-dead",
@@ -1489,65 +1417,6 @@ describe("AgentSessionRegistry", () => {
 // ─── slice handoff-foundations C3: reservation + rollback ─────────────────────
 
 describe("AgentSessionRegistry — reservation + rollback (handoff-foundations C3)", () => {
-  // DoD 7: isHeld returns true during the creation window (in-flight)
-  it("isHeld returns true while getOrCreateHost is in-flight (creation window)", async () => {
-    const conn = makeMockConnection()
-    const connectionRegistry = makeMockConnectionRegistry(conn)
-    const mockHost = makeMockHost(null)
-    // Delay host creation so we can check isHeld during the window
-    let resolveCreate!: () => void
-    const createHostFn = vi.fn().mockImplementation(() => {
-      return new Promise((resolve) => {
-        resolveCreate = () => resolve(mockHost)
-      })
-    })
-
-    const registry = createAgentSessionRegistry({
-      connectionRegistry,
-      _createHostFn: createHostFn,
-      _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
-    })
-
-    // Start creation — don't await yet
-    const createPromise = registry.getOrCreateHost("agent-1")
-
-    // Flush microtasks so the promise is in-flight
-    await Promise.resolve()
-
-    // isHeld must be true during the creation window
-    expect(registry.isHeld("agent-1")).toBe(true)
-
-    // Complete creation
-    resolveCreate!()
-    await createPromise
-
-    // After creation, isHeld is still true (host is in the map now)
-    expect(registry.isHeld("agent-1")).toBe(true)
-  })
-
-  it("isHeld returns false for an unknown agentId", () => {
-    const registry = createAgentSessionRegistry({
-      connectionRegistry: makeMockConnectionRegistry(),
-    })
-    expect(registry.isHeld("unknown")).toBe(false)
-  })
-
-  it("isHeld returns false after unregisterHost", async () => {
-    const conn = makeMockConnection()
-    const connectionRegistry = makeMockConnectionRegistry(conn)
-    const registry = createAgentSessionRegistry({
-      connectionRegistry,
-      _createHostFn: vi.fn().mockResolvedValue(makeMockHost()),
-      _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
-    })
-
-    await registry.getOrCreateHost("agent-1")
-    expect(registry.isHeld("agent-1")).toBe(true)
-
-    registry.unregisterHost("agent-1")
-    expect(registry.isHeld("agent-1")).toBe(false)
-  })
-
   // DoD 8: rollback calls host.dispose() on newSession failure
   it("rollback calls host.dispose() when newSession fails (not just inFlight cleanup)", async () => {
     const conn = makeMockConnection()
@@ -1560,9 +1429,10 @@ describe("AgentSessionRegistry — reservation + rollback (handoff-foundations C
 
     const disposeSpy = mockHost.dispose as ReturnType<typeof vi.fn>
 
+    const createHostFn = vi.fn().mockResolvedValue(mockHost)
     const registry = createAgentSessionRegistry({
       connectionRegistry,
-      _createHostFn: vi.fn().mockResolvedValue(mockHost),
+      _createHostFn: createHostFn,
       _createBroadcasterFn: vi.fn().mockReturnValue(makeMockBroadcaster()),
     })
 
@@ -1571,9 +1441,12 @@ describe("AgentSessionRegistry — reservation + rollback (handoff-foundations C
     // The host was disposed — crash subscription removed, patches terminated
     expect(disposeSpy).toHaveBeenCalledTimes(1)
 
-    // isHeld is false — the reservation was cleaned up
-    expect(registry.isHeld("agent-1")).toBe(false)
     expect(registry.getHost("agent-1")).toBeUndefined()
+
+    // The rejected creation no longer occupies the reservation.
+    expect(createHostFn).toHaveBeenCalledTimes(1)
+    await expect(registry.getOrCreateHost("agent-1")).rejects.toThrow("newSession failed")
+    expect(createHostFn).toHaveBeenCalledTimes(2)
   })
 
   // DoD 9: inFlight still works — two concurrent callers create exactly one host

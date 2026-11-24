@@ -52,7 +52,6 @@ function makeStubSessionRegistry(): AgentSessionRegistry & { hosts: Map<string, 
   return {
     hosts,
     getHost: vi.fn((id: string) => hosts.get(id)),
-    isHeld: vi.fn((id: string) => hosts.has(id)),
     getOrCreateHost: vi.fn(async (id: string) => {
       let host = hosts.get(id)
       if (!host) {
