@@ -314,10 +314,10 @@
       "codeLines": 24
     },
     "packages/backend/src/session-host/http/events.ts": {
-      "metric": 220,
-      "impurity": 7,
+      "metric": 65,
+      "impurity": 5,
       "class": "mixed",
-      "codeLines": 103
+      "codeLines": 58
     },
     "packages/backend/src/session-host/http/reply.ts": {
       "metric": 16,
