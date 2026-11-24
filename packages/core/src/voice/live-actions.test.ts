@@ -65,12 +65,12 @@ describe("buildLiveActions()", () => {
 })
 
 describe("buildLiveSecretaryPrompt()", () => {
-  it("includes identifier, language, and scope sections", () => {
+  it("includes identifier, language, and delegation rules", () => {
     const prompt = buildLiveSecretaryPrompt()
     expect(prompt).toContain("מזהים טכניים")
     expect(prompt).toContain("שפת המשתמש")
-    expect(prompt).toContain("ענה בעצמך על שאלות רגילות")
-    expect(prompt).toContain("התפקיד העיקרי שלך הוא לתווך")
+    expect(prompt).toContain("ברירת המחדל היא להעביר לסוכן")
+    expect(prompt).toContain("ענה בעצמך רק")
     expect(prompt).toContain("אל תחווה דעה על יכולות סוכן הקוד")
     expect(prompt).toContain("compose_prompt")
   })

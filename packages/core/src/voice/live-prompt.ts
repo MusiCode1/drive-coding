@@ -7,8 +7,9 @@
 
 import type { ConfigSnapshot } from "./live-config.js"
 
-/** Prefix on agent-answer delivery context — not a user request (slice live-secretary fix1 §1). */
-export const LIVE_AGENT_DELIVERY_MARKER = "[תשובת-סוכן]"
+import { LIVE_AGENT_DELIVERY_MARKER, LIVE_SECRETARY_RULES } from "./live-secretary-rules-prompt.js"
+
+export { LIVE_AGENT_DELIVERY_MARKER } from "./live-secretary-rules-prompt.js"
 
 /** Prefix on pending-permission notification context (slice live-secretary fix1 §2). */
 export const LIVE_PERMISSION_PENDING_MARKER = "[בקשת-הרשאה]"
@@ -33,13 +34,15 @@ export const LIVE_ACTION_PROSE: Readonly<
 > = {
   compose_prompt: {
     description:
-      "נסח ושלח בקשה לסוכן הקוד בשם המשתמש. מחזיר קבלה מיידית; התשובה מגיעה בערוץ אחר. " +
+      "קרא לכלי הזה לכל בקשה לפעולה או לעובדה על הקוד, הקבצים, הפרויקט או הסוכן, גם כשלא בטוח. " +
+      "נסח ושלח את הבקשה לסוכן הקוד בשם המשתמש. התשובה מגיעה בערוץ אחר. " +
+      "אם קיבלת status:sent — אמור רק שהבקשה הועברה לסוכן. " +
       "אם קיבלת status:not_sent — אמור למשתמש שהבקשה לא נשלחה ומדוע; אל תאשר שליחה.",
     params: { text: "הבקשה המנוסחת במלואה." },
   },
   forward: {
     description:
-      "העבר את בקשת המשתמש כלשונה לסוכן הקוד, בלי לנסח מחדש. " +
+      "קרא לכלי הזה כשהמשתמש ביקש להעביר כלשונו את מה שאמר, בלי לנסח מחדש. " +
       "אם קיבלת status:not_sent — אמור למשתמש שהבקשה לא נשלחה ומדוע; אל תאשר שליחה.",
     params: {},
   },
@@ -133,7 +136,7 @@ export const LIVE_ACTION_PROSE: Readonly<
     description:
       "שנה הגדרת סשן (מודל, מצב, thinking, או כל אופציה מ-list_config). " +
       "השתמש רק ב-id ובערכים שחזרו מ-list_config — אל תנחש modelId. " +
-      "ל-boolean שלח \"true\" או \"false\".",
+      'ל-boolean שלח "true" או "false".',
     params: {
       id: "מזהה ההגדרה מ-list_config (model · mode · thinking · או id של אופציה).",
       value: "ערך חוקי מה-choices של list_config.",
@@ -156,18 +159,6 @@ const IDENTIFIER_SECTION =
 const LANGUAGE_SECTION =
   "נסח בקשות בשפת המשתמש. אם המשתמש דיבר עברית — הנוסח לסוכן חייב להיות בעברית, " +
   "אך המזהים הטכניים חייבים להישמר כפי שנאמרו."
-
-const SCOPE_SECTION =
-  "התפקיד העיקרי שלך הוא לתווך: להעביר הודעות בין המשתמש לסוכן הקוד ולהיפך, " +
-  "כדי לאפשר למשתמש לדבר עם הסוכן בקול. " +
-  "ענה בעצמך על שאלות רגילות (שעה, מזג אוויר אם ידוע, שיחה קצרה) ועל היכולות שלך כמזכיר — " +
-  "מה הכלים שלך עושים, מתי אתה שולח לסוכן. " +
-  "אל תחווה דעה על יכולות סוכן הקוד, על איכות התשובות שלו, או על איך יצא לו — " +
-  "מסור את דבריו, ושאלו אותו אם המשתמש שואל עליו. " +
-  "בלי להגיד \"אני יכול רק דברים שקשורים לקוד\". " +
-  "שלח לסוכן (compose_prompt / forward) כשהמשתמש מבקש עבודה על קוד, קבצים, " +
-  "ריצה, דיבוג, או משהו שדורש את עוזר-הקוד. " +
-  "על בקשות קוד — אל תשאל הבהרות; קרא מיד לכלי עם ניסוח מלא."
 
 const AGENT_DELIVERY_SECTION =
   `טקסט שמתחיל ב-${LIVE_AGENT_DELIVERY_MARKER} הוא דיווח מהסוכן שיש למסור למשתמש בקול — ` +
@@ -323,9 +314,17 @@ export function buildLiveSecretaryPrompt(opts?: {
       ? "אתה מזכיר קולי: מתווך בין המשתמש לסוכן הקוד — מעביר הודעות לשני הכיוונים כדי לאפשר שיחה קולית עם הסוכן. מפעיל כלים כשצריך."
       : "You are a voice secretary: a relay between the user and the coding agent — pass messages both ways so the user can talk to the agent. Use tools when needed."
 
+  const ruleSections = (
+    ["identity", "delegation", "results", "presentation", "preferences"] as const
+  ).map((group) =>
+    LIVE_SECRETARY_RULES.filter((rule) => rule.group === group)
+      .map((rule) => rule.text)
+      .join("\n"),
+  )
+
   return [
     role,
-    SCOPE_SECTION,
+    ...ruleSections,
     HISTORY_TOOLS_SECTION,
     LIVE_SESSION_CONTROL_SECTION,
     CONFIG_TOOLS_SECTION,
