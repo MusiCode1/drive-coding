@@ -2,13 +2,8 @@
  * @vitest-environment jsdom
  * frame-ingest-parity.test.svelte.ts — gates G1–G6 for frame-ingest + meta-passthrough.
  *
- * Three feeds of the same recorded conversation (ACP session/update + _claude/sdkMessage):
- *   A — WS: reducer and host frames → RemoteSessionView (drip)
- *   B — HTTP: patchToSessionUpdates synthesis → RemoteSessionView (snapshot batch)
- *   C — HTTP: patchToSessionUpdates synthesis → RemoteSessionView (drip batches)
- *
- * G3 compares top-level tool-bubble counts (not flat bubble count — slice meta-passthrough:
- * HTTP had an extra orphan tool bubble that cancelled WS message duplication on the old G3).
+ * The same host frames replay a recorded conversation through both transports.
+ * Batching the updates independently checks the reader's version watermark.
  */
 
 import { readFileSync } from "node:fs"
@@ -18,24 +13,24 @@ import {
   createInitialSessionState,
   encodeWsFrame,
   type Patch,
-  patchToSessionUpdates,
   reduce,
   type SessionState,
   type SseFrame,
   serializeFrame,
   snapshotFrame,
+  TOOL_OUTPUT_TEXT_CAP,
+  type ToolOutputRules,
   updateFrame,
-  type WireSessionUpdate,
 } from "@drive-coding/core/session"
 import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
-import { tick } from "svelte"
+import { flushSync, mount, tick, unmount } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import ToolBubbleHarness from "$lib/components/chat/bubbles/__tests__/tool-bubble-output-harness.svelte"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
 import { fakeSessionSockets } from "$lib/session/__contract__/fake-session-socket"
 import { createRemoteSessionView, createRemoteView } from "$lib/session/create-session-view"
-import type { SessionView, ViewEmission } from "$lib/session/session-view"
-import type { WireUpdateBatch } from "$lib/session/sse-reader"
+import type { SessionTransport } from "$lib/session/session-transport"
 import type { Bubble } from "$lib/types/bubble"
 
 // ─── fixture ────────────────────────────────────────────────────────────────
@@ -61,118 +56,51 @@ function rawUpdate(entry: FixtureEntry): unknown {
   return (entry.frame.params as { update: unknown }).update
 }
 
-// ─── HTTP replay view (mirrors RemoteSessionView.#applyIncoming) ────────────
+const replayState = createInitialSessionState({ sessionId: "parity-test" })
 
-class HttpReplayView implements SessionView {
-  state: SessionState = $state(createInitialSessionState({ sessionId: null }))
-
-  #controller: ReadableStreamDefaultController<ViewEmission> | null = null
-  readonly patches: ReadableStream<ViewEmission>
-  #lastVersion = 0
-  supportsSessionDelete = false
-
-  constructor() {
-    this.patches = new ReadableStream<ViewEmission>({
-      start: (controller) => {
-        this.#controller = controller
-      },
-    })
-  }
-
-  connect(sessionId: string): void {
-    this.state = { ...this.state, sessionId, status: "connected" }
-  }
-
-  applyIncoming(batch: WireUpdateBatch): void {
-    if (batch.version <= this.#lastVersion) return
-    let state = this.state
-    const produced: Patch[] = []
-    for (const update of batch.updates) {
-      const { state: next, patches } = reduce(state, update)
-      state = next
-      produced.push(...patches)
-    }
-    this.state = { ...state, version: batch.version }
-    this.#lastVersion = batch.version
-    if (produced.length > 0 || batch.updates.length > 0) {
-      this.#emit(produced, batch.updates)
-    }
-  }
-
-  #emit(patches: Patch[], updates: unknown[] = []): void {
-    try {
-      this.#controller?.enqueue({ patches, updates })
-    } catch {
-      // stream closed
-    }
-  }
-
-  prompt = vi.fn().mockResolvedValue(undefined)
-  cancel = vi.fn().mockResolvedValue(undefined)
-  respond = vi.fn().mockResolvedValue(undefined)
-  setMode = vi.fn().mockResolvedValue(undefined)
-  setConfigOption = vi.fn().mockResolvedValue(undefined)
-  extMethod = vi.fn().mockResolvedValue(undefined)
-  newSession = vi.fn().mockResolvedValue(undefined)
-  loadSession = vi.fn().mockResolvedValue(undefined)
-  listSessions = vi.fn().mockResolvedValue([])
-  deleteSession = vi.fn().mockResolvedValue(undefined)
-  setSessionModel = vi.fn().mockResolvedValue(undefined)
-  close = vi.fn().mockResolvedValue(undefined)
-}
-
-// ─── wire synthesis (BE path: reduce → Patch → patchToSessionUpdates + ext wrapper) ─
-
-function synthesizeWireFromInbound(mode: "snapshot" | "drip"): {
-  batches: WireUpdateBatch[]
-  wireCount: number
-} {
-  let state = createInitialSessionState({ sessionId: "parity-test" })
-  let version = 0
-  const allWire: WireSessionUpdate[] = []
-  const batches: WireUpdateBatch[] = []
-
+function* inboundUpdates() {
   for (const entry of inbound) {
-    let batchWire: WireSessionUpdate[] = []
-
     if (entry.channel === "acp" && entry.frame.method === "session/update") {
-      const update = rawUpdate(entry)
-      const { state: next, patches } = reduce(state, update)
-      for (const patch of patches) {
-        const applied = applyPatch(state, patch)
-        if (applied) {
-          batchWire.push(...patchToSessionUpdates(applied, patch))
-          state = applied
-        }
-      }
-      state = next
+      yield rawUpdate(entry)
     } else if (entry.channel === "raw" && entry.frame.method === "_claude/sdkMessage") {
-      batchWire.push({
+      yield {
         sessionUpdate: "_drive/ext_notification",
-        method: "_claude/sdkMessage",
-        params: entry.frame.params as Record<string, unknown>,
-      })
-    } else {
-      continue
-    }
-
-    version++
-    allWire.push(...batchWire)
-    if (mode === "drip" && batchWire.length > 0) {
-      batches.push({ version, updates: batchWire })
+        method: entry.frame.method,
+        params: entry.frame.params,
+      }
     }
   }
-
-  if (mode === "snapshot") {
-    batches.push({ version, updates: allWire })
-  }
-
-  return { batches, wireCount: allWire.length }
 }
 
-const { batches: snapshotBatches, wireCount: expectedWireCount } =
-  synthesizeWireFromInbound("snapshot")
-const { batches: dripBatches } = synthesizeWireFromInbound("drip")
+function hostFrames(
+  state: SessionState,
+  updates: Iterable<unknown>,
+  opts?: Parameters<typeof reduce>[2],
+) {
+  const frames: SseFrame[] = []
+  for (const update of updates) {
+    const next = reduce(state, update, opts)
+    for (const patch of next.patches) {
+      state = applyPatch(state, patch)
+      const frame = updateFrame(state, patch)
+      if (frame) frames.push(frame)
+    }
+    state = next.state
+  }
+  return frames
+}
+
+function notifications(frames: readonly SseFrame[]): { params: { update: unknown } }[] {
+  return frames.flatMap((frame) => JSON.parse(frame.data) as { params: { update: unknown } }[])
+}
+
+const dripFrames = hostFrames(replayState, inboundUpdates())
+const wireNotifications = notifications(dripFrames)
+const batchedFrame: SseFrame = {
+  event: "update",
+  id: dripFrames.at(-1)?.id,
+  data: JSON.stringify(wireNotifications),
+}
 
 // ─── bubble helpers (flat top-level; subFrames excluded per brief §4) ───────
 
@@ -212,10 +140,6 @@ function toolShapes(bubbles: Bubble[]): ToolShape[] {
     }))
 }
 
-function delay(ms = 20): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
 vi.mock("$lib/adapters/agents-api", () => ({
   createAgent: vi.fn().mockResolvedValue({ agentId: "parity-agent" }),
   deleteAgent: vi.fn().mockResolvedValue(undefined),
@@ -242,70 +166,57 @@ import { Speaker } from "./speaker.svelte"
 
 // ─── feed runners ───────────────────────────────────────────────────────────
 
-async function runWsPath(): Promise<{ observed: unknown[]; bubbles: Bubble[] }> {
-  const observed: unknown[] = []
-  const sockets = fakeSessionSockets()
-  let state = createInitialSessionState({ sessionId: "parity-test" })
-  const connected = createRemoteView({
-    agentId: "parity-agent",
-    baseUrl: "http://be.local",
-    transport: "ws",
-    _WebSocket: sockets.WebSocket,
+async function connectFrameFeed(transport: SessionTransport, state: SessionState) {
+  const initial = snapshotFrame(state)
+  const opts = { agentId: "parity-agent", baseUrl: "http://be.local", transport }
+  if (transport === "ws") {
+    const sockets = fakeSessionSockets()
+    const connecting = createRemoteView({ ...opts, _WebSocket: sockets.WebSocket })
+    const socket = sockets.latest()
+    const push = (frame: SseFrame) => socket.receive(encodeWsFrame(frame))
+    socket.connect()
+    push(initial)
+    return { view: await connecting, push }
+  }
+
+  const encoder = new TextEncoder()
+  let controller!: ReadableStreamDefaultController<Uint8Array>
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c
+    },
   })
-  const socket = sockets.latest()
-  socket.connect()
-  socket.receive(encodeWsFrame(snapshotFrame(state)))
-  const view = await connected
+  const push = (frame: SseFrame) => controller.enqueue(encoder.encode(serializeFrame(frame)))
+  const view = await createRemoteView({
+    ...opts,
+    _fetch: async (url, init) => {
+      expect(url).toBe("http://be.local/api/agents/parity-agent/events")
+      init?.signal?.addEventListener("abort", () => controller.close(), { once: true })
+      push(initial)
+      return new Response(stream, { headers: { "Content-Type": "text/event-stream" } })
+    },
+  })
+  return { view, push }
+}
+
+async function runReplay(
+  transport: SessionTransport,
+  frames: readonly SseFrame[],
+  state = replayState,
+) {
+  const observed: unknown[] = []
+  const { view, push } = await connectFrameFeed(transport, state)
   const agent = new AgentSession({ view, _onUpdateObserved: (update) => observed.push(update) })
+  agent._setStatusForTest("connected")
   try {
-    let sent = 0
-    for (const entry of inbound) {
-      const update =
-        entry.channel === "acp" && entry.frame.method === "session/update"
-          ? rawUpdate(entry)
-          : entry.channel === "raw" && entry.frame.method === "_claude/sdkMessage"
-            ? {
-                sessionUpdate: "_drive/ext_notification",
-                method: entry.frame.method,
-                params: entry.frame.params,
-              }
-            : undefined
-      if (!update) continue
-      const result = reduce(state, update)
-      state = result.state
-      for (const patch of result.patches) {
-        const frame = updateFrame(state, patch)
-        if (!frame) continue
-        socket.receive(encodeWsFrame(frame))
-        sent++
-      }
-    }
-    expect(sent).toBeGreaterThan(0)
-    await vi.waitFor(() => expect(view.state.version).toBe(state.version))
-    await delay()
-    expect(observed.length).toBeGreaterThan(0)
+    const expectedCount = notifications(frames).length
+    for (const frame of frames) push(frame)
+    await vi.waitFor(() => expect(observed).toHaveLength(expectedCount))
     return { observed, bubbles: [...agent.bubbles] }
   } finally {
     await view.close()
   }
 }
-
-async function runHttpPath(
-  batches: WireUpdateBatch[],
-): Promise<{ observed: unknown[]; bubbles: Bubble[] }> {
-  const observed: unknown[] = []
-  const view = new HttpReplayView()
-  view.connect("http-parity-test")
-  const agent = new AgentSession({ view, _onUpdateObserved: (u) => observed.push(u) })
-  agent._setStatusForTest("connected")
-  for (const batch of batches) {
-    view.applyIncoming(batch)
-  }
-  await delay()
-  return { observed, bubbles: [...agent.bubbles] }
-}
-
-// ─── G1–G4 ──────────────────────────────────────────────────────────────────
 
 describe("frame-ingest parity gate", () => {
   beforeEach(() => {
@@ -316,53 +227,150 @@ describe("frame-ingest parity gate", () => {
     vi.clearAllMocks()
   })
 
-  it("G1 — every session/update on the HTTP wire is observed in #onSessionUpdate", async () => {
-    const { observed } = await runHttpPath(snapshotBatches)
-    expect(observed.length).toBe(expectedWireCount)
+  it("G1 — every host update reaches the VM over SSE and WebSocket", async () => {
+    expect(wireNotifications.length).toBeGreaterThan(0)
+    const sse = await runReplay("http", [batchedFrame])
+    const ws = await runReplay("ws", dripFrames)
+    expect(sse.observed).toEqual(wireNotifications.map((entry) => entry.params.update))
+    expect(sse.observed).toEqual(ws.observed)
   })
 
-  it("G2 — bubble structure in HTTP snapshot ≈ HTTP drip", async () => {
-    const a = await runHttpPath(snapshotBatches)
-    const b = await runHttpPath(dripBatches)
-    expect(flatShapes(a.bubbles)).toEqual(flatShapes(b.bubbles))
+  it("G2 — batched and streamed host frames produce the same bubbles", async () => {
+    const sse = await runReplay("http", [batchedFrame])
+    const drip = await runReplay("http", dripFrames)
+    const ws = await runReplay("ws", dripFrames)
+    expect(flatShapes(sse.bubbles)).toEqual(flatShapes(drip.bubbles))
+    expect(flatShapes(sse.bubbles)).toEqual(flatShapes(ws.bubbles))
   })
 
-  it("G3 — no duplication: HTTP snapshot tool shapes count = WS tool shapes count", async () => {
-    const ws = await runWsPath()
-    const http = await runHttpPath(snapshotBatches)
-    expect(toolShapes(http.bubbles).length).toBe(toolShapes(ws.bubbles).length)
+  it("G3 — the top-level tool count matches over SSE and WebSocket", async () => {
+    const ws = await runReplay("ws", dripFrames)
+    const sse = await runReplay("http", [batchedFrame])
+    expect(toolShapes(sse.bubbles).length).toBeGreaterThan(0)
+    expect(toolShapes(sse.bubbles)).toHaveLength(toolShapes(ws.bubbles).length)
   })
 
-  it("G4 — message text in HTTP snapshot ≈ WS", async () => {
-    const ws = await runWsPath()
-    const http = await runHttpPath(snapshotBatches)
-    // WS replay may re-emit a full-text chunk after partial chunks (fixture artifact);
-    // HTTP wire synthesis collapses to whole messages — compare unique text content.
-    const wsUnique = [...new Set(flatMessageTexts(ws.bubbles))].sort()
-    const httpUnique = [...new Set(flatMessageTexts(http.bubbles))].sort()
-    expect(httpUnique).toEqual(wsUnique)
+  it("G4 — message text matches over SSE and WebSocket", async () => {
+    const ws = await runReplay("ws", dripFrames)
+    const sse = await runReplay("http", [batchedFrame])
+    expect(flatMessageTexts(sse.bubbles)).toEqual(flatMessageTexts(ws.bubbles))
   })
 
-  it("G5 — HTTP snapshot tool shapes match WS field-for-field", async () => {
-    const ws = await runWsPath()
-    const http = await runHttpPath(snapshotBatches)
-    expect(toolShapes(http.bubbles)).toEqual(toolShapes(ws.bubbles))
+  it("G5 — tool shapes match field-for-field over SSE and WebSocket", async () => {
+    const ws = await runReplay("ws", dripFrames)
+    const sse = await runReplay("http", [batchedFrame])
+    expect(toolShapes(sse.bubbles)).toEqual(toolShapes(ws.bubbles))
   })
 
-  it("G6 — Task bubble carries toolCall.task on both WS and HTTP paths", async () => {
-    const ws = await runWsPath()
-    const http = await runHttpPath(snapshotBatches)
+  it("G6 — both transports preserve the Task bubble's subagent data", async () => {
+    const ws = await runReplay("ws", dripFrames)
+    const sse = await runReplay("http", [batchedFrame])
     const wsTask = ws.bubbles.find(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === TASK_TOOL_CALL_ID,
     )
-    const httpTask = http.bubbles.find(
+    const sseTask = sse.bubbles.find(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === TASK_TOOL_CALL_ID,
     )
-    expect(wsTask?.kind === "tool" && wsTask.toolCall.task).toBeDefined()
-    expect(httpTask?.kind === "tool" && httpTask.toolCall.task).toEqual(
+    expect(wsTask?.kind === "tool" && wsTask.toolCall.task).toBeTruthy()
+    expect(sseTask?.kind === "tool" && sseTask.toolCall.task).toEqual(
       wsTask?.kind === "tool" ? wsTask.toolCall.task : undefined,
     )
   })
+})
+
+const terminalTail = "part 1\npart 2\n"
+const mcpText = "MCP tool returned its content"
+const terminal = { sessionUpdate: "tool_call_update", toolCallId: "terminal" }
+const codexUpdates = [
+  {
+    sessionUpdate: "tool_call",
+    toolCallId: "terminal",
+    kind: "execute",
+    title: "Run command",
+    _meta: { terminal_info: { terminal_id: "t1" } },
+  },
+  {
+    ...terminal,
+    _meta: { terminal_output_delta: { data: `${"x".repeat(TOOL_OUTPUT_TEXT_CAP)}\npart 1\n` } },
+  },
+  { ...terminal, _meta: { terminal_output_delta: { data: "part 2\n" } } },
+  { ...terminal, status: "failed", _meta: { terminal_exit: { exit_code: 3 } } },
+  {
+    sessionUpdate: "tool_call",
+    toolCallId: "mcp",
+    title: "Lookup",
+    status: "completed",
+    _meta: { is_mcp_tool_call: true },
+    rawOutput: { error: null, result: { content: [{ type: "text", text: mcpText }] } },
+  },
+]
+// Rules for the synthetic host input above.
+const codexRules: ToolOutputRules = {
+  fields: {
+    text: [
+      { from: "meta", key: "terminal_output_delta", path: ["data"] },
+      { from: "raw", path: ["result", "content", 0, "text"] },
+    ],
+    exitCode: [{ from: "meta", key: "terminal_exit", path: ["exit_code"] }],
+  },
+  metaKeys: {
+    terminal_info: "replace",
+    terminal_output_delta: "append",
+    terminal_exit: "replace",
+    is_mcp_tool_call: "replace",
+  },
+}
+const codexState = createInitialSessionState({ sessionId: "codex-tools" })
+
+async function readRenderedTools(transport: SessionTransport, canonicalOutput: boolean) {
+  const frames = hostFrames(codexState, codexUpdates, {
+    toolOutput: canonicalOutput ? codexRules : undefined,
+  })
+  const { bubbles } = await runReplay(transport, frames, codexState)
+  const rendered = []
+  for (const bubble of bubbles) {
+    if (bubble.kind !== "tool") throw new Error("Expected a tool bubble")
+    const target = document.createElement("div")
+    const app = mount(ToolBubbleHarness, { target, props: { bubble } })
+    try {
+      flushSync()
+      expect(target.querySelector("details")?.open).toBe(true)
+      rendered.push({
+        id: bubble.toolCall.toolCallId,
+        text: target.querySelector(".tool-text-wrapper pre")?.textContent,
+        exitCode: target.querySelector(".exit-chip")?.textContent?.trim(),
+        notice: target.querySelector(".output-truncated")?.textContent,
+      })
+    } finally {
+      await unmount(app)
+    }
+  }
+  return rendered
+}
+
+const expectedCodexOutput = [
+  {
+    id: "terminal",
+    text: terminalTail,
+    exitCode: "chat.tool.output.exitCode: 3",
+    notice: "chat.tool.output.truncatedHead",
+  },
+  { id: "mcp", text: mcpText, exitCode: undefined, notice: undefined },
+]
+
+it.each(["http", "ws"] as const)(
+  "renders Codex terminal and MCP output over %s",
+  async (transport) => {
+    expect(await readRenderedTools(transport, true)).toEqual(expectedCodexOutput)
+  },
+)
+
+it("detects missing canonical host output in the rendered bubbles", async () => {
+  const rendered = await readRenderedTools("ws", false)
+  expect(rendered).toEqual([
+    { id: "terminal", text: undefined, exitCode: undefined, notice: undefined },
+    { id: "mcp", text: undefined, exitCode: undefined, notice: undefined },
+  ])
 })
 
 describe("failed session switch over HTTP", () => {
