@@ -17,7 +17,7 @@ routes:
   - DELETE /api/agents/:id/connection
 mcp_tools:
   - session_subscribe
-docs_version: 1.11.0
+docs_version: 1.11.1
 updated: 2026-11-24
 ---
 
@@ -84,9 +84,14 @@ for that viewer's HTTP presence and detach requests.
   `{jsonrpc:"2.0", id, result:{status, body}}`. With a scoped caller, pass
   the scope header in the upgrade request.
 - **`POST /api/agents/:id/presence`** renews the viewer row. Send
-  `Acp-Connection-Id` with the viewer's ID. `$/ping` requests a `$/pong`
-  and renews socket liveness only. Send `$/detach` to release the viewer.
-  These control messages are JSON-RPC notifications.
+  `Acp-Connection-Id` with the viewer's ID.
+- Clients must send `$/ping` after opening the socket and at intervals
+  shorter than 60 seconds. Each ping requests a `$/pong` and renews socket
+  liveness only. The server checks every 20 seconds and terminates sockets
+  whose last ping is more than 60 seconds old. The client sees `1006` even if
+  it was still receiving session frames.
+- Send `$/detach` to release the viewer. Ping, pong, and detach are JSON-RPC
+  notifications.
 
 SSE and WebSocket viewers can share one session and viewing epoch. The first
 viewer after the group becomes empty starts a new epoch. If a supplied
@@ -96,6 +101,7 @@ before opening the session host.
 | Close code | Meaning |
 |---|---|
 | `1000` | Viewer released, expired, or stream ended |
+| `1006` | Abnormal closure, including server termination after missed pings |
 | `4401` | Agent authentication is required |
 | `4404` | Agent connection is missing |
 | `4409` | Stale epoch or takeover by the raw WebSocket |

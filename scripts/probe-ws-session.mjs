@@ -8,11 +8,15 @@ if (!base || !agentId) {
 const address = new URL(`/ws/session/${encodeURIComponent(agentId)}`, base)
 address.protocol = address.protocol === "https:" ? "wss:" : "ws:"
 
+const pingIntervalMs = 12_000
+const ping = JSON.stringify({ jsonrpc: "2.0", method: "$/ping" })
+
 await new Promise((resolve, reject) => {
   const socket = new WebSocket(address)
   let snapshotReceived = false
   let promptAccepted = false
   let toolOutputId
+  let pingTimer
   const timer = setTimeout(
     () => finish(new Error("Timed out waiting for snapshot, RPC and tool output")),
     90_000,
@@ -20,11 +24,18 @@ await new Promise((resolve, reject) => {
 
   function finish(error) {
     clearTimeout(timer)
+    clearInterval(pingTimer)
     socket.close()
     if (error) reject(error)
     else resolve()
   }
 
+  socket.addEventListener("open", () => {
+    socket.send(ping)
+    pingTimer = setInterval(() => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(ping)
+    }, pingIntervalMs)
+  })
   socket.addEventListener("close", (event) => {
     if (!promptAccepted || toolOutputId === undefined) {
       finish(new Error(`WebSocket closed before the probe completed (code ${event.code})`))
