@@ -144,10 +144,10 @@ function makeStatefulConnReg(conn: ProviderConnection) {
   let epoch = 0
   const addConnection = vi.fn<ConnectionRegistry["addConnection"]>(
     (_id, cid, via, stream, opts) => {
-      const hadHttp = [...rows.values()].some((r) => r.via === "http")
-      rows.set(cid, { via, role: opts?.role ?? "viewer", lastSeenAt: Date.now(), stream })
-      if (via === "http" && !hadHttp) epoch++
-      if (via === "ws") epoch++
+      const role = opts?.role ?? "viewer"
+      const hadViewer = [...rows.values()].some((r) => r.role === "viewer")
+      rows.set(cid, { via, role, lastSeenAt: Date.now(), stream: stream ?? rows.get(cid)?.stream })
+      if (role === "owner" || !hadViewer) epoch++
     },
   )
   const removeConnection = vi.fn((_id: string, cid: string) => {
