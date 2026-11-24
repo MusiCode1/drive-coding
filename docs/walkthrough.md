@@ -1,3 +1,21 @@
+## 2026-11-25 01:10 — slice `subagent-identity-gate` (אליעזר)
+
+ענף: `slice/subagent-identity-gate` @ base `0fd374b2`. worktree: `.worktrees/subagent-identity-gate`.
+
+**C0** — עוגני בסיס: אין פרסור תת-סוכן ב-BE/core (רק carry). `typecheck:fe` 0 שגיאות; FE `212` קבצי-טסט ירוקים (`2108` טסטים); `agent-session.svelte.ts` `codeLines=1130`.
+
+**C1** — `isSubagentToolCall` + טסטים טהורים (Agent/Task/Bash/fallback).
+
+**C2** — `SubagentTranscriptRouter` + שער בשתי נקודות; טסטי אינטגרציה #70 / fallback / מעורב; `codeLines` 1130→1094; `size-baseline` עודכן.
+
+**C3** — אימות ידני: הבנייה `bun run --filter @drive-coding/frontend build` ירוקה; preview BE `PORT=4004` + `FE_STATIC_DIR` (tmux `dc-subagent-identity-gate-be`, HTTP 200). פרוב-חי עם `claude` CLI (פרומפטים מ-`probe-cli-task-frames.sh`) **לא הורץ** — מדיניות הקפאת Claude בשרת (אליעזר חסום מ-`session_open`/`claude`). כיסוי תרחישי probe בטסטי harness (Bash+`local_bash` שלילי, Agent replay, רצף מעורב). שער אימות עיניים — calev על preview.
+
+**סטיות (§7):** `#flushPendingSubagentEvents` עדיין נקרא רק מ-`tool_call` (לא מתוקן בסלייס).
+
+**קומיטים:** `b00880a8` (C1), `3c909ec6` (C2).
+
+---
+
 ## 2026-09-27 — slice `usage-per-cli` (אליעזר)
 
 ענף: `slice/usage-per-cli` @ base `0f32eabf`. worktree: `.worktrees/usage-per-cli`.
