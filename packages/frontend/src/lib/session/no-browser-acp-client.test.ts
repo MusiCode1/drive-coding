@@ -11,6 +11,8 @@ const forbiddenModules = new Set([
   "@drive-coding/acp-wire/browser",
   "@drive-coding/provider/client",
 ])
+const sdkModule = "@agentclientprotocol/sdk"
+const sdkClient = "ClientSideConnection"
 
 function runtimeModule(node: ts.Node): ts.Expression | undefined {
   if (ts.isImportDeclaration(node)) {
@@ -41,11 +43,38 @@ function runtimeModule(node: ts.Node): ts.Expression | undefined {
   return undefined
 }
 
+function exposesSdkClient(node: ts.Node): boolean {
+  if (ts.isImportDeclaration(node)) {
+    const clause = node.importClause
+    if (!clause) return false
+    const bindings = clause.namedBindings
+    return Boolean(
+      clause.name ||
+        (bindings &&
+          (ts.isNamespaceImport(bindings) ||
+            bindings.elements.some(
+              (item) => !item.isTypeOnly && (item.propertyName ?? item.name).text === sdkClient,
+            ))),
+    )
+  }
+  if (ts.isExportDeclaration(node) && node.exportClause && ts.isNamedExports(node.exportClause)) {
+    return node.exportClause.elements.some(
+      (item) => !item.isTypeOnly && (item.propertyName ?? item.name).text === sdkClient,
+    )
+  }
+  // A dynamic import, namespace re-export or export * exposes the entire SDK.
+  return true
+}
+
 function runtimeImports(file: SourceFile): string[] {
   const violations = new Set<string>()
   visitSource(file, (node) => {
     const module = runtimeModule(node)
-    if (module && ts.isStringLiteralLike(module) && forbiddenModules.has(module.text)) {
+    if (
+      module &&
+      ts.isStringLiteralLike(module) &&
+      (forbiddenModules.has(module.text) || (module.text === sdkModule && exposesSdkClient(node)))
+    ) {
       violations.add(module.text)
     }
   })
@@ -63,6 +92,16 @@ describe("no browser ACP client (L4)", () => {
     ],
     ['import { type Client, connect } from "@drive-coding/acp-wire"', "@drive-coding/acp-wire"],
     ['import {} from "@drive-coding/acp-wire"', "@drive-coding/acp-wire"],
+    [
+      'import { ClientSideConnection as Client } from "@agentclientprotocol/sdk"',
+      "@agentclientprotocol/sdk",
+    ],
+    ['import * as sdk from "@agentclientprotocol/sdk"', "@agentclientprotocol/sdk"],
+    ['import("@agentclientprotocol/sdk")', "@agentclientprotocol/sdk"],
+    [
+      'export { ClientSideConnection as Client } from "@agentclientprotocol/sdk"',
+      "@agentclientprotocol/sdk",
+    ],
   ])("detects a runtime import: %s", (statement, module) => {
     expect(
       runtimeImports({
@@ -80,6 +119,9 @@ describe("no browser ACP client (L4)", () => {
       import { type PromptBlocks } from "@drive-coding/provider/client"
       export type { AcpTransport as Transport } from "@drive-coding/acp-wire"
       type Client = import("@drive-coding/provider/client").PromptBlocks
+      import type { ClientSideConnection } from "@agentclientprotocol/sdk"
+      import { type ClientSideConnection as AcpClient } from "@agentclientprotocol/sdk"
+      import { ndJsonStream } from "@agentclientprotocol/sdk"
     `
     expect(runtimeImports({ path: "lib/other.ts", text })).toEqual([])
   })
