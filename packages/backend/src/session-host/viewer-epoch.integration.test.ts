@@ -1,5 +1,6 @@
 import { once } from "node:events"
 import {
+  type ChannelFrame,
   createInitialSessionState,
   decodeWsServerMessage,
   type Patch,
@@ -65,6 +66,72 @@ it("ends an expired SSE viewer without takeover when a WS viewer has joined", as
     ws.cancel()
     expect(await wsEnd).toBe("cancelled")
   } finally {
+    registry.stop()
+    registry.unregisterHost(agentId)
+    await connectionRegistry.close(agentId)
+    vi.useRealTimers()
+  }
+})
+
+it("ends an expired SSE viewer without takeover even if its snapshot write overlaps the next epoch", async () => {
+  vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] })
+  const agentId = "slow-sse"
+  const connectionRegistry = createConnectionRegistry()
+  const registry = createAgentSessionRegistry({
+    connectionRegistry,
+    _createHostFn: async () =>
+      ({
+        state: createInitialSessionState({ sessionId: "session" }),
+        patches: new ReadableStream<Patch>(),
+      }) as ExtendedSessionHost,
+    _httpOwnerTtlMs: 100,
+    _httpSweepMs: 10,
+  })
+  let finishWrite!: () => void
+  const blockedWrite = new Promise<void>((resolve) => {
+    finishWrite = resolve
+  })
+  try {
+    await connectionRegistry.connect(agentId, "opencode", { cwd: process.cwd() })
+    const deps = { registry, connectionRegistry }
+    const sse = await openViewer(deps, {
+      agentId,
+      connectionId: "sse",
+      via: "http",
+      clientEpoch: undefined,
+    })
+    if (!sse.ok) throw new Error("SSE viewer did not open")
+    const write = vi.fn<(frame: ChannelFrame) => Promise<void>>().mockReturnValueOnce(blockedWrite)
+    const sseEnd = sse.run({ write })
+    expect(write).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ event: "snapshot" }))
+    expect(connectionRegistry.getEpoch(agentId)).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(110)
+    expect(connectionRegistry.listViewerRows(agentId)).toEqual([])
+    const ws = await openViewer(deps, {
+      agentId,
+      connectionId: "ws",
+      via: "ws",
+      clientEpoch: undefined,
+    })
+    if (!ws.ok) throw new Error("WS viewer did not open")
+    const wsEnd = ws.run({ write: async () => {} })
+    try {
+      expect(connectionRegistry.getEpoch(agentId)).toBe(2)
+      finishWrite()
+      // Restoring the former epoch comparison emits a second frame here.
+      const end = await sseEnd
+      expect(write.mock.calls.map(([frame]) => frame.event)).toEqual(["snapshot"])
+      expect(end).toBe("ended")
+      expect(connectionRegistry.listViewerRows(agentId).map((row) => row.connectionId)).toEqual([
+        "ws",
+      ])
+    } finally {
+      ws.cancel()
+      await wsEnd
+    }
+  } finally {
+    finishWrite()
     registry.stop()
     registry.unregisterHost(agentId)
     await connectionRegistry.close(agentId)

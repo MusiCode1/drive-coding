@@ -24,7 +24,6 @@ import type { AgentSessionRegistry } from "../session-host/registry.js"
 const log = createLogger("backend.ws.session")
 
 const closeCodeByEnd: Record<ViewerEnd, number> = {
-  "taken-over": closeCodeForStatus(409),
   ended: 1000,
   cancelled: 1000,
   failed: closeCodeForStatus(500),

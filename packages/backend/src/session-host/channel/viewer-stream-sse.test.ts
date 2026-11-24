@@ -10,7 +10,7 @@ import type { ExtendedSessionHost } from "../session-host.js"
 
 const path = "/api/agents/fixture-agent/events"
 
-it("streams exactly the SSE bytes captured before the channel extraction", async () => {
+it("preserves the snapshot, update and keepalive SSE bytes across an epoch change", async () => {
   let patches!: ReadableStreamDefaultController<Patch>
   const patchStream = new ReadableStream<Patch>({
     start(controller) {
@@ -56,7 +56,6 @@ it("streams exactly the SSE bytes captured before the channel extraction", async
   bytes += decoder.decode((await reader.read()).value)
   epoch = 2
   patches.close()
-  bytes += decoder.decode((await reader.read()).value)
   expect((await reader.read()).done).toBe(true)
 
   const fixture = new URL("./fixtures/viewer-stream-sse.json", import.meta.url)

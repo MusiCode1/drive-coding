@@ -33,7 +33,7 @@ export type OpenViewerInput = {
   clientEpoch: number | undefined
   via: ConnectionVia
 }
-export type ViewerEnd = "taken-over" | "ended" | "cancelled" | "failed"
+export type ViewerEnd = "ended" | "cancelled" | "failed"
 export type OpenViewerResult =
   | { ok: false; response: ChannelResponse }
   | { ok: true; run(sink: FrameSink): Promise<ViewerEnd>; cancel(): void }
@@ -55,7 +55,7 @@ export async function openViewer(
   }: OpenViewerDeps,
   { agentId, connectionId, clientEpoch, via }: OpenViewerInput,
 ): Promise<OpenViewerResult> {
-  // A stale reconnect must not evict the current owner by triggering lazy creation.
+  // Reject stale epochs before triggering lazy host creation.
   if (clientEpoch !== undefined) {
     const serverEpoch = registry.getEpoch(agentId)
     if (clientEpoch < serverEpoch) {
@@ -156,14 +156,7 @@ export async function openViewer(
       while (!cancelled) {
         const { done, value: patch } = await reader.read()
         if (cancelled) break
-        if (done) {
-          const newEpoch = registry.getEpoch(agentId)
-          if (newEpoch > currentEpoch) {
-            await write({ event: "taken-over", id: String(newEpoch), data: "{}" })
-            end = "taken-over"
-          }
-          break
-        }
+        if (done) break
         // Wire mapping needs the state directly after this patch. The live
         // host may already have applied a reset or changed the target message.
         view = applyPatch(view, patch)

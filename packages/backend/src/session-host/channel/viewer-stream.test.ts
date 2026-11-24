@@ -97,7 +97,7 @@ describe("openViewer", () => {
     expect(getOrCreateHost).not.toHaveBeenCalled()
   })
 
-  it("streams snapshot, update, timer tick and takeover via the supplied sink", async () => {
+  it("streams snapshot, update and timer tick, then ends despite a newer epoch", async () => {
     const h = setup()
     const viewer = await h.open()
     const done = viewer.run({ write: h.write })
@@ -107,15 +107,10 @@ describe("openViewer", () => {
     h.tick()
     h.setEpoch(4)
     h.patches.close()
-    expect(await done).toBe("taken-over")
+    expect(await done).toBe("ended")
     expect(h.addConnection).toHaveBeenCalledExactlyOnceWith("agent", "viewer", "ws", h.patchStream)
     const frames = h.write.mock.calls.map(([frame]) => frame)
-    expect(frames.map((frame) => frame.event)).toEqual([
-      "snapshot",
-      "update",
-      "stream-alive",
-      "taken-over",
-    ])
+    expect(frames.map((frame) => frame.event)).toEqual(["snapshot", "update", "stream-alive"])
     expect(JSON.parse(frames[0]?.data ?? "null")).toMatchObject({
       sessionId: "test-session",
       epoch: 3,
@@ -124,7 +119,6 @@ describe("openViewer", () => {
       { params: { update: { title: "New title" } } },
     ])
     expect(frames[2]).not.toHaveProperty("id")
-    expect(frames[3]).toEqual({ event: "taken-over", id: "4", data: "{}" })
     h.expectCleaned()
   })
 
@@ -139,7 +133,7 @@ describe("openViewer", () => {
     h.expectCleaned()
   })
 
-  it("ignores takeover on cancellation during the snapshot write", async () => {
+  it("cancels during the snapshot write even if the epoch advanced", async () => {
     const h = setup()
     const viewer = await h.open()
     let completeSnapshot!: () => void
