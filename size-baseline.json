@@ -913,12 +913,6 @@
       "class": "mixed",
       "codeLines": 16
     },
-    "packages/frontend/src/lib/session/sse-reader.ts": {
-      "metric": 648,
-      "impurity": 18,
-      "class": "scattered",
-      "codeLines": 293
-    },
     "packages/frontend/src/lib/util/clipboard.ts": {
       "metric": 19,
       "impurity": 4,
