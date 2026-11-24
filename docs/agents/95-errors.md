@@ -9,8 +9,8 @@ read_when:
 tags: [errors, rpc]
 surface: [http, mcp]
 stability: stable
-docs_version: 1.10.4
-updated: 2026-11-20
+docs_version: 1.11.0
+updated: 2026-11-24
 ---
 
 # Errors
@@ -39,7 +39,10 @@ Use status code **and body shape** — many endpoints share **404** with differe
 | **503** | **`evict-timeout`** — retry |
 | **409** | Stale **`?epoch=`** — reconnect with current epoch or fall back to history |
 
-Stream ends with **`taken-over`** when another client owns the epoch.
+The first viewer after the group becomes empty starts a new epoch. Additional
+SSE and WebSocket viewers share it. The raw WebSocket can take ownership and
+end active streams with **`taken-over`**. A stale epoch gets `409` on SSE or
+`4409` on [the session WebSocket](97-transports.md).
 
 ## History / state
 

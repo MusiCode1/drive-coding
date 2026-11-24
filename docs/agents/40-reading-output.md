@@ -16,7 +16,7 @@ routes:
   - GET /api/agents/:id/state
   - POST /api/agents/:id/rpc
 mcp_tools: [session_send, session_state]
-docs_version: 1.10.6
+docs_version: 1.11.0
 updated: 2026-11-24
 ---
 
@@ -77,7 +77,7 @@ Protocol (event names):
 | `snapshot` | Initial coalesced state + `version`, `epoch`, `updates[]` |
 | `update` | Live JSON-RPC batch of session updates |
 | `stream-alive` | Keepalive carrying `_drive/streamAlive` |
-| `taken-over` | Another client took the stream; stop reconnecting |
+| `taken-over` | The raw WebSocket took ownership; stop reconnecting |
 
 Status codes:
 
@@ -87,15 +87,19 @@ Status codes:
 
 Design: subscribe after snapshot so replay excludes patches already in frame-zero.
 
+SSE and [WebSocket session viewers](97-transports.md) can watch concurrently.
+The first viewer after the group becomes empty starts a new epoch. Additional
+viewers share that epoch.
+
 ## Canonical tool output
 
-On the HTTP session transport, the session host can normalize output from a CLI
+The session host can normalize output from a CLI
 with configured tool output rules. In `GET /state`, a tool message can carry
 `toolCall.output` with optional `text`, `stdout`, `stderr`, `error`, `exitCode`,
 `isError`, and `truncated` fields. The host uses `toolCall.outputRank` internally
 to track which source produced each field.
 
-On live SSE updates, the corresponding change is in
+On live SSE and WebSocket updates, the corresponding change is in
 `_meta["_drive/toolOutput"]`. Apply its optional `set` first and then concatenate
 the strings in its optional `append` onto their respective fields. Start an
 absent field at the empty string. Each text field keeps its last 65,536
@@ -103,7 +107,7 @@ UTF-16 code units. An oversized `set` arrives capped, while an `append` carries
 the received chunk. Preserve `truncated: true` once the cap is exceeded or the
 delta specifies it.
 
-In the SSE snapshot, `GET /history`, and the update that creates a tool, the
+In a session snapshot, `GET /history`, and the update that creates a tool, the
 same metadata key uses `set` for the full canonical values and includes
 `truncated: true` when applicable. Source ranks stay in server state. The original
 `rawOutput` remains available. The host resolves the configuration at

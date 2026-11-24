@@ -5,7 +5,7 @@ summary: When to use REST, agent events SSE, Streamable HTTP MCP, or browser Web
 read_when:
   - You need server push for turn events but HTTP alone is stateless
   - You integrate via MCP Streamable HTTP at /api/mcp
-  - You wonder why /ws/agent is not in the OpenAPI spec
+  - You want to receive session events or send RPC calls over WebSocket
 tags: [transports]
 surface: [http, mcp]
 stability: stable
@@ -17,8 +17,8 @@ routes:
   - DELETE /api/agents/:id/connection
 mcp_tools:
   - session_subscribe
-docs_version: 1.10.3
-updated: 2026-11-21
+docs_version: 1.11.0
+updated: 2026-11-24
 ---
 
 # Transports
@@ -68,13 +68,53 @@ One registration handles **`POST`**, **`GET`**, and **`DELETE`** on the same pat
 
 Prefer MCP for **`session_*`** tools when your CLI already speaks MCP; prefer HTTP RPC when mirroring the FE (`50-rpc`).
 
-## WebSocket (browser FE)
+## WebSocket — session channel
 
-**`/ws/agent/:id`** and **`/ws/echo`** exist for the drive-first PWA (`boot/ws.ts:96`, `boot/ws.ts:103`). They are **intentionally omitted** from `openapi.json` and from `routes:` here — coding agents on the same host should use HTTP/MCP, not impersonate the browser WS client.
+Upgrade **`GET /ws/session/:id?connectionId=…&epoch=…`** to open a viewer. Both
+query parameters are optional. Provide a unique `connectionId` and reuse it
+for that viewer's HTTP presence and detach requests.
+
+- The server sends one JSON object `{event, id?, data}` per frame. The event
+  names and the contents of the `data` string match the SSE stream in
+  [Reading output](40-reading-output.md).
+- Send RPC and reply as JSON-RPC requests
+  `{jsonrpc:"2.0", id, method, params}`. Use a numeric `id` and method
+  `_drive/rpc` or `_drive/reply`. Put the full body of the corresponding
+  HTTP POST in `params`. The response is
+  `{jsonrpc:"2.0", id, result:{status, body}}`. With a scoped caller, pass
+  the scope header in the upgrade request.
+- **`POST /api/agents/:id/presence`** renews the viewer row. Send
+  `Acp-Connection-Id` with the viewer's ID. `$/ping` requests a `$/pong`
+  and renews socket liveness only. Send `$/detach` to release the viewer.
+  These control messages are JSON-RPC notifications.
+
+SSE and WebSocket viewers can share one session and viewing epoch. The first
+viewer after the group becomes empty starts a new epoch. If a supplied
+`epoch` is older than the server's epoch, the connection closes with `4409`
+before opening the session host.
+
+| Close code | Meaning |
+|---|---|
+| `1000` | Viewer released, expired, or stream ended |
+| `4401` | Agent authentication is required |
+| `4404` | Agent connection is missing |
+| `4409` | Stale epoch or takeover by the raw WebSocket |
+| `4500` | Internal failure |
+| `4503` | Temporary failure to evict the previous owner |
+
+An opening failure sends an `error` frame with the HTTP error body encoded
+in `data` before closing. A takeover of an active stream sends
+`taken-over` before closing. For opening failures the close code is
+`4000 + HTTP status`.
+
+### Legacy browser sockets
+
+**`/ws/agent/:id`** is the raw ACP transport and is scheduled for removal.
+**`/ws/echo`** carries browser configuration notifications.
 
 ## DELETE /api/agents/:id/connection
 
-Releases the selected viewer connection and ends its SSE stream if present. The
+Releases the selected viewer connection and ends its SSE or WebSocket stream. The
 agent, session host, and other viewers stay active (`boot/ws.ts`, `connection.ts`).
 
 | Status | When | Anchor |
