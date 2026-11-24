@@ -110,6 +110,11 @@ export function visibleCappedText(text: string): string {
   return breakAt === -1 ? text : text.slice(breakAt + 1)
 }
 
+/** null, undefined, "" and false are an absent error, not a failure. */
+function isRealErrorValue(value: unknown): boolean {
+  return value !== null && value !== undefined && value !== "" && value !== false
+}
+
 function viewFromMappedScalars(raw: unknown, mapped: ToolOutput): ToolOutputView | undefined {
   const truncation = mapped.truncated ? { truncated: mapped.truncated } : {}
   const show = (text: string): string => (mapped.truncated ? visibleCappedText(text) : text)
@@ -126,7 +131,7 @@ function viewFromMappedScalars(raw: unknown, mapped: ToolOutput): ToolOutputView
     }
   }
 
-  if (mapped.error !== undefined) {
+  if (typeof mapped.error === "string" && isRealErrorValue(mapped.error)) {
     return { kind: "error", message: show(mapped.error), ...truncation }
   }
 
@@ -206,7 +211,7 @@ export function normalizeToolOutputGeneric(rawOutput: unknown): ToolOutputView {
     }
   }
 
-  if ("error" in obj && !Array.isArray(obj.content)) {
+  if ("error" in obj && !Array.isArray(obj.content) && isRealErrorValue(obj.error)) {
     const err = obj.error
     const message = typeof err === "string" ? err : prettyJson(err)
     return { kind: "error", message }

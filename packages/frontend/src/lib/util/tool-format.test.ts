@@ -279,6 +279,47 @@ describe("normalizeToolOutput", () => {
       }),
     ).toEqual({ kind: "error", message: "boom" })
   })
+
+  it("{error:null, result.content} is not an error — the payload stays visible", () => {
+    const raw = { error: null, result: { content: [{ type: "text", text: "x" }] } }
+    const view = normalizeToolOutput(raw)
+    expect(view.kind).not.toBe("error")
+    expect(view).toEqual({ kind: "json", json: prettyJson(raw) })
+  })
+
+  it("{error:null} alone is not an error", () => {
+    const view = normalizeToolOutput({ error: null })
+    expect(view.kind).not.toBe("error")
+    expect(view.kind === "empty" || view.kind === "json").toBe(true)
+  })
+
+  it('{error:"boom"} is an error', () => {
+    expect(normalizeToolOutput({ error: "boom" })).toEqual({
+      kind: "error",
+      message: "boom",
+    })
+  })
+
+  it("{error:{message}} is an error", () => {
+    expect(normalizeToolOutput({ error: { message: "m" } })).toEqual({
+      kind: "error",
+      message: prettyJson({ message: "m" }),
+    })
+  })
+
+  it("absent error sentinels are not errors", () => {
+    for (const error of [undefined, "", false] as const) {
+      expect(normalizeToolOutput({ error }).kind).not.toBe("error")
+    }
+  })
+
+  it("mapped empty error falls through to the generic view", () => {
+    const raw = { error: null, result: { content: [{ type: "text", text: "x" }] } }
+    expect(normalizeToolOutput(raw, { error: "" })).toEqual({
+      kind: "json",
+      json: prettyJson(raw),
+    })
+  })
 })
 
 describe("normalizeToolOutput — canonical values", () => {
