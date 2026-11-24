@@ -331,17 +331,11 @@
       "class": "mixed",
       "codeLines": 35
     },
-    "packages/backend/src/session-host/http/rpc-wait.ts": {
-      "metric": 73,
-      "impurity": 1,
-      "class": "mixed",
-      "codeLines": 44
-    },
     "packages/backend/src/session-host/http/rpc.ts": {
-      "metric": 244,
-      "impurity": 15,
+      "metric": 41,
+      "impurity": 2,
       "class": "mixed",
-      "codeLines": 170
+      "codeLines": 38
     },
     "packages/backend/src/session-host/patches-broadcaster.ts": {
       "metric": 166,

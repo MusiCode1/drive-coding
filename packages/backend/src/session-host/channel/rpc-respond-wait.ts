@@ -1,5 +1,5 @@
 /**
- * rpc-response.ts — shared RPC wait response helpers (extracted from rpc.ts, C1).
+ * rpc-respond-wait.ts — JSON-RPC error mapping + wait response bodies for rpc.ts.
  */
 
 import { raceKeepRunning } from "./rpc-wait.js"
@@ -20,7 +20,7 @@ export function messageOf(e: unknown): string {
   return String(e)
 }
 
-export function rpcWaitErrorField(error: unknown): { message: string; code?: number } {
+function rpcWaitErrorField(error: unknown): { message: string; code?: number } {
   const code = codeOf(error)
   const message = messageOf(error)
   return code === undefined ? { message } : { message, code }
