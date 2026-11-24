@@ -39,11 +39,27 @@ const legacyNames = new Set([
 ])
 const configFunctions = new Set(["normalizeSessionTransport", "resolveSessionTransport"])
 
-function isTransportLiteral(node: ts.Node): boolean {
-  return ts.isStringLiteralLike(node) && (node.text === "ws" || node.text === "http")
+function unwrap(expression: ts.Expression): ts.Expression {
+  while (
+    ts.isParenthesizedExpression(expression) ||
+    ts.isAsExpression(expression) ||
+    ts.isSatisfiesExpression(expression) ||
+    ts.isNonNullExpression(expression)
+  ) {
+    expression = expression.expression
+  }
+  return expression
+}
+
+function isTransportLiteral(node: ts.Expression): boolean {
+  const expression = unwrap(node)
+  return (
+    ts.isStringLiteralLike(expression) && (expression.text === "ws" || expression.text === "http")
+  )
 }
 
 function isTransportBranch(node: ts.Node): boolean {
+  if (ts.isCaseClause(node)) return isTransportLiteral(node.expression)
   if (ts.isConditionalExpression(node)) {
     return isTransportLiteral(node.whenTrue) || isTransportLiteral(node.whenFalse)
   }
@@ -53,6 +69,18 @@ function isTransportBranch(node: ts.Node): boolean {
       node.operatorToken.kind === ts.SyntaxKind.ExclamationEqualsEqualsToken) &&
     (isTransportLiteral(node.left) || isTransportLiteral(node.right))
   )
+}
+
+function isTransportMap(expression: ts.Expression): boolean {
+  const object = unwrap(expression)
+  if (!ts.isObjectLiteralExpression(object)) return false
+  const keys = new Set(
+    object.properties.flatMap(({ name }) => {
+      const key = name && ts.isComputedPropertyName(name) ? name.expression : name
+      return key && (ts.isIdentifier(key) || ts.isStringLiteralLike(key)) ? [key.text] : []
+    }),
+  )
+  return keys.has("ws") && keys.has("http")
 }
 
 function inTransportConfigFunction(node: ts.Node): boolean {
@@ -71,12 +99,27 @@ function transportUse(file: SourceFile): TransportUse {
     legacy: false,
     unapprovedConfigBranch: false,
   }
+  const maps = new Set<string>()
+  const lookups: ts.ElementAccessExpression[] = []
+  function recordBranch(node: ts.Node) {
+    use.branch = true
+    if (file.path === transportConfig && !inTransportConfigFunction(node)) {
+      use.unapprovedConfigBranch = true
+    }
+  }
   visitSource(file, (node) => {
-    if (isTransportBranch(node)) {
-      use.branch = true
-      if (file.path === transportConfig && !inTransportConfigFunction(node)) {
-        use.unapprovedConfigBranch = true
-      }
+    if (isTransportBranch(node)) recordBranch(node)
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      isTransportMap(node.initializer)
+    ) {
+      maps.add(node.name.text)
+    }
+    if (ts.isElementAccessExpression(node)) {
+      const index = unwrap(node.argumentExpression)
+      if (!ts.isStringLiteralLike(index) && !ts.isNumericLiteral(index)) lookups.push(node)
     }
     if (ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) {
       use.legacy ||= legacyNames.has(node.text)
@@ -94,6 +137,12 @@ function transportUse(file: SourceFile): TransportUse {
       use.read ||= ts.isIdentifier(name) && name.text === "readSessionTransport"
     }
   })
+  for (const lookup of lookups) {
+    const map = unwrap(lookup.expression)
+    if (isTransportMap(map) || (ts.isIdentifier(map) && maps.has(map.text))) {
+      recordBranch(lookup)
+    }
+  }
   return use
 }
 
@@ -103,8 +152,16 @@ describe("session transport points (L5)", () => {
     "if ('ws' !== transport) run()",
     'const t = condition ? "ws" : other',
     'const t = condition ? other : "http"',
+    'switch (transport) { case "http": connect(); break; case "ws": open(); }',
+    "const pipe = ({ ws: open, http: connect })[transport]",
+    'const pipes = { ["ws"]: open, http: connect } as const; const pipe = pipes[transport]',
   ])("detects transport branching: %s", (text) => {
     expect(transportUse({ path: "lib/other.ts", text }).branch).toBe(true)
+  })
+
+  it("allows a fixed lookup and a map with unrelated keys", () => {
+    const text = 'const a = ({ ws: 1, http: 2 })["ws"]; const b = ({ x: 1, y: 2 })[key]'
+    expect(transportUse({ path: "lib/other.ts", text }).branch).toBe(false)
   })
 
   it("allows branching in the two transport config functions", () => {
