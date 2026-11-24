@@ -104,35 +104,42 @@ export type ToolOutputView =
   | { kind: "stat"; stats: { key: string; value: string }[] }
   | { kind: "json"; json: string }
 
+/** Drop a leading partial line from capped output. No newline means show the stored tail. */
+export function visibleCappedText(text: string): string {
+  const breakAt = text.indexOf("\n")
+  return breakAt === -1 ? text : text.slice(breakAt + 1)
+}
+
 function viewFromMappedScalars(raw: unknown, mapped: ToolOutput): ToolOutputView | undefined {
   const truncation = mapped.truncated ? { truncated: mapped.truncated } : {}
+  const show = (text: string): string => (mapped.truncated ? visibleCappedText(text) : text)
   if (
     mapped.exitCode !== undefined &&
     (mapped.stdout !== undefined || mapped.stderr !== undefined)
   ) {
     return {
       kind: "terminal",
-      stdout: mapped.stdout ?? "",
-      stderr: mapped.stderr ?? "",
+      stdout: show(mapped.stdout ?? ""),
+      stderr: show(mapped.stderr ?? ""),
       exitCode: mapped.exitCode,
       ...truncation,
     }
   }
 
   if (mapped.error !== undefined) {
-    return { kind: "error", message: mapped.error, ...truncation }
+    return { kind: "error", message: show(mapped.error), ...truncation }
   }
 
   if (mapped.isError === true) {
     const message =
       mapped.text !== undefined && mapped.text.length > 0 ? mapped.text : prettyJson(raw)
-    return { kind: "error", message, ...truncation }
+    return { kind: "error", message: show(message), ...truncation }
   }
 
   if (mapped.text !== undefined) {
     const view: { kind: "text"; text: string; exitCode?: number; truncated?: true } = {
       kind: "text",
-      text: mapped.text,
+      text: show(mapped.text),
       ...truncation,
     }
     if (mapped.exitCode !== undefined) view.exitCode = mapped.exitCode
