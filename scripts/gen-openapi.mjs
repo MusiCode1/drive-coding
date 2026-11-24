@@ -264,6 +264,7 @@ const SPECIAL = {
         },
       },
       400: jsonErrorResponse("Invalid JSON, params, method, or waitMs"),
+      401: jsonErrorResponse("Agent authentication required (auth_required, with authMethods)"),
       404: jsonErrorResponse("Agent connection not found"),
       409: {
         description: "any session/load while a turn is active",
@@ -277,7 +278,6 @@ const SPECIAL = {
           },
         },
       },
-      503: jsonErrorResponse("Host evict timeout (transient)"),
     },
   },
   "post /api/agents/:id/reply": {
@@ -417,6 +417,7 @@ const SPECIAL = {
           },
         },
       },
+      401: jsonErrorResponse("Agent authentication required (auth_required, with authMethods)"),
     },
   },
   "post /api/recordings": {

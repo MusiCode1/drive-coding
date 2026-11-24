@@ -53,16 +53,9 @@ export type PatchesBroadcaster = {
    * stream SYNCHRONOUSLY (same code the background `drain()` loop's `finally`
    * already runs when the SOURCE ends), without waiting for the source to end.
    *
-   * Why this exists: `registry.ts`'s `unregisterHost` is called from two
-   * sites (`deleteAndKill`, the crash handler) that never call `host.dispose()`
-   * first — before this method, NOTHING ever ended the broadcaster for those
-   * paths, so GET /events subscribers (and their keepalive timer) leaked
-   * forever. A third site (`ws-agent.ts`'s WS-takeover path) DOES call
-   * `host.dispose()` first, which cascades to the same effect via the source
-   * ending — but only after several extra microtask hops (source read()
-   * resolves → this drain() loop resumes → its finally runs). `close()`
-   * collapses that to ONE hop, callable independently of whether the host
-   * (or its `patches` source) is disposed at all — see `unregisterHost`.
+   * On agent deletion or crash, unregisterHost ends every SSE and WS viewer
+   * immediately. Subscriber streams and their keepalive timers can finish
+   * independently of the host's patch source.
    */
   close(): void
 }

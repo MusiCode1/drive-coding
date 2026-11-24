@@ -10,7 +10,7 @@ tags: [connect]
 surface: [http, mcp, cli]
 stability: stable
 routes: [GET /api/health]
-docs_version: 1.2.0
+docs_version: 1.12.0
 updated: 2026-09-28
 ---
 
@@ -112,4 +112,4 @@ when configured.
 - CORS errors from a browser FE on another origin → backend needs that origin in
   `CORS_ORIGINS` (human config doc).
 
-See `95-errors` for agent-specific 404/503 patterns once you have an agent id.
+See `95-errors` for agent-specific 401 authentication and 404 connection errors once you have an agent id.

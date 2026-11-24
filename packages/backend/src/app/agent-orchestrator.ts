@@ -89,8 +89,7 @@ export type AgentOrchestrator = {
   deleteAllAndKill(): Promise<CloseAllResult>
 
   /**
-   * מחזיר את פורט ה-bridge עבור מזהה סוכן נתון (עבור ניתוב ב-ws-agent).
-   * תמיד מחזיר 0 — in-process, אין WS-bridge אמיתי (נשמר לתאימות).
+   * Returns 0 for compatibility with callers that expect a bridge port.
    */
   getBridgePort(id: string): number | null
 
@@ -305,8 +304,6 @@ export function createAgentOrchestrator(deps: {
     },
 
     getBridgePort(_id: string): number | null {
-      // in-process pipe — אין WS-bridge אמיתי; תמיד 0.
-      // ws-agent משתמש ב-connectionRegistry.get() לבדיקת presence, לא ב-port.
       return 0
     },
   }

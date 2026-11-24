@@ -16,7 +16,7 @@ routes:
   - GET /api/agents/:id/state
   - POST /api/agents/:id/rpc
 mcp_tools: [session_send, session_state]
-docs_version: 1.11.2
+docs_version: 1.12.0
 updated: 2026-11-24
 ---
 
@@ -77,12 +77,12 @@ Protocol (event names):
 | `snapshot` | Initial coalesced state + `version`, `epoch`, `updates[]` |
 | `update` | Live JSON-RPC batch of session updates |
 | `stream-alive` | Keepalive carrying `_drive/streamAlive` |
-| `taken-over` | The raw WebSocket took ownership; stop reconnecting |
+| `taken-over` | Reserved for protocol compatibility. This server never emits it. |
 
 Status codes:
 
-- **404** — connection not found / not HTTP-owned / dead host path.
-- **503** — transient **`evict-timeout`** (stuck tab) — retry; not always "agent gone".
+- **401** — the agent requires authentication (`kind: "auth_required"`, with `authMethods`).
+- **404** — the connection is missing or dead.
 - **409** — `?epoch=` lower than current epoch (stale reconnect) **before** attach.
 
 Design: subscribe after snapshot so replay excludes patches already in frame-zero.
@@ -94,7 +94,7 @@ An update without this field leaves the viewer's existing list intact.
 
 SSE and [WebSocket session viewers](97-transports.md) can watch concurrently.
 The first viewer after the group becomes empty starts a new epoch. Additional
-viewers share that epoch.
+viewers share that epoch. A stale epoch also closes a WebSocket with **4409**.
 
 ## Canonical tool output
 
@@ -135,7 +135,7 @@ Invalid **`waitMs`** (non-integer, negative, **> 60000**) → **400** — not cl
 Blocking session management RPCs (`session/list`, `session/load`, …) ignore `waitMs` and return method-specific statuses (**200**, **400**, or **502**).
 During an active turn, any **`session/load`** returns **409** with `code: "session_busy"`. The turn continues.
 
-See **`95-errors`** for 404 vs 503 on RPC.
+See **`95-errors`** for RPC error responses.
 
 ## Choosing a path
 

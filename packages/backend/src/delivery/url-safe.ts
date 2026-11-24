@@ -17,7 +17,7 @@
  * Never throws.
  *
  * @param rawUrl - The raw URL string from an HTTP request (req.url) or undefined.
- * @returns The pathname string (e.g. "/ws/agent/abc") or null on parse failure.
+ * @returns The pathname string (e.g. "/ws/session/abc") or null on parse failure.
  */
 export function safeUrlPathname(rawUrl: string | undefined): string | null {
   try {

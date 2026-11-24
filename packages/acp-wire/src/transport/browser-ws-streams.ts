@@ -15,10 +15,9 @@
 /**
  * האם ה-frame הוא notification בקרה ($/...) של keepalive ולא הודעת ACP אמיתית.
  *
- * ה-BE מחזיר `{"jsonrpc":"2.0","method":"$/pong"}` כ-frame עצמאי שלם בתגובה
- * ל-$/ping של ה-heartbeat (ר' ws-agent.ts / ws-transport.ts). frame כזה אסור
- * שידלוף לספריית לקוח ה-ACP החיצונית — היא לא מכירה method כזה וזורקת
- * "Method not found" (-32601). מסננים אותו כאן, לפני שהבתים נכנסים לזרם.
+ * A WebSocket peer can send standalone keepalive notifications such as
+ * `{"jsonrpc":"2.0","method":"$/pong"}`. Filter them before delivering bytes
+ * to the ACP SDK, which may reject an unrecognized method with -32601.
  *
  * הבדיקה שמרנית: רק notification (ללא id) עם method שמתחיל ב-"$/" מסונן.
  * frame חלקי / מרובה-הודעות → JSON.parse נכשל → false → מועבר הלאה ללא שינוי,

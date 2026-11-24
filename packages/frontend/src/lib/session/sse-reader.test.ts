@@ -814,7 +814,7 @@ describe("SSEReader — 404 mid-reconnect is final, 500/503 are not (Commit 3ג)
     expect(call).toBe(2)
   })
 
-  it("keeps retrying through 503 (evict-timeout — transient) and 500 (generic) — reaches a patch on eventual success", async () => {
+  it("retries through 503 and 500 and reaches a patch on eventual success", async () => {
     const snapshot = makeSnapshot()
     const patch = makePatch(1)
 

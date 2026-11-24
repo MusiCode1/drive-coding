@@ -17,7 +17,7 @@ routes:
   - DELETE /api/agents/:id/connection
 mcp_tools:
   - session_subscribe
-docs_version: 1.11.1
+docs_version: 1.12.0
 updated: 2026-11-24
 ---
 
@@ -70,7 +70,8 @@ Prefer MCP for **`session_*`** tools when your CLI already speaks MCP; prefer HT
 
 ## WebSocket — session channel
 
-Upgrade **`GET /ws/session/:id?connectionId=…&epoch=…`** to open a viewer. Both
+**`/ws/session/:id`** is the browser's only session WebSocket. Upgrade
+**`GET /ws/session/:id?connectionId=…&epoch=…`** to open a viewer. Both
 query parameters are optional. Provide a unique `connectionId` and reuse it
 for that viewer's HTTP presence and detach requests.
 
@@ -84,7 +85,8 @@ for that viewer's HTTP presence and detach requests.
   `{jsonrpc:"2.0", id, result:{status, body}}`. With a scoped caller, pass
   the scope header in the upgrade request.
 - **`POST /api/agents/:id/presence`** renews the viewer row. Send
-  `Acp-Connection-Id` with the viewer's ID.
+  `Acp-Connection-Id` with the viewer's ID. WS and SSE viewer rows use the same
+  `HTTP_OWNER_TTL_MS`.
 - Clients must send `$/ping` after opening the socket and at intervals
   shorter than 60 seconds. Each ping requests a `$/pong` and renews socket
   liveness only. The server checks every 20 seconds and terminates sockets
@@ -104,18 +106,13 @@ before opening the session host.
 | `1006` | Abnormal closure, including server termination after missed pings |
 | `4401` | Agent authentication is required |
 | `4404` | Agent connection is missing |
-| `4409` | Stale epoch or takeover by the raw WebSocket |
+| `4409` | Stale epoch |
 | `4500` | Internal failure |
-| `4503` | Temporary failure to evict the previous owner |
 
 An opening failure sends an `error` frame with the HTTP error body encoded
-in `data` before closing. A takeover of an active stream sends
-`taken-over` before closing. For opening failures the close code is
-`4000 + HTTP status`.
+in `data` before closing with `4000 + HTTP status`. The `taken-over` event is
+reserved for protocol compatibility. This server never emits it.
 
-### Legacy browser sockets
-
-**`/ws/agent/:id`** is the raw ACP transport and is scheduled for removal.
 **`/ws/echo`** carries browser configuration notifications.
 
 ## DELETE /api/agents/:id/connection

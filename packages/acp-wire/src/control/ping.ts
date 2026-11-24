@@ -4,13 +4,10 @@
  *
  * ─── Why not `$/ping` ────────────────────────────────────────────────────────
  *
- * 🔴 `$/ping` (browser-ws.ts:133, intercepted at ws-agent.ts:138) is **not an
- * ACP method**. The `$/` prefix is an LSP convention that ACP never adopted;
- * nothing in the protocol reserves it, and no agent is required to tolerate it.
- * It works today only because our own WS boundary strips it before the frame can
- * reach a CLI (browser-ws-streams.ts filters `$/…` out of the stream). The
- * moment such a frame rides a transport that does *not* strip it — a Unix socket
- * straight into a sidecar, for instance — it is an unknown method on the wire.
+ * `$/ping` is a browser session WebSocket control notification. The server
+ * handles it at the WebSocket boundary and keeps it out of the provider's ACP
+ * stream. ACP does not reserve the LSP-style `$/` namespace, so transports that
+ * speak ACP directly, such as the sidecar socket, use a namespaced extension.
  *
  * The legal namespace in this repo is `_drive/*`, which is what
  * `provider/src/extensions/schema.ts` registers (`_drive/setThinkingTokens`,

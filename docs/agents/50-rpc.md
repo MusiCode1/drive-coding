@@ -17,14 +17,14 @@ ext_methods:
   - _drive/voice/stop
   - _drive/voice/listVoices
   - _drive/voice/speak
-docs_version: 1.10.4
+docs_version: 1.12.0
 updated: 2026-11-20
 ---
 
 # Agent session RPC
 
 `POST /api/agents/:id/rpc` accepts a JSON body `{ "method": "<name>", "params": { … }, "waitMs"?: number }`.
-The agent must exist and have an active session host; otherwise the backend returns `404` or `503`.
+RPC creates a session host on demand. A missing or dead agent connection returns `404`. An agent that requires authentication returns `401`.
 
 Method names below are the **canonical** strings from `RPC_METHODS` in `@drive-coding/core`.
 Legacy aliases (for example `prompt` instead of `session/prompt`) may still be accepted during migration — prefer the canonical name in new integrations.
@@ -84,13 +84,13 @@ the session reports `idle`, so a voice reply does not look like a running turn.
 
 ## `waitMs` and blocking
 
-Six methods honor optional top-level `waitMs` (1–60000) on the HTTP handler (`session-host/http/rpc.ts:67-74`):
+Six methods honor optional top-level `waitMs` (1–60000) on the HTTP handler (`dispatchRpcBody`):
 
 - `session/prompt` · `session/cancel` · `session/set_mode` · `session/set_config_option` · `_drive/ext` · `_drive/set_session_model`
 
-Without `waitMs` (or `0`), those six return **`202`** with `{ version }` only (`rpc.ts:425`).
-With valid `waitMs`, the handler waits and returns **`200`** result bodies (or **`200`** `{ ok: false, timedOut: true }` on timeout — `rpc.ts:211-212`, `rpc.ts:137-139`).
-Invalid `waitMs` on those six → **`400`** `{ error: "invalid waitMs" }` (`rpc.ts:189-190`).
+Without `waitMs` (or `0`), those six return **`202`** with `{ version }` only (`dispatchRpcBody`).
+With valid `waitMs`, the handler waits and returns **`200`** result bodies (or **`200`** `{ ok: false, timedOut: true }` on timeout — `respondRpcWait`).
+Invalid `waitMs` on those six → **`400`** `{ error: "invalid waitMs" }` (`dispatchRpcBody`).
 
 Management methods (`session/list`, `session/load`, `session/new`, `session/delete`) **ignore** `waitMs` and return method-specific status codes. Any **`session/load`** while a turn is active returns **`409`** with `{ error, code: "session_busy" }`. The active turn continues. **`session/new`** is still allowed during a turn.
 
@@ -98,16 +98,16 @@ Management methods (`session/list`, `session/load`, `session/new`, `session/dele
 
 | Status | When | Anchor |
 |--------|------|--------|
-| `404` | Host missing (final reasons) | `rpc.ts:168-169` |
-| `503` | Host missing, reason `evict-timeout` | `rpc.ts:168-169` |
-| `400` | Invalid JSON | `rpc.ts:177-178` |
-| `400` | Unknown method | `rpc.ts:421` |
-| `400` | ArkType param errors (`p.summary`) | `rpc.ts:198`, `rpc.ts:236`, etc. |
-| `400` | `load`/`new` without cwd | `rpc.ts:338`, `rpc.ts:375` |
-| `202` | Fire-and-forget success for the six wait-capable methods | `rpc.ts:425` |
-| `200` | Blocking wait results, management results, or `-32601` degradations | `rpc.ts:211-231`, `rpc.ts:303-415` |
+| `401` | Agent authentication required, with `kind: "auth_required"` and `authMethods` | `host-failure.ts` |
+| `404` | Agent connection missing or dead | `host-failure.ts` |
+| `400` | Invalid JSON | `registerRpcRoute` in `http/rpc.ts` |
+| `400` | Unknown method | `dispatchRpcBody` in `channel/rpc-dispatch.ts` |
+| `400` | ArkType param errors (`p.summary`) | `rpc-dispatch.ts`, `rpc-session-mgmt.ts` |
+| `400` | `load`/`new` without cwd | `rpc-session-mgmt.ts` |
+| `202` | Fire-and-forget success for the six wait-capable methods | `dispatchRpcBody` |
+| `200` | Blocking wait results, management results, or `-32601` degradations | `rpc-respond-wait.ts`, `rpc-session-mgmt.ts` |
 | `409` | Any `session/load` while a turn is active | `rpc-session-mgmt.ts` |
-| `502` | Upstream/session errors on management calls | `rpc.ts:328-331`, `rpc.ts:365-367`, etc. |
+| `502` | Upstream/session errors on management calls | `rpc-session-mgmt.ts` |
 
 Scoped writes may deny before dispatch — see `60-identity-and-scopes`.
 
@@ -134,13 +134,13 @@ ordinary `session/prompt` from the FE.
 
 | Method | Invalid params | Response |
 |--------|----------------|----------|
-| `session/prompt` | ArkType `PromptParams` | `400` + `error` summary (`rpc.ts:197-198`) |
-| `session/cancel` | ArkType `CancelParams` | `400` (`rpc.ts:235-236`) |
-| `session/load` | ArkType / missing cwd | `400` (`rpc.ts:335-338`) |
-| `session/new` | ArkType / missing cwd | `400` (`rpc.ts:372-375`) |
-| `session/delete` | ArkType | `400` (`rpc.ts:402-403`) |
-| `session/list` | (none) | errors → `502` or empty list on `-32601` (`rpc.ts:318-331`) |
-| `session/delete` | unsupported CLI | `200` `{ ok: false, unsupported: true }` on `-32601` (`rpc.ts:408-409`) |
+| `session/prompt` | ArkType `PromptParams` | `400` + `error` summary (`rpc-dispatch.ts`) |
+| `session/cancel` | ArkType `CancelParams` | `400` (`rpc-dispatch.ts`) |
+| `session/load` | ArkType / missing cwd | `400` (`rpc-session-mgmt.ts`) |
+| `session/new` | ArkType / missing cwd | `400` (`rpc-session-mgmt.ts`) |
+| `session/delete` | ArkType | `400` (`rpc-session-mgmt.ts`) |
+| `session/list` | (none) | errors → `502` or empty list on `-32601` (`rpc-session-mgmt.ts`) |
+| `session/delete` | unsupported CLI | `200` `{ ok: false, unsupported: true }` on `-32601` (`rpc-session-mgmt.ts`) |
 
 ## OpenAPI
 

@@ -23,9 +23,8 @@
  *   - session/new    → 200 {sessionId, version} | 400 (no cwd) | 502
  *   - session/delete → 200 {ok:true} | 200 {ok:false, unsupported:true} (-32601) | 502
  *
- * Returns 404 if connection not found (registry.getOrCreateHost → {ok:false}),
- * except reason:"evict-timeout" (a stuck WS tab, not a dead agent) → 503
- * (slice host-result-reason C1).
+ * Returns 404 for a missing or dead agent connection, and 401 when the
+ * provider requires authentication during host creation.
  *
  * ⚠️ prompt/cancel are non-blocking without waitMs (slice session-host-pending-surface C3-ד):
  * a synchronous launch failure (bad params, unknown method) stays an ordinary

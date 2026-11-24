@@ -599,8 +599,8 @@ export async function createSessionHostFromConnection(
   // ── slice http-usable C1: capabilities → SessionState ────────────────────
   // 🔴 חייב להיות **אחרי** יצירת ה-client: תגובת ה-initialize מחליפה את אובייקט
   // היכולות (provider/connection/spawn.ts). העתקה מוקדמת שומרת ערך שקרי.
-  // למה בכלל: ב-remote אין #client ב-FE, ו-_drive/capabilities נשלח רק מ-ws-agent,
-  // ולכן supportsImageInput היה false תמיד ב-HTTP. ה-snapshot נושא את זה.
+  // The initial snapshot carries provider capabilities, including image input,
+  // to both SSE and WS viewers.
   if (conn.capabilities) {
     currentState = { ...currentState, capabilities: conn.capabilities }
   }

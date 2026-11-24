@@ -190,15 +190,14 @@ export function createSpawnCore(hooks?: SpawnCoreHooks): SpawnCore {
       }
     })
 
-    // Permanent stdout reader — bridge-manager owns child.stdout.
-    // ws-agent subscribes via onLine() and receives lines via callback.
-    // Order is critical: lineSubscribers (-> ws send) BEFORE onFrame.
+    // Permanent stdout reader. Deliver each line to transport subscribers
+    // before publishing it to frame observers.
     child.stdout.setEncoding("utf8")
     const stdoutRl = createInterface({ input: child.stdout, crlfDelay: Infinity })
     stdoutRl.on("line", (line) => {
       const entry = store.get(bridgeId)
       if (!entry) return
-      // (1) subscribers first (ws-agent -> feWs.send) — timed (hot-path)
+      // (1) deliver to transport subscribers first
       const t = markStart()
       for (const cb of entry.lineSubscribers) {
         try {

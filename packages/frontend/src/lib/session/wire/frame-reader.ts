@@ -159,17 +159,8 @@ export class FrameReader {
         if (lastedMs >= STABLE_CONNECTION_MS) delay = 1000
         connWarn("sse-lost", { url: this.#pipe.describe, lastedMs })
       } catch (err) {
-        // slice sse-liveness Commit 3ג: 404 mid-reconnect is a FINAL state, not
-        // a transient failure. Three of the four backend reasons for 404 ARE
-        // final (connection not found / dead / ws-owned-without-eviction); the
-        // fourth (evict-timeout — a stuck WS tab) is 503, which falls through
-        // to the retry branch below like any other transient failure. Without
-        // this, a deleted agent's tab hammers GET /events every 30s forever
-        // (backoff caps at 30s and never resets — every attempt fails
-        // identically) — see brief §3, Commit 3ג. Only the STATUS matters
-        // here, never the message text (unlike the guard in the initial
-        // #connectOnce() rejection, this branch never surfaces to a test via
-        // `.toThrow()`).
+        // A missing or dead agent connection ends reconnect attempts. Other
+        // transient failures keep using the backoff below.
         if (err instanceof PipeError && err.status === 404) {
           // slice sse-liveness Commit 4: routed through #setClosed (harmless
           // no-op on the watchdog here — it was never started for a failed

@@ -1,8 +1,7 @@
 /**
  * connection/index.ts — barrel for ProviderConnection primitive (CUT-3b-i).
  *
- * Re-exports shared wire utilities so consumers (bridge-manager, ws-agent) can
- * import from @drive-coding/provider/connection instead of internal paths.
+ * Exports provider connections and wire utilities for SessionHost and the sidecar.
  *
  * connectSpawn and ProviderConnection types are added in CUT-3b-i commits 1 & 2.
  * connectInProcess added in CUT-3b-iii-1.

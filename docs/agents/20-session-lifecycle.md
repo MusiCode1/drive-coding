@@ -1,11 +1,11 @@
 ---
 id: session-lifecycle
 title: Session lifecycle — open, send, close
-summary: How to spawn an agent, drive a turn and release it, including who owns the session.
+summary: How to open an agent, drive a turn, close it, and keep session viewers alive.
 read_when:
   - You need to spawn an agent and get its id
   - A turn is running and you must decide between waiting and forcing
-  - You are about to leave an agent open and want to know who owns it
+  - You are about to leave an agent open and want to understand viewer lifetimes
 tags: [session, ownership, turnstate]
 surface: [http, mcp]
 stability: stable
@@ -25,7 +25,7 @@ mcp_tools:
   - session_note_set
   - session_field_set
   - session_field_delete
-docs_version: 1.10.0
+docs_version: 1.12.0
 updated: 2026-11-18
 ---
 
@@ -105,21 +105,21 @@ Scope note: MCP tool copy states **no ownership check on session_close** (any id
 closed), while server instructions also describe scoped writes for subtree — see report
 §11 divergence 1; stage-3 scope doc is authoritative for guard rails.
 
-## Ownership and liveness (HTTP session host)
+## Viewer groups and liveness
 
-The chat UI holds an **HTTP owner** for SSE/event streaming. Liveness is proven by
-**`POST /api/agents/:id/presence`** (empty body) on a visible heartbeat interval (~12s in
-the product UI). Optional header ties the heartbeat to a connection row.
+SSE and WebSocket viewers can share a session. Each viewer renews its own connection
+row with **`POST /api/agents/:id/presence`** (empty body) and its
+**`Acp-Connection-Id`** header.
 
-If a connection stops signaling within **`HTTP_OWNER_TTL_MS`** (config key
-`httpOwnerTtlMs`, env **`HTTP_OWNER_TTL_MS`**, product default 600000 ms = 10 minutes),
-the backend **drops the stale HTTP connection row**; implementation retains the holder
-record while removing the connection — do not assume ownership release equals agent deletion.
+Both transports use **`HTTP_OWNER_TTL_MS`** (config key `httpOwnerTtlMs`, default
+600000 ms or 10 minutes). Expiry ends the stale viewer's stream and removes its
+connection row. The session host and agent survive, and other viewers can continue.
+WebSocket pings maintain socket liveness. Presence renews the viewer TTL.
 
-**GET** routes such as **`/history`** and **`/state`** do **not** count as liveness signals.
-
-SSE **`GET /api/agents/:id/events`**: stale `?epoch=` → **409** before attach; lost ownership
-→ **`taken-over`** event. See `40-reading-output`.
+The first viewer after the group becomes empty starts a new epoch. Additional
+viewers share it. An older `?epoch=` is rejected before attach with **409** on SSE
+or **4409** on WebSocket. The **`taken-over`** event remains in the protocol for
+compatibility. This server never emits it. See `40-reading-output`.
 
 ## Identity header
 

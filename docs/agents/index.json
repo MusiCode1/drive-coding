@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.11.2",
+  "docsVersion": "1.12.0",
   "docs": [
     {
       "id": "orientation",
@@ -39,7 +39,7 @@
       "tags": ["connect"],
       "surface": ["http", "mcp", "cli"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.12.0",
       "routes": ["GET /api/health"],
       "mcp_tools": [],
       "path": "docs/agents/10-connect.md",
@@ -56,16 +56,16 @@
     {
       "id": "session-lifecycle",
       "title": "Session lifecycle — open, send, close",
-      "summary": "How to spawn an agent, drive a turn and release it, including who owns the session.",
+      "summary": "How to open an agent, drive a turn, close it, and keep session viewers alive.",
       "read_when": [
         "You need to spawn an agent and get its id",
         "A turn is running and you must decide between waiting and forcing",
-        "You are about to leave an agent open and want to know who owns it"
+        "You are about to leave an agent open and want to understand viewer lifetimes"
       ],
       "tags": ["session", "ownership", "turnstate"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.10.0",
+      "docs_version": "1.12.0",
       "routes": [
         "GET /api/agents",
         "POST /api/agents",
@@ -91,7 +91,7 @@
         "Open (spawn)",
         "Send (drive a turn)",
         "Close",
-        "Ownership and liveness (HTTP session host)",
+        "Viewer groups and liveness",
         "Identity header",
         "Inbound prompt envelope (receiver)",
         "Session memory — your own note and fields",
@@ -139,7 +139,7 @@
       "tags": ["output", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.11.2",
+      "docs_version": "1.12.0",
       "routes": [
         "GET /api/agents/:id/history",
         "GET /api/agents/:id/events",
@@ -234,7 +234,7 @@
       "tags": ["rpc", "session"],
       "surface": ["http"],
       "stability": "transitional",
-      "docs_version": "1.10.4",
+      "docs_version": "1.12.0",
       "routes": ["POST /api/agents/:id/rpc"],
       "mcp_tools": [],
       "path": "docs/agents/50-rpc.md",
@@ -436,7 +436,7 @@
       "tags": ["errors", "rpc"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.11.0",
+      "docs_version": "1.12.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/95-errors.md",
@@ -486,7 +486,7 @@
       "tags": ["transports"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.11.1",
+      "docs_version": "1.12.0",
       "routes": [
         "GET /api/mcp",
         "POST /api/mcp",
@@ -504,7 +504,6 @@
         "The same bus over MCP — `session_subscribe`",
         "MCP Streamable HTTP — `/api/mcp`",
         "WebSocket — session channel",
-        "Legacy browser sockets",
         "DELETE /api/agents/:id/connection"
       ]
     },

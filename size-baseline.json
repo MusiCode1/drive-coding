@@ -1136,7 +1136,7 @@
       "codeLines": 13
     },
     "packages/provider/src/shared/spawn-core.ts": {
-      "metric": 323,
+      "metric": 322,
       "impurity": 6,
       "class": "mixed",
       "codeLines": 228

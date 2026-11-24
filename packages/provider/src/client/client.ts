@@ -481,7 +481,7 @@ export type AttachedAcpClientOptions = {
   /**
    * capabilities ידועות מבחוץ. warm reattach אין לו תגובת initialize לשאוב ממנה.
    * משמש רק supportsImageInput (רדום מאחורי IMAGE_INPUT_ENABLED).
-   * NormalizedCapabilities מגיע מ-_drive/capabilities (ws-agent.ts:87) — לא מושפע.
+   * SessionHost publishes the provider's normalized capabilities in viewer snapshots.
    * ברירת-מחדל: אובייקט ריק בטוח.
    */
   capabilities?: AcpClient["capabilities"]

@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.11.2",
+    "version": "1.12.0",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
@@ -1377,6 +1377,16 @@
               }
             }
           },
+          "401": {
+            "description": "Agent authentication required (auth_required, with authMethods)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Agent connection not found",
             "content": {
@@ -1402,16 +1412,6 @@
                     }
                   },
                   "required": ["error", "code"]
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Host evict timeout (transient)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
                 }
               }
             }
@@ -1529,6 +1529,16 @@
               "text/event-stream": {
                 "schema": {
                   "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Agent authentication required (auth_required, with authMethods)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
                 }
               }
             }

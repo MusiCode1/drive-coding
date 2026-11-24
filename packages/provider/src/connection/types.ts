@@ -4,7 +4,7 @@
  * ProviderConnection = פרימיטיב חיבור-ספק שחושף wire-stream (onLine-style) + onFrame
  * (decoded WireFrame) + turn + onCrash + capabilities + ext.
  *
- * wire: onLine-style (לא ReadableStream) — תואם ל-ws-agent.ts:86 ול-spawn-core.onLine.
+ * wire uses line callbacks, as exposed by spawn-core.onLine.
  * ext: undefined ל-spawn-native; יוגדר לחיבורים in-process (CUT-3b-iii+).
  */
 
@@ -76,8 +76,7 @@ export interface ConnectOpts {
  */
 export interface ProviderConnection {
   /**
-   * wire — onLine-style stream (תואם ws-agent.ts:86).
-   * לא ReadableStream — הכרעה מ-§9#1 (אביגיל אימתה vs spawn-core + ws-agent).
+   * Line-based transport. onLine returns an unsubscribe callback.
    */
   readonly wire: {
     onLine(cb: (line: string) => void): () => void
