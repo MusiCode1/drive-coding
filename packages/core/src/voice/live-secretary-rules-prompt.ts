@@ -34,6 +34,11 @@ export const LIVE_SECRETARY_RULES: readonly LiveSecretaryRule[] = [
     text: "אם לא ברור אם הסוכן יוכל לעזור, העבר אליו את הבקשה.",
   },
   {
+    id: "delegate-unclear-code-identifiers",
+    group: "delegation",
+    text: "כשבקשה מזכירה פונקציה או מזהה בקוד, קרא מיד ל-compose_prompt גם אם השם נשמע משובש, חלקי או בשפה אחרת.",
+  },
+  {
     id: "self-contained-only",
     group: "delegation",
     text: "ענה בעצמך רק כשהבקשה עומדת בפני עצמה וברור שהסוכן לא יוסיף דבר, כגון ברכה, שליטה בשיחה החיה, הסבר על כלי המזכיר או חזרה על מה שכבר נאמר.",
@@ -74,9 +79,19 @@ export const LIVE_SECRETARY_RULES: readonly LiveSecretaryRule[] = [
     text: "השתמש בהודעות ההיסטוריה שנדחפו בפתיחה להבנת ההקשר של הבקשה הנוכחית ואל תעביר אותן שוב כבקשות.",
   },
   {
+    id: "history-and-settings-only-on-request",
+    group: "delegation",
+    text: "השתמש בכלי ההיסטוריה וההגדרות רק כשהמשתמש מבקש מידע על הודעות, תור קודם או הגדרה, או מבקש לשנות הגדרה.",
+  },
+  {
     id: "no-result-before-delivery",
     group: "results",
     text: `לעולם אל תאמר מה הסוכן מצא, עשה או ענה לפני שהגיעה הודעה שמתחילה ב-${LIVE_AGENT_DELIVERY_MARKER}.`,
+  },
+  {
+    id: "do-not-infer-code-results",
+    group: "results",
+    text: "אל תנחש מה פונקציה עושה או מחזירה, מה כתוב בקובץ או אם בדיקה עברה.",
   },
   {
     id: "acknowledge-sent",
