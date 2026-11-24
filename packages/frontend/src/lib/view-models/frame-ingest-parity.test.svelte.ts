@@ -11,7 +11,9 @@ import { URL as NodeURL } from "node:url"
 import {
   applyPatch,
   createInitialSessionState,
+  decodeWsClientMessage,
   encodeWsFrame,
+  encodeWsServerResponse,
   type Patch,
   reduce,
   type SessionState,
@@ -26,6 +28,7 @@ import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { flushSync, mount, tick, unmount } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import ToolBubbleHarness from "$lib/components/chat/bubbles/__tests__/tool-bubble-output-harness.svelte"
+import SessionModeSelectHarness from "$lib/components/layout/__tests__/session-mode-select-harness.svelte"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
 import { fakeSessionSockets } from "$lib/session/__contract__/fake-session-socket"
@@ -166,7 +169,11 @@ import { Speaker } from "./speaker.svelte"
 
 // ─── feed runners ───────────────────────────────────────────────────────────
 
-async function connectFrameFeed(transport: SessionTransport, state: SessionState) {
+async function connectFrameFeed(
+  transport: SessionTransport,
+  state: SessionState,
+  onRpc?: (body: unknown) => void,
+) {
   const initial = snapshotFrame(state)
   const opts = { agentId: "parity-agent", baseUrl: "http://be.local", transport }
   if (transport === "ws") {
@@ -174,6 +181,16 @@ async function connectFrameFeed(transport: SessionTransport, state: SessionState
     const connecting = createRemoteView({ ...opts, _WebSocket: sockets.WebSocket })
     const socket = sockets.latest()
     const push = (frame: SseFrame) => socket.receive(encodeWsFrame(frame))
+    if (onRpc) {
+      const send = socket.send.bind(socket)
+      socket.send = (data) => {
+        send(data)
+        const message = decodeWsClientMessage(data)
+        if (message?.kind !== "request") return
+        onRpc(message.request.params)
+        socket.receive(encodeWsServerResponse(message.request.id, { status: 202, body: {} }))
+      }
+    }
     socket.connect()
     push(initial)
     return { view: await connecting, push }
@@ -190,6 +207,11 @@ async function connectFrameFeed(transport: SessionTransport, state: SessionState
   const view = await createRemoteView({
     ...opts,
     _fetch: async (url, init) => {
+      if (onRpc && init?.method === "POST") {
+        expect(url).toBe("http://be.local/api/agents/parity-agent/rpc")
+        onRpc(JSON.parse(String(init.body)))
+        return Response.json({}, { status: 202 })
+      }
       expect(url).toBe("http://be.local/api/agents/parity-agent/events")
       init?.signal?.addEventListener("abort", () => controller.close(), { once: true })
       push(initial)
@@ -198,6 +220,83 @@ async function connectFrameFeed(transport: SessionTransport, state: SessionState
   })
   return { view, push }
 }
+
+const modeChoices = [
+  { id: "review", name: "Auto review" },
+  { id: "read-only", name: "Read-only" },
+]
+const modeConfig = {
+  type: "select",
+  id: "approval",
+  name: "Mode",
+  category: "mode",
+  currentValue: "review",
+  options: modeChoices.map(({ id, name }) => ({ value: id, name })),
+} as const
+const legacyModes = { currentModeId: "review", availableModes: modeChoices }
+
+describe.each(["http", "ws"] as const)("mode selector contract (%s)", (transport) => {
+  it("renders a config change sent by a second viewer while legacy modes stay stale", async () => {
+    const state = {
+      ...replayState,
+      configOptions: [{ ...modeConfig, options: [...modeConfig.options] }],
+      modes: legacyModes,
+    }
+    const observer = await connectFrameFeed(transport, state)
+    const rpc = vi.fn((body: unknown) => {
+      expect(body).toEqual({
+        method: "session/set_config_option",
+        params: { sessionId: state.sessionId, configId: "approval", value: "read-only" },
+      })
+      for (const frame of hostFrames(state, [
+        {
+          sessionUpdate: "config_option_update",
+          configOptions: [{ ...modeConfig, currentValue: "read-only" }],
+        },
+      ]))
+        observer.push(frame)
+    })
+    const sender = await connectFrameFeed(transport, state, rpc)
+    const initiatingAgent = new AgentSession({ view: sender.view })
+    initiatingAgent._setStatusForTest("connected")
+    const agent = new AgentSession({ view: observer.view })
+    const target = document.createElement("div")
+    const app = mount(SessionModeSelectHarness, { target, props: { agent } })
+    const displayed = () => target.querySelector("button")?.textContent?.trim()
+    try {
+      flushSync()
+      expect(displayed()).toBe("Auto review")
+      await initiatingAgent.applyConfigOption("approval", "read-only")
+      expect(rpc).toHaveBeenCalledTimes(1)
+      await vi.waitFor(() =>
+        expect(agent.configOptions[0]).toMatchObject({ currentValue: "read-only" }),
+      )
+      expect(agent.modes?.currentModeId).toBe("review")
+      await tick()
+      expect(displayed()).toBe("Read-only")
+    } finally {
+      await unmount(app)
+      await Promise.all([observer.view.close(), sender.view.close()])
+    }
+  })
+
+  it("uses legacy currentModeId when the CLI omits a mode config option", async () => {
+    const { view } = await connectFrameFeed(transport, {
+      ...replayState,
+      modes: { ...legacyModes, currentModeId: "read-only" },
+    })
+    const agent = new AgentSession({ view })
+    const target = document.createElement("div")
+    const app = mount(SessionModeSelectHarness, { target, props: { agent } })
+    try {
+      flushSync()
+      expect(target.querySelector("button")?.textContent?.trim()).toBe("Read-only")
+    } finally {
+      await unmount(app)
+      await view.close()
+    }
+  })
+})
 
 async function runReplay(
   transport: SessionTransport,
