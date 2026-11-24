@@ -1,0 +1,138 @@
+[
+  {
+    "id": "file-count",
+    "utterance": "כמה קבצים יש בתיקייה packages/core?",
+    "expect": "delegate",
+    "agentOnlyFact": true,
+    "note": "Directory count"
+  },
+  {
+    "id": "auth-tests",
+    "utterance": "האם הטסטים בקובץ auth.test.ts עוברים?",
+    "expect": "delegate",
+    "agentOnlyFact": true,
+    "note": "Test result"
+  },
+  {
+    "id": "file-content",
+    "utterance": "מה כתוב בקובץ README.md?",
+    "expect": "delegate",
+    "agentOnlyFact": true,
+    "note": "Repository file contents"
+  },
+  {
+    "id": "git-status",
+    "utterance": "מה המצב של גיט סטטוס בפרויקט?",
+    "expect": "delegate",
+    "agentOnlyFact": true,
+    "note": "Worktree status"
+  },
+  {
+    "id": "return-value",
+    "utterance": "מה מחזירה הפונקציה buildLiveSeed?",
+    "expect": "delegate",
+    "agentOnlyFact": true,
+    "note": "Function return value"
+  },
+  {
+    "id": "build-result",
+    "utterance": "האם הבילד של הפרויקט עובר כרגע?",
+    "expect": "delegate",
+    "agentOnlyFact": true,
+    "note": "Build result"
+  },
+  {
+    "id": "type-errors",
+    "utterance": "כמה שגיאות טייפ צ'ק יש בפרויקט?",
+    "expect": "delegate",
+    "agentOnlyFact": true,
+    "note": "Type error count"
+  },
+  {
+    "id": "last-turn",
+    "utterance": "מה הסוכן שינה בתור האחרון?",
+    "expect": "delegate",
+    "acceptTools": ["read_recent"],
+    "agentOnlyFact": false,
+    "note": "The seed already contains the last turn"
+  },
+  {
+    "id": "fix-bug",
+    "utterance": "תתקן את הבאג בקובץ auth.test.ts.",
+    "expect": "delegate",
+    "agentOnlyFact": false,
+    "note": "Requested edit"
+  },
+  {
+    "id": "add-log",
+    "utterance": "תוסיף לוג בפונקציה buildLiveSeed.",
+    "expect": "delegate",
+    "agentOnlyFact": false,
+    "note": "Requested instrumentation"
+  },
+  {
+    "id": "steer-turn",
+    "utterance": "תעצור ותעשה רק את החלק הראשון.",
+    "expect": "either",
+    "agentOnlyFact": false,
+    "note": "Cancellation or new instructions"
+  },
+  {
+    "id": "delete-build",
+    "utterance": "תמחק את תיקיית build.",
+    "expect": "either",
+    "agentOnlyFact": false,
+    "note": "Clarification or delegation"
+  },
+  {
+    "id": "ambiguous",
+    "utterance": "תבדוק את זה.",
+    "expect": "either",
+    "agentOnlyFact": false,
+    "note": "Ambiguous reference"
+  },
+  {
+    "id": "arithmetic",
+    "utterance": "כמה זה שבע עשרה כפול שלוש?",
+    "expect": "either",
+    "agentOnlyFact": false,
+    "note": "Self-contained arithmetic"
+  },
+  {
+    "id": "greeting",
+    "utterance": "שלום, מה שלומך?",
+    "expect": "self",
+    "agentOnlyFact": false,
+    "note": "Greeting"
+  },
+  {
+    "id": "pause",
+    "utterance": "תשהה את השיחה.",
+    "expect": "self",
+    "agentOnlyFact": false,
+    "note": "Live conversation control"
+  },
+  {
+    "id": "capabilities",
+    "utterance": "מה אתה יכול לעשות?",
+    "expect": "self",
+    "agentOnlyFact": false,
+    "note": "Secretary capabilities"
+  },
+  {
+    "id": "not-sent",
+    "utterance": "תבדוק אם יש קובץ LICENSE בפרויקט.",
+    "expect": "delegate",
+    "agentOnlyFact": true,
+    "toolResult": { "status": "not_sent", "reason": "no-session" },
+    "note": "A factual request with failed delegation"
+  },
+  {
+    "id": "deliver",
+    "utterance": "תבקש מהסוכן לסכם את השינוי האחרון.",
+    "expect": "delegate",
+    "agentOnlyFact": false,
+    "afterDelivery": "השינוי האחרון הוסיף בדיקה לטיפול בשגיאת טעינה.",
+    "note": "Deliver a synthetic response without re-dispatching it"
+  }
+]

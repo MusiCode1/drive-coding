@@ -10,20 +10,19 @@
  *   PROBE_CONTEXT=1 bun scripts/probe-live-adapter.mjs   # DoD #15 mutation gate
  */
 
-import { execSync, spawn, spawnSync } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { execSync, spawn } from "node:child_process"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { LIVE_ACTION_SHAPES } from "../packages/core/src/voice/live-actions.ts"
-import { buildLiveSeed } from "../packages/core/src/voice/live-seed.ts"
 import {
   buildLiveSecretaryPrompt,
   formatAgentDelivery,
   LIVE_AGENT_DELIVERY_MARKER,
 } from "../packages/core/src/voice/live-prompt.ts"
-import { GoogleGenAI } from "../packages/frontend/node_modules/@google/genai/dist/node/index.mjs"
+import { buildLiveSeed } from "../packages/core/src/voice/live-seed.ts"
 import { geminiLive } from "../packages/frontend/src/lib/adapters/voice/live/gemini.ts"
+
+import { generateHebrewPcm16k } from "./live-eval/hebrew-pcm.mjs"
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
 /**
@@ -76,7 +75,8 @@ const DELIVERY_AGENT_ANSWER =
   process.env.DELIVERY_AGENT_ANSWER ??
   `\u05D4\u05E1\u05D5\u05DB\u05DF \u05E1\u05D9\u05DD \u05D1\u05E7\u05D5\u05D1\u05E5 ${IDENTIFIER}.`
 const SEED_QUESTION =
-  process.env.SEED_QUESTION ?? "\u05E2\u05DC \u05D0\u05D9\u05D6\u05D4 \u05DE\u05D5\u05D3\u05D5\u05DC \u05D4\u05E1\u05D5\u05DB\u05DF \u05DE\u05E8\u05D9\u05E5 \u05D8\u05E1\u05D8\u05D9\u05DD?"
+  process.env.SEED_QUESTION ??
+  "\u05E2\u05DC \u05D0\u05D9\u05D6\u05D4 \u05DE\u05D5\u05D3\u05D5\u05DC \u05D4\u05E1\u05D5\u05DB\u05DF \u05DE\u05E8\u05D9\u05E5 \u05D8\u05E1\u05D8\u05D9\u05DD?"
 const SEED_MODULE = process.env.SEED_MODULE ?? "auth"
 
 const SEED_LABELS = {
@@ -196,57 +196,6 @@ async function mintToken(actionNames) {
 
 async function mintTokenAll() {
   return mintToken(LIVE_ACTION_SHAPES.map((s) => s.name))
-}
-
-/** Gemini TTS 24k → ffmpeg → 16k PCM (same path as probe-live-text-only.mjs). */
-async function generateHebrewPcm16k(text, apiKey) {
-  const ai = new GoogleGenAI({ apiKey })
-  const iter = await ai.models.generateContentStream({
-    model: "gemini-3.1-flash-tts-preview",
-    contents: [{ parts: [{ text }] }],
-    config: {
-      responseModalities: ["AUDIO"],
-      speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } },
-    },
-  })
-
-  const chunks = []
-  for await (const chunk of iter) {
-    const b64 = chunk.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data
-    if (b64) chunks.push(Buffer.from(b64, "base64"))
-  }
-  if (chunks.length === 0) throw new Error("TTS produced no audio")
-
-  const dir = mkdtempSync(join(tmpdir(), "live-adapter-probe-"))
-  const pcm24 = join(dir, "he24.pcm")
-  writeFileSync(pcm24, Buffer.concat(chunks))
-  const pcm16 = join(dir, "he16.pcm")
-  const ff = spawnSync(
-    "ffmpeg",
-    [
-      "-y",
-      "-f",
-      "s16le",
-      "-ar",
-      "24000",
-      "-ac",
-      "1",
-      "-i",
-      pcm24,
-      "-ar",
-      "16000",
-      "-ac",
-      "1",
-      "-f",
-      "s16le",
-      pcm16,
-    ],
-    { encoding: "utf8" },
-  )
-  if (ff.status !== 0) throw new Error(`ffmpeg failed: ${ff.stderr}`)
-  const audio = readFileSync(pcm16)
-  rmSync(dir, { recursive: true, force: true })
-  return new Uint8Array(audio)
 }
 
 /**
@@ -397,9 +346,7 @@ async function runSeedProbe() {
     await sleep(100)
   }
   await sleep(3000)
-  const contextProvokedFrames = events
-    .slice(beforeInject)
-    .filter((e) => e.type === "audio").length
+  const contextProvokedFrames = events.slice(beforeInject).filter((e) => e.type === "audio").length
 
   session.send({ type: "context", text: SEED_QUESTION, channel: "speakable" })
 
@@ -449,8 +396,7 @@ async function runSeedProbe() {
     composeArgs,
     answerUsedSeed,
     actionNames: actions.map((a) => a.name),
-    pass:
-      seed.charCount > 0 && contextProvokedFrames === 0 && answerUsedSeed === true,
+    pass: seed.charCount > 0 && contextProvokedFrames === 0 && answerUsedSeed === true,
     mutatedEmptySeed: PROBE_SEED_EMPTY,
   }
   console.log(JSON.stringify(out, null, 2))
