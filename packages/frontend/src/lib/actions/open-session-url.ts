@@ -95,25 +95,14 @@ export async function openSessionUrl(params: {
     stored: settings.sessionTransport,
   })
 
-  const attachSessionId = sessionId
-
   try {
-    if (transport === "http") {
-      await session.attachRemoteToLiveAgent({
-        agentId: agent.id,
-        cwd: agent.cwd,
-        cliKind: agent.cliKind,
-        ...sessionAttachExtras(agent),
-      })
-    } else {
-      await session.attachToLiveAgent({
-        agentId: agent.id,
-        sessionId: attachSessionId,
-        cwd: agent.cwd,
-        cliKind: agent.cliKind,
-        ...sessionAttachExtras(agent),
-      })
-    }
+    await session.attachRemoteToLiveAgent({
+      agentId: agent.id,
+      cwd: agent.cwd,
+      cliKind: agent.cliKind,
+      transport,
+      ...sessionAttachExtras(agent),
+    })
   } catch (e) {
     session.error = formatAcpError(e)
     return "error"

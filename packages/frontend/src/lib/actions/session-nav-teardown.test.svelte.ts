@@ -7,6 +7,8 @@ import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
+import { createRemoteView } from "$lib/session/create-session-view"
+import { MockSessionView } from "$lib/view-models/__fixtures__/mock-session-view.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
 import { Speaker } from "$lib/view-models/speaker.svelte"
@@ -25,6 +27,12 @@ vi.mock("$lib/adapters/voice/tts-resolve", async (importOriginal) => ({
 }))
 vi.mock("$lib/adapters/voice/translate", () => ({ translate: vi.fn() }))
 vi.mock("$lib/adapters/voice/narrate", () => ({ narrate: vi.fn() }))
+
+vi.mock("$lib/session/create-session-view")
+vi.mock("$lib/adapters/agents-api", () => ({
+  createAgent: vi.fn().mockResolvedValue({ agentId: "agent-test-1" }),
+  deleteAgent: vi.fn().mockResolvedValue(undefined),
+}))
 
 function makeMockSink() {
   const prepared = new Set<string>()
@@ -69,16 +77,23 @@ describe("session-nav teardown gates", () => {
     expect(session.agentId).toBeNull()
   })
 
-  it("gate 3: attach() after navigate-away does not reject with cannot attach", async () => {
+  it("gate 3: can attach after navigating away", async () => {
     const { session } = harness()
     session._setStatusForTest("connected")
     onSessionRouteChange("/chat", "/", session)
-
-    let thrown: unknown
-    await session.attach({ cwd: "/tmp", cliKind: "claude" }).catch((e) => {
-      thrown = e
-    })
-    expect(String(thrown ?? "")).not.toContain("cannot attach in status connected")
+    const view = new MockSessionView()
+    view.connect("next-session")
+    vi.mocked(createRemoteView).mockResolvedValueOnce(
+      view as unknown as Awaited<ReturnType<typeof createRemoteView>>,
+    )
+    const locationStub = vi.stubGlobal("location", { protocol: "http:", host: "localhost" })
+    try {
+      await session.attachRemote({ cwd: "/project", cliKind: "claude", transport: "ws" })
+      expect(session.status).toBe("connected")
+      expect(session.sessionId).toBe("next-session")
+    } finally {
+      locationStub.unstubAllGlobals()
+    }
   })
 
   it("gate 4 negative: /chat → /settings does not change status or agentId", () => {

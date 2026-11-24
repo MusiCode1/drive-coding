@@ -4,47 +4,32 @@
  * redesign-4: RecordFooter מחליף ChatInput.
  */
 import { onMount } from "svelte"
-import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import ChatBubbles from "$lib/components/chat/ChatBubbles.svelte"
+import ChatSessionStatus from "$lib/components/chat/ChatSessionStatus.svelte"
 // edge-merge 25/08: PlaybackControls + voiceMode הגיעו מ-acp-playback על +page.svelte,
 // בעוד session-url חילץ את הדף ל-ChatScreen. מיזוג "take theirs" היה מוחק את שניהם
 // בשקט — ר' הערת ה-mic-toggle למטה.
 import RecordFooter from "$lib/components/chat/RecordFooter.svelte"
 import AppShell from "$lib/components/layout/AppShell.svelte"
-import DisconnectBanner from "$lib/components/session/DisconnectBanner.svelte"
 import SessionMemoPad from "$lib/components/session/SessionMemoPad.svelte"
-import { getI18n, getSession, getMic, getBubblePlayer, getCues, getVoiceMode } from "$lib/context"
-import { BtRemoteEngine, TICK_INTERVAL_MS, buttonForKeyCode, type BtCommand } from "$lib/engines/bt-remote.js"
+import { getBubblePlayer, getCues, getMic, getSession, getVoiceMode } from "$lib/context"
 import { btChatAction, PROBE_CUE_GAP_MS } from "$lib/engines/bt-chat-actions.js"
+import {
+  type BtCommand,
+  BtRemoteEngine,
+  buttonForKeyCode,
+  TICK_INTERVAL_MS,
+} from "$lib/engines/bt-remote.js"
 
 const session = getSession()
 const mic = getMic()
 const voiceMode = getVoiceMode()
 const bubblePlayer = getBubblePlayer()
 const cues = getCues()
-const i18n = getI18n()
-const t = i18n.t
 
 // redesign-fix: disconnect עבר ל-SessionOptionsPanel (אין יותר onDisconnect prop)
 
-// ─── slice leave-running-background: beforeunload guard ───
-// מזהיר כשמחובר ולא ב-bypass — הריצה עלולה להיתקע בלי FE (ACP client).
-// onMount: רץ רק בדפדפן → בטוח מ-SSR (window/beforeunload לא קיימים ב-SSR).
-// scope: /chat בלבד — רענון בדף-הבית/רשימה לא מזהיר.
 onMount(() => {
-  function onBeforeUnload(e: BeforeUnloadEvent) {
-    if (
-      session.status === "connected" &&
-      session.turnState !== "idle" &&
-      !session.bypassActive &&
-      !session.isRemoteView
-    ) {
-      e.preventDefault()   // מפעיל dialog גנרי של הדפדפן
-      e.returnValue = ""   // נדרש לדפדפנים ישנים
-    }
-  }
-  window.addEventListener("beforeunload", onBeforeUnload)
-
   // ─── שלט BT (D-pad) — חיווט קדמי, 2026-08-22 ───
   // ערוץ KEY בלבד ⇒ עובד רק כשהטאב בחזית והמסך דלוק. המדידה של 21/08
   // הוכיחה שזה לא דורש חימוש ולא לולאת-אודיו.
@@ -54,7 +39,6 @@ onMount(() => {
   //    `SessionOptionsPanel.svelte`: component שקורא goto, מחזיק $effect/onMount
   //    ומניע VMs. כאן: מאזיני window · polling · ייבוא **ויצירת** engine
   //    (`new BtRemoteEngine()`) · הפעלת cues · תקציב >50 שורות ב-<script>.
-  //    (מאזין `beforeunload` מ-slice leave-running-background — הפרה קודמת, לא נספר.)
   //    למה כאן: השלט הוא **קלט גלובלי** שאינו שייך לאף entity — הוא
   //    מתרגם מקשים לפעולות על שלושה VMs (Mic · BubblePlayer · Cues).
   //    Follow-up: אם החיווט יורחב מעבר לצ'אט — מקומו ב-VM ייעודי.
@@ -108,7 +92,6 @@ onMount(() => {
   }, TICK_INTERVAL_MS)
 
   return () => {
-    window.removeEventListener("beforeunload", onBeforeUnload)
     window.removeEventListener("keydown", onKey, true)
     window.removeEventListener("keyup", onKey, true)
     clearInterval(btTick)
@@ -120,33 +103,7 @@ onMount(() => {
   <AppShell>
     <ChatBubbles />
 
-    <DisconnectBanner />
-
-    {#if session.error}
-      <div
-        class="mx-4 my-2 ps-3 pe-2 py-3 rounded-lg text-sm flex items-start gap-2"
-        style="background:rgba(255,79,79,0.1); border:1px solid rgba(255,79,79,0.3); color:var(--recording)"
-        role="alert"
-      >
-        <!-- bugs/44: dir="auto" — ההודעה באנגלית, וה-shell ב-RTL יישר אותה לימין. -->
-        <span class="flex-1 min-w-0 break-words" dir="auto">{session.error}</span>
-        <!-- bugs/44: אין מנקה אוטומטי ב-HTTP (המנקה היחיד תלוי ב-WS onClose),
-             ולכן שגיאה חולפת נשארת לנצח. סגירה ידנית = הקלה, לא תיקון-שורש. -->
-        <button
-          type="button"
-          class="shrink-0 px-1 leading-none opacity-70 hover:opacity-100 cursor-pointer"
-          aria-label={t("chat.error.dismiss")}
-          title={t("chat.error.dismiss")}
-          onclick={() => {
-            session.error = null
-          }}
-        >
-          ✕
-        </button>
-      </div>
-      <!-- slice auth-guidance: הדרכת-אימות ספציפית-ל-CLI (מתחת ל-error, רק כשיש authMethods) -->
-      <AuthGuidance cliKind={session.cliKind} authMethods={session.authMethods} />
-    {/if}
+    <ChatSessionStatus />
 
     <!-- slice session-memo-pad: ממו הסשן צף מעל הצ'אט (מצומצם כברירת מחדל). -->
     {#snippet overlay()}

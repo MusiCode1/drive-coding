@@ -2,7 +2,7 @@
  * session-view.test.ts — contract tests for the SessionView port.
  *
  * Tests:
- * 1. LocalSessionView satisfies the SessionView interface at compile time
+ * 1. A minimal implementation satisfies the SessionView interface at compile time
  * 2. The interface shape is correct (state, patches, methods)
  *
  * ─── slice session-view-port C2 (TDD) ───

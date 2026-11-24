@@ -254,6 +254,35 @@ describe("snapshot round-trip — nothing may vanish", () => {
 })
 
 describe("patch → session/update", () => {
+  it("round-trips available modes in live updates and in the snapshot", () => {
+    const previous = {
+      currentModeId: "previous",
+      availableModes: [{ id: "previous", name: "Previous" }],
+    }
+    const availableModes = [
+      { id: "default", name: "Default" },
+      { id: "other", name: "Other" },
+    ]
+    const initial = { ...mk(), modes: previous }
+    const { state, patches } = reduce(initial, {
+      sessionUpdate: "current_mode_update",
+      currentModeId: "default",
+      _meta: { "_drive/availableModes": availableModes },
+    })
+    const expected = { currentModeId: "default", availableModes }
+    expect(state.modes).toEqual(expected)
+    expect(
+      play(
+        patches.flatMap((patch) => patchToSessionUpdates(state, patch)),
+        initial,
+      ).modes,
+    ).toEqual(expected)
+    expect(replay(stateToSessionUpdates(state)).modes).toEqual(expected)
+    expect(
+      reduce(state, { sessionUpdate: "current_mode_update", currentModeId: "other" }).state.modes,
+    ).toEqual({ ...expected, currentModeId: "other" })
+  })
+
   it("update-session splits into one canonical frame per field", () => {
     const s = mk()
     const updates = patchToSessionUpdates(s, {

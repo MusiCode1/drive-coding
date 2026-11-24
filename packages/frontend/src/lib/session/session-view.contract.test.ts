@@ -1,9 +1,8 @@
 /**
- * session-view.contract.test.ts — מריץ את session-view-contract על local, HTTP/SSE ו-WebSocket.
+ * session-view.contract.test.ts — מריץ את session-view-contract על HTTP/SSE ו-WebSocket.
  *
  * Testing: tdd (brief §C1)
  *
- * local  — LocalSessionView עם mock AcpClient (createClient מוזרק).
  * remote — RemoteSessionView עם fake SSE או WS. ⚠️ ה-harness מריץ `reduce`/`applyPendingRequest`/
  *          `clearPendingRequest`/`applyTurnEnd` מ-core (לא patches ידניים) — כדי שהתנהגות 3
  *          תבדוק את ה-view, לא את ה-harness. אותם פריימים מפוענחים ב-FrameReader.
@@ -13,12 +12,12 @@
  * ─── slice view-switch C1 (TDD) ───
  */
 
-import type { SessionNotification } from "@agentclientprotocol/sdk"
 import {
   applyPendingRequest,
   applyTurnEnd,
   type ChannelResponse,
   clearPendingRequest,
+  closeCodeForStatus,
   createInitialSessionState,
   decodeWsClientMessage,
   encodeWsControl,
@@ -36,7 +35,6 @@ import {
   type ToolOutputRules,
   updateFrame,
 } from "@drive-coding/core/session"
-import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { fakeSessionSockets } from "./__contract__/fake-session-socket"
 import {
@@ -45,95 +43,9 @@ import {
   PatchBuffer,
 } from "./__contract__/session-view-contract.js"
 import { createRemoteView } from "./create-session-view.js"
-import { LocalSessionView } from "./local-session-view.js"
 import type { RemoteSessionView } from "./remote-session-view.js"
 import type { SessionTransport } from "./session-transport"
 import type { RpcKind } from "./wire/pipe"
-
-// ⚠️ `AcpClientCallbacks` אינו re-exported מ-"@drive-coding/provider/client" (פער קיים,
-// לא בהיקף ה-slice — משפיע כבר על local-session-view.ts/test.ts). נגזר structurally
-// מחתימת ה-constructor במקום לייבא את הסמל השבור (מונע DELTA-CHECK חדש).
-type CapturedCallbacks = Parameters<
-  NonNullable<ConstructorParameters<typeof LocalSessionView>[0]["createClient"]>
->[0]
-
-// ── local harness ──────────────────────────────────────────────────────────────
-
-function createMockAcpClient(outboundLog: Array<{ method: string; params: unknown }>): AcpClient {
-  return {
-    newSession: vi.fn().mockResolvedValue({ sessionId: "s-contract" }),
-    loadSession: vi.fn().mockResolvedValue({}),
-    // ⚠️ התוויות כאן קנוניות **בכוונה**, ולא "כדי שהטסט יעבור". ה-harness
-    // המרוחק דוחף את גוף-החוט האמיתי; המקומי דוחף תווית מסונתזת. אם השתיים
-    // אינן מדברות אותו אוצר-מילים, כל קיבוע ב-contract המשותף נעשה
-    // תלוי-תעבורה — וזה בדיוק מה ש-contract משותף אמור למנוע.
-    // וזו גם התווית הנכונה: החוט-לספק במסלול המקומי **הוא** session/prompt.
-    prompt: vi.fn(async (sessionId: string, content: unknown) => {
-      outboundLog.push({ method: RPC_METHODS.prompt, params: { sessionId, content } })
-    }),
-    cancel: vi.fn(async (sessionId: string) => {
-      outboundLog.push({ method: RPC_METHODS.cancel, params: { sessionId } })
-    }),
-    extMethod: vi.fn().mockResolvedValue({ snapshot: null }),
-    listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
-    deleteSession: vi.fn().mockResolvedValue(undefined),
-    setSessionConfigOption: vi.fn().mockResolvedValue({ configOptions: [] }),
-    setSessionMode: vi.fn().mockResolvedValue(undefined),
-    setSessionModel: vi.fn().mockResolvedValue(undefined),
-    close: vi.fn(),
-    conn: {} as AcpClient["conn"],
-    capabilities: {} as AcpClient["capabilities"],
-    authMethods: [],
-  } as unknown as AcpClient
-}
-
-async function createLocalHarness(): Promise<ContractHarness> {
-  const outboundLog: Array<{ method: string; params: unknown }> = []
-  const client = createMockAcpClient(outboundLog)
-  let cbs: CapturedCallbacks | null = null
-  const view = new LocalSessionView({
-    cwd: "/workspace",
-    cliKind: "claude",
-    createClient: async (c) => {
-      cbs = c
-      return client
-    },
-  })
-  // ⚠️ חובה — LocalSessionView בונה את ה-client/callbacks רק כאן (brief §C1)
-  await view.newSession()
-  if (!cbs) throw new Error("createLocalHarness: newSession() did not invoke createClient")
-  const boundCbs = cbs as CapturedCallbacks
-
-  const pb = new PatchBuffer(view.patches)
-
-  return {
-    view,
-    nextPatches: (n) => pb.nextPatches(n),
-    async emitUpdate(update) {
-      const target = pb.totalPushed + 1
-      boundCbs.onUpdate({ sessionId: "s-contract", update } as SessionNotification)
-      await pb.waitForTotalAtLeast(target)
-    },
-    async emitPermission(params) {
-      // ⚠️ local: אסור await על onRequestPermission — הוא נפתר רק כש-respond() נקרא (deadlock).
-      void boundCbs.onRequestPermission?.(params as never)
-      await Promise.resolve()
-      const requestId = view.state.pending.permission?.requestId
-      if (requestId === undefined) throw new Error("emitPermission: pending.permission not set")
-      return requestId
-    },
-    async settle() {
-      // local: כתיבה סינכרונית — אין מה להמתין לו.
-    },
-    outbound: () => outboundLog,
-    async dispose() {
-      await pb.dispose()
-      await view.close().catch(() => {})
-    },
-  }
-}
-
-// ── remote harness ─────────────────────────────────────────────────────────────
 
 function makeLiveSSEBody(): {
   body: ReadableStream<Uint8Array>
@@ -287,7 +199,6 @@ async function createRemoteHarness(transport: SessionTransport): Promise<Contrac
 
 // ── shared contract ──────────────────────────────────────────────────────────
 
-describeSessionViewContract("local", createLocalHarness)
 describeSessionViewContract("remote-http", () => createRemoteHarness("http"))
 describeSessionViewContract("remote-ws", () => createRemoteHarness("ws"))
 
@@ -389,6 +300,127 @@ describe("remote tool output", () => {
   })
 })
 
+describe("terminal session stream", () => {
+  const crashReason = "The provider process exited"
+
+  async function connectForTerminalTest(
+    transport: SessionTransport,
+    metadata: () => Response | Promise<Response>,
+  ) {
+    const state = createInitialSessionState({ sessionId: "s-crash" })
+    const initial = snapshotFrame(state)
+    const sse = makeLiveSSEBody()
+    const sockets = fakeSessionSockets()
+    let eventsRequests = 0
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith("/events")) {
+        if (eventsRequests++ === 0) {
+          sse.pushRaw(initial)
+          return new Response(sse.body)
+        }
+        return Response.json({ error: "Agent connection not found" }, { status: 404 })
+      }
+      expect(url).toBe("http://be.local/api/agents/agent-crash")
+      return metadata()
+    })
+    const connected = createRemoteView({
+      agentId: "agent-crash",
+      baseUrl: "http://be.local",
+      transport,
+      _WebSocket: sockets.WebSocket,
+      _fetch: fetcher,
+    })
+    if (transport === "ws") {
+      sockets.latest().connect()
+      sockets.latest().receive(encodeWsFrame(initial))
+    }
+    const view = await connected
+    return {
+      view,
+      metadataRequests: () => fetcher.mock.calls.filter(([url]) => !url.endsWith("/events")).length,
+      async endAsGone() {
+        if (transport === "ws") sockets.latest().close()
+        else sse.close()
+        await vi.advanceTimersByTimeAsync(1000)
+        if (transport === "ws") sockets.latest().close(closeCodeForStatus(404))
+        await vi.advanceTimersByTimeAsync(0)
+      },
+    }
+  }
+
+  it.each(["http", "ws"] as const)(
+    "delivers the crash reason exactly once via %s",
+    async (transport) => {
+      vi.useFakeTimers()
+      const host = await connectForTerminalTest(transport, () =>
+        Response.json({ agent: { status: "crashed", crashReason } }),
+      )
+      const reader = host.view.patches.getReader()
+      try {
+        await host.endAsGone()
+        expect(host.metadataRequests()).toBe(1)
+        await expect(reader.read()).resolves.toMatchObject({
+          value: { terminalError: crashReason },
+        })
+        await vi.advanceTimersByTimeAsync(30_000)
+        expect(host.metadataRequests()).toBe(1)
+      } finally {
+        reader.releaseLock()
+        await host.view.close()
+        vi.useRealTimers()
+      }
+    },
+  )
+
+  const missingReason = {
+    "network failure": () => Promise.reject(new Error("offline")),
+    "404 response": () => new Response(null, { status: 404 }),
+    "invalid JSON": () => new Response("{"),
+    "missing field": () => Response.json({ agent: { status: "ready" } }),
+    "invalid field": () => Response.json({ agent: { crashReason: 1 } }),
+  }
+
+  it.each(Object.entries(missingReason))("ends quietly after %s", async (_name, response) => {
+    vi.useFakeTimers()
+    const host = await connectForTerminalTest("http", response)
+    const reader = host.view.patches.getReader()
+    const delivered = vi.fn()
+    void reader.read().then(delivered)
+    try {
+      await host.endAsGone()
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(host.metadataRequests()).toBe(1)
+      expect(delivered).not.toHaveBeenCalled()
+    } finally {
+      await host.view.close()
+      await reader.cancel()
+      reader.releaseLock()
+      vi.useRealTimers()
+    }
+  })
+
+  it("discards a metadata result that arrives after closing the view", async () => {
+    vi.useFakeTimers()
+    let complete!: (response: Response) => void
+    const metadata = new Promise<Response>((resolve) => {
+      complete = resolve
+    })
+    const host = await connectForTerminalTest("http", () => metadata)
+    const reader = host.view.patches.getReader()
+    try {
+      await host.endAsGone()
+      expect(host.metadataRequests()).toBe(1)
+      await host.view.close()
+      complete(Response.json({ agent: { crashReason } }))
+      await vi.advanceTimersByTimeAsync(0)
+      await expect(reader.read()).resolves.toMatchObject({ done: true })
+    } finally {
+      reader.releaseLock()
+      vi.useRealTimers()
+    }
+  })
+})
+
 // ── טבלת-הסטייה (brief §C1) ──────────────────────────────────────────────────
 
 describe.each(["http", "ws"] as const)("SessionView deviation table — %s", (transport) => {
@@ -458,7 +490,7 @@ describe.each(["http", "ws"] as const)("SessionView deviation table — %s", (tr
     await expect(view.prompt("hi")).rejects.toThrow("500")
   })
 
-  it("respond() with an unknown id is a silent no-op (like LocalSessionView)", async () => {
+  it("respond() with an unknown id is a silent no-op", async () => {
     const view = await connect()
 
     await expect(view.respond(999, {})).resolves.toBeUndefined()

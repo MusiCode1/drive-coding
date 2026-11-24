@@ -26,7 +26,6 @@ export type LoadMockSessionDeps = {
   }) => void
   setMockQuota: (v: QuotaSnapshot | null | undefined) => void
   setCapabilities: (v: NormalizedCapabilities | null) => void
-  resetTurnTracking: () => void
   setTurnState: (state: TurnState) => void
   onSessionUpdate: (notification: SessionNotification) => void
   setStatus: (status: AgentSessionStatus) => void
@@ -82,7 +81,6 @@ export async function loadMockSession(
     const params = new URLSearchParams(typeof location !== "undefined" ? location.search : "")
     const delayMs = Number(params.get("stream") ?? "0") || 0
 
-    d.resetTurnTracking()
     d.setIsLoadingHistory(true)
     try {
       for (const update of data.updates) {

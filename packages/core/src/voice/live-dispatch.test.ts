@@ -9,26 +9,13 @@ import { canDispatchPrompt } from "./live-dispatch"
 
 const ready = {
   status: "connected",
-  hasClient: true,
   hasSessionId: true,
-  isRemoteView: false,
   text: "fix the bug",
 }
 
 describe("canDispatchPrompt", () => {
-  it("ok when connected with local session and non-empty text", () => {
+  it("ok when connected with a session ID and non-empty text", () => {
     expect(canDispatchPrompt(ready)).toEqual({ ok: true })
-  })
-
-  it("ok when connected in remote view without local client", () => {
-    expect(
-      canDispatchPrompt({
-        ...ready,
-        hasClient: false,
-        hasSessionId: false,
-        isRemoteView: true,
-      }),
-    ).toEqual({ ok: true })
   })
 
   it("not-connected when status is not connected", () => {
@@ -38,14 +25,7 @@ describe("canDispatchPrompt", () => {
     })
   })
 
-  it("no-session when local path lacks client", () => {
-    expect(canDispatchPrompt({ ...ready, hasClient: false })).toEqual({
-      ok: false,
-      reason: "no-session",
-    })
-  })
-
-  it("no-session when local path lacks sessionId", () => {
+  it("no-session when the session ID is missing", () => {
     expect(canDispatchPrompt({ ...ready, hasSessionId: false })).toEqual({
       ok: false,
       reason: "no-session",

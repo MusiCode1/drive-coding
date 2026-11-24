@@ -59,8 +59,6 @@ const fakeI18n = { t: (key: string) => key } as unknown as I18nVM
 
 const fakeSession = {
   status: "connected",
-  reconnectAttempt: 0,
-  reconnect: () => {},
 } as unknown as AgentSession
 
 const fakeResponsive = {

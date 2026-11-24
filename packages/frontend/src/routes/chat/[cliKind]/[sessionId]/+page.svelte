@@ -63,13 +63,7 @@ function goHome() {
 
 function goBack() {
   if (session.sessionId !== null && session.cliKind) {
-    goto(
-      sessionPathWithTransport(
-        session.cliKind,
-        session.sessionId,
-        session.isRemoteView ? "http" : "ws",
-      ),
-    )
+    goto(sessionPathWithTransport(session.cliKind, session.sessionId, session.sessionTransport))
     return
   }
   goto("/")

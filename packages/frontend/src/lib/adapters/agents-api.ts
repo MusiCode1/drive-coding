@@ -5,9 +5,11 @@
  * ללא ניסיונות חוזרים, ללא וולידציית סכמה — נתיב מהיר ל-v2.
  */
 
-import type { AgentPublic, MachineStats } from "@drive-coding/core"
+import type { MachineStats } from "@drive-coding/core"
 import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { beUrl } from "$lib/util/be-url"
+
+export { getAgent, listAgents } from "./agent-read-api"
 
 const AGENTS_API_TIMEOUT_MS = 10000 // קריאות API קצרות; BE מקומי בדר"כ < 1s
 
@@ -46,43 +48,6 @@ export async function createAgent(
     throw new Error(`createAgent failed: ${res.status} ${body}`)
   }
   return (await res.json()) as CreateAgentResponse
-}
-
-/** מושך את רשימת הסוכנים הפעילים מה-BE (GET /api/agents). */
-export async function listAgents(signal?: AbortSignal): Promise<AgentPublic[]> {
-  const res = await withTimeout(
-    (s) => fetch(beUrl("/api/agents"), { signal: s }),
-    AGENTS_API_TIMEOUT_MS,
-    { signal, label: "listAgents" },
-  )
-  if (!res.ok) throw new Error(`listAgents failed: ${res.status}`)
-  const body = (await res.json()) as { agents: AgentPublic[] }
-  return body.agents
-}
-
-/**
- * מושך מידע על agent בודד (GET /api/agents/:id) — כולל `crashReason` (מאוכלס ע"י
- * `describeCrash` ב-BE כש-status="crashed"). צרכן: `#handleUnexpectedClose` בסלייס
- * surface-real-error, Commit 3 — best-effort לזיהוי child-crash (ENOENT/credit/וכו')
- * אחרי סגירת WS לא-צפויה, כדי להציג את הסיבה האמיתית במקום "WS closed" גנרי.
- *
- * עטוף ב-withTimeout (calev-heavy §10.1, Commit 4): קריאה חשופה בלי timeout הייתה
- * חוסמת את ה-reconnect אם ה-BE תקוע/לא-נגיש — `#handleUnexpectedClose` ממתין ל-getAgent
- * לפני `#scheduleReconnect()`, ו-`.catch()` לא עוזר ל-hang.
- */
-export async function getAgent(
-  agentId: string,
-  signal?: AbortSignal,
-): Promise<{ agent: { cwd: string; status: string; crashReason?: string } }> {
-  const res = await withTimeout(
-    (s) => fetch(beUrl(`/api/agents/${agentId}`), { signal: s }),
-    AGENTS_API_TIMEOUT_MS,
-    { signal, label: "getAgent" },
-  )
-  if (!res.ok) {
-    throw new Error(`getAgent failed: ${res.status}`)
-  }
-  return (await res.json()) as { agent: { cwd: string; status: string; crashReason?: string } }
 }
 
 /** notifySessionAttached — PATCH acpSessionId (+ optional cwd/replace); replaces POST …/session-attached. */

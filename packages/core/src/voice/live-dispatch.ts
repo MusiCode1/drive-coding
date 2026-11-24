@@ -10,15 +10,13 @@ export type DispatchVerdict =
 
 export function canDispatchPrompt(input: {
   status: string
-  hasClient: boolean
   hasSessionId: boolean
-  isRemoteView: boolean
   text: string
 }): DispatchVerdict {
   if (input.status !== "connected") {
     return { ok: false, reason: "not-connected" }
   }
-  if (!input.isRemoteView && (!input.hasClient || !input.hasSessionId)) {
+  if (!input.hasSessionId) {
     return { ok: false, reason: "no-session" }
   }
   if (!input.text.trim()) {

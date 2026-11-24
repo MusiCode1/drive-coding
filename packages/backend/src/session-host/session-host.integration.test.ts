@@ -26,6 +26,7 @@ import {
   snapshotPayload,
   TOOL_OUTPUT_META_KEY,
   type ToolOutputRules,
+  updateFrame,
 } from "@drive-coding/core/session"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
@@ -1850,10 +1851,62 @@ describe("setConfigOption (http-state-gaps C1)", () => {
 // ─── slice http-state-gaps C2: loadSession מותנה זהות סשן ───────────────────
 
 describe("loadSession (http-state-gaps C2)", () => {
+  it("publishes complete modes from new and loaded sessions", async () => {
+    const { host, mockClient } = await setup()
+    const availableModes = [
+      { id: "default", name: "Default" },
+      { id: "other", name: "Other" },
+    ]
+    for (const sessionId of ["new", "loaded"]) {
+      const modes = { currentModeId: sessionId === "new" ? "default" : "other", availableModes }
+      if (sessionId === "new") {
+        vi.mocked(mockClient.newSession).mockResolvedValueOnce({ sessionId, modes })
+        await host.newSession({ cwd: "/project" })
+      } else {
+        vi.mocked(mockClient.loadSession).mockResolvedValueOnce({ modes })
+        await host.loadSession({ cwd: "/project", sessionId })
+      }
+      expect(host.state.modes).toEqual(modes)
+      let found = false
+      for (let i = 0; i < 3 && !found; i++) {
+        const patch = await readOnePatch(host.patches)
+        const frame = updateFrame(host.state, patch)
+        if (frame?.data.includes("current_mode_update")) {
+          expect(frame.data).toContain('"_drive/availableModes"')
+          found = true
+        }
+      }
+      expect(found).toBe(true)
+    }
+    await host.dispose()
+  })
+
   // DoD #7: אותו sessionId → הקיים מנצח
   it("same session reload: existing configOptions survive (existing wins)", async () => {
-    const existingOptions = [{ id: "mode", type: "select" as const, name: "Mode", currentValue: "auto", options: [{ id: "auto", name: "auto" }, { id: "manual", name: "manual" }] }]
-    const staleOptions = [{ id: "mode", type: "select" as const, name: "Mode", currentValue: "manual", options: [{ id: "auto", name: "auto" }, { id: "manual", name: "manual" }] }]
+    const existingOptions = [
+      {
+        id: "mode",
+        type: "select" as const,
+        name: "Mode",
+        currentValue: "auto",
+        options: [
+          { id: "auto", name: "auto" },
+          { id: "manual", name: "manual" },
+        ],
+      },
+    ]
+    const staleOptions = [
+      {
+        id: "mode",
+        type: "select" as const,
+        name: "Mode",
+        currentValue: "manual",
+        options: [
+          { id: "auto", name: "auto" },
+          { id: "manual", name: "manual" },
+        ],
+      },
+    ]
     const { host, conn, mockClient } = await setup()
     // First: newSession sets up the session with configOptions
     mockClient.newSession = vi.fn().mockResolvedValue({

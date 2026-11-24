@@ -1,7 +1,7 @@
 /**
  * agent-session.subagent-transcript.test.svelte.ts — VM integration (Commit 3,
  * slice subagent-transcript-data-v2). Replay של fixture חי (spike Gate-1) דרך
- * #onExtNotification + #onSessionUpdate האמיתיים.
+ * the session host reducer and the SSE view.
  *
  * מכסה (§5/§6 DoD):
  *   1. subFrames מתמלא על בועת ה-Task, task metadata (prompt/summary/status) מאוכלס.
@@ -9,13 +9,11 @@
  *   3. top-level assistant/session-update ללא שינוי (regression — ACP bubbles כרגיל).
  *   4. counter (0→14) נשאר ירוק (finding #1).
  *
- * דפוס: agent-session.capabilities.test.svelte.ts (מוק createAcpClient, לוכד callbacks).
  */
 
 import { readFileSync } from "node:fs"
 import type { SessionNotification } from "@agentclientprotocol/sdk"
-import type { AcpClient } from "@drive-coding/provider/client"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it } from "vitest"
 import type { Bubble, ToolBubble } from "$lib/types/bubble"
 
 // ─── fixture loading ────────────────────────────────────────────────────────
@@ -43,129 +41,59 @@ const rawSdkEntries = inbound.filter(
   (e) => e.channel === "raw" && e.frame.method === "_claude/sdkMessage",
 )
 
-// ─── Module-level mocks (דפוס agent-session.capabilities.test.svelte.ts) ──────
-
-let capturedOnUpdate: ((n: SessionNotification) => void) | null = null
-let capturedExtNotification: ((method: string, params: Record<string, unknown>) => void) | null =
-  null
-
-function makeMockClient(): AcpClient {
-  return {
-    conn: {} as AcpClient["conn"],
-    capabilities: {} as AcpClient["capabilities"],
-    newSession: vi.fn().mockResolvedValue({ sessionId: "session-subagent-test" }),
-    loadSession: vi.fn().mockResolvedValue({}),
-    listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
-    prompt: vi.fn().mockResolvedValue(undefined),
-    cancel: vi.fn().mockResolvedValue(undefined),
-    close: vi.fn(),
-    setSessionConfigOption: vi.fn(),
-    setSessionMode: vi.fn(),
-    setSessionModel: vi.fn(),
-    extMethod: vi.fn().mockResolvedValue({ ok: true }),
-  } as unknown as AcpClient
-}
-
-vi.mock("@drive-coding/provider/client", async (importActual) => {
-  const actual = await importActual<typeof import("@drive-coding/provider/client")>()
-  return {
-    ...actual,
-    createAcpClient: vi.fn(
-      (
-        _transport: unknown,
-        callbacks: {
-          onUpdate: (n: SessionNotification) => void
-          onExtNotification?: (m: string, p: Record<string, unknown>) => void
-        },
-      ) => {
-        capturedOnUpdate = callbacks.onUpdate
-        capturedExtNotification = callbacks.onExtNotification ?? null
-        return Promise.resolve(makeMockClient())
-      },
-    ),
-  }
-})
-
-vi.mock("@drive-coding/acp-wire/browser", () => ({
-  WsAcpTransport: vi.fn(function mockWsTransport() {
-    return {
-      onClose: vi.fn(),
-      waitForOpen: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn(),
-      closeAndWait: vi.fn().mockResolvedValue(undefined),
-    }
-  }),
-}))
-
-vi.mock("$lib/adapters/agents-api", () => ({
-  createAgent: vi.fn().mockResolvedValue({ agentId: "agent-subagent-test" }),
-  deleteAgent: vi.fn().mockResolvedValue(undefined),
-  notifySessionAttached: vi.fn().mockResolvedValue(undefined),
-  listAgents: vi.fn().mockResolvedValue([]),
-  // slice session-title-in-process-list: #pushTitleToServer קורא ל-patchAgent
-  patchAgent: vi.fn().mockResolvedValue(undefined),
-}))
-
-vi.mock("$lib/adapters/sessions", () => ({
-  normalizeSessionInfo: vi.fn((x: unknown) => x),
-}))
-
-vi.mock("$lib/adapters/ext", () => ({
-  createExtClient: vi.fn(() => ({
-    setThinkingTokens: vi.fn().mockResolvedValue(undefined),
-  })),
-}))
-
-vi.stubGlobal("location", { protocol: "http:", host: "localhost:5173", search: "" })
-let uuidCounter = 0
-vi.stubGlobal("crypto", { randomUUID: () => `test-uuid-${uuidCounter++}` })
-
-// ─── Import after mocks ───────────────────────────────────────────────────────
-
+import { hostSessionView } from "./__fixtures__/host-session-view"
 import { AgentSession } from "./agent-session.svelte"
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+type Host = ReturnType<typeof hostSessionView>
+const hosts: Host[] = []
 
-/** מריץ entries דרך ה-callbacks האמיתיים שנתפסו, בסדר-ההופעה המקורי בפיקסצ'ר. */
-function replay(entries: FixtureEntry[]): void {
-  for (const e of entries) {
-    if (e.channel === "acp" && e.frame.method === "session/update") {
-      capturedOnUpdate?.(e.frame.params as SessionNotification)
-    } else if (e.channel === "raw" && e.frame.method === "_claude/sdkMessage") {
-      capturedExtNotification?.("_claude/sdkMessage", e.frame.params as Record<string, unknown>)
+async function open() {
+  const host = hostSessionView()
+  hosts.push(host)
+  await host.view.connect()
+  return { ...host, session: new AgentSession({ view: host.view }) }
+}
+
+afterEach(async () => {
+  await Promise.all(hosts.splice(0).map(({ view }) => view.close()))
+})
+
+async function replay(host: Host, entries: FixtureEntry[]): Promise<void> {
+  for (const { channel, frame } of entries) {
+    if (channel === "acp" && frame.method === "session/update") {
+      host.send((frame.params as SessionNotification).update)
+    } else if (channel === "raw" && frame.method === "_claude/sdkMessage") {
+      host.send({
+        sessionUpdate: "_drive/ext_notification",
+        method: frame.method,
+        params: frame.params,
+      })
     }
   }
+  await host.settle()
 }
 
 describe("AgentSession — subagent transcript replay (slice subagent-transcript-data-v2)", () => {
-  beforeEach(() => {
-    capturedOnUpdate = null
-    capturedExtNotification = null
-    uuidCounter = 0
-  })
-
   it("bubbles הראשי גדל רק מ-ACP session/update entries — עיבוד raw sdkMessage לא מוסיף בועות", async () => {
     // סשן A: ACP-only replay — baseline לספירת בועות.
-    const sessionA = new AgentSession()
-    await sessionA.attach({ cwd: "/proj", cliKind: "claude" })
-    replay(acpUpdateEntries)
+    const hostA = await open()
+    const { session: sessionA } = hostA
+    await replay(hostA, acpUpdateEntries)
     const baselineCount = sessionA.bubbles.length
     expect(baselineCount).toBeGreaterThan(0)
 
     // סשן B: ACP+raw interleaved (סדר-מקורי מהפיקסצ'ר) — צריך אותה ספירה בדיוק.
-    capturedOnUpdate = null
-    capturedExtNotification = null
-    const sessionB = new AgentSession()
-    await sessionB.attach({ cwd: "/proj", cliKind: "claude" })
-    replay(inbound)
+    const hostB = await open()
+    const { session: sessionB } = hostB
+    await replay(hostB, inbound)
 
     expect(sessionB.bubbles.length).toBe(baselineCount)
   })
 
   it("subFrames מתמלא על בועת ה-Task אחרי replay מלא", async () => {
-    const session = new AgentSession()
-    await session.attach({ cwd: "/proj", cliKind: "claude" })
-    replay(inbound)
+    const host = await open()
+    const { session } = host
+    await replay(host, inbound)
 
     const taskBubble = session.bubbles.find(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === TASK_TOOL_CALL_ID,
@@ -177,9 +105,9 @@ describe("AgentSession — subagent transcript replay (slice subagent-transcript
   })
 
   it("task metadata (prompt/summary/status) מאוכלס אחרי replay מלא", async () => {
-    const session = new AgentSession()
-    await session.attach({ cwd: "/proj", cliKind: "claude" })
-    replay(inbound)
+    const host = await open()
+    const { session } = host
+    await replay(host, inbound)
 
     const taskBubble = session.bubbles.find(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === TASK_TOOL_CALL_ID,
@@ -194,9 +122,9 @@ describe("AgentSession — subagent transcript replay (slice subagent-transcript
   // slice subagent-tool-nesting (re-scope 2026-07-19): התנהגות ישנה הוחלפה — קינון-הבועה-העשירה
   // במקום דיכוי/flat. בעבר הטסט הזה ציפה ל-top-level flat; עכשיו הכלי מקונן ב-subFrames של ה-Task.
   it("Bash tool_call המקונן (ACP session/update רגיל, לא raw) מקונן ב-subFrames של ה-Task — לא top-level", async () => {
-    const session = new AgentSession()
-    await session.attach({ cwd: "/proj", cliKind: "claude" })
-    replay(inbound)
+    const host = await open()
+    const { session } = host
+    await replay(host, inbound)
 
     const bashBubbleTopLevel = session.bubbles.find(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === "toolu_01RcvmgbihnkJJnFJnk9ksRc",
@@ -228,9 +156,9 @@ describe("AgentSession — subagent transcript replay (slice subagent-transcript
   })
 
   it("כלי top-level אמיתי (בלי parentToolUseId, למשל ה-Task tool_call עצמו) — נשאר top-level (רגרסיה)", async () => {
-    const session = new AgentSession()
-    await session.attach({ cwd: "/proj", cliKind: "claude" })
-    replay(inbound)
+    const host = await open()
+    const { session } = host
+    await replay(host, inbound)
 
     const taskBubble = session.bubbles.find(
       (b) => b.kind === "tool" && b.toolCall.toolCallId === TASK_TOOL_CALL_ID,
@@ -239,19 +167,15 @@ describe("AgentSession — subagent transcript replay (slice subagent-transcript
   })
 
   it("counter (_claude/sdkMessage) שווה למספר ה-raw entries בפיקסצ'ר — finding #1 נשמר", async () => {
-    const session = new AgentSession()
-    await session.attach({ cwd: "/proj", cliKind: "claude" })
+    const host = await open()
+    const { session } = host
     expect(session.claudeRawSdkMessageCount).toBe(0)
-    replay(inbound)
+    await replay(host, inbound)
     expect(session.claudeRawSdkMessageCount).toBe(rawSdkEntries.length)
   })
 })
 
 // ─── slice meta-passthrough Commit 3: approach B on tool_call_update ─────────
-
-function emitSessionUpdate(update: Record<string, unknown>): void {
-  capturedOnUpdate?.({ update } as SessionNotification)
-}
 
 /** Collect every toolCallId in the bubble tree (top-level + subFrames). */
 function allToolCallIds(bubbles: Bubble[]): string[] {
@@ -268,17 +192,11 @@ function allToolCallIds(bubbles: Bubble[]): string[] {
 }
 
 describe("AgentSession — meta-passthrough tool_call_update nesting (approach B)", () => {
-  beforeEach(() => {
-    capturedOnUpdate = null
-    capturedExtNotification = null
-    uuidCounter = 0
-  })
-
   it("tool_call_update child nests via _meta when map misses and parent exists (HTTP path)", async () => {
-    const session = new AgentSession()
-    await session.attach({ cwd: "/proj", cliKind: "claude" })
+    const host = await open()
+    const { session } = host
 
-    emitSessionUpdate({
+    host.send({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_PARENT",
       title: "Task",
@@ -286,7 +204,7 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
       status: "in_progress",
       rawInput: {},
     })
-    emitSessionUpdate({
+    host.send({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_CHILD",
       title: "echo hello-from-subagent",
@@ -296,6 +214,7 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
       _meta: { claudeCode: { parentToolUseId: "toolu_PARENT" } },
     })
 
+    await host.settle()
     const parent = session.bubbles.find(
       (b): b is ToolBubble => b.kind === "tool" && b.toolCall.toolCallId === "toolu_PARENT",
     )
@@ -312,10 +231,10 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
   })
 
   it("out-of-order child→parent→child: toolCallId appears once in the bubble tree", async () => {
-    const session = new AgentSession()
-    await session.attach({ cwd: "/proj", cliKind: "claude" })
+    const host = await open()
+    const { session } = host
 
-    emitSessionUpdate({
+    host.send({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_CHILD",
       title: "echo",
@@ -324,7 +243,7 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
       rawInput: {},
       _meta: { claudeCode: { parentToolUseId: "toolu_PARENT" } },
     })
-    emitSessionUpdate({
+    host.send({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_PARENT",
       title: "Task",
@@ -332,7 +251,7 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
       status: "in_progress",
       rawInput: {},
     })
-    emitSessionUpdate({
+    host.send({
       sessionUpdate: "tool_call_update",
       toolCallId: "toolu_CHILD",
       status: "completed",
@@ -340,6 +259,7 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
       _meta: { claudeCode: { parentToolUseId: "toolu_PARENT" } },
     })
 
+    await host.settle()
     const ids = allToolCallIds(session.bubbles)
     expect(ids.filter((id) => id === "toolu_CHILD")).toHaveLength(1)
   })

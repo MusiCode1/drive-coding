@@ -7,45 +7,20 @@ import type { AvailableCommand } from "@agentclientprotocol/sdk"
 import { EMPTY_PLAN_STORE } from "@drive-coding/core/acp/plan"
 import { createInitialSessionState } from "@drive-coding/core/session"
 import { toWireText } from "@drive-coding/core/session/testing"
-import type { AcpClient } from "@drive-coding/provider/client"
 import { flushSync } from "svelte"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { MockSessionView } from "./__fixtures__/mock-session-view.svelte"
 import { AgentSession } from "./agent-session.svelte"
 
-let loadSessionMock = vi.fn().mockResolvedValue({})
-
-vi.mock("@drive-coding/provider/client", async (importActual) => {
-  const actual = await importActual<typeof import("@drive-coding/provider/client")>()
-  return {
-    ...actual,
-    createAcpClient: vi.fn(async () => ({
-      newSession: vi.fn().mockResolvedValue({ sessionId: "test-session" }),
-      loadSession: (...args: unknown[]) => loadSessionMock(...args),
-      prompt: vi.fn().mockResolvedValue(undefined),
-      cancel: vi.fn(),
-      listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
-      close: vi.fn(),
-      setSessionConfigOption: vi.fn(),
-      setSessionModel: vi.fn(),
-      setSessionMode: vi.fn(),
-      conn: {} as AcpClient["conn"],
-      capabilities: {} as AcpClient["capabilities"],
-      authMethods: [],
-    })),
-  }
-})
-
-vi.mock("@drive-coding/acp-wire/browser", () => ({
-  WsAcpTransport: vi.fn(function mockWsTransport() {
-    return {
-      onClose: vi.fn(),
-      waitForOpen: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-      closeAndWait: vi.fn().mockResolvedValue(undefined),
-    }
-  }),
-}))
+function connectedSession(sessionId: string): AgentSession {
+  const view = new MockSessionView()
+  view.connect(sessionId)
+  view.loadSessionMock.mockImplementation(async (nextId: string) => view.connect(nextId))
+  const session = new AgentSession({ view })
+  session._setStatusForTest("connected")
+  session._setSessionContextForTest({ sessionId, cwd: "/proj", cliKind: "opencode" })
+  return session
+}
 
 vi.mock("$lib/adapters/agents-api", () => ({
   createAgent: vi.fn().mockResolvedValue({ agentId: "scope-test-agent" }),
@@ -126,7 +101,6 @@ describe("AgentSession session-scope boundary", () => {
     vi.clearAllMocks()
     vi.unstubAllGlobals()
     vi.stubGlobal("location", { protocol: "http:", host: "localhost:4000" })
-    loadSessionMock = vi.fn().mockResolvedValue({})
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -137,8 +111,8 @@ describe("AgentSession session-scope boundary", () => {
   })
 
   it("different sessionId without title resets session-scoped fields (bug #71)", async () => {
-    const session = new AgentSession()
-    await session.loadSession({
+    const session = connectedSession("sess-a")
+    await session.switchSession({
       sessionId: "sess-1",
       cwd: "/proj",
       cliKind: "opencode",
@@ -147,22 +121,20 @@ describe("AgentSession session-scope boundary", () => {
     seedSessionA(session)
     expect(session.sessionTitle).toBe("first")
 
-    session.status = "disconnected" as typeof session.status
-    await session.loadSession({ sessionId: "sess-2", cwd: "/proj", cliKind: "opencode" })
+    await session.switchSession({ sessionId: "sess-2", cwd: "/proj", cliKind: "opencode" })
 
     expectSessionScopedDefaultsSoft(session)
   })
 
-  it("same sessionId preserves sessionTitle on cold reload", async () => {
-    const session = new AgentSession()
-    await session.loadSession({
+  it("switching to the same session preserves its title", async () => {
+    const session = connectedSession("sess-a")
+    await session.switchSession({
       sessionId: "sess-1",
       cwd: "/proj",
       cliKind: "opencode",
       title: "kept",
     })
-    session.status = "disconnected" as typeof session.status
-    await session.loadSession({ sessionId: "sess-1", cwd: "/proj", cliKind: "opencode" })
+    await session.switchSession({ sessionId: "sess-1", cwd: "/proj", cliKind: "opencode" })
     expect(session.sessionTitle).toBe("kept")
   })
 
@@ -176,6 +148,7 @@ describe("AgentSession session-scope boundary", () => {
 
     const agent = new AgentSession()
     await agent.attachRemoteToLiveAgent({
+      transport: "http",
       agentId: "live-1",
       cwd: "/ws",
       cliKind: "claude",
@@ -193,7 +166,7 @@ describe("AgentSession session-scope boundary", () => {
   })
 
   it("reactivity: $effect sees title across session identity changes", async () => {
-    const session = new AgentSession()
+    const session = connectedSession("sess-a")
     const seen: string[] = []
     const stop = $effect.root(() => {
       $effect(() => {
@@ -201,7 +174,7 @@ describe("AgentSession session-scope boundary", () => {
       })
     })
 
-    await session.loadSession({
+    await session.switchSession({
       sessionId: "sess-a",
       cwd: "/p",
       cliKind: "opencode",
@@ -209,8 +182,7 @@ describe("AgentSession session-scope boundary", () => {
     })
     flushSync()
 
-    session.status = "disconnected" as typeof session.status
-    await session.loadSession({ sessionId: "sess-b", cwd: "/p", cliKind: "opencode" })
+    await session.switchSession({ sessionId: "sess-b", cwd: "/p", cliKind: "opencode" })
     flushSync()
     session.sessionTitle = "B"
     flushSync()
@@ -224,7 +196,7 @@ describe("AgentSession session-scope boundary", () => {
     vi.stubGlobal("fetch", sseFetchFor(snapshot))
 
     const agent = new AgentSession()
-    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
+    await agent.attachRemote({ cwd: "/ws", cliKind: "claude", transport: "http" })
     await delay()
 
     expect(agent._sessionIdForTest()).toBe("remote-enter-1")
@@ -249,22 +221,9 @@ describe("AgentSession session-scope boundary", () => {
     expectSessionScopedDefaultsSoft(agent)
   })
 
-  it("switchSession (local) resets scoped fields on session identity change (§4.2א #7)", async () => {
-    const session = new AgentSession()
-    await session.attach({ cwd: "/proj", cliKind: "opencode" })
-    expect(session.status).toBe("connected")
-
-    session._setSessionContextForTest({ sessionId: "sess-a", cwd: "/proj", cliKind: "opencode" })
-    seedSessionA(session)
-
-    await session.switchSession({ sessionId: "sess-b", cwd: "/proj", cliKind: "opencode" })
-
-    expectSessionScopedDefaultsSoft(session)
-  })
-
   it("#loadMockSession path resets scoped fields on mock identity change (§4.2א #10)", async () => {
-    const session = new AgentSession()
-    await session.loadSession({
+    const session = connectedSession("sess-a")
+    await session.switchSession({
       sessionId: "sess-a",
       cwd: "/proj",
       cliKind: "opencode",
@@ -272,8 +231,8 @@ describe("AgentSession session-scope boundary", () => {
     })
     seedSessionA(session)
 
-    session.status = "disconnected" as typeof session.status
-    await session.loadSession({ sessionId: "mock:greeting", cwd: "/tmp", cliKind: "opencode" })
+    session._setStatusForTest("disconnected")
+    await session.openMockSession("greeting", "/proj")
 
     expect.soft(session.titleManual).toBe(false)
     expect.soft(session.userNotes).toBe("")

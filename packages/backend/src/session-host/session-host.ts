@@ -29,8 +29,8 @@ import type {
   RequestPermissionResponse,
   SessionNotification,
 } from "@agentclientprotocol/sdk"
+import { type AcpTransport, createFromLineWire } from "@drive-coding/acp-wire"
 import type { Patch, SessionConfigOption, SessionState, ToolOutputRules } from "@drive-coding/core/session"
-import { defaultRequestTimeouts } from "./request-timeout.js"
 import {
   applyPatch,
   applyPendingRequest,
@@ -53,16 +53,20 @@ import type {
 import { createAcpClient, createAttachedAcpClient } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { parseExtResult } from "@drive-coding/provider/extensions"
-import type { AcpTransport } from "@drive-coding/acp-wire"
-import { createFromLineWire } from "@drive-coding/acp-wire"
-
-type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
-import { createTurnLifecycleHandlers, type TurnTimingHost } from "./turn-lifecycle.js"
 import { msgOf } from "./error-message.js"
 import { createPendingRequests } from "./pending-requests.js"
-import { createSessionSwitch } from "./session-switch.js"
-import { createPatchChannel, createUpdateIngest } from "./session-host-ingest.js"
+import { defaultRequestTimeouts } from "./request-timeout.js"
+import {
+  configOptionsAfterLoad,
+  createPatchChannel,
+  createUpdateIngest,
+  publishResponseModes,
+} from "./session-host-ingest.js"
 import { attachScopePermission, type ScopePermissionHost } from "./session-host-scope.js"
+import { createSessionSwitch } from "./session-switch.js"
+import { createTurnLifecycleHandlers, type TurnTimingHost } from "./turn-lifecycle.js"
+
+type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
 
 // ─── C2: createSessionHost ───────────────────────────────────────────────────
 
@@ -221,20 +225,20 @@ export async function createSessionHost(deps: SessionHostDeps): Promise<SessionH
 
     async newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts) {
       if (disposed) throw new Error("SessionHost disposed")
-      return client.newSession({
-        ...opts,
-        mcpServers: opts.mcpServers ?? [],
-      }) as Promise<{ sessionId: string }>
+      return client.newSession({ ...opts, mcpServers: opts.mcpServers ?? [] }).then((result) => {
+        publishResponseModes(handleUpdate, result.sessionId, result.modes)
+        return result
+      })
     },
 
     async loadSession(
       opts: { cwd: string; sessionId: string; _meta?: Record<string, unknown> } & SessionMcpOpts,
     ) {
       if (disposed) throw new Error("SessionHost disposed")
-      return client.loadSession({
-        ...opts,
-        mcpServers: opts.mcpServers ?? [],
-      }) as Promise<{ sessionId: string }>
+      return client.loadSession({ ...opts, mcpServers: opts.mcpServers ?? [] }).then((result) => {
+        publishResponseModes(handleUpdate, opts.sessionId, result?.modes)
+        return result as { sessionId: string }
+      })
     },
     async cancel(sessionId: string) {
       if (disposed) throw new Error("SessionHost disposed")
@@ -415,7 +419,7 @@ export async function createSessionHostFromConnection(
     emitPatches(r.patches)
   }
 
-  const { handleUpdate, handleExtNotification } = createUpdateIngest({
+  const { applySessionChanges, handleUpdate, handleExtNotification } = createUpdateIngest({
     isDisposed: () => disposed,
     getState: () => currentState,
     emit,
@@ -721,21 +725,11 @@ export async function createSessionHostFromConnection(
       const sessionOpts = { ...opts, mcpServers: opts.mcpServers ?? [] }
 
       if (!hadSession) {
-        const result = (await client.newSession(sessionOpts)) as {
-          sessionId: string
-          configOptions?: SessionConfigOption[]
-        }
+        const result = await client.newSession(sessionOpts)
         const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
         currentState = { ...currentState, sessionId: result.sessionId, configOptions }
-        if (configOptions.length > 0) {
-          const updatePatch: Patch = {
-            op: "update-session",
-            version: currentState.version + 1,
-            changes: { configOptions },
-          }
-          currentState = applyPatch(currentState, updatePatch)
-          emitPatches([updatePatch])
-        }
+        if (configOptions.length > 0) applySessionChanges({ configOptions })
+        publishResponseModes(handleUpdate, result.sessionId, result.modes)
         quotaGeneration++
         startQuotaFetch(result.sessionId)
         return result
@@ -754,25 +748,17 @@ export async function createSessionHostFromConnection(
       currentState = { ...currentState, sessionId: "__drive_switching__" }
 
       try {
-        const result = (await client.newSession(sessionOpts)) as {
-          sessionId: string
-          configOptions?: SessionConfigOption[]
-        }
+        const result = await client.newSession(sessionOpts)
         const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
         currentState = { ...currentState, sessionId: result.sessionId, configOptions }
-        const updatePatch: Patch = {
-          op: "update-session",
-          version: currentState.version + 1,
-          changes: {
-            turnState: "idle",
-            lastTurnError: null,
-            quota: null,
-            title: "",
-            ...(configOptions.length > 0 ? { configOptions } : {}),
-          },
-        }
-        currentState = applyPatch(currentState, updatePatch)
-        emitPatches([updatePatch])
+        applySessionChanges({
+          turnState: "idle",
+          lastTurnError: null,
+          quota: null,
+          title: "",
+          ...(configOptions.length > 0 ? { configOptions } : {}),
+        })
+        publishResponseModes(handleUpdate, result.sessionId, result.modes)
         startQuotaFetch(result.sessionId)
         return result
       } catch (err) {
@@ -801,39 +787,22 @@ export async function createSessionHostFromConnection(
 
       // 6.
       try {
-        const result = (await client.loadSession({
+        const result = await client.loadSession({
           ...opts,
           mcpServers: opts.mcpServers ?? [],
-        })) as {
-          sessionId: string
-          configOptions?: unknown[]
-        }
-
-        // 7. Success — one update-session patch.
-        // slice http-state-gaps C2: same session → existing wins (last C1-recorded value
-        // is more recent than stale load response); different session → load wins + quota reset.
-        const loadedConfigOptions = (
-          Array.isArray(result.configOptions) ? result.configOptions : []
-        ) as SessionConfigOption[]
+        })
         const isSameSession = opts.sessionId === oldSessionId
-        const mergedConfigOptions = isSameSession
-          ? loadedConfigOptions.map((opt) => {
-              const existing = preResetConfigOptions.find((e) => e.id === opt.id)
-              return existing !== undefined ? existing : opt
-            })
-          : loadedConfigOptions
-        const baseChanges = {
-          turnState: "idle" as const,
+        const mergedConfigOptions = configOptionsAfterLoad(
+          result?.configOptions,
+          isSameSession ? preResetConfigOptions : undefined,
+        )
+        applySessionChanges({
+          turnState: "idle",
           lastTurnError: null,
           ...(mergedConfigOptions.length > 0 ? { configOptions: mergedConfigOptions } : {}),
-        }
-        const updatePatch: Patch = {
-          op: "update-session",
-          version: currentState.version + 1,
-          changes: isSameSession ? baseChanges : { ...baseChanges, quota: null },
-        }
-        currentState = applyPatch(currentState, updatePatch)
-        emitPatches([updatePatch])
+          ...(isSameSession ? {} : { quota: null }),
+        })
+        publishResponseModes(handleUpdate, opts.sessionId, result?.modes)
         // slice http-state-gaps C3: the generation already advanced at entry (above).
         startQuotaFetch(opts.sessionId)
         return { sessionId: opts.sessionId, version: currentState.version }
@@ -890,15 +859,7 @@ export async function createSessionHostFromConnection(
       const configOptions = Array.isArray(result?.configOptions)
         ? (result.configOptions as SessionConfigOption[])
         : null
-      if (configOptions !== null) {
-        const patch: Patch = {
-          op: "update-session",
-          version: currentState.version + 1,
-          changes: { configOptions },
-        }
-        currentState = applyPatch(currentState, patch)
-        emitPatches([patch])
-      }
+      if (configOptions !== null) applySessionChanges({ configOptions })
     },
 
     async extMethod(

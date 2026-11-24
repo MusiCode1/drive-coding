@@ -27,10 +27,8 @@ export type SubagentToolCallUpdateInput = {
 export type SubagentToolNestingDeps = {
   bubbles: () => Bubble[]
   parents: () => Map<string, string>
-  turnEnded: () => boolean
   applyToolCall: (update: Record<string, unknown>) => void
   setTurnState: (state: "idle" | "waiting" | "thinking" | "responding" | "calling-tool") => void
-  scheduleIdle: () => void
 }
 
 export function handleSubagentToolCall(
@@ -75,7 +73,6 @@ export function handleSubagentToolCall(
   }
   deps.parents().set(update.toolCallId, parentToolUseId)
   deps.setTurnState("calling-tool")
-  if (deps.turnEnded()) deps.scheduleIdle()
 }
 
 export function handleSubagentToolCallUpdate(
@@ -85,7 +82,6 @@ export function handleSubagentToolCallUpdate(
   if (update.toolCallId === undefined) return
   if (update.status === "pending" || update.status === "in_progress") {
     deps.setTurnState("calling-tool")
-    if (deps.turnEnded()) deps.scheduleIdle()
   }
   const parentToolUseId = deps.parents().get(update.toolCallId)
   if (parentToolUseId === undefined) return

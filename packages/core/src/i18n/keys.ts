@@ -162,9 +162,6 @@ export type MessageKey =
   | "record.status.idle"
   | "record.send"
   | "record.placeholder"
-  | "record.reconnect"
-  | "record.reconnecting"
-  | "record.reconnectAttempt"
   // ─── live ─── (slice live-ears)
   | "live.toggle.open"
   | "live.toggle.close"
@@ -343,11 +340,6 @@ export type MessageKey =
   | "session.scopePolicy.note"
   | "session.leaveRunning" // תווית כפתור "צא — השאר רץ" (חדש)
   | "session.closeSession" // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
-  | "session.leaveWarning.title"
-  | "session.leaveWarning.body" // "הריצה תיעצר ברגע שתגיע בקשת-הרשאה..."
-  | "session.leaveWarning.confirm"
-  | "session.leaveWarning.cancel"
-  | "session.leaveWarning.dontShowAgain"
   // ─── playbackControls ─── (slice B1-controls-ui)
   | "playbackControls.stopRun"
   | "playbackControls.stopRun.thinking"

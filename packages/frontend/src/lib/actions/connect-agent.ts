@@ -1,25 +1,7 @@
-/**
- * connect-agent.ts — מנהל את תהליך החיבור (connect flow).
- *
- * 1. שומר את ערכי הטופס לתוך ההגדרות (כדי שיישמרו).
- * 2. פותר את דגל sessionTransport (query ← override ← stored ← env ← "ws") ומצרף את ה-session
- *    במצב המתאים (attach מקומי ws / attachRemote http).
- * 3. מנווט אל /chat במקרה של הצלחה.
- *
- * זוהי Action (ולא מתודה על Settings או AgentSession) מכיוון שהיא משלבת
- * מספר view-models יחד עם ניווט — דוגמה קלאסית לעניין חוצה שכבות.
- *
- * ─── slice view-switch C3-ז: נקודות ההזרקה של sessionTransport ─── (additive)
- * ❌ אל תפזר `if (transport === "http")` מחוץ לנקודות אלה — כל הניתוב האחר ב-VM
- * הוא לפי `#view !== null`, לא לפי הדגל (הדגל בנקודה אחת).
- * נקודות: connect-agent.ts · handleReconnect (+page.svelte) · open-session-url.ts · open-session-cold.ts
- * (מקור אמת לרשימה: transport-points.test.ts)
- */
-
 import { goto } from "$app/navigation"
 import { env } from "$env/dynamic/public"
 import { readSessionTransport } from "$lib/session/session-transport-read"
-import { sessionPath } from "$lib/session/session-url"
+import { sessionPathWithTransport } from "$lib/session/session-url"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
 import type { Settings } from "$lib/view-models/settings.svelte"
@@ -34,48 +16,28 @@ export async function connectAgent(params: {
   params.settings.setCliKind(params.cliKind)
   params.settings.setLastCwd(params.cwd)
 
-  // slice remote-warm-reconnect C4 / transport-polish C2: פתירת הדגל עברה לפונקציה
-  // המשותפת — query ← override(sessionStorage) ← stored(settings) ← env ← "ws",
-  // + שמירת ה-query המנורמל ל-sessionStorage (זבל לא נשמר).
   const transport = readSessionTransport({
     env: env.PUBLIC_SESSION_TRANSPORT,
     stored: params.settings.sessionTransport,
   })
 
   try {
-    if (transport === "http") {
-      await params.session.attachRemote({
-        cwd: params.cwd,
-        cliKind: params.cliKind,
-        systemPrompt: params.settings.getProjectPrompt(params.cwd),
-      })
-    } else {
-      await params.session.attach({
-        cwd: params.cwd,
-        cliKind: params.cliKind,
-        systemPrompt: params.settings.getProjectPrompt(params.cwd),
-      })
-    }
+    await params.session.attachRemote({
+      cwd: params.cwd,
+      cliKind: params.cliKind,
+      systemPrompt: params.settings.getProjectPrompt(params.cwd),
+      transport,
+    })
   } catch (e) {
     params.session.error = formatAcpError(e)
     return
   }
 
   if (params.session.status === "connected") {
-    const sid = params.session.sessionId
-    if (transport === "http") {
-      await goto(
-        sid !== null
-          ? `${sessionPath(params.cliKind, sid)}?sessionTransport=http`
-          : "/chat?sessionTransport=http",
-        { replaceState: params.navigate === "replace" },
-      )
-    } else {
-      await goto(sid !== null ? sessionPath(params.cliKind, sid) : "/chat", {
-        replaceState: params.navigate === "replace",
-      })
-    }
+    await goto(sessionPathWithTransport(params.cliKind, params.session.sessionId, transport), {
+      replaceState: params.navigate === "replace",
+    })
   }
   // Guard throws (e.g. cannot attach) land in catch above — stay on / with session.error set.
-  // Failures inside attach/attachRemote set status="error" on the VM without throwing.
+  // Failures inside attachRemote set status="error" on the VM without throwing.
 }

@@ -4,14 +4,11 @@ import Loader2Icon from "@lucide/svelte/icons/loader-2"
 import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
 import { onMount, untrack } from "svelte"
 import { goto } from "$app/navigation"
-import { env } from "$env/dynamic/public"
-import { readSessionTransport } from "$lib/session/session-transport-read"
-import { sessionPath } from "$lib/session/session-url"
 import { connectAgent } from "$lib/actions/connect-agent"
 import { reconnectAgent } from "$lib/actions/reconnect-agent"
+import { postReloadConfig } from "$lib/adapters/cli-availability"
 import { fetchServerOptions } from "$lib/adapters/options"
 import type { RecentProject } from "$lib/adapters/recent-projects"
-import { postReloadConfig } from "$lib/adapters/cli-availability"
 import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import ActiveProcessesPanel from "$lib/components/connect/ActiveProcessesPanel.svelte"
 import CwdPathCombo from "$lib/components/connect/CwdPathCombo.svelte"
@@ -30,6 +27,7 @@ import {
   getSession,
   getSettings,
 } from "$lib/context"
+import { sessionPathWithTransport } from "$lib/session/session-url"
 import { cliDisplayName } from "$lib/util/cli-display"
 import { resolveCliKind } from "$lib/util/resolve-cli-kind"
 
@@ -111,20 +109,7 @@ const isRtl = $derived(settings.locale === "he")
 async function handleReconnect(agent: AgentPublic) {
   const outcome = await reconnectAgent({ agent, session, settings })
   if (outcome !== "navigated") return
-  const http =
-    readSessionTransport({
-      env: env.PUBLIC_SESSION_TRANSPORT,
-      stored: settings.sessionTransport,
-    }) === "http"
-  await goto(
-    agent.acpSessionId
-      ? http
-        ? `${sessionPath(agent.cliKind, agent.acpSessionId)}?sessionTransport=http`
-        : sessionPath(agent.cliKind, agent.acpSessionId)
-      : http
-        ? "/chat?sessionTransport=http"
-        : "/chat",
-  )
+  await goto(sessionPathWithTransport(agent.cliKind, session.sessionId, session.sessionTransport))
 }
 
 async function onSubmit(e: SubmitEvent) {

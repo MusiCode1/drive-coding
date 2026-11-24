@@ -17,7 +17,7 @@ import {
 } from "../adapters/voice/tts-resolve"
 import { DEFAULT_GEMINI_VOICE, DEFAULT_LIVE_VOICE } from "../adapters/voice/voices-gemini"
 import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH_REM } from "../util/sidebar-width"
-import { coerceInputMode, type InputMode } from "./ui-shell.svelte"
+import type { InputMode } from "./ui-shell.svelte"
 
 export const STORAGE_KEY = "drive-coding-v2-settings"
 
@@ -44,7 +44,6 @@ export type PersistedSettings = {
   lastConfig: Record<string, Record<string, string | boolean>>
   ttsProvider: "elevenlabs" | "google"
   recentCollapsed: boolean
-  suppressLeaveWarning: boolean
   geminiVoice: string
   liveVoice: string
   projectSystemPrompt: Record<string, string>
@@ -84,7 +83,6 @@ export const DEFAULTS: PersistedSettings = {
   lastConfig: {},
   ttsProvider: "elevenlabs",
   recentCollapsed: false,
-  suppressLeaveWarning: false,
   geminiVoice: DEFAULT_GEMINI_VOICE,
   liveVoice: DEFAULT_LIVE_VOICE,
   projectSystemPrompt: {},

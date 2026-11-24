@@ -3,7 +3,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { createRemoteView } from "$lib/session/create-session-view"
+import { MockSessionView } from "$lib/view-models/__fixtures__/mock-session-view.svelte"
+import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { openSessionCold } from "./open-session-cold.js"
+
+vi.mock("$lib/adapters/agents-api", () => ({
+  createAgent: vi.fn().mockResolvedValue({ agentId: "agent-1" }),
+}))
 
 const findSessionCwdMock =
   vi.fn<
@@ -24,7 +31,6 @@ type MockSession = {
   error: string | null
   attachRemote: ReturnType<typeof vi.fn>
   switchSession: ReturnType<typeof vi.fn>
-  loadSession: ReturnType<typeof vi.fn>
   detach: ReturnType<typeof vi.fn>
 }
 
@@ -35,18 +41,20 @@ function makeSession(overrides: Partial<MockSession> = {}): MockSession {
     error: null,
     attachRemote: vi.fn(async () => {}),
     switchSession: vi.fn(async () => {}),
-    loadSession: vi.fn(async () => {}),
     detach: vi.fn(),
     ...overrides,
   }
 }
 
+vi.mock("$lib/session/create-session-view")
+
 const stores = new Map<string, string>()
 
 beforeEach(() => {
   stores.clear()
+  vi.mocked(createRemoteView).mockReset()
   findSessionCwdMock.mockReset()
-  vi.stubGlobal("location", { search: "" })
+  vi.stubGlobal("location", { search: "", protocol: "http:", host: "localhost" })
   vi.stubGlobal("sessionStorage", {
     getItem: vi.fn((k: string) => stores.get(k) ?? null),
     setItem: vi.fn((k: string, v: string) => {
@@ -79,36 +87,33 @@ describe("openSessionCold", () => {
     expect(session.attachRemote).not.toHaveBeenCalled()
   })
 
-  it("HTTP: attachRemote then switchSession succeeds", async () => {
-    findSessionCwdMock.mockResolvedValue({ cwd: "/p", lastSeenAt: 1 })
-    stores.set("sessionTransport", "http")
-    const session = makeSession()
-    session.attachRemote.mockImplementation(async () => {
-      session.status = "connected"
-    })
-    session.switchSession.mockImplementation(async () => {
-      session.sessionId = "s1"
-    })
+  it.each(["ws", "http"] as const)(
+    "%s: opens the view and loads the requested session",
+    async (transport) => {
+      findSessionCwdMock.mockResolvedValue({ cwd: "/p", lastSeenAt: 1 })
+      const view = new MockSessionView()
+      view.connect("fresh")
+      view.loadSessionMock.mockImplementation(async (sessionId: string) => view.connect(sessionId))
+      vi.mocked(createRemoteView).mockResolvedValue(
+        view as unknown as Awaited<ReturnType<typeof createRemoteView>>,
+      )
+      const session = new AgentSession()
 
-    expect(
-      await openSessionCold({
-        cliKind: "claude",
-        sessionId: "s1",
-        session: session as never,
-        settings: { sessionTransport: "http", getProjectPrompt: () => "sys" } as never,
-      }),
-    ).toBe("connected")
-    expect(session.attachRemote).toHaveBeenCalledWith({
-      cwd: "/p",
-      cliKind: "claude",
-      systemPrompt: "sys",
-    })
-    expect(session.switchSession).toHaveBeenCalledWith({
-      sessionId: "s1",
-      cwd: "/p",
-      cliKind: "claude",
-    })
-  })
+      expect(
+        await openSessionCold({
+          cliKind: "claude",
+          sessionId: "s1",
+          session,
+          settings: { sessionTransport: transport, getProjectPrompt: () => "sys" } as never,
+        }),
+      ).toBe("connected")
+      expect(createRemoteView).toHaveBeenCalledWith(
+        expect.objectContaining({ agentId: "agent-1", transport }),
+      )
+      expect(view.loadSessionMock).toHaveBeenCalledWith("s1", "/p")
+      expect(session.sessionId).toBe("s1")
+    },
+  )
 
   it("HTTP: attach fails silently → error, no switch", async () => {
     findSessionCwdMock.mockResolvedValue({ cwd: "/p", lastSeenAt: 1 })
@@ -185,30 +190,6 @@ describe("openSessionCold", () => {
     ).toBe("error")
     expect(session.detach).toHaveBeenCalled()
     expect(session.error).toBeTruthy()
-  })
-
-  it("WS: calls loadSession, not attachRemote", async () => {
-    findSessionCwdMock.mockResolvedValue({ cwd: "/p", lastSeenAt: 1 })
-    const session = makeSession()
-    session.loadSession.mockImplementation(async () => {
-      session.status = "connected"
-      session.sessionId = "s1"
-    })
-
-    expect(
-      await openSessionCold({
-        cliKind: "claude",
-        sessionId: "s1",
-        session: session as never,
-        settings,
-      }),
-    ).toBe("connected")
-    expect(session.loadSession).toHaveBeenCalledWith({
-      sessionId: "s1",
-      cwd: "/p",
-      cliKind: "claude",
-    })
-    expect(session.attachRemote).not.toHaveBeenCalled()
   })
 
   it("findSessionCwd throws → error", async () => {

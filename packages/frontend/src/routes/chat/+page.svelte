@@ -9,7 +9,6 @@ import { getSession } from "$lib/context"
 const session = getSession()
 
 // ─── DEV-only: טעינה ישירה דרך URL — /chat?mock=<name> (חוסך את ה-picker) ───
-// עובר דרך אותו loadSession (flow C), כך שאין נתיב טעינה שונה.
 // location.search ישירות (זמין מיד ב-SPA — בלי תלות ב-$page store timing).
 // MODE !== "production": פעיל גם ב-dev server וגם ב-dev build (vite build --mode development),
 // אך עדיין tree-shaken ב-production build. import.meta.env.DEV לבדו היה false בכל build.
@@ -21,7 +20,7 @@ const mockName =
 // הגנה סינכרונית (guard): רענון / ניווט ישיר ללא חיבור פעיל → מעבר לדף הבית.
 if (session.status === "idle") {
   if (mockName) {
-    void session.loadSession({ sessionId: `mock:${mockName}`, cwd: "/mock", cliKind: "opencode" })
+    void session.openMockSession(mockName, "/mock")
   } else {
     goto("/", { replaceState: true })
   }

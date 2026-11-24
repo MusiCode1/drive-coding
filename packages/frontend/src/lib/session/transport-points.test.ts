@@ -32,7 +32,6 @@ const ALLOWLIST = [
   "lib/actions/reconnect-agent.ts", // reconnect routing
   "lib/actions/connect-agent.ts", // connect flow
   "lib/components/chat/bubbles/UserBubble.svelte", // resend uses transport
-  "routes/+page.svelte", // home connect + handleReconnect
   "lib/components/layout/SessionOptionsPanel.svelte", // panel transport toggle
   "lib/actions/open-session-cold.ts", // cold URL HTTP/WS branch
 ] as const

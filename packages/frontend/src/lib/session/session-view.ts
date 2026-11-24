@@ -18,6 +18,16 @@ export type ViewEmission = {
   patches: Patch[]
   /** Raw session/update as received from the wire. Empty on synthetic reset. */
   updates: unknown[]
+  /** Crash reason fetched by the view after the session stream ends. */
+  terminalError?: string
+}
+
+export function readViewEmission(
+  session: { error: string | null },
+  emission: ViewEmission | undefined,
+): ViewEmission | undefined {
+  if (emission?.terminalError) session.error = emission.terminalError
+  if (emission && (emission.patches.length > 0 || emission.updates.length > 0)) return emission
 }
 
 /**

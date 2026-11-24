@@ -3,7 +3,7 @@
  * frame-ingest-parity.test.svelte.ts — gates G1–G6 for frame-ingest + meta-passthrough.
  *
  * Three feeds of the same recorded conversation (ACP session/update + _claude/sdkMessage):
- *   A — WS: raw frames → #onSessionUpdate / #onExtNotification (drip)
+ *   A — WS: reducer and host frames → RemoteSessionView (drip)
  *   B — HTTP: patchToSessionUpdates synthesis → RemoteSessionView (snapshot batch)
  *   C — HTTP: patchToSessionUpdates synthesis → RemoteSessionView (drip batches)
  *
@@ -13,10 +13,10 @@
 
 import { readFileSync } from "node:fs"
 import { URL as NodeURL } from "node:url"
-import type { SessionNotification } from "@agentclientprotocol/sdk"
 import {
   applyPatch,
   createInitialSessionState,
+  encodeWsFrame,
   type Patch,
   patchToSessionUpdates,
   reduce,
@@ -28,12 +28,12 @@ import {
   type WireSessionUpdate,
 } from "@drive-coding/core/session"
 import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
-import type { AcpClient } from "@drive-coding/provider/client"
 import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
-import { createRemoteSessionView } from "$lib/session/create-session-view"
+import { fakeSessionSockets } from "$lib/session/__contract__/fake-session-socket"
+import { createRemoteSessionView, createRemoteView } from "$lib/session/create-session-view"
 import type { SessionView, ViewEmission } from "$lib/session/session-view"
 import type { WireUpdateBatch } from "$lib/session/sse-reader"
 import type { Bubble } from "$lib/types/bubble"
@@ -216,71 +216,6 @@ function delay(ms = 20): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-// ─── WS path mocks ──────────────────────────────────────────────────────────
-
-let capturedOnUpdate: ((n: SessionNotification) => void) | null = null
-let capturedOnExtNotification: ((method: string, params: Record<string, unknown>) => void) | null =
-  null
-
-/**
- * Resetting through a function, not inline `= null`: an inline assignment
- * narrows these module-level `let`s to `null` for the rest of the block, and
- * the later `capturedOnUpdate?.(…)` then reads as `never` — TS cannot see that
- * the mock reassigns them.
- */
-function resetCaptured(): void {
-  capturedOnUpdate = null
-  capturedOnExtNotification = null
-}
-
-function makeMockClient(): AcpClient {
-  return {
-    conn: {} as AcpClient["conn"],
-    capabilities: {} as AcpClient["capabilities"],
-    newSession: vi.fn().mockResolvedValue({ sessionId: "ws-parity-test" }),
-    loadSession: vi.fn().mockResolvedValue({}),
-    listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
-    prompt: vi.fn().mockResolvedValue(undefined),
-    cancel: vi.fn().mockResolvedValue(undefined),
-    close: vi.fn(),
-    setSessionConfigOption: vi.fn(),
-    setSessionMode: vi.fn(),
-    setSessionModel: vi.fn(),
-    extMethod: vi.fn().mockResolvedValue({ ok: true }),
-  } as unknown as AcpClient
-}
-
-vi.mock("@drive-coding/provider/client", async (importActual) => {
-  const actual = await importActual<typeof import("@drive-coding/provider/client")>()
-  return {
-    ...actual,
-    createAcpClient: vi.fn(
-      (
-        _transport: unknown,
-        callbacks: {
-          onUpdate: (n: SessionNotification) => void
-          onExtNotification?: (method: string, params: Record<string, unknown>) => void
-        },
-      ) => {
-        capturedOnUpdate = callbacks.onUpdate
-        capturedOnExtNotification = callbacks.onExtNotification ?? null
-        return Promise.resolve(makeMockClient())
-      },
-    ),
-  }
-})
-
-vi.mock("@drive-coding/acp-wire/browser", () => ({
-  WsAcpTransport: vi.fn(function mockWsTransport() {
-    return {
-      onClose: vi.fn(),
-      waitForOpen: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn(),
-      closeAndWait: vi.fn().mockResolvedValue(undefined),
-    }
-  }),
-}))
-
 vi.mock("$lib/adapters/agents-api", () => ({
   createAgent: vi.fn().mockResolvedValue({ agentId: "parity-agent" }),
   deleteAgent: vi.fn().mockResolvedValue(undefined),
@@ -315,20 +250,50 @@ import { Speaker } from "./speaker.svelte"
 
 async function runWsPath(): Promise<{ observed: unknown[]; bubbles: Bubble[] }> {
   const observed: unknown[] = []
-  resetCaptured()
-  const agent = new AgentSession({ _onUpdateObserved: (u) => observed.push(u) })
-  await agent.attach({ cwd: "/proj", cliKind: "claude" })
-  for (const entry of inbound) {
-    if (entry.channel === "acp" && entry.frame.method === "session/update") {
-      capturedOnUpdate?.(entry.frame.params as SessionNotification)
-    } else if (entry.channel === "raw" && entry.frame.method === "_claude/sdkMessage") {
-      capturedOnExtNotification?.(
-        "_claude/sdkMessage",
-        entry.frame.params as Record<string, unknown>,
-      )
+  const sockets = fakeSessionSockets()
+  let state = createInitialSessionState({ sessionId: "parity-test" })
+  const connected = createRemoteView({
+    agentId: "parity-agent",
+    baseUrl: "http://be.local",
+    transport: "ws",
+    _WebSocket: sockets.WebSocket,
+  })
+  const socket = sockets.latest()
+  socket.connect()
+  socket.receive(encodeWsFrame(snapshotFrame(state)))
+  const view = await connected
+  const agent = new AgentSession({ view, _onUpdateObserved: (update) => observed.push(update) })
+  try {
+    let sent = 0
+    for (const entry of inbound) {
+      const update =
+        entry.channel === "acp" && entry.frame.method === "session/update"
+          ? rawUpdate(entry)
+          : entry.channel === "raw" && entry.frame.method === "_claude/sdkMessage"
+            ? {
+                sessionUpdate: "_drive/ext_notification",
+                method: entry.frame.method,
+                params: entry.frame.params,
+              }
+            : undefined
+      if (!update) continue
+      const result = reduce(state, update)
+      state = result.state
+      for (const patch of result.patches) {
+        const frame = updateFrame(state, patch)
+        if (!frame) continue
+        socket.receive(encodeWsFrame(frame))
+        sent++
+      }
     }
+    expect(sent).toBeGreaterThan(0)
+    await vi.waitFor(() => expect(view.state.version).toBe(state.version))
+    await delay()
+    expect(observed.length).toBeGreaterThan(0)
+    return { observed, bubbles: [...agent.bubbles] }
+  } finally {
+    await view.close()
   }
-  return { observed, bubbles: [...agent.bubbles] }
 }
 
 async function runHttpPath(
@@ -350,8 +315,6 @@ async function runHttpPath(
 
 describe("frame-ingest parity gate", () => {
   beforeEach(() => {
-    capturedOnUpdate = null
-    capturedOnExtNotification = null
     uuidCounter = 0
   })
 

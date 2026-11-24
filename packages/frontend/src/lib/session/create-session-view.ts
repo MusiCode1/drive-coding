@@ -39,7 +39,7 @@ export function createRemoteSessionView(
     rpc: createHttpRpcPipe(agentUrl, wireOptions),
     close() {}, // FrameReader owns and aborts the SSE request.
   }
-  return new RemoteSessionView(agentId, pipe, { ...opts, connectionId })
+  return new RemoteSessionView(agentId, pipe, { ...opts, baseUrl, connectionId })
 }
 
 export async function createRemoteView(
@@ -61,7 +61,7 @@ export async function createRemoteView(
     view = new RemoteSessionView(
       agentId,
       createWsSessionPipe(url, { _WebSocket: rest._WebSocket }),
-      { ...rest, connectionId },
+      { ...rest, baseUrl: base, connectionId },
     )
   } else {
     view = createRemoteSessionView(agentId, base ?? beUrl("").replace(/\/$/, ""), rest)

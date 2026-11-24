@@ -34,41 +34,31 @@ export async function openSessionCold(params: {
     stored: settings.sessionTransport,
   })
 
-  if (transport === "http") {
-    try {
-      await session.attachRemote({
-        cwd,
-        cliKind,
-        systemPrompt: settings.getProjectPrompt(cwd),
-      })
-    } catch (e) {
-      session.error = formatAcpError(e)
-      return "error"
-    }
+  try {
+    await session.attachRemote({
+      cwd,
+      cliKind,
+      systemPrompt: settings.getProjectPrompt(cwd),
+      transport,
+    })
+  } catch (e) {
+    session.error = formatAcpError(e)
+    return "error"
+  }
 
-    if (connectionFailed(session)) return "error"
+  if (connectionFailed(session)) return "error"
 
-    try {
-      await session.switchSession({ sessionId, cwd, cliKind })
-    } catch (e) {
-      session.error = formatAcpError(e)
-    }
+  try {
+    await session.switchSession({ sessionId, cwd, cliKind })
+  } catch (e) {
+    session.error = formatAcpError(e)
+  }
 
-    if (session.error !== null || session.sessionId !== sessionId) {
-      const err = session.error
-      session.detach()
-      session.error = err
-      return "error"
-    }
-  } else {
-    try {
-      await session.loadSession({ sessionId, cwd, cliKind })
-    } catch (e) {
-      session.error = formatAcpError(e)
-      return "error"
-    }
-
-    if (connectionFailed(session)) return "error"
+  if (session.error !== null || session.sessionId !== sessionId) {
+    const err = session.error
+    session.detach()
+    session.error = err
+    return "error"
   }
 
   return "connected"

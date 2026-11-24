@@ -60,6 +60,8 @@ export type SessionCapabilities = {
 
 // ─── Session modes ───
 
+export const AVAILABLE_MODES_META = "_drive/availableModes"
+
 export type SessionModes = {
   /** SessionMode[] from ACP SDK — opaque to core (not inspected here) */
   availableModes: unknown[]

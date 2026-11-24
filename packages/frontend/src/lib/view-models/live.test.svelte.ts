@@ -103,8 +103,6 @@ function mockSession(overrides: Partial<AgentSession> = {}): AgentSession {
   const base = {
     status: "connected",
     sessionId: "ses_test",
-    hasAcpClient: true,
-    isRemoteView: false,
     turnState: "idle",
     pendingPermission: null,
     bubbles: [] as AgentSession["bubbles"],
@@ -265,8 +263,8 @@ describe("Live outgoing path (Commit 0)", () => {
     })
   })
 
-  it("not_sent when local session lacks client", async () => {
-    const session = mockSession({ hasAcpClient: false })
+  it("not_sent when the session ID is missing", async () => {
+    const session = mockSession({ sessionId: null })
     await openLive(session)
 
     providerOnEvent?.({
@@ -330,8 +328,6 @@ describe("Live outgoing path (Commit 0)", () => {
     const session = $state({
       status: "connected",
       sessionId: "ses_test",
-      hasAcpClient: true,
-      isRemoteView: false,
       turnState: "busy" as "idle" | "busy",
       pendingPermission: null,
       sendPrompt: vi.fn(async () => {}),
@@ -363,8 +359,6 @@ describe("Live outgoing path (Commit 0)", () => {
     const session = $state({
       status: "connected",
       sessionId: "ses_test",
-      hasAcpClient: true,
-      isRemoteView: false,
       turnState: "idle" as const,
       pendingPermission: null as {
         requestId: number

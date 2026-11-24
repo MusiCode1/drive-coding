@@ -97,9 +97,6 @@ export class Settings {
 
   // ─── תיקיות אחרונות ─── (slice recent-projects-controls)
   recentCollapsed = $state<boolean>(DEFAULTS.recentCollapsed)
-  // ─── leave-running (runtime-gate fixes) ───
-  suppressLeaveWarning = $state<boolean>(DEFAULTS.suppressLeaveWarning)
-
   // ─── קול Gemini ─── (V4b-gemini-voice-picker)
   geminiVoice = $state<string>(DEFAULTS.geminiVoice)
 
@@ -159,7 +156,6 @@ export class Settings {
     this.elevenLabsModelId = loaded.elevenLabsModelId
     this.geminiModelId = loaded.geminiModelId
     this.recentCollapsed = loaded.recentCollapsed
-    this.suppressLeaveWarning = loaded.suppressLeaveWarning
     this.geminiVoice = loaded.geminiVoice
     this.liveVoice = loaded.liveVoice
     this.projectSystemPrompt = loaded.projectSystemPrompt
@@ -356,13 +352,6 @@ export class Settings {
     this.#persist()
   }
 
-  // ─── leave-running (runtime-gate fixes) ───
-
-  setSuppressLeaveWarning = (v: boolean): void => {
-    this.suppressLeaveWarning = v
-    this.#persist()
-  }
-
   // ─── קול Gemini ─── (V4b-gemini-voice-picker)
 
   setGeminiVoice = (v: string): void => {
@@ -483,7 +472,6 @@ export class Settings {
       elevenLabsModelId: this.elevenLabsModelId,
       geminiModelId: this.geminiModelId,
       recentCollapsed: this.recentCollapsed,
-      suppressLeaveWarning: this.suppressLeaveWarning,
       geminiVoice: this.geminiVoice,
       liveVoice: this.liveVoice,
       projectSystemPrompt: this.projectSystemPrompt,

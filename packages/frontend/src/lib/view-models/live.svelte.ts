@@ -7,12 +7,7 @@
  */
 
 import type { MessageKey } from "@drive-coding/core/i18n"
-import {
-  conversationHasLiveAgentPreamble,
-  formatSecretaryDispatch,
-} from "@drive-coding/core/voice/live-agent-prompt"
 import { formatListConfigSnapshot, validateAppSetting } from "@drive-coding/core/voice/live-config"
-import { canDispatchPrompt } from "@drive-coding/core/voice/live-dispatch"
 import { formatMemoryForPrompt, type MemoryItem } from "@drive-coding/core/voice/live-memory"
 import {
   formatAgentDelivery,
@@ -26,7 +21,6 @@ import {
 } from "@drive-coding/core/voice/live-read-recent"
 import { searchSessionBubbles } from "@drive-coding/core/voice/live-search"
 import { buildLiveSeed } from "@drive-coding/core/voice/live-seed"
-import { isUnpromptedSend } from "@drive-coding/core/voice/unprompted-guard"
 import {
   loadAlwaysMemory,
   rememberAlways,
@@ -52,10 +46,11 @@ import { LiveVad } from "../engines/live-vad"
 import { MicFrames } from "../engines/mic-frames"
 import { liveInfo } from "../util/live-log"
 import type { AgentSession } from "./agent-session.svelte"
+import { dispatchLiveAgentPrompt } from "./live-dispatch-agent"
 import {
   buildListConfigInput,
-  validateSessionConfigValue,
   type LiveListConfigDeps,
+  validateSessionConfigValue,
 } from "./live-list-config"
 import type { Mic } from "./mic.svelte"
 import type { Settings } from "./settings.svelte"
@@ -245,33 +240,6 @@ export class Live {
     this.#engine.close()
   }
 
-  #dispatchGate(text: string) {
-    return canDispatchPrompt({
-      status: this.#session.status,
-      hasClient: this.#session.hasAcpClient,
-      hasSessionId: this.#session.sessionId !== null,
-      isRemoteView: this.#session.isRemoteView,
-      text,
-    })
-  }
-
-  /** First successful dispatch prepends the explanation unless it is already in the ACP transcript. */
-  #sendToAgent(text: string): void {
-    const includePreamble = !conversationHasLiveAgentPreamble(this.#conversationTexts())
-    void this.#session.sendPrompt(formatSecretaryDispatch(text, { includePreamble }))
-  }
-
-  #conversationTexts(): string[] {
-    const texts: string[] = []
-    const last = this.#session.lastUserMessage
-    if (last) texts.push(last)
-    for (const bubble of this.#session.bubbles ?? []) {
-      if (bubble.kind !== "user") continue
-      texts.push(bubble.segments.map((s) => s.text).join(""))
-    }
-    return texts
-  }
-
   #lastFinalUserTranscript(): string {
     for (let i = this.transcript.length - 1; i >= 0; i--) {
       const entry = this.transcript[i]
@@ -282,48 +250,17 @@ export class Live {
 
   #handleAction(action: { id: string; name: string; args: Record<string, unknown> }): void {
     switch (action.name) {
-      case "compose_prompt": {
-        const text = typeof action.args.text === "string" ? action.args.text : ""
-        if (isUnpromptedSend({ deliveredSinceUserSpoke: this.#deliveredSinceUserSpoke })) {
-          this.#engine.sendActionResult(action.id, action.name, {
-            status: "not_sent",
-            reason: "unprompted",
-          })
-          return
-        }
-        const verdict = this.#dispatchGate(text)
-        if (!verdict.ok) {
-          this.#engine.sendActionResult(action.id, action.name, {
-            status: "not_sent",
-            reason: verdict.reason,
-          })
-          return
-        }
-        this.#sendToAgent(text)
-        this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
-        this.#pendingAgentDelivery = true
-        break
-      }
+      case "compose_prompt":
       case "forward": {
-        const text = this.#lastFinalUserTranscript()
-        if (isUnpromptedSend({ deliveredSinceUserSpoke: this.#deliveredSinceUserSpoke })) {
-          this.#engine.sendActionResult(action.id, action.name, {
-            status: "not_sent",
-            reason: "unprompted",
-          })
-          return
-        }
-        const verdict = this.#dispatchGate(text)
-        if (!verdict.ok) {
-          this.#engine.sendActionResult(action.id, action.name, {
-            status: "not_sent",
-            reason: verdict.reason,
-          })
-          return
-        }
-        this.#sendToAgent(text)
-        this.#engine.sendActionResult(action.id, action.name, { status: "sent" })
-        this.#pendingAgentDelivery = true
+        const text =
+          action.name === "forward"
+            ? this.#lastFinalUserTranscript()
+            : typeof action.args.text === "string"
+              ? action.args.text
+              : ""
+        const result = dispatchLiveAgentPrompt(this.#session, text, this.#deliveredSinceUserSpoke)
+        this.#engine.sendActionResult(action.id, action.name, result)
+        if (result.status === "sent") this.#pendingAgentDelivery = true
         break
       }
       case "cancel_turn": {

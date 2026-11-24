@@ -2,16 +2,15 @@
  * session-scope.test.svelte.ts — S1 session-scope-core gates G1–G7.
  *
  * Harness mirrors +layout wiring via bindSessionScope (see session-scope.ts from Commit 2).
- * G2/G4 local switch/new/delete paths require attach() — agent-session.local-view harness.
+ * G2/G4 use the AgentSession entry points backed by an injected session view.
  */
 
-import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import type { OrderKey } from "@drive-coding/core/voice/tts-queue"
-import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
+import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
-import type { ViewEmission } from "$lib/session/session-view"
+import { createRemoteView } from "$lib/session/create-session-view"
 import { MockSessionView } from "$lib/view-models/__fixtures__/mock-session-view.svelte"
 import { AgentSession, type SessionEndReason } from "$lib/view-models/agent-session.svelte"
 import { Settings } from "$lib/view-models/settings.svelte"
@@ -73,99 +72,22 @@ function reasonHarness() {
   return { session, reasons }
 }
 
-// ─── Local-view mocks (G2/G4 — attach() required) ───────────────────────────
-
-type TransportFn = ReturnType<typeof vi.fn>
-
-const lv = vi.hoisted(() => {
-  const rawClient = {
-    newSession: vi.fn().mockResolvedValue({ sessionId: "sess-new" }),
-    loadSession: vi.fn().mockResolvedValue({ sessionId: "sess-load" }),
-    prompt: vi.fn().mockResolvedValue(undefined),
-    cancel: vi.fn().mockResolvedValue(undefined),
-    extMethod: vi.fn().mockResolvedValue({ snapshot: null }),
-    listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
-    deleteSession: vi.fn().mockResolvedValue(undefined),
-    setSessionConfigOption: vi.fn().mockResolvedValue({ configOptions: [] }),
-    setSessionMode: vi.fn().mockResolvedValue(undefined),
-    setSessionModel: vi.fn().mockResolvedValue(undefined),
-    close: vi.fn(),
-    conn: {},
-    capabilities: { promptCapabilities: {}, sessionCapabilities: { delete: true } },
-    authMethods: [{ id: "apiKey", name: "API Key" }],
-  }
-  const client = rawClient as unknown as AcpClient
-  const state = {
-    client,
-    teedCallbacks: null as (AcpClientCallbacks & { onUpdate: TransportFn }) | null,
-    transports: [] as Array<{ close: TransportFn; closeAndWait: TransportFn; waitForOpen: TransportFn }>,
-    queue: [] as Array<{ mode: "open" }>,
-  }
-  return { state }
-})
-
-vi.mock("@drive-coding/acp-wire/browser", () => ({
-  WsAcpTransport: vi.fn(function MockTransport() {
-    const t = {
-      onClose: vi.fn(),
-      waitForOpen: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-      closeAndWait: vi.fn().mockResolvedValue(undefined),
-    }
-    lv.state.transports.push(t)
-    return t
-  }),
-}))
-
-vi.mock("@drive-coding/provider/client", async (importActual) => {
-  const actual = await importActual<typeof import("@drive-coding/provider/client")>()
-  return {
-    ...actual,
-    createAcpClient: vi.fn(function mockCreateClient(_transport: unknown, callbacks: unknown) {
-      lv.state.teedCallbacks = callbacks as (typeof lv.state)["teedCallbacks"]
-      return Promise.resolve(lv.state.client)
-    }),
-    createAttachedAcpClient: vi.fn(function mockAttachedClient(_transport: unknown, callbacks: unknown) {
-      lv.state.teedCallbacks = callbacks as (typeof lv.state)["teedCallbacks"]
-      return lv.state.client
-    }),
-  }
-})
-
+vi.mock("$lib/session/create-session-view")
 vi.mock("$lib/adapters/agents-api", () => ({
   createAgent: vi.fn().mockResolvedValue({ agentId: "test-agent" }),
   deleteAgent: vi.fn().mockResolvedValue(undefined),
   notifySessionAttached: vi.fn().mockResolvedValue(undefined),
-  listAgents: vi.fn().mockResolvedValue([]),
 }))
-
-vi.mock("$lib/adapters/sessions", () => ({
-  normalizeSessionInfo: vi.fn((x: unknown) => x),
-}))
-
-vi.mock("$lib/session/local-session-view", async (importActual) => {
-  const actual = await importActual<typeof import("$lib/session/local-session-view")>()
-  return {
-    ...actual,
-    LocalSessionView: class CapturedLocalSessionView extends actual.LocalSessionView {
-      static instances: CapturedLocalSessionView[] = []
-      constructor(opts: ConstructorParameters<typeof actual.LocalSessionView>[0]) {
-        super(opts)
-        CapturedLocalSessionView.instances.push(this)
-      }
-    },
-  }
-})
 
 beforeEach(() => {
   vi.clearAllMocks()
-  lv.state.teedCallbacks = null
-  lv.state.transports = []
+  const view = new MockSessionView()
+  view.connect("sess-initial")
+  vi.mocked(createRemoteView).mockResolvedValue(
+    view as unknown as Awaited<ReturnType<typeof createRemoteView>>,
+  )
   vi.stubGlobal("location", { protocol: "http:", host: "localhost:4000" })
-  vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValue("test-uuid") })
 })
-
-// ─── Commit 0 — G1–G3 (red on base) ──────────────────────────────────────────
 
 describe("session-scope G1 — detach clears playlist and sink", () => {
   it("detach() empties playlist and calls sink.clear", () => {
@@ -184,7 +106,7 @@ describe("session-scope G1 — detach clears playlist and sink", () => {
 describe("session-scope G2 — switchSession clears previous session audio", () => {
   it("switchSession() does not leave items from the previous session", async () => {
     const { session, playlist } = audioHarness()
-    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+    await session.attachRemote({ cwd: "/project", cliKind: "opencode", transport: "ws" })
     playlist.reserve("seg-a", key(0), "bubble-a")
     playlist.markReady("seg-a")
     expect(playlist.items.length).toBe(1)
@@ -224,37 +146,37 @@ describe("session-scope G4 — every exit path fires onSessionEnd with correct r
     expect(reasons).toEqual(["leave-running"])
   })
 
-  it("loadSession → load", async () => {
+  it("openMockSession → load", async () => {
     const { session, reasons } = reasonHarness()
-    await session.loadSession({ sessionId: "sess-1", cwd: "/tmp", cliKind: "opencode" })
+    await session.openMockSession("unused-fixture", "/project")
     expect(reasons).toEqual(["load"])
   })
 
-  it("switchSession local (after attach) → switch", async () => {
+  it("switchSession on a WebSocket view → switch", async () => {
     const { session, reasons } = reasonHarness()
-    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+    await session.attachRemote({ cwd: "/project", cliKind: "opencode", transport: "ws" })
     reasons.length = 0
     await session.switchSession({ sessionId: "sess-b", cwd: "/tmp", cliKind: "opencode" })
     expect(reasons).toEqual(["switch"])
   })
 
-  it("newSession local warm (after attach) → new", async () => {
+  it("newSession on a connected WebSocket view → new", async () => {
     const { session, reasons } = reasonHarness()
-    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+    await session.attachRemote({ cwd: "/project", cliKind: "opencode", transport: "ws" })
     reasons.length = 0
     await session.newSession({ cliKind: "opencode" })
     expect(reasons).toEqual(["new"])
   })
 
-  it("newSession local fallback (no #client) → new before attach", async () => {
+  it("newSession without an existing view → new before attach", async () => {
     const { session, reasons } = reasonHarness()
     await session.newSession({ cwd: "/tmp", cliKind: "opencode" })
     expect(reasons[0]).toBe("new")
   })
 
-  it("deleteSession local active → delete", async () => {
+  it("deleteSession on the active WebSocket view → delete", async () => {
     const { session, reasons } = reasonHarness()
-    await session.attach({ cwd: "/tmp", cliKind: "opencode" })
+    await session.attachRemote({ cwd: "/project", cliKind: "opencode", transport: "ws" })
     const sid = session.sessionId
     if (!sid) throw new Error("expected sessionId after attach")
     reasons.length = 0
@@ -331,17 +253,6 @@ describe("session-scope G6 — double session-end is idempotent", () => {
     }).not.toThrow()
     expect(playlist.items.length).toBe(0)
     expect(sink.clear).toHaveBeenCalled()
-  })
-})
-
-describe("session-scope G7 — loadSession preserveContextOnError does not fire", () => {
-  it("cold-reconnect preserve path skips session-end", async () => {
-    const { session, reasons } = reasonHarness()
-    await session.loadSession(
-      { sessionId: "sess-1", cwd: "/tmp", cliKind: "opencode" },
-      { preserveContextOnError: true },
-    )
-    expect(reasons).not.toContain("load")
   })
 })
 

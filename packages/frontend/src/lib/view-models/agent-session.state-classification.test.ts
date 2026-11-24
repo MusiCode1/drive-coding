@@ -51,7 +51,6 @@ describe("agent-session $state classification gate", () => {
     expect(pending.sort()).toEqual(
       [
         "#cliKind",
-        "#displaySnapshot",
         "agentId",
         "authMethods",
         "bubbles",
@@ -65,7 +64,6 @@ describe("agent-session $state classification gate", () => {
         "modes",
         "pendingElicitation",
         "pendingPermission",
-        "reconnectAttempt",
         "sessionState",
         "status",
         "turnState",

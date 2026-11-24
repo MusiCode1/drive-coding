@@ -20,23 +20,13 @@ export async function reconnectAgent(deps: {
   })
 
   try {
-    if (transport === "http") {
-      await session.attachRemoteToLiveAgent({
-        agentId: agent.id,
-        cwd: agent.cwd,
-        cliKind: agent.cliKind,
-        ...sessionAttachExtras(agent),
-      })
-    } else {
-      if (!agent.acpSessionId) return "skipped"
-      await session.attachToLiveAgent({
-        agentId: agent.id,
-        sessionId: agent.acpSessionId,
-        cwd: agent.cwd,
-        cliKind: agent.cliKind,
-        ...sessionAttachExtras(agent),
-      })
-    }
+    await session.attachRemoteToLiveAgent({
+      agentId: agent.id,
+      cwd: agent.cwd,
+      cliKind: agent.cliKind,
+      transport,
+      ...sessionAttachExtras(agent),
+    })
   } catch (e) {
     session.error = formatAcpError(e)
     return "error"

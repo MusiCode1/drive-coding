@@ -26,6 +26,12 @@ import type { PromptBlocks } from "@drive-coding/provider/client"
 import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import { registerView, unregisterView, type ViewDebugInfo } from "$lib/debug/session-registry"
 import { connWarn } from "$lib/util/conn-log"
+import {
+  cancelPendingOnViewClose,
+  drainRemoteUpdates,
+  readTerminalError,
+  snapshotResetPatch,
+} from "./remote-session-stream"
 import type { SessionView, ViewEmission } from "./session-view.js"
 import type { WireUpdateBatch } from "./wire/frame-decode"
 import { FrameReader } from "./wire/frame-reader"
@@ -37,8 +43,9 @@ const RETURN_VALUE_EXT_METHODS = new Set<string>(["_drive/getQuota"])
 
 const NOT_SUPPORTED_EXT_RETURN_VALUE = "not supported in remote mode — use state instead"
 
-export type RemoteViewOptions = Pick<SSEReaderOptions, "_sleep" | "_now"> & {
+export type RemoteViewOptions = Pick<SSEReaderOptions, "_sleep" | "_now" | "_fetch"> & {
   connectionId?: string
+  baseUrl?: string
   /** Called after a reconnect replaces the view state. */
   onSseReconnected?: () => void
 }
@@ -49,6 +56,7 @@ export class RemoteSessionView implements SessionView {
   readonly #pipe: SessionPipe
   readonly #onSseReconnected?: () => void
   readonly #reader: FrameReader
+  readonly #agentMetadataOptions: Parameters<typeof readTerminalError>[2]
   readonly connectionId?: string
 
   #state: SessionState
@@ -74,6 +82,7 @@ export class RemoteSessionView implements SessionView {
     this.#agentId = agentId
     this.#pipe = pipe
     this.connectionId = opts.connectionId
+    this.#agentMetadataOptions = { baseUrl: opts.baseUrl, fetcher: opts._fetch }
     registerView(this) // תצפית בלבד — ר' debug/session-registry.ts
     this.#onSseReconnected = opts.onSseReconnected
     // Replaced on connect() by the snapshot.
@@ -108,7 +117,7 @@ export class RemoteSessionView implements SessionView {
       messages: this.#state.messages.length,
       status: this.#state.status,
       turnState: this.#state.turnState,
-      closed: this.#isClosed,
+      closed: this.#lifetime.signal.aborted,
     }
   }
 
@@ -126,8 +135,7 @@ export class RemoteSessionView implements SessionView {
 
   /** @internal M8 — memoizes the in-flight/completed connect() call (see below). */
   #connectPromise: Promise<void> | null = null
-  /** @internal round-2 finding #3 — set by close(); connect() rejects explicitly after. */
-  #isClosed = false
+  readonly #lifetime = new AbortController()
 
   /**
    * מתחבר ל-SSE, מאחזר snapshot (כולל sessionId), ומתחיל להאזין ל-patches.
@@ -150,7 +158,7 @@ export class RemoteSessionView implements SessionView {
    * stream שכבר נסגר סופית).
    */
   async connect(): Promise<void> {
-    if (this.#isClosed) {
+    if (this.#lifetime.signal.aborted) {
       throw new Error(
         "RemoteSessionView: connect() called after close() — construct a new instance",
       )
@@ -178,16 +186,15 @@ export class RemoteSessionView implements SessionView {
     // גרסה), version = snapshot.version (בלי לגעת ב-#lastVersion, כבר מעודכן),
     // **לפני** #drainPatches — סדר דטרמיניסטי בערוץ ה-VM. רגרסיה: "היסטוריה לא מוכפלת".
     if (snapshot.messages.length > 0) {
-      const resetPatch: Patch = {
-        version: snapshot.version,
-        op: "reset",
-        messages: snapshot.messages,
-        nextMessageSeq: snapshot.nextMessageSeq,
-        nextSegmentSeq: snapshot.nextSegmentSeq,
-      }
-      this.#emit([resetPatch], [])
+      this.#emit([snapshotResetPatch(snapshot)])
     }
-    void this.#drainUpdates(updates)
+    void drainRemoteUpdates(updates, (batch) => this.#applyIncoming(batch))
+      .then(() =>
+        readTerminalError(this.#agentId, this.#lifetime.signal, this.#agentMetadataOptions),
+      )
+      .then((reason) => {
+        if (reason) this.#emit([], [], reason)
+      })
   }
 
   /**
@@ -200,20 +207,13 @@ export class RemoteSessionView implements SessionView {
    * מחדש את אותו instance.
    */
   async close(): Promise<void> {
-    const { permission, elicitation } = this.#state.pending
-    if (permission) {
-      await this.respond(permission.requestId, { outcome: { outcome: "cancelled" } }).catch(() => {
-        // best-effort — ה-SSE כבר בדרך להיסגר, לא חוסמים את הסגירה על כשל reply
-      })
-    }
-    if (elicitation) {
-      await this.respond(elicitation.requestId, { action: "cancel" }).catch(() => {
-        // best-effort
-      })
+    this.#lifetime.abort()
+    const pending = this.#state.pending
+    if (pending.permission || pending.elicitation) {
+      await cancelPendingOnViewClose(pending, this.respond.bind(this))
     }
     // מנקה pending מקומית — הופך close() לאידמפוטנטי (קריאה חוזרת לא תשלח /reply שוב).
     this.#state = { ...this.#state, pending: { permission: null, elicitation: null } }
-    this.#isClosed = true
     unregisterView(this)
     this.#reader.close()
     this.#pipe.close()
@@ -225,32 +225,6 @@ export class RemoteSessionView implements SessionView {
   }
 
   // ─── Incoming patches: apply to state (core applyPatch) + wrap + emit ───
-
-  async #drainUpdates(updates: ReadableStream<WireUpdateBatch>): Promise<void> {
-    const reader = updates.getReader()
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        try {
-          this.#applyIncoming(value)
-        } catch (err) {
-          // calev-heavy round 2 finding #1: a single unexpected/malformed patch
-          // must not kill the whole drain loop — `void this.#drainPatches(...)`
-          // is fire-and-forget, so an uncaught throw here would become a silent
-          // unhandled rejection and every subsequent patch would be lost forever.
-          // Skip this one patch, keep draining. calev-heavy round 3: staying
-          // silent here was itself wrong — SSEReader now validates patches before
-          // they even reach this point (round 3 root-cause fix), so reaching this
-          // catch means something unexpected slipped through; log it so it's not
-          // invisible.
-          console.warn("RemoteSessionView: error applying patch, skipping", err)
-        }
-      }
-    } finally {
-      reader.releaseLock()
-    }
-  }
 
   /**
    * ─── slice acp-wire-session-update ───
@@ -286,9 +260,9 @@ export class RemoteSessionView implements SessionView {
     }
   }
 
-  #emit(patches: Patch[], updates: unknown[] = []): void {
+  #emit(patches: Patch[], updates: unknown[] = [], terminalError?: string): void {
     try {
-      this.#patchesCtrl?.enqueue({ patches, updates })
+      this.#patchesCtrl?.enqueue({ patches, updates, ...(terminalError ? { terminalError } : {}) })
     } catch {
       // stream cancelled by consumer — ignore
     }
@@ -341,19 +315,12 @@ export class RemoteSessionView implements SessionView {
       }
       return
     }
-    const resetPatch: Patch = {
-      version: snapshot.version,
-      op: "reset",
-      messages: snapshot.messages,
-      nextMessageSeq: snapshot.nextMessageSeq,
-      nextSegmentSeq: snapshot.nextSegmentSeq,
-    }
     this.#state = snapshot
     this.#sessionId = snapshot.sessionId
     this.#lastVersion = snapshot.version
     this.#lastReadMessageId = null
     this.#lastReadSegmentIndex = 0
-    this.#emit([resetPatch], [])
+    this.#emit([snapshotResetPatch(snapshot)])
     this.#onSseReconnected?.()
   }
 

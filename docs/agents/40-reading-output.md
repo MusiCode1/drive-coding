@@ -1,7 +1,7 @@
 ---
 id: reading-output
 title: Reading output — history, SSE, state, and RPC waits
-summary: How to read agent messages, turn progress, and canonical tool output through state, history, and SSE.
+summary: How to read agent messages, turn progress, tool output, and session modes through state, history, and SSE.
 read_when:
   - You sent a prompt with noWait and now need the agent's reply
   - You must follow a long turn without holding a stream open
@@ -16,7 +16,7 @@ routes:
   - GET /api/agents/:id/state
   - POST /api/agents/:id/rpc
 mcp_tools: [session_send, session_state]
-docs_version: 1.11.0
+docs_version: 1.11.2
 updated: 2026-11-24
 ---
 
@@ -86,6 +86,11 @@ Status codes:
 - **409** — `?epoch=` lower than current epoch (stale reconnect) **before** attach.
 
 Design: subscribe after snapshot so replay excludes patches already in frame-zero.
+
+In snapshots and live updates, `current_mode_update` may include
+`_meta["_drive/availableModes"]`, the non-empty list of available modes reported
+by the CLI. Each entry has an `id` and `name` and may have a `description`.
+An update without this field leaves the viewer's existing list intact.
 
 SSE and [WebSocket session viewers](97-transports.md) can watch concurrently.
 The first viewer after the group becomes empty starts a new epoch. Additional

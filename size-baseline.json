@@ -350,10 +350,10 @@
       "codeLines": 235
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 937,
+      "metric": 898,
       "impurity": 22,
       "class": "scattered",
-      "codeLines": 603
+      "codeLines": 568
     },
     "packages/backend/src/session-host/turn-lifecycle.ts": {
       "metric": 93,
@@ -434,22 +434,22 @@
       "codeLines": 15
     },
     "packages/frontend/src/lib/actions/connect-agent.ts": {
-      "metric": 74,
-      "impurity": 4,
+      "metric": 43,
+      "impurity": 2,
       "class": "mixed",
-      "codeLines": 44
+      "codeLines": 37
     },
     "packages/frontend/src/lib/actions/open-session-url.ts": {
-      "metric": 124,
-      "impurity": 7,
+      "metric": 114,
+      "impurity": 6,
       "class": "mixed",
-      "codeLines": 98
+      "codeLines": 89
     },
     "packages/frontend/src/lib/adapters/agents-api.ts": {
-      "metric": 213,
-      "impurity": 24,
-      "class": "scattered",
-      "codeLines": 160
+      "metric": 178,
+      "impurity": 18,
+      "class": "mixed",
+      "codeLines": 137
     },
     "packages/frontend/src/lib/adapters/cli-availability.ts": {
       "metric": 41,
@@ -584,10 +584,10 @@
       "codeLines": 72
     },
     "packages/frontend/src/lib/components/chat/ChatScreen.svelte": {
-      "metric": 115,
-      "impurity": 9,
+      "metric": 98,
+      "impurity": 7,
       "class": "mixed",
-      "codeLines": 109
+      "codeLines": 77
     },
     "packages/frontend/src/lib/components/chat/ElicitationDialog.svelte": {
       "metric": 127,
@@ -612,12 +612,6 @@
       "impurity": 0,
       "class": "pure",
       "codeLines": 199
-    },
-    "packages/frontend/src/lib/components/chat/RecordFooter.svelte": {
-      "metric": 61,
-      "impurity": 0,
-      "class": "pure",
-      "codeLines": 151
     },
     "packages/frontend/src/lib/components/chat/SlashCommandMenu.svelte": {
       "metric": 64,
@@ -686,10 +680,10 @@
       "codeLines": 95
     },
     "packages/frontend/src/lib/components/layout/AppShell.svelte": {
-      "metric": 350,
+      "metric": 334,
       "impurity": 12,
       "class": "mixed",
-      "codeLines": 293
+      "codeLines": 265
     },
     "packages/frontend/src/lib/components/layout/BottomSheet.svelte": {
       "metric": 99,
@@ -895,17 +889,11 @@
       "class": "mixed",
       "codeLines": 15
     },
-    "packages/frontend/src/lib/session/local-session-view.ts": {
-      "metric": 409,
-      "impurity": 14,
-      "class": "scattered",
-      "codeLines": 249
-    },
     "packages/frontend/src/lib/session/remote-session-view.ts": {
-      "metric": 512,
-      "impurity": 15,
+      "metric": 479,
+      "impurity": 13,
       "class": "scattered",
-      "codeLines": 289
+      "codeLines": 269
     },
     "packages/frontend/src/lib/session/session-transport-read.ts": {
       "metric": 41,
@@ -980,10 +968,10 @@
       "codeLines": 68
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 3204,
-      "impurity": 70,
+      "metric": 1847,
+      "impurity": 30,
       "class": "scattered",
-      "codeLines": 1960
+      "codeLines": 1167
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
       "metric": 328,
@@ -1010,10 +998,10 @@
       "codeLines": 59
     },
     "packages/frontend/src/lib/view-models/live.svelte.ts": {
-      "metric": 622,
+      "metric": 559,
       "impurity": 7,
       "class": "mixed",
-      "codeLines": 563
+      "codeLines": 504
     },
     "packages/frontend/src/lib/view-models/mic.svelte.ts": {
       "metric": 194,
@@ -1070,10 +1058,10 @@
       "codeLines": 211
     },
     "packages/frontend/src/routes/+page.svelte": {
-      "metric": 405,
+      "metric": 390,
       "impurity": 8,
       "class": "mixed",
-      "codeLines": 307
+      "codeLines": 292
     },
     "packages/frontend/src/routes/bt-test/+page.svelte": {
       "metric": 329,

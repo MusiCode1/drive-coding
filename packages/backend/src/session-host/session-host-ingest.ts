@@ -1,14 +1,36 @@
-import type { SessionNotification } from "@agentclientprotocol/sdk"
+import type { SessionModeState, SessionNotification } from "@agentclientprotocol/sdk"
 import { createLogger } from "@drive-coding/core/log"
 import {
+  applyPatch,
+  currentModeUpdate,
   type Patch,
   reduce,
+  type SessionConfigOption,
   type SessionState,
   type ToolOutputRules,
   unclassifiedToolMetaKeys,
 } from "@drive-coding/core/session"
 
 const log = createLogger("backend.session-host.ingest")
+
+export function publishResponseModes(
+  handleUpdate: (notification: SessionNotification) => void,
+  sessionId: string,
+  modes: SessionModeState | null | undefined,
+): void {
+  if (modes) handleUpdate({ sessionId, update: currentModeUpdate(modes) })
+}
+
+export function configOptionsAfterLoad(
+  configOptions: unknown,
+  previous: SessionConfigOption[] | undefined,
+): SessionConfigOption[] {
+  const loaded = (Array.isArray(configOptions) ? configOptions : []) as SessionConfigOption[]
+  // For the same session, a locally changed option is newer than a load reply.
+  return previous
+    ? loaded.map((opt) => previous.find((entry) => entry.id === opt.id) ?? opt)
+    : loaded
+}
 
 export function createPatchChannel() {
   let controller: ReadableStreamDefaultController<Patch> | null = null
@@ -64,6 +86,12 @@ export function createUpdateIngest({
   const options = toolOutputRules ? { toolOutput: toolOutputRules } : undefined
 
   return {
+    applySessionChanges(changes: Extract<Patch, { op: "update-session" }>["changes"]): void {
+      const state = getState()
+      const patch: Patch = { op: "update-session", version: state.version + 1, changes }
+      emit({ state: applyPatch(state, patch), patches: [patch] })
+    },
+
     handleUpdate(notification: SessionNotification): void {
       if (isDisposed()) return
       const state = getState()

@@ -19,10 +19,28 @@
  */
 
 import { TOOL_OUTPUT_META_KEY, type ToolOutputDelta } from "./tool-output"
-import type { MessageContentChunk, Patch, SessionMessage, SessionState } from "./types"
+import type {
+  MessageContentChunk,
+  Patch,
+  SessionMessage,
+  SessionModes,
+  SessionState,
+} from "./types"
+import { AVAILABLE_MODES_META } from "./types"
 
 /** פריים כפי שהוא נוסע על החוט. `unknown` בשדות — הצרכן הוא `reduce`. */
 export type WireSessionUpdate = Record<string, unknown> & { sessionUpdate: string }
+
+/** ACP v1 carries the current mode; drive-coding adds the list from session/new or session/load. */
+export function currentModeUpdate(modes: NonNullable<SessionModes>) {
+  return {
+    sessionUpdate: "current_mode_update" as const,
+    currentModeId: modes.currentModeId,
+    ...(modes.availableModes.length > 0
+      ? { _meta: { [AVAILABLE_MODES_META]: modes.availableModes } }
+      : {}),
+  }
+}
 
 /**
  * ‏v2 דורש `messageId` על כל chunk והודעה; אצלנו הוא יכול להיות `null`
@@ -171,13 +189,10 @@ function changesToUpdates(changes: Record<string, unknown>): WireSessionUpdate[]
     out.push({ sessionUpdate: "config_option_update", configOptions: changes.configOptions })
   }
   if ("modes" in changes) {
-    // ⚠️ `current_mode_update` הוא קנוני ב-v1 ו-v2 **הסיר** אותו: שם ה-modes
-    // הם config-options. אצלנו הם עדיין שדה נפרד ב-SessionState, שמוזן מהחוט
-    // של הספק. פליטת השם ה-v1 היא התיאור הכן של המצב — לא `_drive/`, כי זה
-    // לא המצאה שלנו, וגם לא העמדת-פנים שזה v2.
-    const modes = changes.modes as { currentModeId?: unknown } | null
-    if (modes && typeof modes.currentModeId === "string") {
-      out.push({ sessionUpdate: "current_mode_update", currentModeId: modes.currentModeId })
+    // ACP v2 uses config options. The v1 update remains the compatibility frame.
+    const modes = changes.modes as SessionModes
+    if (modes && typeof modes.currentModeId === "string" && Array.isArray(modes.availableModes)) {
+      out.push(currentModeUpdate(modes))
     }
   }
   if ("contextUsage" in changes) {

@@ -30,6 +30,7 @@ import type {
   SessionUsage,
   TurnStateValue,
 } from "./types"
+import { AVAILABLE_MODES_META } from "./types"
 
 // ─── internal helpers ───
 
@@ -1014,8 +1015,11 @@ function reduceRecognized(
     const modeId = u.currentModeId
     if (typeof modeId !== "string") return { state, patches: [] }
     const meta = metaOf(u)
+    const availableModes = meta?.[AVAILABLE_MODES_META]
     const newModes: NonNullable<SessionModes> = {
-      availableModes: state.modes?.availableModes ?? [],
+      availableModes: Array.isArray(availableModes)
+        ? availableModes
+        : (state.modes?.availableModes ?? []),
       currentModeId: modeId,
     }
     const newVersion = state.version + 1
@@ -1031,7 +1035,8 @@ function reduceRecognized(
 
   // config_option_update → update configOptions
   if (sessionUpdate === "config_option_update") {
-    const opts = Array.isArray(u.configOptions) ? u.configOptions : []
+    const opts = u.configOptions
+    if (!Array.isArray(opts)) return { state, patches: [] }
     const meta = metaOf(u)
     const newVersion = state.version + 1
     const newState: SessionState = { ...state, version: newVersion, configOptions: opts }
@@ -1125,7 +1130,11 @@ export function reduce(
   if (typeof ev !== "object" || ev === null) return { state, patches: [] }
   const u = ev as Record<string, unknown>
   const result = reduceRecognized(state, ev, options)
-  if (result.patches.length === 0 && metaOf(u) !== undefined) {
+  if (
+    result.patches.length === 0 &&
+    u.sessionUpdate !== "config_option_update" &&
+    metaOf(u) !== undefined
+  ) {
     return opaquePatch(state, u)
   }
   return result

@@ -5,6 +5,9 @@
 import type { AgentPublic } from "@drive-coding/core/schemas/agent"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { SessionInfo } from "$lib/adapters/sessions"
+import { createRemoteView } from "$lib/session/create-session-view"
+import { MockSessionView } from "$lib/view-models/__fixtures__/mock-session-view.svelte"
+import { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { openSessionUrl } from "./open-session-url.js"
 
 const listAgentsMock = vi.fn<() => Promise<AgentPublic[]>>()
@@ -50,7 +53,6 @@ type MockSession = {
   sessionsCache: MockSessionsCache
   listSessions: ReturnType<typeof vi.fn>
   switchSession: ReturnType<typeof vi.fn>
-  attachToLiveAgent: ReturnType<typeof vi.fn>
   attachRemoteToLiveAgent: ReturnType<typeof vi.fn>
 }
 
@@ -79,19 +81,21 @@ function makeSession(overrides: Partial<MockSession> = {}): MockSession {
     sessionsCache: { sessions: [], error: null, ...cacheOverride },
     listSessions: vi.fn(async () => {}),
     switchSession: vi.fn(async () => {}),
-    attachToLiveAgent: vi.fn(async () => {}),
     attachRemoteToLiveAgent: vi.fn(async () => {}),
     ...rest,
   }
 }
 
+vi.mock("$lib/session/create-session-view")
+
 const stores = new Map<string, string>()
 
 beforeEach(() => {
   stores.clear()
+  vi.mocked(createRemoteView).mockReset()
   listAgentsMock.mockReset()
   openSessionColdMock.mockReset()
-  vi.stubGlobal("location", { search: "" })
+  vi.stubGlobal("location", { search: "", protocol: "http:", host: "localhost" })
   vi.stubGlobal("sessionStorage", {
     getItem: vi.fn((k: string) => stores.get(k) ?? null),
     setItem: vi.fn((k: string, v: string) => {
@@ -316,7 +320,7 @@ describe("openSessionUrl", () => {
     ])
     stores.set("dc.ownedAgentId", "00000000-0000-4000-8000-000000000003")
     const session = makeSession()
-    session.attachToLiveAgent.mockImplementation(async () => {
+    session.attachRemoteToLiveAgent.mockImplementation(async () => {
       session.status = "connected"
       session.agentId = "00000000-0000-4000-8000-000000000003"
     })
@@ -329,58 +333,34 @@ describe("openSessionUrl", () => {
         settings: { sessionTransport: null } as never,
       }),
     ).toBe("connected")
-    expect(session.attachToLiveAgent).toHaveBeenCalled()
+    expect(session.attachRemoteToLiveAgent).toHaveBeenCalled()
   })
 
-  it("cold attach via ws on exact match", async () => {
+  it.each(["ws", "http"] as const)("attaches to the matched agent via %s", async (transport) => {
     const agent = makeAgent({
       id: "00000000-0000-4000-8000-000000000004",
       acpSessionId: "sess-target",
     })
     listAgentsMock.mockResolvedValue([agent])
-    const session = makeSession()
-    session.attachToLiveAgent.mockImplementation(async () => {
-      session.status = "connected"
-    })
+    const view = new MockSessionView()
+    view.connect("sess-target")
+    vi.mocked(createRemoteView).mockResolvedValue(
+      view as unknown as Awaited<ReturnType<typeof createRemoteView>>,
+    )
+    const session = new AgentSession()
 
     expect(
       await openSessionUrl({
         cliKind: "claude",
         sessionId: "sess-target",
-        session: session as never,
-        settings: { sessionTransport: null } as never,
+        session,
+        settings: { sessionTransport: transport } as never,
       }),
     ).toBe("connected")
-    expect(session.attachToLiveAgent).toHaveBeenCalledWith({
-      agentId: agent.id,
-      sessionId: "sess-target",
-      cwd: agent.cwd,
-      cliKind: agent.cliKind,
-    })
-  })
-
-  it("cold attach via http when transport is http", async () => {
-    stores.set("sessionTransport", "http")
-    const agent = makeAgent({
-      id: "00000000-0000-4000-8000-000000000005",
-      acpSessionId: "sess-target",
-    })
-    listAgentsMock.mockResolvedValue([agent])
-    const session = makeSession()
-    session.attachRemoteToLiveAgent.mockImplementation(async () => {
-      session.status = "connected"
-    })
-
-    expect(
-      await openSessionUrl({
-        cliKind: "claude",
-        sessionId: "sess-target",
-        session: session as never,
-        settings: { sessionTransport: "http" } as never,
-      }),
-    ).toBe("connected")
-    expect(session.attachRemoteToLiveAgent).toHaveBeenCalled()
-    expect(session.attachToLiveAgent).not.toHaveBeenCalled()
+    expect(createRemoteView).toHaveBeenCalledWith(
+      expect.objectContaining({ agentId: agent.id, transport }),
+    )
+    expect(session.sessionId).toBe("sess-target")
   })
 
   it("joins http-attached agent without takeover prompt", async () => {
@@ -416,7 +396,7 @@ describe("openSessionUrl", () => {
       }),
     ])
     const session = makeSession()
-    session.attachToLiveAgent.mockImplementation(async () => {
+    session.attachRemoteToLiveAgent.mockImplementation(async () => {
       session.status = "error"
       session.error = "reconnect failed"
     })

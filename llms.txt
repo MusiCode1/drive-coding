@@ -6,7 +6,7 @@ Agent-facing documentation for drive-coding HTTP, MCP, and session lifecycle.
 - [Connect — find the backend base URL and origins](docs/agents/10-connect.md): How to discover which drive-coding instance is running, which URL to call, and when to use loopback versus a public origin.
 - [Session lifecycle — open, send, close](docs/agents/20-session-lifecycle.md): How to spawn an agent, drive a turn and release it, including who owns the session.
 - [Child config — models, permissions, and sets](docs/agents/30-child-config.md): How to change a spawned agent's model, permission mode, and other CLI options using the live catalog, not guessed ids.
-- [Reading output — history, SSE, state, and RPC waits](docs/agents/40-reading-output.md): How to read agent messages, turn progress, and canonical tool output through state, history, and SSE.
+- [Reading output — history, SSE, state, and RPC waits](docs/agents/40-reading-output.md): How to read agent messages, turn progress, tool output, and session modes through state, history, and SSE.
 - [Render contract — what your output can display](docs/agents/45-render-contract.md): What the drive-coding UI renders from agent output, and what it will not render.
 - [UI reference — screens and controls](docs/agents/46-ui-reference.md): Where settings and session controls live in the drive-coding web app, with on-screen labels an agent can quote back to the user.
 - [Agent session RPC — POST /api/agents/:id/rpc](docs/agents/50-rpc.md): JSON-RPC-style methods on a live agent session (prompt, cancel, session management, and drive-coding extensions).

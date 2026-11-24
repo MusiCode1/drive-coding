@@ -25,31 +25,9 @@ import {
   createInitialSessionState,
 } from "@drive-coding/core/session"
 import { toWireText } from "@drive-coding/core/session/testing"
-import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { createAgent, deleteAgent, listAgents, notifySessionAttached } from "$lib/adapters/agents-api"
+import { createAgent, deleteAgent, notifySessionAttached } from "$lib/adapters/agents-api"
 import type { Settings } from "$lib/view-models/settings.svelte"
-
-// ─── Module-level mocks (חייבים להיות לפני import AgentSession — נדרש לרגרסיית ה-local) ───
-
-vi.mock("@drive-coding/provider/client", async (importActual) => {
-  const actual = await importActual<typeof import("@drive-coding/provider/client")>()
-  return {
-    ...actual,
-    createAcpClient: vi.fn(async () => localClientMock),
-  }
-})
-
-vi.mock("@drive-coding/acp-wire/browser", () => ({
-  WsAcpTransport: vi.fn(function mockWsTransport() {
-    return {
-      onClose: vi.fn(),
-      waitForOpen: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn().mockResolvedValue(undefined),
-      closeAndWait: vi.fn().mockResolvedValue(undefined),
-    }
-  }),
-}))
 
 vi.mock("$lib/adapters/agents-api", () => ({
   createAgent: vi.fn().mockResolvedValue({ agentId: "remote-test-agent" }),
@@ -58,9 +36,6 @@ vi.mock("$lib/adapters/agents-api", () => ({
   listAgents: vi.fn().mockResolvedValue([]),
   patchAgent: vi.fn().mockResolvedValue(undefined),
 }))
-
-// mutable — כל טסט-רגרסיה מעצב אותו מחדש ב-beforeEach
-let localClientMock: AcpClient
 
 // ─── Import after mocks ───────────────────────────────────────────────────────
 
@@ -80,22 +55,6 @@ function makeSettingsMock(): Settings {
 beforeEach(() => {
   vi.unstubAllGlobals()
   vi.stubGlobal("location", { protocol: "http:", host: "localhost:4013", search: "" })
-  localClientMock = {
-    newSession: vi.fn().mockResolvedValue({ sessionId: "local-sess-1" }),
-    loadSession: vi.fn().mockResolvedValue({}),
-    prompt: vi.fn().mockResolvedValue(undefined),
-    cancel: vi.fn().mockResolvedValue(undefined),
-    extMethod: vi.fn().mockResolvedValue({ snapshot: null }),
-    listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
-    deleteSession: vi.fn().mockResolvedValue(undefined),
-    setSessionConfigOption: vi.fn().mockResolvedValue({ configOptions: [] }),
-    setSessionMode: vi.fn().mockResolvedValue(undefined),
-    setSessionModel: vi.fn().mockResolvedValue(undefined),
-    close: vi.fn(),
-    conn: {} as AcpClient["conn"],
-    capabilities: {} as AcpClient["capabilities"],
-    authMethods: [],
-  } as unknown as AcpClient
 })
 
 afterEach(() => {
@@ -400,7 +359,7 @@ describe("AgentSession — attachRemote fast-fail", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     const agent = new AgentSession()
-    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
+    await agent.attachRemote({ transport: "http", cwd: "/ws", cliKind: "claude" })
 
     expect(agent.status).toBe("error")
     expect(agent.error).toContain("did not provide a sessionId")
@@ -429,7 +388,7 @@ describe("AgentSession — attachRemote fast-fail", () => {
 
     const settings = makeSettingsMock()
     const agent = new AgentSession({ settings })
-    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
+    await agent.attachRemote({ transport: "http", cwd: "/ws", cliKind: "claude" })
 
     expect(agent.status).toBe("connected")
     expect(agent.cwd).toBe("/ws") // attachRemote מציב גם cwd וגם #cliKind (כמו attach)
@@ -504,7 +463,7 @@ describe("AgentSession — attachRemote cold parity (slice http-cold-parity C0)"
     vi.stubGlobal("fetch", fetchMock)
 
     const agent = new AgentSession()
-    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
+    await agent.attachRemote({ transport: "http", cwd: "/ws", cliKind: "claude" })
 
     expect(agent.sessionId).toBe("probe-sess")
   })
@@ -519,7 +478,7 @@ describe("AgentSession — attachRemote cold parity (slice http-cold-parity C0)"
 
     const settings = makeSettingsWithLastConfig()
     const agent = new AgentSession({ settings })
-    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
+    await agent.attachRemote({ transport: "http", cwd: "/ws", cliKind: "claude" })
     await delay()
 
     expect(rpcBodies).toContainEqual(
@@ -539,27 +498,11 @@ describe("AgentSession — attachRemote cold parity (slice http-cold-parity C0)"
     // ⚠️ משתנה, לא object literal inline — כדי שה-excess-property-check לא ייכשל
     // typecheck על הבסיס (החתימה כאן היא עדיין דו-פרמטרית; ר' subtyping מבני).
     const input = { cwd: "/ws", cliKind: "claude", systemPrompt: "You are terse and helpful." }
-    await agent.attachRemote(input)
+    await agent.attachRemote({ ...input, transport: "http" })
 
     expect(createAgent).toHaveBeenCalledWith(
       expect.objectContaining({ systemPrompt: "You are terse and helpful." }),
     )
-  })
-
-  it("D: reconnect() על סשן remote חי הוא no-op — אין listAgents, status נשאר connected", async () => {
-    const snapshot = createInitialSessionState({ sessionId: "probe-sess-d" })
-    const { fetchMock } = sseFetchWithRpcCapture(snapshot)
-    vi.stubGlobal("fetch", fetchMock)
-    vi.mocked(listAgents).mockClear()
-
-    const agent = new AgentSession()
-    await agent.attachRemote({ cwd: "/ws", cliKind: "claude" })
-    expect(agent.status).toBe("connected")
-
-    await agent.reconnect()
-
-    expect(listAgents).not.toHaveBeenCalled()
-    expect(agent.status).toBe("connected")
   })
 })
 
@@ -624,7 +567,12 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     const agent = new AgentSession()
-    await agent.attachRemoteToLiveAgent({ agentId: "fresh", cwd: "/ws", cliKind: "claude" })
+    await agent.attachRemoteToLiveAgent({
+      transport: "http",
+      agentId: "fresh",
+      cwd: "/ws",
+      cliKind: "claude",
+    })
     await delay()
 
     expect(agent.bubbles).toHaveLength(0) // באמת ריק
@@ -679,7 +627,12 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     const agent = new AgentSession()
-    await agent.attachRemoteToLiveAgent({ agentId: "live-q", cwd: "/ws", cliKind: "claude" })
+    await agent.attachRemoteToLiveAgent({
+      transport: "http",
+      agentId: "live-q",
+      cwd: "/ws",
+      cliKind: "claude",
+    })
     await delay()
 
     // ⚠️ טענה ישירה: בלעדיה, הסרת ההשמה ל-#sessionId לא נתפסת — refreshQuota
@@ -717,7 +670,12 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
     vi.mocked(notifySessionAttached).mockClear()
 
     const agent = new AgentSession()
-    await agent.attachRemoteToLiveAgent({ agentId: "live-agent-1", cwd: "/ws", cliKind: "claude" })
+    await agent.attachRemoteToLiveAgent({
+      transport: "http",
+      agentId: "live-agent-1",
+      cwd: "/ws",
+      cliKind: "claude",
+    })
 
     expect(agent.status).toBe("connected")
     expect(agent.agentId).toBe("live-agent-1") // מ-input, לא מ-createAgent
@@ -757,7 +715,12 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
     vi.mocked(deleteAgent).mockClear()
 
     const agent = new AgentSession()
-    await agent.attachRemoteToLiveAgent({ agentId: "live-agent-2", cwd: "/ws", cliKind: "claude" })
+    await agent.attachRemoteToLiveAgent({
+      transport: "http",
+      agentId: "live-agent-2",
+      cwd: "/ws",
+      cliKind: "claude",
+    })
 
     expect(agent.status).toBe("error")
     expect(agent.error).toContain("did not provide a sessionId")
@@ -777,7 +740,12 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
     agent._setStatusForTest("connected")
 
     await expect(
-      agent.attachRemoteToLiveAgent({ agentId: "x", cwd: "/ws", cliKind: "claude" }),
+      agent.attachRemoteToLiveAgent({
+        transport: "http",
+        agentId: "x",
+        cwd: "/ws",
+        cliKind: "claude",
+      }),
     ).rejects.toThrow(/cannot attach/)
 
     // אין cleanup לפני ה-throw — ה-view הקודם לא נסגר, ה-status לא נדרס
@@ -795,7 +763,12 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
     vi.mocked(createAgent).mockClear()
 
     const agent = new AgentSession()
-    await agent.attachRemoteToLiveAgent({ agentId: "live-agent-3", cwd: "/ws", cliKind: "claude" })
+    await agent.attachRemoteToLiveAgent({
+      transport: "http",
+      agentId: "live-agent-3",
+      cwd: "/ws",
+      cliKind: "claude",
+    })
 
     expect(agent.status).toBe("error")
     expect(agent.error).toContain("503")
@@ -807,17 +780,15 @@ describe("AgentSession — attachRemoteToLiveAgent", () => {
 
 // ── loadSession/switchSession/newSession/attachToLiveAgent — remote routing ──
 
-describe("AgentSession + remote view — WS paths are blocked", () => {
-  it("loadSession/attachToLiveAgent stay no-ops; switchSession/newSession route through the view", async () => {
+describe("AgentSession session commands through the view", () => {
+  it("switchSession and newSession route through the view", async () => {
     const view = new MockSessionView()
     view.connect("remote-sess-11")
     const agent = new AgentSession({ view })
     agent._setStatusForTest("connected")
 
-    await agent.loadSession({ sessionId: "s", cwd: "/ws", cliKind: "claude" })
     await agent.switchSession({ sessionId: "s", cwd: "/ws", cliKind: "claude" })
     await agent.newSession({ cwd: "/ws", cliKind: "claude" })
-    await agent.attachToLiveAgent({ agentId: "a", sessionId: "s", cwd: "/ws", cliKind: "claude" })
 
     expect(agent.status).toBe("connected")
     expect(view.loadSessionMock).toHaveBeenCalled()
@@ -837,7 +808,7 @@ describe("AgentSession + remote view — WS paths are blocked", () => {
     expect(agent.error).toBeNull()
     expect(agent.status).toBe("connected")
     expect(agent.sessionTitle).toBe("")
-    expect(agent._getSessionIdForTest()).toBe("remote-new-sess")
+    expect(agent.sessionId).toBe("remote-new-sess")
   })
 
   it("newSession remote failure populates session.error and leaves prior sessionId", async () => {
@@ -845,13 +816,13 @@ describe("AgentSession + remote view — WS paths are blocked", () => {
     view.connect("remote-sess-13b")
     const agent = new AgentSession({ view })
     agent._setStatusForTest("connected")
-    const sessionIdBefore = agent._getSessionIdForTest()
+    const sessionIdBefore = agent.sessionId
     view.newSessionMock.mockRejectedValueOnce(new Error("RPC 502"))
 
     await agent.newSession({ cwd: "/ws", cliKind: "claude" })
 
     expect(agent.error).toContain("newSession failed")
-    expect(agent._getSessionIdForTest()).toBe(sessionIdBefore)
+    expect(agent.sessionId).toBe(sessionIdBefore)
     expect(agent.status).toBe("connected")
   })
 })
@@ -888,46 +859,6 @@ describe("AgentSession + remote view — #cleanup teardown", () => {
   })
 })
 
-// ── רגרסיה: בלי #view — הנתיב הקיים זהה ──────────────────────────────────────
-
-describe("regression — local path unchanged (#view === null)", () => {
-  it("attach + sendPrompt: optimistic bubble pushed, waiting→idle after RESP (unaffected by the C3-ב refactor)", async () => {
-    const agent = new AgentSession()
-
-    await agent.attach({ cwd: "/workspace", cliKind: "claude" })
-    expect(agent.status).toBe("connected")
-
-    await agent.sendPrompt("hi there")
-
-    expect(agent.bubbles).toHaveLength(1)
-    expect(agent.bubbles[0]?.kind).toBe("user")
-    expect(agent.turnState).toBe("idle") // ← #turnEnded/#setTurnState("idle") עדיין רצים ב-local
-    expect(localClientMock.prompt).toHaveBeenCalled()
-  })
-
-  it("sendPrompt catch still sets #setStatus('error') in local mode (unlike remote)", async () => {
-    const agent = new AgentSession()
-    await agent.attach({ cwd: "/workspace", cliKind: "claude" })
-
-    vi.mocked(localClientMock.prompt).mockRejectedValueOnce(new Error("boom"))
-    await agent.sendPrompt("hello")
-
-    expect(agent.error).toContain("prompt failed")
-    expect(agent.status).toBe("error") // ← local: #setStatus("error") עדיין רץ (בניגוד ל-remote)
-  })
-
-  it("cancelTurn still calls client.cancel() and sets idle in local mode", async () => {
-    const agent = new AgentSession()
-    await agent.attach({ cwd: "/workspace", cliKind: "claude" })
-    await agent.sendPrompt("hi") // → turnState idle אחרי RESP; נדרוש מצב לא-idle לפני cancel
-    agent.turnState = "waiting"
-
-    await agent.cancelTurn()
-
-    expect(localClientMock.cancel).toHaveBeenCalledWith("local-sess-1")
-    expect(agent.turnState).toBe("idle")
-  })
-})
 // ─── slice remote-session-mgmt C5: session management through the #view ───
 
 describe("AgentSession + remote view — session management via #view (remote-session-mgmt C5)", () => {

@@ -12,6 +12,7 @@ import { reduce } from "./reduce"
 import { stateToSessionUpdates } from "./to-session-update"
 import type { Patch, SessionState } from "./types"
 import { createInitialSessionState } from "./types"
+import { updateFrame } from "./wire-frames"
 
 // ─── helpers ───
 
@@ -535,10 +536,37 @@ describe("reduce — config_option_update (C1)", () => {
     expect(patches[0]!.op).toBe("update-session")
   })
 
-  it("sets empty configOptions when not array", () => {
-    const s = mkState()
-    const { state } = reduce(s, { sessionUpdate: "config_option_update", configOptions: "invalid" })
+  const configured = () =>
+    reduce(mkState(), {
+      sessionUpdate: "config_option_update",
+      configOptions: [{ id: "opt-stable" }],
+    }).state
+
+  it.each([undefined, { trace: "test" }])(
+    "ignores malformed options even with metadata (%j)",
+    (_meta) => {
+      const initial = configured()
+      const { state, patches } = reduce(initial, {
+        sessionUpdate: "config_option_update",
+        configOptions: "invalid",
+        _meta,
+      })
+      expect(state).toBe(initial)
+      expect(patches).toEqual([])
+      expect(patches.flatMap((patch) => updateFrame(state, patch) ?? [])).toEqual([])
+    },
+  )
+
+  it("clears options for an explicitly empty array and sends the change", () => {
+    const { state, patches } = reduce(configured(), {
+      sessionUpdate: "config_option_update",
+      configOptions: [],
+    })
     expect(state.configOptions).toEqual([])
+    expect(patches).toHaveLength(1)
+    const patch = patches[0]
+    if (!patch) throw new Error("Missing clear-options patch")
+    expect(updateFrame(state, patch)?.event).toBe("update")
   })
 })
 
@@ -695,7 +723,11 @@ function sdkAssistant(msgId: string, timestamp: string): object {
     method: "_claude/sdkMessage",
     params: {
       sessionId: "s1",
-      message: { type: "assistant", timestamp, message: { id: msgId, role: "assistant", content: [] } },
+      message: {
+        type: "assistant",
+        timestamp,
+        message: { id: msgId, role: "assistant", content: [] },
+      },
     },
   }
 }

@@ -307,9 +307,8 @@ $effect(() => {
 // ב-reveal של warm-reconnect → .id היה חוטף משתמש-שגלל-למעלה לתחתית, DoD#7).
 let lastSeenUserBubbleKey = ""
 let lastSeenUserBubbleId = ""
-let wasReconnectReplay = false
 $effect(() => {
-  // מצא את הbועה האחרונה עם kind==="user" (renderBubbles — קפוא בזמן warm-reconnect replay)
+  // מצא את הbועה האחרונה עם kind==="user"
   let lastUserBubble: Bubble | undefined
   for (let i = session.renderBubbles.length - 1; i >= 0; i--) {
     const b = session.renderBubbles[i]
@@ -319,21 +318,6 @@ $effect(() => {
     }
   }
   const key = lastUserBubble ? stableBubbleKey(lastUserBubble, session.renderBubbles) : ""
-
-  // ─── reveal-guard ספציפי-ל-reconnect (אביגיל r2/r3) ───
-  // במעבר isReconnectReplay: true→false (רגע ה-reveal של warm-reconnect בלבד) — רק
-  // re-seed את המפתח, בלי following=true/jumpToBottom(). לא isLoadingHistory — הוא true
-  // גם בטעינה-ראשונית/switchSession ששם דווקא רוצים לקפוץ (DoD#8); רק isReconnectReplay
-  // מבחין ב-warm-reconnect. ממוקם לפני ה-`if (!lastUserBubble) return` כדי שגם reveal של
-  // תור-סוכן-בלבד (אין בועת-user) יעשה re-seed.
-  const isReplay = session.isReconnectReplay
-  if (wasReconnectReplay && !isReplay) {
-    wasReconnectReplay = isReplay
-    lastSeenUserBubbleKey = key
-    lastSeenUserBubbleId = lastUserBubble?.id ?? ""
-    return
-  }
-  wasReconnectReplay = isReplay
 
   if (!lastUserBubble) return
   if (key === lastSeenUserBubbleKey) return
