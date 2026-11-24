@@ -36,7 +36,6 @@
  * so concurrent callers share the same in-flight creation.
  */
 
-import { configDefault } from "@drive-coding/core/config/specs"
 import { createLogger } from "@drive-coding/core/log"
 import type { PermissionPolicyKind } from "@drive-coding/core/types/permission"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
@@ -49,6 +48,9 @@ import { startAgentStallSweep } from "./agent-events-stall-sweep.js"
 import { createSessionHostFromConnection, type ExtendedSessionHost } from "./session-host.js"
 import { initSession } from "./session-init.js"
 import { makeAgentHostCliOpts } from "./session-host-cli-opts.js"
+import { startViewerTtlSweep } from "./viewer-ttl-sweep.js"
+
+export { resolveHttpOwnerTtlMs } from "./viewer-ttl-sweep.js"
 
 const log = createLogger("backend.session-host.registry")
 
@@ -162,7 +164,7 @@ export type AgentSessionRegistry = {
   } | null
   getConnectionCount(agentId: string): number
 
-  /** slice boot-layer C2: stop the HTTP ownership TTL sweep interval. */
+  /** slice boot-layer C2: stop the viewer TTL sweep interval. */
   stop(): void
 }
 
@@ -239,26 +241,6 @@ type AgentSessionRegistryDeps = {
   afterHostCreated?: (agentId: string, entry: HostEntry) => void
 }
 
-/**
- * resolveHttpOwnerTtlMs — parses HTTP_OWNER_TTL_MS.
- *
- * 🔴 Pure + EXPORTED on purpose: the default path must be executable by a test
- * without any injected seam. Run-1's lesson (`Illegal invocation`) was a suite
- * of 30 green tests that all injected a mock and never once ran the default.
- *
- * Accepts only a finite, strictly-positive number. Anything else — missing,
- * blank, NaN, 0, negative, Infinity — falls back to configDefault("httpOwnerTtlMs").
- */
-export function resolveHttpOwnerTtlMs(raw: string | undefined): number {
-  const fallback = configDefault("httpOwnerTtlMs")
-  if (raw === undefined) return fallback
-  const trimmed = raw.trim()
-  if (trimmed === "") return fallback
-  const n = Number(trimmed)
-  if (!Number.isFinite(n) || n <= 0) return fallback
-  return n
-}
-
 export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): AgentSessionRegistry {
   const {
     connectionRegistry,
@@ -279,26 +261,7 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
   // callers so only one host + one ACP session get created per agentId.
   const inFlight = new Map<string, Promise<HostResult>>()
 
-  // slice connection-set D8: per-row HTTP TTL sweep — removes stale http rows only.
-  const HTTP_OWNER_TTL_MS =
-    deps._httpOwnerTtlMs ?? resolveHttpOwnerTtlMs(deps.env?.HTTP_OWNER_TTL_MS)
-  const HTTP_SWEEP_MS = deps._httpSweepMs ?? 30_000 // sweep every 30s
-  const httpSweep = setInterval(() => {
-    const now = Date.now()
-    for (const [agentId, entry] of map) {
-      for (const row of connectionRegistry.listHttpConnectionIds(agentId)) {
-        if (now - row.lastSeenAt <= HTTP_OWNER_TTL_MS) continue
-        log.info(
-          { agentId, connectionId: row.connectionId, staleMs: now - row.lastSeenAt },
-          "HTTP connection stale — removing row (holder retained)",
-        )
-        if (row.stream !== undefined)
-          entry.broadcaster.unsubscribe(row.stream as Parameters<PatchesBroadcaster["unsubscribe"]>[0])
-        connectionRegistry.removeConnection(agentId, row.connectionId)
-      }
-    }
-  }, HTTP_SWEEP_MS)
-  httpSweep.unref() // don't prevent process exit
+  const viewerSweep = startViewerTtlSweep({ ...deps, map })
 
   const stallSweep = onStallSuspected
     ? startAgentStallSweep({
@@ -512,9 +475,9 @@ export function createAgentSessionRegistry(deps: AgentSessionRegistryDeps): Agen
       return connectionRegistry.getConnectionCount(agentId)
     },
 
-  /** slice boot-layer C2: stop the HTTP ownership TTL sweep interval. */
+  /** slice boot-layer C2: stop the viewer TTL sweep interval. */
   stop(): void {
-    clearInterval(httpSweep)
+    clearInterval(viewerSweep)
     if (stallSweep) clearInterval(stallSweep)
   },
   }

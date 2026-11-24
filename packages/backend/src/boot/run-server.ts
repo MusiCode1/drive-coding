@@ -75,6 +75,8 @@ export async function startBackendServer(): Promise<void> {
       disposables,
       echoWss: ws.echoWss,
       agentWss: ws.agentWss,
+      sessionWss: ws.sessionWss,
+      stopWs: ws.stop,
       httpServer,
       boundPort,
       removeInstance: (p) => removeInstance(p, deps.env),

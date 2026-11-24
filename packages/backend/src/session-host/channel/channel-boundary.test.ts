@@ -9,6 +9,7 @@ export const PIPE_FILES = [
   "http/rpc.ts",
   "http/reply.ts",
   "http/presence.ts",
+  "../delivery/ws-session-pipe.ts",
 ] as const
 
 type Source = { path: string; text: string }
@@ -63,6 +64,7 @@ const channelMethods = new Set([
 function pipeLogicViolations(sources: Source[]): string[] {
   return findViolations(sources, (node) => {
     if (ts.isIdentifier(node) && channelMethods.has(node.text)) return true
+    if (ts.isStringLiteralLike(node) && node.text === "owner") return true
     if (!ts.isCallExpression(node)) return false
     const callee = node.expression
     return ts.isPropertyAccessExpression(callee) && callee.name.text === "subscribe"
@@ -105,6 +107,7 @@ describe("session channel boundary", () => {
     "host.respondPermission(id, result)",
     "host.respondElicitation(id, result)",
     "registry.touchConnection(id, connection)",
+    'registry.addConnection(id, connection, "ws", undefined, { role: "owner" })',
   ])("L2 detects %s in pipe code and skips comments", (call) => {
     const path = "http/events.ts"
     expect(pipeLogicViolations([{ path, text: call }])).toEqual([path])

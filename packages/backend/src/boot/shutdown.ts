@@ -14,6 +14,8 @@ export type ShutdownOpts = {
   disposables: Disposable[]
   echoWss: WebSocketServer
   agentWss: WebSocketServer
+  sessionWss: WebSocketServer
+  stopWs: () => void
   httpServer: ServerType
   boundPort: number
   removeInstance: (port: number) => void
@@ -32,6 +34,9 @@ export async function gracefulShutdown(opts: ShutdownOpts): Promise<void> {
   force.unref()
   try {
     opts.removeInstance(opts.boundPort)
+    opts.stopWs()
+    for (const ws of opts.sessionWss.clients) ws.close(1001)
+    opts.sessionWss.close()
     for (const d of [...opts.disposables].reverse()) {
       await Promise.resolve(d.dispose({ sig: opts.sig }))
     }
