@@ -76,6 +76,7 @@ function sessionMsgToBubble(msg: SessionMessage, mappers: PatchMappers): Bubble 
     createdAt,
     segments: msg.segments,
     ...(voice !== undefined && { voice }),
+    ...(msg.contentPlaceholders !== undefined && { contentPlaceholders: msg.contentPlaceholders }),
     ...(kind === "user" &&
       "attachments" in msg &&
       msg.attachments != null && { attachments: msg.attachments }),

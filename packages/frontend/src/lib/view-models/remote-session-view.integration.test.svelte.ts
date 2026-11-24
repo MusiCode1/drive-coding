@@ -22,6 +22,7 @@ import {
   createInitialSessionState,
   type Patch,
   RPC_METHODS,
+  reduce,
   type SessionState,
 } from "@drive-coding/core/session"
 import { toWireText } from "@drive-coding/core/session/testing"
@@ -135,6 +136,68 @@ afterEach(() => {
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 describe("VM + RemoteSessionView integration (C4)", () => {
+  it("shows the same message content after live delivery and snapshot hydration", async () => {
+    let state = makeSnapshot()
+    const events = [{ event: "snapshot", data: JSON.stringify(state) }]
+    const entries = [
+      ["user_message_chunk", "user-1", { type: "text", text: "before" }],
+      ["user_message_chunk", "user-1", { type: "image", mimeType: "image/png", data: "YWJj" }],
+      ["user_message_chunk", "user-1", { type: "text", text: " after" }],
+      [
+        "user_message_chunk",
+        "user-1",
+        { type: "resource_link", name: "Example", uri: "file:///example" },
+      ],
+      ["user_message_chunk", "user-2", { type: "text", text: "next" }],
+      ["agent_message_chunk", "agent-1", { type: "image", mimeType: "image/png", data: "YWJj" }],
+      ["agent_message_chunk", "agent-1", { type: "text", text: "reply" }],
+      ["agent_message_chunk", "agent-1", { type: "audio", mimeType: "audio/wav", data: "YWJj" }],
+    ] as const
+    for (const [sessionUpdate, messageId, content] of entries) {
+      const result = reduce(state, { sessionUpdate, messageId, content })
+      state = result.state
+      events.push(
+        ...result.patches.map((patch) => ({ event: "patch", data: JSON.stringify(patch) })),
+      )
+    }
+
+    const { view: live } = newConnectedView(events)
+    const { view: restored } = newConnectedView([
+      { event: "snapshot", data: JSON.stringify(state) },
+    ])
+    const liveVm = new AgentSession({ view: live })
+    const restoredVm = new AgentSession({ view: restored })
+    await Promise.all([live.connect(), restored.connect()])
+    const visible = (vm: AgentSession) =>
+      vm.bubbles.map((bubble) => ({
+        messageId: bubble.messageId,
+        text: bubble.segments.map((segment) => segment.text).join(""),
+        attachments: bubble.kind === "user" ? (bubble.attachments ?? []) : [],
+        placeholders: "contentPlaceholders" in bubble ? (bubble.contentPlaceholders ?? []) : [],
+      }))
+    await vi.waitFor(() =>
+      expect(visible(liveVm)).toEqual([
+        {
+          messageId: "user-1",
+          text: "before after",
+          attachments: [{ mimeType: "image/png", dataBase64: "YWJj" }],
+          placeholders: [{ kind: "resource_link", label: "Example", uri: "file:///example" }],
+        },
+        { messageId: "user-2", text: "next", attachments: [], placeholders: [] },
+        {
+          messageId: "agent-1",
+          text: "reply",
+          attachments: [],
+          placeholders: [
+            { kind: "image", mimeType: "image/png" },
+            { kind: "audio", mimeType: "audio/wav" },
+          ],
+        },
+      ]),
+    )
+    expect(visible(restoredVm)).toEqual(visible(liveVm))
+  })
+
   it("connect() → VM syncs title/turnState from the initial snapshot's patches", async () => {
     const snapshot = makeSnapshot()
     const patch: Patch = { version: 1, op: "update-session", changes: { title: "Remote Title" } }

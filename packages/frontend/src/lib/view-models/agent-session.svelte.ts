@@ -20,7 +20,7 @@ import type {
 } from "@agentclientprotocol/sdk"
 import { WsAcpTransport } from "@drive-coding/acp-wire/browser"
 // ─── slice reconnect-ws-takeover: תרגום נקודתי להודעת "נפתח במקום אחר" ───
-// ה-VM לרוב לא מייבא t() (i18n שייך לשכבת-הרכיב — ר' #appendUserPlaceholder), אבל
+// ה-VM לרוב לא מייבא t() (i18n שייך לשכבת-הרכיב), אבל
 // `error` הוא string גולמי שמוצג as-is (routes/+page.svelte:191, לא עובר t() ברכיב) —
 // כמו הודעות "WS closed (...)" הקיימות. חייב לעבור דרך core/i18n (לא Hebrew ליטרלי
 // בקוד — lint:i18n אוכף), ולא להשתמש ב-I18nVM (לא מוזרק ל-VM הזה).
@@ -86,11 +86,6 @@ import {
   type ApplyConfigToClientDeps,
   applyConfigOption as applyConfigOptionExtracted,
 } from "$lib/view-models/agent-session-apply-config"
-import {
-  appendAgentPlaceholder,
-  appendUserImage,
-  appendUserPlaceholder,
-} from "$lib/view-models/agent-session-bubble-append"
 import {
   type CaptureSessionConfigDeps,
   captureSessionConfig,
@@ -3142,8 +3137,6 @@ export class AgentSession {
       return
     }
 
-    // §11: dispatch לפי contentType לפני ה-gate — כך user_message_chunk עם image/audio/resource_link
-    // לא נזרק בשקט. ה-gate למטה חל רק על agent_message_chunk ו-agent_thought_chunk (text-only).
     const messageId = update.messageId ?? null
 
     if (update.sessionUpdate === "user_message_chunk") {
@@ -3163,96 +3156,18 @@ export class AgentSession {
           }
         }
       }
-      const content = update.content as
-        | {
-            type?: string
-            text?: string
-            data?: string
-            mimeType?: string
-            name?: string
-            uri?: string
-          }
-        | undefined
-      if (content?.type === "text") {
-        // סימון user_message_chunk טקסטואלי דרך reduce (replay מהיסטוריה)
-        const { state: nextState, patches } = reduce(this.sessionState, notification.update)
-        this.sessionState = nextState
-        applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
-      } else if (
-        content?.type === "image" &&
-        content.data !== undefined &&
-        content.mimeType !== undefined
-      ) {
-        this.#appendUserImage(messageId, { mimeType: content.mimeType, data: content.data })
-      } else if (content?.type === "resource_link") {
-        // resource_link: מצרף placeholder כדי למנוע איבוד-שקט.
-        // slice fs-file-proxy: תצוגה מלאה (markdown/תמונה/קישור) דרך ContentViewer.
-        // §11.3א: i18n שייך לשכבת-הרכיב — ה-VM מצרף סמן מבני בלבד.
-        const label = content.name ?? content.uri
-        this.#appendUserPlaceholder(messageId, { kind: "resource_link", label, uri: content.uri })
-      } else {
-        // audio / resource (EmbeddedResource) / unknown — placeholder (אין יותר איבוד-שקט)
-        // §11.3א: הרכיב מתרגם דרך t("chat.content.unsupported") — ה-VM לא כותב מפתח.
-        const kind = content?.type === "audio" ? "audio" : "resource"
-        this.#appendUserPlaceholder(messageId, { kind })
-      }
-      return
     }
 
     if (update.sessionUpdate === "agent_message_chunk") {
-      const content = update.content as
-        | {
-            type?: string
-            text?: string
-            name?: string
-            uri?: string
-          }
-        | undefined
-      if (content?.type === "text") {
-        const text = content.text ?? ""
-        if (!text) return
-        this.#setTurnState("responding")
-        if (this.#turnEnded) this.#scheduleIdle()
-        const { state: nextState1, patches: patches1 } = reduce(
-          this.sessionState,
-          notification.update,
-        )
-        this.sessionState = nextState1
-        applyPatchMutable(this.bubbles, patches1, { mapToolContent, mapLocations })
-      } else if (content !== undefined) {
-        this.#setTurnState("responding")
-        if (this.#turnEnded) this.#scheduleIdle()
-        if (content.type === "resource_link") {
-          const label = content.name ?? content.uri ?? ""
-          this.#appendAgentPlaceholder(messageId, {
-            kind: "resource_link",
-            label,
-            uri: content.uri,
-          })
-        } else if (content.type === "image") {
-          this.#appendAgentPlaceholder(messageId, { kind: "image" })
-        } else {
-          const kind = content.type === "audio" ? "audio" : "resource"
-          this.#appendAgentPlaceholder(messageId, { kind })
-        }
-      }
-      return
+      if (!update.content || (update.content.type === "text" && !update.content.text)) return
+      this.#setTurnState("responding")
+      if (this.#turnEnded) this.#scheduleIdle()
     }
 
     if (update.sessionUpdate === "agent_thought_chunk") {
-      const text =
-        update.content?.type === "text" ? ((update.content as { text?: string }).text ?? "") : ""
-      if (!text) return
-
+      if (!update.content || (update.content.type === "text" && !update.content.text)) return
       this.#setTurnState("thinking")
       if (this.#turnEnded) this.#scheduleIdle()
-      const { state: nextState2, patches: patches2 } = reduce(
-        this.sessionState,
-        notification.update,
-      )
-      this.sessionState = nextState2
-      applyPatchMutable(this.bubbles, patches2, { mapToolContent, mapLocations })
-      return
     }
 
     // ── default arm: everything not handled above ──
@@ -3285,46 +3200,5 @@ export class AgentSession {
     // turnState תמיד calling-tool ללא תנאי (create, לא update)
     this.#setTurnState("calling-tool")
     if (this.#turnEnded) this.#scheduleIdle()
-  }
-
-  /**
-   * §11: מצרף image-attachment לבועת-user — קיבוץ לפי messageId כמו #appendChunk.
-   *
-   * הערה על reactivity: #appendChunk משתמש ב-segments.push() — עובד כי segments[]
-   * הוא deep $state proxy ב-Svelte 5. attachments מתחיל undefined (optional ב-UserBubble),
-   * לכן .push() על undefined יקרוס. לכן כאן **השמה** (`[..., a]`) — פותרת גם את
-   * ה-undefined-init וגם מבטיחה reactivity על מערך שנוסף מאפס.
-   */
-  #appendUserImage(messageId: string | null, img: { mimeType: string; data: string }): void {
-    appendUserImage(this, messageId, img)
-  }
-
-  /**
-   * §11.3א: מצרף placeholder מבני לבועת-user עבור ContentBlocks לא-טקסטואליים (resource_link / audio / resource).
-   *
-   * אותה לוגיקת קיבוץ כמו #appendUserImage — grouping לפי messageId.
-   * contentPlaceholders מתחיל undefined → **השמה** (לא push), כמו attachments.
-   * ה-VM לא מייבא t ולא כותב שום מחרוזת-תצוגה או מפתח i18n — i18n שייך לשכבת-הרכיב.
-   */
-  #appendUserPlaceholder(
-    messageId: string | null,
-    ph: { kind: "resource_link" | "audio" | "resource"; label?: string; uri?: string },
-  ): void {
-    appendUserPlaceholder(this, messageId, ph)
-  }
-
-  /**
-   * tool-render-fidelity: placeholder for non-text agent_message_chunk (§11.3א pattern).
-   * i18n belongs to MessageBubble — VM stores structural marker only.
-   */
-  #appendAgentPlaceholder(
-    messageId: string | null,
-    ph: {
-      kind: "resource_link" | "audio" | "resource" | "image"
-      label?: string
-      uri?: string
-    },
-  ): void {
-    appendAgentPlaceholder(this, messageId, ph)
   }
 }

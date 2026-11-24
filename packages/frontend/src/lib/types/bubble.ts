@@ -95,6 +95,7 @@ export type MessageBubble = BubbleBase & {
 export type ThoughtBubble = BubbleBase & {
   kind: "thought"
   segments: ThoughtSegment[]
+  contentPlaceholders?: MessageBubble["contentPlaceholders"]
 }
 
 export type ToolContentText = { type: "text"; text: string }
