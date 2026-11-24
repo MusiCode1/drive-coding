@@ -1,15 +1,6 @@
 <script lang="ts">
 /**
- * ToolBubble — כלי, עיצוב מחדש (C2).
- *
- * self-end + max-w-[78%] (לא stretch). avatar tool.
- * status dot: ירוק=completed, כתום-פועם=in_progress.
- * drill-down: summary (narration) → <details> עם args+result (native details — לפי §9 Q4).
- * שמירת content/locations מ-slice 16.
- *
- * מוקאפ: 280-291.
- *
- * ─── redesign-5 (C2) ───
+ * Tool call bubble. The summary row opens args, content, and canonical output.
  */
 
 import Maximize2Icon from "@lucide/svelte/icons/maximize-2"
@@ -18,6 +9,7 @@ import { getChatScroll, getContentViewer, getI18n, getSettings } from "$lib/cont
 import type { ToolBubble } from "$lib/types/bubble"
 import { normalizeToolCall } from "$lib/util/tool-call-view"
 import { formatLocation, prettyJson } from "$lib/util/tool-format"
+import { pinTruncatedEnd } from "./pin-truncated-end"
 import { settingBackedOpen } from "./setting-backed-open.svelte"
 import ToolKindIcon from "./ToolKindIcon.svelte"
 
@@ -38,8 +30,14 @@ const open = settingBackedOpen(() => settings.showTools)
 
 const chatScroll = getChatScroll()
 let ready = false
-onMount(() => requestAnimationFrame(() => { ready = true }))
-const onUserToggle = () => { if (ready) chatScroll.noteUserIntent?.() }
+onMount(() =>
+  requestAnimationFrame(() => {
+    ready = true
+  }),
+)
+const onUserToggle = () => {
+  if (ready) chatScroll.noteUserIntent?.()
+}
 
 /** Wrap plain tool text as a markdown fence so the expand viewer stays a code block. */
 function asFencedCode(text: string): string {
@@ -174,16 +172,19 @@ function asFencedCode(text: string): string {
 
         <!-- normalized rawOutput when content is empty (tool-render-fidelity) -->
         {#if showNormalizedOutput}
+          {#if "truncated" in outputView && outputView.truncated}
+            <div class="output-truncated" role="status" dir="auto">{t("chat.tool.output.truncatedHead")}</div>
+          {/if}
           {#if outputView.kind === "terminal"}
             <div>
               <div class="section-label">{t("chat.tool.result")}</div>
               {#if outputView.stdout}
-                <pre>{outputView.stdout}</pre>
+                <pre use:pinTruncatedEnd={open.value && outputView.truncated === true}>{outputView.stdout}</pre>
               {/if}
               {#if outputView.stderr}
                 <div class="stderr-block">
                   <div class="section-label">{t("chat.tool.output.stderr")}</div>
-                  <pre class="stderr-pre">{outputView.stderr}</pre>
+                  <pre class="stderr-pre" use:pinTruncatedEnd={open.value && outputView.truncated === true}>{outputView.stderr}</pre>
                 </div>
               {/if}
               <span
@@ -198,7 +199,7 @@ function asFencedCode(text: string): string {
             <div>
               <div class="section-label">{t("chat.tool.result")}</div>
               <div class="tool-text-wrapper">
-                <pre dir="ltr">{outputView.text}</pre>
+                <pre dir="ltr" use:pinTruncatedEnd={open.value && outputView.truncated === true}>{outputView.text}</pre>
                 <button
                   class="tool-expand-btn"
                   onclick={() => viewer.show({ kind: "markdown", text: asFencedCode(outputView.text) })}
@@ -228,8 +229,6 @@ function asFencedCode(text: string): string {
             </div>
           {/if}
         {/if}
-
-        {#if showNormalizedOutput && "truncated" in outputView && outputView.truncated}<div class="output-truncated text-[11px] opacity-70" dir="auto">{t("chat.tool.output.truncatedHead")}</div>{/if}
 
         <!-- raw output peek (hidden when json fallback already shown in body) -->
         {#if showRawOutput}
@@ -302,6 +301,20 @@ function asFencedCode(text: string): string {
   }
   .exit-ok { background: rgba(34, 197, 94, 0.18); color: #4ade80; }
   .exit-fail { background: rgba(239, 68, 68, 0.18); color: #f87171; }
+
+  .output-truncated {
+    margin-block-end: 0.45rem;
+    padding-block: 0.35rem;
+    padding-inline: 0.55rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-elev);
+    color: var(--fg);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1.4;
+    text-align: start;
+  }
 
   .error-block {
     font-size: 0.78rem;

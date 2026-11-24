@@ -7,10 +7,14 @@ import type { I18nVM } from "$lib/view-models/i18n.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
 import ToolBubble from "../ToolBubble.svelte"
 
-let { bubble }: { bubble: ToolBubbleType } = $props()
+let { bubble, showTools = true }: { bubble: ToolBubbleType; showTools?: boolean } = $props()
 
 const fakeI18n = { t: (key: string) => key } as unknown as I18nVM
-const fakeSettings = { showTools: true } as unknown as Settings
+const fakeSettings = {
+  get showTools() {
+    return showTools
+  },
+} as unknown as Settings
 const fakeViewer = {
   payload: null,
   open: false,

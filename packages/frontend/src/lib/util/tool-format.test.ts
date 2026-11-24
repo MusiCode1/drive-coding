@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { formatLocation, formatToolInput, normalizeToolOutput, prettyJson } from "./tool-format"
+import {
+  formatLocation,
+  formatToolInput,
+  normalizeToolOutput,
+  prettyJson,
+  visibleCappedText,
+} from "./tool-format"
 
 describe("formatToolInput", () => {
   it("{ command, description } → command variant with command + description", () => {
@@ -308,6 +314,46 @@ describe("normalizeToolOutput — canonical values", () => {
     expect(normalizeToolOutput(undefined, { text: "failed", isError: true })).toEqual({
       kind: "error",
       message: "failed",
+    })
+  })
+
+  it("hides a leading partial line on the truncated view and leaves the stored text", () => {
+    const stored = { text: "248\n249\n250", truncated: true as const }
+    expect(visibleCappedText(stored.text)).toBe("249\n250")
+    expect(visibleCappedText("248249")).toBe("248249")
+    expect(normalizeToolOutput(null, stored)).toEqual({
+      kind: "text",
+      text: "249\n250",
+      truncated: true,
+    })
+    expect(stored.text).toBe("248\n249\n250")
+    expect(normalizeToolOutput(null, { text: "248249", truncated: true })).toEqual({
+      kind: "text",
+      text: "248249",
+      truncated: true,
+    })
+    expect(normalizeToolOutput(null, { text: "248\n249" })).toEqual({
+      kind: "text",
+      text: "248\n249",
+    })
+    expect(
+      normalizeToolOutput(null, {
+        stdout: "248\n249\n",
+        stderr: "e\nerr\n",
+        exitCode: 1,
+        truncated: true,
+      }),
+    ).toEqual({
+      kind: "terminal",
+      stdout: "249\n",
+      stderr: "err\n",
+      exitCode: 1,
+      truncated: true,
+    })
+    expect(normalizeToolOutput(null, { error: "bad\nreal", truncated: true })).toEqual({
+      kind: "error",
+      message: "real",
+      truncated: true,
     })
   })
 

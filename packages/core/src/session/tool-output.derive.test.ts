@@ -82,19 +82,60 @@ describe("derive canonical tool output", () => {
   })
 })
 
-function forbiddenDependencies(source: string): string[] {
-  const imports = [...source.matchAll(/\bimport\s+(?:[^"'();]+?\s+from\s+)?["']([^"']+)["']/g)]
-  const vocabulary = [...source.matchAll(/["'](terminal|codex|\$meta)["']/gi)]
-  return [
-    ...imports.flatMap(([, specifier]) =>
-      specifier && specifier !== "./types" ? [specifier] : [],
-    ),
-    ...vocabulary.map(([literal]) => literal),
-  ]
+const ADAPTER_MARK = /terminal|codex|\$meta|mcp_output_delta|is_mcp_tool_call/i
+const ALLOWED_IMPORT = "./types"
+
+function quotedSpecifier(rest: string): string | undefined {
+  const literal = /^\s*(["'`])([^"'`]*)\1/.exec(rest)
+  const specifier = literal?.[2]
+  return specifier && specifier.length > 0 ? specifier : undefined
 }
 
-it("keeps the output reducer generic and free of I/O dependencies", () => {
+function forbiddenDependencies(source: string): string[] {
+  const imports = [
+    ...source.matchAll(/\bimport\s+(?:[^"'();]+?\s+from\s+)?["']([^"']+)["']/g),
+  ].flatMap(([, specifier]) => (specifier && specifier !== ALLOWED_IMPORT ? [specifier] : []))
+  const dynamicImports = [...source.matchAll(/\bimport\s*\(/g)].flatMap((match) => {
+    const specifier = quotedSpecifier(source.slice((match.index ?? 0) + match[0].length))
+    if (specifier === ALLOWED_IMPORT) return []
+    return [specifier ?? "import()"]
+  })
+  const requires = [...source.matchAll(/\brequire\s*\(/g)].map((match) => {
+    return quotedSpecifier(source.slice((match.index ?? 0) + match[0].length)) ?? "require()"
+  })
+  const vocabulary = [...source.matchAll(/(["'`])((?:\\.|(?!\1)[^\\])*?)\1/g)].flatMap((match) => {
+    const body = match[2] ?? ""
+    return ADAPTER_MARK.test(body) ? [match[0]] : []
+  })
+  return [...imports, ...dynamicImports, ...requires, ...vocabulary]
+}
+
+describe("tool-output.ts stays generic", () => {
   const source = readFileSync(new URL("./tool-output.ts", import.meta.url), "utf8")
-  expect(forbiddenDependencies(source)).toEqual([])
-  expect(forbiddenDependencies(`import "node:fs"\n${source}`)).toEqual(["node:fs"])
+
+  it("imports nothing adapter-specific and performs no I/O", () => {
+    expect(forbiddenDependencies(source)).toEqual([])
+  })
+
+  it("still allows the types module, including a dynamic import", () => {
+    expect(forbiddenDependencies(`import { x } from "./types"\n${source}`)).toEqual([])
+    expect(forbiddenDependencies(`import("./types")\n${source}`)).toEqual([])
+  })
+
+  it.each<[string, string[]]>([
+    [`import "node:fs"`, ["node:fs"]],
+    [`import("node:fs")`, ["node:fs"]],
+    [`import(specifier)`, ["import()"]],
+    [`require("node:fs")`, ["node:fs"]],
+    [`require(id)`, ["require()"]],
+    [`const key = "terminal_output_delta"`, ['"terminal_output_delta"']],
+    [`const key = "terminal_exit"`, ['"terminal_exit"']],
+    [`const key = 'terminal_info'`, ["'terminal_info'"]],
+    [`const key = "mcp_output_delta"`, ['"mcp_output_delta"']],
+    [`const key = "is_mcp_tool_call"`, ['"is_mcp_tool_call"']],
+    [`const key = "$meta"`, ['"$meta"']],
+    [`const key = "codex"`, ['"codex"']],
+  ])("flags %s", (snippet, expected) => {
+    expect(forbiddenDependencies(`${snippet}\n${source}`)).toEqual(expected)
+  })
 })
