@@ -32,7 +32,7 @@ import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { BridgeCrashInfo } from "@drive-coding/provider/spawn"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { ConnectionRegistry } from "../acp/connection-registry.js"
+import type { ConnectionRegistry, ConnectionRow } from "../acp/connection-registry.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
 import { registerEventsRoute } from "./http/events.js"
 import { createAgentSessionRegistry } from "./registry.js"
@@ -94,15 +94,11 @@ function makeMockConnection(): ProviderConnection {
 
 /**
  * makeStatefulConnectionRegistry — a REAL-behaving ConnectionRegistry fake for
- * a single agentId. markOwned/markDetached/getOwner/touchOwner/getLastSeenAt/
- * getEpoch mirror connection-registry.ts's actual semantics: markOwned bumps
- * ownershipEpoch AND sets lastSeenAt; markDetached clears the owner but does
- * NOT reset the epoch; getLastSeenAt returns null when there's no owner. The
- * sweep's `if (lastSeen === null) continue` guard only means something if
- * this fake gets that null-when-unowned behaviour right.
+ * a single agentId. Each group of viewers starts one epoch independently of
+ * transport. Each raw owner starts a new epoch, and removing rows preserves it.
  */
 function makeStatefulConnectionRegistry(conn: ProviderConnection, cwd: string): ConnectionRegistry {
-  const rows = new Map<string, { via: "ws" | "http"; lastSeenAt: number; stream?: ReadableStream<unknown> }>()
+  const rows = new Map<string, ConnectionRow>()
   let epoch = 0
   return {
     connect: vi.fn(),
@@ -112,11 +108,11 @@ function makeStatefulConnectionRegistry(conn: ProviderConnection, cwd: string): 
     consumeCharter: vi.fn(() => undefined),
     getCliKind: vi.fn(() => "opencode"),
     list: vi.fn(() => []),
-    addConnection: vi.fn((_id: string, cid: string, via: "ws" | "http", stream?: ReadableStream<unknown>) => {
-      const hadHttp = [...rows.values()].some((r) => r.via === "http")
-      rows.set(cid, { via, lastSeenAt: Date.now(), stream })
-      if (via === "http" && !hadHttp) epoch++
-      if (via === "ws") epoch++
+    addConnection: vi.fn<ConnectionRegistry["addConnection"]>((_id, cid, via, stream, opts) => {
+      const role = opts?.role ?? "viewer"
+      const hadViewer = [...rows.values()].some((r) => r.role === "viewer")
+      rows.set(cid, { via, role, lastSeenAt: Date.now(), stream: stream ?? rows.get(cid)?.stream })
+      if (role === "owner" || !hadViewer) epoch++
     }),
     removeConnection: vi.fn((_id: string, cid: string) => {
       rows.delete(cid)
@@ -138,6 +134,11 @@ function makeStatefulConnectionRegistry(conn: ProviderConnection, cwd: string): 
     listHttpConnectionIds: vi.fn(() =>
       [...rows.entries()]
         .filter(([, r]) => r.via === "http")
+        .map(([connectionId, r]) => ({ connectionId, lastSeenAt: r.lastSeenAt, stream: r.stream })),
+    ),
+    listViewerRows: vi.fn(() =>
+      [...rows.entries()]
+        .filter(([, r]) => r.role === "viewer")
         .map(([connectionId, r]) => ({ connectionId, lastSeenAt: r.lastSeenAt, stream: r.stream })),
     ),
     close: vi.fn().mockResolvedValue(undefined),

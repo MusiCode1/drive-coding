@@ -101,9 +101,40 @@ describe("connection-registry — connection set", () => {
   it("epoch rises on ws addConnection", async () => {
     const reg = createConnectionRegistry()
     await reg.connect("a6", "opencode", { cwd: os.tmpdir() })
-    reg.addConnection("a6", "w1", "ws")
-    expect(reg.getEpoch("a6")).toBe(1)
-    await reg.close("a6")
+    try {
+      reg.addConnection("a6", "viewer", "http")
+      reg.addConnection("a6", "w1", "ws", undefined, { role: "owner" })
+      expect(reg.getEpoch("a6")).toBe(2)
+      reg.addConnection("a6", "w2", "ws", undefined, { role: "owner" })
+      expect(reg.getEpoch("a6")).toBe(3)
+      expect(reg.listViewerRows("a6").map((row) => row.connectionId)).toEqual(["viewer"])
+    } finally {
+      await reg.close("a6")
+    }
+  })
+
+  it("starts one epoch per viewer group across HTTP and WebSocket", async () => {
+    const reg = createConnectionRegistry()
+    const agentId = "mixed-viewers"
+    await reg.connect(agentId, "opencode", { cwd: os.tmpdir() })
+    try {
+      reg.addConnection(agentId, "first-http", "http")
+      expect(reg.getEpoch(agentId)).toBe(1)
+      reg.addConnection(agentId, "first-ws", "ws")
+      expect(reg.getEpoch(agentId)).toBe(1)
+      reg.addConnection(agentId, "second-http", "http")
+      expect(reg.getEpoch(agentId)).toBe(1)
+
+      for (const id of ["first-http", "first-ws", "second-http"]) {
+        reg.removeConnection(agentId, id)
+      }
+      reg.addConnection(agentId, "second-ws", "ws")
+      expect(reg.getEpoch(agentId)).toBe(2)
+      reg.addConnection(agentId, "third-http", "http")
+      expect(reg.getEpoch(agentId)).toBe(2)
+    } finally {
+      await reg.close(agentId)
+    }
   })
 
   it("via prefers ws when both ws and http rows exist", async () => {

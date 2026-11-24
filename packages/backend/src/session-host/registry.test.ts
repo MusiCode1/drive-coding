@@ -16,7 +16,7 @@ import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { Hono } from "hono"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { ConnectionRegistry } from "../acp/connection-registry.js"
+import type { ConnectionRegistry, ConnectionRow } from "../acp/connection-registry.js"
 import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import { buildAgentMcpServers } from "../agent-identity.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
@@ -85,8 +85,14 @@ function makeMockConnectionRegistry(
   touchState = makeTouchState(),
   initialVia: "ws" | "http" = "http",
 ): ConnectionRegistry {
-  const rows = new Map<string, { via: "ws" | "http"; lastSeenAt: number }>()
-  if (attached) rows.set("mock", { via: initialVia, lastSeenAt: touchState.get() ?? Date.now() })
+  const rows = new Map<string, ConnectionRow>()
+  if (attached) {
+    rows.set("mock", {
+      via: initialVia,
+      role: initialVia === "ws" ? "owner" : "viewer",
+      lastSeenAt: touchState.get() ?? Date.now(),
+    })
+  }
 
   return {
     connect: vi.fn(),
@@ -95,8 +101,8 @@ function makeMockConnectionRegistry(
     getCharter: vi.fn().mockReturnValue(undefined),
     consumeCharter: vi.fn().mockReturnValue(undefined),
     list: vi.fn().mockReturnValue([]),
-    addConnection: vi.fn((_id, cid, via, stream) => {
-      rows.set(cid, { via, lastSeenAt: Date.now(), ...(stream !== undefined ? { stream } : {}) })
+    addConnection: vi.fn<ConnectionRegistry["addConnection"]>((_id, cid, via, stream, opts) => {
+      rows.set(cid, { via, role: opts?.role ?? "viewer", lastSeenAt: Date.now(), stream })
     }),
     removeConnection: vi.fn((_id, cid) => {
       rows.delete(cid)
@@ -117,6 +123,11 @@ function makeMockConnectionRegistry(
         .filter(([, r]) => r.via === "http")
         .map(([connectionId, r]) => ({ connectionId, lastSeenAt: r.lastSeenAt })),
     ),
+    listViewerRows: vi.fn(() =>
+      [...rows.entries()]
+        .filter(([, r]) => r.role === "viewer")
+        .map(([connectionId, r]) => ({ connectionId, lastSeenAt: r.lastSeenAt, stream: r.stream })),
+    ),
     isAttached: vi.fn(() => rows.size > 0),
     getEpoch: vi.fn().mockReturnValue(0),
     isOwnedByWs: vi.fn().mockReturnValue(false),
@@ -129,17 +140,16 @@ function makeMockConnectionRegistry(
 }
 
 function makeStatefulConnReg(conn: ProviderConnection) {
-  const rows = new Map<
-    string,
-    { via: "ws" | "http"; lastSeenAt: number; stream?: ReadableStream }
-  >()
+  const rows = new Map<string, ConnectionRow>()
   let epoch = 0
-  const addConnection = vi.fn((_id: string, cid: string, via: "ws" | "http", stream?: ReadableStream) => {
-    const hadHttp = [...rows.values()].some((r) => r.via === "http")
-    rows.set(cid, { via, lastSeenAt: Date.now(), ...(stream !== undefined ? { stream } : {}) })
-    if (via === "http" && !hadHttp) epoch++
-    if (via === "ws") epoch++
-  })
+  const addConnection = vi.fn<ConnectionRegistry["addConnection"]>(
+    (_id, cid, via, stream, opts) => {
+      const hadHttp = [...rows.values()].some((r) => r.via === "http")
+      rows.set(cid, { via, role: opts?.role ?? "viewer", lastSeenAt: Date.now(), stream })
+      if (via === "http" && !hadHttp) epoch++
+      if (via === "ws") epoch++
+    },
+  )
   const removeConnection = vi.fn((_id: string, cid: string) => {
     rows.delete(cid)
   })
@@ -160,6 +170,11 @@ function makeStatefulConnReg(conn: ProviderConnection) {
           lastSeenAt: r.lastSeenAt,
           stream: r.stream,
         })),
+    ),
+    listViewerRows: vi.fn(() =>
+      [...rows.entries()]
+        .filter(([, r]) => r.role === "viewer")
+        .map(([connectionId, r]) => ({ connectionId, lastSeenAt: r.lastSeenAt, stream: r.stream })),
     ),
     touchConnection: vi.fn((_id: string, cid: string) => {
       const row = rows.get(cid)

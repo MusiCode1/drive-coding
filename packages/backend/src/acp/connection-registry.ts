@@ -30,6 +30,7 @@ export type ConnectionVia = "ws" | "http"
 
 export type ConnectionRow = {
   via: ConnectionVia
+  role: "viewer" | "owner"
   lastSeenAt: number
   stream?: ReadableStream<unknown>
 }
@@ -66,6 +67,7 @@ export type ConnectionRegistry = {
     connectionId: string,
     via: ConnectionVia,
     stream?: ReadableStream<unknown>,
+    opts?: { role?: ConnectionRow["role"] },
   ): void
   removeConnection(agentId: string, connectionId: string, opts?: { onlyIfStream?: unknown }): void
   touchConnection(agentId: string, connectionId: string): void
@@ -87,6 +89,9 @@ export type ConnectionRegistry = {
 
   getLastSeenAt(agentId: string): number | null
   listHttpConnectionIds(
+    agentId: string,
+  ): Array<{ connectionId: string; lastSeenAt: number; stream?: ReadableStream<unknown> }>
+  listViewerRows(
     agentId: string,
   ): Array<{ connectionId: string; lastSeenAt: number; stream?: ReadableStream<unknown> }>
 
@@ -216,25 +221,27 @@ export function createConnectionRegistry(opts?: {
       return [...map.keys()]
     },
 
-    addConnection(agentId, connectionId, via, stream) {
+    addConnection(agentId, connectionId, via, stream, { role = "viewer" } = {}) {
       const e = map.get(agentId)
       if (!e) return
 
-      const hadHttp = [...e.connections.values()].some((row) => row.via === "http")
+      const hadViewer = [...e.connections.values()].some((row) => row.role === "viewer")
       const existing = e.connections.get(connectionId)
 
       if (existing) {
+        existing.role = role
+        existing.via = via
         existing.lastSeenAt = Date.now()
         if (stream !== undefined) existing.stream = stream
       } else {
         e.connections.set(connectionId, {
           via,
+          role,
           lastSeenAt: Date.now(),
           ...(stream !== undefined ? { stream } : {}),
         })
-        if (via === "http" && !hadHttp) e.ownershipEpoch++
-        if (via === "ws") e.ownershipEpoch++
       }
+      if (role === "owner" || !hadViewer) e.ownershipEpoch++
 
       syncAttached(e)
       httpCacheInvalidateAll()
@@ -303,6 +310,12 @@ export function createConnectionRegistry(opts?: {
           out.push({ connectionId, lastSeenAt: row.lastSeenAt, stream: row.stream })
       }
       return out
+    },
+
+    listViewerRows(agentId) {
+      return [...(map.get(agentId)?.connections ?? [])]
+        .filter(([, row]) => row.role === "viewer")
+        .map(([connectionId, { lastSeenAt, stream }]) => ({ connectionId, lastSeenAt, stream }))
     },
 
     getRuntimeInfo(agentId) {

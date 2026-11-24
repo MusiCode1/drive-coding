@@ -133,6 +133,7 @@ function makeMockConnectionRegistry(): ConnectionRegistry {
     getRuntimeInfo: vi.fn(() => null),
     getLastSeenAt: vi.fn(() => null),
     listHttpConnectionIds: vi.fn(() => []),
+    listViewerRows: vi.fn(() => []),
     close: vi.fn(),
     onCrash: vi.fn(() => () => {}),
     setWsSocketChecker: vi.fn(),

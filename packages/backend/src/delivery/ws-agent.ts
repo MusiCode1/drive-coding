@@ -105,7 +105,7 @@ export function createAgentWsHandler(deps: {
     }
 
     activeFeWs.set(agentId, { ws: feWs, lastPingAt: Date.now(), connectionId })
-    deps.connectionRegistry.addConnection(agentId, connectionId, "ws")
+    deps.connectionRegistry.addConnection(agentId, connectionId, "ws", undefined, { role: "owner" })
     childLog.info({ pid: conn.pid, connectionId }, "WS connect → pipe attached")
 
     const evictionReg = deps.evictionController?.register(agentId, feWs)
