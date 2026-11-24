@@ -1,14 +1,14 @@
 /**
- * session-view.contract.test.ts — מריץ את session-view-contract פעמיים: local + remote.
+ * session-view.contract.test.ts — מריץ את session-view-contract על local, HTTP/SSE ו-WebSocket.
  *
  * Testing: tdd (brief §C1)
  *
  * local  — LocalSessionView עם mock AcpClient (createClient מוזרק).
- * remote — RemoteSessionView עם mock fetch/SSE. ⚠️ ה-harness מריץ `reduce`/`applyPendingRequest`/
+ * remote — RemoteSessionView עם fake SSE או WS. ⚠️ ה-harness מריץ `reduce`/`applyPendingRequest`/
  *          `clearPendingRequest`/`applyTurnEnd` מ-core (לא patches ידניים) — כדי שהתנהגות 3
- *          תבדוק את ה-view, לא את ה-harness. כל patch עובר `PatchSchema` (SSEReader מאמת).
+ *          תבדוק את ה-view, לא את ה-harness. אותם פריימים מפוענחים ב-FrameReader.
  *
- * + טבלת-הסטייה (session mgmt reject, prompt(PromptBlocks) throws, HTTP-כשל, respond id לא-מוכר).
+ * + טבלת-הסטייה (session management, PromptBlocks, RPC failure, respond id לא-מוכר).
  *
  * ─── slice view-switch C1 (TDD) ───
  */
@@ -17,8 +17,13 @@ import type { SessionNotification } from "@agentclientprotocol/sdk"
 import {
   applyPendingRequest,
   applyTurnEnd,
+  type ChannelResponse,
   clearPendingRequest,
   createInitialSessionState,
+  decodeWsClientMessage,
+  encodeWsControl,
+  encodeWsFrame,
+  encodeWsServerResponse,
   type Patch,
   type PendingKind,
   RPC_METHODS,
@@ -27,19 +32,23 @@ import {
   type SseFrame,
   serializeFrame,
   snapshotFrame,
+  type ToolOutput,
+  type ToolOutputRules,
   updateFrame,
 } from "@drive-coding/core/session"
-import { toWireText } from "@drive-coding/core/session/testing"
 import type { AcpClient } from "@drive-coding/provider/client"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { fakeSessionSockets } from "./__contract__/fake-session-socket"
 import {
   type ContractHarness,
   describeSessionViewContract,
   PatchBuffer,
 } from "./__contract__/session-view-contract.js"
-import { createRemoteSessionView } from "./create-session-view.js"
+import { createRemoteView } from "./create-session-view.js"
 import { LocalSessionView } from "./local-session-view.js"
 import type { RemoteSessionView } from "./remote-session-view.js"
+import type { SessionTransport } from "./session-transport"
+import type { RpcKind } from "./wire/pipe"
 
 // ⚠️ `AcpClientCallbacks` אינו re-exported מ-"@drive-coding/provider/client" (פער קיים,
 // לא בהיקף ה-slice — משפיע כבר על local-session-view.ts/test.ts). נגזר structurally
@@ -129,6 +138,7 @@ async function createLocalHarness(): Promise<ContractHarness> {
 function makeLiveSSEBody(): {
   body: ReadableStream<Uint8Array>
   pushRaw: (frame: SseFrame) => void
+  close: () => void
 } {
   const encoder = new TextEncoder()
   let ctrl!: ReadableStreamDefaultController<Uint8Array>
@@ -139,6 +149,7 @@ function makeLiveSSEBody(): {
   })
   return {
     body,
+    close: () => ctrl.close(),
     // ⚠️ המסגור נעשה ע"י הקורא, לא כאן. ה-harness הוא היחיד שמחזיק את
     // ה-shadowState — וה-state נדרש כדי למפות patch ל-`session/update`
     // (‏`append-segment` נושא `targetId` בלבד, והסוג נגזר מה-role של היעד).
@@ -148,50 +159,69 @@ function makeLiveSSEBody(): {
   }
 }
 
-async function createRemoteHarness(): Promise<ContractHarness> {
-  const outboundLog: Array<{ method: string; params: unknown }> = []
+type HandleRequest = (kind: RpcKind, body: unknown) => ChannelResponse
+type FrameTransform = (frame: SseFrame) => SseFrame
+
+async function connectRemoteHarness(
+  transport: SessionTransport,
+  snapshot: SessionState,
+  handleRequest: HandleRequest,
+  transformWsFrame: FrameTransform = (frame) => frame,
+) {
+  const initialFrame = snapshotFrame(snapshot)
+  const base = { agentId: "agent-contract", baseUrl: "http://be.local", transport }
+  if (transport === "ws") {
+    const sockets = fakeSessionSockets()
+    const connected = createRemoteView({ ...base, _WebSocket: sockets.WebSocket })
+    const socket = sockets.latest()
+    const send = socket.send.bind(socket)
+    vi.spyOn(socket, "send").mockImplementation((data) => {
+      send(data)
+      const message = decodeWsClientMessage(data)
+      if (!message) throw new Error("Malformed WS client message")
+      if (message.kind === "ping") socket.receive(encodeWsControl("$/pong"))
+      if (message.kind !== "request") return
+      const { id, method, params } = message.request
+      const reply = handleRequest(method === "_drive/rpc" ? "rpc" : "reply", params)
+      socket.receive(encodeWsServerResponse(id, reply))
+    })
+    const pushRaw = (frame: SseFrame) => socket.receive(encodeWsFrame(transformWsFrame(frame)))
+    socket.connect()
+    pushRaw(initialFrame)
+    return { view: await connected, pushRaw }
+  }
+
   const sse = makeLiveSSEBody()
-  // ⚠️ מלכודת #2 (brief §C1): מונה-version עולה. shadowState הוא ייצוג-הצללה שרק ה-harness
-  // מחזיק כדי לגזור patches ב-version נכון דרך reduce/applyPendingRequest/וכו' — RemoteSessionView
-  // עצמו אינו רואה אותו, רק את ה-patches שנשלחים על החוט (frame-per-patch, בדיוק כמו production).
-  let shadowState: SessionState = createInitialSessionState({ sessionId: "sess-contract" })
+  const view = await createRemoteView({
+    ...base,
+    async _fetch(url, init) {
+      if (url.endsWith("/events")) {
+        sse.pushRaw(initialFrame)
+        init?.signal?.addEventListener("abort", sse.close, { once: true })
+        return new Response(sse.body)
+      }
+      const raw: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+      if (!url.endsWith("/rpc") && !url.endsWith("/reply")) throw new Error("Unexpected RPC URL")
+      const response = handleRequest(url.endsWith("/rpc") ? "rpc" : "reply", raw)
+      return Response.json(response.body, { status: response.status })
+    },
+  })
+  return { view, pushRaw: sse.pushRaw }
+}
+
+async function createRemoteHarness(transport: SessionTransport): Promise<ContractHarness> {
+  const outboundLog: Array<{ method: string; params: unknown }> = []
+  // The fixture folds the same updates as the host so each frame carries the right version.
+  let shadowState = createInitialSessionState({ sessionId: "sess-contract" })
   let nextRequestId = 0
-
-  const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.includes("/events")) {
-      // frame-zero חייב להיות snapshot (brief §C1 harness pitfall #5 — שם event מדויק).
-      sse.pushRaw(snapshotFrame(shadowState))
-      return { ok: true, status: 200, body: sse.body } as unknown as Response
-    }
-    if (url.includes("/rpc")) {
-      const body = init?.body
-        ? (JSON.parse(init.body as string) as { method: string; params: unknown })
-        : undefined
-      if (body) outboundLog.push({ method: body.method, params: body.params })
-      // ⚠️ מלכודת #4: mock שמחזיר Response בלי ok:true מפיל כל RPC (RemoteSessionView#post בודק res.ok).
-      return {
-        ok: true,
-        status: 202,
-        json: () => Promise.resolve({ version: shadowState.version }),
-      } as unknown as Response
-    }
-    if (url.includes("/reply")) {
-      const body = init?.body ? (JSON.parse(init.body as string) as unknown) : undefined
+  const { view, pushRaw } = await connectRemoteHarness(transport, shadowState, (kind, body) => {
+    if (kind === "reply") {
       outboundLog.push({ method: "reply", params: body })
-      return {
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ ok: true }),
-      } as unknown as Response
+      return { status: 200, body: { ok: true } }
     }
-    throw new Error(`unexpected fetch: ${url}`)
+    outboundLog.push(body as { method: string; params: unknown })
+    return { status: 202, body: { version: shadowState.version } }
   })
-
-  const view = createRemoteSessionView("agent-contract", "http://be.local", {
-    _fetch: mockFetch,
-    _sleep: () => Promise.resolve(),
-  })
-  await view.connect()
 
   const pb = new PatchBuffer(view.patches)
 
@@ -203,7 +233,7 @@ async function createRemoteHarness(): Promise<ContractHarness> {
     // דרך **אותו** `updateFrame` שה-BE משתמש בו — לא דרך העתק של הפורמט.
     for (const p of patches) {
       const frame = updateFrame(shadowState, p)
-      if (frame !== null) sse.pushRaw(frame)
+      if (frame !== null) pushRaw(frame)
     }
     await pb.waitForTotalAtLeast(target)
   }
@@ -255,89 +285,139 @@ async function createRemoteHarness(): Promise<ContractHarness> {
   }
 }
 
-// ── shared contract — פעמיים ─────────────────────────────────────────────────
+// ── shared contract ──────────────────────────────────────────────────────────
 
 describeSessionViewContract("local", createLocalHarness)
-describeSessionViewContract("remote", createRemoteHarness)
+describeSessionViewContract("remote-http", () => createRemoteHarness("http"))
+describeSessionViewContract("remote-ws", () => createRemoteHarness("ws"))
+
+const terminalRules: ToolOutputRules = {
+  fields: {
+    text: [{ from: "meta", key: "terminal_output_delta", path: ["data"] }],
+    exitCode: [{ from: "meta", key: "terminal_exit", path: ["exit_code"] }],
+  },
+  metaKeys: {
+    terminal_info: "replace",
+    terminal_output_delta: "append",
+    terminal_exit: "replace",
+  },
+}
+
+function stripWireMeta(frame: SseFrame): SseFrame {
+  function strip({ _meta, ...update }: Record<string, unknown>) {
+    return update
+  }
+  if (frame.event === "snapshot") {
+    const snapshot = JSON.parse(frame.data) as { updates: Record<string, unknown>[] }
+    return { ...frame, data: JSON.stringify({ ...snapshot, updates: snapshot.updates.map(strip) }) }
+  }
+  const batch = JSON.parse(frame.data) as {
+    params: { update: Record<string, unknown> }
+  }[]
+  return {
+    ...frame,
+    data: JSON.stringify(
+      batch.map((entry) => ({
+        ...entry,
+        params: { ...entry.params, update: strip(entry.params.update) },
+      })),
+    ),
+  }
+}
+
+function firstToolOutput(state: SessionState): ToolOutput | undefined {
+  const message = state.messages[0]
+  return message?.role === "tool" ? message.toolCall.output : undefined
+}
+
+async function readToolOutput(transport: SessionTransport, transformWsFrame?: FrameTransform) {
+  const toolCallId = "exec-fixture"
+  const update = { sessionUpdate: "tool_call_update", toolCallId }
+  const inputs = [
+    { sessionUpdate: "tool_call", toolCallId, kind: "execute", _meta: { terminal_info: {} } },
+    { ...update, _meta: { terminal_output_delta: { data: "one\n" } } },
+    { ...update, _meta: { terminal_output_delta: { data: "two\n" } } },
+    { ...update, status: "failed", _meta: { terminal_exit: { exit_code: 3 } } },
+  ]
+
+  let state = createInitialSessionState({ sessionId: "s1" })
+  const ack: HandleRequest = () => ({ status: 202, body: {} })
+  const { view, pushRaw } = await connectRemoteHarness(transport, state, ack, transformWsFrame)
+  const patches = new PatchBuffer(view.patches)
+  let frameCount = 0
+  let live: ToolOutput | undefined
+  try {
+    for (const input of inputs) {
+      const next = reduce(state, input, { toolOutput: terminalRules })
+      state = next.state
+      for (const patch of next.patches) {
+        const frame = updateFrame(state, patch)
+        if (!frame) continue
+        pushRaw(frame)
+        frameCount++
+      }
+    }
+    await patches.waitForTotalAtLeast(frameCount)
+    live = firstToolOutput(view.state)
+  } finally {
+    await patches.dispose()
+    await view.close()
+  }
+
+  const late = await connectRemoteHarness(transport, state, ack, transformWsFrame)
+  try {
+    return { live, snapshot: firstToolOutput(late.view.state) }
+  } finally {
+    await late.view.close()
+  }
+}
+
+describe("remote tool output", () => {
+  const output = { text: "one\ntwo\n", exitCode: 3 }
+
+  it("keeps canonical output equal across both transports and delivery modes", async () => {
+    const sse = await readToolOutput("http")
+    const ws = await readToolOutput("ws")
+    expect(sse).toEqual({ live: output, snapshot: output })
+    expect(ws).toEqual(sse)
+  })
+
+  it("detects a WS pipe that strips canonical metadata", async () => {
+    const stripped = await readToolOutput("ws", stripWireMeta)
+    expect(stripped).not.toEqual({ live: output, snapshot: output })
+    expect(stripped).toEqual({ live: undefined, snapshot: undefined })
+  })
+})
 
 // ── טבלת-הסטייה (brief §C1) ──────────────────────────────────────────────────
 
-describe("SessionView deviation table — remote-only behaviors", () => {
-  function mockFetchFor(opts: {
-    events?: Array<{ event: string; data: string }>
-    rpcStatus?: number
-  }): (url: string, init?: RequestInit) => Promise<Response> {
-    const encoder = new TextEncoder()
-    return vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
-      if (url.includes("/events")) {
-        const frames = opts.events ?? [
-          {
-            event: "snapshot",
-            data: JSON.stringify(createInitialSessionState({ sessionId: "s-1" })),
-          },
-        ]
-        const text = toWireText(frames)
-        const body = new ReadableStream<Uint8Array>({
-          start(ctrl) {
-            ctrl.enqueue(encoder.encode(text))
-            // keepOpen — a closing stream would spin the no-sleep reconnect loop
-            // and #handleReconnected would keep resetting state to the snapshot
-            // (the C4 session-mgmt assertions need state to stay put).
-          },
-        })
-        return { ok: true, status: 200, body } as unknown as Response
+describe.each(["http", "ws"] as const)("SessionView deviation table — %s", (transport) => {
+  async function connect(rpcStatus = 202): Promise<RemoteSessionView> {
+    const snapshot = createInitialSessionState({ sessionId: "s-1" })
+    const { view } = await connectRemoteHarness(transport, snapshot, (kind, body) => {
+      if (kind === "reply") return { status: 200, body: { ok: true } }
+      const { method, params } = body as { method?: string; params?: { sessionId?: string } }
+      switch (method) {
+        case RPC_METHODS.listSessions:
+          return {
+            status: 200,
+            body: {
+              sessions: [{ sessionId: "s-9", cwd: "/w", title: "Listed" }],
+              sessionCapabilities: { delete: {} },
+            },
+          }
+        case RPC_METHODS.loadSession:
+          return { status: 200, body: { sessionId: params?.sessionId ?? "s", version: 2 } }
+        case RPC_METHODS.newSession:
+          return { status: 200, body: { sessionId: "s-brand-new", version: 3 } }
+        case RPC_METHODS.deleteSession:
+          return { status: 200, body: { ok: true } }
+        default:
+          return { status: rpcStatus, body: { version: 1 } }
       }
-      if (url.includes("/rpc")) {
-        // slice remote-session-mgmt C4: the three blocking mappings answer with
-        // real bodies; the six fire-and-forget methods keep the 202 {version}.
-        const rawBody = init?.body ? JSON.parse(init.body as string) : undefined
-        const rpcMethod = (rawBody as { method?: string } | undefined)?.method
-        if (rpcMethod === RPC_METHODS.listSessions) {
-          return {
-            ok: true,
-            status: 200,
-            json: () =>
-              Promise.resolve({
-                sessions: [{ sessionId: "s-9", cwd: "/w", title: "Listed" }],
-                sessionCapabilities: { delete: {} },
-              }),
-          } as unknown as Response
-        }
-        if (rpcMethod === RPC_METHODS.loadSession) {
-          const params = (rawBody as { params?: { sessionId?: string } }).params
-          return {
-            ok: true,
-            status: 200,
-            json: () => Promise.resolve({ sessionId: params?.sessionId ?? "s", version: 2 }),
-          } as unknown as Response
-        }
-        if (rpcMethod === RPC_METHODS.newSession) {
-          return {
-            ok: true,
-            status: 200,
-            json: () => Promise.resolve({ sessionId: "s-brand-new", version: 3 }),
-          } as unknown as Response
-        }
-        if (rpcMethod === RPC_METHODS.deleteSession) {
-          return {
-            ok: true,
-            status: 200,
-            json: () => Promise.resolve({ ok: true }),
-          } as unknown as Response
-        }
-        const status = opts.rpcStatus ?? 202
-        return {
-          ok: status < 300,
-          status,
-          json: () => Promise.resolve({ version: 1 }),
-        } as unknown as Response
-      }
-      return {
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ ok: true }),
-      } as unknown as Response
     })
+    activeViews.push(view)
+    return view
   }
 
   const activeViews: RemoteSessionView[] = []
@@ -347,12 +427,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
   })
 
   it("newSession/loadSession/listSessions/deleteSession perform real RPCs", async () => {
-    const view = createRemoteSessionView("a1", "http://be.local", {
-      _fetch: mockFetchFor({}),
-      _sleep: () => Promise.resolve(),
-    })
-    activeViews.push(view)
-    await view.connect()
+    const view = await connect()
 
     await expect(view.newSession("/w")).resolves.toBeUndefined()
     expect(view.state.sessionId).toBe("s-brand-new")
@@ -372,45 +447,19 @@ describe("SessionView deviation table — remote-only behaviors", () => {
   })
 
   it("prompt(PromptBlocks) passes blocks to RPC without throwing (slice remote-images C1)", async () => {
-    const view = createRemoteSessionView("a1", "http://be.local", {
-      _fetch: mockFetchFor({}),
-      _sleep: () => Promise.resolve(),
-    })
-    activeViews.push(view)
-    await view.connect()
+    const view = await connect()
 
     await expect(view.prompt([{ type: "text", text: "hi" }] as never)).resolves.toBeUndefined()
   })
 
-  it("an HTTP failure (5xx) on any RPC is rejected -- not silently swallowed", async () => {
-    const view = createRemoteSessionView("a1", "http://be.local", {
-      _fetch: mockFetchFor({ rpcStatus: 500 }),
-      _sleep: () => Promise.resolve(),
-    })
-    activeViews.push(view)
-    await view.connect()
+  it("rejects a failed RPC (5xx)", async () => {
+    const view = await connect(500)
 
     await expect(view.prompt("hi")).rejects.toThrow("500")
   })
 
   it("respond() with an unknown id is a silent no-op (like LocalSessionView)", async () => {
-    const view = createRemoteSessionView("a1", "http://be.local", {
-      _fetch: mockFetchFor({
-        events: [
-          {
-            event: "snapshot",
-            data: JSON.stringify(
-              createInitialSessionState({ sessionId: "s-1" }) as SessionState & {
-                pending: { permission: { requestId: number; params: unknown }; elicitation: null }
-              },
-            ),
-          },
-        ],
-      }),
-      _sleep: () => Promise.resolve(),
-    })
-    activeViews.push(view)
-    await view.connect()
+    const view = await connect()
 
     await expect(view.respond(999, {})).resolves.toBeUndefined()
   })
