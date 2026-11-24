@@ -109,9 +109,6 @@ it.each(["ttl", "delete"] as const)("closes a routed WS viewer on %s", async (re
     const address = server.address()
     if (!address || typeof address === "string") throw new Error("No bound port")
     await connectionRegistry.connect(agentId, "opencode", { cwd: process.cwd() })
-    if (release === "ttl") {
-      connectionRegistry.addConnection(agentId, "raw", "ws", undefined, { role: "owner" })
-    }
 
     const base = `127.0.0.1:${address.port}`
     const session = new WebSocket(`ws://${base}/ws/session/${agentId}?connectionId=viewer`)
@@ -127,7 +124,6 @@ it.each(["ttl", "delete"] as const)("closes a routed WS viewer on %s", async (re
     if (release === "ttl") {
       await vi.advanceTimersByTimeAsync(110)
       expect(connectionRegistry.listViewerRows(agentId)).toEqual([])
-      expect(connectionRegistry.getConnectionCount(agentId)).toBe(1)
     } else if (release === "delete") {
       const result = await fetch(`http://${base}/api/agents/${agentId}/connection`, {
         method: "DELETE",

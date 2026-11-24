@@ -23,7 +23,9 @@ import { expect, it, vi } from "vitest"
 import { WebSocket } from "ws"
 import { createConnectionRegistry } from "../src/acp/connection-registry.js"
 import { issueToken } from "../src/agent-scope.js"
+import { buildAgentRow } from "../src/agents/agent-row.js"
 import { createInMemoryAgentRegistry } from "../src/agents/registry.js"
+import { createAgentOrchestrator } from "../src/app/agent-orchestrator.js"
 import type { BootDeps } from "../src/boot/deps.js"
 import { createWsStack } from "../src/boot/ws.js"
 import { setSelfBaseUrlForTests } from "../src/instances.js"
@@ -58,6 +60,11 @@ vi.mock("../src/acp/open-connection.js", () => ({
   }),
 }))
 
+vi.mock("../src/agents/agent-launcher.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/agents/agent-launcher.js")>()),
+  stopAgentUnit: () => false,
+}))
+
 async function setup(opts: { snapshotState?: SessionState; authError?: Error } = {}) {
   let callbacks: AcpClientCallbacks | undefined
   const client = {
@@ -86,7 +93,20 @@ async function setup(opts: { snapshotState?: SessionState; authError?: Error } =
       return host
     },
   })
-  const registry = createInMemoryAgentRegistry()
+  const cwd = process.cwd()
+  const registry = createInMemoryAgentRegistry({
+    seed: [
+      buildAgentRow({
+        id: agentId,
+        cwd,
+        createdAt: new Date().toISOString(),
+        input: {
+          cwd,
+          cliKind: "opencode",
+        },
+      }),
+    ],
+  })
   const app = new Hono()
   registerEventsRoute(app, agentSessionRegistry, connectionRegistry)
   registerRpcRoute(app, agentSessionRegistry, registry)
@@ -105,8 +125,10 @@ async function setup(opts: { snapshotState?: SessionState; authError?: Error } =
   const end = new AbortController()
   const sockets: WebSocket[] = []
 
-  function connectWs(headers?: Record<string, string>) {
-    const ws = new WebSocket(`ws://127.0.0.1:${address.port}/ws/session/${agentId}`, { headers })
+  function connectWs(headers?: Record<string, string>, epoch?: number) {
+    const url = new URL(`ws://127.0.0.1:${address.port}/ws/session/${agentId}`)
+    if (epoch !== undefined) url.searchParams.set("epoch", String(epoch))
+    const ws = new WebSocket(url, { headers })
     sockets.push(ws)
     const frames: ChannelFrame[] = []
     const responses = new Map<number, ChannelResponse>()
@@ -122,6 +144,7 @@ async function setup(opts: { snapshotState?: SessionState; authError?: Error } =
     return {
       frames,
       closed,
+      close: () => ws.close(),
       async request(method: WsClientRequest["method"], params: unknown) {
         const id = nextId++
         ws.send(encodeWsClientRequest({ jsonrpc: "2.0", id, method, params }))
@@ -138,10 +161,24 @@ async function setup(opts: { snapshotState?: SessionState; authError?: Error } =
 
   return {
     connectWs,
-    events: () =>
-      fetch(`${route}/events`, {
-        signal: AbortSignal.any([end.signal, AbortSignal.timeout(8_000)]),
-      }),
+    events: (epoch?: number, signal?: AbortSignal) => {
+      const url = new URL(`${route}/events`)
+      if (epoch !== undefined) url.searchParams.set("epoch", String(epoch))
+      return fetch(url, {
+        signal: AbortSignal.any([
+          end.signal,
+          AbortSignal.timeout(8_000),
+          ...(signal ? [signal] : []),
+        ]),
+      })
+    },
+    connectionCount: () => connectionRegistry.getConnectionCount(agentId),
+    deleteAgent: () =>
+      createAgentOrchestrator({
+        registry,
+        connectionRegistry,
+        sessionHostRegistry: agentSessionRegistry,
+      }).deleteAndKill(agentId),
     post: (path: "rpc" | "reply", body: unknown, headers?: Record<string, string>) =>
       fetch(`${route}/${path}`, {
         method: "POST",
@@ -175,6 +212,57 @@ async function setup(opts: { snapshotState?: SessionState; authError?: Error } =
     },
   }
 }
+
+it("shares a viewer epoch across transports, rejects stale epochs and ends streams on deletion", async () => {
+  const fixture = await setup()
+  async function openSse(signal?: AbortSignal) {
+    const response = await fixture.events(undefined, signal)
+    expect(response.status).toBe(200)
+    if (!response.body) throw new Error("Missing SSE response body")
+    return readSse(response.body)
+  }
+  async function expectWsSnapshot(ws: ReturnType<typeof fixture.connectWs>, epoch: number) {
+    await vi.waitFor(() => {
+      const snapshot = ws.frames[0]
+      expect(snapshot?.event).toBe("snapshot")
+      expect(JSON.parse(snapshot?.data ?? "{}")).toMatchObject({ epoch })
+    })
+  }
+  try {
+    const first = new AbortController()
+    const initialSse = await openSse(first.signal)
+    const snapshot = await initialSse()
+    expect(snapshot.event).toBe("snapshot")
+    expect(JSON.parse(snapshot.data)).toMatchObject({ epoch: 1 })
+    const initialWs = fixture.connectWs()
+    await expectWsSnapshot(initialWs, 1)
+
+    first.abort()
+    initialWs.close()
+    await initialWs.closed
+    await vi.waitFor(() => expect(fixture.connectionCount()).toBe(0))
+
+    const ws = fixture.connectWs()
+    await expectWsSnapshot(ws, 2)
+    const sse = await openSse()
+    const current = await sse()
+    expect(current.event).toBe("snapshot")
+    expect(JSON.parse(current.data)).toMatchObject({ epoch: 2 })
+
+    const staleSse = await fixture.events(1)
+    expect(staleSse.status).toBe(409)
+    expect(await staleSse.json()).toEqual({ error: "taken-over", epoch: 2 })
+    const staleWs = fixture.connectWs(undefined, 1)
+    expect((await staleWs.closed)[0]).toBe(4409)
+
+    await fixture.deleteAgent()
+    await expect(sse()).rejects.toThrow("SSE stream ended")
+    expect((await ws.closed)[0]).toBe(1000)
+    expect(ws.frames.map((frame) => frame.event)).toEqual(["snapshot"])
+  } finally {
+    await fixture.stop()
+  }
+})
 
 function readSse(stream: ReadableStream<Uint8Array>) {
   const reader = stream.getReader()

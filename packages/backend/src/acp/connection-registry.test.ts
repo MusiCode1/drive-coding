@@ -98,21 +98,6 @@ describe("connection-registry — connection set", () => {
     await reg.close("a5")
   })
 
-  it("epoch rises on ws addConnection", async () => {
-    const reg = createConnectionRegistry()
-    await reg.connect("a6", "opencode", { cwd: os.tmpdir() })
-    try {
-      reg.addConnection("a6", "viewer", "http")
-      reg.addConnection("a6", "w1", "ws", undefined, { role: "owner" })
-      expect(reg.getEpoch("a6")).toBe(2)
-      reg.addConnection("a6", "w2", "ws", undefined, { role: "owner" })
-      expect(reg.getEpoch("a6")).toBe(3)
-      expect(reg.listViewerRows("a6").map((row) => row.connectionId)).toEqual(["viewer"])
-    } finally {
-      await reg.close("a6")
-    }
-  })
-
   it("starts one epoch per viewer group across HTTP and WebSocket", async () => {
     const reg = createConnectionRegistry()
     const agentId = "mixed-viewers"

@@ -95,7 +95,7 @@ function makeMockConnection(): ProviderConnection {
 /**
  * makeStatefulConnectionRegistry — a REAL-behaving ConnectionRegistry fake for
  * a single agentId. Each group of viewers starts one epoch independently of
- * transport. Each raw owner starts a new epoch, and removing rows preserves it.
+ * transport. The first viewer starts a new epoch, and removing rows preserves it.
  */
 function makeStatefulConnectionRegistry(conn: ProviderConnection, cwd: string): ConnectionRegistry {
   const rows = new Map<string, ConnectionRow>()
@@ -108,11 +108,10 @@ function makeStatefulConnectionRegistry(conn: ProviderConnection, cwd: string): 
     consumeCharter: vi.fn(() => undefined),
     getCliKind: vi.fn(() => "opencode"),
     list: vi.fn(() => []),
-    addConnection: vi.fn<ConnectionRegistry["addConnection"]>((_id, cid, via, stream, opts) => {
-      const role = opts?.role ?? "viewer"
-      const hadViewer = [...rows.values()].some((r) => r.role === "viewer")
-      rows.set(cid, { via, role, lastSeenAt: Date.now(), stream: stream ?? rows.get(cid)?.stream })
-      if (role === "owner" || !hadViewer) epoch++
+    addConnection: vi.fn<ConnectionRegistry["addConnection"]>((_id, cid, via, stream) => {
+      const hadViewer = rows.size > 0
+      rows.set(cid, { via, lastSeenAt: Date.now(), stream: stream ?? rows.get(cid)?.stream })
+      if (!hadViewer) epoch++
     }),
     removeConnection: vi.fn((_id: string, cid: string) => {
       rows.delete(cid)
@@ -137,7 +136,6 @@ function makeStatefulConnectionRegistry(conn: ProviderConnection, cwd: string): 
     ),
     listViewerRows: vi.fn(() =>
       [...rows.entries()]
-        .filter(([, r]) => r.role === "viewer")
         .map(([connectionId, r]) => ({ connectionId, lastSeenAt: r.lastSeenAt, stream: r.stream })),
     ),
     close: vi.fn().mockResolvedValue(undefined),

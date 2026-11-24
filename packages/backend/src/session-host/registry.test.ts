@@ -83,13 +83,11 @@ function makeMockConnectionRegistry(
   conn?: ProviderConnection,
   attached = false,
   touchState = makeTouchState(),
-  initialVia: "ws" | "http" = "http",
 ): ConnectionRegistry {
   const rows = new Map<string, ConnectionRow>()
   if (attached) {
     rows.set("mock", {
-      via: initialVia,
-      role: initialVia === "ws" ? "owner" : "viewer",
+      via: "http",
       lastSeenAt: touchState.get() ?? Date.now(),
     })
   }
@@ -101,8 +99,8 @@ function makeMockConnectionRegistry(
     getCharter: vi.fn().mockReturnValue(undefined),
     consumeCharter: vi.fn().mockReturnValue(undefined),
     list: vi.fn().mockReturnValue([]),
-    addConnection: vi.fn<ConnectionRegistry["addConnection"]>((_id, cid, via, stream, opts) => {
-      rows.set(cid, { via, role: opts?.role ?? "viewer", lastSeenAt: Date.now(), stream })
+    addConnection: vi.fn<ConnectionRegistry["addConnection"]>((_id, cid, via, stream) => {
+      rows.set(cid, { via, lastSeenAt: Date.now(), stream })
     }),
     removeConnection: vi.fn((_id, cid) => {
       rows.delete(cid)
@@ -125,7 +123,6 @@ function makeMockConnectionRegistry(
     ),
     listViewerRows: vi.fn(() =>
       [...rows.entries()]
-        .filter(([, r]) => r.role === "viewer")
         .map(([connectionId, r]) => ({ connectionId, lastSeenAt: r.lastSeenAt, stream: r.stream })),
     ),
     isAttached: vi.fn(() => rows.size > 0),
@@ -141,11 +138,10 @@ function makeStatefulConnReg(conn: ProviderConnection) {
   const rows = new Map<string, ConnectionRow>()
   let epoch = 0
   const addConnection = vi.fn<ConnectionRegistry["addConnection"]>(
-    (_id, cid, via, stream, opts) => {
-      const role = opts?.role ?? "viewer"
-      const hadViewer = [...rows.values()].some((r) => r.role === "viewer")
-      rows.set(cid, { via, role, lastSeenAt: Date.now(), stream: stream ?? rows.get(cid)?.stream })
-      if (role === "owner" || !hadViewer) epoch++
+    (_id, cid, via, stream) => {
+      const hadViewer = rows.size > 0
+      rows.set(cid, { via, lastSeenAt: Date.now(), stream: stream ?? rows.get(cid)?.stream })
+      if (!hadViewer) epoch++
     },
   )
   const removeConnection = vi.fn((_id: string, cid: string) => {
@@ -171,7 +167,6 @@ function makeStatefulConnReg(conn: ProviderConnection) {
     ),
     listViewerRows: vi.fn(() =>
       [...rows.entries()]
-        .filter(([, r]) => r.role === "viewer")
         .map(([connectionId, r]) => ({ connectionId, lastSeenAt: r.lastSeenAt, stream: r.stream })),
     ),
     touchConnection: vi.fn((_id: string, cid: string) => {
@@ -554,43 +549,6 @@ describe("AgentSessionRegistry", () => {
 
         expect(connectionRegistry.removeConnection).not.toHaveBeenCalled()
         expect(broadcaster.close).not.toHaveBeenCalled()
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-
-    // 🔴 DoD 7 — slice liveness C1 §2.1: הסויפ המאוחד **לעולם לא** מפנה בעלי-WS.
-    // גם אם ה-WS לא דיווח 200ש׳ (lastSeen פקוע) — ה-WS הוא סימן-החיים של עצמו
-    // (sweep של סוקטים ב-ws-agent.ts, תפקיד נפרד). בלי בדיקת-התעבורה המפורשת
-    // (getConnectionCount().via !== "http") הטסט הזה היה נכשל — touchConnection אגנוסטי גרם
-    // ל-getLastSeenAt להחזיר מספר גם ל-WS. (mutant 21ב).
-    // 🔴 slice ttl-ownership: mutated — same replacement as the two tests above.
-    it("🔴 sweep does NOT evict a WS owner even with a stale stamp", async () => {
-      vi.useFakeTimers()
-      try {
-        const conn = makeMockConnection()
-        const touchState = makeTouchState(Date.now() - 10_000) // פקוע
-        // attached=false ⇒ יצירת ה-host מותרת; owner={via:"ws"} ⇒ הסויפ חייב לדלג
-        // על בעל-ה-WS הזה (הבדיקה המפורשת של התעבורה, §2.1).
-        const connectionRegistry = makeMockConnectionRegistry(conn, true, touchState, "ws")
-        const mockHost = makeMockHost()
-        const broadcaster = makeMockBroadcaster()
-
-        const registry = createAgentSessionRegistry({
-          connectionRegistry,
-          _createHostFn: vi.fn().mockResolvedValue(mockHost),
-          _createBroadcasterFn: vi.fn().mockReturnValue(broadcaster),
-          _httpOwnerTtlMs: 100,
-          _httpSweepMs: 20,
-        })
-
-        await registry.getOrCreateHost("agent-1")
-
-        await vi.advanceTimersByTimeAsync(300)
-
-        expect(connectionRegistry.removeConnection).not.toHaveBeenCalled()
-        expect(broadcaster.close).not.toHaveBeenCalled()
-        expect(registry.getHost("agent-1")).toBe(mockHost)
       } finally {
         vi.useRealTimers()
       }
@@ -1380,7 +1338,7 @@ describe("AgentSessionRegistry", () => {
       expect(clearAllSpy).toHaveBeenCalledWith("test-agent")
     })
 
-    it("unregisterHost always clears connections (ws owner too)", () => {
+    it("unregisterHost always clears connections for a WS viewer", () => {
       const conn = makeMockConnection()
       const connectionRegistry = makeMockConnectionRegistry(conn)
       const clearAllSpy = connectionRegistry.clearAllConnections as ReturnType<typeof vi.fn>
