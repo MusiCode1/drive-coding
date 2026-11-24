@@ -319,17 +319,11 @@
       "class": "mixed",
       "codeLines": 103
     },
-    "packages/backend/src/session-host/http/presence.ts": {
-      "metric": 60,
-      "impurity": 1,
-      "class": "mixed",
-      "codeLines": 29
-    },
     "packages/backend/src/session-host/http/reply.ts": {
-      "metric": 57,
+      "metric": 16,
       "impurity": 1,
       "class": "mixed",
-      "codeLines": 35
+      "codeLines": 13
     },
     "packages/backend/src/session-host/http/rpc.ts": {
       "metric": 41,

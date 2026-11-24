@@ -5,7 +5,9 @@
 
 import type { AgentRegistry } from "@drive-coding/core"
 import type { Hono } from "hono"
-import { whenScopedWriteAllowed, SCOPE_DENIED_BODY } from "./scope-write.js"
+import type { ContentfulStatusCode } from "hono/utils/http-status"
+import { SCOPE_DENIED_BODY, whenScopedWriteAllowed } from "./scope-write.js"
+import { replyScopeDenied } from "./session-host/channel/reply-dispatch.js"
 import type { AgentSessionRegistry } from "./session-host/registry.js"
 
 export type ScopeEnforcementDeps = {
@@ -30,14 +32,11 @@ export function bindScopeEnforcement(app: Hono, deps: ScopeEnforcementDeps): voi
 
   app.use("/api/agents/:id/reply", async (c, next) => {
     if (c.req.method !== "POST") return next()
-    const allowed = await whenScopedWriteAllowed((name) => c.req.header(name), {
-      targetId: c.req.param("id"),
-      verb: "reply",
-      registry: deps.registry,
-      sessionRegistry: deps.sessionRegistry,
+    const denied = await replyScopeDenied(deps, c.req.param("id"), {
+      header: (name) => c.req.header(name),
     })
-    if (allowed) return next()
-    return c.json(SCOPE_DENIED_BODY, 403)
+    if (!denied) return next()
+    return c.json(denied.body, denied.status as ContentfulStatusCode)
   })
 }
 
