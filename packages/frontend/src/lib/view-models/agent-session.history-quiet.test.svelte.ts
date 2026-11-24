@@ -24,7 +24,8 @@ import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
-import { RemoteSessionView } from "$lib/session/remote-session-view.js"
+import { createRemoteSessionView } from "$lib/session/create-session-view.js"
+import type { RemoteSessionView } from "$lib/session/remote-session-view.js"
 import { AgentSession } from "./agent-session.svelte.js"
 import { Settings } from "./settings.svelte"
 import { Speaker } from "./speaker.svelte"
@@ -233,7 +234,7 @@ function createQuietHarness(
   mockFetch?: (url: string, init?: RequestInit) => Promise<Response>,
 ): QuietHarness {
   const fetchImpl = mockFetch ?? makeMockFetch([frames])
-  const view = new RemoteSessionView("agent-quiet", "http://be.local", {
+  const view = createRemoteSessionView("agent-quiet", "http://be.local", {
     _fetch: fetchImpl,
     _sleep: noSleep,
   })

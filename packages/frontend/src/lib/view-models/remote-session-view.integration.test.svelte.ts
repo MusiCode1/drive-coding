@@ -26,7 +26,8 @@ import {
 } from "@drive-coding/core/session"
 import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { RemoteSessionView } from "$lib/session/remote-session-view.js"
+import { createRemoteSessionView } from "$lib/session/create-session-view.js"
+import type { RemoteSessionView } from "$lib/session/remote-session-view.js"
 import { AgentSession } from "./agent-session.svelte.js"
 
 // ── helpers (mirrors remote-session-view.test.ts's mock backend) ─────────────
@@ -118,7 +119,7 @@ function newConnectedView(
   onRpc?: (body: unknown) => void,
 ): { view: RemoteSessionView; mockFetch: ReturnType<typeof makeMockFetch> } {
   const mockFetch = makeMockFetch({ events, onRpc })
-  const view = new RemoteSessionView("agent-1", "http://be.local", {
+  const view = createRemoteSessionView("agent-1", "http://be.local", {
     _fetch: mockFetch,
     _sleep: noSleep,
   })
@@ -238,7 +239,7 @@ describe("VM + RemoteSessionView integration (C4)", () => {
         ]),
       )
     })
-    const view = new RemoteSessionView("agent-1", "http://be.local", {
+    const view = createRemoteSessionView("agent-1", "http://be.local", {
       _fetch: mockFetch,
       _sleep: noSleep,
     })

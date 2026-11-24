@@ -1,27 +1,21 @@
 /**
  * remote-session-view.ts — RemoteSessionView מממש את SessionView port.
  *
- * מתחבר ל-SessionHost בשרת דרך HTTP+SSE (S4 routes):
- * - GET  /api/agents/:id/events  — SSE snapshot+patches (דרך SSEReader)
- * - POST /api/agents/:id/rpc     — session/prompt · session/cancel · session/set_mode
- *                                  session/set_config_option · _drive/ext · _drive/set_session_model
- * - POST /api/agents/:id/reply   — respond ל-permission/elicitation
+ * מתחבר ל-SessionHost בשרת באמצעות SessionPipe ומקפל עדכוני מצב.
  *
  * Session management (slice remote-session-mgmt C4 + remote warm newSession):
  * listSessions/loadSession/deleteSession/newSession go through the BE rpc
  * (blocking mappings, real results).
  *
- * Reactivity: RemoteSessionView רק מתחזק state + מזרים patches (עוטף כל Patch בודד
- * מ-SSEReader ל-[patch] כדי להתאים ל-VM's ReadableStream<Patch[]>). ה-VM עושה את
+ * Reactivity: RemoteSessionView מקפל את העדכונים מ-FrameReader באמצעות reduce
+ * ומזרים את ה-patches שהקיפול הפיק. ה-VM עושה את
  * ההחלה הממוקדת על Bubble[] (consumeViewPatches/applyPatchMutable, S1/S2) — לא כאן.
- * state עצמו מתעדכן דרך applyPatch (core, טהור/immutable) — לא כותבים applyPatch חדש.
  *
  * ─── slice remote-session-view C2+C3 (TDD) ───
  * ─── slice session-host-pending-surface C4: respond() — exact routing, no fallback ───
  */
 
 import {
-  applyPatch,
   createInitialSessionState,
   type Patch,
   RPC_METHODS,
@@ -33,50 +27,29 @@ import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
 import { registerView, unregisterView, type ViewDebugInfo } from "$lib/debug/session-registry"
 import { connWarn } from "$lib/util/conn-log"
 import type { SessionView, ViewEmission } from "./session-view.js"
-import type { WireUpdateBatch } from "./sse-reader"
-import { SSEReader } from "./sse-reader.js"
-
-export const ACP_CONNECTION_ID_HEADER = "Acp-Connection-Id"
+import type { WireUpdateBatch } from "./wire/frame-decode"
+import { FrameReader } from "./wire/frame-reader"
+import { resultOf, type SessionPipe } from "./wire/pipe"
+import type { SSEReaderOptions } from "./wire/reader-types"
 
 /** ext methods שדורשות return value אמיתי — לא נתמכות ב-remote mode (§C2 decision #3). */
 const RETURN_VALUE_EXT_METHODS = new Set<string>(["_drive/getQuota"])
 
 const NOT_SUPPORTED_EXT_RETURN_VALUE = "not supported in remote mode — use state instead"
 
-export type RemoteSessionViewOptions = {
-  /** HTTP headers לכל בקשה (auth וכו'). */
-  headers?: Record<string, string>
-  /** slice liveness C4: hook חיצוני כשה-SSE מתחבר מחדש (ניקוי באנר presence). */
+export type RemoteViewOptions = Pick<SSEReaderOptions, "_sleep" | "_now"> & {
+  connectionId?: string
+  /** Called after a reconnect replaces the view state. */
   onSseReconnected?: () => void
-  /** @internal לבדיקות — override global fetch. */
-  _fetch?: (url: string, init?: RequestInit) => Promise<Response>
-  /** @internal לבדיקות — override setTimeout-based sleep (מועבר ל-SSEReader). */
-  _sleep?: (ms: number) => Promise<void>
-  /**
-   * @internal לבדיקות — override השעון שמודד אורך-חיי-חיבור (מועבר ל-SSEReader).
-   * slice sse-liveness Commit 4: היה חסר — בלעדיו אי-אפשר לבדוק את הגלאי
-   * (וגם לא STABLE_CONNECTION_MS) מהשכבה הזו, רק ישירות על SSEReader.
-   */
-  _now?: () => number
 }
 
-/**
- * RemoteSessionView — מימוש SessionView שמתחבר ל-SessionHost בשרת (HTTP+SSE).
- *
- * Usage:
- *   const view = new RemoteSessionView("agent-1", "https://be.example.com")
- *   await view.connect()
- *   // view.state / view.patches מתעדכנים; view.prompt(...) וכו' שולחות RPC
- *   await view.close()  // כשמסיימים
- */
+/** RemoteSessionView — the stateful SessionView backed by the server session host. */
 export class RemoteSessionView implements SessionView {
   readonly #agentId: string
-  readonly #baseUrl: string
-  readonly #headers: Record<string, string>
-  readonly #connectionId: string
+  readonly #pipe: SessionPipe
   readonly #onSseReconnected?: () => void
-  readonly #doFetch: (url: string, init?: RequestInit) => Promise<Response>
-  readonly #reader: SSEReader
+  readonly #reader: FrameReader
+  readonly connectionId?: string
 
   #state: SessionState
   #sessionId: string | null = null
@@ -97,28 +70,16 @@ export class RemoteSessionView implements SessionView {
   /** גרסת ה-patch/snapshot האחרונה שהוחלה על state — לצורך השוואה ב-reconnect mid-turn. */
   #lastVersion = 0
 
-  constructor(agentId: string, baseUrl: string, opts: RemoteSessionViewOptions = {}) {
+  constructor(agentId: string, pipe: SessionPipe, opts: RemoteViewOptions = {}) {
     this.#agentId = agentId
-    this.#baseUrl = baseUrl
+    this.#pipe = pipe
+    this.connectionId = opts.connectionId
     registerView(this) // תצפית בלבד — ר' debug/session-registry.ts
-    this.#connectionId =
-      opts.headers?.[ACP_CONNECTION_ID_HEADER] ??
-      (typeof crypto !== "undefined" ? crypto.randomUUID() : "remote-view")
-    this.#headers = {
-      [ACP_CONNECTION_ID_HEADER]: this.#connectionId,
-      ...opts.headers,
-    }
     this.#onSseReconnected = opts.onSseReconnected
-    this.#doFetch = opts._fetch ?? ((u, init) => globalThis.fetch(u, init))
-    // replaced on connect() by the SSE snapshot — this is just a safe pre-connect default
+    // Replaced on connect() by the snapshot.
     this.#state = createInitialSessionState({ sessionId: null })
 
-    this.#reader = new SSEReader(this.#eventsUrl(), {
-      headers: this.#headers,
-      _fetch: opts._fetch,
-      _sleep: opts._sleep,
-      _now: opts._now,
-    })
+    this.#reader = new FrameReader(pipe.frames, opts)
     this.#reader.onReconnected = this.#handleReconnected.bind(this)
 
     this.patches = new ReadableStream<ViewEmission>({
@@ -255,6 +216,7 @@ export class RemoteSessionView implements SessionView {
     this.#isClosed = true
     unregisterView(this)
     this.#reader.close()
+    this.#pipe.close()
     try {
       this.#patchesCtrl?.close()
     } catch {
@@ -437,7 +399,7 @@ export class RemoteSessionView implements SessionView {
    * Lists sessions + captures sessionCapabilities (delete gating) in one
    * round-trip. Sessions are normalized here (like LocalSessionView) — the VM
    * consumes them as-is. A -32601 (CLI without list capability) surfaces as an
-   * error carrying `.code` (#post parses the 502 body) → the VM degrades to an
+   * error carrying `.code` (resultOf reads the response body) → the VM degrades to an
    * empty list gracefully instead of showing a generic "502".
    */
   async listSessions(): Promise<SessionInfo[]> {
@@ -532,88 +494,18 @@ export class RemoteSessionView implements SessionView {
           ? "elicitation"
           : undefined
     if (kind === undefined) return // no-op שקט — id לא תואם אף pending קיים
-    await this.#post(this.#replyUrl(), { kind, requestId, result })
-  }
-
-  // ─── Private: HTTP helpers ───
-
-  #eventsUrl(): string {
-    return `${this.#baseUrl}/api/agents/${this.#agentId}/events`
-  }
-
-  #rpcUrl(): string {
-    return `${this.#baseUrl}/api/agents/${this.#agentId}/rpc`
-  }
-
-  #replyUrl(): string {
-    return `${this.#baseUrl}/api/agents/${this.#agentId}/reply`
+    resultOf(
+      await this.#pipe.rpc.call("reply", { kind, requestId, result }),
+      this.#pipe.rpc.label("reply"),
+    )
   }
 
   async #rpc(method: string, params: Record<string, unknown>): Promise<unknown> {
-    const res = await this.#post(this.#rpcUrl(), { method, params })
-    return res
+    return resultOf(
+      await this.#pipe.rpc.call("rpc", { method, params }),
+      this.#pipe.rpc.label("rpc"),
+    )
   }
-
-  /**
-   * calev-heavy M4: never checked `res.ok` — a 404/400/500 was silently treated as
-   * success. Measured: setMode that caused a 500 on the BE "succeeded" from the
-   * caller's point of view. A failed prompt would look like a hang to the user,
-   * not an error. Network errors already propagate (fetch rejects); only the HTTP
-   * layer was swallowed.
-   *
-   * slice remote-session-mgmt C4: on !ok the body IS parsed now — the BE ships
-   * 502 {error, code?} for CLI failures (e.g. -32601). Without parsing, the VM
-   * would show a generic "502" instead of handling unsupported methods
-   * gracefully. `.code` is attached to the thrown error when numeric.
-   */
-  async #post(url: string, body: unknown): Promise<unknown> {
-    const res = await this.#doFetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...this.#headers },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) {
-      let payload: { error?: unknown; code?: unknown } | undefined
-      if (res.json) {
-        try {
-          payload = (await res.json()) as { error?: unknown; code?: unknown }
-        } catch {
-          payload = undefined
-        }
-      }
-      const detail =
-        payload && typeof payload.error === "string" && payload.error.length > 0
-          ? ` (${payload.error})`
-          : ""
-      const err = new Error(
-        `RemoteSessionView: POST ${url} failed with status ${res.status}${detail}`,
-      ) as Error & { code?: number }
-      if (payload && typeof payload.code === "number") err.code = payload.code
-      throw err
-    }
-    if (!res.json) return undefined
-    try {
-      return await res.json()
-    } catch {
-      return undefined
-    }
-  }
-}
-
-// ─── Factory ───
-
-/**
- * createRemoteSessionView — נוחות ליצירת RemoteSessionView.
- * סינכרוני בכוונה (תואם ל-brief C4) — הקורא (S6, טרם נבנה) אחראי לקרוא
- * ל-connect() בעצמו לפני שימוש; זה אינו נחווט כאן (avigail plan-gate r3 #11,
- * מרדכי: "זה נסגר ב-S6, לא אצלך").
- */
-export function createRemoteSessionView(
-  agentId: string,
-  baseUrl: string,
-  opts?: RemoteSessionViewOptions,
-): RemoteSessionView {
-  return new RemoteSessionView(agentId, baseUrl, opts)
 }
 
 // ─── Re-export for convenience ───

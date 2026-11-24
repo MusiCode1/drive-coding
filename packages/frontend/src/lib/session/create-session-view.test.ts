@@ -9,13 +9,99 @@
  * ─── slice view-switch C2 (TDD) ───
  */
 
-import { createInitialSessionState } from "@drive-coding/core/session"
+import {
+  createInitialSessionState,
+  decodeWsClientMessage,
+  encodeWsFrame,
+  encodeWsServerResponse,
+  serializeFrame,
+  snapshotFrame,
+} from "@drive-coding/core/session"
 import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { fakeSessionSockets } from "./__contract__/fake-session-socket"
 import { createRemoteView } from "./create-session-view.js"
 import { RemoteSessionView } from "./remote-session-view.js"
 
 const encoder = new TextEncoder()
+
+describe("reply failure through RemoteSessionView", () => {
+  const pendingSnapshot = snapshotFrame({
+    ...createInitialSessionState({ sessionId: "sess-1" }),
+    pending: { permission: { requestId: 7, params: {} as never }, elicitation: null },
+  })
+  const reply = { outcome: { outcome: "cancelled" } }
+  const failure = { status: 500, body: { error: "reply failed" } }
+
+  it("HTTP retains the error message and the configured connection ID", async () => {
+    const fetchReply = vi.fn(async (_url: string, _init?: RequestInit) =>
+      Response.json(failure.body, { status: failure.status }),
+    )
+    const mockFetch = (url: string, init?: RequestInit) =>
+      url.endsWith("/events")
+        ? Promise.resolve(new Response(serializeFrame(pendingSnapshot)))
+        : fetchReply(url, init)
+    const view = await createRemoteView({
+      agentId: "agent-1",
+      baseUrl: "https://be.local",
+      headers: { "Acp-Connection-Id": "tab / 1" },
+      _fetch: mockFetch,
+    })
+    try {
+      await expect(view.respond(7, reply)).rejects.toThrow(
+        "RemoteSessionView: POST https://be.local/api/agents/agent-1/reply failed with status 500 (reply failed)",
+      )
+      expect(fetchReply).toHaveBeenCalledWith(
+        expect.stringContaining("/reply"),
+        expect.objectContaining({
+          headers: expect.objectContaining({ "Acp-Connection-Id": "tab / 1" }),
+        }),
+      )
+    } finally {
+      await view.close()
+    }
+  })
+
+  it("WS rejects the same reply and uses the HTTP connection ID in the query", async () => {
+    const sockets = fakeSessionSockets()
+    const unexpectedFetch = vi.fn(async () => {
+      throw new Error("Unexpected HTTP request")
+    })
+    const connected = createRemoteView({
+      transport: "ws",
+      agentId: "agent-1",
+      baseUrl: "https://be.local/",
+      headers: { "Acp-Connection-Id": "tab / 1" },
+      _WebSocket: sockets.WebSocket,
+      _fetch: unexpectedFetch,
+    })
+    void connected.catch(() => {})
+    const socket = sockets.latest()
+    const url = new URL(socket.url)
+    expect(url.origin + url.pathname).toBe("wss://be.local/ws/session/agent-1")
+    expect([...url.searchParams]).toEqual([["connectionId", "tab / 1"]])
+    const send = socket.send.bind(socket)
+    vi.spyOn(socket, "send").mockImplementation((data) => {
+      send(data)
+      const message = decodeWsClientMessage(data)
+      if (message?.kind === "request") {
+        socket.receive(encodeWsServerResponse(message.request.id, failure))
+      }
+    })
+    socket.connect()
+    socket.receive(encodeWsFrame(pendingSnapshot))
+    const view = await connected
+    try {
+      await expect(view.respond(7, reply)).rejects.toThrow(
+        "RemoteSessionView: WS reply failed with status 500 (reply failed)",
+      )
+    } finally {
+      await view.close()
+    }
+    expect(socket.readyState).toBe(3)
+    expect(unexpectedFetch).not.toHaveBeenCalled()
+  })
+})
 
 function sseResponse(): Response {
   const snapshot = createInitialSessionState({ sessionId: "sess-1" })

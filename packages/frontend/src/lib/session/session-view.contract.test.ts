@@ -37,8 +37,9 @@ import {
   describeSessionViewContract,
   PatchBuffer,
 } from "./__contract__/session-view-contract.js"
+import { createRemoteSessionView } from "./create-session-view.js"
 import { LocalSessionView } from "./local-session-view.js"
-import { RemoteSessionView } from "./remote-session-view.js"
+import type { RemoteSessionView } from "./remote-session-view.js"
 
 // ⚠️ `AcpClientCallbacks` אינו re-exported מ-"@drive-coding/provider/client" (פער קיים,
 // לא בהיקף ה-slice — משפיע כבר על local-session-view.ts/test.ts). נגזר structurally
@@ -186,7 +187,7 @@ async function createRemoteHarness(): Promise<ContractHarness> {
     throw new Error(`unexpected fetch: ${url}`)
   })
 
-  const view = new RemoteSessionView("agent-contract", "http://be.local", {
+  const view = createRemoteSessionView("agent-contract", "http://be.local", {
     _fetch: mockFetch,
     _sleep: () => Promise.resolve(),
   })
@@ -346,7 +347,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
   })
 
   it("newSession/loadSession/listSessions/deleteSession perform real RPCs", async () => {
-    const view = new RemoteSessionView("a1", "http://be.local", {
+    const view = createRemoteSessionView("a1", "http://be.local", {
       _fetch: mockFetchFor({}),
       _sleep: () => Promise.resolve(),
     })
@@ -371,7 +372,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
   })
 
   it("prompt(PromptBlocks) passes blocks to RPC without throwing (slice remote-images C1)", async () => {
-    const view = new RemoteSessionView("a1", "http://be.local", {
+    const view = createRemoteSessionView("a1", "http://be.local", {
       _fetch: mockFetchFor({}),
       _sleep: () => Promise.resolve(),
     })
@@ -382,7 +383,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
   })
 
   it("an HTTP failure (5xx) on any RPC is rejected -- not silently swallowed", async () => {
-    const view = new RemoteSessionView("a1", "http://be.local", {
+    const view = createRemoteSessionView("a1", "http://be.local", {
       _fetch: mockFetchFor({ rpcStatus: 500 }),
       _sleep: () => Promise.resolve(),
     })
@@ -393,7 +394,7 @@ describe("SessionView deviation table — remote-only behaviors", () => {
   })
 
   it("respond() with an unknown id is a silent no-op (like LocalSessionView)", async () => {
-    const view = new RemoteSessionView("a1", "http://be.local", {
+    const view = createRemoteSessionView("a1", "http://be.local", {
       _fetch: mockFetchFor({
         events: [
           {

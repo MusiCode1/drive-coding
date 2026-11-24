@@ -33,7 +33,7 @@ import { tick } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
-import { RemoteSessionView } from "$lib/session/remote-session-view"
+import { createRemoteSessionView } from "$lib/session/create-session-view"
 import type { SessionView, ViewEmission } from "$lib/session/session-view"
 import type { WireUpdateBatch } from "$lib/session/sse-reader"
 import type { Bubble } from "$lib/types/bubble"
@@ -455,7 +455,7 @@ describe("failed session switch over HTTP", () => {
     const writer = sse.writable.getWriter()
     const send = (frame: SseFrame) => writer.write(encoder.encode(serializeFrame(frame)))
     const rpc = Promise.withResolvers<Response>()
-    const view = new RemoteSessionView("restore-test", "http://be.local", {
+    const view = createRemoteSessionView("restore-test", "http://be.local", {
       _fetch: async (url) =>
         url.endsWith("/events")
           ? new Response(sse.readable, { headers: { "Content-Type": "text/event-stream" } })

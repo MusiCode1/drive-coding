@@ -25,6 +25,7 @@ export function findTransportPoints(files: { path: string; text: string }[]): st
 }
 
 const ALLOWLIST = [
+  "lib/session/create-session-view.ts", // session pipe selection
   "lib/session/session-transport-read.ts", // definition
   "lib/session/session-url.ts", // sessionPathWithTransport query flag
   "lib/actions/open-session-url.ts", // exact-host attach branch

@@ -31,11 +31,8 @@ import {
 } from "@drive-coding/core/session"
 import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import {
-  createRemoteSessionView,
-  RemoteSessionView,
-  type RemoteSessionViewOptions,
-} from "./remote-session-view.js"
+import { createRemoteSessionView, type RemoteSessionViewOptions } from "./create-session-view.js"
+import { RemoteSessionView } from "./remote-session-view.js"
 import type { ViewEmission } from "./session-view.js"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -50,7 +47,7 @@ function newView(
   baseUrl: string,
   opts: RemoteSessionViewOptions = {},
 ): RemoteSessionView {
-  const view = new RemoteSessionView(agentId, baseUrl, opts)
+  const view = createRemoteSessionView(agentId, baseUrl, opts)
   activeViews.push(view)
   return view
 }
@@ -286,7 +283,7 @@ describe("RemoteSessionView — connect()", () => {
 
   it("round 2 #3: connect() after close() throws explicitly instead of silently no-op-ing", async () => {
     const mockFetch = makeMockFetch({ keepOpen: true })
-    const view = new RemoteSessionView("agent-1", "http://be.local", {
+    const view = createRemoteSessionView("agent-1", "http://be.local", {
       _fetch: mockFetch,
       _sleep: noSleep,
     })
@@ -906,7 +903,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
 
 describe("RemoteSessionView — close()", () => {
   it("closes without throwing, even before connect()", async () => {
-    const view = new RemoteSessionView("agent-1", "http://be.local", {
+    const view = createRemoteSessionView("agent-1", "http://be.local", {
       _fetch: makeMockFetch({}),
       _sleep: noSleep,
     })
