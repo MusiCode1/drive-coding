@@ -1,8 +1,7 @@
 /**
  * session-transport.ts — resolveSessionTransport(): טהור (בלי window/location).
  *
- * דגל בחירת-מימוש: `ws` (WebSocket — הנתיב הקיים, ברירת-מחדל) | `http`
- * (RemoteSessionView → BE SessionHost דרך HTTP+SSE).
+ * RemoteSessionView uses `ws` (the default) or `http` (HTTP with SSE) to reach SessionHost.
  * ⚠️ השם `sessionTransport` — לא `sessionMode` (תפוס: configName.sessionMode הוא
  * אפשרות config של ה-CLI, דומיין אחר לחלוטין).
  *

@@ -692,7 +692,7 @@
       "codeLines": 144
     },
     "packages/frontend/src/lib/components/layout/SessionOptionsPanel.svelte": {
-      "metric": 198,
+      "metric": 197,
       "impurity": 8,
       "class": "mixed",
       "codeLines": 314
@@ -872,7 +872,7 @@
       "codeLines": 26
     },
     "packages/frontend/src/lib/session/__contract__/session-view-contract.ts": {
-      "metric": 236,
+      "metric": 232,
       "impurity": 23,
       "class": "scattered",
       "codeLines": 177
@@ -884,7 +884,7 @@
       "codeLines": 15
     },
     "packages/frontend/src/lib/session/remote-session-view.ts": {
-      "metric": 479,
+      "metric": 476,
       "impurity": 13,
       "class": "scattered",
       "codeLines": 269
@@ -962,7 +962,7 @@
       "codeLines": 68
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 1745,
+      "metric": 1721,
       "impurity": 27,
       "class": "scattered",
       "codeLines": 1130

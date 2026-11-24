@@ -1,9 +1,8 @@
 /**
  * session-view.ts — SessionView port.
  *
- * ה-port מגדיר את ה-contract שה-VM צורך (C3) ו-LocalSessionView מממש (C2).
- * RemoteSessionView (S5) מממש אותו באמצעות HTTP+SSE ל-SessionHost בשרת (לא WS —
- * EventSource לא תומך ב-POST/headers, ולכן fetch+ReadableStream + reconnect ידני).
+ * The view model consumes this contract. RemoteSessionView connects to the server's
+ * SessionHost through either WebSocket or HTTP with SSE.
  *
  * ─── slice session-view-port C2 ───
  */
@@ -37,12 +36,7 @@ export function readViewEmission(
 
 /**
  * SessionView — port עבור גישה למצב הסשן + methods לניהולו.
- *
- * שני מימושים:
- * - LocalSessionView (C2): עוטף AcpClient + WsAcpTransport — in-process.
- * - RemoteSessionView (S5): HTTP+SSE ל-SessionHost בשרת — out-of-process.
- *
- * ה-VM (C3) מקבל SessionView ב-DI ואינו יודע על המימוש.
+
  */
 export interface SessionView {
   /** מצב הסשן העכשווי — כולל כל שדות SessionState מ-C1 (status, turnState, pending, ...). */

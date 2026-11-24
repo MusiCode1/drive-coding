@@ -125,10 +125,7 @@ export class FrameReader {
 
     // Reconnect loop
     let delay = 1000
-    // סבב-תיקונים liveness: היומן [conn] נוסף כאן ולא רק במסלול ה-WS. ניתוק
-    // ב-HTTP לא עובר ב-#handleUnexpectedClose בכלל, ולכן הקונסולה נשארה שקטה
-    // לגמרי בזמן ניתוק אמיתי — נתפס חי בפריוויו. זה הזרם היחיד שרואה את
-    // הניתוק בנתיב ה-HTTP, אז כאן מקומו.
+    // Log stream loss here, where both transports enter the reconnect loop.
     connWarn("sse-lost", { url: this.#pipe.describe })
 
     while (!this.#closed) {

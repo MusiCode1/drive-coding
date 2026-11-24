@@ -159,8 +159,7 @@ function currentTransport() {
 }
 
 /**
- * בחירת סשן: switchSession (warm reload על החיבור הקיים) + ניווט ל-/chat.
- * אם אין חיבור (#client === null) — switchSession נופל ל-loadSession הכבד (דפנסיבי).
+ * Switch the session through the attached view before updating the chat route.
  */
 async function selectSession(info: { sessionId: string; cwd: string; title?: string }) {
   await session.switchSession({

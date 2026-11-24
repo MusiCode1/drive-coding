@@ -191,7 +191,6 @@ export class AgentSession {
       this.#view = opts.view
       void this.#consumeViewPatches(opts.view)
     }
-    // ─── slice ws-reconnect-infra: visibility tracking (עבר ל-#visibility) ───
     if (typeof document !== "undefined") {
       // watchdog §2 — רק בדפדפן. בטסטים/SSR אין טיימר רקע שידלוף.
       this.#startStallWatch()
@@ -226,11 +225,7 @@ export class AgentSession {
   /**
    * בקשת הרשאה ממתינה מהסוכן — pending יחיד (בקשה שנייה סוגרת את הקודמת כ-cancelled).
    * null = אין בקשה פעילה. ה-UI (PermissionRequestBlock) מרנדר inline כשזה לא-null.
-   * `resolve` הוא ה-resolver של ה-Promise שהוחזר ל-`createClientImpl.requestPermission` —
-   * חובה לפתור אותו בכל נקודה ש-#client מתאפס, אחרת ה-turn נתקע (§4 Commit 2, הסיכון #1).
-   * ─── slice view-switch C3-ו: requestId אופציונלי ─── (additive)
-   * remote תמיד מציב אותו (guard-זהות מול patch מעופש); הנתיב המקומי בונה בלי requestId
-   * (#onRequestPermission) — שדה-חובה היה שובר typecheck שם, בניגוד ל"אפס שינוי ב-local".
+   * The request ID identifies the pending permission in the SessionView.
    */
   pendingPermission = $state<{
     requestId?: number
@@ -242,10 +237,7 @@ export class AgentSession {
   /**
    * שאלה מובנת ממתינה מהסוכן — pending יחיד (בקשה שנייה סוגרת את הקודמת כ-cancelled).
    * null = אין בקשה פעילה. ה-UI (ElicitationDialog) מרנדר inline כשזה לא-null.
-   * `resolve` הוא ה-resolver של ה-Promise שהוחזר ל-`createClientImpl.createElicitation`
-   * — חובה לפתור אותו בכל נקודה ש-#client מתאפס, אחרת ה-turn נתקע (מחקה pendingPermission —
-   * הסיכון #1 יורש מ-A1). ר' docs/plans/slice-elicitation-ui.md §4 Commit 2.
-   * ─── slice view-switch C3-ו: requestId אופציונלי ─── (additive, מקביל ל-pendingPermission)
+   * The request ID identifies the pending elicitation in the SessionView.
    */
   pendingElicitation = $state<{
     requestId?: number
@@ -478,12 +470,7 @@ export class AgentSession {
     }
   }
   /**
-   * True רק אחרי catch **טרמינלי** (attach/loadSession — שם #cleanup רץ / ה-agent מת).
-   * anti-clobber guard ב-#handleUnexpectedClose (calev-heavy §10.2, Commit 4): במקור
-   * ה-guard היה `status==="error"`, אבל switchSession/newSession גם קובעים status="error"
-   * ומשאירים את ה-WS חי (בלי #cleanup) — כשל שם לא אמור להשתיק reconnect אם ה-WS נופל
-   * מאוחר יותר. הדגל מוצת רק בכשל טרמינלי, ומתאפס בתחילת כל מתודת-חיבור (attach/
-   * loadSession/switchSession/newSession/attachToLiveAgent) כדי שסשן חדש לא ייתקע.
+   * Preserve a terminal attachment error until the next attachment begins.
    */
   #errorSurfaced = false
 
@@ -559,10 +546,7 @@ export class AgentSession {
           }
         }
 
-        // 2. other patches → view state only (void for bubbles — same as #drainViewPatches)
-        // RemoteSessionView already applied them to view.state in #applyIncoming.
-
-        // 3. all raw wire updates → #onSessionUpdate (WS tee parity)
+        // The view has applied the patches to its state. The wire updates feed the chat bubbles.
         for (const update of emission.updates) {
           this.#onSessionUpdate({ update } as unknown as SessionNotification)
         }
@@ -606,10 +590,7 @@ export class AgentSession {
     // quota
     if (viewState.quota !== this.quota) this.quota = viewState.quota
     // ─── slice http-usable C1: capabilities from SessionState → #capabilities ───
-    // In remote there is no #client, and _drive/capabilities is only sent by
-    // ws-agent — so supportsImageInput was always false over HTTP. The BE now
-    // fills state.capabilities and the snapshot carries it; this is where it
-    // lands in the VM. null = not received yet → never clobber an existing value.
+    // Capabilities come from the host snapshot. A missing value preserves the current capabilities.
     if (viewState.capabilities !== null && viewState.capabilities !== this.#capabilities) {
       this.#capabilities = viewState.capabilities as NormalizedCapabilities
     }
@@ -1019,9 +1000,7 @@ export class AgentSession {
 
   /**
    * helper מרוכז — נקודת-פתרון יחידה ל-pendingPermission. idempotent (no-op אם null).
-   * ⚠️ **חובה** לקרוא מכל נקודה ש-#client מתאפס/הסשן נסגר, אחרת Promise דולף + turn תקוע
-   * (הסיכון #1 של הסלייס): #cleanup (מכסה detach+leaveRunning), cancelTurn,
-   * #doReconnect/#coldReconnect/#warmReconnect (3 נתיבי reconnect).
+   * Cleanup and turn cancellation resolve a pending permission here.
    */
   #resolvePendingPermission(response: PermissionResponse): void {
     const pending = this.pendingPermission
@@ -1042,9 +1021,7 @@ export class AgentSession {
 
   /**
    * helper מרוכז — נקודת-פתרון יחידה ל-pendingElicitation. idempotent (no-op אם null).
-   * ⚠️ **חובה** לקרוא מכל נקודה ש-#client מתאפס/הסשן נסגר, אחרת Promise דולף + turn תקוע
-   * (הסיכון #1, יורש מ-A1): #cleanup (מכסה detach+leaveRunning), cancelTurn,
-   * #doReconnect/#coldReconnect/#warmReconnect (3 נתיבי reconnect).
+   * Cleanup and turn cancellation resolve a pending elicitation here.
    */
   #resolvePendingElicitation(response: ElicitationResponse): void {
     const pending = this.pendingElicitation
@@ -1123,8 +1100,8 @@ export class AgentSession {
       throw new Error(`cannot switchSession in status ${this.status}`)
     }
     this.#endSessionScope("switch")
-    this.error = null // parity with the local path — a stale error must not survive
-    this.isLoadingHistory = true // silences TTS during the replay (like local)
+    this.error = null // Clear stale errors when switching sessions.
+    this.isLoadingHistory = true // Silence TTS during history replay.
     try {
       await view.loadSession(input.sessionId, input.cwd)
       // Direct assignment — #syncFromViewState does NOT sync sessionId; cannot rely on it.
@@ -1260,8 +1237,7 @@ export class AgentSession {
   // ─── redesign-fix: רשימת סשנים inline ─── (תוספתי)
 
   /**
-   * מביא את רשימת הסשנים דרך החיבור ה-ACP הקיים (#client) — ללא spawn של סוכן.
-   * cache: טעינה מוצלחת אחת; force=true מרענן. no-op אם אין חיבור פעיל (#client===null).
+   * Read the session list through the current view. Force refresh bypasses the cache.
    * (slice connect-recent-projects: דף החיבור כבר לא משתמש ב-spawn — הוסר listSessionsForCwd.
    *  בחירת סשן נעשית מתוך הסשן הפעיל דרך SessionOptionsPanel.)
    */
@@ -1274,7 +1250,7 @@ export class AgentSession {
   /**
    * מוחק session מ-`session/list` (store/persistence) דרך ACP `session/delete` — **לא**
    * הורג את ה-process (זה נעשה בנפרד ע"י `DELETE /api/agents/:id`, מסלול שונה — §1 הבריף).
-   * no-op אם אין חיבור פעיל (`#client===null`) — גם הכפתור אמור להיות מוסתר (gate).
+   * Deletion requires an attached view.
    *
    * אם הסשן הנמחק הוא הסשן הפעיל (`#sessionId`) → `detach()` (ניווט-החוצה, עקבי עם
    * `onDisconnect` הקיים ב-`SessionOptionsPanel`) — אין טעם להשאיר תהליך חי לסשן שכבר לא
@@ -1335,7 +1311,7 @@ export class AgentSession {
   // ─── slice 6: setter מרכז ─── (additive — מנתב את כל ה-status writes)
 
   /**
-   * נקודת-mutation יחידה ל-status. כל שינוי status עובר דרך כאן.
+   * Applies status transitions that can play a cue. Terminal view emissions mark a silent disconnect.
    * מנגן audio cue ב-transitions רלוונטיים (slice 6). אין $effect — קריאה מפורשת.
    * idempotent: אם next === prev — לא מנגן cue (אין transition).
    *

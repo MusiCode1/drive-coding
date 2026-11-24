@@ -1,9 +1,5 @@
 /**
- * session-view-contract.ts — הגדרת ה-contract המשותף בין LocalSessionView ל-RemoteSessionView.
- *
- * describeSessionViewContract() מריץ 8 התנהגויות משותפות פעמיים — פעם עם harness
- * מבוסס-local (mock AcpClient) ופעם עם harness מבוסס-remote (mock fetch/SSE) — ומוכיח
- * ששני המימושים מקיימים אותו חוזה.
+ * session-view-contract.ts — shared SessionView contract for the SSE and WebSocket harnesses.
  *
  * ⚠️ `view.patches` הוא single-consumer (session-view.ts) — ה-harness מחזיק reader יחיד
  * (PatchBuffer, למטה) ולעולם לא פותח reader שני.

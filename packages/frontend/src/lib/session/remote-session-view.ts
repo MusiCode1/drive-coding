@@ -153,9 +153,7 @@ export class RemoteSessionView implements SessionView {
    *
    * calev-heavy round 2 finding #3: `connect()` אחרי `close()` היה no-op שקט
    * (מחזיר promise מוצלח ישן בלי לפתוח שום stream). תוקן: זורק שגיאה מפורשת —
-   * view סגור הוא terminal; לחיבור חדש יש לבנות instance חדש (תואם ל-LocalSessionView
-   * ול-contract של close() ב-session-view.ts, ונמנע מהמורכבות של שחזור ה-patches
-   * stream שכבר נסגר סופית).
+   * A closed view cannot reopen its patch stream. Create a new instance to attach again.
    */
   async connect(): Promise<void> {
     if (this.#lifetime.signal.aborted) {
@@ -364,8 +362,8 @@ export class RemoteSessionView implements SessionView {
 
   /**
    * Lists sessions + captures sessionCapabilities (delete gating) in one
-   * round-trip. Sessions are normalized here (like LocalSessionView) — the VM
-   * consumes them as-is. A -32601 (CLI without list capability) surfaces as an
+   * round-trip. The view model consumes the normalized sessions as-is.
+   * A -32601 (CLI without list capability) surfaces as an
    * error carrying `.code` (resultOf reads the response body) → the VM degrades to an
    * empty list gracefully instead of showing a generic "502".
    */
@@ -450,8 +448,7 @@ export class RemoteSessionView implements SessionView {
    *
    * slice session-host-pending-surface C4: ה-BE מקצה requestId ממונה משותף
    * יחיד (session-host.ts) — שני kinds לעולם לא חולקים id, אז אין כאן מקום
-   * ל"עדיפות". id שלא תואם אף pending קיים הוא no-op שקט (כמו
-   * LocalSessionView.respond) — לא נשלחת שום בקשה.
+   * ל"עדיפות". id שלא תואם בקשה ממתינה אינו שולח תשובה לשרת.
    */
   async respond(requestId: number, result: unknown): Promise<void> {
     const kind =
