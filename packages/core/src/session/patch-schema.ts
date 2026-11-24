@@ -22,6 +22,13 @@ import { type } from "arktype"
 const SessionSegmentSchema = type({ id: "string", text: "string" })
 
 const AttachmentSchema = type({ mimeType: "string", dataBase64: "string" })
+const ContentPlaceholderSchema = type({
+  kind: "'image'|'audio'|'resource_link'|'resource'",
+  "label?": "string",
+  "uri?": "string",
+  "mimeType?": "string",
+})
+const MessageContentChunkSchema = ContentPlaceholderSchema.or(AttachmentSchema)
 const SessionMessageSchema = type({
   id: "string",
   role: "'user'|'thought'|'assistant'",
@@ -29,6 +36,7 @@ const SessionMessageSchema = type({
   segments: SessionSegmentSchema.array(),
   "meta?": "object",
   "attachments?": AttachmentSchema.array(),
+  "contentPlaceholders?": ContentPlaceholderSchema.array(),
 }).or({
   id: "string",
   role: "'tool'",
@@ -49,12 +57,14 @@ export const PatchSchema = type({
     version: "number",
     op: "'add-message'",
     message: SessionMessageSchema,
+    "contentChunk?": MessageContentChunkSchema,
   })
   .or({
     version: "number",
     op: "'set-message'",
     targetId: "string",
     message: SessionMessageSchema,
+    "contentChunk?": MessageContentChunkSchema,
   })
   .or({
     version: "number",

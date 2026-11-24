@@ -7,6 +7,7 @@
  *
  * ─── slice session-state-reducer C1 (TDD) ───
  */
+import { applyPatch } from "./apply-patch"
 import { recordCarried } from "./carried"
 import {
   applyToolOutputDelta,
@@ -18,6 +19,8 @@ import {
   type ToolOutputRules,
 } from "./tool-output"
 import type {
+  MessageContentChunk,
+  MessageContentPlaceholder,
   Patch,
   SessionMessage,
   SessionModes,
@@ -153,15 +156,11 @@ function isVoiceMessage(meta: Record<string, unknown> | undefined): boolean {
   return meta?.["_drive/voice"] !== undefined
 }
 
-function handleTextChunk(
+function chunkTargetIndex(
   state: SessionState,
   role: "user" | "thought" | "assistant",
-  text: string,
   messageId: string | null,
-  meta?: Record<string, unknown>,
-): { state: SessionState; patches: Patch[] } {
-  if (!text) return { state, patches: [] }
-
+): number {
   let targetIdx = state.messages.length - 1
   if (messageId !== null) {
     while (targetIdx >= 0) {
@@ -194,6 +193,19 @@ function handleTextChunk(
       break
     }
   }
+  return targetIdx
+}
+
+function handleTextChunk(
+  state: SessionState,
+  role: "user" | "thought" | "assistant",
+  text: string,
+  messageId: string | null,
+  meta?: Record<string, unknown>,
+): { state: SessionState; patches: Patch[] } {
+  if (!text) return { state, patches: [] }
+
+  const targetIdx = chunkTargetIndex(state, role, messageId)
   const last = state.messages[targetIdx]
   const newVersion = state.version + 1
 
@@ -477,24 +489,100 @@ function splitTimestampMeta(u: Record<string, unknown>): {
   }
 }
 
-/** ContentBlock[] → {טקסט מצטבר, קבצים מצורפים}. אפס-זריקה: מה שאינו טקסט נשמר. */
-function splitContentBlocks(blocks: unknown): {
-  text: string
-  attachments: { mimeType: string; dataBase64: string }[]
-} {
-  const attachments: { mimeType: string; dataBase64: string }[] = []
+type MessageContent = Pick<
+  Extract<SessionMessage, { segments: SessionSegment[] }>,
+  "attachments" | "contentPlaceholders"
+>
+
+function nonTextContent(
+  role: "user" | "thought" | "assistant",
+  block: Record<string, unknown>,
+): MessageContentChunk | undefined {
+  const kind = block.type
+  if (kind !== "image" && kind !== "audio" && kind !== "resource_link" && kind !== "resource") {
+    return undefined
+  }
+  const mimeType = typeof block.mimeType === "string" ? block.mimeType : undefined
+  if (role === "user" && kind === "image") {
+    if (mimeType === undefined || typeof block.data !== "string") return undefined
+    return { mimeType, dataBase64: block.data }
+  }
+  const placeholder: MessageContentPlaceholder = { kind }
+  if (kind === "resource_link") {
+    if (typeof block.uri === "string") placeholder.uri = block.uri
+    placeholder.label = typeof block.name === "string" ? block.name : (placeholder.uri ?? "")
+  }
+  if (mimeType !== undefined) placeholder.mimeType = mimeType
+  return placeholder
+}
+
+function handleContentChunk(
+  state: SessionState,
+  role: "user" | "thought" | "assistant",
+  messageId: string | null,
+  contentChunk: MessageContentChunk,
+  meta?: Record<string, unknown>,
+): { state: SessionState; patches: Patch[] } {
+  const last = state.messages[chunkTargetIndex(state, role, messageId)]
+  const version = state.version + 1
+  const grouped = canGroupWith(last, role, messageId) ? last : undefined
+  const message = withPendingTs(
+    {
+      ...(grouped ?? {
+        id: nextMsgId(state.nextMessageSeq),
+        role,
+        messageId,
+        segments: [],
+        ...(meta ? { meta } : {}),
+      }),
+      ...("dataBase64" in contentChunk
+        ? { attachments: [...(grouped?.attachments ?? []), contentChunk] }
+        : { contentPlaceholders: [...(grouped?.contentPlaceholders ?? []), contentChunk] }),
+    },
+    state,
+  )
+  const patch: Patch = grouped
+    ? { version, op: "set-message", targetId: grouped.id, message, contentChunk }
+    : { version, op: "add-message", message, contentChunk }
+  const next = applyPatch(state, patch)
+  return {
+    state: isVoiceMessage(meta) ? { ...next, turnState: state.turnState } : next,
+    patches: [patch],
+  }
+}
+
+function splitContentBlocks(
+  role: "user" | "thought" | "assistant",
+  blocks: unknown,
+): { text: string; content: MessageContent } {
+  const attachments: NonNullable<MessageContent["attachments"]> = []
+  const contentPlaceholders: MessageContentPlaceholder[] = []
   let text = ""
-  if (!Array.isArray(blocks)) return { text, attachments }
-  for (const raw of blocks) {
-    if (typeof raw !== "object" || raw === null) continue
-    const b = raw as Record<string, unknown>
-    if (b.type === "text" && typeof b.text === "string") {
-      text += b.text
-    } else if (b.type === "image" && typeof b.mimeType === "string" && typeof b.data === "string") {
-      attachments.push({ mimeType: b.mimeType, dataBase64: b.data })
+  if (Array.isArray(blocks)) {
+    for (const raw of blocks) {
+      if (typeof raw !== "object" || raw === null) continue
+      const block = raw as Record<string, unknown>
+      if (block.type === "text" && typeof block.text === "string") {
+        text += block.text
+      } else if (
+        block.type === "image" &&
+        typeof block.mimeType === "string" &&
+        typeof block.data === "string"
+      ) {
+        attachments.push({ mimeType: block.mimeType, dataBase64: block.data })
+      } else {
+        const content = nonTextContent(role, block)
+        if (content && !("dataBase64" in content)) contentPlaceholders.push(content)
+      }
     }
   }
-  return { text, attachments }
+  return {
+    text,
+    content: {
+      ...(attachments.length ? { attachments } : {}),
+      ...(contentPlaceholders.length ? { contentPlaceholders } : {}),
+    },
+  }
 }
 
 /**
@@ -511,7 +599,7 @@ function handleWholeMessage(
   const messageId = typeof u.messageId === "string" ? u.messageId : null
   if (messageId === null) return { state, patches: [] }
 
-  const { text, attachments } = splitContentBlocks(u.content)
+  const { text, content } = splitContentBlocks(role, u.content)
   // ⚠️ **הודעה ריקה היא עדיין הודעה, ואינה no-op.**
   //
   // גרסה קודמת של השורה הזו דחתה `content: []` כדי לא לייצר בועה ריקה — וזה
@@ -560,7 +648,7 @@ function handleWholeMessage(
         messageId: storedMid,
         segments,
         ...(timestamp !== undefined ? { timestamp } : {}),
-        ...(attachments.length > 0 ? { attachments } : {}),
+        ...content,
         ...(meta !== undefined ? { meta } : {}),
       },
       state,
@@ -580,12 +668,13 @@ function handleWholeMessage(
   }
 
   const old = state.messages[idx] as SessionMessage & { role: "user" | "thought" | "assistant" }
+  const { contentPlaceholders: _previousPlaceholders, ...previous } = old
   const msg: SessionMessage = withPendingTs(
     {
-      ...old,
+      ...previous,
       segments,
       ...(timestamp !== undefined ? { timestamp } : {}),
-      ...(attachments.length > 0 ? { attachments } : {}),
+      ...content,
       ...(meta !== undefined ? { meta: { ...(old.meta ?? {}), ...meta } } : {}),
     },
     state,
@@ -766,15 +855,13 @@ function reduceRecognized(
 
   if (typeof sessionUpdate !== "string") return { state, patches: [] }
 
-  // text chunks
+  // Message chunks
   if (
     sessionUpdate === "agent_message_chunk" ||
     sessionUpdate === "agent_thought_chunk" ||
     sessionUpdate === "user_message_chunk"
   ) {
     const content = u.content as Record<string, unknown> | undefined
-    if (content?.type !== "text") return { state, patches: [] }
-    const text = typeof content.text === "string" ? content.text : ""
     const messageId = storedMessageId(u as Record<string, unknown>, toStringOrNull(u.messageId))
     const role: "user" | "thought" | "assistant" =
       sessionUpdate === "user_message_chunk"
@@ -782,7 +869,14 @@ function reduceRecognized(
         : sessionUpdate === "agent_thought_chunk"
           ? "thought"
           : "assistant"
-    return handleTextChunk(state, role, text, messageId, metaOf(u))
+    if (content?.type === "text") {
+      const text = typeof content.text === "string" ? content.text : ""
+      return handleTextChunk(state, role, text, messageId, metaOf(u))
+    }
+    const parsed = content && nonTextContent(role, content)
+    return parsed
+      ? handleContentChunk(state, role, messageId, parsed, metaOf(u))
+      : { state, patches: [] }
   }
 
   // ─── ACP v2: upsert של הודעה שלמה ───

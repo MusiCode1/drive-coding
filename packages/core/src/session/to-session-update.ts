@@ -19,7 +19,7 @@
  */
 
 import { TOOL_OUTPUT_META_KEY, type ToolOutputDelta } from "./tool-output"
-import type { Patch, SessionMessage, SessionState } from "./types"
+import type { MessageContentChunk, Patch, SessionMessage, SessionState } from "./types"
 
 /** פריים כפי שהוא נוסע על החוט. `unknown` בשדות — הצרכן הוא `reduce`. */
 export type WireSessionUpdate = Record<string, unknown> & { sessionUpdate: string }
@@ -86,6 +86,28 @@ const WHOLE_KIND = {
   assistant: "agent_message",
 } as const
 
+function messageContentToUpdate(
+  message: Exclude<SessionMessage, { role: "tool" }>,
+  chunk: MessageContentChunk,
+): WireSessionUpdate {
+  const meta = mergeMeta(message.meta, midMeta(message))
+  const content =
+    "dataBase64" in chunk
+      ? { type: "image", mimeType: chunk.mimeType, data: chunk.dataBase64 }
+      : {
+          type: chunk.kind,
+          ...(chunk.label !== undefined ? { name: chunk.label } : {}),
+          ...(chunk.uri !== undefined ? { uri: chunk.uri } : {}),
+          ...(chunk.mimeType !== undefined ? { mimeType: chunk.mimeType } : {}),
+        }
+  return {
+    sessionUpdate: CHUNK_KIND[message.role],
+    messageId: midOf(message),
+    content,
+    ...(meta !== undefined ? { _meta: meta } : {}),
+  }
+}
+
 /** הודעה שלמה → update יחיד. כלי מקבל `tool_call_update` (ב-v2 הוא גם היוצר). */
 function messageToUpdate(m: SessionMessage): WireSessionUpdate {
   if (m.role === "tool") {
@@ -123,6 +145,18 @@ function messageToUpdate(m: SessionMessage): WireSessionUpdate {
   }
 }
 
+function messageUpdates(
+  message: SessionMessage,
+  contentChunk?: MessageContentChunk,
+): WireSessionUpdate[] {
+  if (message.role === "tool") return [messageToUpdate(message)]
+  if (contentChunk !== undefined) return [messageContentToUpdate(message, contentChunk)]
+  return [
+    messageToUpdate(message),
+    ...(message.contentPlaceholders?.map((chunk) => messageContentToUpdate(message, chunk)) ?? []),
+  ]
+}
+
 /** ה-changes שיש להם בית קנוני, כל אחד ל-update משלו. */
 function changesToUpdates(changes: Record<string, unknown>): WireSessionUpdate[] {
   const out: WireSessionUpdate[] = []
@@ -154,7 +188,9 @@ function changesToUpdates(changes: Record<string, unknown>): WireSessionUpdate[]
           ? undefined
           : typeof u.cost === "number"
             ? { amount: u.cost }
-            : u.cost && typeof u.cost === "object" && typeof (u.cost as { amount?: unknown }).amount === "number"
+            : u.cost &&
+                typeof u.cost === "object" &&
+                typeof (u.cost as { amount?: unknown }).amount === "number"
               ? {
                   amount: (u.cost as { amount: number }).amount,
                   ...((u.cost as { currency?: unknown }).currency !== undefined &&
@@ -227,7 +263,7 @@ export function patchToSessionUpdates(state: SessionState, patch: Patch): WireSe
 
     case "add-message":
     case "set-message":
-      return [messageToUpdate(patch.message)]
+      return messageUpdates(patch.message, patch.contentChunk)
 
     case "append-segment": {
       const target = state.messages.find((m) => m.id === patch.targetId)
@@ -408,7 +444,7 @@ export function stateToSessionUpdates(
 
   emitCarriedAfter(null)
   for (const m of visible) {
-    out.push(messageToUpdate(m))
+    out.push(...messageUpdates(m))
     emitCarriedAfter(m.id)
   }
 

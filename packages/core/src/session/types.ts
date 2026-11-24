@@ -107,6 +107,16 @@ export type SessionToolCall = {
 
 // ─── Messages ───
 
+export type MessageContentPlaceholder = {
+  kind: "image" | "audio" | "resource_link" | "resource"
+  label?: string
+  uri?: string
+  mimeType?: string
+}
+
+export type MessageAttachment = { mimeType: string; dataBase64: string }
+export type MessageContentChunk = MessageContentPlaceholder | MessageAttachment
+
 /**
  * SessionMessage — discriminated union לפי role.
  * - user / thought / assistant: נושאים segments
@@ -130,7 +140,8 @@ export type SessionMessage =
       timestamp?: string
       meta?: Record<string, unknown>
       /** slice remote-images C2 — תמונות שנשלחו עם הפרומפט. אופציונלי ו-additive. */
-      attachments?: { mimeType: string; dataBase64: string }[]
+      attachments?: MessageAttachment[]
+      contentPlaceholders?: MessageContentPlaceholder[]
     }
   | {
       id: string
@@ -259,7 +270,13 @@ export type Patch =
       segment: SessionSegment
       meta?: Record<string, unknown>
     }
-  | { version: number; op: "add-message"; message: SessionMessage }
+  | {
+      version: number
+      op: "add-message"
+      message: SessionMessage
+      /** Emit only the new content block in the live update. */
+      contentChunk?: MessageContentChunk
+    }
   /**
    * החלפת הודעה קיימת **בשלמותה**, במקומה בסדר.
    *
@@ -273,7 +290,13 @@ export type Patch =
    * ה-`messageId` של ACP. ההתאמה לפי messageId נעשית ב-`reduce`, פעם אחת,
    * ומה שיוצא לחוט כבר מדבר במזהים שלנו.
    */
-  | { version: number; op: "set-message"; targetId: string; message: SessionMessage }
+  | {
+      version: number
+      op: "set-message"
+      targetId: string
+      message: SessionMessage
+      contentChunk?: MessageContentChunk
+    }
   | {
       version: number
       op: "update-tool"
