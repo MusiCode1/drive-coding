@@ -90,7 +90,7 @@ const headerLabel = $derived(session.sessionTitle?.trim() ? session.sessionTitle
     <!-- נקודת סטטוס: ירוק כשמחובר/חושב, אפור אחרת -->
     <span
       class="pointer-events-auto shrink-0 grid place-items-center size-9"
-      title={t("header.connected")}
+      title={t(session.status === "connected" ? "header.connected" : "connect.agents.disconnected")}
     >
       <span
         class="size-2.5 rounded-full transition-colors duration-300"

@@ -12,21 +12,26 @@ import type { Patch, SessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import type { SessionInfo } from "$lib/adapters/sessions"
 
+export type ViewTerminal = { terminal: true; terminalError?: string }
+
 /** Single delivery unit from view to VM. Order guaranteed: same channel, same queue. */
 export type ViewEmission = {
   /** Patches produced from the batch. Advance view state. */
   patches: Patch[]
   /** Raw session/update as received from the wire. Empty on synthetic reset. */
   updates: unknown[]
+  /** The reader has stopped reconnecting and this session is no longer attached. */
+  terminal?: true
   /** Crash reason fetched by the view after the session stream ends. */
   terminalError?: string
 }
 
 export function readViewEmission(
-  session: { error: string | null },
+  session: { status: string; error: string | null },
   emission: ViewEmission | undefined,
 ): ViewEmission | undefined {
   if (emission?.terminalError) session.error = emission.terminalError
+  if (emission?.terminal && session.status === "connected") session.status = "disconnected"
   if (emission && (emission.patches.length > 0 || emission.updates.length > 0)) return emission
 }
 

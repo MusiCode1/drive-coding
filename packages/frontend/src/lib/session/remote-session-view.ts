@@ -29,10 +29,10 @@ import { connWarn } from "$lib/util/conn-log"
 import {
   cancelPendingOnViewClose,
   drainRemoteUpdates,
-  readTerminalError,
+  readTerminalEmission,
   snapshotResetPatch,
 } from "./remote-session-stream"
-import type { SessionView, ViewEmission } from "./session-view.js"
+import type { SessionView, ViewEmission, ViewTerminal } from "./session-view.js"
 import type { WireUpdateBatch } from "./wire/frame-decode"
 import { FrameReader } from "./wire/frame-reader"
 import { resultOf, type SessionPipe } from "./wire/pipe"
@@ -56,7 +56,7 @@ export class RemoteSessionView implements SessionView {
   readonly #pipe: SessionPipe
   readonly #onSseReconnected?: () => void
   readonly #reader: FrameReader
-  readonly #agentMetadataOptions: Parameters<typeof readTerminalError>[2]
+  readonly #agentMetadataOptions: Parameters<typeof readTerminalEmission>[2]
   readonly connectionId?: string
 
   #state: SessionState
@@ -190,10 +190,10 @@ export class RemoteSessionView implements SessionView {
     }
     void drainRemoteUpdates(updates, (batch) => this.#applyIncoming(batch))
       .then(() =>
-        readTerminalError(this.#agentId, this.#lifetime.signal, this.#agentMetadataOptions),
+        readTerminalEmission(this.#agentId, this.#lifetime.signal, this.#agentMetadataOptions),
       )
-      .then((reason) => {
-        if (reason) this.#emit([], [], reason)
+      .then((end) => {
+        if (end && !this.#lifetime.signal.aborted) this.#emit([], [], end)
       })
   }
 
@@ -260,9 +260,9 @@ export class RemoteSessionView implements SessionView {
     }
   }
 
-  #emit(patches: Patch[], updates: unknown[] = [], terminalError?: string): void {
+  #emit(patches: Patch[], updates: unknown[] = [], terminal?: ViewTerminal): void {
     try {
-      this.#patchesCtrl?.enqueue({ patches, updates, ...(terminalError ? { terminalError } : {}) })
+      this.#patchesCtrl?.enqueue({ patches, updates, ...terminal })
     } catch {
       // stream cancelled by consumer — ignore
     }

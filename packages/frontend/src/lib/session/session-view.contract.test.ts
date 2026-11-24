@@ -45,6 +45,7 @@ import {
 import { createRemoteView } from "./create-session-view.js"
 import type { RemoteSessionView } from "./remote-session-view.js"
 import type { SessionTransport } from "./session-transport"
+import { readViewEmission } from "./session-view"
 import type { RpcKind } from "./wire/pipe"
 
 function makeLiveSSEBody(): {
@@ -349,7 +350,7 @@ describe("terminal session stream", () => {
   }
 
   it.each(["http", "ws"] as const)(
-    "delivers the crash reason exactly once via %s",
+    "disconnects and delivers the crash reason exactly once via %s",
     async (transport) => {
       vi.useFakeTimers()
       const host = await connectForTerminalTest(transport, () =>
@@ -359,9 +360,10 @@ describe("terminal session stream", () => {
       try {
         await host.endAsGone()
         expect(host.metadataRequests()).toBe(1)
-        await expect(reader.read()).resolves.toMatchObject({
-          value: { terminalError: crashReason },
-        })
+        const { value } = await reader.read()
+        const session = { status: "connected", error: null }
+        readViewEmission(session, value)
+        expect(session).toEqual({ status: "disconnected", error: crashReason })
         await vi.advanceTimersByTimeAsync(30_000)
         expect(host.metadataRequests()).toBe(1)
       } finally {
@@ -380,24 +382,28 @@ describe("terminal session stream", () => {
     "invalid field": () => Response.json({ agent: { crashReason: 1 } }),
   }
 
-  it.each(Object.entries(missingReason))("ends quietly after %s", async (_name, response) => {
-    vi.useFakeTimers()
-    const host = await connectForTerminalTest("http", response)
-    const reader = host.view.patches.getReader()
-    const delivered = vi.fn()
-    void reader.read().then(delivered)
-    try {
-      await host.endAsGone()
-      await vi.advanceTimersByTimeAsync(30_000)
-      expect(host.metadataRequests()).toBe(1)
-      expect(delivered).not.toHaveBeenCalled()
-    } finally {
-      await host.view.close()
-      await reader.cancel()
-      reader.releaseLock()
-      vi.useRealTimers()
-    }
-  })
+  it.each(Object.entries(missingReason))(
+    "disconnects without replacing the error after %s",
+    async (_name, response) => {
+      vi.useFakeTimers()
+      const host = await connectForTerminalTest("http", response)
+      const reader = host.view.patches.getReader()
+      try {
+        await host.endAsGone()
+        await vi.advanceTimersByTimeAsync(30_000)
+        expect(host.metadataRequests()).toBe(1)
+        const { value } = await reader.read()
+        const session = { status: "connected", error: "This session is gone" }
+        readViewEmission(session, value)
+        expect(session).toEqual({ status: "disconnected", error: "This session is gone" })
+      } finally {
+        await host.view.close()
+        await reader.cancel()
+        reader.releaseLock()
+        vi.useRealTimers()
+      }
+    },
+  )
 
   it("discards a metadata result that arrives after closing the view", async () => {
     vi.useFakeTimers()

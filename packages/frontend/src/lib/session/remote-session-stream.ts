@@ -1,5 +1,6 @@
 import type { Patch, SessionState } from "@drive-coding/core/session"
 import { getAgent } from "$lib/adapters/agents-api"
+import type { ViewTerminal } from "./session-view"
 import type { WireUpdateBatch } from "./wire/frame-decode"
 
 export function snapshotResetPatch(snapshot: SessionState): Patch {
@@ -32,19 +33,22 @@ export async function drainRemoteUpdates(
   }
 }
 
-export async function readTerminalError(
+export async function readTerminalEmission(
   agentId: string,
   signal: AbortSignal,
   opts: Parameters<typeof getAgent>[2],
-): Promise<string | undefined> {
+): Promise<ViewTerminal | undefined> {
   if (signal.aborted) return
   try {
     const response = await getAgent(agentId, signal, opts)
     const reason = response?.agent?.crashReason
-    if (!signal.aborted && typeof reason === "string" && reason.length > 0) return reason
+    if (!signal.aborted && typeof reason === "string" && reason.length > 0) {
+      return { terminal: true, terminalError: reason }
+    }
   } catch {
     // Agent metadata is optional once the stream has ended.
   }
+  if (!signal.aborted) return { terminal: true }
 }
 
 export async function cancelPendingOnViewClose(
