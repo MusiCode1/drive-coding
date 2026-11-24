@@ -41,6 +41,7 @@ const rawSdkEntries = inbound.filter(
   (e) => e.channel === "raw" && e.frame.method === "_claude/sdkMessage",
 )
 
+import { isSubagentTask } from "$lib/components/chat/bubbles/bubble-rendering"
 import { hostSessionView } from "./__fixtures__/host-session-view"
 import { AgentSession } from "./agent-session.svelte"
 
@@ -262,5 +263,150 @@ describe("AgentSession — meta-passthrough tool_call_update nesting (approach B
     await host.settle()
     const ids = allToolCallIds(session.bubbles)
     expect(ids.filter((id) => id === "toolu_CHILD")).toHaveLength(1)
+  })
+})
+
+// ─── slice subagent-identity-gate: שער זהות (Bash לא תת-סוכן) ─────────────────
+
+const BASH_PROBE_ID = "toolu_bash_probe_70"
+const BASH_TASK_ID = "task_bash_probe_70"
+
+function sendSdk(host: Host, message: Record<string, unknown>): void {
+  host.send({
+    sessionUpdate: "_drive/ext_notification",
+    method: "_claude/sdkMessage",
+    params: { message },
+  })
+}
+
+describe("AgentSession — subagent identity gate (slice subagent-identity-gate)", () => {
+  it("#70: Bash + local_bash task_* — לא מקבל תעתיק תת-סוכן", async () => {
+    const host = await open()
+    const { session } = host
+
+    host.send({
+      sessionUpdate: "tool_call",
+      toolCallId: BASH_PROBE_ID,
+      kind: "execute",
+      title: "Sleep 20",
+      status: "in_progress",
+      rawInput: { command: "sleep 20 && echo probe" },
+      _meta: { claudeCode: { toolName: "Bash" } },
+    })
+
+    sendSdk(host, {
+      type: "system",
+      subtype: "task_started",
+      task_type: "local_bash",
+      task_id: BASH_TASK_ID,
+      tool_use_id: BASH_PROBE_ID,
+      description: "Sleep 20",
+    })
+    sendSdk(host, {
+      type: "system",
+      subtype: "task_updated",
+      task_id: BASH_TASK_ID,
+    })
+    sendSdk(host, {
+      type: "system",
+      subtype: "task_notification",
+      task_id: BASH_TASK_ID,
+      tool_use_id: BASH_PROBE_ID,
+      status: "completed",
+    })
+
+    await host.settle()
+
+    const bashBubble = session.bubbles.find(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === BASH_PROBE_ID,
+    )
+    expect(bashBubble?.kind).toBe("tool")
+    if (bashBubble?.kind !== "tool") throw new Error("expected bash tool bubble")
+    expect(bashBubble.toolCall.task).toBeUndefined()
+    expect(bashBubble.subFrames).toBeUndefined()
+    expect(isSubagentTask(bashBubble)).toBe(false)
+    expect(bashBubble.toolCall.args).toMatchObject({ command: "sleep 20 && echo probe" })
+  })
+
+  it("fallback: kind think בלי _meta + task_* — תעתיק מתאכלס (ענף נפילה)", async () => {
+    const host = await open()
+    const { session } = host
+    const thinkId = "toolu_think_fallback"
+    const taskId = "task_think_fallback"
+
+    host.send({
+      sessionUpdate: "tool_call",
+      toolCallId: thinkId,
+      kind: "think",
+      title: "Think",
+      status: "in_progress",
+      rawInput: {},
+    })
+
+    sendSdk(host, {
+      type: "system",
+      subtype: "task_started",
+      task_id: taskId,
+      tool_use_id: thinkId,
+    })
+    sendSdk(host, {
+      type: "system",
+      subtype: "task_notification",
+      task_id: taskId,
+      tool_use_id: thinkId,
+      status: "completed",
+    })
+
+    await host.settle()
+
+    const bubble = session.bubbles.find(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === thinkId,
+    )
+    if (bubble?.kind !== "tool") throw new Error("expected tool bubble")
+    expect(bubble.toolCall.task?.status).toBe("completed")
+  })
+
+  it("רצף מעורב: Bash ללא task, ואז Agent מה-fixture עם תעתיק", async () => {
+    const host = await open()
+    const { session } = host
+
+    host.send({
+      sessionUpdate: "tool_call",
+      toolCallId: BASH_PROBE_ID,
+      kind: "execute",
+      title: "Sleep 20",
+      status: "in_progress",
+      rawInput: { command: "sleep 20" },
+      _meta: { claudeCode: { toolName: "Bash" } },
+    })
+    sendSdk(host, {
+      type: "system",
+      subtype: "task_started",
+      task_type: "local_bash",
+      task_id: BASH_TASK_ID,
+      tool_use_id: BASH_PROBE_ID,
+    })
+    sendSdk(host, {
+      type: "system",
+      subtype: "task_notification",
+      task_id: BASH_TASK_ID,
+      tool_use_id: BASH_PROBE_ID,
+      status: "completed",
+    })
+
+    await replay(host, inbound)
+
+    const bashBubble = session.bubbles.find(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === BASH_PROBE_ID,
+    )
+    if (bashBubble?.kind !== "tool") throw new Error("expected bash bubble")
+    expect(bashBubble.toolCall.task).toBeUndefined()
+
+    const agentBubble = session.bubbles.find(
+      (b) => b.kind === "tool" && b.toolCall.toolCallId === TASK_TOOL_CALL_ID,
+    )
+    if (agentBubble?.kind !== "tool") throw new Error("expected agent bubble")
+    expect(agentBubble.toolCall.task?.status).toBe("completed")
+    expect(agentBubble.subFrames?.length).toBeGreaterThan(0)
   })
 })

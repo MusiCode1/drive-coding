@@ -109,14 +109,9 @@ import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 // ─── slice session-state-reducer C4: FE patch applicator + mappers ─── (additive)
 import { applyPatchMutable } from "$lib/session/apply-patch-mutable"
 import { mapLocations, mapToolContent } from "$lib/session/map-tool-content"
-// ─── slice subagent-transcript-data-v2: פרסר+reducer טהורים (additive) ───
-import {
-  type ClaudeSubagentEvent,
-  createSubagentIndex,
-  parseClaudeSdkMessage,
-  reduceSubagent,
-} from "./claude-subagent-parse"
 import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
+// ─── slice subagent-identity-gate: ניתוב תעתיק (חילוץ מ-VM) ───
+import { type SubagentTranscriptDeps, SubagentTranscriptRouter } from "./subagent-transcript-router"
 
 // ─── slice subagent-tool-nesting: helper טהור לחילוץ parentToolUseId ───
 /**
@@ -194,6 +189,14 @@ export class AgentSession {
     if (typeof document !== "undefined") {
       // watchdog §2 — רק בדפדפן. בטסטים/SSR אין טיימר רקע שידלוף.
       this.#startStallWatch()
+    }
+    this.#subagentTranscript = new SubagentTranscriptRouter(this.#subagentTranscriptDeps())
+  }
+
+  #subagentTranscriptDeps(): SubagentTranscriptDeps {
+    return {
+      bubbles: () => this.bubbles,
+      sessionState: () => this.sessionState,
     }
   }
 
@@ -385,12 +388,8 @@ export class AgentSession {
   #mockQuota: QuotaSnapshot | null | undefined = undefined
   /** Counter פנימי ל-spike raw SDK. לא נרנדר ב-UI. */
   #claudeRawSdkMessageCount = 0
-  // ─── slice subagent-transcript-data-v2: תעתיק תת-סוכן (additive) ───
-  /** taskId→toolUseId, נבנה מ-task_started (Q3). */
-  #subagentIndex = createSubagentIndex()
-  /** אירועים שהגיעו לפני שה-Task ToolBubble נוצר ב-bubbles (bounded — §7 Risks). */
-  #pendingByParent: { parentId: string; event: ClaudeSubagentEvent }[] = []
-  static readonly #SUBAGENT_PENDING_CAP = 50
+  // ─── slice subagent-identity-gate: ניתוב תעתיק + שער זהות (חילוץ מ-VM) ───
+  #subagentTranscript: SubagentTranscriptRouter
   /** slice connection-set C2: one id per VM lifetime — SSE header, presence, WS query, DELETE. */
   readonly #connectionId = safeUUID()
   #pageHideReleaseBound = false
@@ -1429,9 +1428,8 @@ export class AgentSession {
     this.quotaLoading = false
     this.#mockQuota = undefined
     this.#claudeRawSdkMessageCount = 0
-    // slice subagent-transcript-data-v2: נקה state תעתיק תת-סוכן (חיבור חדש = index/pending חדשים)
-    this.#subagentIndex = createSubagentIndex()
-    this.#pendingByParent = []
+    // slice subagent-identity-gate: ניתוב תעתיק חדש (חיבור חדש = router מחדש)
+    this.#subagentTranscript = new SubagentTranscriptRouter(this.#subagentTranscriptDeps())
     // slice subagent-tool-nesting: נקה מיפוי-קינון (חיבור חדש = מיפוי חדש)
     this.#session.subagentToolCallParents = new Map()
     this.#sessionId = null
@@ -1478,53 +1476,13 @@ export class AgentSession {
     if (method === "_claude/sdkMessage") {
       // finding #1: השאר את ה-counter — agent-session.capabilities.test.svelte.ts:191 מצפה 0→2.
       this.#claudeRawSdkMessageCount += 1
-      const ev = parseClaudeSdkMessage(params)
-      if (ev.kind === "ignored") return
-      const parentId = this.#subagentIndex.resolve(ev)
-      if (parentId === undefined) return // task_updated לפני task_started — לא צפוי (§7), drop
-      const idx = this.bubbles.findIndex(
-        (b) => b.kind === "tool" && b.toolCall.toolCallId === parentId,
-      )
-      if (idx === -1) {
-        this.#pushPendingSubagentEvent(parentId, ev)
-        return
-      }
-      const task = this.bubbles[idx]
-      // finding #3: this.bubbles[idx] הוא Bubble|undefined תחת noUncheckedIndexedAccess.
-      if (!task || task.kind !== "tool") return
-      this.bubbles[idx] = reduceSubagent(task, ev)
+      this.#subagentTranscript.onSdkMessage(params)
       return
     }
     // finding #2: ענף _drive/capabilities (וכל ענף עתידי) — ללא שינוי.
     if (method === "_drive/capabilities") {
       this.#capabilities = params as unknown as NormalizedCapabilities
     }
-  }
-
-  /** דוחף אירוע-תת-סוכן שממתין ל-Task ToolBubble שטרם נוצר. bounded (drop-oldest) — §7 Risks. */
-  #pushPendingSubagentEvent(parentId: string, event: ClaudeSubagentEvent): void {
-    this.#pendingByParent.push({ parentId, event })
-    if (this.#pendingByParent.length > AgentSession.#SUBAGENT_PENDING_CAP) {
-      this.#pendingByParent.shift()
-    }
-  }
-
-  /** מפעיל אירועי-תת-סוכן שהמתינו ל-Task ToolBubble הזה (נקרא מ-#applyToolCall). */
-  #flushPendingSubagentEvents(toolCallId: string): void {
-    if (this.#pendingByParent.length === 0) return
-    const matching = this.#pendingByParent.filter((p) => p.parentId === toolCallId)
-    if (matching.length === 0) return
-    this.#pendingByParent = this.#pendingByParent.filter((p) => p.parentId !== toolCallId)
-    const idx = this.bubbles.findIndex(
-      (b) => b.kind === "tool" && b.toolCall.toolCallId === toolCallId,
-    )
-    if (idx === -1) return
-    let task = this.bubbles[idx]
-    if (!task || task.kind !== "tool") return
-    for (const { event } of matching) {
-      task = reduceSubagent(task, event)
-    }
-    this.bubbles[idx] = task
   }
 
   /** Folds session updates emitted by the backend. */
@@ -1713,7 +1671,7 @@ export class AgentSession {
     applyPatchMutable(this.bubbles, patches, { mapToolContent, mapLocations })
     // flush pending subagent events for this toolCallId (slice subagent-transcript-data-v2)
     if (typeof update.toolCallId === "string") {
-      this.#flushPendingSubagentEvents(update.toolCallId)
+      this.#subagentTranscript.flush(update.toolCallId)
     }
     // turnState תמיד calling-tool ללא תנאי (create, לא update)
     this.#setTurnState("calling-tool")
