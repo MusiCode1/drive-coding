@@ -19,16 +19,16 @@ describe("reconnectState", () => {
     expect(reconnectState({ acpSessionId: undefined, attached: true })).toBe("disabled")
   })
 
-  it('acpSessionId + attached===true + attachedVia ws → "takeover"', () => {
-    expect(
-      reconnectState({ acpSessionId: "sess-1", attached: true, attachedVia: "ws" }),
-    ).toBe("takeover")
+  it('acpSessionId + attached===true + attachedVia ws → "reconnect"', () => {
+    expect(reconnectState({ acpSessionId: "sess-1", attached: true, attachedVia: "ws" })).toBe(
+      "reconnect",
+    )
   })
 
   it('acpSessionId + attached===true + attachedVia http → "reconnect"', () => {
-    expect(
-      reconnectState({ acpSessionId: "sess-1", attached: true, attachedVia: "http" }),
-    ).toBe("reconnect")
+    expect(reconnectState({ acpSessionId: "sess-1", attached: true, attachedVia: "http" })).toBe(
+      "reconnect",
+    )
   })
 
   it('acpSessionId + לא attached → "reconnect"', () => {

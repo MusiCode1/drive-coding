@@ -254,8 +254,6 @@ export type MessageKey =
   | "connect.agents.killConfirm"
   | "connect.agents.inUse"
   // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
-  | "connect.agents.takeOver"
-  | "connect.agents.takeOverConfirm"
   | "connect.agents.noSession"
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   | "connect.agents.working"
@@ -481,7 +479,6 @@ export type MessageKey =
   | "authGuidance.envVar.setLabel"
   | "authGuidance.envVar.linkLabel"
   // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
-  | "session.openedElsewhere"
   // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
   | "connect.agents.connected"
   | "connect.agents.disconnected"
@@ -511,10 +508,6 @@ export type MessageKey =
   | "sessionUrl.notFound.title"
   | "sessionUrl.notFound.body"
   | "sessionUrl.notFound.back"
-  | "sessionUrl.takeover.title"
-  | "sessionUrl.takeover.body"
-  | "sessionUrl.takeover.confirm"
-  | "sessionUrl.takeover.cancel"
   | "sessionUrl.busy.title"
   | "sessionUrl.busy.body"
   | "sessionUrl.busy.back"

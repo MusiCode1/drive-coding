@@ -241,8 +241,6 @@ export const en: Catalog = {
   "connect.agents.killConfirm": "Sure?",
   "connect.agents.inUse": "Open in another tab",
   // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
-  "connect.agents.takeOver": "Take over",
-  "connect.agents.takeOverConfirm": "Open elsewhere — take over?",
   "connect.agents.noSession": "No active session",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "working…",
@@ -467,7 +465,6 @@ export const en: Catalog = {
   "authGuidance.envVar.setLabel": "Set:",
   "authGuidance.envVar.linkLabel": "Get credentials",
   // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
-  "session.openedElsewhere": "This session was opened elsewhere",
   // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
   "connect.agents.connected": "Connected",
   "connect.agents.disconnected": "Disconnected",
@@ -499,11 +496,6 @@ export const en: Catalog = {
   "sessionUrl.notFound.body":
     "The session you requested is not available. It may have closed or the agent is not running.",
   "sessionUrl.notFound.back": "Back to home",
-  "sessionUrl.takeover.title": "Active connection",
-  "sessionUrl.takeover.body":
-    "This session is already connected from another device or tab. Connecting here will disconnect it.",
-  "sessionUrl.takeover.confirm": "Connect anyway",
-  "sessionUrl.takeover.cancel": "Cancel",
   "sessionUrl.busy.title": "A turn is running",
   "sessionUrl.busy.body":
     "You can't switch sessions while the agent is working. Wait for the turn to finish, or stop it, then try again.",

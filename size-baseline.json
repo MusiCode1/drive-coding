@@ -440,10 +440,10 @@
       "codeLines": 37
     },
     "packages/frontend/src/lib/actions/open-session-url.ts": {
-      "metric": 114,
-      "impurity": 6,
+      "metric": 100,
+      "impurity": 4,
       "class": "mixed",
-      "codeLines": 89
+      "codeLines": 77
     },
     "packages/frontend/src/lib/adapters/agents-api.ts": {
       "metric": 178,
@@ -454,12 +454,6 @@
     "packages/frontend/src/lib/adapters/cli-availability.ts": {
       "metric": 41,
       "impurity": 4,
-      "class": "mixed",
-      "codeLines": 20
-    },
-    "packages/frontend/src/lib/adapters/ext.ts": {
-      "metric": 49,
-      "impurity": 2,
       "class": "mixed",
       "codeLines": 20
     },
@@ -662,10 +656,10 @@
       "codeLines": 135
     },
     "packages/frontend/src/lib/components/connect/ActiveProcessesPanel.svelte": {
-      "metric": 176,
-      "impurity": 5,
+      "metric": 133,
+      "impurity": 4,
       "class": "mixed",
-      "codeLines": 663
+      "codeLines": 592
     },
     "packages/frontend/src/lib/components/connect/CwdPathCombo.svelte": {
       "metric": 97,
@@ -968,10 +962,10 @@
       "codeLines": 68
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 1847,
-      "impurity": 30,
+      "metric": 1745,
+      "impurity": 27,
       "class": "scattered",
-      "codeLines": 1167
+      "codeLines": 1130
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
       "metric": 328,
@@ -1070,10 +1064,10 @@
       "codeLines": 291
     },
     "packages/frontend/src/routes/chat/[cliKind]/[sessionId]/+page.svelte": {
-      "metric": 106,
-      "impurity": 4,
+      "metric": 97,
+      "impurity": 2,
       "class": "mixed",
-      "codeLines": 92
+      "codeLines": 84
     },
     "packages/frontend/src/routes/wake-word-test/+page.svelte": {
       "metric": 322,

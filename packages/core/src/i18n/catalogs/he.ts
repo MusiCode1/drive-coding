@@ -236,8 +236,6 @@ export const he: Catalog = {
   "connect.agents.killConfirm": "בטוח?",
   "connect.agents.inUse": "פעיל בכרטיסייה אחרת",
   // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
-  "connect.agents.takeOver": "השתלט",
-  "connect.agents.takeOverConfirm": "פתוח במקום אחר — להשתלט?",
   "connect.agents.noSession": "אין סשן פעיל",
   // ─── agent-busy-indicator ─── (slice agent-busy-indicator)
   "connect.agents.working": "עובד…",
@@ -462,7 +460,6 @@ export const he: Catalog = {
   "authGuidance.envVar.setLabel": "הגדר:",
   "authGuidance.envVar.linkLabel": "קבלת פרטי-גישה",
   // ─── reconnect takeover ─── (slice reconnect-ws-takeover)
-  "session.openedElsewhere": "הסשן נפתח במקום אחר",
   // ─── reconnect-ws-takeover Commit 3 ─── (טבעת-חיבור פר-סשן, ActiveProcessesPanel)
   "connect.agents.connected": "מחובר",
   "connect.agents.disconnected": "לא מחובר",
@@ -492,11 +489,6 @@ export const he: Catalog = {
   "sessionUrl.notFound.title": "סשן לא נמצא",
   "sessionUrl.notFound.body": "הסשן שביקשת אינו זמין כרגע. ייתכן שהוא נסגר או שהסוכן לא פועל.",
   "sessionUrl.notFound.back": "חזרה לדף הבית",
-  "sessionUrl.takeover.title": "יש חיבור פעיל",
-  "sessionUrl.takeover.body":
-    "סשן זה מחובר כבר ממכשיר או טאב אחר. להתחבר כאן ינתק את החיבור הקיים.",
-  "sessionUrl.takeover.confirm": "התחבר בכל זאת",
-  "sessionUrl.takeover.cancel": "ביטול",
   "sessionUrl.busy.title": "תור רץ בסשן הזה",
   "sessionUrl.busy.body":
     "אי אפשר לעבור לסשן אחר בזמן שהסוכן עובד. חכה לסיום התור, או עצור אותו, ונסה שוב.",

@@ -8,7 +8,6 @@
  */
 
 import type {
-  AuthMethod,
   AvailableCommand,
   SessionConfigOption,
   SessionModeState,
@@ -46,13 +45,16 @@ import type {
 import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitation"
 // ─── slice-permission-ui-basic: טיפוסי בקשת-הרשאה (view-model layer, נגזרים מ-SDK) ───
 import type { PermissionParams, PermissionResponse } from "$lib/types/permission"
+import type { GuidanceAuthMethod } from "$lib/util/auth-guidance"
 import { connWarn } from "$lib/util/conn-log"
 import { isBypassMode } from "$lib/util/permission-mode"
 import { safeUUID } from "$lib/util/uuid"
 import {
   type ApplyConfigOptionDeps,
   applyConfigOption as applyConfigOptionExtracted,
+  setThinkingTokens,
 } from "$lib/view-models/agent-session-apply-config"
+import { sessionAttachFailure } from "$lib/view-models/agent-session-attach-failure"
 import {
   type CaptureSessionConfigDeps,
   captureSessionConfig,
@@ -70,7 +72,6 @@ import {
   setManualTitleOnAgent,
   syncTitleFromViewState,
 } from "$lib/view-models/agent-session-manual-title"
-import { doRefreshQuota, type QuotaRefreshDeps } from "$lib/view-models/agent-session-quota-refresh"
 import {
   endSessionScope,
   registerSessionEndListener,
@@ -105,7 +106,6 @@ import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 // import type בלבד — NormalizedCapabilities מ-subpath ./types (pure, ללא spawn-core).
 // ⚠️ אל תייבא value מ-@drive-coding/provider/host → יגרור spawn-core → vite crash.
 import type { NormalizedCapabilities } from "@drive-coding/provider/types"
-import type { ExtClient } from "$lib/adapters/ext"
 // ─── slice session-state-reducer C4: FE patch applicator + mappers ─── (additive)
 import { applyPatchMutable } from "$lib/session/apply-patch-mutable"
 import { mapLocations, mapToolContent } from "$lib/session/map-tool-content"
@@ -203,9 +203,7 @@ export class AgentSession {
   /** מה המודל עושה בתור הנוכחי. idle = אין תור פעיל. */
   turnState = $state<TurnState>("idle")
   error = $state<string | null>(null)
-  // ─── slice auth-guidance: authMethods שנלכדו מ-initialize (client.authMethods) ───
-  /** [] = אין כשל-auth ידוע / warm-reattach (מדלג initialize) / CLI לא מפרסם authMethods. */
-  authMethods = $state<ReadonlyArray<AuthMethod>>([])
+  authMethods = $state<ReadonlyArray<GuidanceAuthMethod>>([])
   bubbles = $state<Bubble[]>([])
   // ─── slice session-state-reducer C4: מצב SessionState פנימי (base ל-reduce) ─── (additive)
   sessionState = $state<SessionState>(createInitialSessionState({ sessionId: null }))
@@ -388,33 +386,11 @@ export class AgentSession {
     )
   }
 
-  /**
-   * ExtClient facade — גישה לשליחת _drive/* ext requests.
-   * null = אין חיבור פעיל. ה-vm קורא לzה דרך שיטות ציבוריות (לא ישירות).
-   */
-  get ext(): ExtClient | null {
-    return this.#ext
-  }
-
-  // ─── slice sessions-cache-scope: connection-scoped session list ───
   sessionsCache = $state(new SessionsCacheScope())
-  // ─── slice FE-normalization: ext facade ─── (additive)
-  /** facade מטופס לשליחת _drive/* ext requests. נוצר/מנוקה עם #client. */
-  #ext: ExtClient | null = null
   // ─── slice FE-normalization: capabilities ─── (additive)
   /** NormalizedCapabilities שהתקבלו מ-_drive/capabilities ext notification. null = טרם התקבל. */
   #capabilities = $state<NormalizedCapabilities | null>(null)
-  // ─── slice session-budget-meter Commit 4: mock quota harness (DEV-only) ─── (additive)
-  /**
-   * snapshot מדומה ל-mock harness בלבד (`/chat?mock=<fixture>` עם `mockState.quota`).
-   * undefined = לא הוזרק ע"י fixture (ברירת המחדל). null = הוזרק במפורש כ"אין מגבלות".
-   * `refreshQuota()` מעתיק את זה ל-`quota` הציבורי רק כש-sessionId מתחיל "mock:" וגם
-   * הערך `!== undefined` — כדי ש-open→refresh→render יעבור דרך אותה מתודה כמו production.
-   * מתאפס ב-#cleanup ו-#captureSessionConfig (brief §0 "התאמת scope").
-   */
   #mockQuota: QuotaSnapshot | null | undefined = undefined
-  /** Promise פעיל של refreshQuota — dedupe לפתיחות popover מקבילות (brief §4 Commit 4). */
-  #quotaFetchInFlight: Promise<void> | null = null
   /** Counter פנימי ל-spike raw SDK. לא נרנדר ב-UI. */
   #claudeRawSdkMessageCount = 0
   // ─── slice subagent-transcript-data-v2: תעתיק תת-סוכן (additive) ───
@@ -457,20 +433,6 @@ export class AgentSession {
       view: () => this.#view,
       cliKind: () => this.#cliKind,
       settings: () => this.#settings,
-    }
-  }
-
-  #quotaRefreshDeps(): QuotaRefreshDeps {
-    return {
-      sessionId: () => this.#sessionId,
-      mockQuota: () => this.#mockQuota,
-      ext: () => this.#ext,
-      setQuota: (v) => {
-        this.quota = v
-      },
-      setQuotaLoading: (v) => {
-        this.quotaLoading = v
-      },
     }
   }
 
@@ -903,7 +865,7 @@ export class AgentSession {
     } catch (e) {
       // 8. כל שלבים 3-6 עטופים — createAgent/connect() שנדחים לא ישאירו status="connecting" לנצח
       this.#cleanup()
-      this.error = formatAcpError(e)
+      Object.assign(this, sessionAttachFailure(e))
       this.#errorSurfaced = true
       this.#setStatus("error")
     }
@@ -973,12 +935,6 @@ export class AgentSession {
         return
       }
 
-      // ─── slice http-state-gaps C4: #sessionId מהסנאפשוט ───
-      // ⚠️ המתודה קראה את view.state.sessionId לכשל-המהיר אך **לא השימה אותו**.
-      // ⇒ אחרי חזרה לסוכן חי, #sessionId נשאר null, וכל מה שמותנה בו מת בשקט —
-      // refreshQuota יוצא בשורה הראשונה ולעולם לא מרענן. נמדד, לא הונח.
-      // שאר מסלולי ה-remote (attachToLiveAgent :1767, switchSession :1813,
-      // newSession :1921) כן משימים; זה היה החריג.
       this.#enterSession(view.state.sessionId)
       applyManualTitleFromAttach(this, input, false)
 
@@ -992,7 +948,7 @@ export class AgentSession {
       // 8. כל השלבים עטופים — כשל לא משאיר status:"connecting" לנצח. keepAgent:true —
       // ר' שלב 4: הסוכן החי ב-BE שורד גם כשל-חולף (רשת/503), המשתמשת יכולה לנסות שוב.
       this.#cleanup({ keepAgent: true })
-      this.error = formatAcpError(e)
+      Object.assign(this, sessionAttachFailure(e))
       this.#errorSurfaced = true
       this.#setStatus("error")
     }
@@ -1248,77 +1204,21 @@ export class AgentSession {
     await applyConfigOptionExtracted(this.#applyConfigOptionDeps(), configId, value)
   }
 
-  // ─── slice FEAT-thinking-live: setThinkingTokens ─── (תוספתי)
-
-  /**
-   * מגדיר את מגבלת ה-thinking tokens דרך ה-ext facade.
-   * n=null → כבוי (no-limit). מדלג בשקט אם אין חיבור פעיל או ה-ext לא זמין.
-   * נפרד מ-applyConfigOption — זהו ext (_drive/*), לא configOption ACP סטנדרטי.
-   */
   setThinkingTokens = async (n: number | null): Promise<void> => {
     if (this.status !== "connected") return
-    if (!this.#ext || !this.#sessionId) return
-    await this.#ext.setThinkingTokens(this.#sessionId, n)
+    await setThinkingTokens(this.#view, this.#sessionId, n)
   }
 
-  // ─── slice session-budget-meter Commit 4: refreshQuota ─── (תוספתי)
-
-  /**
-   * מרענן את `quota` מ-`_drive/getQuota` (on-open בלבד — לא polling, brief §9 Q4).
-   * ציבורית — הפופאובר קורא לה ב-on-open.
-   *
-   * כללים (brief §4 Commit 4):
-   *   - `supports.usage===false` → אין request (ה-quota section מוסתר ב-UI ממילא).
-   *     **חריג**: ה-DEV mock harness עוקף את הבדיקה הזו במפורש — mock sessions לא
-   *     עוברות דרך `_drive/capabilities` האמיתי (אין #client/#ext ל-mock בכלל), ולכן
-   *     `supports.usage` לא בהכרח true גם כש-mockState.capabilities מבקש usage:true
-   *     (המיזוג ל-#capabilities מגיע ב-Commit 5). הבדיקה על sessionId+#mockQuota
-   *     מספיקה כדי לזהות "זהו debug harness מכוון", לא request אמיתי.
-   *   - dedupe: פתיחות מקבילות חולקות את אותו Promise, לא שולחות בקשות כפולות.
-   *   - race safety: sessionId נלכד לפני ה-await; תשובה שמגיעה אחרי session
-   *     switch/cleanup (`this.#sessionId !== capturedSessionId`) לא נכתבת.
-   *   - error/unavailable → `quota=null`, `quotaLoading` מסתיים, אין קריסה ב-UI.
-   *   - DEV-only mock harness: sessionId מתחיל "mock:" + `#mockQuota !== undefined` →
-   *     מעתיק ל-quota בלי ext request (אותו flow open→refresh→render כמו production).
-   */
-  refreshQuota = async (): Promise<void> => {
-    const sessionId = this.#sessionId
-    if (sessionId === null) return
-
-    const isMockWithSnapshot =
+  /** Production quota comes from the host. Mock sessions populate their fixture on open. */
+  refreshQuota = (): Promise<void> => {
+    if (
       import.meta.env.MODE !== "production" &&
-      sessionId.startsWith("mock:") &&
+      this.#sessionId?.startsWith("mock:") &&
       this.#mockQuota !== undefined
-
-    if (!isMockWithSnapshot && !this.supports.usage) return
-
-    // ─── slice http-state-gaps C4: ב-remote המכסה מגיעה מערוץ-המצב ───
-    // ⚠️ בלי היציאה הזו, refreshQuota לא רק "לא מביא" — הוא **מוחק**:
-    // ב-remote אין #ext (הוא נבנה מעל #client שאינו קיים שם), ולכן
-    // #doRefreshQuota נופל ל-`quota = null` ודורס ערך תקין שכבר הגיע
-    // מ-#syncFromViewState. ⇒ גם עם ה-BE מתוקן, המשתמשת לא תראה כלום.
-    // ב-remote ה-BE קורא getQuota וכותב ל-state; ה-FE רק צורך.
-    if (this.#view && !isMockWithSnapshot) {
-      this.quotaLoading = false
-      return
+    ) {
+      this.quota = this.#mockQuota
     }
-
-    if (this.#quotaFetchInFlight) {
-      await this.#quotaFetchInFlight
-      return
-    }
-
-    this.quotaLoading = true
-    const fetchPromise = this.#doRefreshQuota(sessionId).finally(() => {
-      this.#quotaFetchInFlight = null
-    })
-    this.#quotaFetchInFlight = fetchPromise
-    await fetchPromise
-  }
-
-  /** מבצע את בקשת ה-quota בפועל, עם guard נגד כתיבה אחרי session switch/cleanup. */
-  #doRefreshQuota = async (sessionId: string): Promise<void> => {
-    await doRefreshQuota(this.#quotaRefreshDeps(), sessionId)
+    return Promise.resolve()
   }
 
   // ─── slice-restore-last-config: apply remembered config ─── (תוספתי)
@@ -1547,13 +1447,11 @@ export class AgentSession {
     // בלי איפוס — הדיאלוג הראשון של הסשן המרוחק הבא באותו טאב מדוכא בשקט (id 0 "כבר נענה").
     this.#answeredPermissionId = null
     this.#answeredElicitationId = null
-    this.#ext = null // slice FE-normalization: נקה facade
     this.#capabilities = null // slice FE-normalization: נקה capabilities (חיבור חדש = caps חדשים)
     this.contextUsage = null // slice session-budget-meter: נקה context-usage (חיבור חדש = caps חדשים)
     this.quota = null // slice session-budget-meter Commit 4: נקה quota
     this.quotaLoading = false
     this.#mockQuota = undefined
-    this.#quotaFetchInFlight = null
     this.#claudeRawSdkMessageCount = 0
     // slice subagent-transcript-data-v2: נקה state תעתיק תת-סוכן (חיבור חדש = index/pending חדשים)
     this.#subagentIndex = createSubagentIndex()

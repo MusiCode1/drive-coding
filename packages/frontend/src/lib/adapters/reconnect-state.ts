@@ -2,10 +2,6 @@
  * reconnect-state.ts — predicate טהור (ללא IO) עבור כפתור ה-Reconnect
  * ב-ActiveProcessesPanel.
  *
- * slice: reconnect-ws-takeover, Commit 2 — ה-BE עכשיו תומך ב-takeover
- * (WS חדש מדיח ישן, ראה ws-agent.ts), כך שסוכן "בשימוש" (attached===true)
- * כבר לא צריך להיות disabled — הכפתור מאפשר ליזום takeover.
- *
  * slice liveness C4: hasConnectionRing משתמש בממד "מחובר" (attached + lastSeenAt טרי),
  * לא ב-attached בלבד (§2 — סוקט פתוח ניתן לזיוף).
  */
@@ -17,7 +13,7 @@ import {
   type LivenessAgent,
 } from "./liveness-state"
 
-export type ReconnectState = "disabled" | "reconnect" | "takeover"
+export type ReconnectState = "disabled" | "reconnect"
 
 export { isAgentConnected, isAgentResumable, isAgentRunning }
 
@@ -25,7 +21,6 @@ export function reconnectState(
   agent: Pick<AgentPublic, "acpSessionId" | "attached" | "attachedVia">,
 ): ReconnectState {
   if (!agent.acpSessionId) return "disabled"
-  if (agent.attached === true && agent.attachedVia === "ws") return "takeover"
   return "reconnect"
 }
 

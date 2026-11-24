@@ -1,4 +1,5 @@
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
+import { parseExtParams } from "@drive-coding/provider/extensions"
 import type { SessionView } from "$lib/session/session-view"
 import type { Settings } from "$lib/view-models/settings.svelte"
 
@@ -40,4 +41,14 @@ export async function applyConfigOption(
   }
   const cli = d.cliKind()
   if (cli) d.settings()?.setLastConfig(cli, configId, value)
+}
+
+export async function setThinkingTokens(
+  view: SessionView | null,
+  sessionId: string | null,
+  n: number | null,
+): Promise<void> {
+  if (!view || !sessionId) return
+  const method = "_drive/setThinkingTokens"
+  await view.extMethod(method, parseExtParams(method, { sessionId, n }))
 }

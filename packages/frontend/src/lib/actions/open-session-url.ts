@@ -18,9 +18,7 @@ import type { Settings } from "$lib/view-models/settings.svelte"
 import { openSessionCold } from "./open-session-cold.js"
 import { connectionFailed } from "./session-connection.js"
 
-export type OpenSessionOutcome = "connected" | "not-found" | "needs-takeover" | "busy" | "error"
-
-const OWNED_AGENT_KEY = "dc.ownedAgentId"
+export type OpenSessionOutcome = "connected" | "not-found" | "busy" | "error"
 
 export function sessionAttachExtras(agent: AgentPublic): ManualTitleInput {
   const out: ManualTitleInput = {}
@@ -38,9 +36,8 @@ export async function openSessionUrl(params: {
   sessionId: string
   session: AgentSession
   settings: Settings
-  confirmedTakeover?: boolean
 }): Promise<OpenSessionOutcome> {
-  const { cliKind, sessionId, session, settings, confirmedTakeover = false } = params
+  const { cliKind, sessionId, session, settings } = params
 
   if (
     session.sessionId === sessionId &&
@@ -78,17 +75,6 @@ export async function openSessionUrl(params: {
   if (pick.kind === "none") return openSessionCold({ cliKind, sessionId, session, settings })
 
   const agent = pick.agent
-
-  const ownedId =
-    typeof sessionStorage !== "undefined" ? sessionStorage.getItem(OWNED_AGENT_KEY) : null
-  if (
-    agent.attached === true &&
-    agent.attachedVia === "ws" &&
-    ownedId !== agent.id &&
-    !confirmedTakeover
-  ) {
-    return "needs-takeover"
-  }
 
   const transport = readSessionTransport({
     env: env.PUBLIC_SESSION_TRANSPORT,

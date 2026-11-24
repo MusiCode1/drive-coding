@@ -42,11 +42,6 @@ let handleEl = $state<HTMLDivElement | null>(null)
 let confirmingId = $state<string | null>(null)
 let confirmTimer = $state<ReturnType<typeof setTimeout> | null>(null)
 
-// אישור takeover — state נפרד מ-confirmingId (של Kill), אחרת קליק-Kill
-// וקליק-takeover על אותו agent.id מתנגשים (slice reconnect-ws-takeover Commit 2).
-let takeoverConfirmingId = $state<string | null>(null)
-let takeoverConfirmTimer = $state<ReturnType<typeof setTimeout> | null>(null)
-
 // מדדי-מכונה (RAM/CPU) — poll קיים 12s, בית ב-MachineStatsBar (slice be-machine-stats)
 let machine = $state<MachineStats | null>(null)
 
@@ -125,38 +120,6 @@ function handleKill(id: string) {
   }
 }
 
-// מבטל מצב-אישור takeover — מקביל ל-cancelKillConfirm, state נפרד (ר' הערה
-// בהגדרת takeoverConfirmingId למעלה).
-function cancelTakeoverConfirm() {
-  if (takeoverConfirmTimer !== null) {
-    clearTimeout(takeoverConfirmTimer)
-    takeoverConfirmTimer = null
-  }
-  takeoverConfirmingId = null
-}
-
-// לחיצה על כפתור ה-Reconnect — דפוס 2-קליקים ל-takeover (עקבי ויזואלית עם ה-Kill
-// שלמעלה, אבל state-אישור נפרד: takeoverConfirmingId, לא confirmingId).
-function handleReconnectClick(agent: AgentPublic) {
-  const state = reconnectState(agent)
-  if (state === "disabled") return
-  if (state === "reconnect") {
-    onReconnect(agent)
-    return
-  }
-  // state === "takeover"
-  if (takeoverConfirmingId === agent.id) {
-    // לחיצה שנייה — בצע את ה-takeover
-    cancelTakeoverConfirm()
-    onReconnect(agent)
-  } else {
-    // לחיצה ראשונה — בקש אישור
-    if (takeoverConfirmTimer !== null) clearTimeout(takeoverConfirmTimer)
-    takeoverConfirmingId = agent.id
-    takeoverConfirmTimer = setTimeout(cancelTakeoverConfirm, 3000)
-  }
-}
-
 // a11y ל-status-dot — ממד-חיבור נפרד ממצב-התהליך (הצבע). slice
 // reconnect-ws-takeover Commit 3 (3b): טבעת סביב ה-dot כש-attached===true,
 // בלי לגעת בצבע (שנשאר agent.status). ראה hasConnectionRing.
@@ -164,16 +127,10 @@ function connectionTitle(agent: AgentPublic): string {
   return hasConnectionRing(agent) ? t("connect.agents.connected") : t("connect.agents.disconnected")
 }
 
-// title 3-דרכי: disabled (אין סשן) / takeover (בשימוש, ממתין ל-2-קליקים) / reconnect רגיל.
 function reconnectTitle(agent: AgentPublic): string {
-  const state = reconnectState(agent)
-  if (state === "disabled") return t("connect.agents.noSession")
-  if (state === "takeover") {
-    return takeoverConfirmingId === agent.id
-      ? t("connect.agents.takeOverConfirm")
-      : t("connect.agents.takeOver")
-  }
-  return t("connect.agents.reconnect")
+  return reconnectState(agent) === "disabled"
+    ? t("connect.agents.noSession")
+    : t("connect.agents.reconnect")
 }
 </script>
 
@@ -228,51 +185,17 @@ function reconnectTitle(agent: AgentPublic): string {
       </div>
 
       <div class="agent-actions">
-      <!-- Reconnect / Take over — tooltip מרחף מעל הכפתור, מרונדר ב-
-           Popover.Portal (bits-ui) כדי לא להיחתך ע"י .agent-list{overflow-y:auto}
-           (slice reconnect-ws-takeover Commit 3, 3a redo 2026-07-23: היה
-           inline-expand, הוחזר ל-tooltip מרחף לפי החלטת-משתמשת, הפעם דרך
-           portal — תקדים: SessionBudgetMeter.svelte). ה-Popover.Root נשלט
-           לגמרי ע"י takeoverConfirmingId (לא bind:open) — הקליק עצמו מנוהל
-           ע"י handleReconnectClick (מכונת ה-2-קליקים); ה-onclick על ה-<button>
-           (בתוך snippet child, אחרי הפריסה של props) דורס את ה-toggle
-           הפנימי של bits כדי שלא יתנגש. onOpenChange מטפל רק בסגירה חיצונית
-           (Escape / קליק מחוץ). -->
-      <Popover.Root
-        open={takeoverConfirmingId === agent.id}
-        onOpenChange={(next) => { if (!next && takeoverConfirmingId === agent.id) cancelTakeoverConfirm() }}
+      <button
+        type="button"
+        class="action-btn icon-btn"
+        disabled={reconnectState(agent) === "disabled"}
+        onclick={() => onReconnect(agent)}
+        title={reconnectTitle(agent)}
+        aria-label={reconnectTitle(agent)}
       >
-        <Popover.Trigger>
-          {#snippet child({ props })}
-            <button
-              {...props}
-              type="button"
-              class="action-btn icon-btn reconnect-btn"
-              class:confirming={takeoverConfirmingId === agent.id}
-              disabled={reconnectState(agent) === "disabled"}
-              onclick={() => handleReconnectClick(agent)}
-              title={reconnectTitle(agent)}
-              aria-label={reconnectTitle(agent)}
-            >
-              <PlugIcon size={16} strokeWidth={1.75} />
-            </button>
-          {/snippet}
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            side="top"
-            sideOffset={5}
-            trapFocus={false}
-            dir={i18n.dir}
-            class="takeover-confirm-tip"
-            onOpenAutoFocus={(e) => e.preventDefault()}
-          >
-            <span role="status">{t("connect.agents.takeOverConfirm")}</span>
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
+        <PlugIcon size={16} strokeWidth={1.75} />
+      </button>
 
-      <!-- Kill — אותו דפוס tooltip-portal כמו למעלה, state נפרד (confirmingId). -->
       <Popover.Root
         open={confirmingId === agent.id}
         onOpenChange={(next) => { if (!next && confirmingId === agent.id) cancelKillConfirm() }}
@@ -752,15 +675,6 @@ function reconnectTitle(agent: AgentPublic): string {
     padding: 0.3rem;
   }
 
-  /* takeover 2-click confirm — עיצוב עקבי ל-.kill-btn.confirming, צבע accent
-     (לא danger-red) כי זו לא פעולה הרסנית. */
-  .reconnect-btn.confirming {
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
-    border-color: var(--accent);
-    color: var(--accent);
-    font-weight: 600;
-  }
-
   .kill-btn {
     color: var(--recording);
     border-color: rgba(255, 79, 79, 0.3);
@@ -779,27 +693,7 @@ function reconnectTitle(agent: AgentPublic): string {
     font-weight: 600;
   }
 
-  /* tooltip מרחף (kill/takeover 2-click confirm) — מרונדר ע"י Popover.Content
-     (bits-ui) בתוך Popover.Portal, כלומר ב-DOM מחוץ ל-ActiveProcessesPanel.svelte
-     (ולכן מחוץ ל-.agent-list{overflow-y:auto} החותך). :global() נדרש כי הקלאס
-     הזה מיושם על אלמנט שנוצר בקומפוננטה אחרת (popover-content.svelte של bits-ui),
-     לא נכתב ישירות ב-template של הקובץ הזה — סקופ ה-CSS הרגיל של Svelte לא
-     תופס אותו (slice reconnect-ws-takeover Commit 3, 3a redo 2026-07-23).
-     המיקום מעל הכפתור מנוהל ע"י floating-ui (side="top" ב-Popover.Content) —
-     אין עוד position:absolute/bottom ידני כמו בגרסה הקודמת (לפני Commit 3). */
-  :global(.takeover-confirm-tip) {
-    background: var(--accent);
-    color: #fff;
-    font-size: 0.72rem;
-    font-weight: 600;
-    white-space: nowrap;
-    padding: 0.2rem 0.45rem;
-    border-radius: 5px;
-    z-index: 50;
-    pointer-events: none;
-    animation: tip-pop 0.12s ease-out both;
-  }
-
+  /* The portal keeps the confirmation visible outside the scrolling list. */
   :global(.kill-confirm-tip) {
     background: rgba(200, 40, 40, 0.88);
     color: #fff;

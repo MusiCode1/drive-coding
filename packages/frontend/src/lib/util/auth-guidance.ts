@@ -35,11 +35,43 @@ type EnvVarAuthMethod = {
   link?: string | null
 }
 
+export type GuidanceAuthMethod = AuthMethod | EnvVarAuthMethod
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value == null || typeof value === "string"
+}
+
+function isGuidanceAuthMethod(value: unknown): value is GuidanceAuthMethod {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    !isOptionalString(value.description)
+  )
+    return false
+  if (value.type !== "env_var") return true
+  return (
+    isOptionalString(value.link) &&
+    Array.isArray(value.vars) &&
+    value.vars.every((v: unknown) => isRecord(v) && typeof v.name === "string")
+  )
+}
+
+/** Checks the fields used by the panel, including its keyed list. */
+export function readGuidanceAuthMethods(value: unknown): ReadonlyArray<GuidanceAuthMethod> {
+  if (!Array.isArray(value) || !value.every(isGuidanceAuthMethod)) return []
+  return new Set(value.map((method) => method.id)).size === value.length ? value : []
+}
+
 function nullableToUndefined(v: string | null | undefined): string | undefined {
   return v ?? undefined
 }
 
-export function describeAuthMethod(m: AuthMethod | EnvVarAuthMethod): AuthMethodDisplay {
+export function describeAuthMethod(m: GuidanceAuthMethod): AuthMethodDisplay {
   if ("type" in m && m.type === "env_var") {
     return {
       kind: "env_var",

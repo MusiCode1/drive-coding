@@ -4,14 +4,13 @@
  * כשיש error **וגם** authMethods לא-ריק (רק ב-claude, שאין לו authMethods, לא מוצג פאנל —
  * ה-error של formatAcpError מספיק). תצוגה בלבד — בלי authenticate אינטראקטיבי (זה auth-flows).
  */
-import type { AuthMethod } from "@agentclientprotocol/sdk"
 import CliBadge from "$lib/components/ui/CliBadge.svelte"
 import { getCliAvailability, getI18n } from "$lib/context"
-import { describeAuthMethod } from "$lib/util/auth-guidance"
+import { describeAuthMethod, type GuidanceAuthMethod } from "$lib/util/auth-guidance"
 
 interface Props {
   cliKind: string | null
-  authMethods: ReadonlyArray<AuthMethod>
+  authMethods: ReadonlyArray<GuidanceAuthMethod>
 }
 
 const { cliKind, authMethods }: Props = $props()

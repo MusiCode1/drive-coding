@@ -6,6 +6,7 @@ import { untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { page } from "$app/state"
 import { type OpenSessionOutcome, openSessionUrl } from "$lib/actions/open-session-url"
+import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import ChatScreen from "$lib/components/chat/ChatScreen.svelte"
 import { getI18n, getSession, getSettings } from "$lib/context"
 import { sessionPathWithTransport } from "$lib/session/session-url"
@@ -14,11 +15,9 @@ const session = getSession()
 const settings = getSettings()
 const t = getI18n().t
 
-const OWNED_AGENT_KEY = "dc.ownedAgentId"
-
 let outcome = $state<OpenSessionOutcome | "resolving">("resolving")
 
-async function resolve(cliKind: string, sessionId: string, confirmedTakeover = false) {
+async function resolve(cliKind: string, sessionId: string) {
   const requestedKind = cliKind
   const requestedId = sessionId
 
@@ -27,15 +26,11 @@ async function resolve(cliKind: string, sessionId: string, confirmedTakeover = f
     sessionId,
     session,
     settings,
-    confirmedTakeover,
   })
 
   if (page.params.cliKind !== requestedKind || page.params.sessionId !== requestedId) return
 
   outcome = result
-  if (result === "connected" && session.agentId) {
-    sessionStorage.setItem(OWNED_AGENT_KEY, session.agentId)
-  }
 }
 
 $effect(() => {
@@ -48,14 +43,6 @@ $effect(() => {
   outcome = "resolving"
   untrack(() => void resolve(kind, sid))
 })
-
-async function confirmTakeover() {
-  const kind = page.params.cliKind
-  const sid = page.params.sessionId
-  if (!kind || !sid) return
-  outcome = "resolving"
-  await resolve(kind, sid, true)
-}
 
 function goHome() {
   goto("/")
@@ -72,29 +59,6 @@ function goBack() {
 
 {#if outcome === "connected"}
   <ChatScreen />
-{:else if outcome === "needs-takeover"}
-  <main class="min-h-dvh flex flex-col items-center justify-center gap-4 p-6 text-center">
-    <h1 class="text-lg font-medium">{t("sessionUrl.takeover.title")}</h1>
-    <p class="text-sm text-[var(--fg-dim)] max-w-md">{t("sessionUrl.takeover.body")}</p>
-    <div class="flex gap-3">
-      <button
-        type="button"
-        class="px-4 py-2 rounded-lg border text-sm"
-        style="border-color:var(--border)"
-        onclick={goHome}
-      >
-        {t("sessionUrl.takeover.cancel")}
-      </button>
-      <button
-        type="button"
-        class="px-4 py-2 rounded-lg text-sm"
-        style="background:var(--accent); color:var(--bg)"
-        onclick={() => void confirmTakeover()}
-      >
-        {t("sessionUrl.takeover.confirm")}
-      </button>
-    </div>
-  </main>
 {:else if outcome === "busy"}
   <main class="min-h-dvh flex flex-col items-center justify-center gap-4 p-6 text-center">
     <h1 class="text-lg font-medium">{t("sessionUrl.busy.title")}</h1>
@@ -110,8 +74,13 @@ function goBack() {
   </main>
 {:else if outcome === "not-found" || outcome === "error"}
   <main class="min-h-dvh flex flex-col items-center justify-center gap-4 p-6 text-center">
-    <h1 class="text-lg font-medium">{t("sessionUrl.notFound.title")}</h1>
-    <p class="text-sm text-[var(--fg-dim)] max-w-md">{t("sessionUrl.notFound.body")}</p>
+    {#if outcome === "error" && session.error && session.authMethods.length > 0}
+      <h1 class="text-lg font-medium" role="alert" dir="auto">{session.error}</h1>
+      <AuthGuidance cliKind={session.cliKind} authMethods={session.authMethods} />
+    {:else}
+      <h1 class="text-lg font-medium">{t("sessionUrl.notFound.title")}</h1>
+      <p class="text-sm text-[var(--fg-dim)] max-w-md">{t("sessionUrl.notFound.body")}</p>
+    {/if}
     <button
       type="button"
       class="px-4 py-2 rounded-lg border text-sm"

@@ -88,20 +88,11 @@ function makeSession(overrides: Partial<MockSession> = {}): MockSession {
 
 vi.mock("$lib/session/create-session-view")
 
-const stores = new Map<string, string>()
-
 beforeEach(() => {
-  stores.clear()
   vi.mocked(createRemoteView).mockReset()
   listAgentsMock.mockReset()
   openSessionColdMock.mockReset()
   vi.stubGlobal("location", { search: "", protocol: "http:", host: "localhost" })
-  vi.stubGlobal("sessionStorage", {
-    getItem: vi.fn((k: string) => stores.get(k) ?? null),
-    setItem: vi.fn((k: string, v: string) => {
-      stores.set(k, v)
-    }),
-  })
 })
 
 afterEach(() => {
@@ -290,39 +281,17 @@ describe("openSessionUrl", () => {
     })
   })
 
-  it("returns needs-takeover when ws-attached agent and not owned by tab", async () => {
-    listAgentsMock.mockResolvedValue([
-      makeAgent({
-        id: "00000000-0000-4000-8000-000000000002",
-        attached: true,
-        attachedVia: "ws",
-        acpSessionId: "sess-target",
-      }),
-    ])
-    const session = makeSession()
-    expect(
-      await openSessionUrl({
-        cliKind: "claude",
-        sessionId: "sess-target",
-        session: session as never,
-        settings: { sessionTransport: null } as never,
-      }),
-    ).toBe("needs-takeover")
-  })
-
-  it("skips takeover prompt when tab owns the agent", async () => {
-    listAgentsMock.mockResolvedValue([
-      makeAgent({
-        id: "00000000-0000-4000-8000-000000000003",
-        attached: true,
-        acpSessionId: "sess-target",
-      }),
-    ])
-    stores.set("dc.ownedAgentId", "00000000-0000-4000-8000-000000000003")
+  it("joins a WebSocket-attached agent without confirmation", async () => {
+    const agent = makeAgent({
+      id: "00000000-0000-4000-8000-000000000002",
+      attached: true,
+      attachedVia: "ws",
+    })
+    listAgentsMock.mockResolvedValue([agent])
     const session = makeSession()
     session.attachRemoteToLiveAgent.mockImplementation(async () => {
       session.status = "connected"
-      session.agentId = "00000000-0000-4000-8000-000000000003"
+      session.agentId = agent.id
     })
 
     expect(
@@ -330,10 +299,15 @@ describe("openSessionUrl", () => {
         cliKind: "claude",
         sessionId: "sess-target",
         session: session as never,
-        settings: { sessionTransport: null } as never,
+        settings: { sessionTransport: "ws" } as never,
       }),
     ).toBe("connected")
-    expect(session.attachRemoteToLiveAgent).toHaveBeenCalled()
+    expect(session.attachRemoteToLiveAgent).toHaveBeenCalledExactlyOnceWith({
+      agentId: agent.id,
+      cwd: agent.cwd,
+      cliKind: agent.cliKind,
+      transport: "ws",
+    })
   })
 
   it.each(["ws", "http"] as const)("attaches to the matched agent via %s", async (transport) => {

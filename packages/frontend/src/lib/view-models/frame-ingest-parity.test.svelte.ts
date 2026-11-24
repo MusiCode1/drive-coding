@@ -20,10 +20,10 @@ import {
   type Patch,
   patchToSessionUpdates,
   reduce,
-  serializeFrame,
-  snapshotFrame,
   type SessionState,
   type SseFrame,
+  serializeFrame,
+  snapshotFrame,
   updateFrame,
   type WireSessionUpdate,
 } from "@drive-coding/core/session"
@@ -232,12 +232,6 @@ vi.mock("./speaker-fetch-job", () => ({
   executeSpeakerFetchJob: vi.fn().mockResolvedValue({ kind: "abandoned" }),
 }))
 
-vi.mock("$lib/adapters/ext", () => ({
-  createExtClient: vi.fn(() => ({
-    setThinkingTokens: vi.fn().mockResolvedValue(undefined),
-  })),
-}))
-
 vi.stubGlobal("location", { protocol: "http:", host: "localhost:5173", search: "" })
 let uuidCounter = 0
 vi.stubGlobal("crypto", { randomUUID: () => `test-uuid-${uuidCounter++}` })
@@ -402,7 +396,10 @@ describe("failed session switch over HTTP", () => {
 
   it.each([
     { label: "restores text and tool bubbles", withSpeaker: false },
-    { label: "does not enqueue restored history for speech after the RPC returns", withSpeaker: true },
+    {
+      label: "does not enqueue restored history for speech after the RPC returns",
+      withSpeaker: true,
+    },
   ])("$label", async ({ withSpeaker }) => {
     let state = createInitialSessionState({ sessionId: "original" })
     for (const update of [
@@ -453,7 +450,11 @@ describe("failed session switch over HTTP", () => {
       expect(tools).toMatchObject([{ toolCallId: "lookup" }])
       expect(speaker?.debugInfo().recent ?? []).toEqual([])
 
-      const switching = agent.switchSession({ sessionId: "failed", cwd: "/test", cliKind: "claude" })
+      const switching = agent.switchSession({
+        sessionId: "failed",
+        cwd: "/test",
+        cliKind: "claude",
+      })
       expect(agent.isLoadingHistory).toBe(true)
       await patch({
         op: "reset",
