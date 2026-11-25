@@ -2,7 +2,8 @@ import { FrameReader } from "./wire/frame-reader"
 import type { SSEReaderOptions } from "./wire/reader-types"
 import { createSseFramePipe } from "./wire/sse-pipe"
 
-export type { WireUpdateBatch } from "./wire/frame-decode"
+export type { OpeningFrame, WireUpdateBatch } from "./wire/frame-decode"
+export { connectionOf } from "./wire/frame-reader"
 export type {
   ClearIntervalFn,
   IntervalId,

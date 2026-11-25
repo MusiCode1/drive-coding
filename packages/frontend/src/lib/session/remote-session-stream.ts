@@ -1,8 +1,6 @@
 import type { Patch, SessionState } from "@drive-coding/core/session"
 import { getAgent } from "$lib/adapters/agents-api"
 import type { ViewTerminal } from "./session-view"
-import type { WireUpdateBatch } from "./wire/frame-decode"
-
 export function snapshotResetPatch(snapshot: SessionState): Patch {
   return {
     version: snapshot.version,
@@ -10,26 +8,6 @@ export function snapshotResetPatch(snapshot: SessionState): Patch {
     messages: snapshot.messages,
     nextMessageSeq: snapshot.nextMessageSeq,
     nextSegmentSeq: snapshot.nextSegmentSeq,
-  }
-}
-
-export async function drainRemoteUpdates(
-  stream: ReadableStream<WireUpdateBatch>,
-  apply: (batch: WireUpdateBatch) => void,
-): Promise<void> {
-  const reader = stream.getReader()
-  try {
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) return
-      try {
-        apply(value)
-      } catch (error) {
-        console.warn("RemoteSessionView: error applying patch, skipping", error)
-      }
-    }
-  } finally {
-    reader.releaseLock()
   }
 }
 

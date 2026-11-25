@@ -1,6 +1,6 @@
-import type { ChannelFrame, SessionState } from "@drive-coding/core/session"
+import type { ChannelFrame } from "@drive-coding/core/session"
 import { readSnapshotTimeoutMs } from "../snapshot-timeout"
-import { decodeSnapshotFrame } from "./frame-decode"
+import { decodeOpeningFrame, type OpeningFrame } from "./frame-decode"
 
 /**
  * ‏הגבול על המתנה ל-snapshot ‏חי ב-`snapshot-timeout.ts` ‏— ‏שם גם שני ערוצי
@@ -47,7 +47,7 @@ export function snapshotWaitMs(override?: number): number {
 export async function waitForSnapshot(
   frames: AsyncIterator<ChannelFrame>,
   snapshotTimeoutMs: number,
-): Promise<SessionState> {
+): Promise<OpeningFrame> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   const timeout = (async (): Promise<never> => {
     await new Promise<void>((resolve) => {
@@ -55,7 +55,7 @@ export async function waitForSnapshot(
     })
     throw new Error("SSEReader: timed out waiting for snapshot frame")
   })()
-  const advance = (async (): Promise<SessionState> => {
+  const advance = (async (): Promise<OpeningFrame> => {
     let next = await frames.next()
     while (!next.done && next.value.event !== "snapshot") {
       next = await frames.next()
@@ -63,7 +63,7 @@ export async function waitForSnapshot(
     if (next.done || next.value.event !== "snapshot") {
       throw new Error("SSEReader: no snapshot frame received")
     }
-    return decodeSnapshotFrame(next.value)
+    return decodeOpeningFrame(next.value)
   })()
   // Both sides get a no-op `.catch` attached IMMEDIATELY (same tick, before
   // racing) — whichever one LOSES the race may still reject later on its

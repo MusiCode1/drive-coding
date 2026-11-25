@@ -1,17 +1,23 @@
 import type { ChannelFrame, SessionState } from "@drive-coding/core/session"
 import { connInfo, connWarn } from "$lib/util/conn-log"
-import { decodeUpdateFrame, type WireUpdateBatch } from "./frame-decode"
+import { decodeUpdateFrame, type OpeningFrame, type WireUpdateBatch } from "./frame-decode"
 import { type FramePipe, PipeError } from "./pipe"
 import { MAX_BACKOFF_MS, ReaderWatchdog, STABLE_CONNECTION_MS } from "./reader-liveness"
 import type { SSEReaderOptions } from "./reader-types"
 import { snapshotWaitMs, waitForSnapshot } from "./snapshot-wait"
+
+const batchConnection = new WeakMap<WireUpdateBatch, number>()
+
+export function connectionOf(batch: WireUpdateBatch): number {
+  return batchConnection.get(batch) ?? 0
+}
 
 export class FrameReader {
   /**
    * Called after each successful reconnect, with the new snapshot.
    * Set before calling connect().
    */
-  onReconnected?: (snapshot: SessionState) => void
+  onReconnected?: (snapshot: SessionState, opening?: OpeningFrame) => void
   /**
    * slice ownership-handoff C3: called when the server sends taken-over event.
    * After this, #closed is set to true and no reconnect is attempted.
@@ -44,11 +50,16 @@ export class FrameReader {
    * Returns the initial snapshot and a long-lived patches stream.
    * The patches stream survives reconnects (automatic exponential backoff).
    */
-  async connect(): Promise<{ snapshot: SessionState; updates: ReadableStream<WireUpdateBatch> }> {
+  async connect(): Promise<{
+    snapshot: SessionState
+    opening: OpeningFrame
+    updates: ReadableStream<WireUpdateBatch>
+  }> {
     this.#closed = false
 
     // Initial connection — must receive snapshot as first frame
-    const { snapshot, frames } = await this.#connectOnce()
+    const { opening, frames, connectionId } = await this.#connectOnce()
+    const snapshot = opening.state
     // slice sse-liveness Commit 4: the watchdog only ever ticks AFTER a
     // snapshot was received — never during the snapshot wait itself (bounded
     // separately, above) and never during backoff (below, §runLoop).
@@ -69,9 +80,9 @@ export class FrameReader {
     })
 
     // Background loop: drain initial frames, then reconnect-loop
-    void this.#runLoop(frames, patchCtrl)
+    void this.#runLoop(frames, patchCtrl, connectionId)
 
-    return { snapshot, updates }
+    return { snapshot, opening, updates }
   }
 
   /** Stop reconnect attempts, abort any in-flight request, and close the patches stream. */
@@ -86,17 +97,25 @@ export class FrameReader {
    * Opens a connection and consumes its snapshot, leaving the same iterator
    * positioned at the subsequent update frames.
    */
+  #connectionSeq = 0
+
+  get currentConnectionId(): number {
+    return this.#connectionSeq
+  }
+
   async #connectOnce(): Promise<{
-    snapshot: SessionState
+    opening: OpeningFrame
     frames: AsyncIterable<ChannelFrame>
+    connectionId: number
   }> {
     const abortController = new AbortController()
     this.#abortController = abortController
+    const connectionId = ++this.#connectionSeq
     try {
       const source = await this.#pipe.open(abortController.signal)
       const iterator = source[Symbol.asyncIterator]()
-      const snapshot = await waitForSnapshot(iterator, this.#snapshotTimeoutMs)
-      return { snapshot, frames: { [Symbol.asyncIterator]: () => iterator } }
+      const opening = await waitForSnapshot(iterator, this.#snapshotTimeoutMs)
+      return { opening, frames: { [Symbol.asyncIterator]: () => iterator }, connectionId }
     } catch (error) {
       abortController.abort()
       throw error
@@ -110,9 +129,10 @@ export class FrameReader {
   async #runLoop(
     frames: AsyncIterable<ChannelFrame>,
     ctrl: ReadableStreamDefaultController<WireUpdateBatch>,
+    connectionId: number,
   ): Promise<void> {
     // Drain initial connection patches
-    await this.#drainFrames(frames, ctrl)
+    await this.#drainFrames(frames, ctrl, connectionId)
     // slice sse-liveness Commit 4: the connection just ended (drainFrames
     // always returns normally, never throws — see its doc comment) — no
     // watchdog while there's no open connection to watch.
@@ -136,20 +156,29 @@ export class FrameReader {
       delay = Math.min(delay * 2, MAX_BACKOFF_MS)
 
       try {
-        const { snapshot, frames: newFrames } = await this.#connectOnce()
+        const {
+          opening,
+          frames: newFrames,
+          connectionId: nextConnectionId,
+        } = await this.#connectOnce()
         if (this.#closed) break
         // slice sse-liveness Commit 4: snapshot received — watchdog resumes.
         // Symmetric with the "no watchdog during backoff" stop above.
         this.#watchdog.start(() => this.#abortController?.abort())
 
         const openedAt = this.#now()
+        const snapshot = opening.state
         connInfo("sse-reconnected", { url: this.#pipe.describe, version: snapshot.version })
 
         // Notify about the new snapshot
-        this.onReconnected?.(snapshot)
+        if (opening.historyOmitted !== undefined) {
+          this.onReconnected?.(snapshot, opening)
+        } else {
+          this.onReconnected?.(snapshot)
+        }
 
         // Drain patches from the reconnected connection
-        await this.#drainFrames(newFrames, ctrl)
+        await this.#drainFrames(newFrames, ctrl, nextConnectionId)
         this.#watchdog.stop() // connection ended — see the symmetric call above
 
         // ⚠️ איפוס ה-backoff רק לחיבור ש**שרד**, לא לכל אחד שנפתח. חיבור
@@ -200,6 +229,7 @@ export class FrameReader {
   async #drainFrames(
     frames: AsyncIterable<ChannelFrame>,
     ctrl: ReadableStreamDefaultController<WireUpdateBatch>,
+    connectionId: number,
   ): Promise<void> {
     try {
       for await (const frame of frames) {
@@ -228,6 +258,7 @@ export class FrameReader {
         }
 
         try {
+          batchConnection.set(decoded.batch, connectionId)
           ctrl.enqueue(decoded.batch)
         } catch {
           // Controller closed by consumer — stop. slice sse-liveness Commit 4:

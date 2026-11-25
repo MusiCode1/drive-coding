@@ -21,7 +21,7 @@ import {
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { vi } from "vitest"
 import type { SessionInfo } from "$lib/adapters/sessions"
-import type { SessionView, ViewEmission } from "$lib/session/session-view"
+import type { HistoryController, SessionView, ViewEmission } from "$lib/session/session-view"
 
 export class MockSessionView implements SessionView {
   // ─── state (plain object, updated by fireUpdate) ───
@@ -30,6 +30,14 @@ export class MockSessionView implements SessionView {
   // ─── slice remote-session-mgmt C5: port extension — supportsSessionDelete ───
   // Mutable so tests can toggle the capability; the VM getter must follow it.
   supportsSessionDelete = $state(false)
+
+  readonly history: HistoryController = {
+    window: { firstSeq: null, lastSeq: null, hasMore: false, watermark: 0 },
+    error: null,
+    reloading: false,
+    loadFull: async () => {},
+    retry: async () => {},
+  }
 
   // ─── patches stream ───
   #controller: ReadableStreamDefaultController<ViewEmission> | null = null

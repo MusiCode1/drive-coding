@@ -1,6 +1,7 @@
 import {
   createInitialSessionState,
   reduce,
+  snapshotPayload,
   type SessionState,
   serializeFrame,
   snapshotFrame,
@@ -17,15 +18,20 @@ export function hostSessionView(initial: Partial<SessionState> = {}) {
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       output = controller
-      controller.enqueue(encoder.encode(serializeFrame(snapshotFrame(state))))
+      controller.enqueue(encoder.encode(serializeFrame(snapshotFrame(state, undefined, "meta"))))
     },
   })
   const view = createRemoteSessionView("test-agent", "http://be.local", {
     _fetch: async (url, init) => {
-      if (url.endsWith("/events")) {
+      const path = new URL(url, "http://be.local").pathname
+      if (path.endsWith("/events")) {
         return new Response(stream, { headers: { "content-type": "text/event-stream" } })
       }
-      if (url.endsWith("/reply") && typeof init?.body === "string") {
+      if (path.endsWith("/history")) {
+        const body = snapshotPayload(state, undefined, { range: { tail: true, maxBytes: 262_144 } })
+        return Response.json(body, { status: 200 })
+      }
+      if (path.endsWith("/reply") && typeof init?.body === "string") {
         replies.push(JSON.parse(init.body))
         return Response.json({ ok: true })
       }

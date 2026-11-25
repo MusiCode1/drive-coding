@@ -31,6 +31,7 @@ import {
   type SseFrame,
   serializeFrame,
   snapshotFrame,
+  snapshotPayload,
   type ToolOutput,
   type ToolOutputRules,
   updateFrame,
@@ -79,13 +80,27 @@ async function connectRemoteHarness(
   transport: SessionTransport,
   snapshot: SessionState,
   handleRequest: HandleRequest,
+  liveState: () => SessionState,
   transformWsFrame: FrameTransform = (frame) => frame,
 ) {
-  const initialFrame = snapshotFrame(snapshot)
+  const initialFrame = snapshotFrame(snapshot, undefined, "meta")
   const base = { agentId: "agent-contract", baseUrl: "http://be.local", transport }
+  const historyBody = () =>
+    snapshotPayload(liveState(), undefined, { range: { tail: true, maxBytes: 262_144 } })
+  const fetchHistory = async (url: string) => {
+    const path = new URL(url, base.baseUrl).pathname
+    if (path.endsWith("/history")) {
+      return Response.json(historyBody(), { status: 200 })
+    }
+    throw new Error(`Unexpected HTTP request: ${url}`)
+  }
   if (transport === "ws") {
     const sockets = fakeSessionSockets()
-    const connected = createRemoteView({ ...base, _WebSocket: sockets.WebSocket })
+    const connected = createRemoteView({
+      ...base,
+      _WebSocket: sockets.WebSocket,
+      _fetch: fetchHistory,
+    })
     const socket = sockets.latest()
     const send = socket.send.bind(socket)
     vi.spyOn(socket, "send").mockImplementation((data) => {
@@ -108,14 +123,16 @@ async function connectRemoteHarness(
   const view = await createRemoteView({
     ...base,
     async _fetch(url, init) {
-      if (url.endsWith("/events")) {
+      const path = new URL(url, base.baseUrl).pathname
+      if (path.endsWith("/events")) {
         sse.pushRaw(initialFrame)
         init?.signal?.addEventListener("abort", sse.close, { once: true })
         return new Response(sse.body)
       }
+      if (path.endsWith("/history")) return fetchHistory(url)
       const raw: unknown = typeof init?.body === "string" ? JSON.parse(init.body) : undefined
-      if (!url.endsWith("/rpc") && !url.endsWith("/reply")) throw new Error("Unexpected RPC URL")
-      const response = handleRequest(url.endsWith("/rpc") ? "rpc" : "reply", raw)
+      if (!path.endsWith("/rpc") && !path.endsWith("/reply")) throw new Error("Unexpected RPC URL")
+      const response = handleRequest(path.endsWith("/rpc") ? "rpc" : "reply", raw)
       return Response.json(response.body, { status: response.status })
     },
   })
@@ -127,14 +144,19 @@ async function createRemoteHarness(transport: SessionTransport): Promise<Contrac
   // The fixture folds the same updates as the host so each frame carries the right version.
   let shadowState = createInitialSessionState({ sessionId: "sess-contract" })
   let nextRequestId = 0
-  const { view, pushRaw } = await connectRemoteHarness(transport, shadowState, (kind, body) => {
-    if (kind === "reply") {
-      outboundLog.push({ method: "reply", params: body })
-      return { status: 200, body: { ok: true } }
-    }
-    outboundLog.push(body as { method: string; params: unknown })
-    return { status: 202, body: { version: shadowState.version } }
-  })
+  const { view, pushRaw } = await connectRemoteHarness(
+    transport,
+    shadowState,
+    (kind, body) => {
+      if (kind === "reply") {
+        outboundLog.push({ method: "reply", params: body })
+        return { status: 200, body: { ok: true } }
+      }
+      outboundLog.push(body as { method: string; params: unknown })
+      return { status: 202, body: { version: shadowState.version } }
+    },
+    () => shadowState,
+  )
 
   const pb = new PatchBuffer(view.patches)
 
@@ -254,7 +276,13 @@ async function readToolOutput(transport: SessionTransport, transformWsFrame?: Fr
 
   let state = createInitialSessionState({ sessionId: "s1" })
   const ack: HandleRequest = () => ({ status: 202, body: {} })
-  const { view, pushRaw } = await connectRemoteHarness(transport, state, ack, transformWsFrame)
+  const { view, pushRaw } = await connectRemoteHarness(
+    transport,
+    state,
+    ack,
+    () => state,
+    transformWsFrame,
+  )
   const patches = new PatchBuffer(view.patches)
   let frameCount = 0
   let live: ToolOutput | undefined
@@ -276,7 +304,7 @@ async function readToolOutput(transport: SessionTransport, transformWsFrame?: Fr
     await view.close()
   }
 
-  const late = await connectRemoteHarness(transport, state, ack, transformWsFrame)
+  const late = await connectRemoteHarness(transport, state, ack, () => state, transformWsFrame)
   try {
     return { live, snapshot: firstToolOutput(late.view.state) }
   } finally {
@@ -297,7 +325,8 @@ describe("remote tool output", () => {
   it("detects a WS pipe that strips canonical metadata", async () => {
     const stripped = await readToolOutput("ws", stripWireMeta)
     expect(stripped).not.toEqual({ live: output, snapshot: output })
-    expect(stripped).toEqual({ live: undefined, snapshot: undefined })
+    expect(stripped.live).toBeUndefined()
+    expect(stripped.snapshot).toEqual(output)
   })
 })
 
@@ -309,19 +338,26 @@ describe("terminal session stream", () => {
     metadata: () => Response | Promise<Response>,
   ) {
     const state = createInitialSessionState({ sessionId: "s-crash" })
-    const initial = snapshotFrame(state)
+    const initial = snapshotFrame(state, undefined, "meta")
     const sse = makeLiveSSEBody()
     const sockets = fakeSessionSockets()
     let eventsRequests = 0
     const fetcher = vi.fn(async (url: string) => {
-      if (url.endsWith("/events")) {
+      const path = new URL(url, "http://be.local").pathname
+      if (path.endsWith("/events")) {
         if (eventsRequests++ === 0) {
           sse.pushRaw(initial)
           return new Response(sse.body)
         }
         return Response.json({ error: "Agent connection not found" }, { status: 404 })
       }
-      expect(url).toBe("http://be.local/api/agents/agent-crash")
+      if (path.endsWith("/history")) {
+        return Response.json(
+          snapshotPayload(state, undefined, { range: { tail: true, maxBytes: 262_144 } }),
+          { status: 200 },
+        )
+      }
+      expect(path).toBe("/api/agents/agent-crash")
       return metadata()
     })
     const connected = createRemoteView({
@@ -338,12 +374,21 @@ describe("terminal session stream", () => {
     const view = await connected
     return {
       view,
-      metadataRequests: () => fetcher.mock.calls.filter(([url]) => !url.endsWith("/events")).length,
+      metadataRequests: () =>
+        fetcher.mock.calls.filter(([url]) => {
+          const path = new URL(String(url), "http://be.local").pathname
+          return !path.endsWith("/events") && !path.endsWith("/history")
+        }).length,
       async endAsGone() {
-        if (transport === "ws") sockets.latest().close()
-        else sse.close()
-        await vi.advanceTimersByTimeAsync(1000)
-        if (transport === "ws") sockets.latest().close(closeCodeForStatus(404))
+        if (transport === "ws") {
+          sockets.latest().close(1006)
+          await vi.advanceTimersByTimeAsync(1000)
+          await vi.waitFor(() => expect(sockets.instances.length).toBeGreaterThan(1))
+          sockets.latest().close(closeCodeForStatus(404))
+        } else {
+          sse.close()
+          await vi.advanceTimersByTimeAsync(1000)
+        }
         await vi.advanceTimersByTimeAsync(0)
       },
     }
@@ -432,28 +477,33 @@ describe("terminal session stream", () => {
 describe.each(["http", "ws"] as const)("SessionView deviation table — %s", (transport) => {
   async function connect(rpcStatus = 202): Promise<RemoteSessionView> {
     const snapshot = createInitialSessionState({ sessionId: "s-1" })
-    const { view } = await connectRemoteHarness(transport, snapshot, (kind, body) => {
-      if (kind === "reply") return { status: 200, body: { ok: true } }
-      const { method, params } = body as { method?: string; params?: { sessionId?: string } }
-      switch (method) {
-        case RPC_METHODS.listSessions:
-          return {
-            status: 200,
-            body: {
-              sessions: [{ sessionId: "s-9", cwd: "/w", title: "Listed" }],
-              sessionCapabilities: { delete: {} },
-            },
-          }
-        case RPC_METHODS.loadSession:
-          return { status: 200, body: { sessionId: params?.sessionId ?? "s", version: 2 } }
-        case RPC_METHODS.newSession:
-          return { status: 200, body: { sessionId: "s-brand-new", version: 3 } }
-        case RPC_METHODS.deleteSession:
-          return { status: 200, body: { ok: true } }
-        default:
-          return { status: rpcStatus, body: { version: 1 } }
-      }
-    })
+    const { view } = await connectRemoteHarness(
+      transport,
+      snapshot,
+      (kind, body) => {
+        if (kind === "reply") return { status: 200, body: { ok: true } }
+        const { method, params } = body as { method?: string; params?: { sessionId?: string } }
+        switch (method) {
+          case RPC_METHODS.listSessions:
+            return {
+              status: 200,
+              body: {
+                sessions: [{ sessionId: "s-9", cwd: "/w", title: "Listed" }],
+                sessionCapabilities: { delete: {} },
+              },
+            }
+          case RPC_METHODS.loadSession:
+            return { status: 200, body: { sessionId: params?.sessionId ?? "s", version: 2 } }
+          case RPC_METHODS.newSession:
+            return { status: 200, body: { sessionId: "s-brand-new", version: 3 } }
+          case RPC_METHODS.deleteSession:
+            return { status: 200, body: { ok: true } }
+          default:
+            return { status: rpcStatus, body: { version: 1 } }
+        }
+      },
+      () => snapshot,
+    )
     activeViews.push(view)
     return view
   }

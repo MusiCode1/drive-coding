@@ -22,6 +22,13 @@ type WireSnapshot = {
   sessionId: string | null
   version: number
   updates: WireSessionUpdate[]
+  historyOmitted?: { messageCount: number }
+  page?: { firstSeq: number | null; lastSeq: number | null; hasMore: boolean }
+}
+
+export type OpeningFrame = {
+  state: SessionState
+  historyOmitted?: { messageCount: number }
 }
 
 /**
@@ -61,7 +68,15 @@ function foldSnapshot(snap: WireSnapshot): SessionState {
 }
 
 export function decodeSnapshotFrame(frame: ChannelFrame): SessionState {
-  return foldSnapshot(JSON.parse(frame.data) as WireSnapshot)
+  return decodeOpeningFrame(frame).state
+}
+
+export function decodeOpeningFrame(frame: ChannelFrame): OpeningFrame {
+  const snap = JSON.parse(frame.data) as WireSnapshot
+  const state = foldSnapshot(snap)
+  return snap.historyOmitted !== undefined
+    ? { state, historyOmitted: snap.historyOmitted }
+    : { state }
 }
 
 type DecodedUpdate =

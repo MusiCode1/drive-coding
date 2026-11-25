@@ -2,6 +2,7 @@ import { WS_SESSION_PATH_PREFIX } from "@drive-coding/core/session"
 import { beUrl, beWsUrl } from "$lib/util/be-url.js"
 import { RemoteSessionView, type RemoteViewOptions } from "./remote-session-view.js"
 import type { SessionTransport } from "./session-transport.js"
+import { createHttpHistoryPipe } from "./wire/http-history-pipe"
 import { createHttpRpcPipe } from "./wire/http-rpc-pipe"
 import type { SSEReaderOptions } from "./wire/reader-types"
 import { createSseFramePipe } from "./wire/sse-pipe"
@@ -34,9 +35,11 @@ export function createRemoteSessionView(
     headers: { [ACP_CONNECTION_ID_HEADER]: connectionId, ...opts.headers },
   }
   const agentUrl = `${baseUrl}/api/agents/${agentId}`
+  const eventsUrl = `${agentUrl}/events?snapshot=meta`
   const pipe = {
-    frames: createSseFramePipe(`${agentUrl}/events`, wireOptions),
+    frames: createSseFramePipe(eventsUrl, wireOptions),
     rpc: createHttpRpcPipe(agentUrl, wireOptions),
+    history: createHttpHistoryPipe(`${agentUrl}/history`, wireOptions),
     close() {}, // FrameReader owns and aborts the SSE request.
   }
   return new RemoteSessionView(agentId, pipe, { ...opts, baseUrl, connectionId })
@@ -55,12 +58,21 @@ export async function createRemoteView(
   let view: RemoteSessionView
   if (transport === "ws") {
     const connectionId = resolveConnectionId(rest)
-    const query = new URLSearchParams({ connectionId })
+    const wireHeaders = {
+      [ACP_CONNECTION_ID_HEADER]: connectionId,
+      ...rest.headers,
+    }
+    const query = new URLSearchParams({ connectionId, snapshot: "meta" })
     const path = `${WS_SESSION_PATH_PREFIX}${encodeURIComponent(agentId)}?${query}`
     const url = base ? base.replace(/^http/, "ws") + path : beWsUrl(path)
+    const agentUrl = `${base ?? beUrl("").replace(/\/$/, "")}/api/agents/${agentId}`
+    const history = createHttpHistoryPipe(`${agentUrl}/history`, {
+      _fetch: rest._fetch,
+      headers: wireHeaders,
+    })
     view = new RemoteSessionView(
       agentId,
-      createWsSessionPipe(url, { _WebSocket: rest._WebSocket }),
+      createWsSessionPipe(url, { _WebSocket: rest._WebSocket, history }),
       { ...rest, baseUrl: base, connectionId },
     )
   } else {

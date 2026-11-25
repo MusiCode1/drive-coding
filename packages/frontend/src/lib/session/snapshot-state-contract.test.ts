@@ -23,6 +23,7 @@ const sampledState = {
   messages: transcript.messages,
   nextMessageSeq: transcript.nextMessageSeq,
   nextSegmentSeq: transcript.nextSegmentSeq,
+  wireSeqIndex: transcript.wireSeqIndex,
   status: "connected",
   turnState: "calling-tool",
   pending: {

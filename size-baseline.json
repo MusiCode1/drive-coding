@@ -872,10 +872,10 @@
       "codeLines": 15
     },
     "packages/frontend/src/lib/session/remote-session-view.ts": {
-      "metric": 476,
-      "impurity": 13,
-      "class": "scattered",
-      "codeLines": 269
+      "metric": 289,
+      "impurity": 3,
+      "class": "mixed",
+      "codeLines": 207
     },
     "packages/frontend/src/lib/session/session-transport-read.ts": {
       "metric": 41,

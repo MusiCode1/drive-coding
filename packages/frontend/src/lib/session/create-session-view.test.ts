@@ -16,8 +16,8 @@ import {
   encodeWsServerResponse,
   serializeFrame,
   snapshotFrame,
+  snapshotPayload,
 } from "@drive-coding/core/session"
-import { toWireText } from "@drive-coding/core/session/testing"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { fakeSessionSockets } from "./__contract__/fake-session-socket"
 import { createRemoteView } from "./create-session-view.js"
@@ -26,10 +26,11 @@ import { RemoteSessionView } from "./remote-session-view.js"
 const encoder = new TextEncoder()
 
 describe("reply failure through RemoteSessionView", () => {
-  const pendingSnapshot = snapshotFrame({
+  const openingState = {
     ...createInitialSessionState({ sessionId: "sess-1" }),
     pending: { permission: { requestId: 7, params: {} as never }, elicitation: null },
-  })
+  }
+  const pendingSnapshot = snapshotFrame(openingState, undefined, "meta")
   const reply = { outcome: { outcome: "cancelled" } }
   const failure = { status: 500, body: { error: "reply failed" } }
 
@@ -37,10 +38,17 @@ describe("reply failure through RemoteSessionView", () => {
     const fetchReply = vi.fn(async (_url: string, _init?: RequestInit) =>
       Response.json(failure.body, { status: failure.status }),
     )
-    const mockFetch = (url: string, init?: RequestInit) =>
-      url.endsWith("/events")
-        ? Promise.resolve(new Response(serializeFrame(pendingSnapshot)))
-        : fetchReply(url, init)
+    const mockFetch = (url: string, init?: RequestInit) => {
+      const path = new URL(url, "https://be.local").pathname
+      if (path.endsWith("/events")) {
+        return Promise.resolve(new Response(serializeFrame(pendingSnapshot)))
+      }
+      if (path.endsWith("/history")) {
+        const body = snapshotPayload(openingState, undefined, { history: "omit" })
+        return Promise.resolve(Response.json(body, { status: 200 }))
+      }
+      return fetchReply(url, init)
+    }
     const view = await createRemoteView({
       agentId: "agent-1",
       baseUrl: "https://be.local",
@@ -64,7 +72,8 @@ describe("reply failure through RemoteSessionView", () => {
 
   it("WS rejects the same reply and uses the HTTP connection ID in the query", async () => {
     const sockets = fakeSessionSockets()
-    const unexpectedFetch = vi.fn(async () => {
+    let historyFetches = 0
+    const unexpectedFetch = vi.fn(async (_url: string) => {
       throw new Error("Unexpected HTTP request")
     })
     const connected = createRemoteView({
@@ -73,13 +82,25 @@ describe("reply failure through RemoteSessionView", () => {
       baseUrl: "https://be.local/",
       headers: { "Acp-Connection-Id": "tab / 1" },
       _WebSocket: sockets.WebSocket,
-      _fetch: unexpectedFetch,
+      _fetch: async (url) => {
+        if (String(url).includes("/history")) {
+          historyFetches++
+          const body = snapshotPayload(openingState, undefined, { history: "omit" })
+          return Response.json(body, { status: 200 })
+        }
+        return unexpectedFetch(url)
+      },
     })
     void connected.catch(() => {})
     const socket = sockets.latest()
     const url = new URL(socket.url)
     expect(url.origin + url.pathname).toBe("wss://be.local/ws/session/agent-1")
-    expect([...url.searchParams]).toEqual([["connectionId", "tab / 1"]])
+    expect([...url.searchParams.entries()]).toEqual(
+      expect.arrayContaining([
+        ["connectionId", "tab / 1"],
+        ["snapshot", "meta"],
+      ]),
+    )
     const send = socket.send.bind(socket)
     vi.spyOn(socket, "send").mockImplementation((data) => {
       send(data)
@@ -99,13 +120,14 @@ describe("reply failure through RemoteSessionView", () => {
       await view.close()
     }
     expect(socket.readyState).toBe(3)
-    expect(unexpectedFetch).not.toHaveBeenCalled()
+    expect(historyFetches).toBe(1)
   })
 })
 
 function sseResponse(): Response {
   const snapshot = createInitialSessionState({ sessionId: "sess-1" })
-  const text = toWireText([{ event: "snapshot", data: JSON.stringify(snapshot) }])
+  const frame = snapshotFrame(snapshot, undefined, "meta")
+  const text = serializeFrame(frame)
   const body = new ReadableStream<Uint8Array>({
     start(ctrl) {
       ctrl.enqueue(encoder.encode(text))
@@ -120,6 +142,15 @@ describe("createRemoteView()", () => {
     const calls: string[] = []
     const mockFetch = async (url: string): Promise<Response> => {
       calls.push(url)
+      const path = new URL(url, "http://be.local").pathname
+      if (path.endsWith("/history")) {
+        const body = snapshotPayload(
+          createInitialSessionState({ sessionId: "sess-1" }),
+          undefined,
+          { range: { tail: true, maxBytes: 262_144 } },
+        )
+        return Response.json(body, { status: 200 })
+      }
       return sseResponse()
     }
 
@@ -132,7 +163,8 @@ describe("createRemoteView()", () => {
 
     expect(view).toBeInstanceOf(RemoteSessionView)
     expect(view.state.sessionId).toBe("sess-1")
-    expect(calls[0]).toBe("http://be.local/api/agents/agent-1/events")
+    expect(calls.some((u) => u.includes("/events?snapshot=meta"))).toBe(true)
+    expect(calls.some((u) => u.includes("/history"))).toBe(true)
     await view.close()
   })
 
@@ -140,6 +172,15 @@ describe("createRemoteView()", () => {
     const calls: string[] = []
     const mockFetch = async (url: string): Promise<Response> => {
       calls.push(url)
+      const path = new URL(url, "http://be.local").pathname
+      if (path.endsWith("/history")) {
+        const body = snapshotPayload(
+          createInitialSessionState({ sessionId: "sess-1" }),
+          undefined,
+          { range: { tail: true, maxBytes: 262_144 } },
+        )
+        return Response.json(body, { status: 200 })
+      }
       return sseResponse()
     }
 
@@ -151,7 +192,7 @@ describe("createRemoteView()", () => {
 
     // beUrl("") ב-SSR/vitest (אין location) מחזיר את הנתיב כפי שהוא — ⇒ ה-URL
     // מתחיל ב-/api/agents/agent-2/events (בלי host קשיח).
-    expect(calls[0]).toContain("/api/agents/agent-2/events")
+    expect(calls.some((u) => u.includes("/api/agents/agent-2/events"))).toBe(true)
     await view.close()
   })
 
@@ -163,6 +204,15 @@ describe("createRemoteView()", () => {
     const calls: string[] = []
     const mockFetch = async (url: string): Promise<Response> => {
       calls.push(url)
+      const path = new URL(url, "http://be.local").pathname
+      if (path.endsWith("/history")) {
+        const body = snapshotPayload(
+          createInitialSessionState({ sessionId: "sess-1" }),
+          undefined,
+          { range: { tail: true, maxBytes: 262_144 } },
+        )
+        return Response.json(body, { status: 200 })
+      }
       return sseResponse()
     }
 
@@ -173,8 +223,9 @@ describe("createRemoteView()", () => {
       _sleep: () => Promise.resolve(),
     } as never)
 
-    expect(calls[0]).toBe("http://be.local/api/agents/agent-3/events")
-    expect(calls[0]).not.toContain("//api/agents")
+    const eventsUrl = calls.find((u) => u.includes("/events?snapshot=meta"))
+    expect(eventsUrl).toBe("http://be.local/api/agents/agent-3/events?snapshot=meta")
+    expect(eventsUrl).not.toContain("//api/agents")
     await view.close()
   })
 
@@ -186,6 +237,15 @@ describe("createRemoteView()", () => {
     const calls: string[] = []
     const mockFetch = async (url: string): Promise<Response> => {
       calls.push(url)
+      const path = new URL(url, "http://be.local").pathname
+      if (path.endsWith("/history")) {
+        const body = snapshotPayload(
+          createInitialSessionState({ sessionId: "sess-1" }),
+          undefined,
+          { range: { tail: true, maxBytes: 262_144 } },
+        )
+        return Response.json(body, { status: 200 })
+      }
       return sseResponse()
     }
 
@@ -195,8 +255,9 @@ describe("createRemoteView()", () => {
       _sleep: () => Promise.resolve(),
     } as never)
 
-    expect(calls[0]).toBe("https://preview.tuns.sh/api/agents/agent-4/events")
-    expect(calls[0]).not.toContain("//api/agents")
+    const eventsUrl = calls.find((u) => u.includes("/events?snapshot=meta"))
+    expect(eventsUrl).toBe("https://preview.tuns.sh/api/agents/agent-4/events?snapshot=meta")
+    expect(eventsUrl).not.toContain("//api/agents")
     await view.close()
   })
 })

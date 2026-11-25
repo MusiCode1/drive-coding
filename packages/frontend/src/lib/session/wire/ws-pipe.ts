@@ -9,13 +9,14 @@ import {
   WS_RPC_METHOD,
 } from "@drive-coding/core/session"
 import { PRESENCE_INTERVAL_MS } from "$lib/engines/liveness-thresholds"
-import { PipeError, type RpcKind, type SessionPipe } from "./pipe"
+import { type HistoryPipe, PipeError, type RpcKind, type SessionPipe } from "./pipe"
 import type { ClearIntervalFn, IntervalId, SetIntervalFn } from "./reader-types"
 
 type WsOptions = {
   _WebSocket?: typeof WebSocket
   _setInterval?: SetIntervalFn
   _clearInterval?: ClearIntervalFn
+  history?: HistoryPipe
 }
 
 function readErrorBody(data: string): unknown {
@@ -33,6 +34,10 @@ function closedError(): PipeError {
 type PendingRequest = {
   resolve: (response: ChannelResponse) => void
   reject: (error: PipeError) => void
+}
+
+const stubHistory: HistoryPipe = {
+  get: async () => ({ status: 404, body: null }),
 }
 
 export function createWsSessionPipe(url: string, opts: WsOptions = {}): SessionPipe {
@@ -190,6 +195,7 @@ export function createWsSessionPipe(url: string, opts: WsOptions = {}): SessionP
       call: (kind, body) => active?.call(kind, body) ?? Promise.reject(closedError()),
       label: (kind) => `WS ${kind}`,
     },
+    history: opts.history ?? stubHistory,
     close() {
       active?.stop()
       active = undefined

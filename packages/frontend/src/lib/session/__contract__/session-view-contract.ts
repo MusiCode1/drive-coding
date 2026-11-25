@@ -40,7 +40,7 @@ export class PatchBuffer {
       while (true) {
         const { done, value } = await this.#reader.read()
         if (done) break
-        if (value !== undefined) {
+        if (value !== undefined && value.patches.length > 0) {
           this.#buffer.push(value.patches)
           this.#totalPushed++
           this.#drainWaiters()

@@ -10,10 +10,11 @@ const wire = `${session}wire/`
 const wsFile = `${wire}ws-pipe.ts`
 const sseFile = `${wire}sse-pipe.ts`
 const rpcFile = `${wire}http-rpc-pipe.ts`
+const historyFile = `${wire}http-history-pipe.ts`
 const settingsSocket = "lib/engines/config-change-socket.ts"
 const view = `${session}remote-session-view.ts`
 const reader = `${wire}frame-reader.ts`
-const requiredFiles = [wsFile, sseFile, rpcFile, settingsSocket, view, reader]
+const requiredFiles = [wsFile, sseFile, rpcFile, historyFile, settingsSocket, view, reader]
 
 function collectProductionFiles(): { path: string; text: string }[] {
   function walk(root: string): string[] {
@@ -81,7 +82,8 @@ function moduleSpecifier(node: ts.Node): ts.Node | undefined {
 
 function findViolations(path: string, text: string): string[] {
   const wsAllowed = path === wsFile || path === settingsSocket
-  const checkFetch = path.startsWith(session) && path !== sseFile && path !== rpcFile
+  const checkFetch =
+    path.startsWith(session) && path !== sseFile && path !== rpcFile && path !== historyFile
   const checkImports = path === view || path === reader
   const violations = new Set<string>()
   const socketNames = new Set(["WebSocket", "_WebSocket"])

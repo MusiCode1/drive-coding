@@ -13,6 +13,13 @@ import type { SessionInfo } from "$lib/adapters/sessions"
 
 export type ViewTerminal = { terminal: true; terminalError?: string }
 
+export type HistoryWindowState = {
+  firstSeq: number | null
+  lastSeq: number | null
+  hasMore: boolean
+  watermark: number
+}
+
 /** Single delivery unit from view to VM. Order guaranteed: same channel, same queue. */
 export type ViewEmission = {
   /** Patches produced from the batch. Advance view state. */
@@ -23,6 +30,21 @@ export type ViewEmission = {
   terminal?: true
   /** Crash reason fetched by the view after the session stream ends. */
   terminalError?: string
+  history?: "tail" | "full" | "reload" | "reset"
+  activity?: true
+  historyState?: {
+    window: HistoryWindowState
+    error: string | null
+    reloading: boolean
+  }
+}
+
+export type HistoryController = {
+  readonly window: HistoryWindowState
+  readonly error: string | null
+  readonly reloading: boolean
+  loadFull(): Promise<void>
+  retry(): Promise<void>
 }
 
 export function readViewEmission(
@@ -31,7 +53,16 @@ export function readViewEmission(
 ): ViewEmission | undefined {
   if (emission?.terminalError) session.error = emission.terminalError
   if (emission?.terminal && session.status === "connected") session.status = "disconnected"
-  if (emission && (emission.patches.length > 0 || emission.updates.length > 0)) return emission
+  if (
+    emission &&
+    (emission.patches.length > 0 ||
+      emission.updates.length > 0 ||
+      emission.history !== undefined ||
+      emission.historyState !== undefined ||
+      emission.activity === true)
+  ) {
+    return emission
+  }
 }
 
 /**
@@ -110,4 +141,7 @@ export interface SessionView {
 
   /** סוגר את החיבור ומפנה משאבים. מבטל pending permission/elicitation כ-cancelled. */
   close(): Promise<void>
+
+  /** Tail/history window control (slice fast-session-open-1). */
+  readonly history: HistoryController
 }
