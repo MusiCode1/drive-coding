@@ -9,7 +9,7 @@ read_when:
 tags: [errors, rpc]
 surface: [http, mcp]
 stability: stable
-docs_version: 1.12.0
+docs_version: 1.13.0
 updated: 2026-11-24
 ---
 
@@ -48,8 +48,9 @@ event remains reserved for protocol compatibility. This server never emits it.
 
 | Route | 404 | 400 |
 |---|---|---|
-| **GET …/history** | No host — `{ error: "Agent connection not found" }` | Bad **`fromMessage`** id |
+| **GET …/history** | No host — `{ error: "Agent connection not found" }` | Bad **`fromMessage`**; unknown **`before`** seq; empty **`before=`** or **`tail=`**; **`maxBytes`** without `tail`/`before` or invalid; `tail` + `before` / `fromMessage` conflicts |
 | **GET …/state** | Same 404 body | — |
+| **GET …/events?snapshot=** | No host (404 before attach) | Invalid `snapshot` (not `full` or `meta`) |
 
 **404 on host routes ≠ "agent UUID unknown"** — check **`GET /api/agents/:id`** for registry truth.
 

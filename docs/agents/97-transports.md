@@ -17,8 +17,8 @@ routes:
   - DELETE /api/agents/:id/connection
 mcp_tools:
   - session_subscribe
-docs_version: 1.12.0
-updated: 2026-11-24
+docs_version: 1.13.0
+updated: 2026-11-25
 ---
 
 # Transports
@@ -71,9 +71,10 @@ Prefer MCP for **`session_*`** tools when your CLI already speaks MCP; prefer HT
 ## WebSocket — session channel
 
 **`/ws/session/:id`** is the browser's only session WebSocket. Upgrade
-**`GET /ws/session/:id?connectionId=…&epoch=…`** to open a viewer. Both
-query parameters are optional. Provide a unique `connectionId` and reuse it
-for that viewer's HTTP presence and detach requests.
+**`GET /ws/session/:id?connectionId=…&epoch=…&snapshot=full|meta`** to open a viewer.
+`connectionId`, `epoch`, and `snapshot` are optional (`snapshot` defaults to `full`).
+Provide a unique `connectionId` and reuse it for that viewer's HTTP presence and detach
+requests. Invalid `snapshot` closes with **4400** (same contract as SSE).
 
 - The server sends one JSON object `{event, id?, data}` per frame. The event
   names and the contents of the `data` string match the SSE stream in

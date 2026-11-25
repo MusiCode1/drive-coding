@@ -16,8 +16,8 @@ routes:
   - GET /api/agents/:id/state
   - POST /api/agents/:id/rpc
 mcp_tools: [session_send, session_state]
-docs_version: 1.12.0
-updated: 2026-11-24
+docs_version: 1.13.0
+updated: 2026-11-25
 ---
 
 # Reading output
@@ -54,6 +54,8 @@ Does **not** extend HTTP ownership TTL (unlike **`POST …/presence`**).
 ```http
 GET /api/agents/:id/history
 GET /api/agents/:id/history?fromMessage=<messageId>
+GET /api/agents/:id/history?tail=1&maxBytes=<n>
+GET /api/agents/:id/history?before=<seq>&maxBytes=<n>
 ```
 
 - Same **`updates`** shape as SSE frame-zero (`snapshotPayload`) — single source of truth.
@@ -62,13 +64,28 @@ GET /api/agents/:id/history?fromMessage=<messageId>
   `{ error: "unknown fromMessage", fromMessage }` (not silent full history).
 - Empty / missing `fromMessage` → full snapshot.
 
+**Tail and earlier pages (slice 1):**
+
+| Query | Payload |
+|---|---|
+| `tail=1&maxBytes=` | Latest message page plus session tail and `carried` (anchored inside the page stay in place; others are emitted before the page). Response includes `page: { firstSeq, lastSeq, hasMore }`. |
+| `before=<seq>&maxBytes=` | Messages strictly before that seq only — no session tail, no `carried`. `before=0` is an empty page. Unknown seq → **400** `{ error: "unknown before", before }`. |
+| `maxBytes` alone, invalid `tail`, `before=` empty, conflicting params | **400** (see `95-errors`). |
+
+`maxBytes` is clamped to a server ceiling (default applied when absent is **not** allowed with `tail` or `before`).
+
 Prefer **history** when you cannot keep SSE open (scripts, reconnect without epoch handling).
 
 ## SSE live stream
 
 ```http
 GET /api/agents/:id/events
+GET /api/agents/:id/events?snapshot=full
+GET /api/agents/:id/events?snapshot=meta
 ```
+
+- **`snapshot=meta`** — opening frame omits message history and includes `historyOmitted: { messageCount }`; updates after `session/load` use `_drive/reset` plus session tail only (no messages). Same on the [session WebSocket](97-transports.md) via `?snapshot=meta`. Invalid values → **400**; WebSocket closes with **4400**.
+- Missing or empty `snapshot` → **full** (backward compatible).
 
 Protocol (event names):
 
