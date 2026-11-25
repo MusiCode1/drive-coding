@@ -94,6 +94,7 @@ export async function openSessionUrl(params: {
     return "error"
   }
 
+  if (session.status === "disconnected" && session.sessionId === sessionId) return "connected"
   if (connectionFailed(session)) return "error"
 
   return "connected"

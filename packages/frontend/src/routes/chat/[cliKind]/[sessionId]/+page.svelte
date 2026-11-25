@@ -9,6 +9,7 @@ import { type OpenSessionOutcome, openSessionUrl } from "$lib/actions/open-sessi
 import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import ChatScreen from "$lib/components/chat/ChatScreen.svelte"
 import { getI18n, getSession, getSettings } from "$lib/context"
+import { HISTORY_OPEN_ERROR } from "$lib/session/history-open"
 import { sessionPathWithTransport } from "$lib/session/session-url"
 
 const session = getSession()
@@ -44,6 +45,13 @@ $effect(() => {
   untrack(() => void resolve(kind, sid))
 })
 
+function retryHistory() {
+  const { cliKind, sessionId } = page.params
+  if (!cliKind || !sessionId) return
+  outcome = "resolving"
+  void resolve(cliKind, sessionId)
+}
+
 function goHome() {
   goto("/")
 }
@@ -70,6 +78,18 @@ function goBack() {
       onclick={goBack}
     >
       {t("sessionUrl.busy.back")}
+    </button>
+  </main>
+{:else if outcome === "error" && session.error === HISTORY_OPEN_ERROR}
+  <main class="min-h-dvh flex flex-col items-center justify-center gap-4 p-6 text-center">
+    <h1 class="text-lg font-medium" role="alert">{t("chat.history.error")}</h1>
+    <button
+      type="button"
+      class="px-4 py-2 rounded-lg border text-sm"
+      style="border-color:var(--border)"
+      onclick={retryHistory}
+    >
+      {t("chat.history.retry")}
     </button>
   </main>
 {:else if outcome === "not-found" || outcome === "error"}
