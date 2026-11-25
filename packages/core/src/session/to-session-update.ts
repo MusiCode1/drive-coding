@@ -63,6 +63,17 @@ const midOf = (m: SessionMessage): string => m.messageId ?? m.id
 const midMeta = (m: SessionMessage): Record<string, unknown> | undefined =>
   m.messageId === null ? { "_drive/messageId": null } : undefined
 
+/** Wire hint: stable message slot from synthetic id `m_<n>`. Not stored on the message. */
+export const SEQ_META_KEY = "_drive/seq" as const
+
+const MSG_ID_SEQ = /^m_(\d+)$/
+
+export function seqMeta(m: { id: string }): Record<string, unknown> | undefined {
+  const match = MSG_ID_SEQ.exec(m.id)
+  if (!match) return undefined
+  return { [SEQ_META_KEY]: Number(match[1]) }
+}
+
 /**
  * ‏`SessionMessage.timestamp` נוסע כשדה-מטא על פריים ההודעה השלמה.
  *
@@ -108,7 +119,7 @@ function messageContentToUpdate(
   message: Exclude<SessionMessage, { role: "tool" }>,
   chunk: MessageContentChunk,
 ): WireSessionUpdate {
-  const meta = mergeMeta(message.meta, midMeta(message))
+  const meta = mergeMeta(message.meta, midMeta(message), seqMeta(message))
   const content =
     "dataBase64" in chunk
       ? { type: "image", mimeType: chunk.mimeType, data: chunk.dataBase64 }
@@ -135,6 +146,7 @@ function messageToUpdate(m: SessionMessage): WireSessionUpdate {
       const { truncated, ...set } = tc.output
       meta = mergeMeta(meta, toolOutputMeta({ set, ...(truncated ? { truncated } : {}) }))
     }
+    const _meta = mergeMeta(meta, seqMeta(m))
     return {
       sessionUpdate: "tool_call_update",
       toolCallId: tc.toolCallId,
@@ -145,7 +157,7 @@ function messageToUpdate(m: SessionMessage): WireSessionUpdate {
       ...(tc.result !== undefined ? { rawOutput: tc.result } : {}),
       ...(tc.content !== undefined ? { content: tc.content } : {}),
       ...(tc.locations !== undefined ? { locations: tc.locations } : {}),
-      ...(meta !== undefined ? { _meta: meta } : {}),
+      ...(_meta !== undefined ? { _meta: _meta } : {}),
     }
   }
   const content: unknown[] = []
@@ -154,7 +166,7 @@ function messageToUpdate(m: SessionMessage): WireSessionUpdate {
   for (const a of m.attachments ?? []) {
     content.push({ type: "image", mimeType: a.mimeType, data: a.dataBase64 })
   }
-  const _meta = mergeMeta(m.meta, midMeta(m), tsMeta(m))
+  const _meta = mergeMeta(m.meta, midMeta(m), tsMeta(m), seqMeta(m))
   return {
     sessionUpdate: WHOLE_KIND[m.role],
     messageId: midOf(m),
@@ -283,7 +295,7 @@ export function patchToSessionUpdates(state: SessionState, patch: Patch): WireSe
     case "append-segment": {
       const target = state.messages.find((m) => m.id === patch.targetId)
       if (!target || target.role === "tool") return []
-      const chunkMeta = mergeMeta(target.meta, patch.meta, midMeta(target))
+      const chunkMeta = mergeMeta(target.meta, patch.meta, midMeta(target), seqMeta(target))
       return [
         {
           sessionUpdate: CHUNK_KIND[target.role],
@@ -298,7 +310,12 @@ export function patchToSessionUpdates(state: SessionState, patch: Patch): WireSe
       const target = state.messages.find((m) => m.id === patch.targetId)
       if (!target || target.role !== "tool") return []
       const tc = patch.toolCall
-      const outMeta = mergeMeta(target.meta, patch.meta, toolOutputMeta(patch.outputDelta))
+      const outMeta = mergeMeta(
+        target.meta,
+        patch.meta,
+        toolOutputMeta(patch.outputDelta),
+        seqMeta(target),
+      )
       return [
         {
           sessionUpdate: "tool_call_update",

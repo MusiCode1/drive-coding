@@ -1,6 +1,6 @@
 import { expect, it } from "vitest"
 import { reduce } from "./reduce"
-import { patchToSessionUpdates, stateToSessionUpdates } from "./to-session-update"
+import { patchToSessionUpdates, SEQ_META_KEY, stateToSessionUpdates } from "./to-session-update"
 import { TOOL_OUTPUT_META_KEY, TOOL_OUTPUT_TEXT_CAP, type ToolOutputRules } from "./tool-output"
 import { createInitialSessionState, type SessionState } from "./types"
 
@@ -44,6 +44,7 @@ it("keeps two capped fields identical during live updates and when continuing af
         if (i === 3)
           expect(wire._meta).toEqual({
             [TOOL_OUTPUT_META_KEY]: { append: { text: "one", stdout: "two" }, truncated: true },
+            [SEQ_META_KEY]: expect.any(Number),
           })
         live = reduce(live, wire).state
         if (i > 3) resumed = reduce(resumed, wire).state

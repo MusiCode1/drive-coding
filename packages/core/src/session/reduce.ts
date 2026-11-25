@@ -9,6 +9,7 @@
  */
 import { applyPatch } from "./apply-patch"
 import { recordCarried } from "./carried"
+import { SEQ_META_KEY } from "./to-session-update"
 import {
   applyToolOutputDelta,
   deriveToolOutputDelta,
@@ -64,13 +65,36 @@ function toStringOrNull(v: unknown): string | null {
   return typeof v === "string" ? v : null
 }
 
-/** Atomic extraction of provider `_meta` — no key is inspected or interpreted. */
-function metaOf(u: Record<string, unknown>): Record<string, unknown> | undefined {
+function rawMeta(u: Record<string, unknown>): Record<string, unknown> | undefined {
   const m = u._meta
   if (typeof m === "object" && m !== null && Object.keys(m).length > 0) {
     return m as Record<string, unknown>
   }
   return undefined
+}
+
+/** Atomic extraction of provider `_meta` — `_drive/seq` is wire-only and stripped. */
+function metaOf(u: Record<string, unknown>): Record<string, unknown> | undefined {
+  const m = rawMeta(u)
+  if (m === undefined) return undefined
+  if (!Object.hasOwn(m, SEQ_META_KEY)) return m
+  const { [SEQ_META_KEY]: _seq, ...rest } = m
+  return Object.keys(rest).length > 0 ? rest : undefined
+}
+
+export function wireSeqOf(u: Record<string, unknown>): number | undefined {
+  const seq = rawMeta(u)?.[SEQ_META_KEY]
+  return typeof seq === "number" && Number.isInteger(seq) && seq >= 0 ? seq : undefined
+}
+
+function allocMessageId(
+  state: SessionState,
+  wireSeq?: number,
+): { id: string; nextMessageSeq: number } {
+  if (wireSeq !== undefined) {
+    return { id: `m_${wireSeq}`, nextMessageSeq: Math.max(state.nextMessageSeq, wireSeq + 1) }
+  }
+  return { id: nextMsgId(state.nextMessageSeq), nextMessageSeq: state.nextMessageSeq + 1 }
 }
 
 function readToolUpdate(
@@ -161,7 +185,12 @@ function chunkTargetIndex(
   state: SessionState,
   role: "user" | "thought" | "assistant",
   messageId: string | null,
+  wireSeq?: number,
 ): number {
+  if (wireSeq !== undefined) {
+    const bySeq = state.messages.findIndex((m) => m.id === `m_${wireSeq}`)
+    if (bySeq !== -1) return bySeq
+  }
   let targetIdx = state.messages.length - 1
   if (messageId !== null) {
     while (targetIdx >= 0) {
@@ -203,12 +232,15 @@ function handleTextChunk(
   text: string,
   messageId: string | null,
   meta?: Record<string, unknown>,
+  wireSeq?: number,
 ): { state: SessionState; patches: Patch[] } {
   if (!text) return { state, patches: [] }
 
-  const targetIdx = chunkTargetIndex(state, role, messageId)
+  const targetIdx = chunkTargetIndex(state, role, messageId, wireSeq)
   const last = state.messages[targetIdx]
   const newVersion = state.version + 1
+  const seqMatched =
+    wireSeq !== undefined && last !== undefined && last.id === `m_${wireSeq}` && last.role === role
 
   // C1: derive turnState from content role (user_message_chunk = replay, no change)
   const newTurnState = isVoiceMessage(meta)
@@ -219,7 +251,7 @@ function handleTextChunk(
         ? "responding"
         : state.turnState
 
-  if (canGroupWith(last, role, messageId)) {
+  if (canGroupWith(last, role, messageId) || seqMatched) {
     // append-segment
     const seg: SessionSegment = { id: nextSegId(state.nextSegmentSeq), text }
     const patch: Patch = {
@@ -256,7 +288,7 @@ function handleTextChunk(
     if (text.trim() === "") return { state, patches: [] }
 
     // add-message
-    const msgId = nextMsgId(state.nextMessageSeq)
+    const { id: msgId, nextMessageSeq } = allocMessageId(state, wireSeq)
     const segId = nextSegId(state.nextSegmentSeq)
     const seg: SessionSegment = { id: segId, text }
     const msg: SessionMessage = withPendingTs(
@@ -275,7 +307,7 @@ function handleTextChunk(
         ...state,
         version: newVersion,
         messages: [...state.messages, msg],
-        nextMessageSeq: state.nextMessageSeq + 1,
+        nextMessageSeq,
         nextSegmentSeq: state.nextSegmentSeq + 1,
         turnState: newTurnState,
       },
@@ -288,6 +320,7 @@ function handleToolCall(
   state: SessionState,
   update: Record<string, unknown>,
   rules: ToolOutputRules | undefined,
+  wireSeq?: number,
 ): { state: SessionState; patches: Patch[] } {
   const toolCallId = update.toolCallId
   if (typeof toolCallId !== "string") return { state, patches: [] }
@@ -300,7 +333,7 @@ function handleToolCall(
   const existingIdx = state.messages.findIndex(
     (m) => m.role === "tool" && m.toolCall.toolCallId === toolCallId,
   )
-  if (existingIdx !== -1) return handleToolCallUpdate(state, update, rules)
+  if (existingIdx !== -1) return handleToolCallUpdate(state, update, rules, wireSeq)
 
   const name =
     typeof update.kind === "string"
@@ -330,7 +363,7 @@ function handleToolCall(
     ...outputFields,
   }
 
-  const msgId = nextMsgId(state.nextMessageSeq)
+  const { id: msgId, nextMessageSeq } = allocMessageId(state, wireSeq)
   const msg: SessionMessage = {
     id: msgId,
     role: "tool",
@@ -347,7 +380,7 @@ function handleToolCall(
       ...state,
       version: newVersion,
       messages: [...state.messages, msg],
-      nextMessageSeq: state.nextMessageSeq + 1,
+      nextMessageSeq,
       turnState: "calling-tool", // C1: tool_call → 'calling-tool'
     },
     patches: [patch],
@@ -358,6 +391,7 @@ function handleToolCallUpdate(
   state: SessionState,
   update: Record<string, unknown>,
   rules: ToolOutputRules | undefined,
+  wireSeq?: number,
 ): { state: SessionState; patches: Patch[] } {
   const toolCallId = update.toolCallId
   if (typeof toolCallId !== "string") return { state, patches: [] }
@@ -376,7 +410,7 @@ function handleToolCallUpdate(
   //
   // ⚠️ אין כאן רקורסיה אינסופית: `handleToolCall` מנתב חזרה לכאן רק כשהוא
   // **מצא** את הכלי, וכאן מנתבים אליו רק כשלא נמצא. כל מסלול צועד פעם אחת.
-  if (idx === -1) return handleToolCall(state, update, rules)
+  if (idx === -1) return handleToolCall(state, update, rules, wireSeq)
 
   const old = state.messages[idx] as SessionMessage & { role: "tool" }
 
@@ -523,14 +557,19 @@ function handleContentChunk(
   messageId: string | null,
   contentChunk: MessageContentChunk,
   meta?: Record<string, unknown>,
+  wireSeq?: number,
 ): { state: SessionState; patches: Patch[] } {
-  const last = state.messages[chunkTargetIndex(state, role, messageId)]
+  const targetIdx = chunkTargetIndex(state, role, messageId, wireSeq)
+  const last = state.messages[targetIdx]
   const version = state.version + 1
-  const grouped = canGroupWith(last, role, messageId) ? last : undefined
+  const seqMatched =
+    wireSeq !== undefined && last !== undefined && last.id === `m_${wireSeq}` && last.role === role
+  const grouped = canGroupWith(last, role, messageId) || seqMatched ? last : undefined
+  const freshId = grouped ? undefined : allocMessageId(state, wireSeq)
   const message = withPendingTs(
     {
       ...(grouped ?? {
-        id: nextMsgId(state.nextMessageSeq),
+        id: freshId?.id ?? nextMsgId(state.nextMessageSeq),
         role,
         messageId,
         segments: [],
@@ -546,8 +585,12 @@ function handleContentChunk(
     ? { version, op: "set-message", targetId: grouped.id, message, contentChunk }
     : { version, op: "add-message", message, contentChunk }
   const next = applyPatch(state, patch)
+  const nextMessageSeq =
+    grouped || freshId === undefined ? next.nextMessageSeq : freshId.nextMessageSeq
   return {
-    state: isVoiceMessage(meta) ? { ...next, turnState: state.turnState } : next,
+    state: isVoiceMessage(meta)
+      ? { ...next, turnState: state.turnState, nextMessageSeq }
+      : { ...next, nextMessageSeq },
     patches: [patch],
   }
 }
@@ -613,7 +656,11 @@ function handleWholeMessage(
   // (`handleTextChunk`, שם `!text` עדיין חוסם), ובדרישה ל-`messageId` מתחת.
   // ‏chunk של רווחים אינו הודעה; `agent_message` הוא כן.
 
-  const idx = state.messages.findIndex((m) => m.role === role && m.messageId === messageId)
+  const wireSeq = wireSeqOf(u)
+  let idx = state.messages.findIndex((m) => m.role === role && m.messageId === messageId)
+  if (idx === -1 && wireSeq !== undefined) {
+    idx = state.messages.findIndex((m) => m.id === `m_${wireSeq}`)
+  }
   const newVersion = state.version + 1
   const turnState: TurnStateValue = isVoiceMessage(metaOf(u))
     ? state.turnState
@@ -642,9 +689,10 @@ function handleWholeMessage(
       : state.messageTimestamps
 
   if (idx === -1) {
+    const { id, nextMessageSeq } = allocMessageId(state, wireSeq)
     const msg: SessionMessage = withPendingTs(
       {
-        id: nextMsgId(state.nextMessageSeq),
+        id,
         role,
         messageId: storedMid,
         segments,
@@ -659,7 +707,7 @@ function handleWholeMessage(
         ...state,
         version: newVersion,
         messages: [...state.messages, msg],
-        nextMessageSeq: state.nextMessageSeq + 1,
+        nextMessageSeq,
         nextSegmentSeq,
         turnState,
         ...(messageTimestamps !== state.messageTimestamps ? { messageTimestamps } : {}),
@@ -864,6 +912,7 @@ function reduceRecognized(
   ) {
     const content = u.content as Record<string, unknown> | undefined
     const messageId = storedMessageId(u as Record<string, unknown>, toStringOrNull(u.messageId))
+    const wireSeq = wireSeqOf(u)
     const role: "user" | "thought" | "assistant" =
       sessionUpdate === "user_message_chunk"
         ? "user"
@@ -872,11 +921,11 @@ function reduceRecognized(
           : "assistant"
     if (content?.type === "text") {
       const text = typeof content.text === "string" ? content.text : ""
-      return handleTextChunk(state, role, text, messageId, metaOf(u))
+      return handleTextChunk(state, role, text, messageId, metaOf(u), wireSeq)
     }
     const parsed = content && nonTextContent(role, content)
     return parsed
-      ? handleContentChunk(state, role, messageId, parsed, metaOf(u))
+      ? handleContentChunk(state, role, messageId, parsed, metaOf(u), wireSeq)
       : { state, patches: [] }
   }
 
@@ -942,10 +991,10 @@ function reduceRecognized(
 
   // tool
   if (sessionUpdate === "tool_call") {
-    return handleToolCall(state, u, options?.toolOutput)
+    return handleToolCall(state, u, options?.toolOutput, wireSeqOf(u))
   }
   if (sessionUpdate === "tool_call_update") {
-    return handleToolCallUpdate(state, u, options?.toolOutput)
+    return handleToolCallUpdate(state, u, options?.toolOutput, wireSeqOf(u))
   }
 
   // ─── ACP v2: פריט-תוכן לכלי ───
