@@ -2,7 +2,8 @@
  * Agent-facing docs — GET /api/docs, GET /api/docs/:id, GET /api/openapi.json
  */
 
-import type { Hono } from "hono"
+import { PUBLISHED_CONTRACT_VERSION } from "@drive-coding/core/contract-version"
+import type { Context, Hono } from "hono"
 import {
   agentDocsVersionBlock,
   buildAgentDocsListBody,
@@ -27,8 +28,17 @@ function setVersionHeaders(
   c.header(VERSION_HEADERS[3], block.generatedAt)
 }
 
+function setContractVersionHeader(c: Context): void {
+  if (PUBLISHED_CONTRACT_VERSION !== undefined) {
+    c.header("X-Drive-Coding-Contract-Version", PUBLISHED_CONTRACT_VERSION)
+  }
+}
+
 export function registerDocsHttp(app: Hono): void {
-  app.get("/api/docs", (c) => c.json(buildAgentDocsListBody()))
+  app.get("/api/docs", (c) => {
+    setContractVersionHeader(c)
+    return c.json(buildAgentDocsListBody())
+  })
 
   app.get("/api/docs/:id", (c) => {
     const id = c.req.param("id")
@@ -38,10 +48,14 @@ export function registerDocsHttp(app: Hono): void {
     }
     const block = agentDocsVersionBlock()
     setVersionHeaders(c, block)
+    setContractVersionHeader(c)
     return c.body(doc.text, 200, {
       "Content-Type": "text/markdown; charset=utf-8",
     })
   })
 
-  app.get("/api/openapi.json", (c) => c.json(buildOpenApiServeBody()))
+  app.get("/api/openapi.json", (c) => {
+    setContractVersionHeader(c)
+    return c.json(buildOpenApiServeBody())
+  })
 }

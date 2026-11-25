@@ -13,6 +13,7 @@ import {
   NewSessionParams,
   PromptParams,
 } from "../packages/backend/src/session-host/http/rpc.ts"
+import { PUBLISHED_CONTRACT_VERSION } from "../packages/core/src/contract-version.ts"
 import { AgentSubscribeBody } from "../packages/core/src/schemas/agent-events.ts"
 import {
   ScopePolicyPatchBodySchema,
@@ -543,7 +544,7 @@ const spec = {
   openapi: "3.1.1",
   info: {
     title: "drive-coding HTTP API",
-    version: docsVersion,
+    version: PUBLISHED_CONTRACT_VERSION ?? docsVersion,
     description:
       "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh.",
   },

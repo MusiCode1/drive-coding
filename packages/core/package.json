@@ -29,7 +29,8 @@
     "./types/permission": "./src/types/permission.ts",
     "./types/scope-prompt": "./src/types/scope-prompt.ts",
     "./session/testing": "./src/session/__testing__/wire-fixtures.ts",
-    "./docs": "./src/docs/index.ts"
+    "./docs": "./src/docs/index.ts",
+    "./contract-version": "./src/contract-version.ts"
   },
   "scripts": {
     "build": "tsc --build",
