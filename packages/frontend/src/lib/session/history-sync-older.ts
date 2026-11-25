@@ -9,7 +9,6 @@ import { historyPage, settleGet } from "./history-open"
 import { emitHistoryState, type HistoryEmitCtx } from "./history-sync-emit"
 import type { HistorySyncPort } from "./history-sync-port"
 import { type HistoryWindow, mergeOlder } from "./history-window"
-import { snapshotResetPatch } from "./remote-session-stream"
 import type { HistoryPipe } from "./wire/pipe"
 
 const OLDER_HOLD_MAX = 500
@@ -104,7 +103,8 @@ export class OlderHistory {
         if (signal.aborted) return
         const page = historyPage(settled)
         if (!page) break
-        const merged = mergeOlder(port.getState(), window, page)
+        const previous = port.getState()
+        const merged = mergeOlder(previous, window, page)
         if (held.overflow || "conflict" in merged || merged.window.firstSeq === null) continue
         const floor = { firstSeq: merged.window.firstSeq, before, version: page.version }
         // The page can be ahead of the stream, whose watermark still governs live batches.
@@ -115,9 +115,13 @@ export class OlderHistory {
         setWindow(merged.window)
         this.#held = undefined
         port.emit({
-          patches: [snapshotResetPatch(state)],
+          patches: [],
           updates: [],
           history: "older",
+          messages: state.messages.slice(
+            0,
+            merged.state.messages.length - previous.messages.length,
+          ),
           historyState: emitCtx(),
         })
         return

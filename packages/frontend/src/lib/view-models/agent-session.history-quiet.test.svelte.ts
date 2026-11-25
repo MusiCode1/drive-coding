@@ -676,3 +676,41 @@ describe("replay-quiet meta path", () => {
     expect(tail.page?.hasMore).toBe(true)
   })
 })
+
+it("prepends silently and preserves the existing tool narration", async () => {
+  const seed = makeSnapshot({ messages: [historicalMessage()], nextMessageSeq: 1 })
+  const state = reduce(seed, {
+    sessionUpdate: "tool_call",
+    toolCallId: "visible-tool",
+    title: "Visible tool",
+    status: "completed",
+  }).state
+  const opening = metaSnapshotFrame(state)
+  const base = makeMockFetch([[{ event: "snapshot", data: opening.data }]])
+  const harness = createQuietHarness([], async (url, init) => {
+    const { pathname, searchParams } = new URL(url)
+    if (!pathname.endsWith("/history")) return base(url, init)
+    const range = searchParams.has("before")
+      ? { before: 1, maxBytes: 1 }
+      : { tail: true as const, maxBytes: 1 }
+    return jsonResponse(snapshotPayload(state, undefined, { range }))
+  })
+  try {
+    await harness.view.connect()
+    await flushEffects()
+    const existing = harness.agent.bubbles[0]
+    if (existing?.kind !== "tool") throw new Error("Missing tail tool")
+    existing.toolCall.narration = "Existing narration"
+    const epoch = harness.agent.historyEpoch
+    const enqueues = harness.enqueueCount()
+    await harness.view.history.loadOlder()
+    await flushEffects()
+    expect(harness.agent.bubbles.map(({ id }) => id)).toEqual(["m_0", "m_1"])
+    const tool = harness.agent.bubbles[1]
+    expect(tool?.kind === "tool" && tool.toolCall.narration).toBe("Existing narration")
+    expect(harness.agent.historyEpoch).toBe(epoch + 1)
+    expect(harness.enqueueCount()).toBe(enqueues)
+  } finally {
+    harness.destroy()
+  }
+})

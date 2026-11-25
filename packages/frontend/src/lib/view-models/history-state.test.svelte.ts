@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { tick } from "svelte"
 import { describe, expect, it, vi } from "vitest"
 import { bindHistory, HistoryState } from "./history-state.svelte"
 
@@ -61,4 +62,23 @@ describe("HistoryState", () => {
     expect(ctrl.loadOlder).toHaveBeenCalledOnce()
     expect(ctrl.retry).toHaveBeenCalledOnce()
   })
+})
+
+it("exposes shift during the flush for older history only", async () => {
+  const state = new HistoryState()
+  const observed: boolean[] = []
+  const dispose = $effect.root(() => {
+    $effect.pre(() => {
+      observed.push(state.shiftNext)
+    })
+  })
+  try {
+    await tick()
+    state.onOlderApplying()
+    await state.onOlderApplied()
+    await tick()
+    expect(observed).toEqual([false, true, false])
+  } finally {
+    dispose()
+  }
 })

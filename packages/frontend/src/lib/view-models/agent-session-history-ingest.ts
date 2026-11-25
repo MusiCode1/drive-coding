@@ -1,11 +1,12 @@
 import type { Patch, SessionState } from "@drive-coding/core/session"
 import { applyPatch } from "@drive-coding/core/session"
-import { applyPatchMutable } from "$lib/session/apply-patch-mutable"
+import { applyPatchMutable, sessionMsgToBubble } from "$lib/session/apply-patch-mutable"
 import { mapLocations, mapToolContent } from "$lib/session/map-tool-content"
 import { readViewEmission, type SessionView, type ViewEmission } from "$lib/session/session-view"
 import type { Bubble } from "$lib/types/bubble"
 import type { HistoryMark } from "./history-mark"
 import { historyMarkFromReset } from "./history-mark"
+import type { HistoryState } from "./history-state.svelte"
 
 export type HistoryIngestHost = {
   ingestView(): SessionView | null
@@ -14,6 +15,8 @@ export type HistoryIngestHost = {
   bubbles: Bubble[]
   sessionState: SessionState
   historyEpoch: number
+  readonly historyMark: HistoryMark
+  readonly history: HistoryState
   isLoadingHistory: boolean
   ingestOnSessionUpdate(n: { update: unknown }): void
   ingestSyncFromViewState(s: SessionState): void
@@ -35,6 +38,8 @@ export type HistoryIngestDeps = {
   getHistoryEpoch: () => number
   setHistoryEpoch: (n: number) => void
   setHistoryMark: (m: HistoryMark) => void
+  getHistoryMark: () => HistoryMark
+  history: HistoryState
   setIsLoadingHistory: (v: boolean) => void
   applyHistoryState: (s: NonNullable<ViewEmission["historyState"]>) => void
 }
@@ -59,11 +64,33 @@ export function historyIngestDepsFrom(host: HistoryIngestHost): HistoryIngestDep
       host.historyEpoch = n
     },
     setHistoryMark: (m) => host.ingestSetHistoryMark(m),
+    getHistoryMark: () => host.historyMark,
+    history: host.history,
     setIsLoadingHistory: (v) => {
       host.isLoadingHistory = v
     },
     applyHistoryState: (s) => host.ingestApplyHistoryState(s),
   }
+}
+
+function prependHistory(
+  deps: HistoryIngestDeps,
+  messages: Extract<ViewEmission, { history: "older" }>["messages"],
+): void {
+  const state = deps.getSessionState()
+  const existingMark = deps.getHistoryMark()
+  const addedMark = historyMarkFromReset(messages)
+  deps.history.onOlderApplying()
+  deps.setBubbles([
+    ...messages.map((message) => sessionMsgToBubble(message, { mapToolContent, mapLocations })),
+    ...deps.getBubbles(),
+  ])
+  deps.setSessionState({ ...state, messages: [...messages, ...state.messages] })
+  deps.setHistoryMark({
+    segmentCounts: new Map([...existingMark.segmentCounts, ...addedMark.segmentCounts]),
+    toolCallIds: [...new Set([...existingMark.toolCallIds, ...addedMark.toolCallIds])],
+  })
+  deps.setHistoryEpoch(deps.getHistoryEpoch() + 1)
 }
 
 export async function consumeViewPatches(
@@ -87,6 +114,14 @@ export async function consumeViewPatches(
         deps.setIsLoadingHistory(value.historyState.reloading)
       }
       if (emission.activity === true) deps.noteAgentActivity()
+      if (emission.history === "older") {
+        prependHistory(deps, emission.messages)
+        deps.syncFromViewState(view.state)
+        // The next queued live append belongs to a separate virtualizer flush.
+        await deps.history.onOlderApplied()
+        continue
+      }
+      if (emission.history === "reset") deps.history.resetViewport()
 
       const patches = emission.patches
       const resetPatches = patches.filter(
@@ -101,10 +136,7 @@ export async function consumeViewPatches(
           if (next) deps.setSessionState(next)
         }
         const bumpEpoch =
-          attachWindow ||
-          emission.history === "tail" ||
-          emission.history === "older" ||
-          emission.history === "reset"
+          attachWindow || emission.history === "tail" || emission.history === "reset"
         if (bumpEpoch) {
           attachWindow = false
           const reset = resetPatches[0]

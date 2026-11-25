@@ -7,7 +7,7 @@
  * ─── slice session-view-port C2 ───
  */
 
-import type { Patch, SessionState } from "@drive-coding/core/session"
+import type { Patch, SessionMessage, SessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import type { SessionInfo } from "$lib/adapters/sessions"
 
@@ -30,7 +30,6 @@ export type ViewEmission = {
   terminal?: true
   /** Crash reason fetched by the view after the session stream ends. */
   terminalError?: string
-  history?: "tail" | "older" | "reload" | "reset"
   activity?: true
   historyState?: {
     window: HistoryWindowState
@@ -39,7 +38,10 @@ export type ViewEmission = {
     loadingOlder: boolean
     olderError: string | null
   }
-}
+} & (
+  | { history: "older"; messages: SessionMessage[] }
+  | { history?: "tail" | "reload" | "reset"; messages?: never }
+)
 
 export type HistoryController = {
   readonly window: HistoryWindowState

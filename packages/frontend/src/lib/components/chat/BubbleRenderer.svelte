@@ -47,7 +47,7 @@ const placement = $derived(
 )
 </script>
 
-<BubbleRow side={placement.side} avatar={placement.avatar}>
+<BubbleRow side={placement.side} avatar={placement.avatar} historyBubbleId={depth === 0 ? bubble.id : undefined}>
   {#if bubble.kind === "user" && bubble.voice?.kind === "handoff"}
     <VoiceHandoffBubble {bubble} />
   {:else if (bubble.kind === "user" || bubble.kind === "message") && bubble.voice?.kind === "speech"}

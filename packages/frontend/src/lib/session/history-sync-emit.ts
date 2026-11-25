@@ -15,7 +15,7 @@ export type HistoryEmitCtx = {
 export function applyEmitHistory(
   port: HistorySyncPort,
   ctx: HistoryEmitCtx,
-  tag: ViewEmission["history"],
+  tag: Exclude<ViewEmission["history"], "older">,
   watermark: number,
   page?: SnapshotPayload["page"],
 ): HistoryWindow {
