@@ -38,6 +38,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",
     "@types/node": "^22.0.0",
+    "ajv": "8.20.0",
     "jsdom": "^29.1.1",
     "package-manager-detector": "^1.8.0",
     "typescript": "^5.7.0",

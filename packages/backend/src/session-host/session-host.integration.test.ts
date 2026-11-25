@@ -94,7 +94,7 @@ function makeMockAcpClient(overrides: Partial<AcpClient> = {}): AcpClient {
     setSessionModel: vi.fn().mockResolvedValue(undefined),
     extMethod: vi.fn().mockResolvedValue({}),
     close: vi.fn(),
-    listSessions: vi.fn().mockResolvedValue([]),
+    listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
     ...overrides,
   } as unknown as AcpClient
 }
@@ -1041,10 +1041,11 @@ describe("createSessionHostFromConnection — remote-session-mgmt C1", () => {
       listSessions: vi.fn().mockResolvedValue(raw),
     })
 
-    const result = await host.listSessions()
+    const query = { cwd: "/a", cursor: "opaque" }
+    const result = await host.listSessions(query)
 
     expect(result).toEqual(raw)
-    expect(mockClient.listSessions).toHaveBeenCalledTimes(1)
+    expect(mockClient.listSessions).toHaveBeenCalledExactlyOnceWith(query)
   })
 
   it("deleteSession passes the sessionId through to client.deleteSession", async () => {

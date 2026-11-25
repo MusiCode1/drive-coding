@@ -7,9 +7,14 @@
  * ─── slice session-view-port C2 ───
  */
 
-import type { Patch, SessionMessage, SessionState } from "@drive-coding/core/session"
+import type {
+  Patch,
+  SessionListQuery,
+  SessionMessage,
+  SessionState,
+} from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
-import type { SessionInfo } from "$lib/adapters/sessions"
+import type { SessionListPage } from "$lib/adapters/sessions"
 
 export type ViewTerminal = { terminal: true; terminalError?: string }
 
@@ -129,18 +134,11 @@ export interface SessionView {
    */
   loadSession(sessionId: string, cwd?: string): Promise<void>
 
-  /** מחזיר רשימת sessions הזמינים. */
-  listSessions(): Promise<SessionInfo[]>
+  /** Returns the requested page of sessions. */
+  listSessions(query?: SessionListQuery): Promise<SessionListPage>
 
   /** מוחק session. */
   deleteSession(sessionId: string): Promise<void>
-
-  /**
-   * האם הסשן הנוכחי תומך במחיקה (sessionCapabilities.delete).
-   * local: raw client capabilities; remote: מתשובת listSessions (false עד התשובה
-   * הראשונה). slice remote-session-mgmt C5 — ה-port חושף, ה-VM צורך.
-   */
-  readonly supportsSessionDelete: boolean
 
   /** מחליף מודל לסשן הפעיל. */
   setSessionModel(model: string): Promise<void>

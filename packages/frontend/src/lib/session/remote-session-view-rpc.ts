@@ -1,6 +1,6 @@
-import { RPC_METHODS, type SessionState } from "@drive-coding/core/session"
+import { RPC_METHODS, type SessionListQuery, type SessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
-import { normalizeSessionInfo, type SessionInfo } from "$lib/adapters/sessions"
+import { normalizeSessionInfo, type SessionListPage } from "$lib/adapters/sessions"
 import type { SessionPipe } from "./wire/pipe"
 import { resultOf } from "./wire/pipe"
 
@@ -13,8 +13,6 @@ export type RemoteSessionRpcDeps = {
   setState: (state: SessionState) => void
   getSessionId: () => string | null
   setSessionId: (id: string | null) => void
-  getSessionCapabilities: () => { delete?: unknown; [key: string]: unknown } | null
-  setSessionCapabilities: (caps: { delete?: unknown; [key: string]: unknown } | null) => void
 }
 
 async function rpc(deps: RemoteSessionRpcDeps, method: string, params: Record<string, unknown>) {
@@ -47,21 +45,55 @@ export async function remoteLoadSession(
   deps.setState({ ...deps.getState(), sessionId: attached })
 }
 
-export async function remoteListSessions(deps: RemoteSessionRpcDeps): Promise<SessionInfo[]> {
-  const res = (await rpc(deps, RPC_METHODS.listSessions, {})) as
-    | { sessions?: unknown; sessionCapabilities?: unknown }
-    | undefined
-  deps.setSessionCapabilities(
-    (res?.sessionCapabilities as { delete?: unknown; [key: string]: unknown } | null | undefined) ??
-      null,
-  )
-  const sessions = res?.sessions
-  const raw = Array.isArray(sessions) ? (sessions as unknown[]) : []
-  return raw.map(normalizeSessionInfo)
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-export function remoteSupportsSessionDelete(deps: RemoteSessionRpcDeps): boolean {
-  return deps.getSessionCapabilities()?.delete != null
+function decodeSessionPage(body: unknown): SessionListPage {
+  if (!isObject(body) || !Array.isArray(body.sessions)) {
+    throw new Error("RemoteSessionView: invalid session list response")
+  }
+  const sessions = body.sessions.filter(isObject).map(normalizeSessionInfo)
+  const caps = body.capabilities
+  if (caps === undefined) {
+    return {
+      sessions,
+      capabilities: null,
+      legacyCanDelete:
+        isObject(body.sessionCapabilities) && body.sessionCapabilities.delete != null,
+    }
+  }
+  if (
+    !isObject(caps) ||
+    typeof caps.list !== "boolean" ||
+    typeof caps.filterByCwd !== "boolean" ||
+    typeof caps.delete !== "boolean"
+  ) {
+    throw new Error("RemoteSessionView: invalid session list capabilities")
+  }
+  return {
+    sessions,
+    capabilities: { list: caps.list, filterByCwd: caps.filterByCwd, delete: caps.delete },
+    legacyCanDelete: false,
+    ...(typeof body.nextCursor === "string" && { nextCursor: body.nextCursor }),
+  }
+}
+
+export async function remoteListSessions(
+  deps: RemoteSessionRpcDeps,
+  { cwd, cursor }: SessionListQuery = {},
+): Promise<SessionListPage> {
+  const body = await rpc(deps, RPC_METHODS.listSessions, {
+    paged: true,
+    ...(cwd !== undefined && { cwd }),
+    ...(cursor !== undefined && { cursor }),
+  })
+  if (isObject(body) && body.legacyOnly === true) {
+    if (cursor === undefined)
+      return decodeSessionPage(await rpc(deps, RPC_METHODS.listSessions, {}))
+    return { ...decodeSessionPage(body), sessions: [], nextCursor: undefined }
+  }
+  return decodeSessionPage(body)
 }
 
 export async function remoteDeleteSession(

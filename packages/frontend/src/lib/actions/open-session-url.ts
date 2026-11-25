@@ -48,13 +48,11 @@ export async function openSessionUrl(params: {
 
   if (session.status === "connected" && session.cliKind === cliKind) {
     if (session.turnState !== "idle") return "busy"
-    await session.listSessions(true)
-    if (session.sessionsCache.error !== null) return "error"
-
-    const info = session.sessionsCache.sessions.find((s) => s.sessionId === sessionId)
-    if (!info) return "not-found"
-
+    const view = session.ingestView()
     try {
+      const info = await session.findListedSession(sessionId)
+      if (!info || session.ingestView() !== view) return "not-found"
+      if (session.turnState !== "idle") return "busy"
       await session.switchSession({
         sessionId,
         cwd: info.cwd,

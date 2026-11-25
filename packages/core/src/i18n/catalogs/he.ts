@@ -541,6 +541,8 @@ export const he: Catalog = {
   "sidebar.sessionsFilterAll": "כל השיחות",
   "sidebar.sessionsFilterCwd": "רק נתיב נוכחי",
   "sidebar.sessionsNoMatches": "אין התאמות",
+  "sidebar.sessionsLoadMore": "טען עוד",
+  "sidebar.sessionsUnsupported": "הספק אינו תומך בהצגת רשימת שיחות.",
   // ─── pending-capture ─── (slice voice-pending-persistence)
   "pendingCapture.retry": "נסה שוב",
   "pendingCapture.dismiss": "מחק",

@@ -338,10 +338,10 @@
       "codeLines": 214
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 898,
-      "impurity": 22,
+      "metric": 860,
+      "impurity": 17,
       "class": "scattered",
-      "codeLines": 568
+      "codeLines": 540
     },
     "packages/backend/src/session-host/turn-lifecycle.ts": {
       "metric": 93,
@@ -428,10 +428,10 @@
       "codeLines": 37
     },
     "packages/frontend/src/lib/actions/open-session-url.ts": {
-      "metric": 100,
+      "metric": 99,
       "impurity": 4,
       "class": "mixed",
-      "codeLines": 77
+      "codeLines": 78
     },
     "packages/frontend/src/lib/adapters/agents-api.ts": {
       "metric": 178,
@@ -680,10 +680,10 @@
       "codeLines": 144
     },
     "packages/frontend/src/lib/components/layout/SessionOptionsPanel.svelte": {
-      "metric": 197,
-      "impurity": 8,
+      "metric": 165,
+      "impurity": 7,
       "class": "mixed",
-      "codeLines": 314
+      "codeLines": 248
     },
     "packages/frontend/src/lib/components/layout/Sidebar.svelte": {
       "metric": 51,
@@ -872,10 +872,10 @@
       "codeLines": 15
     },
     "packages/frontend/src/lib/session/remote-session-view.ts": {
-      "metric": 289,
+      "metric": 279,
       "impurity": 3,
       "class": "mixed",
-      "codeLines": 207
+      "codeLines": 203
     },
     "packages/frontend/src/lib/session/session-transport-read.ts": {
       "metric": 41,
@@ -950,10 +950,10 @@
       "codeLines": 68
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 1608,
-      "impurity": 27,
+      "metric": 1588,
+      "impurity": 25,
       "class": "scattered",
-      "codeLines": 1049
+      "codeLines": 1033
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
       "metric": 328,
@@ -1076,10 +1076,10 @@
       "codeLines": 55
     },
     "packages/provider/src/client/client.ts": {
-      "metric": 526,
-      "impurity": 7,
+      "metric": 378,
+      "impurity": 5,
       "class": "mixed",
-      "codeLines": 306
+      "codeLines": 211
     },
     "packages/provider/src/config/cli-config-file.ts": {
       "metric": 307,

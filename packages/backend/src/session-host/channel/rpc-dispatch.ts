@@ -18,10 +18,10 @@
  * needs the list/confirmation. Each case below returns EXPLICITLY (200/400/409/502):
  * a `break` would fall through to the shared `return {status: 202, body: {version}}`
  * and break the contract. Management methods ignore `waitMs` silently (valid or invalid).
- *   - session/list   → 200 {sessions, sessionCapabilities} | 502 {error, code?}
+ *   - session/list   → 200 legacy or paged result | 400 (bad params) | 502 {error, code?}
  *   - session/load   → 200 {sessionId, version} | 400 (bad params / no cwd) | 409 (session_busy: any load during turn) | 502
  *   - session/new    → 200 {sessionId, version} | 400 (no cwd) | 502
- *   - session/delete → 200 {ok:true} | 200 {ok:false, unsupported:true} (-32601) | 502
+ *   - session/delete → 200 {ok:true} | 200 {ok:false, unsupported:true} (unsupported) | 400 (bad params) | 502
  *
  * Returns 404 for a missing or dead agent connection, and 401 when the
  * provider requires authentication during host creation.
@@ -56,12 +56,19 @@ import { type } from "arktype"
 import { AGENT_ID_HEADER } from "../../agent-identity.js"
 import { readScopeToken } from "../../scope-write.js"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
+import type { ExtendedSessionHost } from "../session-host.js"
 import type { CallerContext } from "./caller-context.js"
 import { hostFailureResponse, hostThrowResponse } from "./host-failure.js"
 import { dispatchRpcPrompt, PromptParams, resolveCallerSenderForPrompt } from "./rpc-prompt.js"
 import { respondRpcWait } from "./rpc-respond-wait.js"
 import { preflightRpcScopeDenied } from "./rpc-scope.js"
-import { tryDispatchBlockingSessionRpc } from "./rpc-session-mgmt.js"
+import {
+  DeleteSessionParams,
+  dispatchDeleteSession,
+  dispatchListSessions,
+  ListSessionsParams,
+  tryDispatchBlockingSessionRpc,
+} from "./rpc-session-mgmt.js"
 import { parseWaitMs } from "./rpc-wait.js"
 
 const log = createLogger("backend.session-host.rpc")
@@ -86,7 +93,12 @@ export {
 } from "./rpc-prompt.js"
 
 export const CancelParams = type({ sessionId: "string" })
-export { DeleteSessionParams, LoadSessionParams, NewSessionParams } from "./rpc-session-mgmt.js"
+export {
+  DeleteSessionParams,
+  ListSessionsParams,
+  LoadSessionParams,
+  NewSessionParams,
+} from "./rpc-session-mgmt.js"
 
 export type RpcDispatchDeps = { registry: AgentRegistry; sessionRegistry: AgentSessionRegistry }
 
@@ -119,6 +131,21 @@ export async function dispatchRpcBody(
   )
   if (scopeDenied) return scopeDenied
 
+  let dispatchManagement: ((host: ExtendedSessionHost) => Promise<ChannelResponse>) | undefined
+  if (method === RPC_METHODS.listSessions) {
+    // ArkType's structural object also accepts arrays when all keys are optional.
+    if (Array.isArray(params))
+      return { status: 400, body: { error: "list params must be an object" } }
+    const validated = ListSessionsParams(params)
+    if (validated instanceof type.errors) return { status: 400, body: { error: validated.summary } }
+    dispatchManagement = (host) => dispatchListSessions(host, validated)
+  }
+  if (method === RPC_METHODS.deleteSession) {
+    const validated = DeleteSessionParams(params)
+    if (validated instanceof type.errors) return { status: 400, body: { error: validated.summary } }
+    dispatchManagement = (host) => dispatchDeleteSession(host, validated)
+  }
+
   let result: HostResult
   try {
     result = await registry.getOrCreateHost(agentId)
@@ -129,6 +156,7 @@ export async function dispatchRpcBody(
   }
   if (!result.ok) return hostFailureResponse(result)
   const { host } = result.entry
+  if (dispatchManagement) return dispatchManagement(host)
 
   switch (method) {
     case RPC_METHODS.prompt: {
@@ -215,10 +243,8 @@ export async function dispatchRpcBody(
       )
       return waited
     }
-    case RPC_METHODS.listSessions:
     case RPC_METHODS.loadSession:
-    case RPC_METHODS.newSession:
-    case RPC_METHODS.deleteSession: {
+    case RPC_METHODS.newSession: {
       const blocking = await tryDispatchBlockingSessionRpc(method, params, host, registry, agentId)
       if (blocking) return blocking
       break

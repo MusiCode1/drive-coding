@@ -38,11 +38,6 @@ vi.mock("$env/dynamic/public", () => ({
   env: { PUBLIC_SESSION_TRANSPORT: undefined },
 }))
 
-type MockSessionsCache = {
-  sessions: SessionInfo[]
-  error: string | null
-}
-
 type MockSession = {
   status: string
   cliKind: string | null
@@ -50,8 +45,8 @@ type MockSession = {
   agentId: string | null
   error: string | null
   turnState: string
-  sessionsCache: MockSessionsCache
-  listSessions: ReturnType<typeof vi.fn>
+  ingestView: ReturnType<typeof vi.fn>
+  findListedSession: ReturnType<typeof vi.fn<(id: string) => Promise<SessionInfo | undefined>>>
   switchSession: ReturnType<typeof vi.fn>
   attachRemoteToLiveAgent: ReturnType<typeof vi.fn>
 }
@@ -70,7 +65,6 @@ function makeAgent(overrides: Partial<AgentPublic> & Pick<AgentPublic, "id">): A
 }
 
 function makeSession(overrides: Partial<MockSession> = {}): MockSession {
-  const { sessionsCache: cacheOverride, ...rest } = overrides
   return {
     status: "idle",
     cliKind: null,
@@ -78,11 +72,13 @@ function makeSession(overrides: Partial<MockSession> = {}): MockSession {
     agentId: null,
     error: null,
     turnState: "idle",
-    sessionsCache: { sessions: [], error: null, ...cacheOverride },
-    listSessions: vi.fn(async () => {}),
+    ingestView: vi.fn(() => null),
+    findListedSession: vi
+      .fn<(id: string) => Promise<SessionInfo | undefined>>()
+      .mockResolvedValue(undefined),
     switchSession: vi.fn(async () => {}),
     attachRemoteToLiveAgent: vi.fn(async () => {}),
-    ...rest,
+    ...overrides,
   }
 }
 
@@ -114,7 +110,7 @@ describe("openSessionUrl", () => {
         settings: { sessionTransport: null } as never,
       }),
     ).toBe("connected")
-    expect(session.listSessions).not.toHaveBeenCalled()
+    expect(session.findListedSession).not.toHaveBeenCalled()
   })
 
   it("returns connected when disconnected but same sessionId", async () => {
@@ -148,7 +144,7 @@ describe("openSessionUrl", () => {
         settings: { sessionTransport: null } as never,
       }),
     ).toBe("busy")
-    expect(session.listSessions).not.toHaveBeenCalled()
+    expect(session.findListedSession).not.toHaveBeenCalled()
     expect(session.switchSession).not.toHaveBeenCalled()
   })
 
@@ -157,10 +153,9 @@ describe("openSessionUrl", () => {
       status: "connected",
       cliKind: "claude",
       sessionId: "other",
-      sessionsCache: {
-        sessions: [{ sessionId: "sess-b", cwd: "/proj", title: "B", updatedAt: "" }],
-        error: null,
-      },
+      findListedSession: vi
+        .fn()
+        .mockResolvedValue({ sessionId: "sess-b", cwd: "/proj", title: "B", updatedAt: "" }),
     })
     session.switchSession.mockImplementation(async () => {
       session.sessionId = "sess-b"
@@ -174,7 +169,7 @@ describe("openSessionUrl", () => {
         settings: { sessionTransport: null } as never,
       }),
     ).toBe("connected")
-    expect(session.listSessions).toHaveBeenCalledWith(true)
+    expect(session.findListedSession).toHaveBeenCalledWith("sess-b")
     expect(session.switchSession).toHaveBeenCalledWith({
       sessionId: "sess-b",
       cwd: "/proj",
@@ -183,11 +178,32 @@ describe("openSessionUrl", () => {
     })
   })
 
-  it("returns error when listSessions fails", async () => {
+  it("does not switch if the lookup result resolves after the connection changes", async () => {
     const session = makeSession({
       status: "connected",
       cliKind: "claude",
-      sessionsCache: { sessions: [], error: "network down" },
+      ingestView: vi.fn().mockReturnValue({ old: true }),
+    })
+    session.findListedSession.mockImplementation(async () => {
+      session.ingestView.mockReturnValue({ replacement: true })
+      return { sessionId: "sess-b", cwd: "/proj", title: "", updatedAt: "" }
+    })
+    expect(
+      await openSessionUrl({
+        cliKind: "claude",
+        sessionId: "sess-b",
+        session: session as never,
+        settings: { sessionTransport: null } as never,
+      }),
+    ).toBe("not-found")
+    expect(session.switchSession).not.toHaveBeenCalled()
+  })
+
+  it("returns error when the paged lookup fails", async () => {
+    const session = makeSession({
+      status: "connected",
+      cliKind: "claude",
+      findListedSession: vi.fn().mockRejectedValue(new Error("network down")),
     })
     expect(
       await openSessionUrl({
@@ -203,7 +219,6 @@ describe("openSessionUrl", () => {
     const session = makeSession({
       status: "connected",
       cliKind: "claude",
-      sessionsCache: { sessions: [], error: null },
     })
     expect(
       await openSessionUrl({
@@ -219,10 +234,9 @@ describe("openSessionUrl", () => {
     const session = makeSession({
       status: "connected",
       cliKind: "claude",
-      sessionsCache: {
-        sessions: [{ sessionId: "sess-b", cwd: "/proj", title: "", updatedAt: "" }],
-        error: null,
-      },
+      findListedSession: vi
+        .fn()
+        .mockResolvedValue({ sessionId: "sess-b", cwd: "/proj", title: "", updatedAt: "" }),
     })
     session.switchSession.mockRejectedValue(new Error("cannot switchSession in status connecting"))
 
@@ -240,10 +254,9 @@ describe("openSessionUrl", () => {
     const session = makeSession({
       status: "connected",
       cliKind: "claude",
-      sessionsCache: {
-        sessions: [{ sessionId: "sess-b", cwd: "/proj", title: "", updatedAt: "" }],
-        error: null,
-      },
+      findListedSession: vi
+        .fn()
+        .mockResolvedValue({ sessionId: "sess-b", cwd: "/proj", title: "", updatedAt: "" }),
     })
     session.switchSession.mockImplementation(async () => {
       session.status = "error"

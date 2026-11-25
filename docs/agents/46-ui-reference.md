@@ -10,8 +10,8 @@ tags: [ui]
 surface: [ui]
 stability: transitional
 routes: []
-docs_version: 1.10.0
-updated: 2026-11-18
+docs_version: 1.15.0
+updated: 2026-11-25
 ---
 
 # UI reference
@@ -143,8 +143,17 @@ the current session alongside message history.
 - **Project system prompt** — multiline field with helper **Appended to the agent's default
   instructions. Takes effect from the next session.** Provider may show **This provider does
   not support a project system prompt.**
-- **Sessions** list — **Refresh**, **Search titles…**, **All sessions**, **＋ New session**,
-  and historical session rows with **Copy session ID**.
+- **Sessions** list — **Refresh** starts again at the first page of the selected folder scope.
+  The folder toggle switches between **All sessions** and **Current path only** when the
+  current path and filtering are available. Paged lists filter by path on the server.
+  **Search titles…** searches sessions already loaded. **Load more** appears when another
+  page is available. If loading that page fails, the existing rows stay visible and
+  **Load more** can retry the request.
+- Session rows offer **Copy session ID**. The delete action appears when the provider
+  supports it and disappears if the provider reports that deletion is unsupported.
+  Warm ACP v1 attachments without capability metadata use one legacy page with local
+  path filtering and hide the delete action. When listing is unsupported, the panel
+  shows a status message and **＋ New session** remains available while connected.
 
 On **mobile width**, the same panel content sits behind **Drag to open** instead of staying
 visible; the header **Menu** button may be absent in favor of that drag affordance.

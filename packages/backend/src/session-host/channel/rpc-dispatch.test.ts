@@ -12,6 +12,7 @@ function setup() {
     state: { version: 3 },
     prompt: vi.fn().mockResolvedValue(undefined),
     listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
+    agentCapabilities: { sessionCapabilities: { list: {} } },
     loadSession: vi.fn().mockRejectedValue(new SessionBusyError()),
   }
   const getOrCreateHost = vi.fn<AgentSessionRegistry["getOrCreateHost"]>().mockResolvedValue({
@@ -41,14 +42,41 @@ describe("dispatchRpcBody", () => {
   })
 
   it("returns the blocking list result even with invalid waitMs", async () => {
-    const { deps } = setup()
+    const { deps, host } = setup()
     const result = await dispatchRpcBody(
       deps,
       "agent",
       { method: "session/list", waitMs: "bad" },
       caller,
     )
-    expect(result).toEqual({ status: 200, body: { sessions: [], sessionCapabilities: null } })
+    expect(result).toEqual({
+      status: 200,
+      body: { sessions: [], sessionCapabilities: { list: {} } },
+    })
+    expect(host.listSessions).toHaveBeenCalledOnce()
+  })
+
+  it.each(["session/list", "listSessions"])(
+    "rejects invalid %s before fetching a cold host",
+    async (method) => {
+      const { deps, getOrCreateHost } = setup()
+      getOrCreateHost.mockResolvedValue({ ok: false, reason: "not-found" })
+      expect(
+        await dispatchRpcBody(deps, "agent", { method, params: { cwd: "relative" } }, caller),
+      ).toMatchObject({ status: 400 })
+      expect(getOrCreateHost).not.toHaveBeenCalled()
+    },
+  )
+
+  it("checks delete scope before validation and both before fetching the host", async () => {
+    const { deps, getOrCreateHost } = setup()
+    const body = { method: "session/delete", params: { sessionId: 42 } }
+    const denied = {
+      header: (name: string) => (name === SCOPE_HEADER ? "invalid-test-scope" : undefined),
+    }
+    expect(await dispatchRpcBody(deps, "agent", body, denied)).toMatchObject({ status: 403 })
+    expect(await dispatchRpcBody(deps, "agent", body, caller)).toMatchObject({ status: 400 })
+    expect(getOrCreateHost).not.toHaveBeenCalled()
   })
 
   it("maps a busy load to a conflict", async () => {

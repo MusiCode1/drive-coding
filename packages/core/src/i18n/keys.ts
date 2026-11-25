@@ -225,6 +225,8 @@ export type MessageKey =
   | "sidebar.sessionsFilterAll"
   | "sidebar.sessionsFilterCwd"
   | "sidebar.sessionsNoMatches"
+  | "sidebar.sessionsLoadMore"
+  | "sidebar.sessionsUnsupported"
   // ─── cli-name-in-chat ─── (slice cli-name-in-chat)
   | "sidebar.runningOn"
   | "sheet.handle"

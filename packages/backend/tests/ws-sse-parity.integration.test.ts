@@ -73,7 +73,7 @@ async function setup(opts: { snapshotState?: SessionState; authError?: Error } =
     setSessionMode: vi.fn(async () => {
       throw new Error("mode fixture failed")
     }),
-    capabilities: {},
+    capabilities: { sessionCapabilities: { list: {} } },
   } as unknown as AcpClient
   const connectionRegistry = createConnectionRegistry()
   await connectionRegistry.connect(agentId, "opencode", { cwd: process.cwd() })
@@ -394,7 +394,15 @@ it("returns the same statuses and bodies for RPC and reply on both transports", 
     })
     const prompt = { sessionId, content: "Parity" }
     const cases = [
-      { path: "rpc", body: { method: "session/list", params: {} }, status: 200 },
+      {
+        path: "rpc",
+        body: { method: "session/list", params: {} },
+        status: 200,
+        expectedBody: {
+          sessions: [{ sessionId, cwd: process.cwd() }],
+          sessionCapabilities: { list: {} },
+        },
+      },
       { path: "rpc", body: { method: "unknown/fixture", params: {} }, status: 400 },
       { path: "rpc", body: { method: "session/prompt", params: prompt, waitMs: -1 }, status: 400 },
       {
@@ -419,12 +427,11 @@ it("returns the same statuses and bodies for RPC and reply on both transports", 
       const http = await h.post(row.path, row.body, scoped ? scopedHeaders : undefined)
       const socket = scoped ? denied : ws
       expect(http.status, row.path + JSON.stringify(row.body)).toBe(row.status)
+      const body = await http.json()
+      if ("expectedBody" in row) expect(body).toEqual(row.expectedBody)
       expect(
         await socket.request(row.path === "rpc" ? WS_RPC_METHOD : WS_REPLY_METHOD, row.body),
-      ).toEqual({
-        status: http.status,
-        body: await http.json(),
-      })
+      ).toEqual({ status: http.status, body })
     }
     const throwing = { method: "session/set_mode", params: { modeId: "throw" } }
     const http = await h.post("rpc", throwing)

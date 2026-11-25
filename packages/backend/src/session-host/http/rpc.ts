@@ -9,6 +9,7 @@ export {
   CancelParams,
   DeleteSessionParams,
   ImageBlock,
+  ListSessionsParams,
   LoadSessionParams,
   NewSessionParams,
   PromptParams,

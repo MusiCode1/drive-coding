@@ -549,6 +549,8 @@ export const en: Catalog = {
   "sidebar.sessionsFilterAll": "All sessions",
   "sidebar.sessionsFilterCwd": "Current path only",
   "sidebar.sessionsNoMatches": "No matches",
+  "sidebar.sessionsLoadMore": "Load more",
+  "sidebar.sessionsUnsupported": "This provider does not support listing sessions.",
   // ─── pending-capture ─── (slice voice-pending-persistence)
   "pendingCapture.retry": "Try again",
   "pendingCapture.dismiss": "Dismiss",

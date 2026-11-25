@@ -21,12 +21,13 @@ export async function deleteSession(d: DeleteSessionDeps, sessionId: string): Pr
   try {
     await view.deleteSession(sessionId)
   } catch (e) {
-    if ((e as { code?: number }).code === -32601) return false // button hidden; defensive no-op
-    d.cache().setError(e)
+    if (d.view() !== view) return false
+    if ((e as { code?: number } | null)?.code === -32601) d.cache().rejectDelete(view)
+    else d.cache().setError(e)
     return false
   }
-  // optimistic removal (the RPC confirmed the delete)
-  d.cache().remove(sessionId)
+  if (d.view() !== view) return false
+  d.cache().remove(view, sessionId)
   const wasActive = sessionId === d.sessionId()
   if (wasActive) {
     d.detachWith("delete")

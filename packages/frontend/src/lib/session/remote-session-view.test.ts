@@ -706,6 +706,7 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
   /** Method-aware /rpc mock for the three blocking mappings. */
   function rpcFetchFor(opts: {
     listSessionsBody?: unknown
+    listSessionsReplies?: unknown[]
     listSessionsStatus?: number
     loadSessionBody?: unknown
     deleteSessionBody?: unknown
@@ -725,7 +726,10 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
         const method = (body as { method?: string })?.method
         if (method === RPC_METHODS.listSessions) {
           const status = opts.listSessionsStatus ?? 200
-          return jsonResponse(opts.listSessionsBody ?? { sessions: [] }, status)
+          return jsonResponse(
+            opts.listSessionsReplies?.shift() ?? opts.listSessionsBody ?? { sessions: [] },
+            status,
+          )
         }
         if (method === RPC_METHODS.loadSession) {
           return jsonResponse(opts.loadSessionBody ?? { sessionId: "sess-2", version: 5 })
@@ -742,52 +746,112 @@ describe("RemoteSessionView — session management over rpc (C4)", () => {
     })
   }
 
-  it("listSessions: sends method + normalizes sessions + stores sessionCapabilities", async () => {
+  const available = { list: true, filterByCwd: true, delete: true }
+  const warmOnly = {
+    sessions: [],
+    sessionCapabilities: null,
+    capabilities: { list: false, filterByCwd: false, delete: false },
+    legacyOnly: true,
+  }
+
+  it("sends the paged query, normalizes records, and retains string cursors", async () => {
     const seen: unknown[] = []
     const view = newView("agent-1", "http://be.local", {
       _fetch: rpcFetchFor({
         listSessionsBody: {
           sessions: [
-            { sessionId: "a", cwd: "/a", title: "A" },
-            { sessionId: "b", cwd: "/b" },
+            { sessionId: "a", cwd: "/w", title: "A" },
+            { sessionId: "b", cwd: "/w" },
           ],
-          sessionCapabilities: { delete: {} },
+          capabilities: available,
+          nextCursor: "",
         },
-        onRpc: (b) => seen.push(b),
+        onRpc: (value) => seen.push(value),
       }),
       _sleep: noSleep,
     })
     await view.connect()
-
-    const sessions = await view.listSessions()
-
-    expect(seen[0]).toMatchObject({ method: RPC_METHODS.listSessions })
-    expect(sessions).toEqual([
-      { sessionId: "a", cwd: "/a", title: "A", updatedAt: "" },
-      { sessionId: "b", cwd: "/b", title: "", updatedAt: "" },
-    ])
-    expect(view.supportsSessionDelete).toBe(true)
-  })
-
-  it("supportsSessionDelete is false before any listSessions answer", async () => {
-    const view = newView("agent-1", "http://be.local", {
-      _fetch: rpcFetchFor({}),
-      _sleep: noSleep,
+    expect(await view.listSessions({ cwd: "/w", cursor: "  opaque/+  " })).toEqual({
+      sessions: [
+        { sessionId: "a", cwd: "/w", title: "A", updatedAt: "" },
+        { sessionId: "b", cwd: "/w", title: "", updatedAt: "" },
+      ],
+      capabilities: available,
+      nextCursor: "",
+      legacyCanDelete: false,
     })
-    await view.connect()
-    expect(view.supportsSessionDelete).toBe(false)
+    expect(seen).toEqual([
+      {
+        method: RPC_METHODS.listSessions,
+        params: { paged: true, cwd: "/w", cursor: "  opaque/+  " },
+      },
+    ])
   })
 
-  it("supportsSessionDelete is false when capabilities lack delete", async () => {
+  it("uses the legacy page from an old backend without an extra request", async () => {
+    const seen: unknown[] = []
     const view = newView("agent-1", "http://be.local", {
       _fetch: rpcFetchFor({
-        listSessionsBody: { sessions: [], sessionCapabilities: { list: {} } },
+        listSessionsBody: {
+          sessions: [{ sessionId: "a", cwd: "/w" }],
+          sessionCapabilities: { delete: {} },
+        },
+        onRpc: (value) => seen.push(value),
       }),
       _sleep: noSleep,
     })
     await view.connect()
-    await view.listSessions()
-    expect(view.supportsSessionDelete).toBe(false)
+    expect(await view.listSessions()).toEqual({
+      sessions: [{ sessionId: "a", cwd: "/w", title: "", updatedAt: "" }],
+      capabilities: null,
+      legacyCanDelete: true,
+    })
+    expect(seen).toEqual([{ method: RPC_METHODS.listSessions, params: { paged: true } }])
+  })
+
+  it("falls back once on the first warm page, and ends a warm append with no fallback", async () => {
+    const seen: unknown[] = []
+    const view = newView("agent-1", "http://be.local", {
+      _fetch: rpcFetchFor({
+        listSessionsReplies: [
+          warmOnly,
+          { sessions: [{ sessionId: "a", cwd: "/w" }], sessionCapabilities: null },
+          warmOnly,
+        ],
+        onRpc: (value) => seen.push(value),
+      }),
+      _sleep: noSleep,
+    })
+    await view.connect()
+    expect(await view.listSessions({ cwd: "/w" })).toMatchObject({
+      sessions: [{ sessionId: "a" }],
+      capabilities: null,
+      legacyCanDelete: false,
+    })
+    const append = await view.listSessions({ cwd: "/w", cursor: "" })
+    expect(append.sessions).toEqual([])
+    expect(append.nextCursor).toBeUndefined()
+    expect(append.capabilities?.list).toBe(false)
+    expect(seen).toEqual([
+      { method: RPC_METHODS.listSessions, params: { paged: true, cwd: "/w" } },
+      { method: RPC_METHODS.listSessions, params: {} },
+      { method: RPC_METHODS.listSessions, params: { paged: true, cwd: "/w", cursor: "" } },
+    ])
+  })
+
+  it("validates paged capabilities and treats non-string cursors as the end", async () => {
+    const view = newView("agent-1", "http://be.local", {
+      _fetch: rpcFetchFor({
+        listSessionsReplies: [
+          { sessions: [], capabilities: available, nextCursor: null },
+          { sessions: [], capabilities: { list: true } },
+        ],
+      }),
+      _sleep: noSleep,
+    })
+    await view.connect()
+    expect((await view.listSessions()).nextCursor).toBeUndefined()
+    await expect(view.listSessions()).rejects.toThrow("invalid session list capabilities")
   })
 
   it("listSessions: a 502 carrying code -32601 rejects with the code on the error", async () => {
