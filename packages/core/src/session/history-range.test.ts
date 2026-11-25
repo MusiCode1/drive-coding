@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  assertHistoryPageByteBudget,
   clampPageBytes,
   HISTORY_PAGE_BYTES_DEFAULT,
   HISTORY_PAGE_BYTES_MAX,
@@ -57,6 +58,30 @@ describe("history-range", () => {
     })
   })
 
+  it("before=0 yields an empty page", () => {
+    const state = mk([msg(0, "a"), msg(1, "b")])
+    const sel = selectRange(state, { before: 0, maxBytes: 10_000 }, messageWireByteSize)
+    expect(sel.ok).toBe(true)
+    if (sel.ok) {
+      expect(sel.start).toBe(0)
+      expect(sel.end).toBe(0)
+      expect(sel.page).toEqual({ firstSeq: null, lastSeq: null, hasMore: false })
+    }
+  })
+
+  it("before excludes the anchor and page.lastSeq is within the page", () => {
+    const state = mk([msg(0, "a"), msg(1, "b"), msg(2, "c")])
+    const sel = selectRange(state, { before: 2, maxBytes: 10_000 }, messageWireByteSize)
+    expect(sel.ok).toBe(true)
+    if (sel.ok) {
+      const pageMsgs = state.messages.slice(sel.start, sel.end)
+      expect(pageMsgs.map((m) => m.id)).toEqual(["m_0", "m_1"])
+      expect(sel.page.firstSeq).toBe(0)
+      expect(sel.page.lastSeq).toBe(1)
+      expect(sel.page.hasMore).toBe(false)
+    }
+  })
+
   it("meta + tail page covering all messages is meaningful-equal to full snapshot", () => {
     const state = mk([msg(0, "a"), msg(1, "b")])
     const full = snapshotPayload(state)
@@ -97,10 +122,15 @@ describe("F1 history page bytes", () => {
     }
   })
 
-  it("F1 control: ignoring budget in selectRange would exceed maxBytes", () => {
+  it("F1 negative control: a greedy page fails assertHistoryPageByteBudget", () => {
     const state = mk([msg(0, "a"), msg(1, "b".repeat(5000))])
-    const sel = selectRange(state, { tail: true, maxBytes: 50 }, () => 1)
+    const maxBytes = 50
+    const sel = selectRange(state, { tail: true, maxBytes }, messageWireByteSize)
     expect(sel.ok).toBe(true)
-    if (sel.ok) expect(sel.end - sel.start).toBeGreaterThan(1)
+    if (!sel.ok) return
+    const pageMsgs = state.messages.slice(sel.start, sel.end)
+    expect(assertHistoryPageByteBudget(pageMsgs, maxBytes, messageWireByteSize)).toBe(true)
+    const greedy = state.messages.slice(0, state.messages.length)
+    expect(assertHistoryPageByteBudget(greedy, maxBytes, messageWireByteSize)).toBe(false)
   })
 })
