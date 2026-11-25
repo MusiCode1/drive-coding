@@ -18,6 +18,7 @@
  * התיאור הנכון של הפער, לא כיסוי עליו.
  */
 
+import { selectRange, utf8Length } from "./history-range"
 import { TOOL_OUTPUT_META_KEY, type ToolOutputDelta } from "./tool-output"
 import type {
   MessageContentChunk,
@@ -407,6 +408,15 @@ export type StateToSessionUpdatesOptions = {
    * **לפני** ומתרגם ל-400), אבל הצורה מקובעת כאן כדי שלא תתפרש אחרת.
    */
   fromMessage?: string
+  range?: { tail: true; maxBytes: number } | { before: number; maxBytes: number }
+  /** Precomputed slice when `snapshotPayload` already ran `selectRange`. */
+  messageSlice?: { start: number; end: number }
+  /** Opening `meta` frame: session tail only (no messages). */
+  history?: "omit"
+}
+
+export function messageWireByteSize(m: SessionMessage): number {
+  return utf8Length(JSON.stringify(messageToUpdate(m)))
 }
 
 export function stateToSessionUpdates(
@@ -422,7 +432,17 @@ export function stateToSessionUpdates(
   const cutting = opts?.fromMessage !== undefined && opts.fromMessage !== ""
   const cutIndex = cutting ? findMessageIndex(state, opts.fromMessage as string) : 0
   if (cutting && cutIndex === -1) return []
-  const visible = cutting ? state.messages.slice(cutIndex) : state.messages
+  let visible = cutting ? state.messages.slice(cutIndex) : state.messages
+
+  if (opts?.history === "omit") {
+    visible = []
+  } else if (opts?.messageSlice) {
+    visible = visible.slice(opts.messageSlice.start, opts.messageSlice.end)
+  } else if (opts?.range) {
+    const sized = selectRange({ ...state, messages: visible }, opts.range, messageWireByteSize)
+    if (!sized.ok) return []
+    visible = visible.slice(sized.start, sized.end)
+  }
 
   // ─── slice carried-snapshot C3: שזירת ה-carried במיקומם ───
   //

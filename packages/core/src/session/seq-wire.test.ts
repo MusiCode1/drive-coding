@@ -50,7 +50,11 @@ describe("_drive/seq wire round-trip", () => {
       nextMessageSeq: 502,
     })
     const updates = stateToSessionUpdates(s0)
-    expect(updates.some((u) => u._meta?.[SEQ_META_KEY] === 500)).toBe(true)
+    expect(
+      updates.some(
+        (u) => (u._meta as Record<string, unknown> | undefined)?.[SEQ_META_KEY] === 500,
+      ),
+    ).toBe(true)
     const s1 = play(updates, mk())
     expect(meaningful(s1)).toEqual(meaningful(s0))
   })
@@ -67,7 +71,7 @@ describe("_drive/seq wire round-trip", () => {
     expect(state.messages[0]?.id).toBe("m_500")
     expect(patches[0]?.op).toBe("add-message")
     const wire = patchToSessionUpdates(state, patches[0] as never)
-    expect(wire[0]?._meta?.[SEQ_META_KEY]).toBe(500)
+    expect((wire[0]?._meta as Record<string, unknown> | undefined)?.[SEQ_META_KEY]).toBe(500)
   })
 
   it("text chunk with seq and messageId null attaches to m_<seq>", () => {
@@ -86,7 +90,10 @@ describe("_drive/seq wire round-trip", () => {
     })
     expect(state.messages).toHaveLength(1)
     expect(state.messages[0]?.id).toBe("m_502")
-    expect(state.messages[0]?.segments.map((x) => x.text).join("")).toBe("part1 part2")
+    const msg = state.messages[0]
+    expect(msg !== undefined && msg.role !== "tool" ? msg.segments.map((x) => x.text).join("") : "").toBe(
+      "part1 part2",
+    )
   })
 
   it("tool_call_update for unknown tool uses seq for new message id", () => {

@@ -10,7 +10,9 @@
  * לכיוון הלא-נכון. כאן יש מקור-אמת אחד, ולשני הצדדים.
  */
 
+import { type HistoryPage, selectRange } from "./history-range"
 import {
+  messageWireByteSize,
   patchToSessionUpdates,
   type StateToSessionUpdatesOptions,
   stateToSessionUpdates,
@@ -54,6 +56,8 @@ export type SnapshotPayload = {
   version: number
   epoch?: number
   updates: WireSessionUpdate[]
+  page?: HistoryPage
+  historyOmitted?: { messageCount: number }
 }
 
 export function snapshotPayload(
@@ -61,11 +65,32 @@ export function snapshotPayload(
   epoch?: number,
   opts?: StateToSessionUpdatesOptions,
 ): SnapshotPayload {
+  let page: HistoryPage | undefined
+  let messageSlice: { start: number; end: number } | undefined
+  if (opts?.range) {
+    const sized = selectRange(state, opts.range, messageWireByteSize)
+    if (!sized.ok) {
+      return {
+        sessionId: state.sessionId,
+        version: state.version,
+        ...(epoch !== undefined ? { epoch } : {}),
+        updates: [],
+      }
+    }
+    page = sized.page
+    messageSlice = { start: sized.start, end: sized.end }
+  }
+  const historyOmitted =
+    opts?.history === "omit" ? { messageCount: state.messages.length } : undefined
+  const mergedOpts: StateToSessionUpdatesOptions | undefined =
+    messageSlice !== undefined ? { ...opts, messageSlice } : opts
   return {
     sessionId: state.sessionId,
     version: state.version,
     ...(epoch !== undefined ? { epoch } : {}),
-    updates: stateToSessionUpdates(state, opts),
+    updates: stateToSessionUpdates(state, mergedOpts),
+    ...(page !== undefined ? { page } : {}),
+    ...(historyOmitted !== undefined ? { historyOmitted } : {}),
   }
 }
 
@@ -75,11 +100,17 @@ export function snapshotPayload(
  * ה-`id:` הוא ה-**version** ולא ה-epoch: ה-epoch מזהה *מי מחזיק בזרם*
  * וה-version מזהה *איפה אנחנו ברצף*. ה-epoch עבר לגוף ההודעה.
  */
-export function snapshotFrame(state: SessionState, epoch?: number): SseFrame {
+export function snapshotFrame(
+  state: SessionState,
+  epoch?: number,
+  mode: "full" | "meta" = "full",
+): SseFrame {
+  const opts: StateToSessionUpdatesOptions | undefined =
+    mode === "meta" ? { history: "omit" } : undefined
   return {
     event: "snapshot",
     id: String(state.version),
-    data: JSON.stringify(snapshotPayload(state, epoch)),
+    data: JSON.stringify(snapshotPayload(state, epoch, opts)),
   }
 }
 
@@ -89,8 +120,18 @@ export function snapshotFrame(state: SessionState, epoch?: number): SseFrame {
  * @param stateAfter המצב **אחרי** ה-patch — נדרש כי `append-segment`/
  *   `update-tool` נושאים `targetId` בלבד, וסוג-ה-update תלוי ב-role של היעד.
  */
-export function updateFrame(stateAfter: SessionState, patch: Patch): SseFrame | null {
-  const updates = patchToSessionUpdates(stateAfter, patch)
+export function updateFrame(
+  stateAfter: SessionState,
+  patch: Patch,
+  mode: "full" | "meta" = "full",
+): SseFrame | null {
+  let updates = patchToSessionUpdates(stateAfter, patch)
+  if (mode === "meta" && patch.op === "reset") {
+    updates = [
+      { sessionUpdate: "_drive/reset" },
+      ...stateToSessionUpdates(stateAfter, { history: "omit" }),
+    ]
+  }
   if (updates.length === 0) return null
   return {
     event: "update",
