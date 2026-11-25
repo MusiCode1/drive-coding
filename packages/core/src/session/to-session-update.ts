@@ -453,77 +453,105 @@ export function stateToSessionUpdates(
   // האינווריאנט שמחזיק את זה: סדר-המערך מתלכד עם סדר ה-`after`, כי רענון
   // הוא מחיקה + דחיפה לסוף (`recordCarried`). ⇒ מעבר יחיד לפי סדר המערך
   // בתוך כל עוגן מספיק, וה-`carried` המשוחזר יוצא זהה.
-  const carried = state.carried ?? []
+  const isOmit = opts?.history === "omit"
+  const isBeforePage = !isOmit && opts?.range !== undefined && "before" in opts.range
+  const isTailPage =
+    !isOmit &&
+    !isBeforePage &&
+    (opts?.messageSlice !== undefined || (opts?.range !== undefined && "tail" in opts.range))
 
-  // ─── slice history-cursor C0: מי מה-`carried` **יורד** בחיתוך ───
-  //
-  // 🔴 שלושת הענפים של §4.1.2, ובסדר הזה:
-  //   (א) `after === null`  ⇒ יורד. ‏`null` לעולם אינו ברשימת-ההודעות, ולכן
-  //       מבחן-"קיים ברשימה המלאה" לבדו היה מחזיר אותו כשייר — הפוך מהכלל.
-  //   (ב) עוגן שקיים ברשימה המלאה אך נחתך ⇒ יורד, **ואינו שייר**.
-  //   (ג) עוגן שאינו קיים כלל ⇒ שייר (מסלול-מת, נשמר להתנהגות).
-  //
-  // 🔴 **ההשוואה חייבת להיות מול רשימת-ההודעות המלאה.** לולאת-השיירים למטה
-  // פולטת כל `carried` שעוגנו "אינו קיים"; היא מסלול-מת היום (`reset` מנקה),
-  // אבל תחת חיתוך כל עוגן שנחתך נראה לה לא-קיים — וכל ה-`carried` הישן היה
-  // חוזר דרך הדלת האחורית. לכן `allIds` נבנה מ-`state.messages` ולא מ-`visible`.
-  const allIds = cutting ? new Set(state.messages.map((m) => m.id)) : undefined
-  const keptIds = cutting ? new Set(visible.map((m) => m.id)) : undefined
-  const isCutAway = (after: string | null): boolean => {
-    if (!cutting) return false
-    if (after === null) return true
-    return allIds!.has(after) && !keptIds!.has(after)
-  }
+  if (!isOmit && !isBeforePage) {
+    const carried = state.carried ?? []
 
-  const emitted = new Set<number>()
-  const emitCarriedAfter = (anchor: string | null): void => {
-    for (let i = 0; i < carried.length; i++) {
+    // ─── slice history-cursor C0: מי מה-`carried` **יורד** בחיתוך ───
+    //
+    // 🔴 שלושת הענפים של §4.1.2, ובסדר הזה:
+    //   (א) `after === null`  ⇒ יורד. ‏`null` לעולם אינו ברשימת-ההודעות, ולכן
+    //       מבחן-"קיים ברשימה המלאה" לבדו היה מחזיר אותו כשייר — הפוך מהכלל.
+    //   (ב) עוגן שקיים ברשימה המלאה אך נחתך ⇒ יורד, **ואינו שייר**.
+    //   (ג) עוגן שאינו קיים כלל ⇒ שייר (מסלול-מת, נשמר להתנהגות).
+    //
+    // 🔴 **ההשוואה חייבת להיות מול רשימת-ההודעות המלאה.** לולאת-השיירים למטה
+    // פולטת כל `carried` שעוגנו "אינו קיים"; היא מסלול-מת היום (`reset` מנקה),
+    // אבל תחת חיתוך כל עוגן שנחתך נראה לה לא-קיים — וכל ה-`carried` הישן היה
+    // חוזר דרך הדלת האחורית. לכן `allIds` נבנה מ-`state.messages` ולא מ-`visible`.
+    const allIds = cutting ? new Set(state.messages.map((m) => m.id)) : undefined
+    const keptIds = cutting ? new Set(visible.map((m) => m.id)) : undefined
+    const isCutAway = (after: string | null): boolean => {
+      if (!cutting) return false
+      if (after === null) return true
+      return allIds!.has(after) && !keptIds!.has(after)
+    }
+
+    const emitted = new Set<number>()
+    const pushCarriedIndex = (i: number): void => {
+      if (emitted.has(i)) return
       const e = carried[i]
-      if (e === undefined || emitted.has(i) || e.after !== anchor) continue
+      if (e === undefined) return
       emitted.add(i)
       if (typeof e.update === "object" && e.update !== null) {
         out.push(e.update as WireSessionUpdate)
       }
     }
-  }
 
-  // עוגנים שנחתכו מסומנים כ"כבר נפלטו" — כך הם אינם נשזרים, וגם אינם
-  // נאספים בלולאת-השיירים. סימון אחד, שני מסלולים.
-  for (let i = 0; i < carried.length; i++) {
-    const e = carried[i]
-    if (e !== undefined && isCutAway(e.after)) emitted.add(i)
-  }
+    const emitCarriedAfter = (anchor: string | null): void => {
+      for (let i = 0; i < carried.length; i++) {
+        const e = carried[i]
+        if (e === undefined || emitted.has(i) || e.after !== anchor) continue
+        pushCarriedIndex(i)
+      }
+    }
 
-  emitCarriedAfter(null)
-  for (const m of visible) {
-    out.push(...messageUpdates(m))
-    emitCarriedAfter(m.id)
-  }
+    for (let i = 0; i < carried.length; i++) {
+      const e = carried[i]
+      if (e !== undefined && isCutAway(e.after)) emitted.add(i)
+    }
 
-  // עוגן שאינו קיים ברשימת-ההודעות. לא אמור לקרות — `reset` מנקה את
-  // ה-buffer יחד עם ההודעות — אבל להשמיט בשקט זה בדיוק הכשל שהסלייס סוגר.
-  for (let i = 0; i < carried.length; i++) {
-    const e = carried[i]
-    if (e === undefined || emitted.has(i)) continue
-    if (typeof e.update === "object" && e.update !== null) {
-      out.push(e.update as WireSessionUpdate)
+    const visibleIds = new Set(visible.map((m) => m.id))
+
+    if (isTailPage) {
+      for (let i = 0; i < carried.length; i++) {
+        const e = carried[i]
+        if (e === undefined || emitted.has(i)) continue
+        const after = e.after
+        if (after === null || !visibleIds.has(after)) pushCarriedIndex(i)
+      }
+      for (const m of visible) {
+        out.push(...messageUpdates(m))
+        emitCarriedAfter(m.id)
+      }
+    } else {
+      emitCarriedAfter(null)
+      for (const m of visible) {
+        out.push(...messageUpdates(m))
+        emitCarriedAfter(m.id)
+      }
+      for (let i = 0; i < carried.length; i++) {
+        if (!emitted.has(i)) pushCarriedIndex(i)
+      }
+    }
+  } else if (isBeforePage) {
+    for (const m of visible) {
+      out.push(...messageUpdates(m))
     }
   }
 
-  out.push(
-    ...changesToUpdates({
-      title: state.title,
-      commands: state.commands,
-      configOptions: state.configOptions,
-      modes: state.modes,
-      contextUsage: state.contextUsage,
-      turnState: state.turnState,
-      lastTurnError: state.lastTurnError,
-      status: state.status,
-      pending: state.pending,
-      capabilities: state.capabilities,
-      quota: state.quota,
-    }),
-  )
+  if (!isBeforePage) {
+    out.push(
+      ...changesToUpdates({
+        title: state.title,
+        commands: state.commands,
+        configOptions: state.configOptions,
+        modes: state.modes,
+        contextUsage: state.contextUsage,
+        turnState: state.turnState,
+        lastTurnError: state.lastTurnError,
+        status: state.status,
+        pending: state.pending,
+        capabilities: state.capabilities,
+        quota: state.quota,
+      }),
+    )
+  }
   return out
 }
