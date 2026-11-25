@@ -378,3 +378,55 @@ describe("‏C1 — ‏GET history?fromMessage= : חיתוך מהודעה ואי
     expect(res.status).toBe(404)
   })
 })
+
+describe("GET /history — tail and before pages", () => {
+  function multiMessageState(): SessionState {
+    return makeMockState({
+      sessionId: "sess-1",
+      version: 3,
+      messages: [
+        { id: "m_0", role: "user", messageId: "u-0", segments: [{ id: "s_0", text: "one" }] },
+        { id: "m_1", role: "assistant", messageId: "a-1", segments: [{ id: "s_1", text: "two" }] },
+        { id: "m_2", role: "user", messageId: "u-2", segments: [{ id: "s_2", text: "three" }] },
+      ],
+      nextMessageSeq: 3,
+      nextSegmentSeq: 3,
+    })
+  }
+
+  it("tail=1 returns page metadata and a tail slice", async () => {
+    const registry = makeMockRegistry(makeMockHost(multiMessageState()))
+    const res = await makeApp(registry).request("/api/agents/agent-1/history?tail=1&maxBytes=65536")
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as HistoryBody & {
+      page?: { firstSeq: number | null; lastSeq: number | null; hasMore: boolean }
+    }
+    expect(body.page?.lastSeq).toBe(2)
+    expect(body.page?.hasMore).toBe(false)
+  })
+
+  it("before=0 yields an empty page", async () => {
+    const registry = makeMockRegistry(makeMockHost(multiMessageState()))
+    const res = await makeApp(registry).request("/api/agents/agent-1/history?before=0&maxBytes=65536")
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as {
+      page?: { firstSeq: number | null; lastSeq: number | null }
+      updates: WireSessionUpdate[]
+    }
+    expect(body.page).toEqual({ firstSeq: null, lastSeq: null, hasMore: false })
+    expect(body.updates).toHaveLength(0)
+  })
+
+  it("unknown before seq returns 400", async () => {
+    const registry = makeMockRegistry(makeMockHost(multiMessageState()))
+    const res = await makeApp(registry).request("/api/agents/agent-1/history?before=999&maxBytes=1000")
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: "unknown before", before: 999 })
+  })
+
+  it("rejects tail without maxBytes", async () => {
+    const registry = makeMockRegistry(makeMockHost(multiMessageState()))
+    const res = await makeApp(registry).request("/api/agents/agent-1/history?tail=1")
+    expect(res.status).toBe(400)
+  })
+})

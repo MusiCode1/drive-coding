@@ -1,4 +1,4 @@
-import { createInitialSessionState, type Patch } from "@drive-coding/core/session"
+import { createInitialSessionState, type Patch, type SessionState } from "@drive-coding/core/session"
 import { describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
@@ -180,6 +180,54 @@ describe("openViewer", () => {
     h.tick()
     expect(await done).toBe("cancelled")
     h.expectCleaned()
+  })
+
+  it("meta snapshot matches for sse and ws viewers", async () => {
+    const h = setup()
+    const hostState: SessionState = {
+      ...createInitialSessionState({ sessionId: "test-session" }),
+      version: 5,
+      title: "parity",
+      messages: [
+        {
+          id: "m_0",
+          role: "user",
+          messageId: "u-0",
+          segments: [{ id: "s_0", text: "hello" }],
+        },
+      ],
+      nextMessageSeq: 1,
+    }
+    const capture = async (via: "http" | "ws") => {
+      const local = setup()
+      local.getOrCreateHost.mockResolvedValue({
+        ok: true,
+        entry: {
+          host: { state: hostState } as unknown as ExtendedSessionHost,
+          broadcaster: {
+            subscribe: vi.fn(() => new ReadableStream({ start() {} })),
+            oldestBufferedVersion: vi.fn(),
+            unsubscribe: vi.fn(),
+            close: vi.fn(),
+          },
+        },
+      })
+      let snapshotData: string | undefined
+      const opened = await openViewer(local.deps, { ...local.input, via, snapshot: "meta" })
+      if (!opened.ok) throw new Error("viewer should open")
+      const done = opened.run({
+        write: async (frame) => {
+          if (frame.event === "snapshot" && snapshotData === undefined) {
+            snapshotData = frame.data
+            opened.cancel()
+          }
+        },
+      })
+      await done
+      return snapshotData
+    }
+
+    expect(await capture("http")).toEqual(await capture("ws"))
   })
 
   it("reports an internal snapshot error and still cleans up", async () => {

@@ -14,9 +14,10 @@
 
 import { describe, expect, it } from "vitest"
 import { recordCarried } from "./carried"
-import type { SessionState } from "./types"
+import { HISTORY_PAGE_BYTES_MAX } from "./history-range"
+import type { Patch, SessionState } from "./types"
 import { createInitialSessionState } from "./types"
-import { snapshotFrame, snapshotPayload } from "./wire-frames"
+import { snapshotFrame, snapshotPayload, updateFrame } from "./wire-frames"
 
 function stateWithMessage(): SessionState {
   const base = createInitialSessionState({ sessionId: "sess-1" })
@@ -76,5 +77,118 @@ describe("snapshotFrame — המסגור לא השתנה", () => {
     const frame = snapshotFrame(state, 3)
     expect(frame.event).toBe("snapshot")
     expect(frame.id).toBe(String(state.version))
+  })
+
+  it("mode meta omits messages and sets historyOmitted", () => {
+    const state = stateWithMessage()
+    const payload = JSON.parse(snapshotFrame(state, 3, "meta").data) as ReturnType<
+      typeof snapshotPayload
+    >
+    expect(payload.historyOmitted).toEqual({ messageCount: 1 })
+    expect(payload.updates.some((u) => String(u.sessionUpdate).endsWith("_message"))).toBe(false)
+    expect(payload.updates.some((u) => u.sessionUpdate === "session_info_update")).toBe(true)
+    expect(payload.updates.some((u) => u.sessionUpdate === "plan")).toBe(false)
+  })
+})
+
+describe("snapshotPayload pages", () => {
+  it("tail page includes page metadata", () => {
+    const state = stateWithMessage()
+    const payload = snapshotPayload(state, undefined, {
+      range: { tail: true, maxBytes: HISTORY_PAGE_BYTES_MAX },
+    })
+    expect(payload.page?.lastSeq).toBe(0)
+  })
+
+  it("tail puts carried before the page when anchor is outside the slice", () => {
+    const state: SessionState = {
+      ...createInitialSessionState({ sessionId: "sess-1" }),
+      version: 3,
+      messages: [
+        {
+          id: "m_0",
+          role: "user",
+          messageId: "u0",
+          segments: [{ id: "s_0", text: "x".repeat(400_000) }],
+        },
+        {
+          id: "m_1",
+          role: "assistant",
+          messageId: "a1",
+          segments: [{ id: "s_1", text: "two" }],
+        },
+        {
+          id: "m_2",
+          role: "user",
+          messageId: "u2",
+          segments: [{ id: "s_2", text: "three" }],
+        },
+      ],
+      nextMessageSeq: 3,
+      carried: [
+        {
+          key: "plan",
+          after: "m_0",
+          update: {
+            sessionUpdate: "plan",
+            entries: [{ content: "x", priority: "high", status: "pending" }],
+          },
+        },
+      ],
+    }
+    const payload = snapshotPayload(state, undefined, {
+      range: { tail: true, maxBytes: 4096 },
+    })
+    const kinds = payload.updates.map((u) => u.sessionUpdate)
+    expect(kinds.indexOf("plan")).toBeLessThan(kinds.indexOf("user_message"))
+  })
+
+  it("before page is messages only", () => {
+    const state: SessionState = {
+      ...recordCarried(stateWithMessage(), {
+        sessionUpdate: "plan",
+        entries: [{ content: "צעד", priority: "high", status: "pending" }],
+      }),
+      messages: [
+        {
+          id: "m_0",
+          role: "user",
+          messageId: "u0",
+          segments: [{ id: "s_0", text: "one" }],
+        },
+        {
+          id: "m_1",
+          role: "assistant",
+          messageId: "a1",
+          segments: [{ id: "s_1", text: "two" }],
+        },
+      ],
+      nextMessageSeq: 2,
+    }
+    const payload = snapshotPayload(state, undefined, {
+      range: { before: 1, maxBytes: HISTORY_PAGE_BYTES_MAX },
+    })
+    const kinds = payload.updates.map((u) => u.sessionUpdate)
+    expect(kinds).toEqual(["user_message"])
+  })
+})
+
+describe("updateFrame meta reset", () => {
+  it("prepends _drive/reset and omits message history", () => {
+    const state = stateWithMessage()
+    const patch: Patch = {
+      version: 4,
+      op: "reset",
+      messages: [],
+      nextMessageSeq: 0,
+      nextSegmentSeq: 0,
+    }
+    const frame = updateFrame(state, patch, "meta")
+    expect(frame).not.toBeNull()
+    const batch = JSON.parse(frame!.data) as { params: { update: { sessionUpdate: string } } }[]
+    expect(batch.map((n) => n.params.update.sessionUpdate)).toContain("_drive/reset")
+    expect(batch.some((n) => String(n.params.update.sessionUpdate).endsWith("_message"))).toBe(
+      false,
+    )
   })
 })
