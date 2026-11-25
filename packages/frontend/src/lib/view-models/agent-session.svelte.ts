@@ -30,17 +30,7 @@ import {
 import { createRemoteView } from "$lib/session/create-session-view"
 import type { SessionTransport } from "$lib/session/session-transport"
 import type { SessionView } from "$lib/session/session-view"
-import type {
-  Bubble,
-  MessageBubble,
-  Segment,
-  ThoughtBubble,
-  ToolBubble,
-  ToolCall,
-  ToolContent,
-  ToolLocation,
-  UserBubble,
-} from "$lib/types/bubble"
+import type { Bubble, ToolCall } from "$lib/types/bubble"
 // ─── slice-elicitation-ui: טיפוסי שאלה מובנת (view-model layer, נגזרים מ-SDK) ───
 import type { ElicitationParams, ElicitationResponse } from "$lib/types/elicitation"
 // ─── slice-permission-ui-basic: טיפוסי בקשת-הרשאה (view-model layer, נגזרים מ-SDK) ───
@@ -92,15 +82,9 @@ import {
 export type { SessionEndReason } from "$lib/view-models/agent-session-session-end"
 
 // ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
-import { EMPTY_PLAN_STORE, type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
+import { type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
 // ─── slice session-state-reducer C4: reduce + types ─── (additive)
-import {
-  applyPatch,
-  createInitialSessionState,
-  type Patch,
-  reduce,
-  type SessionState,
-} from "@drive-coding/core/session"
+import { createInitialSessionState, reduce, type SessionState } from "@drive-coding/core/session"
 // ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 // ─── slice FE-normalization: ייבוא ─── (additive)

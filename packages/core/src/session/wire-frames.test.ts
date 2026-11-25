@@ -92,7 +92,6 @@ describe("snapshotFrame — המסגור לא השתנה", () => {
     expect(payload.updates.some((u) => String(u.sessionUpdate).endsWith("_message"))).toBe(false)
     expect(payload.updates.some((u) => u.sessionUpdate === "session_info_update")).toBe(true)
   })
-
 })
 
 describe("snapshotPayload pages", () => {

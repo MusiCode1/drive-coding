@@ -21,9 +21,9 @@ import BubbleRenderer from "./BubbleRenderer.svelte"
 import ActivityGroupBubble from "./bubbles/ActivityGroupBubble.svelte"
 import { groupActivityRuns } from "./bubbles/activity-groups"
 import ElicitationDialog from "./ElicitationDialog.svelte"
+import HistoryEdge from "./HistoryEdge.svelte"
 import PermissionRequestBlock from "./PermissionRequestBlock.svelte"
 import PlanChecklist from "./PlanChecklist.svelte"
-import HistoryEdge from "./HistoryEdge.svelte"
 import StatusBubble from "./StatusBubble.svelte"
 
 const session = getSession()

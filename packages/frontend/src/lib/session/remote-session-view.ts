@@ -21,11 +21,11 @@ import {
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { registerView, type ViewDebugInfo } from "$lib/debug/session-registry"
 import type { HistorySync } from "./history-sync"
-import { advanceReadWaterMark, emitView, enqueueEmission } from "./remote-session-emission"
-import { wireRemoteHistorySync } from "./remote-session-history-port"
 import { closeRemoteSession } from "./remote-session-close"
 import { openRemoteSession } from "./remote-session-connect"
-import { readTerminalEmission } from "./remote-session-stream"
+import { advanceReadWaterMark, emitView, enqueueEmission } from "./remote-session-emission"
+import { wireRemoteHistorySync } from "./remote-session-history-port"
+import type { readTerminalEmission } from "./remote-session-stream"
 import {
   type RemoteSessionRpcDeps,
   remoteCancel,
@@ -270,7 +270,8 @@ export class RemoteSessionView implements SessionView {
   }
 
   newSession = (cwd?: string) => remoteNewSession(this.#rpcDeps(), cwd)
-  loadSession = (sessionId: string, cwd?: string) => remoteLoadSession(this.#rpcDeps(), sessionId, cwd)
+  loadSession = (sessionId: string, cwd?: string) =>
+    remoteLoadSession(this.#rpcDeps(), sessionId, cwd)
   listSessions = () => remoteListSessions(this.#rpcDeps())
   get supportsSessionDelete(): boolean {
     return remoteSupportsSessionDelete(this.#rpcDeps())
@@ -280,10 +281,12 @@ export class RemoteSessionView implements SessionView {
     remotePrompt(this.#rpcDeps(), content, meta)
   cancel = () => remoteCancel(this.#rpcDeps())
   setMode = (mode: string) => remoteSetMode(this.#rpcDeps(), mode)
-  setConfigOption = (key: string, value: unknown) => remoteSetConfigOption(this.#rpcDeps(), key, value)
+  setConfigOption = (key: string, value: unknown) =>
+    remoteSetConfigOption(this.#rpcDeps(), key, value)
   setSessionModel = (model: string) => remoteSetSessionModel(this.#rpcDeps(), model)
   extMethod = (method: string, params: unknown) => remoteExtMethod(this.#rpcDeps(), method, params)
-  respond = (requestId: number, result: unknown) => remoteRespond(this.#rpcDeps(), requestId, result)
+  respond = (requestId: number, result: unknown) =>
+    remoteRespond(this.#rpcDeps(), requestId, result)
 }
 
 // ─── Re-export for convenience ───

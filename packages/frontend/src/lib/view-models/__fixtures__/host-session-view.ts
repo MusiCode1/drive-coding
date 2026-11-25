@@ -1,10 +1,10 @@
 import {
   createInitialSessionState,
   reduce,
-  snapshotPayload,
   type SessionState,
   serializeFrame,
   snapshotFrame,
+  snapshotPayload,
   updateFrame,
 } from "@drive-coding/core/session"
 import { createRemoteSessionView } from "$lib/session/create-session-view"

@@ -1,5 +1,5 @@
 import type { SessionState } from "@drive-coding/core/session"
-import { unregisterView, type DebuggableView } from "$lib/debug/session-registry"
+import { type DebuggableView, unregisterView } from "$lib/debug/session-registry"
 import type { HistorySync } from "./history-sync"
 import { cancelPendingOnViewClose } from "./remote-session-stream"
 import type { FrameReader } from "./wire/frame-reader"

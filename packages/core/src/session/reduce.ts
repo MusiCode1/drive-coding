@@ -371,7 +371,7 @@ function handleToolCall(
     ...outputFields,
   }
 
-  const { id: msgId, nextMessageSeq } = allocMessageId(state, wireSeq)
+  const { id: msgId } = allocMessageId(state, wireSeq)
   const msg: SessionMessage = {
     id: msgId,
     role: "tool",
@@ -691,7 +691,7 @@ function handleWholeMessage(
       : state.messageTimestamps
 
   if (idx === -1) {
-    const { id, nextMessageSeq } = allocMessageId(state, wireSeq)
+    const { id } = allocMessageId(state, wireSeq)
     const msg: SessionMessage = withPendingTs(
       {
         id,
