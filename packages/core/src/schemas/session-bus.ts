@@ -37,7 +37,7 @@ export const AgentOpenInput = type({
     "Permission policy for the new agent (permissionPolicy), e.g. allow_once, bypassPermissions.",
   ),
   "parent?": optStr(
-    "Parent agent UUID for sub-agent wiring (parentAgentId). Ignored when X-Drive-Coding-Agent header is set to a different id.",
+    "Parent agent UUID for sub-agent wiring (parentAgentId). If X-Drive-Coding-Agent identifies a registered agent, that agent is the parent and any explicit parent must match. Otherwise, the explicit parent is used.",
   ),
   "closeOnTurnEnd?": optBool(
     "When true, automatically close this agent after its first clean turn end.",

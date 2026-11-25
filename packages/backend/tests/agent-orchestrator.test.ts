@@ -14,6 +14,7 @@ import type { Agent, AgentRegistry, BridgeCrashInfo, CreateAgentInput } from "@d
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../src/acp/connection-registry.js"
+import { createInMemoryAgentRegistry } from "../src/agents/registry.js"
 
 const { createAgentOrchestrator, composeShapeEnv } = await import("../src/app/agent-orchestrator.js")
 const {
@@ -591,6 +592,36 @@ describe("AgentOrchestrator (CUT-3b-ii)", () => {
     expect(shaped[DC_TOKEN_ENV]).toBe(expectedToken)
     expect(connReg.lastConnectOpts?.agentEnv?.[DC_TOKEN_ENV]).toBe(expectedToken)
   })
+
+  it.each([
+    { name: "parent field only", hasParent: true, env: undefined },
+    { name: "parent field and independent env", hasParent: true, env: { DC_PARENT: "legacy" } },
+    { name: "legacy env only", hasParent: false, env: { DC_PARENT: "legacy" } },
+  ])(
+    "keeps the parent record and child environment separate for $name",
+    async ({ hasParent, env }) => {
+      const registry = createInMemoryAgentRegistry()
+      const parent = await registry.create({ cliKind: "cursor", cwd: "/tmp/parent" })
+      const connReg = makeConnectionRegistry()
+      const orch = createAgentOrchestrator({ registry, connectionRegistry: connReg.reg })
+
+      const { agentId } = await orch.createAndSpawn({
+        cliKind: "cursor",
+        cwd: "/tmp/child",
+        ...(hasParent ? { parentAgentId: parent.id } : {}),
+        ...(env === undefined ? {} : { env }),
+      })
+
+      const child = await registry.get(agentId)
+      expect(child).not.toBeNull()
+      expect(child?.parentAgentId).toBe(hasParent ? parent.id : undefined)
+      const opts = connReg.lastConnectOpts
+      expect(opts?.shapeEnv).toBeTypeOf("function")
+      expect(opts?.agentEnv).toBeDefined()
+      expect(opts?.shapeEnv?.("cursor", {}).DC_PARENT).toBe(env?.DC_PARENT)
+      expect(opts?.agentEnv?.DC_PARENT).toBe(env?.DC_PARENT)
+    },
+  )
 
   it("createAndSpawn forces loopback BASE even if caller passes a public URL", async () => {
     const { registry } = makeRegistry()
