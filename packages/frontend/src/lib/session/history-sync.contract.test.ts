@@ -416,6 +416,20 @@ describe.each(["http", "ws"] as const)("history transport contract — %s", (tra
     expect(host.requests.slice(1).every(({ url }) => url.searchParams.has("tail"))).toBe(true)
   })
 
+  it("requests the earlier page after a legacy reconnect keeps the window", async () => {
+    const state = transcript("earlier", "tail")
+    host.history(tail(state, 1))
+    view = await host.connect(state)
+    await host.reconnect(state, "full")
+
+    host.history(beforePage(state, 1))
+    await view.history.loadOlder()
+
+    expect(host.requests[1]?.url.searchParams.get("before")).toBe("1")
+    expect(host.requests[1]?.signal?.aborted).toBe(false)
+    expect(view.state.messages.map(({ id }) => id)).toEqual(["m_0", "m_1"])
+  })
+
   it.each(["same version", "replaced", "during reload"] as const)(
     "handles a legacy reconnect (%s)",
     async (mode) => {
