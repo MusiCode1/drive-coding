@@ -352,23 +352,27 @@ function handleToolCall(
         : "tool"
 
   const { meta, outputFields } = readToolUpdate(update, rules)
+  const status =
+    update.status === "pending" ||
+    update.status === "in_progress" ||
+    update.status === "completed" ||
+    update.status === "failed"
+      ? update.status
+      : "pending"
   const toolCall: SessionToolCall = {
     toolCallId,
     name,
-    kind: typeof update.kind === "string" ? update.kind : undefined,
     args: update.rawInput ?? {},
-    status:
-      update.status === "pending" ||
-      update.status === "in_progress" ||
-      update.status === "completed" ||
-      update.status === "failed"
-        ? update.status
-        : "pending",
-    title: typeof update.title === "string" ? update.title : undefined,
-    result: update.rawOutput,
-    content: Array.isArray(update.content) && update.content !== null ? update.content : undefined,
-    locations:
-      Array.isArray(update.locations) && update.locations !== null ? update.locations : undefined,
+    status,
+    ...(typeof update.kind === "string" ? { kind: update.kind } : {}),
+    ...(typeof update.title === "string" ? { title: update.title } : {}),
+    ...(update.rawOutput !== undefined ? { result: update.rawOutput } : {}),
+    ...(Array.isArray(update.content) && update.content !== null
+      ? { content: update.content }
+      : {}),
+    ...(Array.isArray(update.locations) && update.locations !== null
+      ? { locations: update.locations }
+      : {}),
     ...outputFields,
   }
 

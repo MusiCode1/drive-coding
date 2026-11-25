@@ -2,6 +2,17 @@ import { mapLocations, mapToolContent } from "$lib/session/map-tool-content"
 import type { Bubble, ToolBubble, ToolCall } from "$lib/types/bubble"
 import { safeUUID } from "$lib/util/uuid"
 
+/** Parent subagent id from `_meta.claudeCode` on a raw session/update (slice subagent-identity-gate). */
+export function extractParentToolUseId(rawUpdate: unknown): string | undefined {
+  if (typeof rawUpdate !== "object" || rawUpdate === null) return undefined
+  const meta = (rawUpdate as { _meta?: unknown })._meta
+  if (typeof meta !== "object" || meta === null) return undefined
+  const claudeCode = (meta as { claudeCode?: unknown }).claudeCode
+  if (typeof claudeCode !== "object" || claudeCode === null) return undefined
+  const parentToolUseId = (claudeCode as { parentToolUseId?: unknown }).parentToolUseId
+  return typeof parentToolUseId === "string" ? parentToolUseId : undefined
+}
+
 export type SubagentToolCallInput = {
   toolCallId?: string
   title?: string

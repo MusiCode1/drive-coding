@@ -35,6 +35,11 @@ export const he: Catalog = {
   "chat.prompt.placeholder": "כתוב prompt…",
   "chat.send": "שלח",
   "chat.disconnect": "נתק",
+  "chat.history.edge.label": "היסטוריית שיחה",
+  "chat.history.hasOlder": "יש הודעות מוקדמות יותר",
+  "chat.history.loadAll": "טען הכול",
+  "chat.history.error": "טעינת ההיסטוריה נכשלה",
+  "chat.history.retry": "נסה שוב",
   "chat.audioToggle": "אודיו",
 
   // ─── voice picker ─── (slice 9)

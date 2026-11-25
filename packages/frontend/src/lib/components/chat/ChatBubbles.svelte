@@ -23,6 +23,7 @@ import { groupActivityRuns } from "./bubbles/activity-groups"
 import ElicitationDialog from "./ElicitationDialog.svelte"
 import PermissionRequestBlock from "./PermissionRequestBlock.svelte"
 import PlanChecklist from "./PlanChecklist.svelte"
+import HistoryEdge from "./HistoryEdge.svelte"
 import StatusBubble from "./StatusBubble.svelte"
 
 const session = getSession()
@@ -40,6 +41,7 @@ $effect(() => {
 })
 </script>
 
+<HistoryEdge history={session.history} />
 {#if chatScroll.scrollEl}
   <Virtualizer
     bind:this={handle}

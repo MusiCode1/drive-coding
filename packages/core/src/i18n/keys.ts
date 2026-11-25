@@ -50,6 +50,11 @@ export type MessageKey =
   | "chat.prompt.placeholder"
   | "chat.send"
   | "chat.disconnect"
+  | "chat.history.edge.label"
+  | "chat.history.hasOlder"
+  | "chat.history.loadAll"
+  | "chat.history.error"
+  | "chat.history.retry"
   | "chat.audioToggle"
   // ─── voice picker ─── (slice 9 — voice selection)
   | "chat.voicePicker.label"

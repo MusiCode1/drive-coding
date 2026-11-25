@@ -39,6 +39,11 @@ export const en: Catalog = {
   "chat.prompt.placeholder": "Type a prompt…",
   "chat.send": "Send",
   "chat.disconnect": "Disconnect",
+  "chat.history.edge.label": "Chat history",
+  "chat.history.hasOlder": "Earlier messages available",
+  "chat.history.loadAll": "Load all",
+  "chat.history.error": "History failed to load",
+  "chat.history.retry": "Retry",
   "chat.audioToggle": "Audio",
 
   // ─── voice picker ─── (slice 9)

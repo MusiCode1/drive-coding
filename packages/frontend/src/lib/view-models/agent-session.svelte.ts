@@ -29,7 +29,7 @@ import {
 // ─── slice view-switch C3: createRemoteView (attachRemote) ─── (additive)
 import { createRemoteView } from "$lib/session/create-session-view"
 import type { SessionTransport } from "$lib/session/session-transport"
-import { readViewEmission, type SessionView } from "$lib/session/session-view"
+import type { SessionView } from "$lib/session/session-view"
 import type {
   Bubble,
   MessageBubble,
@@ -83,6 +83,7 @@ import { SessionScope } from "$lib/view-models/session-scoped-state.svelte"
 import { SessionsCacheScope } from "$lib/view-models/sessions-cache-scope.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
 import {
+  extractParentToolUseId,
   handleSubagentToolCall,
   handleSubagentToolCallUpdate,
   type SubagentToolNestingDeps,
@@ -109,26 +110,12 @@ import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 // ─── slice session-state-reducer C4: FE patch applicator + mappers ─── (additive)
 import { applyPatchMutable } from "$lib/session/apply-patch-mutable"
 import { mapLocations, mapToolContent } from "$lib/session/map-tool-content"
-import { type HistoryMark, historyMarkFromReset } from "./history-mark.js"
+import type { ViewEmission } from "$lib/session/session-view"
+import { consumeViewPatches, historyIngestDepsFrom } from "./agent-session-history-ingest.js"
+import type { HistoryMark } from "./history-mark.js"
+import { bindHistory, HistoryState } from "./history-state.svelte.js"
 // ─── slice subagent-identity-gate: ניתוב תעתיק (חילוץ מ-VM) ───
 import { type SubagentTranscriptDeps, SubagentTranscriptRouter } from "./subagent-transcript-router"
-
-// ─── slice subagent-tool-nesting: helper טהור לחילוץ parentToolUseId ───
-/**
- * מחלץ `parentToolUseId` מ-`_meta.claudeCode` של frame גולמי של `session/update`.
- * `rawUpdate` הוא `notification.update` **לפני** ה-cast הטיפוסי ב-`#onSessionUpdate`
- * (ה-cast המקומי משמיט את `_meta` מהטיפוס אבל לא מהאובייקט בזמן-ריצה) — narrowing בטוח,
- * בלי `as SDKMessage`. brief §3/§4 (אביגיל #2).
- */
-function extractParentToolUseId(rawUpdate: unknown): string | undefined {
-  if (typeof rawUpdate !== "object" || rawUpdate === null) return undefined
-  const meta = (rawUpdate as { _meta?: unknown })._meta
-  if (typeof meta !== "object" || meta === null) return undefined
-  const claudeCode = (meta as { claudeCode?: unknown }).claudeCode
-  if (typeof claudeCode !== "object" || claudeCode === null) return undefined
-  const parentToolUseId = (claudeCode as { parentToolUseId?: unknown }).parentToolUseId
-  return typeof parentToolUseId === "string" ? parentToolUseId : undefined
-}
 
 type SessionModelState = {
   currentModelId: string
@@ -220,6 +207,10 @@ export class AgentSession {
   #historyMark: HistoryMark = { segmentCounts: new Map(), toolCallIds: [] }
   get historyMark(): HistoryMark {
     return this.#historyMark
+  }
+  readonly #historyState = new HistoryState()
+  get history(): HistoryState {
+    return this.#historyState
   }
   /** טקסט הפרומפט האחרון שנשלח על ידי המשתמש — משמש את ה-Speaker להקשר עבור קריינות. */
   lastUserMessage = $state("")
@@ -500,67 +491,20 @@ export class AgentSession {
    * רץ ברקע (אסינכרוני) ב-loop אינסופיני עד שה-stream נסגר.
    * כל batch patches: עדכון bubbles ביעד (applyPatchMutable) + סינכון metadata.
    */
+  ingestView = (): SessionView | null => this.#view
+  ingestOnSessionUpdate = (n: { update: unknown }): void =>
+    this.#onSessionUpdate(n as SessionNotification)
+  ingestSyncFromViewState = (s: SessionState): void => this.#syncFromViewState(s)
+  ingestNoteAgentActivity = (): void => this.#noteAgentActivity()
+  ingestSetHistoryMark = (m: HistoryMark): void => {
+    this.#historyMark = m
+  }
+  ingestApplyHistoryState = (s: NonNullable<ViewEmission["historyState"]>): void =>
+    this.#historyState.applyEmission(s)
+
   async #consumeViewPatches(view: SessionView): Promise<void> {
-    const reader = view.patches.getReader()
-    // ─── slice empty-session-sync ───
-    // סנכרון ראשוני מה-snapshot, **לפני** הלולאה.
-    // הסנכרון שבתוך הלולאה מותנה ב-patches, וסשן **חדש** הוא ריק: אין הודעות,
-    // ולכן אין reset patch, ולכן `continue` — ו-#syncFromViewState לא נקרא לעולם.
-    // התוצאה למשתמשת: אין מוד, אין מודל (configOptions), ואין כפתור תמונה
-    // (capabilities) — עד שנטענת היסטוריה שמייצרת patches.
-    // ⚠️ זה חייב לרוץ גם כש-view.state ריק — הוא נושא את המטא-דאטה בלי קשר
-    // למספר ההודעות.
-    this.#syncFromViewState(view.state)
-    let attachWindow = true
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        // ─── slice view-switch C3-א.6: כמת בזהות, לא בנוכחות ───
-        // אחרי attachRemote חדש (שקורא #cleanup על ה-view הישן), לולאת ה-drain של ה-view
-        // הישן עדיין יכולה למסור batch — guard שבודק רק this.#view !== null היה מעביר
-        // אותו אל ה-VM החדש. אותו כלל בדיוק כמו ב-shim (#syncPendingPermission/Elicitation).
-        if (this.#view !== view) break
-        const emission = readViewEmission(this, value)
-        if (!emission) continue
-        const patches = emission.patches
-
-        // 1. structural reset → bubbles (hydration / SSE-reconnect)
-        const resetPatches = patches.filter(
-          (p): p is Extract<Patch, { op: "reset" }> => p.op === "reset",
-        )
-        if (resetPatches.length > 0) {
-          applyPatchMutable(this.bubbles, resetPatches, { mapToolContent, mapLocations })
-          for (const patch of resetPatches) {
-            const next = applyPatch(this.sessionState, patch)
-            if (next) this.sessionState = next
-          }
-          if (attachWindow) {
-            attachWindow = false
-            const reset = resetPatches[0]
-            if (reset) {
-              this.#historyMark = historyMarkFromReset(reset.messages)
-              this.historyEpoch++
-            }
-          }
-        }
-
-        // The view has applied the patches to its state. The wire updates feed the chat bubbles.
-        for (const update of emission.updates) {
-          this.#onSessionUpdate({ update } as unknown as SessionNotification)
-        }
-
-        this.#syncFromViewState(view.state)
-      }
-    } catch {
-      // stream נסגר או בוטל — תקין
-    } finally {
-      try {
-        reader.releaseLock()
-      } catch {
-        /* */
-      }
-    }
+    bindHistory(this.#historyState, view)
+    await consumeViewPatches(historyIngestDepsFrom(this), view)
   }
 
   /**
@@ -1434,6 +1378,7 @@ export class AgentSession {
     this.#session.subagentToolCallParents = new Map()
     this.#sessionId = null
     this.agentId = null
+    this.#historyState.resetFields()
     if (!opts?.keepAgent && agentId) void deleteAgent(agentId).catch(() => {})
   }
 
