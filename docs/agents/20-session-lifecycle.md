@@ -63,6 +63,10 @@ Re-use an existing agent from **session_list** instead of spawning duplicates.
 
 HTTP mirrors the same lifecycle: `POST /api/agents` (create), agent-scoped routes under
 `/api/agents/:id/…`, `DELETE /api/agents/:id` (close).
+To subscribe an existing agent to the new agent's events, pass its UUID in
+`notifyOnDone` or `subscribeOnOpenAgentId` at creation. If you supply both,
+they must match. The server creates one subscription and honors
+`includeLastAssistantText`.
 
 ## MCP tool names
 
@@ -197,14 +201,19 @@ error. Each returns `{ "ok": true }`.
 
 Keys are trimmed; an empty key is rejected. Where the memory shows up:
 
-- in the agent's public record — `session_list`, `GET /api/agents/:id` (`userNotes`,
-  `sessionFields`) — and in `session_whoami`;
+- in `session_list` and `session_whoami` as `userNotes` and `sessionFields`, and in
+  their canonical equivalents as `agentNotes` and `agentFields`;
+- in `GET /api/agents` and `GET /api/agents/:id` under both names, with the same value
+  for each pair. Unset values are omitted. Empty notes and empty field maps are returned.
+  A single-record GET reflects a completed write. The list can serve a separate snapshot
+  for up to 1.5 seconds and sends `Cache-Control: no-store`;
 - in the UI: the note as the session memo, the fields in the side panel's **Fields** list;
 - in the agent's own surface prompt (hook, `GET /api/agent-prompt`, `session_surface`), as a
   `# Agent memory` section with `## Notes` and `## Fields` — so the agent reads it back.
 
-The user can edit the note from the UI too (`PATCH /api/agents/:id` accepts `userNotes`), so
-treat it as shared, not private to the agent.
+`PATCH /api/agents/:id` accepts `userNotes` or `agentNotes`. If both are present, they
+must match. An empty string clears the note. Omitting both leaves it alone. Fields are
+read-only over HTTP. The note is shared with the user, who can also edit it from the UI.
 
 ## Configure during lifecycle
 

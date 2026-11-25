@@ -1657,6 +1657,28 @@
           "roleLabel": {
             "type": "string"
           },
+          "subscribeOnOpenAgentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "a UUID",
+                "format": "uuid",
+                "pattern": "^[\\da-f]{8}-[\\da-f]{4}-[1-8][\\da-f]{3}-[89ab][\\da-f]{3}-[\\da-f]{12}$"
+              },
+              {
+                "const": "00000000-0000-0000-0000-000000000000",
+                "description": "a UUID",
+                "format": "uuid"
+              },
+              {
+                "const": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+                "description": "a UUID",
+                "format": "uuid"
+              }
+            ],
+            "description": "a UUID",
+            "format": "uuid"
+          },
           "systemPrompt": {
             "anyOf": [
               {
@@ -1676,6 +1698,9 @@
           "acpSessionId": {
             "type": "string",
             "minLength": 1
+          },
+          "agentNotes": {
+            "type": "string"
           },
           "cwd": {
             "type": "string",

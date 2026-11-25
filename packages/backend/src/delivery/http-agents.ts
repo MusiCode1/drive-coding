@@ -1,4 +1,4 @@
-import { type AgentRegistry, toAgentPublic } from "@drive-coding/core"
+import type { AgentRegistry } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import type { Hono } from "hono"
 import { isMaster, subtreeIds, verifyToken } from "../agent-scope.js"
@@ -7,8 +7,12 @@ import { closeAllAgents } from "../app/close-all-agents.js"
 import type { SessionHistoryStore } from "../history/session-history-store.js"
 import { readScopeToken, SCOPE_DENIED_BODY } from "../scope-write.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
+import {
+  type AgentListRuntime,
+  registerAgentPublicList,
+  toHttpAgentPublic,
+} from "./http-agent-public-list.js"
 import { registerAgentsPatchHttp } from "./http-agents-patch.js"
-import { httpCacheGet, httpCacheSet } from "./http-cache.js"
 import { CF_ACCESS_EMAIL_HEADER, readOpenedByEmail } from "./opened-by-email.js"
 
 const log = createLogger("backend.agents.http")
@@ -27,49 +31,11 @@ export function registerAgentsHttp(
     registry: AgentRegistry
     orchestrator: AgentOrchestrator
     sessionHistoryStore: SessionHistoryStore
-    // pid: number | null — in-process connections (claude) have no child process (CUT-3b-iii-2).
-    bridgeManager?: {
-      getRuntimeInfo(id: string): {
-        pid: number | null
-        attached: boolean
-        busy: boolean
-        lastMessageAt: number | null
-        lastSeenAt: number | null
-        via: "ws" | "http" | null
-      } | null
-      getConnectionCount(id: string): number
-    }
+    bridgeManager?: AgentListRuntime
     env: NodeJS.ProcessEnv
   },
 ): void {
-  // GET /api/agents — רשימה (מועשרת ב-pid+attached+via אם bridgeManager זמין)
-  // slice ownership-truth C3: מיפוי מפורש ומלא של 5 שדות — לא spread.
-  // spread היה מוחק שדות קיימים אם getRuntimeInfo לא היה מחזיר את כולם.
-  // slice liveness C2: מטמון קצר (1.5ש׳) + no-store נקודתי. המטמון מתבטל
-  // ב-markOwned/markDetached (connection-registry) — אחרת attached:true מעופש.
-  app.get("/api/agents", async (c) => {
-    c.header("Cache-Control", "no-store")
-    const cached = httpCacheGet("agents")
-    if (cached !== undefined) return c.json(cached)
-    const all = await deps.registry.list()
-    const body = {
-      agents: all.map((a) => {
-        const rt = deps.bridgeManager?.getRuntimeInfo(a.id)
-        return {
-          ...toAgentPublic(a),
-          pid: rt?.pid ?? null,
-          attached: rt?.attached ?? false,
-          busy: rt?.busy ?? false,
-          lastMessageAt: rt?.lastMessageAt ?? null,
-          lastSeenAt: rt?.lastSeenAt ?? null,
-          attachedVia: rt?.via,
-          connectionCount: deps.bridgeManager?.getConnectionCount(a.id) ?? 0,
-        }
-      }),
-    }
-    httpCacheSet("agents", body)
-    return c.json(body)
-  })
+  registerAgentPublicList(app, deps.registry, deps.bridgeManager)
 
   // POST /api/agents — יצירה דרך orchestrator
   app.post("/api/agents", async (c) => {
@@ -109,8 +75,8 @@ export function registerAgentsHttp(
   app.get("/api/agents/:id", async (c) => {
     const id = c.req.param("id")
     const agent = await deps.registry.get(id)
-    if (!agent) return c.json({ error: "agent not found" }, 404)
-    return c.json({ agent: toAgentPublic(agent) })
+    if (!agent) return c.json({ error: "agent not found", code: "agent_not_found" }, 404)
+    return c.json({ agent: toHttpAgentPublic(agent) })
   })
 
   /**
@@ -147,7 +113,7 @@ export function registerAgentsHttp(
   app.delete("/api/agents/:id", async (c) => {
     const id = c.req.param("id")
     const existing = await deps.registry.get(id)
-    if (!existing) return c.json({ error: "agent not found" }, 404)
+    if (!existing) return c.json({ error: "agent not found", code: "agent_not_found" }, 404)
 
     await deps.orchestrator.deleteAndKill(id)
     return c.body(null, 204)

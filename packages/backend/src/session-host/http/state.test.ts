@@ -57,13 +57,16 @@ function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
   const result: HostResult = host
     ? {
         ok: true,
-        entry: { host, broadcaster: {
-          subscribe: vi.fn(),
-          unsubscribe: vi.fn(),
-          close: vi.fn(),
-          // slice history-cursor C2: חבר חדש בחוזה PatchesBroadcaster.
-          oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
-        } },
+        entry: {
+          host,
+          broadcaster: {
+            subscribe: vi.fn(),
+            unsubscribe: vi.fn(),
+            close: vi.fn(),
+            // slice history-cursor C2: חבר חדש בחוזה PatchesBroadcaster.
+            oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
+          },
+        },
       }
     : { ok: false, reason: "not-found" }
   return {
@@ -98,6 +101,11 @@ describe("GET /api/agents/:id/state", () => {
 
       const res = await app.request("/api/agents/missing/state")
       expect(res.status).toBe(404)
+      expect(await res.json()).toEqual({
+        error: "Agent connection not found",
+        code: "agent_host_unavailable",
+      })
+      expect(registry.getOrCreateHost).not.toHaveBeenCalled()
     })
   })
 

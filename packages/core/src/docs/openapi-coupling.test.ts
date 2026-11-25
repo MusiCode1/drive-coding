@@ -3,6 +3,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { RPC_METHODS } from "../session/rpc-methods.js"
+import { DOCS_VERSION } from "./index.js"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, "../../../..")
@@ -40,6 +41,32 @@ describe("openapi and RPC doc coupling", () => {
     )
     // 42 since fix-session-url-hijack C1: GET /api/sessions/:cliKind/:sessionId
     expect(ops).toHaveLength(42)
+  })
+
+  it("publishes both input spellings for POST and PATCH under the docs version", () => {
+    const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8"))
+    const post = spec.paths["/api/agents"].post
+    const patch = spec.paths["/api/agents/:id"].patch
+    expect(spec.info.version).toBe(DOCS_VERSION)
+    expect(post.operationId).toBe("post_api_agents")
+    expect(patch.operationId).toBe("patch_api_agents_id")
+    expect(post.requestBody.content["application/json"].schema.$ref).toBe(
+      "#/components/schemas/CreateAgentInputFull",
+    )
+    expect(patch.requestBody.content["application/json"].schema.$ref).toBe(
+      "#/components/schemas/PatchAgentInput",
+    )
+    expect(Object.keys(post.responses).sort()).toEqual(["201", "400", "500"])
+    expect(Object.keys(patch.responses)).toEqual(["200"])
+    const create = spec.components.schemas.CreateAgentInputFull
+    expect(create.properties.notifyOnDone).toMatchObject({ format: "uuid" })
+    expect(create.properties.subscribeOnOpenAgentId).toEqual(create.properties.notifyOnDone)
+    expect(create.required).not.toContain("subscribeOnOpenAgentId")
+    const notes = spec.components.schemas.PatchAgentInput
+    expect(notes.additionalProperties).toBe(false)
+    expect(notes.properties.userNotes).toEqual({ type: "string" })
+    expect(notes.properties.agentNotes).toEqual(notes.properties.userNotes)
+    expect(notes.properties).not.toHaveProperty("agentFields")
   })
 
   it("keeps both MCP vocabularies and the two single-name tools", () => {

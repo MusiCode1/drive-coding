@@ -12,6 +12,7 @@ export const PatchAgentInput = type({
   "title?": "string | null",
   "titleManual?": "boolean",
   "userNotes?": "string",
+  "agentNotes?": "string",
   "persistent?": "boolean",
   "acpSessionId?": "string >= 1",
   "status?": "'ready'",
@@ -37,6 +38,11 @@ export function registerAgentsPatchHttp(app: Hono, deps: AgentsPatchDeps): void 
     if (parsed instanceof type.errors) {
       return c.json({ error: parsed.summary }, 400)
     }
+    const { userNotes, agentNotes } = parsed
+    if (userNotes !== undefined && agentNotes !== undefined && userNotes !== agentNotes) {
+      return c.json({ error: "userNotes and agentNotes must match" }, 400)
+    }
+    const notes = userNotes ?? agentNotes
 
     if (
       (parsed.status !== undefined || parsed.cwd !== undefined) &&
@@ -56,7 +62,7 @@ export function registerAgentsPatchHttp(app: Hono, deps: AgentsPatchDeps): void 
     }
 
     const agent = await deps.registry.get(id)
-    if (!agent) return c.json({ error: "agent not found" }, 404)
+    if (!agent) return c.json({ error: "agent not found", code: "agent_not_found" }, 404)
 
     if (
       parsed.replace !== true &&
@@ -76,7 +82,7 @@ export function registerAgentsPatchHttp(app: Hono, deps: AgentsPatchDeps): void 
     > = {}
     if (parsed.title !== undefined) patch.title = parsed.title
     if (parsed.titleManual !== undefined) patch.titleManual = parsed.titleManual
-    if (parsed.userNotes !== undefined) patch.userNotes = parsed.userNotes
+    if (notes !== undefined) patch.userNotes = notes
     if (parsed.persistent !== undefined) patch.persistent = parsed.persistent
     if (parsed.status !== undefined) patch.status = parsed.status
     if (parsed.acpSessionId !== undefined) patch.acpSessionId = parsed.acpSessionId

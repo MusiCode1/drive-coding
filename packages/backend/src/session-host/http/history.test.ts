@@ -155,7 +155,10 @@ describe("GET /api/agents/:id/history", () => {
       const res = await makeApp(registry).request("/api/agents/missing/history")
 
       expect(res.status).toBe(404)
-      expect(await res.json()).toEqual({ error: "Agent connection not found" })
+      expect(await res.json()).toEqual({
+        error: "Agent connection not found",
+        code: "agent_host_unavailable",
+      })
     })
   })
 

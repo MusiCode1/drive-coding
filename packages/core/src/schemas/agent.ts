@@ -239,6 +239,8 @@ export const AgentPublic = type({
   "userNotes?": "string",
   // slice session-memory: agent-written key→value map (MCP only; read-only in UI).
   "sessionFields?": { "[string]": "string" },
+  "agentNotes?": "string",
+  "agentFields?": { "[string]": "string" },
 })
 export type AgentPublic = typeof AgentPublic.infer
 

@@ -13,11 +13,15 @@ import { AGENT_ID_HEADER } from "../src/agent-identity.js"
 import { createInMemoryAgentRegistry } from "../src/agents/registry"
 import type { AgentOrchestrator, CreateAndSpawnResult } from "../src/app/agent-orchestrator"
 import { closeAllAgents } from "../src/app/close-all-agents.js"
+import { registerAgentEventsHttp } from "../src/delivery/agent-events-http.js"
+import { wrapOrchestratorWithAgentEvents } from "../src/delivery/agent-events-orchestrator.js"
 import { registerAgentsHttp } from "../src/delivery/http-agents"
 // slice liveness C2: ה-http-cache הוא module-level — מנקים בין טסטים כדי שלא ידלוף.
 import { httpCacheInvalidateAll } from "../src/delivery/http-cache"
 import { CF_ACCESS_EMAIL_HEADER } from "../src/delivery/opened-by-email.js"
 import type { SessionHistoryStore } from "../src/history/session-history-store.js"
+import { createAgentEventBus } from "../src/session-host/agent-events.js"
+import type { AgentSessionRegistry } from "../src/session-host/registry.js"
 
 beforeEach(() => {
   httpCacheInvalidateAll()
@@ -42,6 +46,7 @@ function makeFakeSessionHistoryStore(): SessionHistoryStore {
 function makeApp(opts?: {
   sessionHistoryStore?: ReturnType<typeof makeFakeSessionHistoryStore>
   sidecar?: string
+  eventBus?: ReturnType<typeof createAgentEventBus>
 }) {
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
@@ -80,14 +85,49 @@ function makeApp(opts?: {
   const sessionHistoryStore = opts?.sessionHistoryStore ?? makeFakeSessionHistoryStore()
   registerAgentsHttp(app, {
     registry,
-    orchestrator,
+    orchestrator: opts?.eventBus
+      ? wrapOrchestratorWithAgentEvents(orchestrator, opts.eventBus)
+      : orchestrator,
     sessionHistoryStore,
     env: { ...process.env, AGENT_SIDECAR: opts?.sidecar },
   })
+  if (opts?.eventBus) {
+    registerAgentEventsHttp(app, {
+      registry,
+      eventBus: opts.eventBus,
+      agentSessionRegistry: { getHost: vi.fn() } as unknown as AgentSessionRegistry,
+    })
+  }
   return { app, registry, orchestrator, sessionHistoryStore }
 }
 
+function jsonRequest(app: Hono, path: string, method: string, body: unknown) {
+  return app.request(path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+}
+
 describe("HTTP /api/agents", () => {
+  it.each([
+    ["GET", "", undefined],
+    ["PATCH", "", { agentNotes: "updated" }],
+    ["DELETE", "", undefined],
+    ["POST", "/subscribe", {}],
+  ])("adds the missing record code to %s %s", async (method, suffix, body) => {
+    const eventBus = createAgentEventBus()
+    const { app, registry, orchestrator } = makeApp({ eventBus })
+    const update = vi.spyOn(registry, "update")
+    const remove = vi.spyOn(orchestrator, "deleteAndKill")
+    const subscribe = vi.spyOn(eventBus, "subscribe")
+    const response = await jsonRequest(app, `/api/agents/missing${suffix}`, method, body)
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({ error: "agent not found", code: "agent_not_found" })
+    expect(update).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    expect(subscribe).not.toHaveBeenCalled()
+  })
   describe("GET /api/agents", () => {
     it("returns empty list", async () => {
       const { app } = makeApp()
@@ -120,6 +160,82 @@ describe("HTTP /api/agents", () => {
   })
 
   describe("POST /api/agents", () => {
+    it.each(["legacy", "canonical", "both"] as const)(
+      "normalizes %s subscribe input once",
+      async (form) => {
+        const eventBus = createAgentEventBus()
+        const { app, registry, orchestrator } = makeApp({ eventBus })
+        const parent = await registry.create({ cliKind: "opencode", cwd: "/parent" })
+        const create = vi.spyOn(orchestrator, "createAndSpawn")
+        const subscribe = vi.spyOn(eventBus, "subscribe")
+        const response = await app.request("/api/agents", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            [CF_ACCESS_EMAIL_HEADER]: "test@example.com",
+          },
+          body: JSON.stringify({
+            cliKind: "opencode",
+            cwd: "/child",
+            parentAgentId: parent.id,
+            includeLastAssistantText: true,
+            ...(form !== "canonical" && { notifyOnDone: parent.id }),
+            ...(form !== "legacy" && { subscribeOnOpenAgentId: parent.id }),
+          }),
+        })
+        const result = await response.json()
+        expect(response.status).toBe(201)
+        expect(result).toEqual({
+          agentId: expect.any(String),
+          cwd: "/child",
+          cliKind: "opencode",
+          wsUrl: "ws://127.0.0.1:7100/",
+          bridgePort: 7100,
+          status: "spawning",
+        })
+        expect(create).toHaveBeenCalledExactlyOnceWith({
+          cliKind: "opencode",
+          cwd: "/child",
+          parentAgentId: parent.id,
+          openedByEmail: "test@example.com",
+          notifyOnDone: parent.id,
+          includeLastAssistantText: true,
+        })
+        expect(subscribe).toHaveBeenCalledExactlyOnceWith(result.agentId, parent.id, {
+          includeLastAssistantText: true,
+        })
+      },
+    )
+
+    it.each([
+      [
+        "00000000-0000-4000-8000-000000000001",
+        "00000000-0000-4000-8000-000000000002",
+        /must match/,
+      ],
+      ["invalid", "invalid", /uuid/i],
+      ["00000000-0000-4000-8000-000000000001", "invalid", /subscribeOnOpenAgentId/],
+      ["invalid", "00000000-0000-4000-8000-000000000001", /notifyOnDone/],
+    ])(
+      "rejects subscription pair (%s, %s) before create or subscribe",
+      async (notifyOnDone, subscribeOnOpenAgentId, error) => {
+        const eventBus = createAgentEventBus()
+        const { app, registry, orchestrator } = makeApp({ eventBus })
+        const create = vi.spyOn(orchestrator, "createAndSpawn")
+        const subscribe = vi.spyOn(eventBus, "subscribe")
+        const res = await jsonRequest(app, "/api/agents", "POST", {
+          cliKind: "opencode",
+          cwd: "/child",
+          notifyOnDone,
+          subscribeOnOpenAgentId,
+        })
+        expect(res.status).toBe(400)
+        expect((await res.json()).error).toMatch(error)
+        expect(create).not.toHaveBeenCalled()
+        expect(subscribe).not.toHaveBeenCalled()
+        expect(await registry.list()).toEqual([])
+      },
+    )
     it.each([
       { name: "parent field only", hasParent: true, hasHeader: false, env: undefined },
       { name: "independent env", hasParent: true, hasHeader: false, env: { DC_PARENT: "legacy" } },
@@ -674,6 +790,128 @@ describe("HTTP /api/agents", () => {
 
   // slice session-title-in-process-list: PATCH /api/agents/:id (generic, whitelist: title)
   describe("PATCH /api/agents/:id", () => {
+    it.each([
+      [{ userNotes: "updated" }, "updated"],
+      [{ agentNotes: "updated" }, "updated"],
+      [{ userNotes: "", agentNotes: "" }, ""],
+      [{ agentNotes: "" }, ""],
+      [{}, undefined],
+    ] as const)("normalizes note input %j into one stored value", async (json, value) => {
+      const { app, registry } = makeApp()
+      const { id } = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      await registry.update(id, { userNotes: "prior", sessionFields: {} })
+      const update = vi.spyOn(registry, "update")
+      const path = `/api/agents/${id}`
+      const res = await jsonRequest(app, path, "PATCH", json)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ ok: true })
+      if (value === undefined) {
+        expect(update).not.toHaveBeenCalled()
+      } else {
+        expect(update).toHaveBeenCalledExactlyOnceWith(id, { userNotes: value })
+      }
+      const { agent } = await (await app.request(path)).json()
+      expect(agent).toMatchObject({
+        id,
+        userNotes: value ?? "prior",
+        agentNotes: value ?? "prior",
+        sessionFields: {},
+        agentFields: {},
+      })
+      expect(await registry.get(id)).not.toHaveProperty("agentNotes")
+    })
+
+    it.each([
+      { userNotes: "prior", agentNotes: "" },
+      { userNotes: "prior", agentNotes: null },
+      { agentNotes: "updated", agentFields: {} },
+    ])("rejects %j before update or history attach", async (notes) => {
+      const { app, registry, sessionHistoryStore } = makeApp()
+      const { id } = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      const update = vi.spyOn(registry, "update")
+      const res = await jsonRequest(app, `/api/agents/${id}`, "PATCH", {
+        ...notes,
+        acpSessionId: "other",
+        title: "changed",
+      })
+      expect(res.status).toBe(400)
+      expect(update).not.toHaveBeenCalled()
+      expect(sessionHistoryStore.recordAttach).not.toHaveBeenCalled()
+    })
+
+    it("preserves stored metadata on ACP replacement and keeps list aliases consistent through TTL", async () => {
+      const { app, registry, sessionHistoryStore } = makeApp()
+      const { id } = await registry.create({ cliKind: "opencode", cwd: "/x" })
+      const path = `/api/agents/${id}`
+      const before = await (await app.request(path)).json()
+      for (const key of ["agentNotes", "userNotes", "agentFields", "sessionFields"]) {
+        expect(before.agent).not.toHaveProperty(key)
+      }
+      const fields = { project: "fixture" }
+      await registry.update(id, {
+        userNotes: "prior",
+        sessionFields: fields,
+        status: "ready",
+        acpSessionId: "old",
+      })
+      const now = vi.spyOn(Date, "now")
+      const start = Date.now()
+      now.mockReturnValue(start)
+      try {
+        const first = await app.request("/api/agents")
+        const cached = await first.json()
+        expect(first.headers.get("Cache-Control")).toBe("no-store")
+        expect(cached.agents[0]).toMatchObject({
+          id,
+          userNotes: "prior",
+          agentNotes: "prior",
+          sessionFields: fields,
+          agentFields: fields,
+        })
+
+        const update = vi.spyOn(registry, "update")
+        const rejected = await jsonRequest(app, path, "PATCH", { acpSessionId: "new" })
+        expect(rejected.status).toBe(409)
+        expect(update).not.toHaveBeenCalled()
+        expect(sessionHistoryStore.recordAttach).not.toHaveBeenCalled()
+
+        const replaced = await jsonRequest(app, path, "PATCH", {
+          replace: true,
+          acpSessionId: "new",
+        })
+        expect(replaced.status).toBe(200)
+        expect(update).toHaveBeenCalledExactlyOnceWith(id, { acpSessionId: "new" })
+        expect(sessionHistoryStore.recordAttach).toHaveBeenCalledOnce()
+        const { agent } = await (await app.request(path)).json()
+        expect(agent).toMatchObject({
+          id,
+          acpSessionId: "new",
+          userNotes: "prior",
+          agentNotes: "prior",
+          sessionFields: fields,
+          agentFields: fields,
+        })
+        const written = await jsonRequest(app, path, "PATCH", { agentNotes: "" })
+        expect(written.status).toBe(200)
+        now.mockReturnValue(start + 1500)
+        const hit = await app.request("/api/agents")
+        expect(hit.headers.get("Cache-Control")).toBe("no-store")
+        expect(await hit.json()).toEqual(cached)
+        now.mockReturnValue(start + 1501)
+        const fresh = await app.request("/api/agents")
+        expect(fresh.headers.get("Cache-Control")).toBe("no-store")
+        expect((await fresh.json()).agents[0]).toMatchObject({
+          id,
+          acpSessionId: "new",
+          userNotes: "",
+          agentNotes: "",
+          sessionFields: fields,
+          agentFields: fields,
+        })
+      } finally {
+        now.mockRestore()
+      }
+    })
     it("sets titleManual + title → GET reflects both (slice session-title-manual C0)", async () => {
       const { app, registry } = makeApp()
       const agent = await registry.create({ cliKind: "opencode", cwd: "/x" })

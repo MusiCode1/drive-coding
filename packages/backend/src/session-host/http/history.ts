@@ -58,7 +58,7 @@ export function registerHistoryRoute(app: Hono, registry: AgentSessionRegistry):
 
     const host = registry.getHost(agentId)
     if (!host) {
-      return c.json({ error: "Agent connection not found" }, 404)
+      return c.json({ error: "Agent connection not found", code: "agent_host_unavailable" }, 404)
     }
 
     const parsed = parseHistoryQuery((key) => c.req.query(key))

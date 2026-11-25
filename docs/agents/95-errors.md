@@ -48,7 +48,7 @@ event remains reserved for protocol compatibility. This server never emits it.
 
 | Route | 404 | 400 |
 |---|---|---|
-| **GET …/history** | No host — `{ error: "Agent connection not found" }` | Bad **`fromMessage`**; unknown **`before`** seq; empty **`before=`** or **`tail=`**; **`maxBytes`** without `tail`/`before` or invalid; `tail` + `before` / `fromMessage` conflicts |
+| **GET …/history** | No host — `{ error: "Agent connection not found", code: "agent_host_unavailable" }` | Bad **`fromMessage`**; unknown **`before`** seq; empty **`before=`** or **`tail=`**; **`maxBytes`** without `tail`/`before` or invalid; `tail` + `before` / `fromMessage` conflicts |
 | **GET …/state** | Same 404 body | — |
 | **GET …/events?snapshot=** | No host — **404 after** a valid `snapshot` passes parsing | Invalid `snapshot` (not `full` or `meta`); empty/missing ⇒ `full` |
 
@@ -58,9 +58,10 @@ event remains reserved for protocol compatibility. This server never emits it.
 
 | Call | Typical errors |
 |---|---|
-| **POST /api/agents** | **400** invalid body; **500** spawn failure message |
-| **DELETE /api/agents/:id** | **404** unknown id |
-| **PATCH /api/agents/:id** | **400** schema/undeclared keys; **409** connection tuple conflicts |
+| **POST /api/agents** | **400** invalid body or mismatched subscription aliases. **500** spawn failure message. |
+| **GET /api/agents/:id**, **DELETE /api/agents/:id**, **POST /api/agents/:id/subscribe** | **404** with `agent_not_found` if the target record is missing. |
+| **PATCH /api/agents/:id** | **400** invalid body, undeclared keys or mismatched note aliases. **404** with `agent_not_found` if the record is missing. **409** connection tuple conflict. |
+| **GET /api/sessions/:cliKind/:sessionId** | **404** with `acp_session_not_found` if the session is absent from the index. |
 
 ## MCP scope and limits
 
