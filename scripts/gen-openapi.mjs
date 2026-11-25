@@ -409,6 +409,25 @@ const SPECIAL = {
       404: jsonErrorResponse("Recording not found"),
     },
   },
+  "delete /api/recordings/:id": {
+    parameters: [
+      { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+      {
+        name: "X-Drive-Coding-Scope",
+        in: "header",
+        required: false,
+        description:
+          "The operator may omit the header, send a blank value, or send the master key.",
+        schema: { type: "string" },
+      },
+    ],
+    responses: {
+      ...noContentResponse("Recording deleted or already absent"),
+      400: jsonErrorResponse("Invalid recording UUID"),
+      403: jsonErrorResponse("Recording deletion requires operator scope"),
+      500: jsonErrorResponse("Could not delete recording"),
+    },
+  },
   "get /api/cli-logo/:cliId": {
     responses: {
       200: {
@@ -547,7 +566,7 @@ if (!docsVersion) {
 }
 
 const { paths, count } = buildPaths()
-const expectedOperationCount = 43
+const expectedOperationCount = 44
 if (count !== expectedOperationCount) {
   console.error(`🔴 expected ${expectedOperationCount} documentable operations, got ${count}`)
   process.exit(1)

@@ -3,6 +3,7 @@
  *
  *   GET  /api/projects   — רשימת פרויקטים מוכרים (מה-registry)
  *   GET  /api/recordings/:id  — מגיש בתי אודיו גולמיים
+ *   DELETE /api/recordings/:id — מוחק הקלטה
  *   POST /api/recordings      — מעלה ושומר אודיו
  *   GET  /api/fs/browse?path= — רשימת ספריות (מאובטח)
  *
@@ -15,10 +16,15 @@
 
 import { readdir, realpath } from "node:fs/promises"
 import { join, relative, resolve } from "node:path"
+import { createLogger } from "@drive-coding/core/log"
 import type { Hono } from "hono"
-import type { RecordingsStore } from "../app/recordings-store.js"
+import { isMaster } from "../agent-scope.js"
+import { RecordingId, type RecordingsStore } from "../app/recordings-store.js"
 import type { SessionHistoryStore } from "../history/session-history-store.js"
+import { readScopeToken } from "../scope-write.js"
 import { registerProjectDeleteRoute, registerProjectsListRoute } from "./http-projects-api.js"
+
+const log = createLogger("backend.recordings")
 
 // ─── /api/projects ────────────────────────────────────────────────────────────
 
@@ -50,6 +56,23 @@ export function registerRecordingsHttp(
       status: 200,
       headers: { "Content-Type": recording.mimeType },
     })
+  })
+
+  app.delete("/api/recordings/:id", (c) => {
+    const token = readScopeToken((name) => c.req.header(name))
+    if (token && !isMaster(token)) {
+      return c.json({ error: "recording deletion requires operator scope" }, 403)
+    }
+    const id = c.req.param("id")
+    if (!RecordingId.allows(id)) return c.json({ error: "invalid recording id" }, 400)
+
+    return deps.recordingsStore.delete(id).then(
+      () => c.body(null, 204),
+      (err: unknown) => {
+        log.error({ err, id }, "recording deletion failed")
+        return c.json({ error: "could not delete recording" }, 500)
+      },
+    )
   })
 }
 

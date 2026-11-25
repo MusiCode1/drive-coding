@@ -44,7 +44,7 @@ describe("agent-api gate helpers", () => {
     const keys = documentableRouteKeys(REPO_ROOT)
     expect(keys.has("get /api/health")).toBe(true)
     expect(keys.has("get /*")).toBe(false)
-    // 43 since complement-gaps-contract C1: DELETE /api/agents/:id/subscribe
-    expect(keys.size).toBe(43)
+    // 44 after adding DELETE /api/recordings/:id
+    expect(keys.size).toBe(44)
   })
 })

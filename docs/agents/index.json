@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.15.0",
+  "docsVersion": "1.16.0",
   "docs": [
     {
       "id": "orientation",
@@ -337,16 +337,16 @@
     {
       "id": "files",
       "title": "Files, projects, and recordings",
-      "summary": "Browse local paths, serve file bytes to the browser, and store short audio recordings.",
+      "summary": "Browse local paths, serve file bytes to the browser, and manage short audio recordings.",
       "read_when": [
         "You need a clickable file:// link the user can open in the chat UI",
         "You want to list project roots or browse a directory through the backend",
-        "You are uploading or fetching a voice recording id for playback"
+        "You are uploading, fetching, or deleting a voice recording"
       ],
       "tags": ["files", "output"],
       "surface": ["http"],
       "stability": "stable",
-      "docs_version": "1.2.1",
+      "docs_version": "1.16.0",
       "routes": [
         "GET /api/fs/browse",
         "GET /api/fs/file",
@@ -354,6 +354,7 @@
         "DELETE /api/projects",
         "GET /api/sessions/:cliKind/:sessionId",
         "GET /api/recordings/:id",
+        "DELETE /api/recordings/:id",
         "POST /api/recordings"
       ],
       "mcp_tools": [],
@@ -365,7 +366,8 @@
         "GET /api/fs/browse",
         "Projects",
         "Session lookup (history)",
-        "Recordings"
+        "Recordings",
+        "DELETE /api/recordings/:id"
       ]
     },
     {

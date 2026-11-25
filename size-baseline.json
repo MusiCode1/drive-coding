@@ -56,10 +56,10 @@
       "codeLines": 182
     },
     "packages/backend/src/app/recordings-store.ts": {
-      "metric": 130,
-      "impurity": 17,
+      "metric": 105,
+      "impurity": 13,
       "class": "mixed",
-      "codeLines": 93
+      "codeLines": 75
     },
     "packages/backend/src/app-version.ts": {
       "metric": 35,

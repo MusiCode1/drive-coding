@@ -13,7 +13,7 @@ Agent-facing documentation for drive-coding HTTP, MCP, and session lifecycle.
 - [Agent identity and scoped writes](docs/agents/60-identity-and-scopes.md): Agent identity, environment passed to tools, and scope tokens for writes.
 - [Subagents — spawn, parent identity, notify_parent](docs/agents/70-subagents.md): Open child agents, detect when you are a child, report to the parent, and what closing does not do.
 - [CLI providers — registry and availability](docs/agents/80-providers.md): Which CLI kinds exist, how overrides merge, and how to detect installed binaries on this host.
-- [Files, projects, and recordings](docs/agents/90-files-and-media.md): Browse local paths, serve file bytes to the browser, and store short audio recordings.
+- [Files, projects, and recordings](docs/agents/90-files-and-media.md): Browse local paths, serve file bytes to the browser, and manage short audio recordings.
 - [Voice — TTS capabilities, live token, upstream proxies](docs/agents/91-voice.md): Discover TTS engines on this backend, mint Gemini live tokens, and use BE-proxied provider keys.
 - [Diagnostics, usage, options, and config reload](docs/agents/92-diagnostics.md): Health vs diag, usage counters, client log ingest, hot config reload, and static options.
 - [Errors — HTTP status codes and what they mean](docs/agents/95-errors.md): How to interpret drive-coding HTTP and MCP failures without guessing whether work started or an agent still exists.

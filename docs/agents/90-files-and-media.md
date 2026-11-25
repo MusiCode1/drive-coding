@@ -1,11 +1,11 @@
 ---
 id: files
 title: Files, projects, and recordings
-summary: Browse local paths, serve file bytes to the browser, and store short audio recordings.
+summary: Browse local paths, serve file bytes to the browser, and manage short audio recordings.
 read_when:
   - You need a clickable file:// link the user can open in the chat UI
   - You want to list project roots or browse a directory through the backend
-  - You are uploading or fetching a voice recording id for playback
+  - You are uploading, fetching, or deleting a voice recording
 tags: [files, output]
 surface: [http]
 stability: stable
@@ -16,9 +16,10 @@ routes:
   - DELETE /api/projects
   - GET /api/sessions/:cliKind/:sessionId
   - GET /api/recordings/:id
+  - DELETE /api/recordings/:id
   - POST /api/recordings
-docs_version: 1.2.1
-updated: 2026-11-21
+docs_version: 1.16.0
+updated: 2026-11-26
 ---
 
 # Files, projects, and recordings
@@ -85,3 +86,20 @@ Resolves a session’s working directory from the SQLite history store — used 
 | `GET /api/recordings/:id` | `200` | Audio bytes | `http-history.ts:62-64` |
 | `POST /api/recordings` | `400` | Invalid JSON / missing fields / bad base64 | `http-history.ts:88-104` |
 | `POST /api/recordings` | `201` | `{ id }` | `http-history.ts:108` |
+
+### DELETE /api/recordings/:id
+
+Use the recording UUID from the upload response. This operator action takes no
+request body. Omit `X-Drive-Coding-Scope`, send an empty or whitespace-only
+value, or send the configured master key. A scoped token or any other non-empty
+token is denied before the backend accesses the recordings store.
+
+| Status | When |
+|--------|------|
+| `204` | Audio and its index entry were removed, or the recording was already absent. Repeating the request is safe. |
+| `400` | The id is not a valid UUID. |
+| `403` | The token does not qualify for operator access. |
+| `500` | The recordings store failed. The response contains a general error and the backend logs the cause. |
+
+The message and transcript remain available after deletion. An existing audio
+link returns `404` when the player requests the recording.

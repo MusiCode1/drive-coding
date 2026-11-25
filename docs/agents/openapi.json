@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.15.0",
+    "version": "1.16.0",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
@@ -1060,6 +1060,65 @@
           },
           "404": {
             "description": "Recording not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_recordings_id",
+        "summary": "DELETE /api/recordings/:id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Drive-Coding-Scope",
+            "in": "header",
+            "required": false,
+            "description": "The operator may omit the header, send a blank value, or send the master key.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Recording deleted or already absent"
+          },
+          "400": {
+            "description": "Invalid recording UUID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Recording deletion requires operator scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not delete recording",
             "content": {
               "application/json": {
                 "schema": {

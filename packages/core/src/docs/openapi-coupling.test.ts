@@ -31,14 +31,14 @@ describe("openapi and RPC doc coupling", () => {
     expect(mentioned).toHaveLength(10)
   })
 
-  it("openapi.json carries 43 HTTP operations", () => {
+  it("openapi.json carries 44 HTTP operations", () => {
     const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8")) as {
       paths?: Record<string, Record<string, unknown>>
     }
     const ops = Object.values(spec.paths ?? {}).flatMap((item) =>
       Object.keys(item).filter((k) => !k.startsWith("x-") && k !== "parameters"),
     )
-    expect(ops).toHaveLength(43)
+    expect(ops).toHaveLength(44)
   })
 
   it("McpToolName union includes both agent-event tools and notify_parent", () => {
@@ -76,6 +76,22 @@ describe("openapi and RPC doc coupling", () => {
       properties: { subscriberAgentId: { format: "uuid" } },
     })
     expect(Object.keys(component.properties)).toEqual(["subscriberAgentId"])
+  })
+
+  it("DELETE recording uses the existing id path, has no request body, and documents the outcomes", () => {
+    const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8"))
+    const recording = spec.paths["/api/recordings/:id"]
+    expect(recording?.get?.parameters).toContainEqual(expect.objectContaining({ name: "id" }))
+    const deletion = recording?.delete
+    expect(deletion?.parameters).toContainEqual({
+      name: "id",
+      in: "path",
+      required: true,
+      schema: { type: "string", format: "uuid" },
+    })
+    expect(deletion?.requestBody).toBeUndefined()
+    expect(Object.keys(deletion?.responses ?? {}).sort()).toEqual(["204", "400", "403", "500"])
+    expect(deletion?.responses?.["204"]?.content).toBeUndefined()
   })
 
   it("openapi.json status codes match agent docs HTTP handlers", () => {
