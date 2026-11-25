@@ -45,6 +45,7 @@ import {
   snapshotPayload,
 } from "@drive-coding/core/session"
 import type { Hono } from "hono"
+import { compress } from "hono/compress"
 import { parseHistoryQuery } from "../channel/history-query.js"
 import type { AgentSessionRegistry } from "../registry.js"
 
@@ -52,7 +53,7 @@ import type { AgentSessionRegistry } from "../registry.js"
  * registerHistoryRoute — registers GET /api/agents/:id/history on the Hono app.
  */
 export function registerHistoryRoute(app: Hono, registry: AgentSessionRegistry): void {
-  app.get("/api/agents/:id/history", (c) => {
+  app.get("/api/agents/:id/history", compress(), (c) => {
     const agentId = c.req.param("id")
 
     const host = registry.getHost(agentId)

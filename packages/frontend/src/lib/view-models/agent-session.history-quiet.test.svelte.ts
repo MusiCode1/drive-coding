@@ -8,8 +8,10 @@
 
 import {
   createInitialSessionState,
+  messageWireByteSize,
   type Patch,
   type SessionState,
+  selectRange,
   serializeFrame,
 } from "@drive-coding/core/session"
 import { type IntentFrame, toWireFrames } from "@drive-coding/core/session/testing"
@@ -26,6 +28,11 @@ import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import type { AudioSink } from "$lib/engines/audio-sink"
 import { createRemoteSessionView } from "$lib/session/create-session-view.js"
 import type { RemoteSessionView } from "$lib/session/remote-session-view.js"
+import {
+  historyTailResponse,
+  metaSnapshotFrame,
+  withHistoryTail,
+} from "./__fixtures__/meta-history-fetch"
 import { AgentSession } from "./agent-session.svelte.js"
 import { Settings } from "./settings.svelte"
 import { Speaker } from "./speaker.svelte"
@@ -227,6 +234,15 @@ const activeViews: RemoteSessionView[] = []
 async function flushEffects(rounds = 8): Promise<void> {
   for (let i = 0; i < rounds; i++) await tick()
   await new Promise<void>((r) => setTimeout(r, 0))
+}
+
+function wrapMetaFetch(
+  fullState: SessionState,
+  frameSets: IntentFrame[][],
+  opts?: { keepOpenLast?: boolean },
+): (url: string, init?: RequestInit) => Promise<Response> {
+  const base = makeMockFetch(frameSets, opts)
+  return withHistoryTail("http://be.local", fullState, base, { history: "omit" })
 }
 
 function createQuietHarness(
@@ -460,5 +476,69 @@ describe("replay-quiet harness", () => {
     }
     expect(harness.enqueueCount()).toBe(RECONNECT_ENQUEUE_BASELINE)
     harness.destroy()
+  })
+})
+
+describe("replay-quiet meta path", () => {
+  it("meta א — tail from /history must not enqueue", async () => {
+    const fullState = makeSnapshot({
+      version: 505,
+      messages: [historicalMessage()],
+      turnState: "idle",
+      nextMessageSeq: 1,
+      nextSegmentSeq: 8,
+    })
+    const opening = metaSnapshotFrame(fullState)
+    const mockFetch = wrapMetaFetch(fullState, [
+      [{ event: "snapshot", data: opening.data as string }],
+    ])
+    const harness = createQuietHarness([], mockFetch)
+
+    await harness.view.connect()
+    await flushEffects(16)
+
+    expect(harness.enqueueCount()).toBe(0)
+    harness.destroy()
+  })
+
+  it("meta ד — second meta attach does not re-enqueue tail", async () => {
+    const fullState = makeSnapshot({
+      version: 505,
+      messages: [historicalMessage()],
+      turnState: "idle",
+    })
+    const opening = metaSnapshotFrame(fullState)
+    const frame = [{ event: "snapshot", data: opening.data as string }]
+    const mockFetch = () => wrapMetaFetch(fullState, [frame])
+
+    const harness1 = createQuietHarness([], mockFetch())
+    await harness1.view.connect()
+    await flushEffects(16)
+    harness1.destroy()
+
+    const harness2 = createQuietHarness([], mockFetch())
+    await harness2.view.connect()
+    await flushEffects(16)
+    expect(harness2.enqueueCount()).toBe(0)
+    harness2.destroy()
+  })
+
+  it("meta — oversized session tail marks hasMore (HistoryEdge signal)", () => {
+    const fullState = makeSnapshot({
+      version: 20,
+      messages: Array.from({ length: 48 }, (_, i) => ({
+        id: `m_${i}`,
+        role: "assistant" as const,
+        messageId: `p-${i}`,
+        segments: [{ id: `s_${i}`, text: "x".repeat(8_000) }],
+      })),
+      turnState: "idle",
+      nextMessageSeq: 48,
+      nextSegmentSeq: 48,
+    })
+    const sized = selectRange(fullState, { tail: true, maxBytes: 262_144 }, messageWireByteSize)
+    expect(sized.ok && sized.page?.hasMore).toBe(true)
+    const tail = historyTailResponse(fullState)
+    expect(tail.page?.hasMore).toBe(true)
   })
 })

@@ -1,3 +1,30 @@
+## 2026-11-25 06:12 — slice `fast-session-open-1` C6 (אליעזר)
+
+ענף: `slice/fast-session-open-1` @ base `1b323d96`. worktree: `.worktrees/fast-session-open-1`.
+
+**C6 — אימות חי / TTFP / פריוויו**
+
+- BE preview: tmux `dc-fso1-preview`, `DC_DEPLOYMENT=fso1-preview`, `PORT=4033`, `FE_STATIC_DIR=packages/frontend/build` (נבדק ב-`/proc/<pid>/environ`). `GET /api/agents` על הפריוויו — 0 סוכנים מ-main.
+- סשן מדידה: agent `cf18acfd…` (cursor sidecar על הפריוויו), `session/load` של `741504c9…` → `/history` ~11.2MB (חריגה מול DoD #7 ≥20MB; גם אין ≥9.1MB על main כרגע — גדול ביותר שם ~6MB).
+- **TTFP (probe `scripts/fast-session-open-ttfp.mjs`, חציון/5 ריצות, סשן למעלה):**
+
+| phase | transport | median ms |
+|---|---|---|
+| before (`snapshot=full`) | http | 110 |
+| before | ws | 129 |
+| after (`snapshot=meta` + parallel `/history`) | http | 15 |
+| after | ws | 6 |
+
+- **DoD #11:** `Content-Encoding: gzip` על `GET /history?tail=1&maxBytes=262144` (localhost + Accept-Encoding).
+- **קוד C6:** `compress()` על route `/history`; טסט gzip ב-`history.test.ts`; טסטי `replay-quiet meta` ב-`agent-session.history-quiet.test.svelte.ts`.
+- **פריוויו (production build):** http://127.0.0.1:4033/chat/cursor/cf18acfd-b7b5-4206-9408-9117884df386?sessionTransport=http — tmux נשאר רץ. מנהרת `fso1-fast-session-open.tuns.sh` החזירה 404 (subdomain לא נגיש); הרמת מחדש נדרשת למשתמש מחוץ ל-violate9.
+- **DoD #10 (חלקי ב-API):** meta tail + `historyOmitted`, parity http/ws TTFP; אימות עין (טען הכול / TTS בניתוק) — למשתמשת + calev על ה-URL לעיל.
+- **שערים (אחרי C6):** `tsc --build` 0 · `typecheck:fe` 0 · core **1070** passed (4 failed קדם-קיימים: openapi-coupling, agent-api-gate×2, message-seq-index.perf) · backend **1566** passed · FE **2088** passed (1 collect error, rc=0) · `lint:i18n` ירוק · `lint-docs-fresh` שקט.
+
+**קומיטים C0–C5:** `8cf18a24..42ac851d` (+ C6 בהמשך).
+
+---
+
 ## 2026-11-25 02:25 — slice `fast-session-open-1` C0 (אליעזר)
 
 ענף: `slice/fast-session-open-1` @ base `1b323d96`. worktree: `.worktrees/fast-session-open-1`.

@@ -516,4 +516,24 @@ describe("GET /history — tail and before pages", () => {
     expect(res.status).toBe(200)
     expect(assertHistoryPageByteBudget(state.messages, maxBytes, messageWireByteSize)).toBe(false)
   })
+
+  it("responds with content-encoding when Accept-Encoding includes gzip", async () => {
+    const state = stateWithMessage({
+      messages: Array.from({ length: 30 }, (_, i) => ({
+        id: `m_${i}`,
+        role: "assistant" as const,
+        messageId: `mid-${i}`,
+        segments: [{ id: `s_${i}`, text: `Line ${i} `.repeat(40) }],
+      })),
+      nextMessageSeq: 30,
+      nextSegmentSeq: 30,
+    })
+    const registry = makeMockRegistry(makeMockHost(state))
+    const res = await makeApp(registry).request(
+      "/api/agents/agent-1/history?tail=1&maxBytes=262144",
+      { headers: { "Accept-Encoding": "gzip, deflate" } },
+    )
+    expect(res.status).toBe(200)
+    expect(res.headers.get("content-encoding")).toBe("gzip")
+  })
 })
