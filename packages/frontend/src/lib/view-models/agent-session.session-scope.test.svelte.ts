@@ -244,8 +244,11 @@ describe("AgentSession session-scope boundary", () => {
   it("memo reads reactive ACP session identity through switchSession and newSession", async () => {
     const session = connectedSession("sess-a")
     seedSessionA(session)
-    localStorage.setItem("dc:session-memo:sess-a", '{"minimized":false}')
-    localStorage.setItem("dc:session-memo:remote-new-sess", '{"minimized":false}')
+    const prefs = new Map([
+      ["dc:session-memo:sess-a", '{"minimized":false}'],
+      ["dc:session-memo:remote-new-sess", '{"minimized":false}'],
+    ])
+    vi.stubGlobal("localStorage", { getItem: (key: string) => prefs.get(key) ?? null })
     const { memo, stop } = mountMemo(session)
     try {
       expect(memo.minimized).toBe(false)
@@ -266,8 +269,7 @@ describe("AgentSession session-scope boundary", () => {
       expect(patchAgent).not.toHaveBeenCalled()
     } finally {
       stop()
-      localStorage.removeItem("dc:session-memo:sess-a")
-      localStorage.removeItem("dc:session-memo:remote-new-sess")
+      vi.unstubAllGlobals()
     }
   })
 
