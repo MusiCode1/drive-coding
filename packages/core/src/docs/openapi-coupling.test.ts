@@ -59,7 +59,7 @@ describe("openapi and RPC doc coupling", () => {
     expect(keys("post", "/api/agents/:id/rpc")).toEqual(["200", "202", "400", "401", "404", "409"])
     expect(keys("post", "/api/agents/:id/subscribe")).toEqual(["204", "400", "403", "404"])
     expect(keys("delete", "/api/agents/:id/subscribe")).toEqual(["204", "400", "403"])
-    expect(keys("post", "/api/agents")).toEqual(["201", "400", "500"])
+    expect(keys("post", "/api/agents")).toEqual(["201", "400", "403", "500"])
     expect(keys("delete", "/api/agents/:id")).toEqual(["204", "404"])
   })
 

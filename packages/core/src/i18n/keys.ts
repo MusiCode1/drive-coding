@@ -623,6 +623,7 @@ export type MessageKey =
   | "scopePrompt.target"
   | "scopePrompt.action"
   | "scopePrompt.watched"
+  | "scopePrompt.watchedAgentPendingCreation"
   | "scopePrompt.subscribeGrant"
   | "scopePrompt.messageGrant"
   | "scopePrompt.allowAlways"

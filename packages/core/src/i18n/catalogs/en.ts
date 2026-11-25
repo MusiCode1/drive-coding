@@ -621,6 +621,7 @@ export const en: Catalog = {
   "scopePrompt.caller": "Requester",
   "scopePrompt.target": "Target session",
   "scopePrompt.watched": "Watched session",
+  "scopePrompt.watchedAgentPendingCreation": "The agent about to be created",
   "scopePrompt.messageGrant": "Allows sending messages and canceling turns for this session",
   "scopePrompt.subscribeGrant": "{caller} can subscribe {target} to events from any session",
   "scopePrompt.allowAlways": "Always allow",

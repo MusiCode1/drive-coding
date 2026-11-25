@@ -137,7 +137,7 @@ export const MCP_TOOL_META: Record<
   session_open: {
     title: "Open agent session",
     description:
-      "Spawn a new ACP CLI agent and block until sessionId exists (30s cap). Returns { agent, sessionId, url, cli, modes, configOptions, hint }. You own this agent: call session_close when done, even if a turn is already running (wait for idle, or force). cli.displayName identifies the CLI. modes and configOptions are the live catalog (model, permission, agent persona, thinking, …) — pass those ids as session_send.sets. Required: cli (e.g. cursor, claude, codex), cwd (absolute path).",
+      "Spawn a new ACP CLI agent and block until sessionId exists (30s cap). Returns { agent, sessionId, url, cli, modes, configOptions, hint }. You own this agent: call session_close when done, even if a turn is already running (wait for idle, or force). cli.displayName identifies the CLI. modes and configOptions are the live catalog (model, permission, agent persona, thinking, …) — pass those ids as session_send.sets. Required: cli (e.g. cursor, claude, codex), cwd (absolute path). Optional notifyOnDone checks subscribe scope against the subscriber before spawning.",
   },
   session_send: {
     title: "Send prompt to agent",

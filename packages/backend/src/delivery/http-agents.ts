@@ -5,7 +5,7 @@ import { isMaster, subtreeIds, verifyToken } from "../agent-scope.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator"
 import { closeAllAgents } from "../app/close-all-agents.js"
 import type { SessionHistoryStore } from "../history/session-history-store.js"
-import { readScopeToken, SCOPE_DENIED_BODY } from "../scope-write.js"
+import { type NotifyOnDoneScopeCheck, readScopeToken, SCOPE_DENIED_BODY } from "../scope-write.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
 import { registerAgentsPatchHttp } from "./http-agents-patch.js"
 import { httpCacheGet, httpCacheSet } from "./http-cache.js"
@@ -27,6 +27,7 @@ export function registerAgentsHttp(
     registry: AgentRegistry
     orchestrator: AgentOrchestrator
     sessionHistoryStore: SessionHistoryStore
+    checkNotifyOnDone?: NotifyOnDoneScopeCheck
     // pid: number | null — in-process connections (claude) have no child process (CUT-3b-iii-2).
     bridgeManager?: {
       getRuntimeInfo(id: string): {
@@ -86,23 +87,34 @@ export function registerAgentsHttp(
       return c.json(parsed.error.body, parsed.error.status)
     }
 
-    const email = readOpenedByEmail(c.req.header(CF_ACCESS_EMAIL_HEADER))
-    log.info(
-      { accessEmailHeader: email ? CF_ACCESS_EMAIL_HEADER : "none" },
-      "openedByEmail attribution",
-    )
-    if (email) {
-      parsed.value.openedByEmail = email
+    const spawn = async (): Promise<Response> => {
+      const email = readOpenedByEmail(c.req.header(CF_ACCESS_EMAIL_HEADER))
+      log.info(
+        { accessEmailHeader: email ? CF_ACCESS_EMAIL_HEADER : "none" },
+        "openedByEmail attribution",
+      )
+      if (email) {
+        parsed.value.openedByEmail = email
+      }
+
+      try {
+        const result = await deps.orchestrator.createAndSpawn(parsed.value)
+        // מחזיר את מבנה CreateAndSpawnResult (סלייס 10)
+        return c.json(result, 201)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        return c.json({ error: msg }, 500)
+      }
     }
 
-    try {
-      const result = await deps.orchestrator.createAndSpawn(parsed.value)
-      // מחזיר את מבנה CreateAndSpawnResult (סלייס 10)
-      return c.json(result, 201)
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      return c.json({ error: msg }, 500)
-    }
+    const subscriber = parsed.value.notifyOnDone
+    if (!subscriber) return spawn()
+    if (!deps.checkNotifyOnDone) return c.json(SCOPE_DENIED_BODY, 403)
+
+    const token = readScopeToken((name) => c.req.header(name))
+    return deps.checkNotifyOnDone(token, subscriber).then<Response>((allowed) =>
+      allowed ? spawn() : c.json(SCOPE_DENIED_BODY, 403),
+    )
   })
 
   // GET /api/agents/:id — פרטי agent

@@ -18,7 +18,7 @@ routes:
 mcp_tools:
   - agent_unsubscribe
   - session_whoami
-docs_version: 1.14.0
+docs_version: 1.15.0
 updated: 2026-11-25
 ---
 
@@ -134,7 +134,7 @@ and sends without a scoped agent token do not create it.
 
 | Write | Scope decision |
 |-------|----------------|
-| `POST /api/agents` | Creation is exempt |
+| `POST /api/agents` | Creation is exempt. With `notifyOnDone`, check `subscribe` scope for the subscriber before spawning. |
 | `DELETE /api/agents` | A valid scoped token closes its subtree and reports other agents in `skipped`. An invalid token returns `403` before closing any agent. With a master token or no token, the result is `{ closed, failed }` for the full fleet. |
 | `DELETE /api/agents/:id` | Close policy for the target |
 | `PATCH /api/agents/:id` | Update policy for the target |
@@ -152,7 +152,10 @@ For example, `agent_unsubscribe { agentId: "<watched>", subscriberAgentId: "<sub
 checks the scope of the subscriber in the request. A permanent `unsubscribe` grant lets
 that caller remove the same subscriber from events from any session. Each verb has its
 own grant. The prompt identifies both the subscriber and the watched session.
-`notifyOnDone` on agent creation currently registers without a subscriber scope decision.
+`notifyOnDone` on
+`POST /api/agents` and `session_open` uses the same `subscribe` grant before the new
+agent spawns. The prompt identifies the subscriber and describes the watched agent as
+about to be created. After approval, creation registers the subscription for the new agent.
 
 ### HTTP API
 

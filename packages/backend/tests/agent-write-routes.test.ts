@@ -35,7 +35,7 @@ vi.mock("@drive-coding/provider/config", async (importOriginal) => ({
 }))
 
 const decisions = {
-  "POST /api/agents": "exempt",
+  "POST /api/agents": "scoped-with-notifyOnDone",
   "DELETE /api/agents": "subtree",
   "DELETE /api/agents/:id": "scoped",
   "DELETE /api/agents/:id/connection": "scoped",
@@ -158,6 +158,45 @@ describe("scope decisions on the production agent write routes", () => {
     expect(allowed.status).toBe(204)
     const unscoped = await request("POST", path, undefined, { subscriberAgentId: foreign })
     expect(unscoped.status).toBe(204)
+  })
+
+  it("checks notifyOnDone before creating through the production POST route", async () => {
+    const spawn = vi.spyOn(deps.orchestrator, "createAndSpawn").mockImplementation(async (input) => {
+      const agent = await deps.registry.create(input)
+      return {
+        agentId: agent.id,
+        cliKind: agent.cliKind,
+        cwd: agent.cwd,
+        wsUrl: "",
+        bridgePort: 0,
+        status: "spawning",
+      }
+    })
+    const create = (token: string, notifyOnDone?: string) =>
+      app.request("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", [SCOPE_HEADER]: token },
+        body: JSON.stringify({
+          cwd: stateDir,
+          cliKind: "claude",
+          notifyOnDone,
+          includeLastAssistantText: true,
+        }),
+      })
+
+    const denied = await create(issueToken(caller), foreign)
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ error: "scope-denied" })
+    expect(spawn).not.toHaveBeenCalled()
+
+    const allowed = await create(issueToken(caller), caller)
+    expect(allowed.status).toBe(201)
+    const { agentId } = (await allowed.json()) as { agentId: string }
+    expect(deps.agentEventBus.subscribersOf(agentId)).toEqual([caller])
+    expect(deps.agentEventBus.optionsOf(agentId, caller)).toEqual({ includeLastAssistantText: true })
+
+    expect((await create("synthetic-invalid-token")).status).toBe(201)
+    expect(spawn).toHaveBeenCalledTimes(2)
   })
 
   it("applies unsubscribe scope to the subscriber on the production DELETE route", async () => {

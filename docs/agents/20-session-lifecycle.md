@@ -25,8 +25,8 @@ mcp_tools:
   - session_note_set
   - session_field_set
   - session_field_delete
-docs_version: 1.12.0
-updated: 2026-11-18
+docs_version: 1.15.0
+updated: 2026-11-25
 ---
 
 # Session lifecycle
@@ -68,6 +68,11 @@ Optional highlights:
 - **`permission`** — policy for the new agent (`allow_once`, `allow_always`, `reject_once`, `ask`).
 - **`parent`** / header **`X-Drive-Coding-Agent`** — sub-agent wiring (`parentAgentId`).
 - **`closeOnTurnEnd`** — auto-close after first clean turn end.
+- **`notifyOnDone`** — subscriber agent UUID for automatic turn-ended notifications.
+  Both `session_open` and `POST /api/agents` check the subscriber's `subscribe`
+  scope before spawning. A denial aborts creation (HTTP 403 or MCP `scope-denied`).
+  Omit the field for ordinary creation. Set `includeLastAssistantText: true`
+  to include a truncated preview in the notification.
 - **`publicUrl` / `base`** — backend URL used to build chat links and child env.
 
 MCP **`session_open`** returns `{ agent, sessionId, url, cli, modes, configOptions, hint }`.

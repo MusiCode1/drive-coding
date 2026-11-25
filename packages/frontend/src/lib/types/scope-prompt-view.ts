@@ -63,13 +63,17 @@ export function scopeDetailRows(
   if (isMessageGrantVerb(detail.verb)) {
     rows.push({ label: t("scopePrompt.allowAlways"), value: t("scopePrompt.messageGrant") })
   }
+  const watched =
+    detail.verb === "subscribe" && detail.watchedAgentPendingCreation === true
+      ? t("scopePrompt.watchedAgentPendingCreation")
+      : detail.watched
   if (
     (detail.verb === "subscribe" || detail.verb === "unsubscribe") &&
-    typeof detail.watched === "string"
+    typeof watched === "string"
   ) {
     const grantKey =
       detail.verb === "subscribe" ? "scopePrompt.subscribeGrant" : "scopePrompt.unsubscribeGrant"
-    rows.push({ label: t("scopePrompt.watched"), value: detail.watched })
+    rows.push({ label: t("scopePrompt.watched"), value: watched })
     rows.push({
       label: t("scopePrompt.allowAlways"),
       value: t(grantKey).replace(/\{(caller|target)\}/g, (_, party) =>

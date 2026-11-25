@@ -71,6 +71,29 @@ describe("scopeDetailRows", () => {
     expect(action?.kind !== "countdown" && action?.value).toBe("session/prompt")
   })
 
+  it("shows a pending watched agent and the existing subscription grant", () => {
+    const translate = (key: string) => {
+      if (key === "scopePrompt.watchedAgentPendingCreation") return "The agent about to be created"
+      if (key === "scopePrompt.subscribeGrant") return "{caller} can subscribe {target} to any session"
+      return key
+    }
+    const pendingDetail = { ...detail, verb: "subscribe", watchedAgentPendingCreation: true }
+    const parsed = readScopePromptDetail(
+      params({ toolCallId: "scope-8", _meta: { "drive-coding/scope": pendingDetail } }),
+    )
+    expect(parsed).toEqual(pendingDetail)
+    if (!parsed) throw new Error("Expected the scope prompt details")
+    const rows = scopeDetailRows(parsed, translate)
+    expect(rows).toContainEqual({
+      label: "scopePrompt.watched",
+      value: "The agent about to be created",
+    })
+    expect(rows).toContainEqual({
+      label: "scopePrompt.allowAlways",
+      value: "A can subscribe B to any session",
+    })
+  })
+
   it("shows the watched session and the full subscription grant scope", () => {
     const translate = (key: string) =>
       key === "scopePrompt.subscribeGrant" ? "{caller} can subscribe {target} to any session" : key

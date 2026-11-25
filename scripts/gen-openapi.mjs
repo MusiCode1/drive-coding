@@ -185,6 +185,7 @@ const SPECIAL = {
     responses: {
       ...jsonResponse("Created", "201"),
       400: jsonErrorResponse("Invalid create input"),
+      403: jsonErrorResponse("notifyOnDone subscriber scope denied"),
       500: jsonErrorResponse("Agent spawn failed"),
     },
   },
