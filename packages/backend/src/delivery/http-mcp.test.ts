@@ -23,6 +23,7 @@ import { setSelfBaseUrlForTests } from "../instances.js"
 import { resetScopePolicyForTests, setScopePolicyOverride } from "../scope-policy.js"
 import { createAgentEventBus } from "../session-host/agent-events.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
+import { wrapOrchestratorWithAgentEvents } from "./agent-events-orchestrator.js"
 import { registerMcpHttp } from "./http-mcp.js"
 
 type HostStub = {
@@ -141,7 +142,7 @@ function makeOrchestrator(registry: AgentRegistry): AgentOrchestrator {
   }
 }
 
-function makeApp(opts?: { mcpHttp?: string; sidecar?: string }) {
+function makeApp(opts?: { mcpHttp?: string; sidecar?: string; subscribeOnOpen?: boolean }) {
   // Hermetic: without this, displayName comes from the machine's ~/.config/drive-coding/cli-specs.jsonc
   // (measured 18/11/2026: a configured machine returned its own display name and failed the test).
   const env: NodeJS.ProcessEnv = {
@@ -156,7 +157,9 @@ function makeApp(opts?: { mcpHttp?: string; sidecar?: string }) {
   const eventBus = createAgentEventBus()
   registerMcpHttp(app, {
     registry,
-    orchestrator,
+    orchestrator: opts?.subscribeOnOpen
+      ? wrapOrchestratorWithAgentEvents(orchestrator, eventBus)
+      : orchestrator,
     agentSessionRegistry,
     env,
     urlConfig: { port: 4000, host: "127.0.0.1" },
@@ -750,36 +753,114 @@ describe("session_send / session_state (slice session-bus-mcp C2)", () => {
 })
 
 describe("agent-identity-mcp (C2/C3)", () => {
-  it("session_open derives parentAgentId from X-Drive-Coding-Agent header", async () => {
-    const { app, registry, orchestrator } = makeApp()
-    const parent = await registry.create({ cliKind: "cursor", cwd: "/tmp/parent" })
-    const client = await connectClient(app, { [AGENT_ID_HEADER]: parent.id })
-    await client.callTool({
-      name: "session_open",
-      arguments: { cli: "cursor", cwd: "/tmp/child", publicUrl: "http://127.0.0.1:4055" },
-    })
-    await client.close()
-    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
-      expect.objectContaining({ parentAgentId: parent.id }),
-    )
+  it("tools/list describes how session_open resolves a parent", async () => {
+    const { app } = makeApp()
+    const client = await connectClient(app)
+    try {
+      const { tools } = await client.listTools()
+      const description = tools.find((tool) => tool.name === "session_open")?.inputSchema.properties
+        ?.parent
+      expect(description).toMatchObject({
+        description: expect.stringMatching(
+          /X-Drive-Coding-Agent identifies a registered agent.*must match.*Otherwise, the explicit parent is used/,
+        ),
+      })
+    } finally {
+      await client.close()
+    }
   })
 
+  it.each([
+    { caller: "registered", parentArg: undefined, expected: "registered" },
+    { caller: "registered", parentArg: "", expected: "registered" },
+    { caller: "registered", parentArg: "registered", expected: "registered" },
+    { caller: "unknown", parentArg: "explicit", expected: "explicit" },
+    { caller: "unknown", parentArg: undefined, expected: undefined },
+    { caller: "token", parentArg: undefined, expected: undefined },
+    { caller: "anonymous", parentArg: undefined, expected: undefined },
+  ] as const)(
+    "session_open resolves parent for $caller caller with parent $parentArg",
+    async (row) => {
+      const { app, registry, orchestrator, eventBus } = makeApp({ subscribeOnOpen: true })
+      const parent = await registry.create({ cliKind: "cursor", cwd: "/tmp/parent" })
+      const subscriber = await registry.create({ cliKind: "cursor", cwd: "/tmp/subscriber" })
+      const headers = {
+        registered: { [AGENT_ID_HEADER]: ` ${parent.id} ` },
+        unknown: { [AGENT_ID_HEADER]: "unregistered-agent" },
+        token: { [SCOPE_HEADER]: issueToken(parent.id) },
+        anonymous: {},
+      }
+      const client = await connectClient(app, headers[row.caller])
+      const expectedParent = row.expected === "registered" ? parent.id : row.expected
+      const result = await client.callTool({
+        name: "session_open",
+        arguments: {
+          cli: "cursor",
+          cwd: "/tmp/child",
+          ...(row.parentArg === undefined
+            ? {}
+            : { parent: row.parentArg === "registered" ? parent.id : row.parentArg }),
+          env: { DC_PARENT: "legacy" },
+          notifyOnDone: subscriber.id,
+        },
+      })
+      await client.close()
+      expect(isToolError(result)).toBe(false)
+      expect(orchestrator.createAndSpawn).toHaveBeenCalledOnce()
+      const input = vi.mocked(orchestrator.createAndSpawn).mock.calls[0]?.[0]
+      expect(input?.parentAgentId).toBe(expectedParent)
+      expect(input?.env?.DC_PARENT).toBe(expectedParent ?? "legacy")
+      const { agent } = JSON.parse(toolText(result)) as { agent: string }
+      const child = await registry.get(agent)
+      expect(child?.id).toBe(agent)
+      expect(child?.parentAgentId).toBe(expectedParent)
+      expect(eventBus.subscribersOf(agent)).toEqual([subscriber.id])
+
+      const childClient = await connectClient(app, { [AGENT_ID_HEADER]: agent })
+      try {
+        const whoami = await childClient.callTool({ name: "session_whoami", arguments: {} })
+        expect(isToolError(whoami)).toBe(false)
+        expect(JSON.parse(toolText(whoami))).toMatchObject({
+          hasParent: expectedParent !== undefined,
+        })
+        const { tools } = await childClient.listTools()
+        expect(tools.some((tool) => tool.name === "notify_parent")).toBe(
+          expectedParent !== undefined,
+        )
+      } finally {
+        await childClient.close()
+      }
+    },
+  )
+
   it("session_open rejects conflicting header parent and explicit parent", async () => {
-    const { app, registry } = makeApp()
+    const { app, registry, orchestrator, agentSessionRegistry, eventBus } = makeApp({
+      subscribeOnOpen: true,
+    })
     const parentA = await registry.create({ cliKind: "cursor", cwd: "/tmp/a" })
+    const parentB = await registry.create({ cliKind: "cursor", cwd: "/tmp/b" })
+    const before = await registry.list()
+    const subscribe = vi.spyOn(eventBus, "subscribe")
     const client = await connectClient(app, { [AGENT_ID_HEADER]: parentA.id })
     const result = await client.callTool({
       name: "session_open",
       arguments: {
         cli: "cursor",
         cwd: "/tmp/child",
-        parent: "other-parent",
+        parent: parentB.id,
+        notifyOnDone: parentB.id,
         publicUrl: "http://127.0.0.1:4055",
       },
     })
     await client.close()
     expect(isToolError(result)).toBe(true)
-    expect(toolText(result)).toMatch(/conflicts/)
+    expect(toolText(result)).toContain(
+      `${AGENT_ID_HEADER} (${parentA.id}) conflicts with explicit parent (${parentB.id})`,
+    )
+    expect(orchestrator.createAndSpawn).not.toHaveBeenCalled()
+    expect(agentSessionRegistry.getOrCreateHost).not.toHaveBeenCalled()
+    expect(subscribe).not.toHaveBeenCalled()
+    expect(await registry.list()).toEqual(before)
   })
 
   it("session_subscribe registers a subscriber on the event bus", async () => {
@@ -838,10 +919,18 @@ describe("agent-identity-mcp (C2/C3)", () => {
       parentAgentId: parent.id,
     })
 
-    const anonClient = await connectClient(app)
-    const anonTools = (await anonClient.listTools()).tools.map((t) => t.name)
-    await anonClient.close()
-    expect(anonTools).not.toContain("notify_parent")
+    for (const headers of [
+      undefined,
+      { [AGENT_ID_HEADER]: parent.id },
+      {
+        [AGENT_ID_HEADER]: "unregistered-agent",
+      },
+    ]) {
+      const nonChildClient = await connectClient(app, headers)
+      const nonChildTools = (await nonChildClient.listTools()).tools.map((t) => t.name)
+      await nonChildClient.close()
+      expect(nonChildTools).not.toContain("notify_parent")
+    }
 
     const childClient = await connectClient(app, { [AGENT_ID_HEADER]: child.id })
     const childTools = (await childClient.listTools()).tools.map((t) => t.name)

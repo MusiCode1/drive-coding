@@ -9,6 +9,7 @@ vi.mock("@drive-coding/core/log", () => ({
 }))
 
 import { Hono } from "hono"
+import { AGENT_ID_HEADER } from "../src/agent-identity.js"
 import { createInMemoryAgentRegistry } from "../src/agents/registry"
 import type { AgentOrchestrator, CreateAndSpawnResult } from "../src/app/agent-orchestrator"
 import { closeAllAgents } from "../src/app/close-all-agents.js"
@@ -119,6 +120,40 @@ describe("HTTP /api/agents", () => {
   })
 
   describe("POST /api/agents", () => {
+    it.each([
+      { name: "parent field only", hasParent: true, hasHeader: false, env: undefined },
+      { name: "independent env", hasParent: true, hasHeader: false, env: { DC_PARENT: "legacy" } },
+      { name: "legacy env only", hasParent: false, hasHeader: false, env: { DC_PARENT: "legacy" } },
+      { name: "identity header only", hasParent: false, hasHeader: true, env: undefined },
+    ])("uses the body parent field for $name", async ({ hasParent, hasHeader, env }) => {
+      const { app, registry, orchestrator } = makeApp()
+      const parent = await registry.create({ cliKind: "cursor", cwd: "/tmp/parent" })
+      const create = vi.spyOn(orchestrator, "createAndSpawn")
+      const res = await app.request("/api/agents", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(hasHeader ? { [AGENT_ID_HEADER]: parent.id } : {}),
+        },
+        body: JSON.stringify({
+          cliKind: "cursor",
+          cwd: "/tmp/child",
+          ...(hasParent ? { parentAgentId: parent.id } : {}),
+          env,
+        }),
+      })
+
+      expect(res.status).toBe(201)
+      expect(create).toHaveBeenCalledOnce()
+      expect(create.mock.calls[0]?.[0].env).toEqual(env)
+      const { agentId } = (await res.json()) as CreateAndSpawnResult
+      const read = await app.request(`/api/agents/${agentId}`)
+      expect(read.status).toBe(200)
+      const { agent } = await read.json()
+      expect(agent.id).toBe(agentId)
+      expect(agent.parentAgentId).toBe(hasParent ? parent.id : undefined)
+    })
+
     it.each([
       ["sidecar at the boundary", "cursor", "cursor", 46_066, 201],
       ["sidecar over the boundary", "cursor", "cursor", 46_067, 400],
