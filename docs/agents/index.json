@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.13.0",
+  "docsVersion": "1.14.0",
   "docs": [
     {
       "id": "orientation",
@@ -263,9 +263,14 @@
       "tags": ["identity"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.10.5",
-      "routes": ["POST /api/agents/:id/reply", "GET /api/scope-policy", "PATCH /api/scope-policy"],
-      "mcp_tools": ["session_whoami"],
+      "docs_version": "1.14.0",
+      "routes": [
+        "POST /api/agents/:id/reply",
+        "DELETE /api/agents/:id/subscribe",
+        "GET /api/scope-policy",
+        "PATCH /api/scope-policy"
+      ],
+      "mcp_tools": ["agent_unsubscribe", "session_whoami"],
       "path": "docs/agents/60-identity-and-scopes.md",
       "headings": [
         "Agent identity and scoped writes",
@@ -293,9 +298,9 @@
       "tags": ["subagents", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.10.3",
-      "routes": ["GET /api/agent-prompt", "DELETE /api/agents"],
-      "mcp_tools": ["session_open", "notify_parent", "session_surface"],
+      "docs_version": "1.14.0",
+      "routes": ["GET /api/agent-prompt", "DELETE /api/agents/:id/subscribe", "DELETE /api/agents"],
+      "mcp_tools": ["session_open", "agent_unsubscribe", "notify_parent", "session_surface"],
       "path": "docs/agents/70-subagents.md",
       "headings": [
         "Subagents",
@@ -477,24 +482,26 @@
     {
       "id": "transports",
       "title": "Transports — HTTP, SSE, MCP, WebSocket",
-      "summary": "When to use REST, agent events SSE, Streamable HTTP MCP, or browser WebSockets.",
+      "summary": "Choose REST, SSE, MCP, or WebSocket, and manage subscriptions to agent events.",
       "read_when": [
         "You need server push for turn events but HTTP alone is stateless",
         "You integrate via MCP Streamable HTTP at /api/mcp",
+        "You want to subscribe to an agent's events or stop receiving them",
         "You want to receive session events or send RPC calls over WebSocket"
       ],
       "tags": ["transports"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.13.0",
+      "docs_version": "1.14.0",
       "routes": [
         "GET /api/mcp",
         "POST /api/mcp",
         "DELETE /api/mcp",
         "POST /api/agents/:id/subscribe",
+        "DELETE /api/agents/:id/subscribe",
         "DELETE /api/agents/:id/connection"
       ],
-      "mcp_tools": ["session_subscribe"],
+      "mcp_tools": ["session_subscribe", "agent_unsubscribe"],
       "path": "docs/agents/97-transports.md",
       "headings": [
         "Transports",
@@ -502,6 +509,7 @@
         "SSE — turn and session events",
         "HTTP subscribe (agent events bus)",
         "The same bus over MCP — `session_subscribe`",
+        "Stop receiving agent events",
         "MCP Streamable HTTP — `/api/mcp`",
         "WebSocket — session channel",
         "DELETE /api/agents/:id/connection"

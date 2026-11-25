@@ -94,6 +94,13 @@ subtree. Writing to any other agent raises a permission prompt to **your user**;
 answer, the call blocks, and a refusal comes back as \`scope-denied\`. Reads (**session_list**,
 **session_state**) are never restricted.
 
+## Agent event subscriptions
+
+Use **session_subscribe** to receive agent events and **agent_unsubscribe** to stop them.
+Subscribe takes \`agent\` and optional \`subscriber\`. Unsubscribe takes \`agentId\` and optional \`subscriberAgentId\`. Both default the subscriber to the identity header.
+Scope is checked against the effective subscriber. Unsubscribe removes the same pair even
+if it was registered via \`notifyOnDone\` or the watched agent has closed.
+
 ## Limits
 
 - **Stateless HTTP** — no live push notifications; poll with session_state or session_send.
@@ -109,6 +116,7 @@ export type McpToolName =
   | "session_state"
   | "session_close"
   | "session_subscribe"
+  | "agent_unsubscribe"
   | "session_whoami"
   | "session_surface"
   | "session_note_set"
@@ -150,6 +158,11 @@ export const MCP_TOOL_META: Record<
     title: "Subscribe to agent events",
     description:
       "Register the caller (or an explicit subscriber UUID) to receive turn-ended and stall-suspected events for the target agent. Duplicate subscribe with the same options is a no-op; repeating with new options (e.g. includeLastAssistantText) updates the subscription. Requires agent (target). subscriber defaults to X-Drive-Coding-Agent when present.",
+  },
+  agent_unsubscribe: {
+    title: "Unsubscribe from agent events",
+    description:
+      "Remove one subscriber from a watched agent's events, including subscriptions from notifyOnDone. Requires agentId (watched). subscriberAgentId defaults to X-Drive-Coding-Agent when present. Scope is checked against the effective subscriber. Repeating the removal is safe, even after either agent closes.",
   },
   session_whoami: {
     title: "Who am I",

@@ -13,7 +13,10 @@ import {
   NewSessionParams,
   PromptParams,
 } from "../packages/backend/src/session-host/http/rpc.ts"
-import { AgentSubscribeBody } from "../packages/core/src/schemas/agent-events.ts"
+import {
+  AgentSubscribeBody,
+  AgentUnsubscribeBody,
+} from "../packages/core/src/schemas/agent-events.ts"
 import {
   ScopePolicyPatchBodySchema,
   ScopePolicySnapshotSchema,
@@ -117,6 +120,7 @@ const components = {
     CreateAgentInputFull: arkToJsonSchema(CreateAgentInputFull, "CreateAgentInputFull"),
     PatchAgentInput: arkToJsonSchema(PatchAgentInput, "PatchAgentInput"),
     AgentSubscribeBody: arkToJsonSchema(AgentSubscribeBody, "AgentSubscribeBody"),
+    AgentUnsubscribeBody: arkToJsonSchema(AgentUnsubscribeBody, "AgentUnsubscribeBody"),
     RpcPromptParams: arkToJsonSchema(PromptParams, "PromptParams"),
     RpcCancelParams: arkToJsonSchema(CancelParams, "CancelParams"),
     RpcLoadSessionParams: arkToJsonSchema(LoadSessionParams, "LoadSessionParams"),
@@ -236,6 +240,14 @@ const SPECIAL = {
       400: jsonErrorResponse("Invalid JSON or subscribe body"),
       403: jsonErrorResponse("Subscriber scope denied"),
       404: jsonErrorResponse("Agent not found"),
+    },
+  },
+  "delete /api/agents/:id/subscribe": {
+    requestBody: requestBodyFromSchema("#/components/schemas/AgentUnsubscribeBody"),
+    responses: {
+      ...noContentResponse("Subscription removed or already absent"),
+      400: jsonErrorResponse("Invalid JSON or unsubscribe body"),
+      403: jsonErrorResponse("Subscriber scope denied"),
     },
   },
   "post /api/agents/:id/rpc": {
@@ -534,8 +546,9 @@ if (!docsVersion) {
 }
 
 const { paths, count } = buildPaths()
-if (count !== 42) {
-  console.error(`🔴 expected 42 documentable operations, got ${count}`)
+const expectedOperationCount = 43
+if (count !== expectedOperationCount) {
+  console.error(`🔴 expected ${expectedOperationCount} documentable operations, got ${count}`)
   process.exit(1)
 }
 

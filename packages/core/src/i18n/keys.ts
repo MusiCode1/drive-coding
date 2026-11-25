@@ -627,6 +627,8 @@ export type MessageKey =
   | "scopePrompt.messageGrant"
   | "scopePrompt.allowAlways"
   | "scopePrompt.verb.subscribe"
+  | "scopePrompt.unsubscribeGrant"
+  | "scopePrompt.verb.unsubscribe"
   | "scopePrompt.verb.detach"
   | "scopePrompt.verb.close"
   | "scopePrompt.verb.patch"

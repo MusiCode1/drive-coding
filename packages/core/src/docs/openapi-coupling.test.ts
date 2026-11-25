@@ -31,24 +31,25 @@ describe("openapi and RPC doc coupling", () => {
     expect(mentioned).toHaveLength(10)
   })
 
-  it("openapi.json carries 42 HTTP operations", () => {
+  it("openapi.json carries 43 HTTP operations", () => {
     const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8")) as {
       paths?: Record<string, Record<string, unknown>>
     }
     const ops = Object.values(spec.paths ?? {}).flatMap((item) =>
       Object.keys(item).filter((k) => !k.startsWith("x-") && k !== "parameters"),
     )
-    // 42 since fix-session-url-hijack C1: GET /api/sessions/:cliKind/:sessionId
-    expect(ops).toHaveLength(42)
+    expect(ops).toHaveLength(43)
   })
 
-  it("McpToolName union has thirteen members (includes notify_parent)", () => {
+  it("McpToolName union includes both agent-event tools and notify_parent", () => {
     const names = mcpToolNamesFromSource()
-    expect(names).toHaveLength(13)
-    expect(names).toContain("notify_parent")
+    expect(names).toHaveLength(14)
+    expect(names).toEqual(
+      expect.arrayContaining(["notify_parent", "session_subscribe", "agent_unsubscribe"]),
+    )
   })
 
-  it("openapi.json status codes match agent HTTP handlers for four core operations", () => {
+  it("openapi.json status codes match agent HTTP handlers for core operations", () => {
     const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8")) as {
       paths: Record<string, Record<string, { responses?: Record<string, unknown> }>>
     }
@@ -56,9 +57,25 @@ describe("openapi and RPC doc coupling", () => {
       Object.keys(spec.paths[path]?.[method]?.responses ?? {}).sort()
 
     expect(keys("post", "/api/agents/:id/rpc")).toEqual(["200", "202", "400", "401", "404", "409"])
-    expect(keys("post", "/api/agents/:id/subscribe")).toEqual(["204", "400", "404"])
+    expect(keys("post", "/api/agents/:id/subscribe")).toEqual(["204", "400", "403", "404"])
+    expect(keys("delete", "/api/agents/:id/subscribe")).toEqual(["204", "400", "403"])
     expect(keys("post", "/api/agents")).toEqual(["201", "400", "500"])
     expect(keys("delete", "/api/agents/:id")).toEqual(["204", "404"])
+  })
+
+  it("DELETE subscribe resolves to a required subscriber UUID with no other fields", () => {
+    const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8"))
+    const requestBody = spec.paths["/api/agents/:id/subscribe"]?.delete?.requestBody
+    expect(requestBody?.required).toBe(true)
+    const ref = requestBody?.content?.["application/json"]?.schema?.$ref
+    expect(ref).toBe("#/components/schemas/AgentUnsubscribeBody")
+    const component = spec.components.schemas[ref.split("/").at(-1)]
+    expect(component).toMatchObject({
+      additionalProperties: false,
+      required: ["subscriberAgentId"],
+      properties: { subscriberAgentId: { format: "uuid" } },
+    })
+    expect(Object.keys(component.properties)).toEqual(["subscriberAgentId"])
   })
 
   it("openapi.json status codes match agent docs HTTP handlers", () => {

@@ -616,6 +616,8 @@ export const he: Catalog = {
   "scopePrompt.subscribeGrant": "{caller} יוכל לרשום את {target} לאירועים של כל סוכן",
   "scopePrompt.allowAlways": "אישור קבוע",
   "scopePrompt.verb.subscribe": "רישום לאירועים",
+  "scopePrompt.unsubscribeGrant": "הרשאה ל־{caller} לבטל את ההרשמה של {target} לאירועים של כל סוכן",
+  "scopePrompt.verb.unsubscribe": "ביטול הרשמה לאירועים",
   "scopePrompt.verb.detach": "ניתוק צופה",
   "scopePrompt.action": "פעולה",
   "scopePrompt.verb.close": "סגירת הסשן",

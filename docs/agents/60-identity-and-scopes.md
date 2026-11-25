@@ -12,12 +12,14 @@ surface: [http, mcp]
 stability: stable
 routes:
   - POST /api/agents/:id/reply
+  - DELETE /api/agents/:id/subscribe
   - GET /api/scope-policy
   - PATCH /api/scope-policy
 mcp_tools:
+  - agent_unsubscribe
   - session_whoami
-docs_version: 1.10.5
-updated: 2026-11-23
+docs_version: 1.14.0
+updated: 2026-11-25
 ---
 
 # Agent identity and scoped writes
@@ -141,11 +143,16 @@ and sends without a scoped agent token do not create it.
 | `POST /api/agents/:id/reply` | Update policy for the target |
 | `POST /api/agents/:id/rpc` | Policy for the RPC action. The read-only `session/list` is exempt. |
 | `POST /api/agents/:id/subscribe` | Message policy for the subscriber |
+| `DELETE /api/agents/:id/subscribe` | Message policy for the subscriber, with the separate `unsubscribe` verb |
 
 HTTP subscribe and MCP `session_subscribe` check the effective subscriber. A permanent
 `subscribe` grant lets the caller register that subscriber for events from any session.
-The prompt identifies both the subscriber and the watched session. `notifyOnDone` on
-agent creation currently registers without a subscriber scope decision.
+HTTP unsubscribe and MCP `agent_unsubscribe` also check the effective subscriber.
+For example, `agent_unsubscribe { agentId: "<watched>", subscriberAgentId: "<subscriber>" }`
+checks the scope of the subscriber in the request. A permanent `unsubscribe` grant lets
+that caller remove the same subscriber from events from any session. Each verb has its
+own grant. The prompt identifies both the subscriber and the watched session.
+`notifyOnDone` on agent creation currently registers without a subscriber scope decision.
 
 ### HTTP API
 

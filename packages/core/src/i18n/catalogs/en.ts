@@ -625,6 +625,8 @@ export const en: Catalog = {
   "scopePrompt.subscribeGrant": "{caller} can subscribe {target} to events from any session",
   "scopePrompt.allowAlways": "Always allow",
   "scopePrompt.verb.subscribe": "Subscribe to events",
+  "scopePrompt.unsubscribeGrant": "{caller} can unsubscribe {target} from any agent's events",
+  "scopePrompt.verb.unsubscribe": "Unsubscribe from events",
   "scopePrompt.verb.detach": "Detach viewer",
   "scopePrompt.action": "Action",
   "scopePrompt.verb.close": "Close session",

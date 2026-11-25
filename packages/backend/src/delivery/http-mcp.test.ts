@@ -226,6 +226,7 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     expect(instructions).toContain("configOptions")
     expect(instructions).toContain("session_whoami")
     expect(tools.map((t) => t.name).sort()).toEqual([
+      "agent_unsubscribe",
       "docs_get",
       "session_close",
       "session_field_delete",
@@ -238,6 +239,22 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
       "session_subscribe",
       "session_surface",
       "session_whoami",
+    ])
+    expect(instructions).toContain("agent_unsubscribe")
+    expect(instructions).not.toContain("session_unsubscribe")
+    const unsubscribeTool = tools.find((t) => t.name === "agent_unsubscribe")
+    expect(unsubscribeTool?.inputSchema).toMatchObject({
+      type: "object",
+      required: ["agentId"],
+      additionalProperties: false,
+      properties: {
+        agentId: { type: "string", minLength: 1 },
+        subscriberAgentId: { type: "string", minLength: 1 },
+      },
+    })
+    expect(Object.keys(unsubscribeTool?.inputSchema.properties ?? {}).sort()).toEqual([
+      "agentId",
+      "subscriberAgentId",
     ])
     const openTool = tools.find((t) => t.name === "session_open")
     const schema = openTool?.inputSchema as { properties?: { cli?: { description?: string } } }

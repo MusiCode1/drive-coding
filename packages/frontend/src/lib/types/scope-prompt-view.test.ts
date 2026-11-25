@@ -82,6 +82,23 @@ describe("scopeDetailRows", () => {
     })
   })
 
+  it("shows the watched session and the separate unsubscribe grant scope", () => {
+    const translate = (key: string) =>
+      key === "scopePrompt.unsubscribeGrant"
+        ? "{caller} can unsubscribe {target} from any session"
+        : key
+    const rows = scopeDetailRows({ ...detail, verb: "unsubscribe", watched: "C" }, translate)
+    expect(rows).toContainEqual({
+      label: "scopePrompt.action",
+      value: "scopePrompt.verb.unsubscribe",
+    })
+    expect(rows).toContainEqual({ label: "scopePrompt.watched", value: "C" })
+    expect(rows).toContainEqual({
+      label: "scopePrompt.allowAlways",
+      value: "A can unsubscribe B from any session",
+    })
+  })
+
   it.each(["send", "session/prompt", "session/cancel"])(
     "shows shared messaging grant for %s",
     (verb) => {

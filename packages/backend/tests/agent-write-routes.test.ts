@@ -43,6 +43,7 @@ const decisions = {
   "POST /api/agents/:id/presence": "exempt",
   "POST /api/agents/:id/reply": "scoped",
   "POST /api/agents/:id/rpc": "scoped",
+  "DELETE /api/agents/:id/subscribe": "scoped",
   "POST /api/agents/:id/subscribe": "scoped",
 } as const
 
@@ -157,6 +158,20 @@ describe("scope decisions on the production agent write routes", () => {
     expect(allowed.status).toBe(204)
     const unscoped = await request("POST", path, undefined, { subscriberAgentId: foreign })
     expect(unscoped.status).toBe(204)
+  })
+
+  it("applies unsubscribe scope to the subscriber on the production DELETE route", async () => {
+    const path = `/api/agents/${foreign}/subscribe`
+    const body = { subscriberAgentId: child }
+    expect((await request("POST", path, issueToken(caller), body)).status).toBe(204)
+
+    const denied = await request("DELETE", path, issueToken(foreign), body)
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ error: "scope-denied" })
+    expect(deps.agentEventBus.subscribersOf(foreign)).toEqual([child])
+
+    expect((await request("DELETE", path, issueToken(caller), body)).status).toBe(204)
+    expect(deps.agentEventBus.subscribersOf(foreign)).toEqual([])
   })
 
   it.each([false, true])("guard and grant for subscriptions (MCP=%s)", async (mcp) => {

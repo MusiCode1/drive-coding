@@ -29,6 +29,22 @@ describe("agent-docs coupling", () => {
     expect(doc).toContain(ttlEnv)
   })
 
+  it("unsubscribe is documented and discoverable in the three agent docs", () => {
+    expect(MCP_TOOL_META.agent_unsubscribe?.description).toContain("effective subscriber")
+    for (const name of ["60-identity-and-scopes", "70-subagents", "97-transports"]) {
+      const doc = fs.readFileSync(path.join(REPO_ROOT, "docs/agents", `${name}.md`), "utf8")
+      const delimiter = "\n---\n"
+      const end = doc.indexOf(delimiter)
+      expect(end).toBeGreaterThan(0)
+      const frontmatter = doc.slice(0, end)
+      const prose = doc.slice(end + delimiter.length)
+      expect(frontmatter).toMatch(/^ {2}- agent_unsubscribe$/m)
+      expect(frontmatter).toMatch(/^ {2}- DELETE \/api\/agents\/:id\/subscribe$/m)
+      expect(prose).toContain("`agent_unsubscribe")
+      expect(prose).toContain("`DELETE /api/agents/:id/subscribe`")
+    }
+  })
+
   it("80-providers lists every CLI_KINDS entry", () => {
     const doc = fs.readFileSync(PROVIDERS_DOC, "utf8")
     const kinds = [...CLI_KINDS]

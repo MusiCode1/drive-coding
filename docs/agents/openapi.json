@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.13.0",
+    "version": "1.14.0",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
@@ -708,6 +708,55 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/AgentSubscribeBody"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_agents_id_subscribe",
+        "summary": "DELETE /api/agents/:id/subscribe",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Subscription removed or already absent"
+          },
+          "400": {
+            "description": "Invalid JSON or unsubscribe body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Subscriber scope denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentUnsubscribeBody"
               }
             }
           }
@@ -1740,6 +1789,35 @@
           }
         },
         "required": ["subscriberAgentId"]
+      },
+      "AgentUnsubscribeBody": {
+        "type": "object",
+        "properties": {
+          "subscriberAgentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "a UUID",
+                "format": "uuid",
+                "pattern": "^[\\da-f]{8}-[\\da-f]{4}-[1-8][\\da-f]{3}-[89ab][\\da-f]{3}-[\\da-f]{12}$"
+              },
+              {
+                "const": "00000000-0000-0000-0000-000000000000",
+                "description": "a UUID",
+                "format": "uuid"
+              },
+              {
+                "const": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+                "description": "a UUID",
+                "format": "uuid"
+              }
+            ],
+            "description": "a UUID",
+            "format": "uuid"
+          }
+        },
+        "required": ["subscriberAgentId"],
+        "additionalProperties": false
       },
       "RpcPromptParams": {
         "type": "object",
