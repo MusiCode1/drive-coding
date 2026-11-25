@@ -92,7 +92,11 @@ function allocMessageId(
   wireSeq?: number,
 ): { id: string; nextMessageSeq: number } {
   if (wireSeq !== undefined) {
-    return { id: `m_${wireSeq}`, nextMessageSeq: Math.max(state.nextMessageSeq, wireSeq + 1) }
+    const id = `m_${wireSeq}`
+    const taken = state.messages.some((m) => m.id === id)
+    if (!taken) {
+      return { id, nextMessageSeq: Math.max(state.nextMessageSeq, wireSeq + 1) }
+    }
   }
   return { id: nextMsgId(state.nextMessageSeq), nextMessageSeq: state.nextMessageSeq + 1 }
 }
@@ -188,7 +192,7 @@ function chunkTargetIndex(
   wireSeq?: number,
 ): number {
   if (wireSeq !== undefined) {
-    const bySeq = state.messages.findIndex((m) => m.id === `m_${wireSeq}`)
+    const bySeq = state.messages.findIndex((m) => m.id === `m_${wireSeq}` && m.role === role)
     if (bySeq !== -1) return bySeq
   }
   let targetIdx = state.messages.length - 1

@@ -51,9 +51,7 @@ describe("_drive/seq wire round-trip", () => {
     })
     const updates = stateToSessionUpdates(s0)
     expect(
-      updates.some(
-        (u) => (u._meta as Record<string, unknown> | undefined)?.[SEQ_META_KEY] === 500,
-      ),
+      updates.some((u) => (u._meta as Record<string, unknown> | undefined)?.[SEQ_META_KEY] === 500),
     ).toBe(true)
     const s1 = play(updates, mk())
     expect(meaningful(s1)).toEqual(meaningful(s0))
@@ -91,9 +89,9 @@ describe("_drive/seq wire round-trip", () => {
     expect(state.messages).toHaveLength(1)
     expect(state.messages[0]?.id).toBe("m_502")
     const msg = state.messages[0]
-    expect(msg !== undefined && msg.role !== "tool" ? msg.segments.map((x) => x.text).join("") : "").toBe(
-      "part1 part2",
-    )
+    expect(
+      msg !== undefined && msg.role !== "tool" ? msg.segments.map((x) => x.text).join("") : "",
+    ).toBe("part1 part2")
   })
 
   it("tool_call_update for unknown tool uses seq for new message id", () => {
@@ -165,6 +163,29 @@ describe("_drive/seq wire round-trip", () => {
     expect(patches[0]?.op).toBe("append-segment")
     expect(state.messages).toHaveLength(1)
     expect(state.messages[0]?.id).toBe("m_500")
+  })
+
+  it("seq does not join a message with a different role", () => {
+    const s = mk({
+      messages: [
+        {
+          id: "m_5",
+          role: "assistant",
+          messageId: "a-old",
+          segments: [{ id: "s_1", text: "agent" }],
+        },
+      ],
+      nextMessageSeq: 6,
+    })
+    const { state } = reduce(s, {
+      sessionUpdate: "user_message_chunk",
+      messageId: "u-new",
+      content: { type: "text", text: "user" },
+      _meta: { [SEQ_META_KEY]: 5 },
+    })
+    expect(state.messages).toHaveLength(2)
+    expect(state.messages[1]?.id).toBe("m_6")
+    expect(state.messages[1]?.role).toBe("user")
   })
 
   it("without seq behaves as before", () => {
