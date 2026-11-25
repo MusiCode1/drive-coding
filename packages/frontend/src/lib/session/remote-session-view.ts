@@ -25,6 +25,7 @@ import { advanceReadWaterMark, emitView, enqueueEmission } from "./remote-sessio
 import { wireRemoteHistorySync } from "./remote-session-history-port"
 import { closeRemoteSession } from "./remote-session-close"
 import { openRemoteSession } from "./remote-session-connect"
+import { readTerminalEmission } from "./remote-session-stream"
 import {
   type RemoteSessionRpcDeps,
   remoteCancel,

@@ -1,12 +1,12 @@
 import type { SessionState } from "@drive-coding/core/session"
-import { unregisterView, type ViewDebugInfo } from "$lib/debug/session-registry"
+import { unregisterView, type DebuggableView } from "$lib/debug/session-registry"
 import type { HistorySync } from "./history-sync"
 import { cancelPendingOnViewClose } from "./remote-session-stream"
 import type { FrameReader } from "./wire/frame-reader"
 import type { SessionPipe } from "./wire/pipe"
 
 export async function closeRemoteSession(
-  view: ViewDebugInfo,
+  view: DebuggableView,
   opts: {
     state: SessionState
     setState: (s: SessionState) => void
