@@ -6,15 +6,17 @@
 export const SURFACE_CAPABILITIES = `
 # drive-coding capabilities (session bus)
 
-This backend exposes an **MCP server** for \`session_*\` tools on the same BE.
-Use **session_list** before spawning duplicates. Do not invent config option ids —
-use ids from \`session_open\` / \`session_state\`.
+Use \`tools/list\` to discover both \`session_*\` and \`agent_*\` names and their schemas.
+Start with **session_list**. To open an agent, call **session_open** with \`cli\` and absolute \`cwd\`.
+Keep its \`agent\` UUID for **session_state**, **session_send** and **session_close**.
+Use live option IDs from open/state in \`session_send.sets\`.
 
 ## Auto-wiring
 
-If your CLI declared \`mcpCapabilities.http: true\` at initialize, drive-coding may
-already have injected this MCP server into your session (loopback URL +
-\`X-Drive-Coding-Agent\` header). Re-use \`session_list\` before spawning duplicates.
+A CLI with \`mcpCapabilities.http: true\` may already have the MCP endpoint and
+\`X-Drive-Coding-Agent\` header. Use \`session_whoami\` for identity, \`session_subscribe\`
+for events and \`session_surface\` for this guide. Update your agent memory with
+\`session_note_set\`, \`session_field_set\` and \`session_field_delete\`.
 
 Every document is reachable without the repository: MCP tool \`docs_get\`, MCP
 resources \`drive-coding://docs/<id>\`, or \`GET /api/docs\`.

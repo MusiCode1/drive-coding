@@ -8,55 +8,42 @@
  * Tools call orchestrator / agentSessionRegistry in-process. No HTTP self-call.
  *
  * Tool inputSchema is derived from ArkType via toJsonSchema (session-bus.ts).
- * Handlers re-validate with the same ArkType types — Zod is advertisement only.
+ * The SDK checks Zod input before the handler validates with ArkType.
  *
  * Kill switch: MCP_HTTP=0 skips registration (default ON).
  */
 import {
-  AgentOpenInput,
   type AgentRegistry,
-  MCP_CONFIGURE_HINT,
   MCP_SERVER_DESCRIPTION,
   MCP_SERVER_INSTRUCTIONS,
   MCP_SERVER_TITLE,
-  MCP_TOOL_META,
+  McpAgentStateInput,
   McpSessionListInput,
   SessionStateMcpInput,
   toAgentPublic,
 } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
-import { getCliSpec } from "@drive-coding/provider/config"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js"
-import { type } from "arktype"
 import type { Hono } from "hono"
-import { z } from "zod"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { resolveAppVersion } from "../app-version.js"
 import { readScopeToken, stripScopePendingFromState } from "../scope-write.js"
 import type { AgentEventBus } from "../session-host/agent-events.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
-import {
-  applyNotifyOnDoneToOpenBody,
-  registerAgentEventMcpTools,
-} from "./agent-events-mcp-tools.js"
-import { parseCreateAgentBody } from "./create-agent-input.js"
+import { registerAgentEventMcpTools } from "./agent-events-mcp-tools.js"
 import { registerAgentDocsMcp } from "./docs-mcp.js"
 import { senderFromRecord } from "./drive-message-source.js"
+import { cliMeta, registerMcpOpenTool } from "./mcp-open-tool.js"
+import { McpToolError, registerArkTool, registerToolPair } from "./mcp-tool-alias.js"
 import { registerMcpWriteTools } from "./mcp-write-tools.js"
-import { defaultPublicUrl, loopbackBaseUrl, type UrlConfig } from "./public-url.js"
+import type { UrlConfig } from "./public-url.js"
 import { registerSessionMemoryMcpTools } from "./session-memory-mcp-tools.js"
-import { applySessionOpenCreateFields } from "./session-open-body.js"
-import { withSessionOpenRollback } from "./session-open-rollback.js"
 import { registerSessionSurfaceMcpTool } from "./session-surface-mcp-tool.js"
 import { registerSessionWhoamiMcpTool } from "./session-whoami-mcp-tool.js"
 
 const log = createLogger("backend.mcp")
-
-/** Same 30s cap as dispatch-via-api open / agent-cli open. */
-const SESSION_OPEN_TIMEOUT_MS = 30_000
-const SESSION_OPEN_POLL_MS = 1_500
 
 /** /state is ~47KB, 88% commands. Default session_state omits that blob. */
 const DEFAULT_STATE_FIELDS = [
@@ -88,65 +75,6 @@ export type McpRequestContext = {
   scopeToken?: string
 }
 
-/** ArkType type that can both validate and emit JSON Schema. */
-type ArkObject = {
-  toJsonSchema: () => object
-  (data: unknown): unknown
-}
-
-function inputSchemaFromArk(ark: ArkObject): z.ZodType {
-  const full = ark.toJsonSchema() as Record<string, unknown>
-  const { $schema: _schema, ...rest } = full
-  return z.fromJSONSchema(rest)
-}
-
-function jsonResult(value: unknown): {
-  content: Array<{ type: "text"; text: string }>
-} {
-  return { content: [{ type: "text", text: JSON.stringify(value) }] }
-}
-
-function jsonError(message: string): {
-  isError: true
-  content: Array<{ type: "text"; text: string }>
-} {
-  return { isError: true, content: [{ type: "text", text: message }] }
-}
-
-type ToolResult = ReturnType<typeof jsonResult> | ReturnType<typeof jsonError>
-
-function registerArkTool(
-  server: McpServer,
-  name: string,
-  meta: { title: string; description: string },
-  ark: ArkObject,
-  handler: (parsed: unknown) => Promise<ToolResult>,
-): void {
-  server.registerTool(name, { ...meta, inputSchema: inputSchemaFromArk(ark) }, async (args) => {
-    const parsed = ark(args ?? {})
-    if (parsed instanceof type.errors) return jsonError(parsed.summary)
-    try {
-      return await handler(parsed)
-    } catch (e) {
-      return jsonError(e instanceof Error ? e.message : String(e))
-    }
-  })
-}
-
-async function waitForSessionId(
-  registry: AgentSessionRegistry,
-  agentId: string,
-  timeoutMs: number,
-): Promise<string | undefined> {
-  const deadline = Date.now() + timeoutMs
-  for (;;) {
-    const sid = registry.getHost(agentId)?.state.sessionId
-    if (typeof sid === "string" && sid.length > 0) return sid
-    if (Date.now() >= deadline) return undefined
-    await new Promise((r) => setTimeout(r, SESSION_OPEN_POLL_MS))
-  }
-}
-
 function pickSessionState(
   state: Record<string, unknown>,
   fields: string[] | undefined,
@@ -158,11 +86,6 @@ function pickSessionState(
     if (Object.hasOwn(state, k)) out[k] = state[k]
   }
   return stripScopePendingFromState(out)
-}
-
-function cliMeta(kind: string, env: NodeJS.ProcessEnv): { kind: string; displayName: string } {
-  const spec = getCliSpec(kind, env)
-  return { kind, displayName: spec?.displayName ?? kind }
 }
 
 function createSessionBusMcpServer(
@@ -205,10 +128,9 @@ function createSessionBusMcpServer(
   const scopeToken = ctx.scopeToken
   const scopeDeps = { registry: deps.registry, sessionRegistry: deps.agentSessionRegistry }
 
-  registerArkTool(
+  registerToolPair(
     server,
     "session_list",
-    MCP_TOOL_META.session_list,
     McpSessionListInput,
     async () => {
       const all = await deps.registry.list()
@@ -228,108 +150,50 @@ function createSessionBusMcpServer(
           turnState: host?.state.turnState,
         }
       })
-      return jsonResult({ agents })
+      return { agents }
+    },
+    {
+      project: ({ agents }) => ({
+        agents: agents.map(({ userNotes, sessionFields, connectionCount, ...agent }) => ({
+          ...agent,
+          agentNotes: userNotes,
+          agentFields: sessionFields,
+          viewerCount: connectionCount,
+        })),
+      }),
     },
   )
 
-  registerArkTool(
-    server,
-    "session_open",
-    MCP_TOOL_META.session_open,
-    AgentOpenInput,
-    async (raw) => {
-      const input = raw as typeof AgentOpenInput.infer
-      const explicit = input.publicUrl ?? input.base
-      const chatBase = (explicit ?? defaultPublicUrl(deps.urlConfig)).replace(/\/$/, "")
-      const childBase = (explicit ?? loopbackBaseUrl(deps.urlConfig)).replace(/\/$/, "")
-      const env: Record<string, string> = { ...(input.env ?? {}) }
-      env.DRIVE_CODING_BASE = childBase
-      env.DC_BASE = childBase
-
-      const headerParent = callerAgentId
-      const explicitParent =
-        input.parent !== undefined && input.parent !== "" ? input.parent : undefined
-
-      if (headerParent && explicitParent && explicitParent !== headerParent) {
-        return jsonError(
-          `${AGENT_ID_HEADER} (${headerParent}) conflicts with explicit parent (${explicitParent})`,
-        )
-      }
-
-      const effectiveParent = headerParent ?? explicitParent
-      if (effectiveParent !== undefined) env.DC_PARENT = effectiveParent
-
-      const body: Record<string, unknown> = {
-        cliKind: input.cli,
-        cwd: input.cwd,
-        env,
-      }
-      applySessionOpenCreateFields(body, input, effectiveParent)
-      applyNotifyOnDoneToOpenBody(body, input.notifyOnDone, input.includeLastAssistantText)
-
-      const parsed = parseCreateAgentBody(body, deps.env)
-      if (!parsed.ok) return jsonError(parsed.error.body.error)
-
-      const created = await deps.orchestrator.createAndSpawn(parsed.value)
-      return withSessionOpenRollback(deps, created.agentId, async () => {
-        const hostResult = await deps.agentSessionRegistry.getOrCreateHost(created.agentId)
-        if (!hostResult.ok) {
-          throw new Error(`session host did not start: ${hostResult.reason}`)
-        }
-        const sessionId = await waitForSessionId(
-          deps.agentSessionRegistry,
-          created.agentId,
-          SESSION_OPEN_TIMEOUT_MS,
-        )
-        if (sessionId === undefined) {
-          throw new Error("session did not come up within 30s")
-        }
-        const host = deps.agentSessionRegistry.getHost(created.agentId)
-        return jsonResult({
-          agent: created.agentId,
-          sessionId,
-          url: `${chatBase}/chat/${input.cli}/${sessionId}?sessionTransport=http`,
-          cli: cliMeta(input.cli, deps.env),
-          modes: host?.state.modes,
-          configOptions: host?.state.configOptions,
-          hint: MCP_CONFIGURE_HINT,
-        })
-      })
-    },
-  )
+  registerMcpOpenTool(server, deps, callerAgentId)
 
   const callerSender = callerAgentId && callerRecord ? senderFromRecord(callerRecord) : undefined
-  registerMcpWriteTools(
-    server,
-    registerArkTool,
-    deps,
-    scopeToken,
-    scopeDeps,
-    jsonResult,
-    jsonError,
-    callerSender,
-  )
+  registerMcpWriteTools(server, deps, scopeToken, scopeDeps, callerSender)
 
-  registerArkTool(
+  registerToolPair(
     server,
     "session_state",
-    MCP_TOOL_META.session_state,
     SessionStateMcpInput,
-    async (raw) => {
-      const input = raw as typeof SessionStateMcpInput.infer
+    async (input) => {
       const existing = await deps.registry.get(input.agent)
-      if (!existing) return jsonError("agent not found")
+      if (!existing) throw new McpToolError("agent not found", "agent_not_found")
       const host = deps.agentSessionRegistry.getHost(input.agent)
-      if (!host) return jsonError("agent connection not found")
-      return jsonResult({
+      if (!host) throw new McpToolError("agent connection not found", "agent_host_unavailable")
+      return {
         agent: input.agent,
         ...pickSessionState(host.state as unknown as Record<string, unknown>, input.fields),
-      })
+      }
+    },
+    {
+      input: {
+        schema: McpAgentStateInput,
+        normalize: ({ agentId, fields }) => ({ agent: agentId, fields }),
+      },
+      project: ({ agent, ...state }) => ({ agentId: agent, ...state }),
     },
   )
-  registerSessionMemoryMcpTools(server, deps, ctx, callerRecord, registerArkTool)
-  registerSessionWhoamiMcpTool(server, deps, ctx, callerRecord, registerArkTool)
-  registerSessionSurfaceMcpTool(server, deps, ctx, callerRecord, registerArkTool)
+  registerSessionMemoryMcpTools(server, deps, ctx, callerRecord)
+  registerSessionWhoamiMcpTool(server, deps, ctx, callerRecord)
+  registerSessionSurfaceMcpTool(server, deps, ctx, callerRecord)
   if (deps.eventBus) {
     registerAgentEventMcpTools(
       server,
@@ -340,7 +204,6 @@ function createSessionBusMcpServer(
       },
       ctx,
       callerRecord,
-      registerArkTool,
     )
   }
   return server

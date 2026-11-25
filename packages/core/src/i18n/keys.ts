@@ -258,8 +258,8 @@ export type MessageKey =
   | "connect.agents.empty"
   | "connect.agents.refresh"
   | "connect.agents.reconnect"
-  | "connect.agents.kill"
-  | "connect.agents.killConfirm"
+  | "connect.agents.close"
+  | "connect.agents.closeConfirm"
   | "connect.agents.inUse"
   // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
   | "connect.agents.noSession"
@@ -325,27 +325,27 @@ export type MessageKey =
   | "connect.recent.expand"
   // ─── leave-running (slice leave-running-background) ───
   | "session.titleLabel" // slice session-title-manual: editable session title in options panel
-  | "session.fieldsLabel" // slice session-memory: read-only agent fields in options panel
-  | "session.fieldsEmpty"
+  | "agent.fieldsLabel" // slice session-memory: read-only agent fields in options panel
+  | "agent.fieldsEmpty"
   // ─── scope-policy-per-caller ───
-  | "session.scopePolicy.title"
-  | "session.scopePolicy.message"
-  | "session.scopePolicy.update"
-  | "session.scopePolicy.close"
-  | "session.scopePolicy.option.inherit"
-  | "session.scopePolicy.sourceLabel"
-  | "session.scopePolicy.source.agent"
-  | "session.scopePolicy.source.override"
-  | "session.scopePolicy.source.env"
-  | "session.scopePolicy.source.default"
-  | "session.scopePolicy.loading"
-  | "session.scopePolicy.saving"
-  | "session.scopePolicy.error"
-  | "session.scopePolicy.empty"
-  | "session.scopePolicy.retry"
-  | "session.scopePolicy.note"
+  | "agent.scopePolicy.title"
+  | "agent.scopePolicy.message"
+  | "agent.scopePolicy.update"
+  | "agent.scopePolicy.close"
+  | "agent.scopePolicy.option.inherit"
+  | "agent.scopePolicy.sourceLabel"
+  | "agent.scopePolicy.source.agent"
+  | "agent.scopePolicy.source.override"
+  | "agent.scopePolicy.source.env"
+  | "agent.scopePolicy.source.default"
+  | "agent.scopePolicy.loading"
+  | "agent.scopePolicy.saving"
+  | "agent.scopePolicy.error"
+  | "agent.scopePolicy.empty"
+  | "agent.scopePolicy.retry"
+  | "agent.scopePolicy.note"
   | "session.leaveRunning" // תווית כפתור "צא — השאר רץ" (חדש)
-  | "session.closeSession" // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
+  | "agent.close" // title כפתור הכיבוי-המלא (Power) — מבדיל מ-leaveRunning
   // ─── playbackControls ─── (slice B1-controls-ui)
   | "playbackControls.stopRun"
   | "playbackControls.stopRun.thinking"
@@ -559,11 +559,11 @@ export type MessageKey =
   | "pendingCapture.dismiss"
   | "pendingCapture.restored"
   // ─── session-memo ─── (slice session-memo-pad)
-  | "sessionMemo.title"
-  | "sessionMemo.open"
-  | "sessionMemo.minimize"
-  | "sessionMemo.placeholder"
-  | "settings.toggle.sessionMemo"
+  | "agentNotes.title"
+  | "agentNotes.open"
+  | "agentNotes.minimize"
+  | "agentNotes.placeholder"
+  | "settings.toggle.agentNotes"
   // ─── usage ─── (slice usage-per-cli)
   | "usage.page.title"
   | "usage.page.loading"

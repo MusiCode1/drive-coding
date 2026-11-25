@@ -9,8 +9,8 @@ read_when:
 tags: [errors, rpc]
 surface: [http, mcp]
 stability: stable
-docs_version: 1.13.0
-updated: 2026-11-24
+docs_version: 1.16.0
+updated: 2026-11-25
 ---
 
 # Errors
@@ -48,7 +48,7 @@ event remains reserved for protocol compatibility. This server never emits it.
 
 | Route | 404 | 400 |
 |---|---|---|
-| **GET …/history** | No host — `{ error: "Agent connection not found" }` | Bad **`fromMessage`**; unknown **`before`** seq; empty **`before=`** or **`tail=`**; **`maxBytes`** without `tail`/`before` or invalid; `tail` + `before` / `fromMessage` conflicts |
+| **GET …/history** | No host — `{ error: "Agent connection not found", code: "agent_host_unavailable" }` | Bad **`fromMessage`**; unknown **`before`** seq; empty **`before=`** or **`tail=`**; **`maxBytes`** without `tail`/`before` or invalid; `tail` + `before` / `fromMessage` conflicts |
 | **GET …/state** | Same 404 body | — |
 | **GET …/events?snapshot=** | No host — **404 after** a valid `snapshot` passes parsing | Invalid `snapshot` (not `full` or `meta`); empty/missing ⇒ `full` |
 
@@ -58,9 +58,10 @@ event remains reserved for protocol compatibility. This server never emits it.
 
 | Call | Typical errors |
 |---|---|
-| **POST /api/agents** | **400** invalid body; **500** spawn failure message |
-| **DELETE /api/agents/:id** | **404** unknown id |
-| **PATCH /api/agents/:id** | **400** schema/undeclared keys; **409** connection tuple conflicts |
+| **POST /api/agents** | **400** invalid body or mismatched subscription aliases. **500** spawn failure message. |
+| **GET /api/agents/:id**, **DELETE /api/agents/:id**, **POST /api/agents/:id/subscribe** | **404** with `agent_not_found` if the target record is missing. |
+| **PATCH /api/agents/:id** | **400** invalid body, undeclared keys or mismatched note aliases. **404** with `agent_not_found` if the record is missing. **409** connection tuple conflict. |
+| **GET /api/sessions/:cliKind/:sessionId** | **404** with `acp_session_not_found` if the session is absent from the index. |
 
 ## MCP scope and limits
 
@@ -69,6 +70,16 @@ event remains reserved for protocol compatibility. This server never emits it.
 - **session_close** when **`turnState !== idle`** without **`force: true`** → tool error; use
   force only when you accept stopping mid-turn.
 - **`MCP_HTTP=0`** → MCP endpoint disabled (connection failure at HTTP layer).
+
+Canonical tools may return `isError: true` with a code in result-level `_meta["drive-coding/errorCode"]`. The legacy tools retain their error text.
+
+| Code | When |
+|---|---|
+| `agent_not_found` | A target lookup fails for state, send or subscribe, or the caller record disappears during field deletion. |
+| `agent_host_unavailable` | State has a record without a host, or open/send cannot acquire a host. |
+| `no_active_acp_session` | Send reaches a host without an active ACP session ID. |
+
+Validation, scope denial and provider errors keep their existing error shapes. Discover availability through `tools/list`. A send timeout can return `{ running: true }` while the original turn continues.
 
 ## Decision cheatsheet
 

@@ -7,7 +7,8 @@ import {
   AgentCloseInput,
   type AgentRegistry,
   AgentSendInput,
-  MCP_TOOL_META,
+  McpAgentCloseInput,
+  McpAgentSendInput,
 } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import { RPC_METHODS } from "@drive-coding/core/session"
@@ -21,23 +22,11 @@ import { raceKeepRunning } from "../session-host/http/rpc-wait.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { type ResolvedSender, wrapPromptContent } from "./drive-message-source.js"
 import { runScopedMcpTool } from "./mcp-scope.js"
+import { McpToolError, registerToolPair } from "./mcp-tool-alias.js"
 
 const log = createLogger("backend.mcp")
 
 const SESSION_SEND_TIMEOUT_SEC = 1800
-
-type ToolResult = {
-  isError?: true
-  content: Array<{ type: "text"; text: string }>
-}
-
-type RegisterTool = (
-  server: McpServer,
-  name: string,
-  meta: { title: string; description: string },
-  ark: { toJsonSchema: () => object; (data: unknown): unknown },
-  handler: (parsed: unknown) => Promise<ToolResult>,
-) => void
 
 function assistantTextSince(messages: unknown[]): string {
   const parts: string[] = []
@@ -52,9 +41,12 @@ function assistantTextSince(messages: unknown[]): string {
   return parts.join("")
 }
 
+function scopeDenied(): never {
+  throw new McpToolError(JSON.stringify(scopeDeniedBody()))
+}
+
 export function registerMcpWriteTools(
   server: McpServer,
-  registerArkTool: RegisterTool,
   deps: {
     registry: AgentRegistry
     orchestrator: AgentOrchestrator
@@ -62,17 +54,13 @@ export function registerMcpWriteTools(
   },
   scopeToken: string | undefined,
   scopeDeps: ScopeEnforcementDeps,
-  jsonResult: (value: unknown) => ToolResult,
-  jsonError: (message: string) => ToolResult,
   sender?: ResolvedSender,
 ): void {
-  registerArkTool(
+  registerToolPair(
     server,
     "session_close",
-    MCP_TOOL_META.session_close,
     AgentCloseInput,
-    async (raw) => {
-      const input = raw as typeof AgentCloseInput.infer
+    async (input) => {
       return runScopedMcpTool(
         scopeToken,
         scopeDeps,
@@ -81,28 +69,32 @@ export function registerMcpWriteTools(
         async () => {
           const existing = await deps.registry.get(input.agent)
           if (!existing) {
-            return jsonResult({ ok: true, alreadyClosed: true, agent: input.agent })
+            return { ok: true, alreadyClosed: true, agent: input.agent }
           }
           const turnState = deps.agentSessionRegistry.getHost(input.agent)?.state.turnState
           if (turnState !== undefined && turnState !== "idle" && input.force !== true) {
-            return jsonError(`turnState=${turnState} — turn is open. wait, or pass force.`)
+            throw new McpToolError(`turnState=${turnState} — turn is open. wait, or pass force.`)
           }
           await deps.orchestrator.deleteAndKill(input.agent)
-          return jsonResult({ ok: true, agent: input.agent })
+          return { ok: true, agent: input.agent }
         },
-        () => jsonError(JSON.stringify(scopeDeniedBody())),
+        scopeDenied,
       )
+    },
+    {
+      input: {
+        schema: McpAgentCloseInput,
+        normalize: ({ agentId, force }) => ({ agent: agentId, force }),
+      },
+      project: ({ agent, ...result }) => ({ ...result, agentId: agent }),
     },
   )
 
-  registerArkTool(
+  registerToolPair(
     server,
     "session_send",
-    MCP_TOOL_META.session_send,
     AgentSendInput,
-    async (raw) => {
-      const input = raw as typeof AgentSendInput.infer
-      const onDenied = () => jsonError(JSON.stringify(scopeDeniedBody()))
+    async (input) => {
       const setKeys = input.sets ? Object.keys(input.sets) : []
       if (setKeys.length > 0) {
         const updateOk = await guardMcpWrite(
@@ -111,71 +103,84 @@ export function registerMcpWriteTools(
           input.agent,
           RPC_METHODS.setConfigOption,
         )
-        if (!updateOk) return onDenied()
+        if (!updateOk) scopeDenied()
       }
       const messageOk = await guardMcpWrite(scopeToken, scopeDeps, input.agent, "send")
-      if (!messageOk) return onDenied()
+      if (!messageOk) scopeDenied()
 
-      return (async () => {
-        const existing = await deps.registry.get(input.agent)
-        if (!existing) return jsonError("agent not found")
+      const existing = await deps.registry.get(input.agent)
+      if (!existing) throw new McpToolError("agent not found", "agent_not_found")
 
-        const hostResult = await deps.agentSessionRegistry.getOrCreateHost(input.agent)
-        if (!hostResult.ok) {
-          return jsonError(`session host did not start: ${hostResult.reason}`)
+      const hostResult = await deps.agentSessionRegistry.getOrCreateHost(input.agent)
+      if (!hostResult.ok) {
+        throw new McpToolError(
+          `session host did not start: ${hostResult.reason}`,
+          "agent_host_unavailable",
+        )
+      }
+      const { host } = hostResult.entry
+
+      const sessionId = host.state.sessionId
+      if (typeof sessionId !== "string" || sessionId.length === 0) {
+        throw new McpToolError("no sessionId — run session_open first", "no_active_acp_session")
+      }
+
+      if (input.sets) {
+        for (const [configId, value] of Object.entries(input.sets)) {
+          await host.setConfigOption(configId, value)
         }
-        const { host } = hostResult.entry
+      }
 
-        const sessionId = host.state.sessionId
-        if (typeof sessionId !== "string" || sessionId.length === 0) {
-          return jsonError("no sessionId — run session_open first")
-        }
+      const promptContent = wrapPromptContent(sender, input.prompt)
+      const from = input.noWait === true ? 0 : host.state.messages.length
+      recordPromptDispatch(scopeToken, input.agent)
+      const promptWork = host.prompt(sessionId, promptContent)
 
-        if (input.sets) {
-          for (const [configId, value] of Object.entries(input.sets)) {
-            await host.setConfigOption(configId, value)
-          }
-        }
-
-        const promptContent = wrapPromptContent(sender, input.prompt)
-        const from = input.noWait === true ? 0 : host.state.messages.length
-        recordPromptDispatch(scopeToken, input.agent)
-        const promptWork = host.prompt(sessionId, promptContent)
-
-        if (input.noWait === true) {
-          void promptWork.catch((e) => {
-            log.warn({ err: e }, "prompt turn failed")
-          })
-          return jsonResult({ running: true })
-        }
-
-        const timeoutMs = (input.timeoutSec ?? SESSION_SEND_TIMEOUT_SEC) * 1000
-        const raced = await raceKeepRunning(promptWork, timeoutMs, (e) => {
+      if (input.noWait === true) {
+        void promptWork.catch((e) => {
           log.warn({ err: e }, "prompt turn failed")
         })
-        if (raced.outcome === "timedOut") {
-          return jsonResult({ running: true })
-        }
-        const messagesSince = host.state.messages.slice(from)
-        const text = assistantTextSince(messagesSince)
-        if (raced.outcome === "rejected") {
-          const err = host.state.lastTurnError
-          return jsonResult({
-            stopReason:
-              err?.message ??
-              (raced.error instanceof Error ? raced.error.message : String(raced.error)),
-            lastTurnError: err,
-            text,
-            messagesSince,
-          })
-        }
-        return jsonResult({
-          stopReason: host.state.lastTurnError?.message ?? "end_turn",
-          lastTurnError: host.state.lastTurnError,
+        return { running: true }
+      }
+
+      const timeoutMs = (input.timeoutSec ?? SESSION_SEND_TIMEOUT_SEC) * 1000
+      const raced = await raceKeepRunning(promptWork, timeoutMs, (e) => {
+        log.warn({ err: e }, "prompt turn failed")
+      })
+      if (raced.outcome === "timedOut") {
+        return { running: true }
+      }
+      const messagesSince = host.state.messages.slice(from)
+      const text = assistantTextSince(messagesSince)
+      if (raced.outcome === "rejected") {
+        const err = host.state.lastTurnError
+        return {
+          stopReason:
+            err?.message ??
+            (raced.error instanceof Error ? raced.error.message : String(raced.error)),
+          lastTurnError: err,
           text,
           messagesSince,
-        })
-      })()
+        }
+      }
+      return {
+        stopReason: host.state.lastTurnError?.message ?? "end_turn",
+        lastTurnError: host.state.lastTurnError,
+        text,
+        messagesSince,
+      }
+    },
+    {
+      input: {
+        schema: McpAgentSendInput,
+        normalize: ({ agentId, prompt, sets, timeoutSec, noWait }) => ({
+          agent: agentId,
+          prompt,
+          sets,
+          timeoutSec,
+          noWait,
+        }),
+      },
     },
   )
 }

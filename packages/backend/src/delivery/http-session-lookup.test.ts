@@ -58,6 +58,6 @@ describe("GET /api/sessions/:cliKind/:sessionId", () => {
     const res = await app.request("/api/sessions/claude/no-such")
     expect(res.status).toBe(404)
     const body = await res.json()
-    expect(body).toEqual({ error: "unknown session" })
+    expect(body).toEqual({ error: "unknown session", code: "acp_session_not_found" })
   })
 })

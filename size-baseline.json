@@ -152,10 +152,10 @@
       "codeLines": 41
     },
     "packages/backend/src/delivery/http-agents.ts": {
-      "metric": 140,
-      "impurity": 6,
+      "metric": 126,
+      "impurity": 5,
       "class": "mixed",
-      "codeLines": 100
+      "codeLines": 92
     },
     "packages/backend/src/delivery/http-cache.ts": {
       "metric": 51,
@@ -200,10 +200,10 @@
       "codeLines": 126
     },
     "packages/backend/src/delivery/http-mcp.ts": {
-      "metric": 372,
-      "impurity": 15,
+      "metric": 248,
+      "impurity": 7,
       "class": "mixed",
-      "codeLines": 323
+      "codeLines": 211
     },
     "packages/backend/src/delivery/http-options.ts": {
       "metric": 14,
@@ -950,10 +950,10 @@
       "codeLines": 68
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 1588,
+      "metric": 1562,
       "impurity": 25,
       "class": "scattered",
-      "codeLines": 1033
+      "codeLines": 1014
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
       "metric": 328,

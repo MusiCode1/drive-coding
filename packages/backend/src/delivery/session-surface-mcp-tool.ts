@@ -13,66 +13,45 @@
  * `tools/list` on its own, so it cannot silently fail to be wired.
  */
 
-import { type AgentRegistry, MCP_TOOL_META, McpSessionSurfaceInput } from "@drive-coding/core"
+import { type AgentRegistry, McpSessionSurfaceInput } from "@drive-coding/core"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
 import { buildAgentPromptText } from "../prompts/index.js"
 import type { McpHttpDeps, McpRequestContext } from "./http-mcp.js"
-
-type ArkRegister = (
-  server: McpServer,
-  name: string,
-  meta: { title: string; description: string },
-  ark: { toJsonSchema: () => object; (data: unknown): unknown },
-  handler: (parsed: unknown) => Promise<{
-    content: Array<{ type: "text"; text: string }>
-    isError?: true
-  }>,
-) => void
-
-function textResult(value: string) {
-  return { content: [{ type: "text" as const, text: value }] }
-}
-
-function jsonError(message: string) {
-  return { isError: true as const, content: [{ type: "text" as const, text: message }] }
-}
+import { McpToolError, registerToolPair, textResult } from "./mcp-tool-alias.js"
 
 export function registerSessionSurfaceMcpTool(
   server: McpServer,
   deps: Pick<McpHttpDeps, "urlConfig">,
   ctx: McpRequestContext,
   callerRecord: Awaited<ReturnType<AgentRegistry["get"]>>,
-  registerArkTool: ArkRegister,
 ): void {
   const callerAgentId = ctx.callerAgentId
 
-  registerArkTool(
+  registerToolPair(
     server,
     "session_surface",
-    MCP_TOOL_META.session_surface,
     McpSessionSurfaceInput,
     async () => {
       if (!callerAgentId || !callerRecord) {
-        return jsonError(
+        throw new McpToolError(
           `${AGENT_ID_HEADER} required — call session_surface with the header set to your registered agent UUID`,
         )
       }
 
       // Text, not JSON: the body is a prompt meant to be read, and JSON.stringify
       // would escape every newline in a ~5.5KB markdown document.
-      return textResult(
-        buildAgentPromptText(
-          {
-            agentId: callerRecord.id,
-            parentAgentId: callerRecord.parentAgentId,
-            charter: callerRecord.systemPrompt ?? undefined,
-            userNotes: callerRecord.userNotes,
-            sessionFields: callerRecord.sessionFields,
-          },
-          deps.urlConfig,
-        ),
+      return buildAgentPromptText(
+        {
+          agentId: callerRecord.id,
+          parentAgentId: callerRecord.parentAgentId,
+          charter: callerRecord.systemPrompt ?? undefined,
+          userNotes: callerRecord.userNotes,
+          sessionFields: callerRecord.sessionFields,
+        },
+        deps.urlConfig,
       )
     },
+    { serialize: textResult },
   )
 }

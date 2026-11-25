@@ -31,3 +31,11 @@ export const AgentSubscribeInput = type({
   ),
 })
 export type AgentSubscribeInput = typeof AgentSubscribeInput.infer
+
+/** MCP agent_subscribe input. The HTTP subscribe schema has its own UUID check. */
+export const McpAgentSubscribeInput = AgentSubscribeInput.pick("includeLastAssistantText").and({
+  agentId: AgentSubscribeInput.get("agent"),
+  "subscriberAgentId?": type("string >= 1").describe(
+    "Subscriber agent UUID. Defaults to X-Drive-Coding-Agent header when present.",
+  ),
+})

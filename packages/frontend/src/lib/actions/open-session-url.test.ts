@@ -8,7 +8,8 @@ import type { SessionInfo } from "$lib/adapters/sessions"
 import { createRemoteView } from "$lib/session/create-session-view"
 import { MockSessionView } from "$lib/view-models/__fixtures__/mock-session-view.svelte"
 import { AgentSession } from "$lib/view-models/agent-session.svelte"
-import { openSessionUrl } from "./open-session-url.js"
+import { openSessionUrl, sessionAttachExtras } from "./open-session-url.js"
+import { reconnectAgent } from "./reconnect-agent.js"
 
 const listAgentsMock = vi.fn<() => Promise<AgentPublic[]>>()
 const openSessionColdMock =
@@ -349,6 +350,57 @@ describe("openSessionUrl", () => {
     )
     expect(session.sessionId).toBe("sess-target")
   })
+
+  it.each([
+    [{ agentNotes: "canonical", agentFields: { state: "ready" } }, "canonical", { state: "ready" }],
+    [{ userNotes: "legacy", sessionFields: { state: "idle" } }, "legacy", { state: "idle" }],
+    [
+      {
+        agentNotes: "canonical",
+        userNotes: "legacy",
+        agentFields: { state: "new" },
+        sessionFields: { state: "old" },
+      },
+      "canonical",
+      { state: "new" },
+    ],
+    [
+      { agentNotes: "", userNotes: "legacy", agentFields: {}, sessionFields: { state: "old" } },
+      "",
+      {},
+    ],
+  ] as const)(
+    "normalizes metadata for both URL entry and reconnect (%o)",
+    async (metadata, agentNotes, agentFields) => {
+      const agent = makeAgent({ id: "00000000-0000-4000-8000-000000000004", ...metadata })
+      expect(sessionAttachExtras(agent)).toEqual({ agentNotes, agentFields })
+      listAgentsMock.mockResolvedValue([agent])
+      const session = makeSession()
+      session.attachRemoteToLiveAgent.mockImplementation(async () => {
+        session.status = "connected"
+      })
+      const settings = { sessionTransport: "http" } as never
+
+      expect(
+        await openSessionUrl({
+          cliKind: agent.cliKind,
+          sessionId: "sess-target",
+          session: session as never,
+          settings,
+        }),
+      ).toBe("connected")
+      expect(await reconnectAgent({ agent, session: session as never, settings })).toBe("navigated")
+      const expected = {
+        agentId: agent.id,
+        cliKind: agent.cliKind,
+        cwd: agent.cwd,
+        transport: "http",
+        agentNotes,
+        agentFields,
+      }
+      expect(session.attachRemoteToLiveAgent.mock.calls).toEqual([[expected], [expected]])
+    },
+  )
 
   it("joins http-attached agent without takeover prompt", async () => {
     listAgentsMock.mockResolvedValue([

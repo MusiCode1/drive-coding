@@ -43,12 +43,11 @@ function buildMemorySection(opts: {
   sessionFields?: Readonly<Record<string, string>>
 }): string | null {
   const noteText = opts.userNotes?.trim()
-  const fieldEntries =
-    opts.sessionFields !== undefined ? Object.entries(opts.sessionFields) : []
+  const fieldEntries = opts.sessionFields !== undefined ? Object.entries(opts.sessionFields) : []
   if ((!noteText || noteText.length === 0) && fieldEntries.length === 0) {
     return null
   }
-  const parts: string[] = ["# Session memory"]
+  const parts: string[] = ["# Agent memory"]
   if (noteText && noteText.length > 0) {
     parts.push(`## Notes\n\n${opts.userNotes}`)
   }

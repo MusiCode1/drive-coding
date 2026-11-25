@@ -28,6 +28,7 @@ export const CreateAgentInputFull = type({
   "parentAgentId?": "string",
   "closeOnTurnEnd?": "boolean",
   "notifyOnDone?": "string.uuid",
+  "subscribeOnOpenAgentId?": "string.uuid",
   "includeLastAssistantText?": "boolean",
   "roleLabel?": "string",
 })
@@ -45,6 +46,17 @@ export function parseCreateAgentBody(
   const parsed = CreateAgentInputFull(body)
   if (parsed instanceof type.errors) {
     return { ok: false, error: { status: 400, body: { error: parsed.summary } } }
+  }
+  const { notifyOnDone, subscribeOnOpenAgentId } = parsed
+  if (
+    notifyOnDone !== undefined &&
+    subscribeOnOpenAgentId !== undefined &&
+    notifyOnDone !== subscribeOnOpenAgentId
+  ) {
+    return {
+      ok: false,
+      error: { status: 400, body: { error: "notifyOnDone and subscribeOnOpenAgentId must match" } },
+    }
   }
 
   if (getCliSpec(parsed.cliKind, env) === undefined) {
@@ -100,9 +112,8 @@ export function parseCreateAgentBody(
   if (parsed.closeOnTurnEnd === true) {
     input.closeOnTurnEnd = true
   }
-  if (parsed.notifyOnDone !== undefined && parsed.notifyOnDone !== "") {
-    input.notifyOnDone = parsed.notifyOnDone
-  }
+  const subscriber = notifyOnDone ?? subscribeOnOpenAgentId
+  if (subscriber !== undefined) input.notifyOnDone = subscriber
   if (parsed.includeLastAssistantText === true) {
     input.includeLastAssistantText = true
   }

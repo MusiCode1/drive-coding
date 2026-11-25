@@ -18,7 +18,7 @@ export function registerSessionLookupHttp(
         deps.sessionHistoryStore.findSession(cliKind, sessionId),
       )
       if (found == null) {
-        return c.json({ error: "unknown session" }, 404)
+        return c.json({ error: "unknown session", code: "acp_session_not_found" }, 404)
       }
       return c.json(found)
     } catch (e) {

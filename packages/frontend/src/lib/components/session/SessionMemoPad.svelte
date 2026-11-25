@@ -87,10 +87,10 @@ const sizeStyle = $derived(
     style={posStyle}
     {...dragging}
     onclick={openUnlessDragged}
-    aria-label={t("sessionMemo.open")}
-    title={t("sessionMemo.open")}
+    aria-label={t("agentNotes.open")}
+    title={t("agentNotes.open")}
   >
-    <span>{t("sessionMemo.title")}</span>
+    <span>{t("agentNotes.title")}</span>
     {#if memo.hasContent}
       <span class="memo-dot" aria-hidden="true"></span>
     {/if}
@@ -100,17 +100,17 @@ const sizeStyle = $derived(
     bind:this={el}
     class="memo-card"
     style="{posStyle} {sizeStyle}"
-    aria-label={t("sessionMemo.title")}
+    aria-label={t("agentNotes.title")}
   >
     <header class="memo-head" {...dragging}>
-      <span class="memo-title">{t("sessionMemo.title")}</span>
+      <span class="memo-title">{t("agentNotes.title")}</span>
       <button
         type="button"
         class="memo-min"
         data-no-drag
         onclick={() => memo.setMinimized(true)}
-        aria-label={t("sessionMemo.minimize")}
-        title={t("sessionMemo.minimize")}
+        aria-label={t("agentNotes.minimize")}
+        title={t("agentNotes.minimize")}
       >
         <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
@@ -120,8 +120,9 @@ const sizeStyle = $derived(
     <textarea
       class="memo-body"
       dir="auto"
-      bind:value={memo.text}
-      placeholder={t("sessionMemo.placeholder")}
+      value={memo.text}
+      oninput={(event) => memo.setText(event.currentTarget.value)}
+      placeholder={t("agentNotes.placeholder")}
     ></textarea>
     <!-- ידית שינוי-גודל. aria-hidden + data-no-drag: קישוט-עכבר, לא פקד
          מקלדת — שינוי גודל אינו תנאי לשימוש בפתק. -->

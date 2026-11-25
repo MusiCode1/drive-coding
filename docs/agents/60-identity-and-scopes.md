@@ -16,8 +16,9 @@ routes:
   - PATCH /api/scope-policy
 mcp_tools:
   - session_whoami
-docs_version: 1.10.5
-updated: 2026-11-23
+  - agent_whoami
+docs_version: 1.16.0
+updated: 2026-11-25
 ---
 
 # Agent identity and scoped writes
@@ -28,6 +29,8 @@ Your agent id travels on two channels (`agent-identity.ts:24-27`, `agent-identit
 
 - **Environment:** `DRIVE_CODING_AGENT_ID` in the CLI and its tools.
 - **HTTP/MCP header:** `X-Drive-Coding-Agent` on requests to this backend.
+
+Discovery also lists `agent_whoami`. The canonical result uses `agentId`, `agentNotes` and `agentFields`. Both use the registered caller header.
 
 MCP **session_whoami** (no parameters) reads the id from the `X-Drive-Coding-Agent` header
 only — it never guesses from the environment, and a missing or unknown header is an error. It

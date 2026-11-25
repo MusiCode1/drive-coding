@@ -21,7 +21,7 @@ export function registerAgentEventsHttp(
   app.post("/api/agents/:id/subscribe", async (c) => {
     const targetId = c.req.param("id")
     const target = await deps.registry.get(targetId)
-    if (!target) return c.json({ error: "agent not found" }, 404)
+    if (!target) return c.json({ error: "agent not found", code: "agent_not_found" }, 404)
 
     let body: unknown
     try {

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { getI18n, getSettings } from "$lib/context"
-  import SettingsCard from "./SettingsCard.svelte"
-  import SettingToggle from "./SettingToggle.svelte"
+import { getI18n, getSettings } from "$lib/context"
+import SettingsCard from "./SettingsCard.svelte"
+import SettingToggle from "./SettingToggle.svelte"
 
-  const settings = getSettings()
-  const t = getI18n().t
+const settings = getSettings()
+const t = getI18n().t
 </script>
 
 <SettingsCard title={t("settings.chatDisplay")}>
@@ -27,7 +27,7 @@
       onCheckedChange={(v) => settings.setCompactActivity(v)}
     />
     <SettingToggle
-      label={t("settings.toggle.sessionMemo")}
+      label={t("settings.toggle.agentNotes")}
       checked={settings.showSessionMemo}
       onCheckedChange={(v) => settings.setShowSessionMemo(v)}
     />

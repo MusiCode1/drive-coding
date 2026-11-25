@@ -3,6 +3,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { RPC_METHODS } from "../session/rpc-methods.js"
+import { DOCS_VERSION } from "./index.js"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, "../../../..")
@@ -42,10 +43,54 @@ describe("openapi and RPC doc coupling", () => {
     expect(ops).toHaveLength(42)
   })
 
-  it("McpToolName union has thirteen members (includes notify_parent)", () => {
+  it("publishes both input spellings for POST and PATCH under the docs version", () => {
+    const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8"))
+    const post = spec.paths["/api/agents"].post
+    const patch = spec.paths["/api/agents/:id"].patch
+    expect(spec.info.version).toBe(DOCS_VERSION)
+    expect(post.operationId).toBe("post_api_agents")
+    expect(patch.operationId).toBe("patch_api_agents_id")
+    expect(post.requestBody.content["application/json"].schema.$ref).toBe(
+      "#/components/schemas/CreateAgentInputFull",
+    )
+    expect(patch.requestBody.content["application/json"].schema.$ref).toBe(
+      "#/components/schemas/PatchAgentInput",
+    )
+    expect(Object.keys(post.responses).sort()).toEqual(["201", "400", "500"])
+    expect(Object.keys(patch.responses)).toEqual(["200"])
+    const create = spec.components.schemas.CreateAgentInputFull
+    expect(create.properties.notifyOnDone).toMatchObject({ format: "uuid" })
+    expect(create.properties.subscribeOnOpenAgentId).toEqual(create.properties.notifyOnDone)
+    expect(create.required).not.toContain("subscribeOnOpenAgentId")
+    const notes = spec.components.schemas.PatchAgentInput
+    expect(notes.additionalProperties).toBe(false)
+    expect(notes.properties.userNotes).toEqual({ type: "string" })
+    expect(notes.properties.agentNotes).toEqual(notes.properties.userNotes)
+    expect(notes.properties).not.toHaveProperty("agentFields")
+  })
+
+  it("keeps both MCP vocabularies and the two single-name tools", () => {
     const names = mcpToolNamesFromSource()
-    expect(names).toHaveLength(13)
-    expect(names).toContain("notify_parent")
+    const suffixes = [
+      "list",
+      "open",
+      "send",
+      "state",
+      "close",
+      "subscribe",
+      "whoami",
+      "surface",
+      "note_set",
+      "field_set",
+      "field_delete",
+    ]
+    expect(names.sort()).toEqual(
+      [
+        "docs_get",
+        "notify_parent",
+        ...suffixes.flatMap((suffix) => [`agent_${suffix}`, `session_${suffix}`]),
+      ].sort(),
+    )
   })
 
   it("openapi.json status codes match agent HTTP handlers for four core operations", () => {

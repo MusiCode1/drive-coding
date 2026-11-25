@@ -26,8 +26,10 @@ export function sessionAttachExtras(agent: AgentPublic): ManualTitleInput {
     out.titleManual = true
     if (agent.title != null) out.title = agent.title
   }
-  if (agent.userNotes !== undefined) out.userNotes = agent.userNotes
-  if (agent.sessionFields !== undefined) out.sessionFields = agent.sessionFields
+  const notes = agent.agentNotes ?? agent.userNotes
+  const fields = agent.agentFields ?? agent.sessionFields
+  if (notes !== undefined) out.agentNotes = notes
+  if (fields !== undefined) out.agentFields = fields
   return out
 }
 

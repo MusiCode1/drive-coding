@@ -5,41 +5,22 @@
  */
 
 import {
-  MCP_TOOL_META,
+  type AgentRegistry,
   McpSessionFieldDeleteInput,
   McpSessionFieldSetInput,
   McpSessionNoteSetInput,
-  type AgentRegistry,
 } from "@drive-coding/core"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
 import type { McpRequestContext } from "./http-mcp.js"
-
-type ArkRegister = (
-  server: McpServer,
-  name: string,
-  meta: { title: string; description: string },
-  ark: { toJsonSchema: () => object; (data: unknown): unknown },
-  handler: (parsed: unknown) => Promise<{
-    content: Array<{ type: "text"; text: string }>
-    isError?: true
-  }>,
-) => void
-
-function jsonResult(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value) }] }
-}
-
-function jsonError(message: string) {
-  return { isError: true as const, content: [{ type: "text" as const, text: message }] }
-}
+import { McpToolError, registerToolPair } from "./mcp-tool-alias.js"
 
 function requireCaller(
   callerAgentId: string | undefined,
   callerRecord: Awaited<ReturnType<AgentRegistry["get"]>>,
-): string | { isError: true; content: Array<{ type: "text"; text: string }> } {
+): string {
   if (!callerAgentId || !callerRecord) {
-    return jsonError(
+    throw new McpToolError(
       `${AGENT_ID_HEADER} required — call with the header set to your registered agent UUID`,
     )
   }
@@ -56,59 +37,34 @@ export function registerSessionMemoryMcpTools(
   deps: { registry: AgentRegistry },
   ctx: McpRequestContext,
   callerRecord: Awaited<ReturnType<AgentRegistry["get"]>>,
-  registerArkTool: ArkRegister,
 ): void {
   const callerAgentId = ctx.callerAgentId
 
-  registerArkTool(
-    server,
-    "session_note_set",
-    MCP_TOOL_META.session_note_set,
-    McpSessionNoteSetInput,
-    async (raw) => {
-      const caller = requireCaller(callerAgentId, callerRecord)
-      if (typeof caller !== "string") return caller
-      const input = raw as typeof McpSessionNoteSetInput.infer
-      await deps.registry.update(caller, { userNotes: input.text })
-      return jsonResult({ ok: true })
-    },
-  )
+  registerToolPair(server, "session_note_set", McpSessionNoteSetInput, async (input) => {
+    const caller = requireCaller(callerAgentId, callerRecord)
+    await deps.registry.update(caller, { userNotes: input.text })
+    return { ok: true }
+  })
 
-  registerArkTool(
-    server,
-    "session_field_set",
-    MCP_TOOL_META.session_field_set,
-    McpSessionFieldSetInput,
-    async (raw) => {
-      const caller = requireCaller(callerAgentId, callerRecord)
-      if (typeof caller !== "string") return caller
-      const input = raw as typeof McpSessionFieldSetInput.infer
-      const key = trimFieldKey(input.key)
-      if (key === null) return jsonError("field key must be non-empty after trim")
-      const existing = (await deps.registry.get(caller))?.sessionFields ?? {}
-      await deps.registry.update(caller, { sessionFields: { ...existing, [key]: input.value } })
-      return jsonResult({ ok: true })
-    },
-  )
+  registerToolPair(server, "session_field_set", McpSessionFieldSetInput, async (input) => {
+    const caller = requireCaller(callerAgentId, callerRecord)
+    const key = trimFieldKey(input.key)
+    if (key === null) throw new McpToolError("field key must be non-empty after trim")
+    const existing = (await deps.registry.get(caller))?.sessionFields ?? {}
+    await deps.registry.update(caller, { sessionFields: { ...existing, [key]: input.value } })
+    return { ok: true }
+  })
 
-  registerArkTool(
-    server,
-    "session_field_delete",
-    MCP_TOOL_META.session_field_delete,
-    McpSessionFieldDeleteInput,
-    async (raw) => {
-      const caller = requireCaller(callerAgentId, callerRecord)
-      if (typeof caller !== "string") return caller
-      const input = raw as typeof McpSessionFieldDeleteInput.infer
-      const key = trimFieldKey(input.key)
-      if (key === null) return jsonError("field key must be non-empty after trim")
-      const record = await deps.registry.get(caller)
-      if (!record) return jsonError("agent not found")
-      const existing = record.sessionFields ?? {}
-      if (!(key in existing)) return jsonResult({ ok: true })
-      const { [key]: _removed, ...rest } = existing
-      await deps.registry.update(caller, { sessionFields: rest })
-      return jsonResult({ ok: true })
-    },
-  )
+  registerToolPair(server, "session_field_delete", McpSessionFieldDeleteInput, async (input) => {
+    const caller = requireCaller(callerAgentId, callerRecord)
+    const key = trimFieldKey(input.key)
+    if (key === null) throw new McpToolError("field key must be non-empty after trim")
+    const record = await deps.registry.get(caller)
+    if (!record) throw new McpToolError("agent not found", "agent_not_found")
+    const existing = record.sessionFields ?? {}
+    if (!Object.hasOwn(existing, key)) return { ok: true }
+    const { [key]: _removed, ...rest } = existing
+    await deps.registry.update(caller, { sessionFields: rest })
+    return { ok: true }
+  })
 }

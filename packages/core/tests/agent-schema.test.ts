@@ -1,12 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-  Agent,
-  AgentPublic,
-  CLI_KINDS,
-  CLI_SPECS,
-  CreateAgentInput,
-  toAgentPublic,
-} from "../src"
+import { Agent, AgentPublic, CLI_KINDS, CLI_SPECS, CreateAgentInput, toAgentPublic } from "../src"
 
 describe("CLI_SPECS sessionMeta (slice session-meta-config C0)", () => {
   it("claude default sessionMeta requests summarized thinking", () => {
@@ -481,6 +474,25 @@ describe("toAgentPublic — userNotes/sessionFields (slice session-memory C0)", 
     const pub = toAgentPublic(agent)
     expect(pub.userNotes).toBe("remember the refactor")
     expect(pub.sessionFields).toEqual({ branch: "slice/session-memory" })
+    expect(pub).not.toHaveProperty("agentNotes")
+    expect(pub).not.toHaveProperty("agentFields")
+  })
+
+  it("validates optional HTTP aliases, including empty values", () => {
+    const record = {
+      id: "550e8400-e29b-41d4-a716-446655440020",
+      cliKind: "cursor",
+      cwd: "/foo",
+      modelOverride: null,
+      status: "ready",
+      createdAt: "2026-05-16T05:00:00.000Z",
+    }
+    expect(AgentPublic({ ...record, agentNotes: "", agentFields: {} })).toMatchObject({
+      agentNotes: "",
+      agentFields: {},
+    })
+    expect(AgentPublic({ ...record, agentNotes: null })).toHaveProperty("summary")
+    expect(AgentPublic({ ...record, agentFields: { retries: 2 } })).toHaveProperty("summary")
   })
 
   it("omits userNotes/sessionFields from pub when not set on agent", () => {

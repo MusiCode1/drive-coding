@@ -92,7 +92,7 @@ export const en: Catalog = {
   "chat.subagent.status.unknown": "Unknown",
   "chat.subagent.prompt": "Task",
   "chat.subagent.summary": "Summary",
-  "chat.subagent.transcript": "Subagent activity",
+  "chat.subagent.transcript": "Subtask activity",
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
@@ -128,10 +128,10 @@ export const en: Catalog = {
   "agentOptions.title": "Session options",
   "agentOptions.model.label": "Model",
   "agentOptions.model.other": "Other",
-  "agentOptions.agent.label": "Agent",
+  "agentOptions.agent.label": "Persona",
   "agentOptions.mode.label": "Mode",
   // CLI-provided config-option name translations (identity in English).
-  "configName.agent": "Agent",
+  "configName.agent": "Persona",
   "configName.mode": "Mode",
   "configName.sessionMode": "Session Mode",
   "configName.approvalPreset": "Approval Preset",
@@ -207,7 +207,7 @@ export const en: Catalog = {
   "header.audioOn": "Mute audio",
   "header.audioOff": "Unmute audio",
   "sidebar.collapse": "Collapse panel",
-  "sidebar.agentOptions": "Agent options",
+  "sidebar.agentOptions": "Session options",
   "sidebar.display": "Display",
   "sidebar.sessions": "Sessions",
   "sidebar.refresh": "Refresh",
@@ -239,12 +239,12 @@ export const en: Catalog = {
   "settings.theme.slate": "Slate",
   "settings.theme.daylight": "Daylight",
   // ─── active-agents ─── (slice active-agents-widget)
-  "connect.agents.title": "Active processes",
-  "connect.agents.empty": "No active processes",
+  "connect.agents.title": "Active agents",
+  "connect.agents.empty": "No active agents",
   "connect.agents.refresh": "Refresh",
   "connect.agents.reconnect": "Reconnect",
-  "connect.agents.kill": "Kill",
-  "connect.agents.killConfirm": "Sure?",
+  "connect.agents.close": "Close agent",
+  "connect.agents.closeConfirm": "Confirm closing agent",
   "connect.agents.inUse": "Open in another tab",
   // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
   "connect.agents.noSession": "No active session",
@@ -254,7 +254,7 @@ export const en: Catalog = {
   "connect.agents.lastMessage": "Last activity",
   // ─── agent-tree-display ─── (slice agent-tree-display)
   "connect.agents.subAgentsOf": "Sub-agents",
-  "connect.agents.childCount": "sub-agents",
+  "connect.agents.childCount": "Child agents",
   "connect.agents.watcherCount": "viewers",
   "connect.agents.openedBy": "opened by",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
@@ -308,28 +308,28 @@ export const en: Catalog = {
   "connect.recent.expand": "Expand",
   // ─── leave-running (slice leave-running-background) ───
   "session.titleLabel": "Title",
-  "session.fieldsLabel": "Fields",
-  "session.fieldsEmpty": "No fields",
+  "agent.fieldsLabel": "Agent fields",
+  "agent.fieldsEmpty": "No agent fields",
   // ─── scope-policy-per-caller ───
-  "session.scopePolicy.title": "Approvals for this agent",
-  "session.scopePolicy.message": "Send messages and cancel turns",
-  "session.scopePolicy.update": "Change another agent",
-  "session.scopePolicy.close": "Close another agent",
-  "session.scopePolicy.option.inherit": "Inherit global",
-  "session.scopePolicy.sourceLabel": "Source",
-  "session.scopePolicy.source.agent": "This agent",
-  "session.scopePolicy.source.override": "Global override (PATCH)",
-  "session.scopePolicy.source.env": "Environment",
-  "session.scopePolicy.source.default": "Default",
-  "session.scopePolicy.loading": "Loading policy for this agent…",
-  "session.scopePolicy.saving": "Saving…",
-  "session.scopePolicy.error": "Could not load or save policy for this agent.",
-  "session.scopePolicy.empty": "No policy loaded for this agent. Try loading again.",
-  "session.scopePolicy.retry": "Try again",
-  "session.scopePolicy.note":
+  "agent.scopePolicy.title": "Approvals for this agent",
+  "agent.scopePolicy.message": "Send messages and cancel turns",
+  "agent.scopePolicy.update": "Change another agent",
+  "agent.scopePolicy.close": "Close another agent",
+  "agent.scopePolicy.option.inherit": "Inherit global",
+  "agent.scopePolicy.sourceLabel": "Source",
+  "agent.scopePolicy.source.agent": "This agent",
+  "agent.scopePolicy.source.override": "Global override (PATCH)",
+  "agent.scopePolicy.source.env": "Environment",
+  "agent.scopePolicy.source.default": "Default",
+  "agent.scopePolicy.loading": "Loading policy for this agent…",
+  "agent.scopePolicy.saving": "Saving…",
+  "agent.scopePolicy.error": "Could not load or save policy for this agent.",
+  "agent.scopePolicy.empty": "No policy loaded for this agent. Try loading again.",
+  "agent.scopePolicy.retry": "Try again",
+  "agent.scopePolicy.note":
     "Applies to writes outside your agent subtree. Not a security boundary — visibility and predictable behavior.",
   "session.leaveRunning": "Leave — keep running",
-  "session.closeSession": "Shut the process down completely",
+  "agent.close": "Close agent",
   // ─── playbackControls ─── (slice B1-controls-ui)
   "playbackControls.stopRun": "Stop run",
   "playbackControls.stopRun.thinking": "Stop run",
@@ -405,7 +405,7 @@ export const en: Catalog = {
   "settings.ttsStatus.usage.notAvailable": "—",
   "settings.ttsStatus.refresh": "Refresh",
   // ─── ui-session-polish ─── (slice ui-session-polish)
-  "session.copyId": "Copy session ID",
+  "session.copyId": "Copy ACP session ID",
   "modal.loading.session": "Loading session…",
   // ─── app-title ─── (slice app-title-build-env)
   "appTitle.settings": "Settings",
@@ -453,8 +453,8 @@ export const en: Catalog = {
   "connect.machine.cpu": "CPU",
   "connect.machine.label": "Machine load",
   // ─── session delete ─── (slice session-delete)
-  "session.delete": "Delete",
-  "session.deleteConfirm": "Sure? Delete session",
+  "session.delete": "Delete session",
+  "session.deleteConfirm": "Confirm deleting session",
   // ─── permission ─── (slice-permission-ui-basic)
   "permission.title": "Permission request",
   "permission.allowOnce": "Allow once",
@@ -556,11 +556,11 @@ export const en: Catalog = {
   "pendingCapture.dismiss": "Dismiss",
   "pendingCapture.restored": "Unfinished recording restored",
   // ─── session-memo ─── (slice session-memo-pad)
-  "sessionMemo.title": "Memo",
-  "sessionMemo.open": "Open memo",
-  "sessionMemo.minimize": "Minimize memo",
-  "sessionMemo.placeholder": "Reminders or a summary of this session…",
-  "settings.toggle.sessionMemo": "Session memo pad",
+  "agentNotes.title": "Agent notes",
+  "agentNotes.open": "Open agent notes",
+  "agentNotes.minimize": "Minimize agent notes",
+  "agentNotes.placeholder": "Reminders or notes about this agent…",
+  "settings.toggle.agentNotes": "Agent notes",
   // ─── usage ─── (slice usage-per-cli)
   "usage.page.title": "Usage by CLI",
   "usage.page.loading": "Loading…",
