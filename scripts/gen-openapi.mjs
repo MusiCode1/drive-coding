@@ -9,6 +9,7 @@ import { PatchAgentInput } from "../packages/backend/src/delivery/http-agents.ts
 import {
   CancelParams,
   DeleteSessionParams,
+  ListSessionsParams,
   LoadSessionParams,
   NewSessionParams,
   PromptParams,
@@ -18,7 +19,7 @@ import {
   ScopePolicyPatchBodySchema,
   ScopePolicySnapshotSchema,
 } from "../packages/core/src/schemas/scope-policy.ts"
-import { RPC_METHODS } from "../packages/core/src/session/rpc-methods.ts"
+import { LEGACY_RPC_METHODS, RPC_METHODS } from "../packages/core/src/session/rpc-methods.ts"
 import { extractOperations } from "./lint-api-documented.mjs"
 
 const OUT_OF_SCOPE = [
@@ -120,6 +121,7 @@ const components = {
     RpcPromptParams: arkToJsonSchema(PromptParams, "PromptParams"),
     RpcCancelParams: arkToJsonSchema(CancelParams, "CancelParams"),
     RpcLoadSessionParams: arkToJsonSchema(LoadSessionParams, "LoadSessionParams"),
+    RpcListSessionsParams: arkToJsonSchema(ListSessionsParams, "ListSessionsParams"),
     RpcNewSessionParams: arkToJsonSchema(NewSessionParams, "NewSessionParams"),
     RpcDeleteSessionParams: arkToJsonSchema(DeleteSessionParams, "DeleteSessionParams"),
     ScopePolicySnapshot: arkToJsonSchema(ScopePolicySnapshotSchema, "ScopePolicySnapshot"),
@@ -143,31 +145,51 @@ const components = {
   },
 }
 
-const rpcMethodEnum = Object.values(RPC_METHODS)
+const listMethods = [
+  RPC_METHODS.listSessions,
+  ...Object.keys(LEGACY_RPC_METHODS).filter(
+    (alias) => LEGACY_RPC_METHODS[alias] === RPC_METHODS.listSessions,
+  ),
+]
+const rpcMethodEnum = [...new Set([...Object.values(RPC_METHODS), ...listMethods])]
 
 const rpcRequestBody = {
   required: true,
-  description: `${CONTRACT_NONE_DESC} The \`params\` object follows five param shapes (prompt, cancel, load, new, delete); \`session/list\` has no params schema; \`set_mode\` / \`set_config_option\` / \`_drive/*\` are ad-hoc casts at runtime.`,
+  description:
+    "The server validates list params for session/list and listSessions, accepts missing or null params, and ignores waitMs for these methods. The remaining RPC envelope has partial, descriptive schema coverage.",
   content: {
     "application/json": {
       schema: {
         type: "object",
         properties: {
           method: { type: "string", enum: rpcMethodEnum },
-          params: {
-            oneOf: [
-              { $ref: "#/components/schemas/RpcPromptParams" },
-              { $ref: "#/components/schemas/RpcCancelParams" },
-              { $ref: "#/components/schemas/RpcLoadSessionParams" },
-              { $ref: "#/components/schemas/RpcNewSessionParams" },
-              { $ref: "#/components/schemas/RpcDeleteSessionParams" },
-              { type: "object", additionalProperties: true },
-            ],
-          },
-          waitMs: { type: "integer", minimum: 1, maximum: 60000 },
         },
         required: ["method"],
         additionalProperties: true,
+        if: { properties: { method: { enum: listMethods } } },
+        // biome-ignore lint/suspicious/noThenProperty: JSON Schema conditional keyword.
+        then: {
+          properties: {
+            params: {
+              anyOf: [{ $ref: "#/components/schemas/RpcListSessionsParams" }, { type: "null" }],
+            },
+          },
+        },
+        else: {
+          properties: {
+            params: {
+              anyOf: [
+                { $ref: "#/components/schemas/RpcPromptParams" },
+                { $ref: "#/components/schemas/RpcCancelParams" },
+                { $ref: "#/components/schemas/RpcLoadSessionParams" },
+                { $ref: "#/components/schemas/RpcNewSessionParams" },
+                { $ref: "#/components/schemas/RpcDeleteSessionParams" },
+                { type: "object", additionalProperties: true },
+              ],
+            },
+            waitMs: { type: "integer", minimum: 1, maximum: 60000 },
+          },
+        },
       },
       "x-drive-coding-contract": "none",
     },

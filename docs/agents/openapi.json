@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.13.0",
+    "version": "1.15.0",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
@@ -1419,7 +1419,7 @@
         },
         "requestBody": {
           "required": true,
-          "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced. The `params` object follows five param shapes (prompt, cancel, load, new, delete); `session/list` has no params schema; `set_mode` / `set_config_option` / `_drive/*` are ad-hoc casts at runtime.",
+          "description": "The server validates list params for session/list and listSessions, accepts missing or null params, and ignores waitMs for these methods. The remaining RPC envelope has partial, descriptive schema coverage.",
           "content": {
             "application/json": {
               "schema": {
@@ -1437,40 +1437,66 @@
                       "session/list",
                       "session/delete",
                       "_drive/ext",
-                      "_drive/set_session_model"
+                      "_drive/set_session_model",
+                      "listSessions"
                     ]
-                  },
-                  "params": {
-                    "oneOf": [
-                      {
-                        "$ref": "#/components/schemas/RpcPromptParams"
-                      },
-                      {
-                        "$ref": "#/components/schemas/RpcCancelParams"
-                      },
-                      {
-                        "$ref": "#/components/schemas/RpcLoadSessionParams"
-                      },
-                      {
-                        "$ref": "#/components/schemas/RpcNewSessionParams"
-                      },
-                      {
-                        "$ref": "#/components/schemas/RpcDeleteSessionParams"
-                      },
-                      {
-                        "type": "object",
-                        "additionalProperties": true
-                      }
-                    ]
-                  },
-                  "waitMs": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 60000
                   }
                 },
                 "required": ["method"],
-                "additionalProperties": true
+                "additionalProperties": true,
+                "if": {
+                  "properties": {
+                    "method": {
+                      "enum": ["session/list", "listSessions"]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "params": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/RpcListSessionsParams"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "params": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/RpcPromptParams"
+                        },
+                        {
+                          "$ref": "#/components/schemas/RpcCancelParams"
+                        },
+                        {
+                          "$ref": "#/components/schemas/RpcLoadSessionParams"
+                        },
+                        {
+                          "$ref": "#/components/schemas/RpcNewSessionParams"
+                        },
+                        {
+                          "$ref": "#/components/schemas/RpcDeleteSessionParams"
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    "waitMs": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 60000
+                    }
+                  }
+                }
               },
               "x-drive-coding-contract": "none"
             }
@@ -1857,6 +1883,21 @@
           }
         },
         "required": ["sessionId"]
+      },
+      "RpcListSessionsParams": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string",
+            "pattern": "^(?:\\/|[a-zA-Z]:[\\\\/]|\\\\\\\\[^\\\\/]+[\\\\/][^\\\\/]+)"
+          },
+          "paged": {
+            "const": true
+          }
+        }
       },
       "RpcNewSessionParams": {
         "type": "object",

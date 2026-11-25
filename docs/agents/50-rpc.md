@@ -17,8 +17,8 @@ ext_methods:
   - _drive/voice/stop
   - _drive/voice/listVoices
   - _drive/voice/speak
-docs_version: 1.12.0
-updated: 2026-11-20
+docs_version: 1.15.0
+updated: 2026-11-25
 ---
 
 # Agent session RPC
@@ -39,10 +39,70 @@ Legacy aliases (for example `prompt` instead of `session/prompt`) may still be a
 | `session/set_config_option` | Set a config option (`params.configId`, `params.value`). |
 | `session/load` | Load an existing ACP session (`params.sessionId`, optional `params.cwd`). |
 | `session/new` | Start a new ACP session (optional `params.cwd`). |
-| `session/list` | List sessions exposed by the CLI (blocking JSON result). |
+| `session/list` | List sessions exposed by the CLI, with optional folder filtering and pagination. |
 | `session/delete` | Delete a session by `params.sessionId`. |
 | `_drive/ext` | Extension dispatch (`params.method`, optional `params.params`). |
 | `_drive/set_session_model` | Legacy model override (`params.model`) — prefer config options when available. |
+
+## Listing sessions
+
+Use `session/list` over HTTP RPC or send the same body in the WebSocket RPC request.
+`listSessions` is the legacy alias and accepts the same arguments.
+
+```json
+{"method":"session/list","params":{"paged":true,"cwd":"/demo/project"}}
+```
+
+Including `paged: true`, `cwd`, or `cursor` selects the paged response. Use an
+absolute POSIX, drive-rooted Windows, or UNC path for `cwd`. Omit it to list
+across the folders available to the provider. In this example the first page returns
+an empty list with a cursor. An empty page can still have a next page.
+
+```json
+{
+  "sessions": [],
+  "sessionCapabilities": {"list": {}},
+  "capabilities": {"list": true, "filterByCwd": true, "delete": false},
+  "nextCursor": "opaque-page-token"
+}
+```
+
+For the next page, send the same `cwd` with the returned cursor.
+
+```json
+{"method":"session/list","params":{"cwd":"/demo/project","cursor":"opaque-page-token"}}
+```
+
+Copy the cursor exactly, including whitespace or an empty string. The server
+omits `nextCursor` at the end, including when the provider returns `null`.
+`sessionCapabilities` carries the provider's raw declaration or `null`.
+Use the boolean `capabilities` fields to decide which actions to offer.
+
+A request with omitted, `null`, or empty `params` returns the legacy
+`{ "sessions": [], "sessionCapabilities": null }` shape, with actual sessions
+and the raw capabilities when available. Unknown parameter keys are ignored.
+A request containing only unknown parameter keys also uses the legacy shape.
+
+A warm ACP v1 attachment without initialization metadata returns an empty paged
+response with `sessionCapabilities: null`, all three capability flags set to
+`false`, and `legacyOnly: true`. On the first page, a client can retry once with
+`params: {}` and use that single legacy page, filtering by folder locally. If
+the marker arrives during pagination, stop and keep the pages already loaded.
+An explicit refresh can then start the first-page flow again. The paged call on
+this attachment makes no upstream list request.
+
+Invalid list params get `400` before the session host is requested. On an
+initialized connection, an absent list capability returns `200` with an empty
+list. An upstream `-32601` has the same fallback. In a paged fallback, `list`
+and `filterByCwd` are `false`. Deletion is gated independently. Other upstream
+errors return `502` with `error` and
+the provider's `code` when available, including `-32602` for rejected arguments.
+
+`session/delete` keeps its scope check and validates `params.sessionId` before
+requesting the host. An absent delete capability or upstream `-32601` returns
+`200` with `{ "ok": false, "unsupported": true }`. A warm v1 attachment without
+capability metadata can still forward an explicit, authorized legacy delete
+request. Other upstream delete errors use the same `502` mapping.
 
 ## Extensions (`_drive/ext`)
 
@@ -138,9 +198,8 @@ ordinary `session/prompt` from the FE.
 | `session/cancel` | ArkType `CancelParams` | `400` (`rpc-dispatch.ts`) |
 | `session/load` | ArkType / missing cwd | `400` (`rpc-session-mgmt.ts`) |
 | `session/new` | ArkType / missing cwd | `400` (`rpc-session-mgmt.ts`) |
-| `session/delete` | ArkType | `400` (`rpc-session-mgmt.ts`) |
-| `session/list` | (none) | errors → `502` or empty list on `-32601` (`rpc-session-mgmt.ts`) |
-| `session/delete` | unsupported CLI | `200` `{ ok: false, unsupported: true }` on `-32601` (`rpc-session-mgmt.ts`) |
+| `session/delete` | ArkType `DeleteSessionParams` after scope check | `400` (`rpc-dispatch.ts`) |
+| `session/list` / `listSessions` | ArkType `ListSessionsParams` | `400` (`rpc-dispatch.ts`) |
 
 ## OpenAPI
 
