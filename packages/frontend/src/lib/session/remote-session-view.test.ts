@@ -170,7 +170,7 @@ describe("RemoteSessionView — connect()", () => {
 
     expect(view.state.sessionId).toBe("sess-42")
     expect(mockFetch).toHaveBeenCalledWith(
-      "http://be.local/api/agents/agent-1/events",
+      "http://be.local/api/agents/agent-1/events?snapshot=meta",
       expect.objectContaining({}),
     )
   })
