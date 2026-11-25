@@ -8,7 +8,7 @@ const session = getSession()
 const entries = $derived(Object.entries(session.agentFields))
 </script>
 
-<label class="flex flex-col gap-1 px-1 shrink-0">
+<section class="flex flex-col gap-1 px-1 shrink-0" aria-label={t("agent.fieldsLabel")}>
   <span class="text-[11px] font-semibold uppercase tracking-wider" style="color:var(--fg-dim)">
     {t("agent.fieldsLabel")}
   </span>
@@ -21,4 +21,4 @@ const entries = $derived(Object.entries(session.agentFields))
       {/each}
     </ul>
   {/if}
-</label>
+</section>

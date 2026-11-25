@@ -91,7 +91,7 @@ function delay(ms = 10): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-function sseFetchFor(snapshot: unknown): ReturnType<typeof vi.fn> {
+function sseFetchFor(snapshot: unknown) {
   const encoder = new TextEncoder()
   const sseText = toWireText([{ event: "snapshot", data: JSON.stringify(snapshot) }])
   return vi.fn(async (url: string) => {
