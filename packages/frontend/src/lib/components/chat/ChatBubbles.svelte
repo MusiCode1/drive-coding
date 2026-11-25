@@ -22,6 +22,8 @@ import ActivityGroupBubble from "./bubbles/ActivityGroupBubble.svelte"
 import { groupActivityRuns } from "./bubbles/activity-groups"
 import ElicitationDialog from "./ElicitationDialog.svelte"
 import HistoryEdge from "./HistoryEdge.svelte"
+import { HISTORY_START_MARGIN } from "./history-edge"
+import { createHistoryScroll } from "./history-scroll"
 import PermissionRequestBlock from "./PermissionRequestBlock.svelte"
 import PlanChecklist from "./PlanChecklist.svelte"
 import StatusBubble from "./StatusBubble.svelte"
@@ -34,21 +36,28 @@ const chatScroll = getChatScroll()
 const items = $derived(groupActivityRuns(session.renderBubbles, settings.compactActivity))
 
 let handle = $state<VirtualizerHandle | undefined>(undefined)
+const historyScroll = createHistoryScroll(
+  () => items,
+  () => chatScroll.scrollEl,
+  () => handle,
+)
 
 // פרסם handle ל-bridge — ChatBubbles הוא owner ה-Virtualizer
 $effect(() => {
   chatScroll.handle = handle ?? null
+  return session.history.observeOlder(historyScroll)
 })
 </script>
 
-<HistoryEdge history={session.history} />
+<HistoryEdge history={session.history} hasBubbles={session.renderBubbles.length > 0} />
 {#if chatScroll.scrollEl}
   <Virtualizer
     bind:this={handle}
     scrollRef={chatScroll.scrollEl}
     data={items}
     getKey={(it) => it.key}
-    startMargin={80}
+    startMargin={HISTORY_START_MARGIN}
+    shift={session.history.shiftNext}
   >
     {#snippet children(item)}
       <div class="pb-5">
@@ -58,6 +67,8 @@ $effect(() => {
           <ActivityGroupBubble
             bubbles={item.bubbles}
             allBubbles={session.renderBubbles}
+            open={historyScroll.isOpen(item.key)}
+            onToggle={(open) => historyScroll.setOpen(item.key, open)}
           />
         {/if}
       </div>

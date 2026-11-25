@@ -1,7 +1,69 @@
+import type { SessionState } from "@drive-coding/core/session"
+import type { HistoryPreserve } from "./history-preserve"
 import { shouldReloadOnReconnect } from "./history-reload"
-import { legacyReconnect } from "./history-sync-emit"
-import type { HistorySyncPort } from "./history-sync-port"
+import { emitHistoryState, legacyReconnect } from "./history-sync-emit"
+import { triggerHistoryReload } from "./history-sync-trigger"
+import { defaultWindow } from "./history-window"
 import type { OpeningFrame } from "./wire/frame-decode"
+
+export type ReloadInput = {
+  tag: "reload" | "reset"
+  seed: SessionState
+  preserve?: HistoryPreserve
+}
+type ReloadOptions = Omit<
+  Parameters<typeof triggerHistoryReload>[0],
+  keyof ReloadInput | "setError" | "setReloading" | "signal"
+>
+
+export class HistoryReload {
+  input?: ReloadInput
+  error: string | null = null
+  reloading = false
+
+  constructor(private readonly opts: ReloadOptions) {}
+
+  async run(input: ReloadInput, signal: AbortSignal): Promise<boolean> {
+    this.input = input
+    const success = await triggerHistoryReload({
+      ...this.opts,
+      ...input,
+      signal,
+      setError: (error) => {
+        this.error = error
+      },
+      setReloading: (reloading) => {
+        this.reloading = reloading
+      },
+    })
+    if (success && this.input === input) this.input = undefined
+    return success
+  }
+
+  finishLegacy(opening: OpeningFrame, begin: () => void, clearFloors: () => void): void {
+    const { port, emitCtx, setWindow, gate } = this.opts
+    const previous = emitCtx()
+    begin()
+    const replaced = legacyReconnect(port, opening.state)
+    if (replaced) {
+      setWindow(defaultWindow(opening.state.version))
+      clearFloors()
+    }
+    this.input = undefined
+    this.error = null
+    this.reloading = false
+    gate.open()
+    if (
+      (replaced && previous.window.hasMore) ||
+      previous.reloading ||
+      previous.error !== null ||
+      previous.loadingOlder ||
+      previous.olderError !== null
+    ) {
+      emitHistoryState(port, emitCtx())
+    }
+  }
+}
 
 export function planReconnect(
   opening: OpeningFrame,
@@ -10,8 +72,4 @@ export function planReconnect(
 ): "legacy" | "noop" | "reload" | "reset" {
   if (!opening.historyOmitted) return "legacy"
   return shouldReloadOnReconnect(prevSession, opening, prevVersion) ?? "noop"
-}
-
-export function applyLegacyReconnect(port: HistorySyncPort, opening: OpeningFrame): void {
-  legacyReconnect(port, opening.state)
 }

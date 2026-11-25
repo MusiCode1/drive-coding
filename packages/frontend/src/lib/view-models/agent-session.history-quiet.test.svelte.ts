@@ -10,10 +10,12 @@ import {
   createInitialSessionState,
   messageWireByteSize,
   type Patch,
+  reduce,
   type SessionState,
   selectRange,
   serializeFrame,
   snapshotPayload,
+  updateFrame,
 } from "@drive-coding/core/session"
 import { type IntentFrame, toWireFrames } from "@drive-coding/core/session/testing"
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
@@ -524,16 +526,19 @@ describe("replay-quiet meta path", () => {
     harness2.destroy()
   })
 
-  it("keeps a visible tail and its full-history replacement quiet", async () => {
-    const fullState = makeSnapshot({ version: 505, messages: [historicalMessage()] })
+  it("keeps a visible tail and the prepended history quiet", async () => {
+    const older = historicalMessage()
+    const newest = { ...older, id: "m_1", messageId: "newest" }
+    const fullState = makeSnapshot({ version: 505, messages: [older, newest] })
     const opening = metaSnapshotFrame(fullState)
     const base = makeMockFetch([[{ event: "snapshot", data: opening.data }]])
     const harness = createQuietHarness([], async (url, init) => {
       const { pathname, searchParams } = new URL(url)
       if (pathname.endsWith("/history")) {
-        return jsonResponse(
-          searchParams.has("tail") ? historyTailResponse(fullState) : snapshotPayload(fullState),
-        )
+        const range = searchParams.has("tail")
+          ? { tail: true as const, maxBytes: 1 }
+          : { before: Number(searchParams.get("before")), maxBytes: 1 }
+        return jsonResponse(snapshotPayload(fullState, undefined, { range }))
       }
       return base(url, init)
     })
@@ -542,10 +547,69 @@ describe("replay-quiet meta path", () => {
       await flushEffects()
       expect(harness.agent.bubbles).toHaveLength(1)
       expect(harness.enqueueCount()).toBe(0)
-      await harness.view.history.loadFull()
+      await harness.view.history.loadOlder()
       await flushEffects()
-      expect(harness.agent.bubbles).toHaveLength(1)
+      expect(harness.agent.bubbles.map(({ id }) => id)).toEqual(["m_0", "m_1"])
       expect(harness.enqueueCount()).toBe(0)
+    } finally {
+      harness.destroy()
+    }
+  })
+
+  it("shows a tool from earlier history with the status received during its GET", async () => {
+    let state = reduce(makeSnapshot(), {
+      sessionUpdate: "tool_call",
+      toolCallId: "earlier-tool",
+      title: "Earlier tool",
+      status: "in_progress",
+    }).state
+    state = reduce(state, {
+      sessionUpdate: "user_message",
+      messageId: "visible",
+      content: { type: "text", text: "Visible tail" },
+    }).state
+    const completed = reduce(state, {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "earlier-tool",
+      status: "completed",
+    })
+    const patch = completed.patches[0]
+    if (!patch) throw new Error("Missing tool status patch")
+    const live = updateFrame(completed.state, patch, "meta")
+    if (!live) throw new Error("Missing tool status update")
+    const opening = metaSnapshotFrame(state)
+    const pending = Promise.withResolvers<Response>()
+    let stream: ReadableStreamDefaultController<Uint8Array> | undefined
+    const encoder = new TextEncoder()
+    const harness = createQuietHarness([], async (url) => {
+      const { pathname, searchParams } = new URL(url)
+      if (pathname.endsWith("/events")) {
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              stream = controller
+              controller.enqueue(encoder.encode(serializeFrame(opening)))
+            },
+          }),
+        )
+      }
+      if (searchParams.has("before")) return pending.promise
+      return jsonResponse(snapshotPayload(state, undefined, { range: { tail: true, maxBytes: 1 } }))
+    })
+    try {
+      await harness.view.connect()
+      const loading = harness.view.history.loadOlder()
+      await vi.waitFor(() => expect(harness.view.history.loadingOlder).toBe(true))
+      stream?.enqueue(encoder.encode(serializeFrame(live)))
+      await vi.waitFor(() => expect(harness.view.state.version).toBe(completed.state.version))
+      pending.resolve(
+        jsonResponse(snapshotPayload(state, undefined, { range: { before: 1, maxBytes: 1 } })),
+      )
+      await loading
+      await vi.waitFor(() => {
+        const first = harness.agent.bubbles[0]
+        expect(first?.kind === "tool" && first.toolCall.status).toBe("completed")
+      })
     } finally {
       harness.destroy()
     }
@@ -611,4 +675,42 @@ describe("replay-quiet meta path", () => {
     const tail = historyTailResponse(fullState)
     expect(tail.page?.hasMore).toBe(true)
   })
+})
+
+it("prepends silently and preserves the existing tool narration", async () => {
+  const seed = makeSnapshot({ messages: [historicalMessage()], nextMessageSeq: 1 })
+  const state = reduce(seed, {
+    sessionUpdate: "tool_call",
+    toolCallId: "visible-tool",
+    title: "Visible tool",
+    status: "completed",
+  }).state
+  const opening = metaSnapshotFrame(state)
+  const base = makeMockFetch([[{ event: "snapshot", data: opening.data }]])
+  const harness = createQuietHarness([], async (url, init) => {
+    const { pathname, searchParams } = new URL(url)
+    if (!pathname.endsWith("/history")) return base(url, init)
+    const range = searchParams.has("before")
+      ? { before: 1, maxBytes: 1 }
+      : { tail: true as const, maxBytes: 1 }
+    return jsonResponse(snapshotPayload(state, undefined, { range }))
+  })
+  try {
+    await harness.view.connect()
+    await flushEffects()
+    const existing = harness.agent.bubbles[0]
+    if (existing?.kind !== "tool") throw new Error("Missing tail tool")
+    existing.toolCall.narration = "Existing narration"
+    const epoch = harness.agent.historyEpoch
+    const enqueues = harness.enqueueCount()
+    await harness.view.history.loadOlder()
+    await flushEffects()
+    expect(harness.agent.bubbles.map(({ id }) => id)).toEqual(["m_0", "m_1"])
+    const tool = harness.agent.bubbles[1]
+    expect(tool?.kind === "tool" && tool.toolCall.narration).toBe("Existing narration")
+    expect(harness.agent.historyEpoch).toBe(epoch + 1)
+    expect(harness.enqueueCount()).toBe(enqueues)
+  } finally {
+    harness.destroy()
+  }
 })

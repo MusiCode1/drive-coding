@@ -2,7 +2,6 @@
 /**
  * ActivityGroupBubble — collapsed row for a run of thought/tool bubbles.
  *
- * slice compact-activity, Commit 1: local open state (not derived from settings).
  * Uses <button> + {#if open}, not <details> (init-fire under CSR).
  */
 import ChevronRightIcon from "@lucide/svelte/icons/chevron-right"
@@ -22,16 +21,18 @@ let {
   bubbles,
   allBubbles,
   depth = 0,
+  open,
+  onToggle,
 }: {
   bubbles: Bubble[]
   allBubbles: readonly Bubble[]
   depth?: number
+  open: boolean
+  onToggle: (open: boolean) => void
 } = $props()
 
 const t = getI18n().t
 const chatScroll = getChatScroll()
-
-let open = $state(false)
 
 const counts = $derived(countActivityKinds(bubbles))
 const kinds = $derived(uniqueToolKinds(bubbles))
@@ -40,7 +41,7 @@ const lastInProgress = $derived(isLastBubbleInProgress(bubbles))
 
 function toggleOpen(): void {
   chatScroll.noteUserIntent?.()
-  open = !open
+  onToggle(!open)
 }
 </script>
 
@@ -51,6 +52,7 @@ function toggleOpen(): void {
     style="background:var(--bg-card); border-color:var(--border); color:var(--fg-dim)"
     onclick={toggleOpen}
     aria-expanded={open}
+    data-history-group={open ? undefined : bubbles[0]?.id}
     aria-label={open ? t("chat.activityGroup.collapse") : t("chat.activityGroup.expand")}
   >
     <ChevronRightIcon

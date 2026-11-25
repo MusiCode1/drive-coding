@@ -19,12 +19,13 @@ interface Props {
   side: BubbleSide
   avatar: BubbleAvatarKind
   children: Snippet
+  historyBubbleId?: string
 }
 
-const { side, avatar, children }: Props = $props()
+const { side, avatar, children, historyBubbleId }: Props = $props()
 </script>
 
-<div class="bubble-row" data-side={side}>
+<div class="bubble-row" data-side={side} data-history-bubble={historyBubbleId}>
   <div class="bubble-row-cluster">
     <Avatar kind={avatar} />
     <div class="bubble-row-content">

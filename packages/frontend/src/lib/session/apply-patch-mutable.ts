@@ -38,7 +38,7 @@ export function voiceOfMeta(meta: Record<string, unknown> | undefined): BubbleVo
   return undefined
 }
 
-function sessionMsgToBubble(msg: SessionMessage, mappers: PatchMappers): Bubble {
+export function sessionMsgToBubble(msg: SessionMessage, mappers: PatchMappers): Bubble {
   if (msg.role === "tool") {
     return {
       id: msg.id,

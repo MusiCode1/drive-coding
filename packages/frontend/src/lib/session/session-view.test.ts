@@ -24,7 +24,9 @@ class MockSessionView implements SessionView {
     window: { firstSeq: null, lastSeq: null, hasMore: false, watermark: 0 },
     error: null,
     reloading: false,
-    loadFull: async () => {},
+    loadingOlder: false,
+    olderError: null,
+    loadOlder: async () => {},
     retry: async () => {},
   }
 
@@ -115,6 +117,8 @@ describe("readViewEmission", () => {
         window: { firstSeq: 1, lastSeq: 2, hasMore: true, watermark: 3 },
         error: null,
         reloading: false,
+        loadingOlder: false,
+        olderError: null,
       },
     }
     expect(readViewEmission(session, emission)).toBe(emission)

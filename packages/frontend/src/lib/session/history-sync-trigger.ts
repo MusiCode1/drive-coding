@@ -1,5 +1,6 @@
 import type { SessionState } from "@drive-coding/core/session"
 import type { HistoryGate } from "./history-drain"
+import { type HistoryPreserve, preserveHistory } from "./history-preserve"
 import { fetchTailWithRetries } from "./history-reload"
 import { applyEmitHistory, emitHistoryState, type HistoryEmitCtx } from "./history-sync-emit"
 import type { HistorySyncPort } from "./history-sync-port"
@@ -18,6 +19,8 @@ export async function triggerHistoryReload(opts: {
   setError: (e: string | null) => void
   tag: "reload" | "reset"
   seed: SessionState
+  preserve?: HistoryPreserve
+  settleFloors: (before?: number) => void
 }): Promise<boolean> {
   const {
     port,
@@ -31,6 +34,8 @@ export async function triggerHistoryReload(opts: {
     setError,
     tag,
     seed,
+    preserve,
+    settleFloors,
   } = opts
   gate.close()
   setReloading(true)
@@ -40,8 +45,11 @@ export async function triggerHistoryReload(opts: {
   setReloading(false)
   setError(page ? null : "history reload failed — retry")
   if (page) {
-    port.replace(foldPage(seed, page), page.version)
-    setWindow(applyEmitHistory(port, emitCtx(), tag, page.version, page.page))
+    const tail = foldPage({ ...seed, messages: [] }, page)
+    const preserved = preserve && page.page && preserveHistory(preserve, tail, page.page)
+    port.replace(preserved?.state ?? tail, page.version)
+    settleFloors(preserved ? (page.page?.firstSeq ?? undefined) : undefined)
+    setWindow(applyEmitHistory(port, emitCtx(), tag, page.version, preserved?.page ?? page.page))
     gate.open()
   } else {
     gate.markFailed()

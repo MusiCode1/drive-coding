@@ -23,10 +23,7 @@ export type RpcPipe = {
   label(kind: RpcKind): string
 }
 
-export type HistoryQuery =
-  | { tail: true; maxBytes: number }
-  | { before: number; maxBytes: number }
-  | { full: true }
+export type HistoryQuery = { tail: true; maxBytes: number } | { before: number; maxBytes: number }
 
 export type HistoryPipe = {
   get(query: HistoryQuery, signal?: AbortSignal): Promise<ChannelResponse>

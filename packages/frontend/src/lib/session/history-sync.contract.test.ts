@@ -23,6 +23,12 @@ const session = (id = "first") => createInitialSessionState({ sessionId: id })
 const fail = (status = 503) => new Response(null, { status })
 const tail = (state: SessionState, maxBytes = HISTORY_PAGE_BYTES_DEFAULT) =>
   Response.json(snapshotPayload(state, undefined, { range: { tail: true, maxBytes } }))
+const beforePage = (state: SessionState, before: number, maxBytes = 1) =>
+  Response.json(snapshotPayload(state, undefined, { range: { before, maxBytes } }))
+
+function transcript(...messages: string[]) {
+  return messages.reduce((state, text) => addMessage(state, text).state, session())
+}
 
 function addMessage(seed: SessionState, text: string) {
   return reduce(seed, {
@@ -38,6 +44,22 @@ function updated(seed: SessionState, text: string) {
   if (!patch) throw new Error("missing message patch")
   const frame = updateFrame(result.state, patch, "meta")
   if (!frame) throw new Error("missing update frame")
+  return { state: result.state, frame }
+}
+
+function toolUpdate(state: SessionState, status: "in_progress" | "completed") {
+  const result = reduce(state, {
+    sessionUpdate: state.messages.some(({ role }) => role === "tool")
+      ? "tool_call_update"
+      : "tool_call",
+    toolCallId: "earlier-tool",
+    title: "Earlier tool",
+    status,
+  })
+  const patch = result.patches[0]
+  if (!patch) throw new Error("missing tool patch")
+  const frame = updateFrame(result.state, patch, "meta")
+  if (!frame) throw new Error("missing tool frame")
   return { state: result.state, frame }
 }
 
@@ -127,8 +149,8 @@ function rig(transport: SessionTransport) {
     history,
     metadata,
     requests,
-    async reconnect(state: SessionState) {
-      opening = snapshotFrame(state, undefined, "meta")
+    async reconnect(state: SessionState, mode: "meta" | "full" = "meta") {
+      opening = snapshotFrame(state, undefined, mode)
       await disconnect()
     },
     async end() {
@@ -204,20 +226,22 @@ describe.each(["http", "ws"] as const)("history transport contract — %s", (tra
     expect(view.history.error).toContain("reload failed")
   })
 
-  it("cancels a full load when the stream requests a reload", async () => {
-    const full = Promise.withResolvers<Response>()
-    const initial = session()
-    host.history(tail(initial))
+  it("cancels an older load when the stream requests a reload", async () => {
+    const older = Promise.withResolvers<Response>()
+    const initial = transcript("earlier", "tail")
+    host.history(tail(initial, 1))
     view = await host.connect(initial)
-    const newer = updated({ ...initial, version: 2 }, "replacement").state
-    host.history(full.promise, tail(newer))
-    const loading = view.history.loadFull()
-    host.feed(resetFrame({ ...newer, version: 2 }))
+    const newer = updated({ ...session(), version: initial.version + 1 }, "replacement").state
+    host.history(older.promise, tail(newer))
+    const loading = view.history.loadOlder()
+    await tick()
+    host.feed(resetFrame({ ...newer, version: initial.version + 1 }))
     await tick()
     expect(host.requests[1]?.signal?.aborted).toBe(true)
-    full.resolve(Response.json(snapshotPayload(initial)))
+    older.resolve(beforePage(initial, 1))
     await loading
     expect(view.state.messages).toEqual(newer.messages)
+    expect(view.history.olderError).toBeNull()
   })
 
   it("refetches when the first page has V < S", async () => {
@@ -228,6 +252,323 @@ describe.each(["http", "ws"] as const)("history transport contract — %s", (tra
     expect(host.requests).toHaveLength(2)
     expect(view.state.messages).toEqual(latest.messages)
   })
+
+  it("loads three successive pages and stops at the start", async () => {
+    const state = transcript("one", "two", "three", "four")
+    host.history(tail(state, 1), beforePage(state, 3), beforePage(state, 2), beforePage(state, 1))
+    view = await host.connect(state)
+    for (let page = 0; page < 4; page++) await view.history.loadOlder()
+    expect(view.state.messages.map(({ id }) => id)).toEqual(["m_0", "m_1", "m_2", "m_3"])
+    expect(host.requests.slice(1).map(({ url }) => url.searchParams.get("before"))).toEqual([
+      "3",
+      "2",
+      "1",
+    ])
+    expect(host.requests[1]?.url.searchParams.get("maxBytes")).toBe(
+      String(HISTORY_PAGE_BYTES_DEFAULT),
+    )
+    expect(view.history.window).toEqual({
+      firstSeq: 0,
+      lastSeq: 3,
+      hasMore: false,
+      watermark: state.version,
+    })
+  })
+
+  it.each([1, 4])("retries a nonadjacent page once (before=%s)", async (before) => {
+    const state = transcript("one", "two", "three", "four")
+    const invalid = () => beforePage(updated(state, "five").state, before)
+    host.history(tail(state, 1), invalid(), invalid())
+    view = await host.connect(state)
+    const previous = view.state
+    const previousWindow = view.history.window
+    await view.history.loadOlder()
+    expect(host.requests).toHaveLength(3)
+    expect(view.history.olderError).toBeTruthy()
+    expect(view.state).toBe(previous)
+    expect(view.history.window).toBe(previousWindow)
+  })
+
+  it("reports an unknown before and retries the same page without losing earlier pages", async () => {
+    const state = transcript("one", "two", "three")
+    const unknown = Response.json({ error: "unknown before" }, { status: 400 })
+    host.history(tail(state, 1), beforePage(state, 2), unknown, beforePage(state, 1))
+    view = await host.connect(state)
+    await view.history.loadOlder()
+    await view.history.loadOlder()
+    expect(host.requests).toHaveLength(3)
+    expect(view.history.olderError).toBeTruthy()
+    expect(view.state.messages.map(({ id }) => id)).toEqual(["m_1", "m_2"])
+    await view.history.loadOlder()
+    expect(host.requests[3]?.url.searchParams.get("before")).toBe("1")
+    expect(view.history.olderError).toBeNull()
+    expect(view.state.messages.map(({ id }) => id)).toEqual(["m_0", "m_1", "m_2"])
+  })
+
+  it("shares the pending load between two callers", async () => {
+    const state = transcript("one", "two")
+    const pending = Promise.withResolvers<Response>()
+    host.history(tail(state, 1), pending.promise)
+    view = await host.connect(state)
+    const first = view.history.loadOlder()
+    expect(view.history.loadOlder()).toBe(first)
+    await tick()
+    expect(view.history.loadingOlder).toBe(true)
+    expect(host.requests).toHaveLength(2)
+    pending.resolve(beforePage(state, 1))
+    await first
+    expect(view.history.loadingOlder).toBe(false)
+  })
+
+  it("keeps V when the earlier page was produced at a later version", async () => {
+    const state = transcript("one", "two")
+    host.history(tail(state, 1), beforePage({ ...state, version: 10 }, 1))
+    view = await host.connect(state)
+    await view.history.loadOlder()
+    expect(view.state.version).toBe(state.version)
+    const live = updated(state, "three")
+    host.feed(live.frame)
+    await tick()
+    expect(view.state.version).toBe(live.state.version)
+    expect(view.state.messages.map(({ id }) => id)).toEqual(["m_0", "m_1", "m_2"])
+  })
+
+  it("applies a held tool update even after live activity advances V", async () => {
+    const tool = toolUpdate(session(), "in_progress")
+    const state = updated(tool.state, "tail").state
+    const toolFinished = toolUpdate(state, "completed")
+    const live = updated(toolFinished.state, "live")
+    const pending = Promise.withResolvers<Response>()
+    host.history(tail(state, 1), pending.promise)
+    view = await host.connect(state)
+    const emissions = observe(view)
+    const loading = view.history.loadOlder()
+    await tick()
+    host.feed(toolFinished.frame)
+    host.feed(live.frame)
+    await tick()
+    pending.resolve(beforePage(state, 1))
+    await loading
+    const earlier = view.state.messages[0]
+    expect(earlier?.role === "tool" && earlier.toolCall.status).toBe("completed")
+    expect(view.state.version).toBe(live.state.version)
+    expect(emissions.filter(({ activity }) => activity)).toHaveLength(1)
+    const pageEmissions = emissions.filter(({ history }) => history === "older")
+    expect(pageEmissions).toHaveLength(1)
+    expect(pageEmissions[0]?.updates).toEqual([])
+  })
+
+  it("drops a subsequently delivered tool update already included in the page", async () => {
+    const tool = toolUpdate(session(), "in_progress")
+    const state = updated(tool.state, "tail").state
+    const page = { ...toolUpdate(state, "completed").state, version: state.version + 2 }
+    const stale = toolUpdate({ ...tool.state, version: state.version }, "in_progress")
+    host.history(tail(state, 1), beforePage(page, 1))
+    view = await host.connect(state)
+    await view.history.loadOlder()
+    host.feed(stale.frame)
+    await tick()
+    const earlier = view.state.messages[0]
+    expect(earlier?.role === "tool" && earlier.toolCall.status).toBe("completed")
+  })
+
+  it("retries once when the buffer of held updates fills", async () => {
+    const state = transcript("earlier", "tail")
+    const pending = [Promise.withResolvers<Response>(), Promise.withResolvers<Response>()]
+    host.history(tail(state, 1), ...pending.map(({ promise }) => promise))
+    view = await host.connect(state)
+    const loading = view.history.loadOlder()
+    for (let attempt = 0; attempt < pending.length; attempt++) {
+      await tick()
+      for (let i = 1; i <= 501; i++) {
+        const version = view.state.version + i
+        host.feed(updated({ ...session(), version }, "outside").frame)
+      }
+      await tick()
+      pending[attempt]?.resolve(beforePage(state, 1))
+    }
+    await loading
+    expect(host.requests).toHaveLength(3)
+    expect(view.history.olderError).toBeTruthy()
+    expect(view.state.messages.map(({ id }) => id)).toEqual(["m_1"])
+  })
+
+  it.each([false, true])("ends a waiting older load without a GET (close=%s)", async (close) => {
+    const state = transcript("earlier", "tail")
+    const pending = Promise.withResolvers<Response>()
+    host.history(
+      tail(state, 1),
+      ...(close ? [pending.promise] : Array.from({ length: 5 }, () => fail())),
+    )
+    view = await host.connect(state)
+    host.feed(resetFrame({ ...state, version: state.version + 1 }))
+    await tick()
+    const loading = view.history.loadOlder()
+    if (close) {
+      await view.close()
+      pending.resolve(fail())
+    } else {
+      await tick(31_000)
+    }
+    await loading
+    expect(view.history.olderError).toBeNull()
+    expect(host.requests).toHaveLength(close ? 2 : 6)
+    expect(host.requests.slice(1).every(({ url }) => url.searchParams.has("tail"))).toBe(true)
+  })
+
+  it.each([
+    "preserve",
+    "retry",
+    "gap",
+    "different identity",
+    "unfinished tool",
+    "active without user",
+    "active prefix",
+    "reset",
+  ] as const)("handles loaded pages after reconnect (%s)", async (scenario) => {
+    const tool =
+      scenario === "unfinished tool" ? toolUpdate(session(), "in_progress").state : session()
+    const old = ["earlier", "middle", "boundary"].reduce(
+      (state, text) => addMessage(state, text).state,
+      tool,
+    )
+    const active = scenario === "active without user" || scenario === "active prefix"
+    const initial = {
+      ...old,
+      turnState: active ? ("responding" as const) : ("idle" as const),
+      messages: old.messages.map((message, index) =>
+        message.role !== "tool" && (scenario === "active without user" || (active && index !== 0))
+          ? { ...message, role: "assistant" as const }
+          : message,
+      ),
+    }
+    const boundary = initial.messages.at(-1)
+    if (!boundary || boundary.role === "tool") throw new Error("Missing transcript boundary")
+    const boundarySeq = Number(boundary.id.slice(2))
+    host.history(tail(initial, 1), beforePage(initial, boundarySeq, 4096))
+    view = await host.connect(initial)
+    await view.history.loadOlder()
+    expect(view.state.messages).toHaveLength(initial.messages.length)
+    const current = {
+      ...initial,
+      version: initial.version + 2,
+      messages: initial.messages.with(-1, {
+        ...boundary,
+        messageId: scenario === "different identity" ? "replacement" : boundary.messageId,
+        segments: [{ id: "s_0", text: "refreshed boundary" }],
+      }),
+    }
+    const next = scenario === "gap" ? updated(current, "after a gap").state : current
+    host.history(scenario === "retry" ? fail(404) : tail(next, 1))
+    if (scenario === "reset") {
+      host.feed(resetFrame(next))
+      await tick()
+    } else {
+      await host.reconnect(next)
+    }
+    if (scenario === "retry") {
+      expect(view.history.error).toBeTruthy()
+      host.history(tail(next, 1))
+      await view.history.retry()
+    }
+    const preserved = scenario === "preserve" || scenario === "retry"
+    expect(view.state.messages.map(({ id }) => id)).toEqual(
+      (preserved ? initial.messages : next.messages.slice(-1)).map(({ id }) => id),
+    )
+    expect(view.history.window.hasMore).toBe(!preserved)
+    const last = view.state.messages.at(-1)
+    if (preserved)
+      expect(last?.role !== "tool" && last?.segments[0]?.text).toBe("refreshed boundary")
+  })
+
+  it("clears preservation input after a successful reload", async () => {
+    const initial = transcript("earlier", "middle", "boundary")
+    host.history(tail(initial, 1), beforePage(initial, 2, 4096))
+    view = await host.connect(initial)
+    await view.history.loadOlder()
+    const next = { ...initial, version: initial.version + 1 }
+    host.history(tail(next, 1))
+    await host.reconnect(next)
+    expect(view.state.messages).toHaveLength(3)
+    host.history(tail(next, 1))
+    await view.history.retry()
+    expect(view.state.messages.map(({ id }) => id)).toEqual(["m_2"])
+    expect(view.history.window.firstSeq).toBe(2)
+  })
+
+  it("uses the actual last live message as the overlap boundary", async () => {
+    const initial = transcript("older", "middle", "initial tail")
+    host.history(tail(initial, 1), beforePage(initial, 2, 4096))
+    view = await host.connect(initial)
+    await view.history.loadOlder()
+    const live = updated(initial, "live after opening")
+    host.feed(live.frame)
+    await tick()
+    expect(view.history.window.lastSeq).toBe(2)
+    const next = { ...live.state, version: live.state.version + 1 }
+    host.history(tail(next, 1))
+    await host.reconnect(next)
+    expect(view.state.messages.map(({ id }) => id)).toEqual(["m_0", "m_1", "m_2", "m_3"])
+  })
+
+  it("requests the earlier page after a legacy reconnect keeps the window", async () => {
+    const state = transcript("earlier", "tail")
+    host.history(tail(state, 1))
+    view = await host.connect(state)
+    await host.reconnect(state, "full")
+
+    host.history(beforePage(state, 1))
+    await view.history.loadOlder()
+
+    expect(host.requests[1]?.url.searchParams.get("before")).toBe("1")
+    expect(host.requests[1]?.signal?.aborted).toBe(false)
+    expect(view.state.messages.map(({ id }) => id)).toEqual(["m_0", "m_1"])
+  })
+
+  it.each(["same version", "replaced", "during reload"] as const)(
+    "handles a legacy reconnect (%s)",
+    async (mode) => {
+      const state = transcript("earlier", "tail")
+      host.history(tail(state, 1))
+      view = await host.connect(state)
+      const emissions = observe(view)
+      await tick()
+      const waiting = Promise.withResolvers<Response>()
+      if (mode === "during reload") {
+        host.history(waiting.promise)
+        host.feed(resetFrame({ ...state, version: state.version + 1 }))
+        await tick()
+        expect(view.history.reloading).toBe(true)
+      }
+      const stateEmissions = () => emissions.filter(({ historyState }) => historyState)
+      const previous = stateEmissions().length
+      const next = mode === "same version" ? state : { ...state, version: state.version + 2 }
+      await host.reconnect(next, "full")
+      waiting.resolve(tail(state))
+      if (mode === "same version") {
+        expect(view.history.window.firstSeq).toBe(1)
+        expect(stateEmissions()).toHaveLength(previous)
+        return
+      }
+      expect(view.history.window).toEqual({
+        firstSeq: null,
+        lastSeq: null,
+        hasMore: false,
+        watermark: next.version,
+      })
+      expect(stateEmissions()).toHaveLength(previous + 1)
+      expect(stateEmissions().at(-1)?.historyState).toMatchObject({
+        reloading: false,
+        error: null,
+        window: { hasMore: false },
+      })
+      await view.history.loadOlder()
+      expect(host.requests).toHaveLength(mode === "during reload" ? 2 : 1)
+      host.feed(updated(next, "live after legacy").frame)
+      await tick()
+      expect(view.state.messages).toHaveLength(3)
+    },
+  )
 
   it("aborts the unused history GET and folds the whole legacy snapshot", async () => {
     const initial = updated(session(), "legacy transcript").state
@@ -252,18 +593,20 @@ describe.each(["http", "ws"] as const)("history transport contract — %s", (tra
   })
 
   it("discards a queued batch from a replaced connection even above the new watermark", async () => {
-    const full = Promise.withResolvers<Response>()
+    const pending = Promise.withResolvers<Response>()
     const initial = { ...session(), version: 50 }
     const replacement = updated(session("replacement"), "correct").state
     host.history(tail(initial))
     view = await host.connect(initial)
-    host.history(full.promise, tail(replacement))
-    const loading = view.history.loadFull()
-    host.feed(updated(initial, "stale batch").frame)
+    host.history(pending.promise, tail(replacement))
+    const resetting = { ...initial, version: 51 }
+    host.feed(resetFrame(resetting))
+    await tick()
+    host.feed(updated(resetting, "stale batch").frame)
     await tick()
     await host.reconnect(replacement)
-    full.resolve(Response.json(snapshotPayload(initial)))
-    await loading
+    pending.resolve(tail(resetting))
+    await tick()
     expect(view.state.messages).toEqual(replacement.messages)
     expect(view.state.sessionId).toBe("replacement")
   })
@@ -354,22 +697,32 @@ describe.each(["http", "ws"] as const)("history transport contract — %s", (tra
     expect(host.requests).toHaveLength(1)
   })
 
-  it("ignores Load all while a reload is in progress", async () => {
-    const initial = session()
-    const pending = Promise.withResolvers<Response>()
-    host.history(tail(initial))
-    view = await host.connect(initial)
-    const next = { ...initial, version: 1 }
-    host.history(pending.promise)
-    host.feed(resetFrame(next))
-    await tick()
-    expect(view.history.reloading).toBe(true)
-    await view.history.loadFull()
-    expect(host.requests).toHaveLength(2)
-    pending.resolve(tail(next))
-    await tick()
-    expect(view.history.reloading).toBe(false)
-  })
+  it.each([true, false])(
+    "waits for reload and uses the resulting anchor (hasMore=%s)",
+    async (hasMore) => {
+      const initial = transcript("old", "tail")
+      const pending = Promise.withResolvers<Response>()
+      host.history(tail(initial, 1))
+      view = await host.connect(initial)
+      const next = updated(initial, "new tail").state
+      host.history(pending.promise, beforePage(next, 2))
+      host.feed(resetFrame({ ...next, version: initial.version + 1 }))
+      await tick()
+      expect(view.history.reloading).toBe(true)
+      const loading = view.history.loadOlder()
+      await tick()
+      expect(host.requests).toHaveLength(2)
+      pending.resolve(tail(next, hasMore ? 1 : HISTORY_PAGE_BYTES_DEFAULT))
+      await loading
+      expect(view.history.reloading).toBe(false)
+      expect(view.history.olderError).toBeNull()
+      expect(host.requests).toHaveLength(hasMore ? 3 : 2)
+      if (hasMore) {
+        expect(host.requests[2]?.url.searchParams.get("before")).toBe("2")
+        expect(view.state.messages.map(({ id }) => id)).toEqual(["m_1", "m_2"])
+      }
+    },
+  )
 
   it("enforces the tail URL and applies only batches strictly newer than V", async () => {
     const initial = session()

@@ -1,4 +1,5 @@
 import {
+  createInitialSessionState,
   type HistoryPage,
   reduce,
   type SessionState,
@@ -32,6 +33,22 @@ export function foldPage(metaState: SessionState, payload: SnapshotPayload): Ses
       ? payload.sessionId
       : state.sessionId
   return { ...state, sessionId, version: payload.version }
+}
+
+export function mergeOlder(
+  state: SessionState,
+  window: HistoryWindow,
+  payload: SnapshotPayload,
+): { state: SessionState; window: HistoryWindow } | { conflict: true } {
+  const page = payload.page
+  if (page?.firstSeq == null || page.lastSeq == null || page.lastSeq + 1 !== window.firstSeq) {
+    return { conflict: true }
+  }
+  const { messages } = foldPage(createInitialSessionState({ sessionId: state.sessionId }), payload)
+  return {
+    state: { ...state, messages: [...messages, ...state.messages] },
+    window: { ...window, firstSeq: page.firstSeq, hasMore: page.hasMore },
+  }
 }
 
 export function isOutsideWindow(seq: number | null, window: HistoryWindow): boolean {

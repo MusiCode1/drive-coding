@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { tick } from "svelte"
 import { describe, expect, it, vi } from "vitest"
 import { bindHistory, HistoryState } from "./history-state.svelte"
 
@@ -19,7 +20,9 @@ function mockController(
     },
     error: overrides.error ?? null,
     reloading: overrides.reloading ?? false,
-    loadFull: vi.fn(async () => {}),
+    loadingOlder: false,
+    olderError: null,
+    loadOlder: vi.fn(async () => {}),
     retry: vi.fn(async () => {}),
   }
 }
@@ -42,19 +45,40 @@ describe("HistoryState", () => {
       window: { firstSeq: 2, lastSeq: 8, hasMore: false, watermark: 1 },
       error: "boom",
       reloading: true,
+      loadingOlder: false,
+      olderError: null,
     })
     expect(state.window.lastSeq).toBe(8)
     expect(state.error).toBe("boom")
     expect(state.reloading).toBe(true)
   })
 
-  it("loadFull and retry delegate to bound controller", async () => {
+  it("loadOlder and retry delegate to bound controller", async () => {
     const state = new HistoryState()
     const ctrl = mockController()
     bindHistory(state, { history: ctrl })
-    await state.loadFull()
+    await state.loadOlder()
     await state.retry()
-    expect(ctrl.loadFull).toHaveBeenCalledOnce()
+    expect(ctrl.loadOlder).toHaveBeenCalledOnce()
     expect(ctrl.retry).toHaveBeenCalledOnce()
   })
+})
+
+it("exposes shift during the flush for older history only", async () => {
+  const state = new HistoryState()
+  const observed: boolean[] = []
+  const dispose = $effect.root(() => {
+    $effect.pre(() => {
+      observed.push(state.shiftNext)
+    })
+  })
+  try {
+    await tick()
+    state.onOlderApplying()
+    await state.onOlderApplied()
+    await tick()
+    expect(observed).toEqual([false, true, false])
+  } finally {
+    dispose()
+  }
 })
