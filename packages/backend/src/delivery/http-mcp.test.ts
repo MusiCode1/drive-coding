@@ -1663,6 +1663,50 @@ describe("session memory MCP tools (slice session-memory C1)", () => {
     expect(body.sessionFields).toEqual({ a: "1", b: "2" })
   })
 
+  it.each(["session_field_delete", "agent_field_delete"])(
+    "%s only deletes own field keys on the caller",
+    async (name) => {
+      const { app, registry } = makeApp()
+      const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/memory-delete-caller" })
+      const other = await registry.create({ cliKind: "cursor", cwd: "/tmp/memory-delete-other" })
+      const fields = { keep: "yes" }
+      const otherFields = { toString: "belongs to the other agent" }
+      await registry.update(caller.id, { sessionFields: fields })
+      await registry.update(other.id, { sessionFields: otherFields })
+      const update = vi.spyOn(registry, "update")
+      const client = await connectClient(app, {
+        [AGENT_ID_HEADER]: caller.id,
+        [SCOPE_HEADER]: issueToken(caller.id),
+      })
+      const remove = async (key: string) => {
+        const result = await client.callTool({
+          name,
+          arguments: { key, agent: other.id, agentId: other.id },
+        })
+        expect(result).toEqual({ content: [{ type: "text", text: '{"ok":true}' }] })
+      }
+
+      try {
+        for (const key of ["ordinary-absent", "toString", "constructor", "__proto__"]) {
+          await remove(key)
+          expect.soft(update, key).not.toHaveBeenCalled()
+          update.mockClear()
+        }
+        expect((await registry.get(caller.id))?.sessionFields).toEqual(fields)
+
+        const retained = { ...fields, constructor: "retained" }
+        await registry.update(caller.id, { sessionFields: { ...retained, toString: "remove" } })
+        update.mockClear()
+        await remove(" toString ")
+        expect(update).toHaveBeenCalledExactlyOnceWith(caller.id, { sessionFields: retained })
+        expect((await registry.get(caller.id))?.sessionFields).toEqual(retained)
+        expect((await registry.get(other.id))?.sessionFields).toEqual(otherFields)
+      } finally {
+        await client.close()
+      }
+    },
+  )
+
   it("session_field_delete removes one key", async () => {
     const { app, registry } = makeApp()
     const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/memory-delete" })

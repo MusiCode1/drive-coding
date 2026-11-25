@@ -62,7 +62,7 @@ export function registerSessionMemoryMcpTools(
     const record = await deps.registry.get(caller)
     if (!record) throw new McpToolError("agent not found", "agent_not_found")
     const existing = record.sessionFields ?? {}
-    if (!(key in existing)) return { ok: true }
+    if (!Object.hasOwn(existing, key)) return { ok: true }
     const { [key]: _removed, ...rest } = existing
     await deps.registry.update(caller, { sessionFields: rest })
     return { ok: true }
