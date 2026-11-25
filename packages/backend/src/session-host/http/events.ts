@@ -4,6 +4,7 @@ import type { Hono } from "hono"
 import { stream } from "hono/streaming"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
+import { parseSnapshotMode } from "../channel/snapshot-mode.js"
 import { openViewer } from "../channel/viewer-stream.js"
 import type { AgentSessionRegistry } from "../registry.js"
 import { CONNECTION_ID_HEADER, readConnectionId } from "./connection-id.js"
@@ -34,6 +35,10 @@ export function registerEventsRoute(
   app.get("/api/agents/:id/events", async (c) => {
     const agentId = c.req.param("id")
     const epoch = c.req.query("epoch")
+    const snapshotMode = parseSnapshotMode(c.req.query("snapshot"))
+    if (snapshotMode === "invalid") {
+      return c.json({ error: "invalid snapshot mode" }, 400)
+    }
     const connectionId = readConnectionId(c) ?? randomUUID()
     const viewer = await openViewer(
       { registry, connectionRegistry, timers },
@@ -42,6 +47,7 @@ export function registerEventsRoute(
         connectionId,
         via: "http",
         clientEpoch: epoch === undefined ? undefined : Number(epoch),
+        snapshot: snapshotMode,
       },
     )
     if (!viewer.ok) {

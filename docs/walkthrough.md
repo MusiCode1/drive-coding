@@ -8,6 +8,8 @@
 
 **TTFP לפני:** אין סשן לא-פעיל ≥20MB על BE חי (גדול ביותר `1fa7a97f` ~5.8MB, `tail-budget-probe`); פרוב `ttfp-probe.mjs` נוצר ב-docs; מדידת P1/P2 נדחית ל-C6 אחרי מימוש. **סטייה:** תקציב ה-DoD דורש ≥20MB — נדרש `session/load` לפני C6.
 
+**C1** — `_drive/seq` (`d2009584`). **C2** — `history-range`, `snapshot=meta`, דפי `/history`. **C3** — `history-query`, `snapshot-mode`, events/WS/history (docs agents — לפני merge).
+
 ---
 
 ## 2026-11-25 01:10 — slice `subagent-identity-gate` (אליעזר)

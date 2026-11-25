@@ -38,8 +38,14 @@
  * והתרגום ל-HTTP הוא של הקליפה. ‏`fromMessage` ריק / חסר ⇒ מתעלמים.
  */
 
-import { findMessageIndex, snapshotPayload } from "@drive-coding/core/session"
+import {
+  findMessageIndex,
+  messageWireByteSize,
+  selectRange,
+  snapshotPayload,
+} from "@drive-coding/core/session"
 import type { Hono } from "hono"
+import { parseHistoryQuery } from "../channel/history-query.js"
 import type { AgentSessionRegistry } from "../registry.js"
 
 /**
@@ -54,15 +60,24 @@ export function registerHistoryRoute(app: Hono, registry: AgentSessionRegistry):
       return c.json({ error: "Agent connection not found" }, 404)
     }
 
-    // ‏404 קודם ל-400: בלי host אין מול מה לאמת מזהה.
-    const fromMessage = c.req.query("fromMessage")
-    if (fromMessage === undefined || fromMessage === "") {
-      return c.json(snapshotPayload(host.state), 200)
-    }
-    if (findMessageIndex(host.state, fromMessage) === -1) {
-      return c.json({ error: "unknown fromMessage", fromMessage }, 400)
+    const parsed = parseHistoryQuery((key) => c.req.query(key))
+    if (!parsed.ok) {
+      return c.json(parsed.body, parsed.status)
     }
 
-    return c.json(snapshotPayload(host.state, undefined, { fromMessage }), 200)
+    const opts = parsed.opts
+    if (opts.fromMessage !== undefined && findMessageIndex(host.state, opts.fromMessage) === -1) {
+      return c.json({ error: "unknown fromMessage", fromMessage: opts.fromMessage }, 400)
+    }
+
+    if (opts.range && "before" in opts.range) {
+      const sized = selectRange(host.state, opts.range, messageWireByteSize)
+      if (!sized.ok) {
+        return c.json({ error: "unknown before", before: opts.range.before }, 400)
+      }
+    }
+
+    const body = snapshotPayload(host.state, undefined, Object.keys(opts).length ? opts : undefined)
+    return c.json(body, 200)
   })
 }

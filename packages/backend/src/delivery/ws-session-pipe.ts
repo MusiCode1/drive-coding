@@ -18,6 +18,7 @@ import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import type { CallerContext } from "../session-host/channel/caller-context.js"
 import { dispatchReply, replyScopeDenied } from "../session-host/channel/reply-dispatch.js"
 import { dispatchRpcBody } from "../session-host/channel/rpc-dispatch.js"
+import { parseSnapshotMode } from "../session-host/channel/snapshot-mode.js"
 import { openViewer, type ViewerEnd } from "../session-host/channel/viewer-stream.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 
@@ -64,6 +65,11 @@ export function createSessionWsHandler({
     const connectionId = url.searchParams.get("connectionId") ?? randomUUID()
     const epochParam = url.searchParams.get("epoch")
     const epoch = epochParam?.trim() ? Number(epochParam) : NaN
+    const snapshotMode = parseSnapshotMode(url.searchParams.get("snapshot") ?? undefined)
+    if (snapshotMode === "invalid") {
+      ws.close(closeCodeForStatus(400))
+      return
+    }
     const caller: CallerContext = {
       header(name) {
         const value = req.headers[name.toLowerCase()]
@@ -162,6 +168,7 @@ export function createSessionWsHandler({
           connectionId,
           clientEpoch: Number.isFinite(epoch) ? epoch : undefined,
           via: "ws",
+          snapshot: snapshotMode,
         },
       )
       if (viewer.ok) {

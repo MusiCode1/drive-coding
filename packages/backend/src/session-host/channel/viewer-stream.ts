@@ -32,6 +32,7 @@ export type OpenViewerInput = {
   connectionId: string
   clientEpoch: number | undefined
   via: ConnectionVia
+  snapshot?: "full" | "meta"
 }
 export type ViewerEnd = "ended" | "cancelled" | "failed"
 export type OpenViewerResult =
@@ -44,6 +45,7 @@ type OpenViewerDeps = {
   timers?: ViewerTimers
   /** @internal Test seam for a failure during snapshot construction. */
   _snapshotFrame?: typeof snapshotFrame
+  _updateFrame?: typeof updateFrame
 }
 
 export async function openViewer(
@@ -52,8 +54,9 @@ export async function openViewer(
     connectionRegistry,
     timers = defaultTimers,
     _snapshotFrame = snapshotFrame,
+    _updateFrame = updateFrame,
   }: OpenViewerDeps,
-  { agentId, connectionId, clientEpoch, via }: OpenViewerInput,
+  { agentId, connectionId, clientEpoch, via, snapshot: snapshotMode = "full" }: OpenViewerInput,
 ): Promise<OpenViewerResult> {
   // Reject stale epochs before triggering lazy host creation.
   if (clientEpoch !== undefined) {
@@ -152,7 +155,7 @@ export async function openViewer(
       clearKeepalive = () => timers.clearInterval(keepalive)
 
       let view = snapshot
-      await write(_snapshotFrame(snapshot, currentEpoch))
+      await write(_snapshotFrame(snapshot, currentEpoch, snapshotMode))
       while (!cancelled) {
         const { done, value: patch } = await reader.read()
         if (cancelled) break
@@ -160,7 +163,7 @@ export async function openViewer(
         // Wire mapping needs the state directly after this patch. The live
         // host may already have applied a reset or changed the target message.
         view = applyPatch(view, patch)
-        const frame = updateFrame(view, patch)
+        const frame = _updateFrame(view, patch, snapshotMode)
         if (frame !== null) await write(frame)
       }
     } catch (err) {
