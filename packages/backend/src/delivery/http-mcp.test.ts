@@ -14,6 +14,7 @@ import { CONTRACT_VERSION, PUBLISHED_CONTRACT_VERSION } from "@drive-coding/core
 import { DOCS_VERSION } from "@drive-coding/core/docs"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
+import type { InitializeResult } from "@modelcontextprotocol/sdk/types.js"
 import { Hono } from "hono"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as readProcessRssMod from "../adapters/read-process-rss.js"
@@ -2061,7 +2062,7 @@ describe("C1 identity, event bus and turn boundaries", () => {
       }),
     })
     expect(response.status).toBe(200)
-    const { result } = await response.json()
+    const { result } = (await response.json()) as { result: InitializeResult }
     expect(result.serverInfo.version).toBe(resolveAppVersion())
     expect(result.instructions).toMatch(/\*\*session_open\*\*.*`cli`.*`cwd`/)
     expect(result.instructions).toContain("session_send.sets")
