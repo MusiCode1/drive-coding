@@ -704,7 +704,7 @@ export class AgentSession {
     systemPrompt?: string | null
     transport: SessionTransport
   }): Promise<void> => {
-    // 0. ⚠️⚠️ קודם guard-הכפילות, ורק אחריו #cleanup() — הסדר ההפוך הוא באג הרסני
+    // 0. ⚠️⚠️ בדיקת חיבור כפול קודמת לניקוי
     // (חיבור-חוזר במצב connected היה הורג agent+host+תת-תהליך חי לפני שהוא זורק).
     if (this.status === "connecting" || this.status === "connected") {
       throw new Error(`cannot attach in status ${this.status}`)
@@ -728,7 +728,7 @@ export class AgentSession {
     let attached = false
     try {
       // 3. HTTP בלבד. מיד אחריו: agentId מוצב — #cleanup מוחק לפיו; אם ההשמה נדחית
-      // לשלב 6, כשל-מהיר (שלב 5) וה-catch (שלב 8) קוראים #cleanup() בלי מה למחוק,
+      // לשלב 6, הניקוי בשלב 5 או 8 לא יקבל את המזהה,
       // וה-agent+host+child שנוצרו כאן מדליפים.
       const { agentId } = await createAgent({
         cwd: input.cwd,
