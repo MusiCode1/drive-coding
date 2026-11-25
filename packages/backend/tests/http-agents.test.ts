@@ -183,7 +183,7 @@ describe("HTTP /api/agents", () => {
             ...(form !== "legacy" && { subscribeOnOpenAgentId: parent.id }),
           }),
         })
-        const result = await response.json()
+        const result = (await response.json()) as CreateAndSpawnResult
         expect(response.status).toBe(201)
         expect(result).toEqual({
           agentId: expect.any(String),
@@ -230,7 +230,7 @@ describe("HTTP /api/agents", () => {
           subscribeOnOpenAgentId,
         })
         expect(res.status).toBe(400)
-        expect((await res.json()).error).toMatch(error)
+        expect(((await res.json()) as { error: string }).error).toMatch(error)
         expect(create).not.toHaveBeenCalled()
         expect(subscribe).not.toHaveBeenCalled()
         expect(await registry.list()).toEqual([])
@@ -810,7 +810,7 @@ describe("HTTP /api/agents", () => {
       } else {
         expect(update).toHaveBeenCalledExactlyOnceWith(id, { userNotes: value })
       }
-      const { agent } = await (await app.request(path)).json()
+      const { agent } = (await (await app.request(path)).json()) as { agent: unknown }
       expect(agent).toMatchObject({
         id,
         userNotes: value ?? "prior",
@@ -843,7 +843,7 @@ describe("HTTP /api/agents", () => {
       const { app, registry, sessionHistoryStore } = makeApp()
       const { id } = await registry.create({ cliKind: "opencode", cwd: "/x" })
       const path = `/api/agents/${id}`
-      const before = await (await app.request(path)).json()
+      const before = (await (await app.request(path)).json()) as { agent: unknown }
       for (const key of ["agentNotes", "userNotes", "agentFields", "sessionFields"]) {
         expect(before.agent).not.toHaveProperty(key)
       }
@@ -859,7 +859,7 @@ describe("HTTP /api/agents", () => {
       now.mockReturnValue(start)
       try {
         const first = await app.request("/api/agents")
-        const cached = await first.json()
+        const cached = (await first.json()) as { agents: unknown[] }
         expect(first.headers.get("Cache-Control")).toBe("no-store")
         expect(cached.agents[0]).toMatchObject({
           id,
@@ -882,7 +882,7 @@ describe("HTTP /api/agents", () => {
         expect(replaced.status).toBe(200)
         expect(update).toHaveBeenCalledExactlyOnceWith(id, { acpSessionId: "new" })
         expect(sessionHistoryStore.recordAttach).toHaveBeenCalledOnce()
-        const { agent } = await (await app.request(path)).json()
+        const { agent } = (await (await app.request(path)).json()) as { agent: unknown }
         expect(agent).toMatchObject({
           id,
           acpSessionId: "new",
@@ -900,7 +900,7 @@ describe("HTTP /api/agents", () => {
         now.mockReturnValue(start + 1501)
         const fresh = await app.request("/api/agents")
         expect(fresh.headers.get("Cache-Control")).toBe("no-store")
-        expect((await fresh.json()).agents[0]).toMatchObject({
+        expect(((await fresh.json()) as { agents: unknown[] }).agents[0]).toMatchObject({
           id,
           acpSessionId: "new",
           userNotes: "",
