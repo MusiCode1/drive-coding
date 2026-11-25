@@ -9,17 +9,14 @@
  */
 
 import type { SessionConfigOption } from "@agentclientprotocol/sdk"
-import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
-import { untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { env } from "$env/dynamic/public"
 import MachineStatsBar from "$lib/components/connect/MachineStatsBar.svelte"
 import SessionFieldsList from "$lib/components/layout/SessionFieldsList.svelte"
+import SessionHistoryList from "$lib/components/layout/SessionHistoryList.svelte"
 import SessionModeSelect from "$lib/components/layout/SessionModeSelect.svelte"
 import SessionScopePolicyCard from "$lib/components/layout/SessionScopePolicyCard.svelte"
-import SessionsFilterBar from "$lib/components/layout/SessionsFilterBar.svelte"
 import SessionTitleField from "$lib/components/layout/SessionTitleField.svelte"
-import SessionCard from "$lib/components/modals/SessionCard.svelte"
 import CliBadge from "$lib/components/ui/CliBadge.svelte"
 import Select, { type SelectGroup, type SelectOption } from "$lib/components/ui/Select.svelte"
 import {
@@ -33,7 +30,6 @@ import {
 } from "$lib/context"
 import { readSessionTransport } from "$lib/session/session-transport-read"
 import { sessionPathWithTransport } from "$lib/session/session-url"
-import { filterSessions } from "$lib/util/filter-sessions"
 import {
   flattenSelectOptions,
   localizeConfigName,
@@ -58,21 +54,6 @@ const settings = getSettings()
  * ‏ומוציא `error`, ‏פרדיקט לעניין אחר.
  */
 const hasSession = $derived(session.status !== "idle")
-
-let sessionsSearchQuery = $state("")
-const filteredSessions = $derived(
-  filterSessions(session.sessionsCache.sessions, {
-    query: sessionsSearchQuery,
-    currentCwd: session.cwd,
-    currentCwdOnly: settings.sessionsCurrentCwdOnly,
-  }),
-)
-const sessionsFilteredEmpty = $derived(
-  !session.sessionsCache.loading &&
-    !session.sessionsCache.error &&
-    session.sessionsCache.sessions.length > 0 &&
-    filteredSessions.length === 0,
-)
 
 // ─── slice session-delete: מחיקת הסשן הפעיל מנווטת החוצה (עקבי עם onDisconnect) ───
 async function onDeleteSession(id: string) {
@@ -183,19 +164,6 @@ async function onNewSession() {
   uiShell.closeSheet()
   await goto(sessionPathWithTransport(settings.cliKind, session.sessionId, currentTransport()))
 }
-
-/**
- * טריגר טעינת סשנים — מגיב ל-responsive.isMobile ו-uiShell.sheetOpen.
- * דסקטופ: sidebar תמיד גלוי → טוען מיד.
- * מובייל: טוען כש-sheetOpen === true (המשתמש פתח את ה-sheet).
- * untrack: listSessions כותב sessionsLoading/Error → בלי untrack נכנסים ללולאה.
- * idempotent+cache (#sessionsLoaded) מונע DDoS אפילו בלי untrack.
- */
-$effect(() => {
-  const shouldLoad = responsive.isMobile ? uiShell.sheetOpen : true
-  if (!shouldLoad) return
-  untrack(() => void session.listSessions())
-})
 </script>
 
 <!-- machine stats from presence poller (slice machine-stats-in-session) -->
@@ -347,65 +315,15 @@ $effect(() => {
 {/if}
 
 {#if hasSession}
-<!-- סשנים — inline (slice sessions-inline: מחליף SessionsDialog) -->
-<div class="flex flex-col gap-2 shrink-0">
-  <div class="flex items-center justify-between px-1 shrink-0">
-    <span class="text-[11px] font-semibold uppercase tracking-wider" style="color:var(--fg-dim)">
-      {t("sidebar.sessions")}
-    </span>
-    <!-- רענון — קורא listSessions(true) ישירות (לא פותח dialog) -->
-    <button
-      class="size-6 grid place-items-center rounded"
-      style="color:var(--fg-dim)"
-      title={t("sidebar.refresh")}
-      aria-label={t("sidebar.refresh")}
-      onclick={() => void session.listSessions(true)}
-    >
-      <RefreshCwIcon size={13} strokeWidth={2} />
-    </button>
-  </div>
-
-  <SessionsFilterBar
-    query={sessionsSearchQuery}
-    onQueryChange={(v) => {
-      sessionsSearchQuery = v
-    }}
+  <SessionHistoryList
+    {session}
+    visible={!responsive.isMobile || uiShell.sheetOpen}
     currentCwdOnly={settings.sessionsCurrentCwdOnly}
-    onCurrentCwdOnlyChange={(v) => settings.setSessionsCurrentCwdOnly(v)}
+    onCurrentCwdOnlyChange={(value) => settings.setSessionsCurrentCwdOnly(value)}
+    onSelectSession={selectSession}
+    {onNewSession}
+    {onDeleteSession}
   />
-
-  <!-- סשן חדש — warm new-session על החיבור הקיים; disabled כשלא connected -->
-  <button
-    class="shrink-0 text-start rounded-lg p-2.5 text-[13px] font-medium border border-dashed disabled:opacity-40 disabled:cursor-not-allowed"
-    style="border-color:var(--border); color:var(--accent)"
-    disabled={session.status !== "connected"}
-    onclick={onNewSession}
-  >
-    ＋ {t("sidebar.newSession")}
-  </button>
-
-  <!-- רשימת סשנים inline — בלי scroll/flex-1 פנימי: גוללת יחד עם אזור הגלילה המאוחד -->
-  <div class="flex flex-col gap-2">
-    {#if session.sessionsCache.loading}
-      <div class="text-[12px] opacity-50 px-1">{t("modal.sessions.loading")}</div>
-    {:else if session.sessionsCache.error}
-      <div class="text-[12px] px-1" style="color:var(--recording)">{t("modal.sessions.error")}: {session.sessionsCache.error}</div>
-    {:else if session.sessionsCache.sessions.length === 0}
-      <div class="text-[12px] opacity-50 px-1">{t("modal.sessions.empty")}</div>
-    {:else if sessionsFilteredEmpty}
-      <div class="text-[12px] opacity-50 px-1">{t("sidebar.sessionsNoMatches")}</div>
-    {:else}
-      {#each filteredSessions as s (s.sessionId)}
-        <SessionCard
-          session={s}
-          isActive={false}
-          onSelect={() => selectSession(s)}
-          onDelete={session.supportsSessionDelete ? onDeleteSession : undefined}
-        />
-      {/each}
-    {/if}
-  </div>
-</div>
 {/if}
 <!-- /אזור גלילה מאוחד -->
 </div>

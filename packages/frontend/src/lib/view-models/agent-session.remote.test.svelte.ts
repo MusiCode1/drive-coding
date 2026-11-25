@@ -873,16 +873,20 @@ describe("AgentSession + remote view — session management via #view (remote-se
   })
 
   it("listSessions through the view populates sessions (normalized in the view)", async () => {
-    view.listSessionsMock.mockResolvedValueOnce([
-      { sessionId: "s-1", cwd: "/a", title: "A", updatedAt: "" },
-      { sessionId: "s-2", cwd: "/b", title: "B", updatedAt: "" },
-    ])
+    view.listSessionsMock.mockResolvedValueOnce({
+      capabilities: { list: true, filterByCwd: true, delete: true },
+      legacyCanDelete: false,
+      sessions: [
+        { sessionId: "s-1", cwd: "/a", title: "A", updatedAt: "" },
+        { sessionId: "s-2", cwd: "/b", title: "B", updatedAt: "" },
+      ],
+    })
 
     await agent.listSessions()
 
     expect(view.listSessionsMock).toHaveBeenCalledTimes(1)
-    expect(agent.sessionsCache.sessions).toHaveLength(2)
-    expect(agent.sessionsCache.sessions[0]?.sessionId).toBe("s-1")
+    expect(agent.sessionsCache.sessions.items).toHaveLength(2)
+    expect(agent.sessionsCache.sessions.items[0]?.sessionId).toBe("s-1")
     expect(agent.sessionsCache.error).toBeNull()
   })
 
@@ -893,7 +897,7 @@ describe("AgentSession + remote view — session management via #view (remote-se
 
     await agent.listSessions()
 
-    expect(agent.sessionsCache.sessions).toEqual([])
+    expect(agent.sessionsCache.sessions.items).toEqual([])
     // Gentle handling (DoD): no scary error — the empty list renders.
     expect(agent.sessionsCache.error).toBeNull()
   })
@@ -923,16 +927,20 @@ describe("AgentSession + remote view — session management via #view (remote-se
       cliKind: "claude",
     })
     // Make the active session appear in the list.
-    view.listSessionsMock.mockResolvedValueOnce([
-      { sessionId: "remote-sess-mgmt", cwd: "/a", title: "", updatedAt: "" },
-      { sessionId: "other", cwd: "/b", title: "", updatedAt: "" },
-    ])
+    view.listSessionsMock.mockResolvedValueOnce({
+      capabilities: { list: true, filterByCwd: true, delete: true },
+      legacyCanDelete: false,
+      sessions: [
+        { sessionId: "remote-sess-mgmt", cwd: "/a", title: "", updatedAt: "" },
+        { sessionId: "other", cwd: "/b", title: "", updatedAt: "" },
+      ],
+    })
     await agent.listSessions()
-    expect(agent.sessionsCache.sessions).toHaveLength(2)
+    expect(agent.sessionsCache.sessions.items).toHaveLength(2)
 
     // Deleting a NON-active session → optimistic removal, no detach
     await expect(agent.deleteSession("other")).resolves.toBe(false)
-    expect(agent.sessionsCache.sessions).toHaveLength(1)
+    expect(agent.sessionsCache.sessions.items).toHaveLength(1)
     expect(view.closeMock).not.toHaveBeenCalled()
 
     // Deleting the ACTIVE session → wasActive true → detach() (view closed;
@@ -941,11 +949,55 @@ describe("AgentSession + remote view — session management via #view (remote-se
     expect(view.closeMock).toHaveBeenCalled()
   })
 
-  it("supportsSessionDelete follows the view's getter (true and false)", () => {
-    expect(agent.supportsSessionDelete).toBe(false)
-    view.supportsSessionDelete = true
+  it("looks up other pages across all directories without replacing the visible list", async () => {
+    const visible = { sessionId: "visible", cwd: "/a", title: "Visible", updatedAt: "" }
+    const target = { sessionId: "target", cwd: "/elsewhere", title: "Target", updatedAt: "" }
+    const common = {
+      capabilities: { list: true, filterByCwd: true, delete: true },
+      legacyCanDelete: false,
+    }
+    view.listSessionsMock
+      .mockResolvedValueOnce({ ...common, sessions: [visible], nextCursor: "visible-cursor" })
+      .mockResolvedValueOnce({ ...common, sessions: [], nextCursor: "" })
+      .mockResolvedValueOnce({ ...common, sessions: [target] })
+
+    await agent.listSessions(false, { cwd: "/a" })
+    expect(await agent.findListedSession("target")).toEqual(target)
+    expect(view.listSessionsMock.mock.calls).toEqual([[{ cwd: "/a" }], [{}], [{ cursor: "" }]])
+    expect(agent.sessionsCache.sessions.items).toEqual([visible])
+    expect(agent.sessionsCache.sessions.nextCursor).toBe("visible-cursor")
     expect(agent.supportsSessionDelete).toBe(true)
-    view.supportsSessionDelete = false
+  })
+
+  it("stops an unfiltered lookup when the provider repeats a cursor", async () => {
+    view.listSessionsMock.mockResolvedValue({
+      sessions: [],
+      capabilities: null,
+      legacyCanDelete: false,
+      nextCursor: "repeated",
+    })
+    expect(await agent.findListedSession("missing")).toBeUndefined()
+    expect(view.listSessionsMock.mock.calls).toEqual([[{}], [{ cursor: "repeated" }]])
+  })
+
+  it("ignores lookup and deletion completions from the detached view", async () => {
+    const result = Promise.withResolvers<Awaited<ReturnType<MockSessionView["listSessions"]>>>()
+    const deleteResult = Promise.withResolvers<void>()
+    view.listSessionsMock.mockReturnValueOnce(result.promise)
+    view.deleteSessionMock.mockReturnValueOnce(deleteResult.promise)
+    agent._setSessionContextForTest({ sessionId: "target", cwd: "/a", cliKind: "claude" })
+    const lookup = agent.findListedSession("target")
+    const deletion = agent.deleteSession("target")
+    agent.detach()
+    deleteResult.reject(new Error("old delete failure"))
+    result.resolve({
+      sessions: [{ sessionId: "target", cwd: "/a", title: "", updatedAt: "" }],
+      capabilities: null,
+      legacyCanDelete: true,
+    })
+    await expect(lookup).resolves.toBeUndefined()
+    await expect(deletion).resolves.toBe(false)
+    expect(agent.sessionsCache.error).toBeNull()
     expect(agent.supportsSessionDelete).toBe(false)
   })
 

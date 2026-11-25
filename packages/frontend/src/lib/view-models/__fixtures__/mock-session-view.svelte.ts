@@ -16,20 +16,17 @@ import {
   createInitialSessionState,
   type Patch,
   reduce,
+  type SessionListQuery,
   type SessionState,
 } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { vi } from "vitest"
-import type { SessionInfo } from "$lib/adapters/sessions"
+import type { SessionListPage } from "$lib/adapters/sessions"
 import type { HistoryController, SessionView, ViewEmission } from "$lib/session/session-view"
 
 export class MockSessionView implements SessionView {
   // ─── state (plain object, updated by fireUpdate) ───
   state: SessionState = $state(createInitialSessionState({ sessionId: null }))
-
-  // ─── slice remote-session-mgmt C5: port extension — supportsSessionDelete ───
-  // Mutable so tests can toggle the capability; the VM getter must follow it.
-  supportsSessionDelete = $state(false)
 
   readonly history: HistoryController = {
     window: { firstSeq: null, lastSeq: null, hasMore: false, watermark: 0 },
@@ -59,7 +56,9 @@ export class MockSessionView implements SessionView {
   readonly setModeMock = vi.fn().mockResolvedValue(undefined)
   readonly setConfigOptionMock = vi.fn().mockResolvedValue(undefined)
   readonly extMethodMock = vi.fn().mockResolvedValue(undefined)
-  readonly listSessionsMock = vi.fn<() => Promise<SessionInfo[]>>().mockResolvedValue([])
+  readonly listSessionsMock = vi
+    .fn<(query?: SessionListQuery) => Promise<SessionListPage>>()
+    .mockResolvedValue({ sessions: [], capabilities: null, legacyCanDelete: false })
   readonly deleteSessionMock = vi.fn().mockResolvedValue(undefined)
   readonly setSessionModelMock = vi.fn().mockResolvedValue(undefined)
 
@@ -139,8 +138,8 @@ export class MockSessionView implements SessionView {
   loadSession(sessionId: string, cwd?: string): Promise<void> {
     return this.loadSessionMock(sessionId, cwd)
   }
-  listSessions(): Promise<SessionInfo[]> {
-    return this.listSessionsMock()
+  listSessions(query?: SessionListQuery): Promise<SessionListPage> {
+    return this.listSessionsMock(query)
   }
   deleteSession(sessionId: string): Promise<void> {
     return this.deleteSessionMock(sessionId)

@@ -16,6 +16,7 @@ import type {
 } from "@agentclientprotocol/sdk"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { createAgent, deleteAgent, patchAgent, releaseConnection } from "$lib/adapters/agents-api"
+import type { SessionInfo } from "$lib/adapters/sessions"
 import type { CuesEngine } from "$lib/engines/cues"
 // ─── slice leave-running-background ───
 import {
@@ -28,6 +29,7 @@ import {
 } from "$lib/engines/turn-watchdog"
 // ─── slice view-switch C3: createRemoteView (attachRemote) ─── (additive)
 import { createRemoteView } from "$lib/session/create-session-view"
+import { findListedSession } from "$lib/session/find-listed-session"
 import type { SessionTransport } from "$lib/session/session-transport"
 import type { SessionView } from "$lib/session/session-view"
 import type { Bubble, ToolCall } from "$lib/types/bubble"
@@ -68,6 +70,11 @@ import {
   type SessionEndReason,
   type SessionEndScopeDeps,
 } from "$lib/view-models/agent-session-session-end"
+import {
+  type ListedSessionInput,
+  newListedSession,
+  switchListedSession,
+} from "$lib/view-models/agent-session-switch-listed-session"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
 import { SessionScope } from "$lib/view-models/session-scoped-state.svelte"
 import { SessionsCacheScope } from "$lib/view-models/sessions-cache-scope.svelte"
@@ -84,7 +91,12 @@ export type { SessionEndReason } from "$lib/view-models/agent-session-session-en
 // ─── slice plan-todo-list Commit 1: reducer טהור + טיפוסים ─── (additive)
 import { type PlanStore, reducePlan } from "@drive-coding/core/acp/plan"
 // ─── slice session-state-reducer C4: reduce + types ─── (additive)
-import { createInitialSessionState, reduce, type SessionState } from "@drive-coding/core/session"
+import {
+  createInitialSessionState,
+  reduce,
+  type SessionListQuery,
+  type SessionState,
+} from "@drive-coding/core/session"
 // ─── slice session-budget-meter Commit 4: QuotaSnapshot טיפוס בלבד ─── (additive)
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 // ─── slice FE-normalization: ייבוא ─── (additive)
@@ -298,7 +310,7 @@ export class AgentSession {
   }
 
   get supportsSessionDelete(): boolean {
-    return this.#view?.supportsSessionDelete === true
+    return this.sessionsCache.supportsDelete(this.#view)
   }
 
   // ─── slice FE-normalization: capabilities + gating ─── (additive)
@@ -884,7 +896,6 @@ export class AgentSession {
     this.#setStatus("idle")
     this.error = null
     this.bubbles = []
-    this.sessionsCache.reset()
   }
 
   /** Leave session without killing the BE agent — child survives for reconnect / process list. */
@@ -1014,66 +1025,24 @@ export class AgentSession {
     await loadMockSession(this.#loadMockSessionDeps(), name, cwd)
   }
 
-  switchSession = async (input: {
-    sessionId: string
-    cwd: string
-    cliKind: string
-    title?: string // ← slice session-title: תוספתי
-    titleManual?: boolean
-  }): Promise<void> => {
-    const view = this.#view
-    if (!view) throw new Error("cannot switchSession without a view")
-    if (this.status !== "connected" || this.isLoadingHistory) {
-      throw new Error(`cannot switchSession in status ${this.status}`)
-    }
-    this.#endSessionScope("switch")
-    this.error = null // Clear stale errors when switching sessions.
-    this.isLoadingHistory = true // Silence TTS during history replay.
-    try {
-      await view.loadSession(input.sessionId, input.cwd)
-      // Direct assignment — #syncFromViewState does NOT sync sessionId; cannot rely on it.
-      this.#enterSession(input.sessionId)
-      // Parity with the local success path: cwd + title (the BE reset preserves
-      // the old title — without this assignment session A's title would stay)
-      // + push to the server.
-      this.cwd = input.cwd
-      this.#applyTitleFromSessionInput(input)
-    } catch (e) {
-      this.error = `switchSession failed: ${formatAcpError(e)}`
-    } finally {
-      this.isLoadingHistory = false
-    }
-  }
+  switchSession = (input: ListedSessionInput): Promise<void> =>
+    switchListedSession(this, this.#view, input, {
+      endScope: () => this.#endSessionScope("switch"),
+      enterSession: (id) => this.#enterSession(id),
+      applyTitle: () => this.#applyTitleFromSessionInput(input),
+    })
 
-  newSession = async (input: { cwd?: string; cliKind: string }): Promise<void> => {
-    const cwd = input.cwd ?? this.cwd
-    if (!cwd) throw new Error("newSession: no cwd")
-    const view = this.#view
-    if (view && (this.status !== "connected" || this.isLoadingHistory)) {
-      throw new Error(`cannot newSession in status ${this.status}`)
-    }
-    this.#endSessionScope("new")
-    if (!view)
-      return this.attachRemote({ cwd, cliKind: input.cliKind, transport: this.#sessionTransport })
-    this.error = null
-    this.#errorSurfaced = false
-    this.sessionTitle = ""
-    this.isLoadingHistory = true
-    try {
-      await view.newSession(cwd)
-      const newId = view.state.sessionId
-      if (!newId) throw new Error("newSession returned no sessionId")
-      this.#enterSession(newId)
-      this.cwd = cwd
-      // Empty title: skip #pushTitleToServer (it no-ops on !title) — host already
-      // cleared title via update-session; agent list stays blank until a real title.
-      await this.#applyRememberedConfig()
-    } catch (e) {
-      this.error = `newSession failed: ${formatAcpError(e)}`
-    } finally {
-      this.isLoadingHistory = false
-    }
-  }
+  newSession = (input: { cwd?: string; cliKind: string }): Promise<void> =>
+    newListedSession(this, this.#view, input, {
+      endScope: () => this.#endSessionScope("new"),
+      enterSession: (id) => this.#enterSession(id),
+      attach: (cwd) =>
+        this.attachRemote({ cwd, cliKind: input.cliKind, transport: this.#sessionTransport }),
+      clearSurfacedError: () => {
+        this.#errorSurfaced = false
+      },
+      applyRememberedConfig: () => this.#applyRememberedConfig(),
+    })
 
   // ─── slice 4: עזרי הקשר לקריינות ─── (תוספתי)
 
@@ -1168,9 +1137,19 @@ export class AgentSession {
    * (slice connect-recent-projects: דף החיבור כבר לא משתמש ב-spawn — הוסר listSessionsForCwd.
    *  בחירת סשן נעשית מתוך הסשן הפעיל דרך SessionOptionsPanel.)
    */
-  listSessions = async (force = false): Promise<void> => {
+  listSessions = async (force = false, query?: SessionListQuery): Promise<void> => {
+    if (this.#view) await this.sessionsCache.list(this.#view, force, query)
+  }
+
+  loadMoreSessions = async (): Promise<void> => {
+    if (this.#view) await this.sessionsCache.loadMore(this.#view)
+  }
+
+  findListedSession = (sessionId: string): Promise<SessionInfo | undefined> => {
     const view = this.#view
-    await this.sessionsCache.list(view ? () => view.listSessions() : null, force)
+    return view
+      ? findListedSession(view, sessionId, () => this.#view === view)
+      : Promise.resolve(undefined)
   }
 
   // ─── slice session-delete: מחיקת סשן (session/delete) ─── (תוספתי)
@@ -1346,6 +1325,7 @@ export class AgentSession {
     // חגורת-ביטחון בלבד — close() תופס בפנים את שתי קריאות ה-respond.
     void this.#view?.close().catch(() => {})
     this.#view = null
+    this.sessionsCache.reset()
     // ─── slice view-switch C3-ו: מרחב-ה-ids של pending הוא פר-host, לא פר-VM ───
     // בלי איפוס — הדיאלוג הראשון של הסשן המרוחק הבא באותו טאב מדוכא בשקט (id 0 "כבר נענה").
     this.#answeredPermissionId = null

@@ -1,3 +1,5 @@
+import type { SessionListCapabilities } from "@drive-coding/core/session"
+
 /**
  * sessions.ts — types ופונקציית נרמול עבור session data מה-ACP.
  *
@@ -14,6 +16,13 @@ export type SessionInfo = {
   cwd: string
   title: string // מחרוזת ריקה אם ה-CLI לא מחזיר כותרת
   updatedAt: string // חותמת זמן ISO (או מחרוזת ריקה אם חסר)
+}
+
+export type SessionListPage = {
+  sessions: SessionInfo[]
+  nextCursor?: string
+  capabilities: SessionListCapabilities | null
+  legacyCanDelete: boolean
 }
 
 /** ממיר נתוני session גולמיים מה-ACP לצורת SessionInfo. ─── slice sessions-inline: ייצוא ל-AgentSession ─── */

@@ -8,10 +8,10 @@
  * ─── slice session-view-port C2 (TDD) ───
  */
 
-import { createInitialSessionState, type Patch } from "@drive-coding/core/session"
+import { createInitialSessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { describe, expect, it } from "vitest"
-import type { SessionInfo } from "$lib/adapters/sessions"
+import type { SessionListPage } from "$lib/adapters/sessions"
 import { readViewEmission, type SessionView, type ViewEmission } from "./session-view"
 
 // ─── Minimal mock implementation to verify the interface ───
@@ -19,7 +19,6 @@ import { readViewEmission, type SessionView, type ViewEmission } from "./session
 class MockSessionView implements SessionView {
   readonly state = createInitialSessionState({ sessionId: null })
   readonly patches: ReadableStream<ViewEmission> = new ReadableStream<ViewEmission>()
-  readonly supportsSessionDelete = false
   readonly history = {
     window: { firstSeq: null, lastSeq: null, hasMore: false, watermark: 0 },
     error: null,
@@ -52,8 +51,8 @@ class MockSessionView implements SessionView {
   loadSession(_sessionId: string, _cwd?: string): Promise<void> {
     return Promise.resolve()
   }
-  listSessions(): Promise<SessionInfo[]> {
-    return Promise.resolve([])
+  listSessions(): Promise<SessionListPage> {
+    return Promise.resolve({ sessions: [], capabilities: null, legacyCanDelete: false })
   }
   deleteSession(_sessionId: string): Promise<void> {
     return Promise.resolve()
@@ -97,7 +96,11 @@ describe("SessionView interface contract", () => {
     await expect(view.extMethod("method", {})).resolves.toBeDefined()
     await expect(view.newSession()).resolves.toBeUndefined()
     await expect(view.loadSession("s-1")).resolves.toBeUndefined()
-    await expect(view.listSessions()).resolves.toEqual([])
+    await expect(view.listSessions()).resolves.toEqual({
+      sessions: [],
+      capabilities: null,
+      legacyCanDelete: false,
+    })
     await expect(view.deleteSession("s-1")).resolves.toBeUndefined()
     await expect(view.setSessionModel("m-1")).resolves.toBeUndefined()
     await expect(view.close()).resolves.toBeUndefined()

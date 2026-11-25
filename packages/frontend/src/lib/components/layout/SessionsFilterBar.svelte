@@ -10,11 +10,13 @@ import { getI18n } from "$lib/context"
 interface Props {
   query: string
   onQueryChange: (value: string) => void
+  showCwdFilter: boolean
   currentCwdOnly: boolean
   onCurrentCwdOnlyChange: (value: boolean) => void
 }
 
-const { query, onQueryChange, currentCwdOnly, onCurrentCwdOnlyChange }: Props = $props()
+const { query, onQueryChange, showCwdFilter, currentCwdOnly, onCurrentCwdOnlyChange }: Props =
+  $props()
 const t = getI18n().t
 
 const filterLabel = $derived(
@@ -33,21 +35,23 @@ const filterLabel = $derived(
     aria-label={t("sidebar.sessionsSearch")}
     oninput={(e) => onQueryChange((e.currentTarget as HTMLInputElement).value)}
   />
-  <button
-    type="button"
-    class="size-8 grid place-items-center rounded-lg shrink-0 border"
-    style={currentCwdOnly
-      ? "background:var(--accent-soft); border-color:var(--accent); color:var(--accent)"
-      : "background:var(--bg-card); border-color:var(--border); color:var(--fg-dim)"}
-    aria-pressed={currentCwdOnly}
-    title={filterLabel}
-    aria-label={filterLabel}
-    onclick={() => onCurrentCwdOnlyChange(!currentCwdOnly)}
-  >
-    {#if currentCwdOnly}
-      <FolderIcon size={15} strokeWidth={2} />
-    {:else}
-      <FoldersIcon size={15} strokeWidth={2} />
-    {/if}
-  </button>
+  {#if showCwdFilter}
+    <button
+      type="button"
+      class="size-8 grid place-items-center rounded-lg shrink-0 border"
+      style={currentCwdOnly
+        ? "background:var(--accent-soft); border-color:var(--accent); color:var(--accent)"
+        : "background:var(--bg-card); border-color:var(--border); color:var(--fg-dim)"}
+      aria-pressed={currentCwdOnly}
+      title={filterLabel}
+      aria-label={filterLabel}
+      onclick={() => onCurrentCwdOnlyChange(!currentCwdOnly)}
+    >
+      {#if currentCwdOnly}
+        <FolderIcon size={15} strokeWidth={2} />
+      {:else}
+        <FoldersIcon size={15} strokeWidth={2} />
+      {/if}
+    </button>
+  {/if}
 </div>

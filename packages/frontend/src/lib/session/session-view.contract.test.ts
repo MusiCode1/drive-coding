@@ -640,11 +640,14 @@ describe.each(["http", "ws"] as const)("SessionView deviation table — %s", (tr
         const { method, params } = body as { method?: string; params?: { sessionId?: string } }
         switch (method) {
           case RPC_METHODS.listSessions:
+            expect(params).toEqual({ paged: true, cwd: "/w", cursor: "" })
             return {
               status: 200,
               body: {
                 sessions: [{ sessionId: "s-9", cwd: "/w", title: "Listed" }],
                 sessionCapabilities: { delete: {} },
+                capabilities: { list: true, filterByCwd: true, delete: true },
+                nextCursor: "next",
               },
             }
           case RPC_METHODS.loadSession:
@@ -679,11 +682,12 @@ describe.each(["http", "ws"] as const)("SessionView deviation table — %s", (tr
     await expect(view.loadSession("s-new", "/w")).resolves.toBeUndefined()
     expect(view.state.sessionId).toBe("s-new")
 
-    // listSessions — normalized sessions + capabilities captured (delete gating)
-    await expect(view.listSessions()).resolves.toEqual([
-      { sessionId: "s-9", cwd: "/w", title: "Listed", updatedAt: "" },
-    ])
-    expect(view.supportsSessionDelete).toBe(true)
+    await expect(view.listSessions({ cwd: "/w", cursor: "" })).resolves.toEqual({
+      sessions: [{ sessionId: "s-9", cwd: "/w", title: "Listed", updatedAt: "" }],
+      capabilities: { list: true, filterByCwd: true, delete: true },
+      nextCursor: "next",
+      legacyCanDelete: false,
+    })
 
     // deleteSession — resolves on {ok:true}
     await expect(view.deleteSession("s-9")).resolves.toBeUndefined()

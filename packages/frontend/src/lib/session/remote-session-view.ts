@@ -16,6 +16,7 @@
 import {
   createInitialSessionState,
   type Patch,
+  type SessionListQuery,
   type SessionState,
 } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
@@ -39,7 +40,6 @@ import {
   remoteSetConfigOption,
   remoteSetMode,
   remoteSetSessionModel,
-  remoteSupportsSessionDelete,
 } from "./remote-session-view-rpc"
 import type { SessionView, ViewEmission, ViewTerminal } from "./session-view.js"
 import { FrameReader } from "./wire/frame-reader"
@@ -66,13 +66,6 @@ export class RemoteSessionView implements SessionView {
 
   #state: SessionState
   #sessionId: string | null = null
-  /**
-   * slice remote-session-mgmt C4: raw sessionCapabilities from the listSessions
-   * response (the BE ships them on that one round-trip). `supportsSessionDelete`
-   * derives from them — false until the first listSessions answer.
-   */
-  #sessionCapabilities: { delete?: unknown; [key: string]: unknown } | null = null
-
   // ─── patches stream (ViewEmission: patches + raw wire updates) ───
   #patchesCtrl: ReadableStreamDefaultController<ViewEmission> | null = null
   readonly patches: ReadableStream<ViewEmission>
@@ -262,20 +255,13 @@ export class RemoteSessionView implements SessionView {
       setSessionId: (id) => {
         this.#sessionId = id
       },
-      getSessionCapabilities: () => this.#sessionCapabilities,
-      setSessionCapabilities: (caps) => {
-        this.#sessionCapabilities = caps
-      },
     }
   }
 
   newSession = (cwd?: string) => remoteNewSession(this.#rpcDeps(), cwd)
   loadSession = (sessionId: string, cwd?: string) =>
     remoteLoadSession(this.#rpcDeps(), sessionId, cwd)
-  listSessions = () => remoteListSessions(this.#rpcDeps())
-  get supportsSessionDelete(): boolean {
-    return remoteSupportsSessionDelete(this.#rpcDeps())
-  }
+  listSessions = (query?: SessionListQuery) => remoteListSessions(this.#rpcDeps(), query)
   deleteSession = (sessionId: string) => remoteDeleteSession(this.#rpcDeps(), sessionId)
   prompt = (content: string | PromptBlocks, meta?: Record<string, unknown>) =>
     remotePrompt(this.#rpcDeps(), content, meta)
