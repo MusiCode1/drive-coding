@@ -21,7 +21,7 @@
 - **DoD #10 (חלקי ב-API):** meta tail + `historyOmitted`, parity http/ws TTFP; אימות עין (טען הכול / TTS בניתוק) — למשתמשת + calev על ה-URL לעיל.
 - **שערים (אחרי C6):** `tsc --build` 0 · `typecheck:fe` 0 · core **1070** passed (4 failed קדם-קיימים: openapi-coupling, agent-api-gate×2, message-seq-index.perf) · backend **1566** passed · FE **2088** passed (1 collect error, rc=0) · `lint:i18n` ירוק · `lint-docs-fresh` שקט.
 
-**קומיטים C0–C5:** `8cf18a24..42ac851d` (+ C6 בהמשך).
+**קומיט C6:** `498a6379` · סה״כ `1b323d96..498a6379`.
 
 ---
 
