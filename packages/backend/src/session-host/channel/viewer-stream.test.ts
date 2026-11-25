@@ -1,4 +1,8 @@
-import { createInitialSessionState, type Patch, type SessionState } from "@drive-coding/core/session"
+import {
+  createInitialSessionState,
+  type Patch,
+  type SessionState,
+} from "@drive-coding/core/session"
 import { describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../../acp/connection-registry.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
@@ -228,6 +232,56 @@ describe("openViewer", () => {
     }
 
     expect(await capture("http")).toEqual(await capture("ws"))
+  })
+
+  it("meta update frames match for http and ws on reset", async () => {
+    const hostState: SessionState = {
+      ...createInitialSessionState({ sessionId: "test-session" }),
+      version: 5,
+      messages: [
+        {
+          id: "m_0",
+          role: "user",
+          messageId: "u-0",
+          segments: [{ id: "s_0", text: "hello" }],
+        },
+      ],
+      nextMessageSeq: 1,
+    }
+    const captureUpdates = async (via: "http" | "ws") => {
+      const local = setup()
+      const updates: string[] = []
+      local.getOrCreateHost.mockResolvedValue({
+        ok: true,
+        entry: {
+          host: { state: hostState } as unknown as ExtendedSessionHost,
+          broadcaster: {
+            subscribe: vi.fn(() => local.patchStream),
+            oldestBufferedVersion: vi.fn(),
+            unsubscribe: vi.fn(),
+            close: vi.fn(),
+          },
+        },
+      })
+      const opened = await openViewer(local.deps, { ...local.input, via, snapshot: "meta" })
+      if (!opened.ok) throw new Error("viewer should open")
+      const done = opened.run({
+        write: async (frame) => {
+          if (frame.event === "update") updates.push(frame.data)
+        },
+      })
+      local.patches.enqueue({
+        version: 6,
+        op: "reset",
+        messages: [],
+        nextMessageSeq: 0,
+        nextSegmentSeq: 0,
+      })
+      local.patches.close()
+      await done
+      return updates
+    }
+    expect(await captureUpdates("http")).toEqual(await captureUpdates("ws"))
   })
 
   it("reports an internal snapshot error and still cleans up", async () => {

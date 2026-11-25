@@ -24,9 +24,13 @@
  */
 
 import type { SessionState, WireSessionUpdate } from "@drive-coding/core/session"
+import * as sessionCore from "@drive-coding/core/session"
 import {
+  assertHistoryPageByteBudget,
   createInitialSessionState,
+  messageWireByteSize,
   recordCarried,
+  selectRange,
   snapshotFrame,
   snapshotPayload,
 } from "@drive-coding/core/session"
@@ -73,13 +77,16 @@ function makeMockRegistry(host?: ExtendedSessionHost): AgentSessionRegistry {
   const result: HostResult = host
     ? {
         ok: true,
-        entry: { host, broadcaster: {
-          subscribe: vi.fn(),
-          unsubscribe: vi.fn(),
-          close: vi.fn(),
-          // slice history-cursor C2: חבר חדש בחוזה PatchesBroadcaster.
-          oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
-        } },
+        entry: {
+          host,
+          broadcaster: {
+            subscribe: vi.fn(),
+            unsubscribe: vi.fn(),
+            close: vi.fn(),
+            // slice history-cursor C2: חבר חדש בחוזה PatchesBroadcaster.
+            oldestBufferedVersion: vi.fn().mockReturnValue(undefined),
+          },
+        },
       }
     : { ok: false, reason: "not-found" }
   return {
@@ -304,7 +311,12 @@ describe("‏C1 — ‏GET history?fromMessage= : חיתוך מהודעה ואי
       title: "כותרת",
       messages: [
         { id: "m_0", role: "user", messageId: "u-0", segments: [{ id: "s_0", text: "אחת" }] },
-        { id: "m_1", role: "assistant", messageId: "a-1", segments: [{ id: "s_1", text: "שתיים" }] },
+        {
+          id: "m_1",
+          role: "assistant",
+          messageId: "a-1",
+          segments: [{ id: "s_1", text: "שתיים" }],
+        },
         { id: "m_2", role: "user", messageId: "u-2", segments: [{ id: "s_2", text: "שלוש" }] },
       ],
       nextMessageSeq: 3,
@@ -407,7 +419,9 @@ describe("GET /history — tail and before pages", () => {
 
   it("before=0 yields an empty page", async () => {
     const registry = makeMockRegistry(makeMockHost(multiMessageState()))
-    const res = await makeApp(registry).request("/api/agents/agent-1/history?before=0&maxBytes=65536")
+    const res = await makeApp(registry).request(
+      "/api/agents/agent-1/history?before=0&maxBytes=65536",
+    )
     expect(res.status).toBe(200)
     const body = (await res.json()) as {
       page?: { firstSeq: number | null; lastSeq: number | null }
@@ -419,7 +433,9 @@ describe("GET /history — tail and before pages", () => {
 
   it("unknown before seq returns 400", async () => {
     const registry = makeMockRegistry(makeMockHost(multiMessageState()))
-    const res = await makeApp(registry).request("/api/agents/agent-1/history?before=999&maxBytes=1000")
+    const res = await makeApp(registry).request(
+      "/api/agents/agent-1/history?before=999&maxBytes=1000",
+    )
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual({ error: "unknown before", before: 999 })
   })
@@ -428,5 +444,76 @@ describe("GET /history — tail and before pages", () => {
     const registry = makeMockRegistry(makeMockHost(multiMessageState()))
     const res = await makeApp(registry).request("/api/agents/agent-1/history?tail=1")
     expect(res.status).toBe(400)
+  })
+
+  it("F1: tail page on the wire respects maxBytes", async () => {
+    const state = makeMockState({
+      sessionId: "sess-1",
+      version: 2,
+      messages: [
+        {
+          id: "m_0",
+          role: "user",
+          messageId: "u-0",
+          segments: [{ id: "s_0", text: "x".repeat(12_000) }],
+        },
+        {
+          id: "m_1",
+          role: "user",
+          messageId: "u-1",
+          segments: [{ id: "s_1", text: "tail" }],
+        },
+      ],
+      nextMessageSeq: 2,
+      nextSegmentSeq: 2,
+    })
+    const maxBytes = 1000
+    const registry = makeMockRegistry(makeMockHost(state))
+    const res = await makeApp(registry).request(
+      `/api/agents/agent-1/history?tail=1&maxBytes=${maxBytes}`,
+    )
+    expect(res.status).toBe(200)
+    const sized = selectRange(state, { tail: true, maxBytes }, messageWireByteSize)
+    expect(sized.ok).toBe(true)
+    if (!sized.ok) return
+    const pageMsgs = state.messages.slice(sized.start, sized.end)
+    expect(assertHistoryPageByteBudget(pageMsgs, maxBytes, messageWireByteSize)).toBe(true)
+  })
+
+  it("F1 negative: greedy page fails assertHistoryPageByteBudget", async () => {
+    const state = makeMockState({
+      sessionId: "sess-1",
+      version: 2,
+      messages: [
+        {
+          id: "m_0",
+          role: "user",
+          messageId: "u-0",
+          segments: [{ id: "s_0", text: "x".repeat(12_000) }],
+        },
+        {
+          id: "m_1",
+          role: "user",
+          messageId: "u-1",
+          segments: [{ id: "s_1", text: "y".repeat(12_000) }],
+        },
+      ],
+      nextMessageSeq: 2,
+      nextSegmentSeq: 2,
+    })
+    const maxBytes = 1000
+    const spy = vi.spyOn(sessionCore, "selectRange").mockReturnValue({
+      ok: true,
+      start: 0,
+      end: state.messages.length,
+      page: { firstSeq: 0, lastSeq: 1, hasMore: false },
+    })
+    const registry = makeMockRegistry(makeMockHost(state))
+    const res = await makeApp(registry).request(
+      `/api/agents/agent-1/history?tail=1&maxBytes=${maxBytes}`,
+    )
+    spy.mockRestore()
+    expect(res.status).toBe(200)
+    expect(assertHistoryPageByteBudget(state.messages, maxBytes, messageWireByteSize)).toBe(false)
   })
 })

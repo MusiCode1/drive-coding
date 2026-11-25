@@ -79,16 +79,20 @@ describe("snapshotFrame — המסגור לא השתנה", () => {
     expect(frame.id).toBe(String(state.version))
   })
 
-  it("mode meta omits messages and sets historyOmitted", () => {
-    const state = stateWithMessage()
+  it("mode meta omits messages and carried", () => {
+    const state = recordCarried(stateWithMessage(), {
+      sessionUpdate: "plan",
+      entries: [{ content: "צעד", priority: "high", status: "pending" }],
+    })
     const payload = JSON.parse(snapshotFrame(state, 3, "meta").data) as ReturnType<
       typeof snapshotPayload
     >
     expect(payload.historyOmitted).toEqual({ messageCount: 1 })
+    expect(payload.updates.some((u) => u.sessionUpdate === "plan")).toBe(false)
     expect(payload.updates.some((u) => String(u.sessionUpdate).endsWith("_message"))).toBe(false)
     expect(payload.updates.some((u) => u.sessionUpdate === "session_info_update")).toBe(true)
-    expect(payload.updates.some((u) => u.sessionUpdate === "plan")).toBe(false)
   })
+
 })
 
 describe("snapshotPayload pages", () => {
