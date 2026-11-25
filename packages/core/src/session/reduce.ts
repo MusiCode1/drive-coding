@@ -9,12 +9,7 @@
  */
 import { applyPatch } from "./apply-patch"
 import { recordCarried } from "./carried"
-import {
-  lookupWireSeqIndex,
-  syncWireSeqIndex,
-  syncWireSeqIndexRaw,
-  wireSeqSlotTaken,
-} from "./message-seq-index"
+import { lookupWireSeqIndex, syncWireSeqIndex, wireSeqSlotTaken } from "./message-seq-index"
 import { SEQ_META_KEY } from "./to-session-update"
 import {
   applyToolOutputDelta,
@@ -301,7 +296,7 @@ function handleTextChunk(
     if (text.trim() === "") return { state, patches: [] }
 
     // add-message
-    const { id: msgId, nextMessageSeq } = allocMessageId(state, wireSeq)
+    const { id: msgId } = allocMessageId(state, wireSeq)
     const segId = nextSegId(state.nextSegmentSeq)
     const seg: SessionSegment = { id: segId, text }
     const msg: SessionMessage = withPendingTs(
@@ -717,7 +712,7 @@ function handleWholeMessage(
       turnState,
       ...(messageTimestamps !== state.messageTimestamps ? { messageTimestamps } : {}),
     }
-    return { state: syncWireSeqIndexRaw(state, withTs, "add", msg), patches: [addPatch] }
+    return { state: withTs, patches: [addPatch] }
   }
 
   const old = state.messages[idx] as SessionMessage & { role: "user" | "thought" | "assistant" }

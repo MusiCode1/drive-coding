@@ -1,45 +1,30 @@
 import type { Patch, SessionMessage, SessionState } from "./types"
 
-const MSG_ID = /^m_(\d+)$/
+// The map belongs to one immutable message array at a time. Each append transfers
+// it to the new array. If an earlier snapshot is used again, it builds its own map.
+const indexes = new WeakMap<SessionMessage[], Map<string, number>>()
 
-/** Parse `m_<n>` → n. Returns undefined for non-wire ids. */
-export function parseMessageWireSeq(id: string): number | undefined {
-  const m = MSG_ID.exec(id)
-  if (!m) return undefined
-  const n = Number(m[1])
-  return Number.isFinite(n) ? n : undefined
-}
-
-export function rebuildWireSeqIndex(messages: SessionMessage[]): Record<number, number> {
-  const index: Record<number, number> = {}
-  for (let i = 0; i < messages.length; i++) {
-    const seq = parseMessageWireSeq(messages[i]!.id)
-    if (seq !== undefined) index[seq] = i
+function messageIndex(messages: SessionMessage[]): Map<string, number> {
+  const cached = indexes.get(messages)
+  if (cached) return cached
+  const index = new Map<string, number>()
+  for (const [position, message] of messages.entries()) {
+    const { id } = message
+    if (!index.has(id)) index.set(id, position)
   }
+  indexes.set(messages, index)
   return index
 }
 
-/** O(1) lookup with role check; returns -1 when not found. */
 export function lookupWireSeqIndex(
   state: SessionState,
   wireSeq: number,
   role?: SessionMessage["role"],
 ): number {
-  let idx = state.wireSeqIndex?.[wireSeq]
-  if (idx === undefined) {
-    for (let i = 0; i < state.messages.length; i++) {
-      if (state.messages[i]!.id === `m_${wireSeq}`) {
-        idx = i
-        break
-      }
-    }
-  }
-  if (idx === undefined) return -1
-  const msg = state.messages[idx]
-  if (msg === undefined) return -1
-  if (msg.id !== `m_${wireSeq}`) return -1
-  if (role !== undefined && msg.role !== role) return -1
-  return idx
+  const position = messageIndex(state.messages).get(`m_${wireSeq}`)
+  if (position === undefined) return -1
+  if (role !== undefined && state.messages[position]?.role !== role) return -1
+  return position
 }
 
 export function wireSeqSlotTaken(state: SessionState, wireSeq: number): boolean {
@@ -51,58 +36,22 @@ export function syncWireSeqIndex(
   next: SessionState,
   patch: Patch,
 ): SessionState {
+  const index = indexes.get(prev.messages)
+  if (!index || prev.messages === next.messages) return next
   switch (patch.op) {
-    case "add-message": {
-      const seq = parseMessageWireSeq(patch.message.id)
-      if (seq === undefined) {
-        return next.messages.length === prev.messages.length
-          ? next
-          : { ...next, wireSeqIndex: rebuildWireSeqIndex(next.messages) }
-      }
-      const base = prev.wireSeqIndex ?? rebuildWireSeqIndex(prev.messages)
-      const idx = next.messages.length - 1
-      return { ...next, wireSeqIndex: { ...base, [seq]: idx } }
-    }
-    case "reset":
-      return { ...next, wireSeqIndex: rebuildWireSeqIndex(next.messages) }
-    case "set-message": {
-      const prevIdx = prev.messages.findIndex((m) => m.id === patch.targetId)
-      if (prevIdx === -1) return next
-      const nextIdx = next.messages.findIndex((m) => m.id === patch.targetId)
-      if (nextIdx === -1) return next
-      const oldSeq = parseMessageWireSeq(prev.messages[prevIdx]!.id)
-      const newSeq = parseMessageWireSeq(patch.message.id)
-      if (oldSeq === newSeq && next.messages.length === prev.messages.length && prev.wireSeqIndex) {
-        return { ...next, wireSeqIndex: prev.wireSeqIndex }
-      }
-      return { ...next, wireSeqIndex: rebuildWireSeqIndex(next.messages) }
-    }
+    case "add-message":
+      if (!index.has(patch.message.id)) index.set(patch.message.id, next.messages.length - 1)
+      break
     case "append-segment":
     case "update-tool":
-      return prev.wireSeqIndex && next.messages.length === prev.messages.length
-        ? { ...next, wireSeqIndex: prev.wireSeqIndex }
-        : next
+      break
+    case "set-message":
+      if (patch.targetId !== patch.message.id) return next
+      break
     default:
-      return next.messages === prev.messages
-        ? next
-        : next.messages.length === prev.messages.length && prev.wireSeqIndex
-          ? { ...next, wireSeqIndex: prev.wireSeqIndex }
-          : { ...next, wireSeqIndex: rebuildWireSeqIndex(next.messages) }
+      return next
   }
-}
-
-export function syncWireSeqIndexRaw(
-  prev: SessionState,
-  next: SessionState,
-  mode: "add" | "rebuild",
-  added?: SessionMessage,
-): SessionState {
-  if (next.messages === prev.messages) return next
-  if (mode === "add" && added) {
-    const seq = parseMessageWireSeq(added.id)
-    if (seq === undefined) return { ...next, wireSeqIndex: rebuildWireSeqIndex(next.messages) }
-    const base = prev.wireSeqIndex ?? rebuildWireSeqIndex(prev.messages)
-    return { ...next, wireSeqIndex: { ...base, [seq]: next.messages.length - 1 } }
-  }
-  return { ...next, wireSeqIndex: rebuildWireSeqIndex(next.messages) }
+  indexes.delete(prev.messages)
+  indexes.set(next.messages, index)
+  return next
 }
