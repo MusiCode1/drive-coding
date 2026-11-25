@@ -1,9 +1,10 @@
 import path from "node:path"
+import { PUBLISHED_CONTRACT_VERSION } from "@drive-coding/core/contract-version"
 import {
+  type AgentDocFile,
   DOCS_VERSION,
   loadAgentDocs,
   readDocsAsset,
-  type AgentDocFile,
 } from "@drive-coding/core/docs"
 import { resolveAppVersion } from "./app-version.js"
 import { resolveDocsSource } from "./docs-source.js"
@@ -31,6 +32,7 @@ type AgentDocsIndex = {
 type VersionBlock = {
   appVersion: string
   docsVersion: string
+  contractVersion?: NonNullable<typeof PUBLISHED_CONTRACT_VERSION>
   routeCount: number
   generatedAt: string
 }
@@ -84,6 +86,9 @@ export function agentDocsVersionBlock(): VersionBlock {
   return {
     appVersion: resolveAppVersion(),
     docsVersion: DOCS_VERSION,
+    ...(PUBLISHED_CONTRACT_VERSION === undefined
+      ? {}
+      : { contractVersion: PUBLISHED_CONTRACT_VERSION }),
     routeCount: countOpenApiOperations(),
     generatedAt: agentDocsGeneratedAt(),
   }

@@ -10,6 +10,8 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import type { AgentRegistry } from "@drive-coding/core"
 import { serializeDriveMessage } from "@drive-coding/core/acp/drive-message-envelope"
+import { CONTRACT_VERSION, PUBLISHED_CONTRACT_VERSION } from "@drive-coding/core/contract-version"
+import { DOCS_VERSION } from "@drive-coding/core/docs"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { Hono } from "hono"
@@ -19,11 +21,13 @@ import { AGENT_ID_HEADER, DRIVE_CODING_AGENT_ID_ENV } from "../agent-identity.js
 import { issueToken, SCOPE_HEADER } from "../agent-scope.js"
 import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
+import { resolveAppVersion } from "../app-version.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
 import { resetScopePolicyForTests, setScopePolicyOverride } from "../scope-policy.js"
 import { createAgentEventBus } from "../session-host/agent-events.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { wrapOrchestratorWithAgentEvents } from "./agent-events-orchestrator.js"
+import { registerDocsHttp } from "./http-docs.js"
 import { registerMcpHttp } from "./http-mcp.js"
 
 type HostStub = {
@@ -201,6 +205,129 @@ function isToolError(result: unknown): boolean {
 afterEach(() => {
   delete process.env.MCP_HTTP
   setSelfBaseUrlForTests(undefined)
+})
+
+describe("agent docs contract discovery", () => {
+  const expectedPublishedVersion = process.env.DC_A1_TEST_PUBLISHED_VERSION
+  const contractHeader = "X-Drive-Coding-Contract-Version"
+
+  async function readJsonResource(client: Client, uri: string): Promise<unknown> {
+    const { contents } = await client.readResource({ uri })
+    expect(contents).toHaveLength(1)
+    const [content] = contents
+    expect(content).toMatchObject({ uri, mimeType: "application/json" })
+    if (content === undefined || !("text" in content) || typeof content.text !== "string") {
+      throw new Error(`Expected JSON text at ${uri}`)
+    }
+    return JSON.parse(content.text)
+  }
+
+  async function expectDiscovery(expectedVersion: string | undefined): Promise<void> {
+    const { app } = makeApp()
+    registerDocsHttp(app)
+    const client = await connectClient(app)
+    try {
+      const appVersion = resolveAppVersion()
+      expect(client.getServerVersion()?.version).toBe(appVersion)
+
+      const catalog = await app.request("/api/docs")
+      const markdown = await app.request("/api/docs/render-contract")
+      const openApi = await app.request("/api/openapi.json")
+      for (const [response, route, mime] of [
+        [catalog, "/api/docs", "application/json"],
+        [markdown, "/api/docs/render-contract", "text/markdown"],
+        [openApi, "/api/openapi.json", "application/json"],
+      ] as const) {
+        expect(response.status, route).toBe(200)
+        expect(response.headers.get("content-type")).toContain(mime)
+        expect(response.headers.get(contractHeader), route).toBe(expectedVersion ?? null)
+      }
+
+      const httpCatalog = (await catalog.json()) as { routeCount: number; generatedAt: string }
+      const mcpCatalog = await readJsonResource(client, "drive-coding://docs/index")
+      const result = await client.callTool({ name: "docs_get", arguments: {} })
+      expect(result.isError).not.toBe(true)
+      const toolCatalog: unknown = JSON.parse(toolText(result))
+      expect(mcpCatalog).toEqual(httpCatalog)
+      expect(toolCatalog).toEqual(httpCatalog)
+
+      const expectedVersionBlock = {
+        appVersion,
+        docsVersion: DOCS_VERSION,
+        routeCount: expect.any(Number),
+        generatedAt: expect.any(String),
+      }
+      expect(httpCatalog).toMatchObject({
+        ...expectedVersionBlock,
+        docs: expect.arrayContaining([expect.objectContaining({ id: "render-contract" })]),
+      })
+      expect(markdown.headers.get("X-Drive-Coding-App-Version")).toBe(appVersion)
+      expect(markdown.headers.get("X-Drive-Coding-Docs-Version")).toBe(DOCS_VERSION)
+      expect(markdown.headers.get("X-Drive-Coding-Route-Count")).toBe(
+        String(httpCatalog.routeCount),
+      )
+      expect(markdown.headers.get("X-Drive-Coding-Generated-At")).toBe(httpCatalog.generatedAt)
+      expect(await markdown.text()).toContain("render-contract")
+      for (const response of [catalog, openApi]) {
+        expect(response.headers.get("X-Drive-Coding-App-Version")).toBeNull()
+        expect(response.headers.get("X-Drive-Coding-Docs-Version")).toBeNull()
+        expect(response.headers.get("X-Drive-Coding-Route-Count")).toBeNull()
+        expect(response.headers.get("X-Drive-Coding-Generated-At")).toBeNull()
+      }
+
+      const { "x-drive-coding": httpBlock, ...httpSpec } = (await openApi.json()) as Record<
+        string,
+        unknown
+      >
+      const { "x-drive-coding": mcpBlock, ...mcpSpec } = (await readJsonResource(
+        client,
+        "drive-coding://docs/openapi.json",
+      )) as Record<string, unknown>
+      const diskSpec: unknown = JSON.parse(
+        readFileSync(new URL("../../../../docs/agents/openapi.json", import.meta.url), "utf8"),
+      )
+      for (const spec of [diskSpec, httpSpec, mcpSpec]) {
+        expect(spec).toMatchObject({
+          openapi: "3.1.1",
+          info: { version: expectedVersion ?? DOCS_VERSION },
+        })
+      }
+      expect(httpSpec).toEqual(diskSpec)
+      expect(mcpSpec).toEqual(diskSpec)
+      expect(httpBlock).toMatchObject(expectedVersionBlock)
+      expect(mcpBlock).toEqual(httpBlock)
+
+      for (const block of [httpCatalog, mcpCatalog, toolCatalog, httpBlock, mcpBlock]) {
+        if (expectedVersion === undefined) {
+          expect(block).not.toHaveProperty("contractVersion")
+        } else {
+          expect(block).toHaveProperty("contractVersion", expectedVersion)
+        }
+      }
+
+      const missing = await app.request("/api/docs/no-such-doc")
+      expect(missing.status).toBe(404)
+      expect(missing.headers.get("content-type")).toContain("application/json")
+      expect(missing.headers.get(contractHeader)).toBeNull()
+      expect(await missing.json()).toEqual({ error: "Unknown document id: no-such-doc" })
+    } finally {
+      await client.close()
+    }
+  }
+
+  it("keeps the unreleased contract version out of discovery", async () => {
+    expect(CONTRACT_VERSION).toBe("2.0.0")
+    expect(PUBLISHED_CONTRACT_VERSION).toBeUndefined()
+    await expectDiscovery(undefined)
+  })
+
+  // Run this case against an isolated source edit and regenerated OpenAPI.
+  it.skipIf(expectedPublishedVersion === undefined)(
+    "publishes one contract version from the shared source",
+    async () => {
+      await expectDiscovery(expectedPublishedVersion)
+    },
+  )
 })
 
 describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
