@@ -27,7 +27,7 @@
       onCheckedChange={(v) => settings.setCompactActivity(v)}
     />
     <SettingToggle
-      label={t("settings.toggle.sessionMemo")}
+      label={t("settings.toggle.agentNotes")}
       checked={settings.showSessionMemo}
       onCheckedChange={(v) => settings.setShowSessionMemo(v)}
     />

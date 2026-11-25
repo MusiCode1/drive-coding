@@ -9,8 +9,10 @@ import { createInitialSessionState } from "@drive-coding/core/session"
 import { toWireText } from "@drive-coding/core/session/testing"
 import { flushSync } from "svelte"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { patchAgent } from "$lib/adapters/agents-api"
 import { MockSessionView } from "./__fixtures__/mock-session-view.svelte"
 import { AgentSession } from "./agent-session.svelte"
+import { SessionMemoVM } from "./session-memo.svelte"
 
 function connectedSession(sessionId: string): AgentSession {
   const view = new MockSessionView()
@@ -30,6 +32,16 @@ vi.mock("$lib/adapters/agents-api", () => ({
   patchAgent: vi.fn().mockResolvedValue(undefined),
 }))
 
+function mountMemo(session: AgentSession) {
+  const result: { memo?: SessionMemoVM } = {}
+  const stop = $effect.root(() => {
+    result.memo = new SessionMemoVM(session)
+  })
+  flushSync()
+  if (!result.memo) throw new Error("Could not mount session memo")
+  return { memo: result.memo, stop }
+}
+
 const mockFixture = {
   updates: [
     {
@@ -41,10 +53,11 @@ const mockFixture = {
 }
 
 function seedSessionA(session: AgentSession): void {
+  session.agentId = "scope-test-agent"
   session.sessionTitle = "first"
   session.titleManual = true
-  session.userNotes = "note-a"
-  session.sessionFields = { k: "v" }
+  session.agentNotes = "note-a"
+  session.agentFields = { k: "v" }
   session.availableCommands = [
     { name: "do", description: "x", input: { hint: "" } },
   ] as AvailableCommand[]
@@ -60,15 +73,13 @@ function seedSessionA(session: AgentSession): void {
   session.quotaLoading = true
 }
 
-/** Assert all nine session-scoped fields (§8.3) — use expect.soft so base runs report every leak. */
+/** Assert session-scoped fields (§8.3) — use expect.soft so base runs report every leak. */
 function expectSessionScopedDefaultsSoft(
   session: AgentSession,
   opts?: { sessionTitle?: string },
 ): void {
   expect.soft(session.sessionTitle).toBe(opts?.sessionTitle ?? "")
   expect.soft(session.titleManual).toBe(false)
-  expect.soft(session.userNotes).toBe("")
-  expect.soft(session.sessionFields).toEqual({})
   expect.soft(session.availableCommands).toEqual([])
   expect.soft(session.planStore).toEqual(EMPTY_PLAN_STORE)
   expect.soft(session.contextUsage).toBeNull()
@@ -124,6 +135,8 @@ describe("AgentSession session-scope boundary", () => {
     await session.switchSession({ sessionId: "sess-2", cwd: "/proj", cliKind: "opencode" })
 
     expectSessionScopedDefaultsSoft(session)
+    expect(session.agentNotes).toBe("note-a")
+    expect(session.agentFields).toEqual({ k: "v" })
   })
 
   it("switching to the same session preserves its title", async () => {
@@ -136,6 +149,23 @@ describe("AgentSession session-scope boundary", () => {
     })
     await session.switchSession({ sessionId: "sess-1", cwd: "/proj", cliKind: "opencode" })
     expect(session.sessionTitle).toBe("kept")
+    session.agentId = "scope-test-agent"
+    await session.switchSession({
+      sessionId: "sess-2",
+      cwd: "/proj",
+      cliKind: "opencode",
+      title: "sync",
+    })
+    expect(patchAgent).toHaveBeenCalledExactlyOnceWith("scope-test-agent", { title: "sync" })
+    session.titleManual = true
+    await session.switchSession({
+      sessionId: "sess-2",
+      cwd: "/proj",
+      cliKind: "opencode",
+      title: "ignore",
+    })
+    expect(session.sessionTitle).toBe("sync")
+    expect(patchAgent).toHaveBeenCalledTimes(1)
   })
 
   it("attachRemoteToLiveAgent applies manual title/notes/fields after enterSession", async () => {
@@ -147,22 +177,98 @@ describe("AgentSession session-scope boundary", () => {
     vi.stubGlobal("fetch", sseFetchFor(snapshot))
 
     const agent = new AgentSession()
-    await agent.attachRemoteToLiveAgent({
-      transport: "http",
-      agentId: "live-1",
-      cwd: "/ws",
-      cliKind: "claude",
-      titleManual: true,
-      title: "manual title",
-      userNotes: "sticky notes",
-      sessionFields: { env: "prod" },
+    const { memo, stop } = mountMemo(agent)
+    let accept!: (response: Response) => void
+    const deferred = new Promise<Response>((resolve) => {
+      accept = resolve
     })
-    await delay()
+    const fetchSnapshot = sseFetchFor(snapshot)
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/events")) return deferred
+        return fetchSnapshot(url)
+      }),
+    )
+    try {
+      const attaching = agent.attachRemoteToLiveAgent({
+        transport: "http",
+        agentId: "live-1",
+        cwd: "/ws",
+        cliKind: "claude",
+        titleManual: true,
+        title: "manual title",
+        agentNotes: "sticky notes",
+        agentFields: { env: "fixture" },
+      })
+      flushSync()
+      expect(agent.agentId).toBe("live-1")
+      await delay(320)
+      expect(memo.text).toBe("")
+      expect(patchAgent).not.toHaveBeenCalled()
+      accept(await fetchSnapshot("/events"))
+      await attaching
+      flushSync()
 
-    expect(agent.sessionTitle).toBe("manual title")
-    expect(agent.titleManual).toBe(true)
-    expect(agent.userNotes).toBe("sticky notes")
-    expect(agent.sessionFields).toEqual({ env: "prod" })
+      expect(agent.sessionTitle).toBe("manual title")
+      expect(agent.titleManual).toBe(true)
+      expect(agent.agentNotes).toBe("sticky notes")
+      expect(agent.agentFields).toEqual({ env: "fixture" })
+      expect(memo.text).toBe("sticky notes")
+      expect(patchAgent).not.toHaveBeenCalled()
+      agent.detach()
+      flushSync()
+      expect(agent.agentNotes).toBe("")
+      expect(agent.agentFields).toEqual({})
+      expect(memo.text).toBe("")
+
+      vi.stubGlobal("fetch", sseFetchFor(snapshot))
+      await agent.attachRemoteToLiveAgent({
+        transport: "http",
+        agentId: "live-2",
+        cwd: "/ws",
+        cliKind: "claude",
+        agentNotes: "other",
+        agentFields: { phase: "second" },
+      })
+      flushSync()
+      expect(memo.text).toBe("other")
+      expect(agent.agentFields).toEqual({ phase: "second" })
+      expect(patchAgent).not.toHaveBeenCalled()
+    } finally {
+      agent.detach()
+      stop()
+    }
+  })
+
+  it("memo reads reactive ACP session identity through switchSession and newSession", async () => {
+    const session = connectedSession("sess-a")
+    seedSessionA(session)
+    localStorage.setItem("dc:session-memo:sess-a", '{"minimized":false}')
+    localStorage.setItem("dc:session-memo:remote-new-sess", '{"minimized":false}')
+    const { memo, stop } = mountMemo(session)
+    try {
+      expect(memo.minimized).toBe(false)
+      expect(memo.text).toBe("note-a")
+      await session.switchSession({ sessionId: "sess-b", cwd: "/proj", cliKind: "opencode" })
+      flushSync()
+      expect(memo.minimized).toBe(true)
+      expect(memo.text).toBe("note-a")
+      expect(session.agentFields).toEqual({ k: "v" })
+      expectSessionScopedDefaultsSoft(session)
+      await session.newSession({ cwd: "/proj", cliKind: "opencode" })
+      flushSync()
+      expect(session.sessionId).toBe("remote-new-sess")
+      expect(session.status).toBe("connected")
+      expect(memo.minimized).toBe(false)
+      expect(memo.text).toBe("note-a")
+      expect(session.agentFields).toEqual({ k: "v" })
+      expect(patchAgent).not.toHaveBeenCalled()
+    } finally {
+      stop()
+      localStorage.removeItem("dc:session-memo:sess-a")
+      localStorage.removeItem("dc:session-memo:remote-new-sess")
+    }
   })
 
   it("reactivity: $effect sees title across session identity changes", async () => {
@@ -235,8 +341,8 @@ describe("AgentSession session-scope boundary", () => {
     await session.openMockSession("greeting", "/proj")
 
     expect.soft(session.titleManual).toBe(false)
-    expect.soft(session.userNotes).toBe("")
-    expect.soft(session.sessionFields).toEqual({})
+    expect.soft(session.agentNotes).toBe("")
+    expect.soft(session.agentFields).toEqual({})
     expect.soft(session.availableCommands).toEqual([])
     expect.soft(session.planStore).toEqual(EMPTY_PLAN_STORE)
     expect.soft(session.contextUsage).toBeNull()

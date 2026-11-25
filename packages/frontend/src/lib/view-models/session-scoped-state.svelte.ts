@@ -1,5 +1,4 @@
-import type { AvailableCommand } from "@agentclientprotocol/sdk"
-import type { UsageUpdate } from "@agentclientprotocol/sdk"
+import type { AvailableCommand, UsageUpdate } from "@agentclientprotocol/sdk"
 import { EMPTY_PLAN_STORE, type PlanStore } from "@drive-coding/core/acp/plan"
 import type { QuotaSnapshot } from "@drive-coding/provider/extensions"
 
@@ -10,8 +9,6 @@ export class SessionScope {
 
   title = $state("")
   titleManual = $state(false)
-  userNotes = $state("")
-  sessionFields = $state<Record<string, string>>({})
   availableCommands = $state<AvailableCommand[]>([])
   planStore = $state<PlanStore>(EMPTY_PLAN_STORE)
   contextUsage = $state<UsageUpdate | null>(null)

@@ -7,8 +7,6 @@ const vmDir = fileURLToPath(new URL(".", import.meta.url))
 const SESSION_SCOPED = new Set([
   "title",
   "titleManual",
-  "userNotes",
-  "sessionFields",
   "availableCommands",
   "planStore",
   "contextUsage",
@@ -18,19 +16,14 @@ const SESSION_SCOPED = new Set([
 
 // #capabilities: the provider's capabilities — per agent, reset on a new connection
 // (slice codex-voice-poc made it $state so consumers react when they arrive).
-const AGENT_SCOPED = new Set(["turnStalled", "#capabilities"])
+const AGENT_SCOPED = new Set(["turnStalled", "#capabilities", "agentNotes", "agentFields"])
 
 const CONNECTION_SCOPED = new Set(["sessions", "loading", "error"])
 
 function extractStateFields(path: string): string[] {
   const text = readFileSync(path, "utf8")
   const re = /^\s*(#?[a-zA-Z][a-zA-Z0-9_]*)\s*=\s*\$state/gm
-  const names: string[] = []
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text)) !== null) {
-    if (m[1] !== undefined) names.push(m[1])
-  }
-  return names
+  return [...text.matchAll(re)].map((match) => match[1]).filter((name) => name !== undefined)
 }
 
 function pendingIn(file: string, classified: Set<string>): string[] {
@@ -41,7 +34,7 @@ describe("agent-session $state classification gate", () => {
   const pending = [
     ...pendingIn(
       "agent-session.svelte.ts",
-      new Set([...AGENT_SCOPED, "#session", "sessionsCache"]),
+      new Set([...AGENT_SCOPED, "#session", "#sessionId", "sessionsCache"]),
     ),
     ...pendingIn("session-scoped-state.svelte.ts", SESSION_SCOPED),
     ...pendingIn("sessions-cache-scope.svelte.ts", CONNECTION_SCOPED),

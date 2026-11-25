@@ -33,7 +33,7 @@ mcp_tools:
   - agent_field_set
   - session_field_delete
   - agent_field_delete
-docs_version: 1.14.0
+docs_version: 1.16.0
 updated: 2026-11-25
 ---
 
@@ -207,13 +207,17 @@ Keys are trimmed; an empty key is rejected. Where the memory shows up:
   for each pair. Unset values are omitted. Empty notes and empty field maps are returned.
   A single-record GET reflects a completed write. The list can serve a separate snapshot
   for up to 1.5 seconds and sends `Cache-Control: no-store`;
-- in the UI: the note as the session memo, the fields in the side panel's **Fields** list;
+- in the UI: **Agent notes** in chat and the read-only **Agent fields** list in the
+  side panel. Both follow the same agent across its ACP sessions;
 - in the agent's own surface prompt (hook, `GET /api/agent-prompt`, `session_surface`), as a
   `# Agent memory` section with `## Notes` and `## Fields` — so the agent reads it back.
 
 `PATCH /api/agents/:id` accepts `userNotes` or `agentNotes`. If both are present, they
 must match. An empty string clears the note. Omitting both leaves it alone. Fields are
-read-only over HTTP. The note is shared with the user, who can also edit it from the UI.
+read-only over HTTP. The browser displays the note from the agent record on attach
+or reconnect and sends a debounced `userNotes` PATCH when the user edits it. An MCP
+edit can be read from the record immediately after it completes and appears in the
+browser the next time it loads that record.
 
 ## Configure during lifecycle
 

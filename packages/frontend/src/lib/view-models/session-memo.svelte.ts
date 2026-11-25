@@ -1,17 +1,4 @@
-/**
- * session-memo.svelte.ts — פתק ממו לכל סשן: תזכורות או תקציר על נושא הסשן.
- * (slice session-memo-pad · session-memory)
- *
- * למה זה entity ולא state של מסך (חוק זהב #2): הממו מתאר את **הסשן**, לא את
- * המסך שפתוח עליו. הוא שורד ניווט, רענון, וסגירת המסך; הוא נטען מחדש כשחוזרים
- * לאותו סשן. minimized נשמר ב-localStorage; תוכן הטקסט (`userNotes`) חי ב-BE.
- *
- * המיקום (`left`/`top`) נשמר **גלובלית** ולא לפי סשן — מפתח נפרד,
- * `dc:session-memo-pos`. המיקום הוא העדפת-ממשק ("איפה נוח לי שהפתק ישב"),
- * ולא נתון של הסשן; מיקום לכל סשן היה מקפיץ את הפתק בכל מעבר.
- * גודל לא נשמר — הפתק בגודל קבוע.
- */
-
+import { untrack } from "svelte"
 import { patchAgent } from "$lib/adapters/agents-api"
 
 const STORAGE_PREFIX = "dc:session-memo:"
@@ -21,65 +8,38 @@ type PersistedMemo = {
   minimized: boolean
 }
 
-/** מפתח האחסון לסשן. `null` = אין סשן פעיל ⇒ אין מה לטעון ואין מה לשמור. */
 export function memoStorageKey(sessionId: string | null): string | null {
-  if (!sessionId) return null
-  return `${STORAGE_PREFIX}${sessionId}`
+  return sessionId ? `${STORAGE_PREFIX}${sessionId}` : null
 }
 
-/**
- * פענוח blob שמור. סובלני לכל קלט — מפתח חסר, JSON קטוע, צורה ישנה — ונופל
- * לברירות מחדל שדה-שדה במקום לזרוק. ממו שנעלם כי האחסון שלו התקלקל גרוע
- * בהרבה מממו שנפתח ריק.
- */
 export function parseMemo(raw: string | null): PersistedMemo {
-  if (!raw) return { minimized: true }
   try {
-    const parsed = JSON.parse(raw) as Partial<PersistedMemo>
-    return {
-      // כל מה שאינו false מפורש = מצומצם. ברירת המחדל היא לא להפריע.
-      minimized: parsed.minimized !== false,
-    }
+    const parsed = JSON.parse(raw ?? "null") as Partial<PersistedMemo> | null
+    return { minimized: parsed?.minimized !== false }
   } catch {
     return { minimized: true }
   }
 }
 
-function loadMemo(sessionId: string | null): PersistedMemo {
-  const key = memoStorageKey(sessionId)
-  if (!key || typeof localStorage === "undefined") return { minimized: true }
+function readStorage(key: string | null): string | null {
+  if (!key) return null
   try {
-    return parseMemo(localStorage.getItem(key))
+    return localStorage.getItem(key)
   } catch {
-    return { minimized: true }
+    return null
   }
 }
 
-function saveMemo(sessionId: string | null, memo: PersistedMemo): void {
-  const key = memoStorageKey(sessionId)
-  if (!key || typeof localStorage === "undefined") return
+function writeStorage(key: string | null, value: string | null): void {
+  if (!key) return
   try {
-    // minimized-only אינו מידע — לא משאירים רשומה שתצטבר לכל סשן שנפתח אי פעם.
-    if (memo.minimized) {
-      localStorage.removeItem(key)
-      return
-    }
-    localStorage.setItem(key, JSON.stringify(memo satisfies PersistedMemo))
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
   } catch {
-    // best-effort (מכסה חרגה / מצב פרטי)
+    // Storage can be unavailable or full.
   }
 }
 
-/**
- * מה שה-VM צריך מהסשן — טיפוס מבני צר, בלי תלות ב-AgentSession עצמו.
- *
- * `status`/`agentId`/`userNotes` הם ה-**טריגר** בלבד: `sessionId` הוא getter מעל שדה פרטי
- * רגיל (`#sessionId`) ולא $state, ולכן קריאה שלו אינה נרשמת כתלות reactive.
- * effect שקורא רק אותו לא היה רץ שוב לעולם, הממו היה נשאר בלי מפתח, ושום דבר
- * לא היה נשמר — כשל שקט שהטסטים לא תופסים (הם מזריקים sessionId ידנית) והתגלה
- * רק בבדיקת דפדפן. השדות האלה כן reactive ומתעדכנים בדיוק כשסשן נטען או
- * מוחלף.
- */
 const POS_KEY = "dc:session-memo-pos"
 const SIZE_KEY = "dc:session-memo-size"
 
@@ -113,142 +73,114 @@ export function parseSize(raw: string | null): MemoSize | null {
   }
 }
 
-function loadSize(): MemoSize | null {
-  if (typeof localStorage === "undefined") return null
-  try {
-    return parseSize(localStorage.getItem(SIZE_KEY))
-  } catch {
-    return null
-  }
-}
-
-function loadPos(): MemoPos | null {
-  if (typeof localStorage === "undefined") return null
-  try {
-    return parsePos(localStorage.getItem(POS_KEY))
-  } catch {
-    return null
-  }
-}
-
-export type MemoSessionSource = {
-  readonly status: unknown
+type MemoSessionSource = {
   readonly agentId: string | null
   readonly sessionId: string | null
-  readonly userNotes?: string
+  readonly agentNotes?: string
 }
+
+type NoteEdit = Readonly<{ agentId: string; text: string }>
+type NoteWrite = Readonly<{ text: string; done: Promise<void> }>
 
 export class SessionMemoVM {
   text = $state("")
-  /** ברירת המחדל מצומצם: הפתק לא חוסם את הצ'אט עד שביקשו אותו. */
   minimized = $state(true)
 
-  /** מיקום גרור, גלובלי. `null` = ברירת המחדל של ה-CSS. */
-  pos = $state<MemoPos | null>(loadPos())
+  // Position and size are global browser preferences.
+  pos = $state<MemoPos | null>(parsePos(readStorage(POS_KEY)))
 
-  /** גודל שנקבע ידנית, גלובלי. חל על הכרטיס בלבד — הגלולה בגודל קבוע. */
-  size = $state<MemoSize | null>(loadSize())
+  size = $state<MemoSize | null>(parseSize(readStorage(SIZE_KEY)))
 
-  /** הסשן שהתוכן הנוכחי שייך לו. plain field, לא $state — ראה persist למטה. */
   #loadedId: string | null = null
-  /** agent UUID for BE note flush — sibling of #loadedId (slice session-memory). */
   #loadedAgentId: string | null = null
+  #loadedNotes: string | undefined
+  #pending: NoteEdit | undefined
+  #timer: ReturnType<typeof setTimeout> | undefined
+  #writes = new Map<string, NoteWrite>()
 
-  /**
-   * `source` אופציונלי: בלעדיו ה-VM מונע-סשן ידנית (`setSessionId`), וכך הטסטים
-   * שולטים במפתח בלי להרים AgentSession שלם.
-   */
-  constructor(source?: MemoSessionSource) {
-    // חוק זהב #4 — ה-effect יושב אצל מי שמחזיק את ה-state, לא ב-composition root.
+  constructor(private readonly source?: MemoSessionSource) {
     if (source) {
       $effect(() => {
-        void source.status
-        void source.agentId
-        void source.userNotes
-        this.setSessionId(source.sessionId, source.agentId, source.userNotes)
+        const { sessionId, agentId, agentNotes } = source
+        untrack(() => this.setSessionId(sessionId, agentId, agentNotes))
       })
     }
 
-    $effect(() => {
-      const minimizedSnapshot = this.minimized
-      const textSnapshot = this.text
-      const timer = setTimeout(() => {
-        saveMemo(this.#loadedId, { minimized: minimizedSnapshot })
-        const agentId = this.#loadedAgentId
-        if (agentId !== null) {
-          void patchAgent(agentId, { userNotes: textSnapshot }).catch(() => {})
-        }
-      }, DEBOUNCE_MS)
-      return () => clearTimeout(timer)
-    })
+    $effect(() => () => this.#flush())
   }
 
-  /**
-   * מיתוג לסשן אחר: שומר מיָדית את התוכן תחת ה-agent הישן, minimized תחת sessionId
-   * הישן, ואז טוען את הממו של החדש. הכתיבה המיָדית היא הנקודה הקריטית — בלעדיה
-   * מעבר-סשן בתוך חלון ה-debounce היה מאבד את מה שהוקלד הרגע.
-   */
-  setSessionId(
-    sessionId: string | null,
-    agentId?: string | null,
-    userNotes?: string,
-  ): void {
-    const nextAgentId = agentId ?? null
-    if (sessionId === this.#loadedId && nextAgentId === this.#loadedAgentId) return
-
-    if (this.#loadedAgentId !== null) {
-      void patchAgent(this.#loadedAgentId, { userNotes: this.text }).catch(() => {})
-    }
-    if (this.#loadedId !== null) {
-      saveMemo(this.#loadedId, { minimized: this.minimized })
+  setSessionId(sessionId: string | null, agentId: string | null = null, notes?: string): void {
+    if (sessionId !== this.#loadedId) {
+      this.#loadedId = sessionId
+      this.minimized = parseMemo(readStorage(memoStorageKey(sessionId))).minimized
     }
 
-    this.#loadedId = sessionId
-    this.#loadedAgentId = nextAgentId
-
-    const loaded = loadMemo(sessionId)
-    this.text = userNotes ?? ""
-    this.minimized = loaded.minimized
+    if (agentId !== this.#loadedAgentId) {
+      this.#flush()
+      this.#loadedAgentId = agentId
+      this.text = (agentId === null ? undefined : this.#writes.get(agentId)?.text) ?? notes ?? ""
+    } else if (
+      notes !== this.#loadedNotes &&
+      this.#pending === undefined &&
+      (agentId === null || !this.#writes.has(agentId))
+    ) {
+      this.text = notes ?? ""
+    }
+    this.#loadedNotes = notes
   }
 
   setText(value: string): void {
+    const agentId = this.#loadedAgentId
+    if ((this.source && agentId !== this.source.agentId) || value === this.text) return
+
     this.text = value
+    if (!agentId) return
+    this.#pending = { agentId, text: value }
+    clearTimeout(this.#timer)
+    this.#timer = setTimeout(() => this.#flush(), DEBOUNCE_MS)
   }
 
-  /**
-   * צמצום והרחבה בלבד — **אין סגירה, במכוון.** הפתק מחזיק רשומות של סשן, ומחווה
-   * אחת שמוחקת אותן היא כשל שאין ממנו חזרה. צמצום הוא הדרך היחידה להרחיק אותו.
-   */
+  #flush(): void {
+    const edit = this.#pending
+    if (!edit) return
+    this.#pending = undefined
+    clearTimeout(this.#timer)
+    this.#timer = undefined
+
+    const { agentId, text } = edit
+    const previous = this.#writes.get(agentId)
+    const send = async () => {
+      try {
+        // Older backends accept the legacy spelling.
+        await patchAgent(agentId, { userNotes: text })
+      } catch {
+        // Keep the local text. A failed or timed out write is never retried.
+      }
+    }
+    const done = (previous ? previous.done.then(send) : send()).finally(() => {
+      if (this.#writes.get(agentId)?.done === done) this.#writes.delete(agentId)
+    })
+    this.#writes.set(agentId, { text, done })
+  }
+
   setMinimized(value: boolean): void {
     if (this.minimized === value) return
     this.minimized = value
-    // כתיבה מיָדית: הצמצום הוא לרוב הפעולה האחרונה לפני מעבר מסך או ניתוק.
-    saveMemo(this.#loadedId, { minimized: value })
+    // The collapsed default needs no stored entry.
+    writeStorage(
+      memoStorageKey(this.#loadedId),
+      value ? null : JSON.stringify({ minimized: value }),
+    )
   }
 
-  /**
-   * נכתב מיָדית ולא ב-debounce: גרירה מסתיימת בהרפיית האצבע, ואם המשתמש סוגר
-   * את הטאב מיד אחריה — חלון-השהיה היה מאבד את המיקום החדש.
-   */
   setPos(next: MemoPos): void {
     this.pos = next
-    if (typeof localStorage === "undefined") return
-    try {
-      localStorage.setItem(POS_KEY, JSON.stringify(next))
-    } catch {
-      // best-effort
-    }
+    writeStorage(POS_KEY, JSON.stringify(next))
   }
 
-  /** נכתב מיָדית מאותו טעם כמו `setPos` — הגרירה נגמרת בהרפיה. */
   setSize(next: MemoSize): void {
     this.size = next
-    if (typeof localStorage === "undefined") return
-    try {
-      localStorage.setItem(SIZE_KEY, JSON.stringify(next))
-    } catch {
-      // best-effort
-    }
+    writeStorage(SIZE_KEY, JSON.stringify(next))
   }
 
   toggle(): void {

@@ -88,7 +88,7 @@ export const he: Catalog = {
   "chat.subagent.status.unknown": "לא ידוע",
   "chat.subagent.prompt": "משימה",
   "chat.subagent.summary": "סיכום",
-  "chat.subagent.transcript": "פעילות תת-סוכן",
+  "chat.subagent.transcript": "פעילות משימת משנה",
   // ─── audio-cues ─── (slice 6)
   // ─── car-mode ─── (slice 7)
   // ─── sessions ─── (slice 8)
@@ -120,13 +120,13 @@ export const he: Catalog = {
   "settings.back": "חזרה",
   // ─── recordings ─── (slice 10)
   // ─── agent-options ─── (slice 23)
-  "agentOptions.title": "הגדרות סשן",
+  "agentOptions.title": "אפשרויות שיחה",
   "agentOptions.model.label": "מודל",
   "agentOptions.model.other": "אחר",
-  "agentOptions.agent.label": "סוכן",
+  "agentOptions.agent.label": "פרסונה",
   "agentOptions.mode.label": "מצב",
   // תרגום שמות config-options שמגיעים מה-CLI (אנגלית) → עברית. name לא-מוכר נשאר כפי שהוא.
-  "configName.agent": "סוכן",
+  "configName.agent": "פרסונה",
   "configName.mode": "מצב",
   "configName.sessionMode": "מצב סשן",
   "configName.approvalPreset": "רמת אישורים",
@@ -202,7 +202,7 @@ export const he: Catalog = {
   "header.audioOn": "השתק שמע",
   "header.audioOff": "הפעל שמע",
   "sidebar.collapse": "קפל פאנל",
-  "sidebar.agentOptions": "אפשרויות סוכן",
+  "sidebar.agentOptions": "אפשרויות שיחה",
   "sidebar.display": "תצוגה",
   "sidebar.sessions": "סשנים",
   "sidebar.refresh": "רענן",
@@ -234,12 +234,12 @@ export const he: Catalog = {
   "settings.theme.slate": "צפחה",
   "settings.theme.daylight": "אור יום",
   // ─── active-agents ─── (slice active-agents-widget)
-  "connect.agents.title": "תהליכים פעילים",
-  "connect.agents.empty": "אין תהליכים פעילים",
+  "connect.agents.title": "סוכנים פעילים",
+  "connect.agents.empty": "אין סוכנים פעילים",
   "connect.agents.refresh": "רענן",
   "connect.agents.reconnect": "התחבר מחדש",
-  "connect.agents.kill": "הרוג",
-  "connect.agents.killConfirm": "בטוח?",
+  "connect.agents.close": "סגור סוכן",
+  "connect.agents.closeConfirm": "אשר סגירת סוכן",
   "connect.agents.inUse": "פעיל בכרטיסייה אחרת",
   // ─── reconnect-ws-takeover Commit 2 ─── (panel takeover-affordance)
   "connect.agents.noSession": "אין סשן פעיל",
@@ -249,7 +249,7 @@ export const he: Catalog = {
   "connect.agents.lastMessage": "פעילות אחרונה",
   // ─── agent-tree-display ─── (slice agent-tree-display)
   "connect.agents.subAgentsOf": "סוכני משנה",
-  "connect.agents.childCount": "סוכני משנה",
+  "connect.agents.childCount": "סוכנים ילדים",
   "connect.agents.watcherCount": "צופים",
   "connect.agents.openedBy": "נפתח על ידי",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
@@ -303,28 +303,28 @@ export const he: Catalog = {
   "connect.recent.expand": "הרחב",
   // ─── leave-running (slice leave-running-background) ───
   "session.titleLabel": "כותרת",
-  "session.fieldsLabel": "שדות",
-  "session.fieldsEmpty": "אין שדות",
+  "agent.fieldsLabel": "שדות סוכן",
+  "agent.fieldsEmpty": "אין שדות סוכן",
   // ─── scope-policy-per-caller ───
-  "session.scopePolicy.title": "אישורים לסוכן הזה",
-  "session.scopePolicy.message": "שליחת הודעות וביטול תור",
-  "session.scopePolicy.update": "שינוי סוכן אחר",
-  "session.scopePolicy.close": "סגירת סוכן אחר",
-  "session.scopePolicy.option.inherit": "יורש מהגלובלי",
-  "session.scopePolicy.sourceLabel": "מקור",
-  "session.scopePolicy.source.agent": "הגדרה לסוכן זה",
-  "session.scopePolicy.source.override": "דריסה גלובלית (PATCH)",
-  "session.scopePolicy.source.env": "משתני סביבה",
-  "session.scopePolicy.source.default": "ברירת מחדל",
-  "session.scopePolicy.loading": "טוען מדיניות לסוכן…",
-  "session.scopePolicy.saving": "שומר…",
-  "session.scopePolicy.error": "לא ניתן לטעון או לשמור מדיניות לסוכן.",
-  "session.scopePolicy.empty": "אין מדיניות לסוכן זה. נסה לטעון שוב.",
-  "session.scopePolicy.retry": "נסה שוב",
-  "session.scopePolicy.note":
+  "agent.scopePolicy.title": "אישורים לסוכן הזה",
+  "agent.scopePolicy.message": "שליחת הודעות וביטול תור",
+  "agent.scopePolicy.update": "שינוי סוכן אחר",
+  "agent.scopePolicy.close": "סגירת סוכן אחר",
+  "agent.scopePolicy.option.inherit": "יורש מהגלובלי",
+  "agent.scopePolicy.sourceLabel": "מקור",
+  "agent.scopePolicy.source.agent": "הגדרה לסוכן זה",
+  "agent.scopePolicy.source.override": "דריסה גלובלית (PATCH)",
+  "agent.scopePolicy.source.env": "משתני סביבה",
+  "agent.scopePolicy.source.default": "ברירת מחדל",
+  "agent.scopePolicy.loading": "טוען מדיניות לסוכן…",
+  "agent.scopePolicy.saving": "שומר…",
+  "agent.scopePolicy.error": "לא ניתן לטעון או לשמור מדיניות לסוכן.",
+  "agent.scopePolicy.empty": "אין מדיניות לסוכן זה. נסה לטעון שוב.",
+  "agent.scopePolicy.retry": "נסה שוב",
+  "agent.scopePolicy.note":
     "חל על כתיבות מחוץ לעץ הסוכן שלך. אין כאן הגנת אבטחה — רק נראות והתנהגות צפויה.",
   "session.leaveRunning": "צא — השאר רץ",
-  "session.closeSession": "כבה לגמרי את התהליך",
+  "agent.close": "סגור סוכן",
   // ─── playbackControls ─── (slice B1-controls-ui)
   "playbackControls.stopRun": "עצור ריצה",
   "playbackControls.stopRun.thinking": "עצור ריצה",
@@ -401,7 +401,7 @@ export const he: Catalog = {
   "settings.ttsStatus.usage.notAvailable": "—",
   "settings.ttsStatus.refresh": "רענן",
   // ─── ui-session-polish ─── (slice ui-session-polish)
-  "session.copyId": "העתק מזהה סשן",
+  "session.copyId": "העתק מזהה שיחת ACP",
   "modal.loading.session": "טוען סשן…",
   // ─── app-title ─── (slice app-title-build-env)
   "appTitle.settings": "הגדרות",
@@ -448,8 +448,8 @@ export const he: Catalog = {
   "connect.machine.cpu": "מעבד",
   "connect.machine.label": "עומס מכונה",
   // ─── session delete ─── (slice session-delete)
-  "session.delete": "מחק",
-  "session.deleteConfirm": "בטוח? מחיקת סשן",
+  "session.delete": "מחק שיחה",
+  "session.deleteConfirm": "אשר מחיקת שיחה",
   // ─── permission ─── (slice-permission-ui-basic)
   "permission.title": "בקשת הרשאה",
   "permission.allowOnce": "אשר פעם",
@@ -546,11 +546,11 @@ export const he: Catalog = {
   "pendingCapture.dismiss": "מחק",
   "pendingCapture.restored": "הקלטה שלא הושלמה שוחזרה",
   // ─── session-memo ─── (slice session-memo-pad)
-  "sessionMemo.title": "ממו",
-  "sessionMemo.open": "פתח ממו",
-  "sessionMemo.minimize": "צמצם ממו",
-  "sessionMemo.placeholder": "תזכורות או תקציר על נושא הסשן…",
-  "settings.toggle.sessionMemo": "פתק ממו בסשן",
+  "agentNotes.title": "הערות סוכן",
+  "agentNotes.open": "פתח הערות סוכן",
+  "agentNotes.minimize": "צמצם הערות סוכן",
+  "agentNotes.placeholder": "תזכורות או הערות על הסוכן…",
+  "settings.toggle.agentNotes": "הערות סוכן",
   // ─── usage ─── (slice usage-per-cli)
   "usage.page.title": "צריכה לפי CLI",
   "usage.page.loading": "טוען…",

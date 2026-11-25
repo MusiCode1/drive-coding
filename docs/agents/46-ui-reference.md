@@ -1,7 +1,7 @@
 ---
 id: ui-reference
 title: UI reference — screens and controls
-summary: Where settings and session controls live in the drive-coding web app, with on-screen labels an agent can quote back to the user.
+summary: Where chat settings, agent notes and fields, agent controls, and ACP session controls live in the web app.
 read_when:
   - The user is asking where a setting lives or what a button on the screen does
   - You need to explain navigation between connect, chat, settings, and usage without opening frontend code
@@ -10,7 +10,7 @@ tags: [ui]
 surface: [ui]
 stability: transitional
 routes: []
-docs_version: 1.10.0
+docs_version: 1.16.0
 updated: 2026-11-18
 ---
 
@@ -34,13 +34,13 @@ checking whether agents are already running on the machine.
 **What you see**
 
 - Title **Drive Coding** and subtitle **Connect to a CLI agent**.
-- **Active processes** — heading with a **Refresh** control (↺), carrying a count when
+- **Active agents** — heading with a **Refresh** control (↺), carrying a count when
   processes exist. A **Machine load** status line summarizes host memory and CPU (wording
   varies; treat as live telemetry, not a promise of exact values). Either **No active
-  processes**, or one row per running agent. **Each row carries:**
+  agents**, or one row per running agent. **Each row carries:**
   - a state tag (observed **Disconnected**), the CLI name, the folder, and **Last activity**;
   - **Reconnect** — **this is how a user returns to an agent that is already running**;
-  - **Kill** — stops that process;
+  - **Close agent** — closes the listed agent;
   - a shortened session id and a `pid:` label.
 
   Both buttons appear at desktop **and** mobile width. They exist only while a process is
@@ -50,14 +50,14 @@ checking whether agents are already running on the machine.
   **Remove from list**. 🛑 **Tapping a row starts a new session** for that CLI and folder —
   it does **not** rejoin the session that ran there before (measured: a second agent is
   spawned, with a different session id). To rejoin a live agent, use **Reconnect** under
-  **Active processes** above.
+  **Active agents** above.
 - **Interface language** — opens a picker (observed value: **English**).
 - **CLI** — picker with **Refresh**; shows the selected provider (observed: **OpenCode**).
 - **Working directory** — text field (shows a path placeholder until filled), plus
   **Browse…** and **Show recent folders**.
 - Primary **Connect** button at the bottom.
 
-**State notes:** Active-process count and machine-load numbers change continuously; describe
+**State notes:** Active agent count and machine-load numbers change continuously; describe
 the section, not a specific reading from one visit.
 
 ## Deep link — new session (`/chat/<cliKind>/new?cwd=<path>`)
@@ -100,6 +100,10 @@ the current session alongside message history.
 - While a session runs: a short working-directory label beside **Connected**, and
   **Session budget** (shows a percentage while context is tracked).
 
+**Agent notes** are available when enabled in **Settings → Chat display**. The
+same agent's notes and read-only fields follow it across ACP sessions. The note's
+expanded or minimized state is remembered separately for each ACP session.
+
 **Message area (center)**
 
 - User messages and agent replies as stacked bubbles with **Copy** on user text; agent
@@ -128,23 +132,25 @@ the current session alongside message history.
 
 - **Machine load** (same family as Connect).
 - **Title** text field.
-- **Fields** (observed empty: **No fields**).
-- Session lifecycle: **Shut the process down completely**, **Leave — keep running**,
+- **Agent fields** (read-only, with **No agent fields** when empty).
+- Session lifecycle: **Close agent**, **Leave — keep running**,
   **Settings**.
 - **Audio**: **Unmute audio** — the mute/unmute control for spoken output lives here, in
   the side panel, not in Settings.
 - **Display** toggles: **Clean reading**, **Show thoughts by default**, **Show tools by
   default**.
 - **Running on** — CLI name (observed: **OpenCode**).
-- **Agent options**
+- **Session options**
   - **Session Mode** button (observed: **build**) plus a help control titled **The default
     agent. Executes tools based on configured permissions.**
+  - **Persona** picker when the provider offers an **Agent** configuration option.
   - **Model** button (observed: **OpenCode Zen/Big Pickle**).
 - **Project system prompt** — multiline field with helper **Appended to the agent's default
   instructions. Takes effect from the next session.** Provider may show **This provider does
   not support a project system prompt.**
 - **Sessions** list — **Refresh**, **Search titles…**, **All sessions**, **＋ New session**,
-  and historical session rows with **Copy session ID**.
+  and historical session rows with **Copy ACP session ID**. Historical rows offer **Delete session** when the
+  provider supports deletion.
 
 On **mobile width**, the same panel content sits behind **Drag to open** instead of staying
 visible; the header **Menu** button may be absent in favor of that drag affordance.
@@ -191,7 +197,7 @@ or inspecting token/TTS status for the backend.
 - **Screen** — **Keep screen on** switch (observed on).
 - **Notifications** — **Notify when tab is hidden**.
 - **Chat display** switches: **Show thoughts by default**, **Show tools by default**,
-  **Clean reading**, **Session memo pad**, **Load remote images automatically — your browser
+  **Clean reading**, **Agent notes**, **Load remote images automatically — your browser
   will fetch any URL the agent emits, which can expose you**, **Enter sends message**.
 - **Backend URL** — text field with helper **Leave empty in dev mode. In production
   (Cloudflare) enter the full BE URL.**
@@ -240,16 +246,16 @@ Same session side panel / **Drag to open** behavior as Settings.
 
 | User question (examples) | Screen | Control / label |
 |---|---|---|
-| Where do I switch the model? | Chat | Side panel → **Agent options** → **Model** |
-| Where is session / permission mode? | Chat | Side panel → **Agent options** → **Session Mode** |
+| Where do I switch the model? | Chat | Side panel → **Session options** → **Model** |
+| Where is session / permission mode? | Chat | Side panel → **Session options** → **Session Mode** |
 | Where do I change language? | Settings or Connect | **Interface language** |
 | Where is dark mode / colors? | Settings | **Theme** |
 | Why is speech off or which voice? | Settings | **Voice & Speech** → **TTS provider**, **TTS Voice**, related switches |
 | Where is token / context usage? | Settings | **Context token usage**; detail by CLI → **View usage by CLI** (**Usage** screen) |
 | How do I type instead of voice? | Chat | Footer → **Type**, then **Type a prompt…** |
 | How do I mute / unmute speech? | Chat | Side panel → **Unmute audio** (per session; the TTS switches in Settings are separate) |
-| How do I get back to an agent that is still running? | Connect | **Active processes** → **Reconnect** on that row (**not** **Recent folders**, which starts a new session) |
-| How do I stop a stuck process? | Connect | **Active processes** → **Kill** on that row |
+| How do I get back to an agent that is still running? | Connect | **Active agents** → **Reconnect** on that row (**not** **Recent folders**, which starts a new session) |
+| How do I stop a stuck process? | Connect | **Active agents** → **Close agent** on that row |
 | How do I start from a recent project? | Connect | **Recent folders** row — note this **starts a new session** for that CLI + folder |
 | How do I pick CLI or folder for new session? | Connect | **CLI**, **Working directory**, **Connect** |
 

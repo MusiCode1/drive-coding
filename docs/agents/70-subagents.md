@@ -20,7 +20,7 @@ mcp_tools:
   - notify_parent
   - session_surface
   - agent_surface
-docs_version: 1.14.0
+docs_version: 1.16.0
 updated: 2026-11-25
 ---
 

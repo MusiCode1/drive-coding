@@ -17,7 +17,7 @@ routes:
 mcp_tools:
   - session_whoami
   - agent_whoami
-docs_version: 1.14.0
+docs_version: 1.16.0
 updated: 2026-11-25
 ---
 

@@ -15,7 +15,7 @@ import type {
   UsageUpdate,
 } from "@agentclientprotocol/sdk"
 import type { PromptBlocks } from "@drive-coding/provider/client"
-import { createAgent, deleteAgent, patchAgent, releaseConnection } from "$lib/adapters/agents-api"
+import { createAgent, deleteAgent, releaseConnection } from "$lib/adapters/agents-api"
 import type { CuesEngine } from "$lib/engines/cues"
 // ─── slice leave-running-background ───
 import {
@@ -57,6 +57,7 @@ import {
 import { type LoadMockSessionDeps, loadMockSession } from "$lib/view-models/agent-session-load-mock"
 import {
   applyManualTitleFromAttach,
+  applyTitleFromSessionInfo,
   applyTitleFromSessionInput,
   type ManualTitleInput,
   setManualTitleOnAgent,
@@ -181,6 +182,8 @@ export class AgentSession {
   // ─── slice session-state-reducer C4: מצב SessionState פנימי (base ל-reduce) ─── (additive)
   sessionState = $state<SessionState>(createInitialSessionState({ sessionId: null }))
   agentId = $state<string | null>(null)
+  agentNotes = $state("")
+  agentFields = $state<Record<string, string>>({})
   cwd = $state<string | null>(null)
   // ─── slice 4: replay guard + narration context ─── (תוספתי)
   /** True בזמן ש-loadSession() מנגן היסטוריה מחדש. ה-Speaker קורא את זה (תחת מעקב) כדי להשתיק TTS. */
@@ -245,18 +248,6 @@ export class AgentSession {
   }
   set titleManual(v: boolean) {
     this.#session.titleManual = v
-  }
-  get userNotes(): string {
-    return this.#session.userNotes
-  }
-  set userNotes(v: string) {
-    this.#session.userNotes = v
-  }
-  get sessionFields(): Record<string, string> {
-    return this.#session.sessionFields
-  }
-  set sessionFields(v: Record<string, string>) {
-    this.#session.sessionFields = v
   }
   get availableCommands(): AvailableCommand[] {
     return this.#session.availableCommands
@@ -368,7 +359,7 @@ export class AgentSession {
   /** slice connection-set C2: one id per VM lifetime — SSE header, presence, WS query, DELETE. */
   readonly #connectionId = safeUUID()
   #pageHideReleaseBound = false
-  #sessionId: string | null = null
+  #sessionId = $state<string | null>(null)
 
   /**
    * Session-identity boundary. A new scope is born only when the incoming identity differs
@@ -844,7 +835,7 @@ export class AgentSession {
       }
 
       this.#enterSession(view.state.sessionId)
-      applyManualTitleFromAttach(this, input, false)
+      if (this.agentId === input.agentId) applyManualTitleFromAttach(this, input, false)
 
       // 5. #consumeViewPatches מכמת בזהות (this.#view !== view → break) — כמו attachRemote.
       this.#view = view
@@ -1006,6 +997,9 @@ export class AgentSession {
       throw new Error(`cannot open mock session in status ${this.status}`)
     }
     this.#endSessionScope("load")
+    this.agentId = null
+    this.agentNotes = ""
+    this.agentFields = {}
     this.#setStatus("connecting")
     this.error = null
     this.authMethods = []
@@ -1037,7 +1031,7 @@ export class AgentSession {
       // the old title — without this assignment session A's title would stay)
       // + push to the server.
       this.cwd = input.cwd
-      this.#applyTitleFromSessionInput(input)
+      applyTitleFromSessionInput(this, input)
     } catch (e) {
       this.error = `switchSession failed: ${formatAcpError(e)}`
     } finally {
@@ -1065,7 +1059,7 @@ export class AgentSession {
       if (!newId) throw new Error("newSession returned no sessionId")
       this.#enterSession(newId)
       this.cwd = cwd
-      // Empty title: skip #pushTitleToServer (it no-ops on !title) — host already
+      // Empty title: skip the title PATCH (it no-ops on !title) — host already
       // cleared title via update-session; agent list stays blank until a real title.
       await this.#applyRememberedConfig()
     } catch (e) {
@@ -1220,19 +1214,8 @@ export class AgentSession {
     this.#setTurnState("idle")
   }
 
-  /** Best-effort PATCH title to BE for the active-processes list. */
-  #pushTitleToServer(title: string): void {
-    const id = this.agentId
-    if (!id || !title) return // אין agentId / כותרת ריקה → דלג
-    void patchAgent(id, { title }).catch(() => {})
-  }
-
   setManualTitle(title: string): void {
     setManualTitleOnAgent(this, title)
-  }
-
-  #applyTitleFromSessionInput(input: { title?: string; titleManual?: boolean }): void {
-    applyTitleFromSessionInput(this, input, (t) => this.#pushTitleToServer(t))
   }
 
   // ─── slice 6: setter מרכז ─── (additive — מנתב את כל ה-status writes)
@@ -1362,6 +1345,8 @@ export class AgentSession {
     this.#session.subagentToolCallParents = new Map()
     this.#sessionId = null
     this.agentId = null
+    this.agentNotes = ""
+    this.agentFields = {}
     this.#historyState.resetFields()
     if (!opts?.keepAgent && agentId) void deleteAgent(agentId).catch(() => {})
   }
@@ -1550,18 +1535,7 @@ export class AgentSession {
     // לא נושא content.text — חובה לטפל בו לפני ה-gate `if (!text) return`.
     // semantics עקבי עם ה-keep-on-undefined הקיים ב-sessionTitle setter paths (:999, :1114).
     if (update.sessionUpdate === "session_info_update") {
-      if (this.titleManual) return
-      // SessionInfoUpdate: title?: string | null; updatedAt?: string | null (types.gen.d.ts:3905)
-      const title = (update as { title?: string | null }).title
-      if (title === null) {
-        this.sessionTitle = "" // null = clear (לפי הסכמה)
-      } else if (typeof title === "string") {
-        this.sessionTitle = title
-        // slice http-live-side-effects (bug #56): ללא תנאי — במסלול HTTP ה-FE הוא
-        // הכותב היחיד למרשם, ולכן `!#isRemote` השאיר title=null בדיוק שם.
-        this.#pushTitleToServer(this.sessionTitle)
-      }
-      // undefined → keep-on-undefined (עקבי עם loadSession :999 / :1114)
+      applyTitleFromSessionInfo(this, (update as { title?: string | null }).title)
       return
     }
 

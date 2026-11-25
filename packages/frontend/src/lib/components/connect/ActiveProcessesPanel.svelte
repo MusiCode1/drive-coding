@@ -208,8 +208,8 @@ function reconnectTitle(agent: AgentPublic): string {
               class="action-btn icon-btn kill-btn"
               class:confirming={confirmingId === agent.id}
               onclick={() => handleKill(agent.id)}
-              title={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
-              aria-label={confirmingId === agent.id ? t("connect.agents.killConfirm") : t("connect.agents.kill")}
+              title={confirmingId === agent.id ? t("connect.agents.closeConfirm") : t("connect.agents.close")}
+              aria-label={confirmingId === agent.id ? t("connect.agents.closeConfirm") : t("connect.agents.close")}
             >
               <Trash2Icon size={16} strokeWidth={1.75} />
             </button>
@@ -224,7 +224,7 @@ function reconnectTitle(agent: AgentPublic): string {
             class="kill-confirm-tip"
             onOpenAutoFocus={(e) => e.preventDefault()}
           >
-            <span role="status">{t("connect.agents.killConfirm")}</span>
+            <span role="status">{t("connect.agents.closeConfirm")}</span>
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>

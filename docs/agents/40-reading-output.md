@@ -16,7 +16,7 @@ routes:
   - GET /api/agents/:id/state
   - POST /api/agents/:id/rpc
 mcp_tools: [session_send, session_state, agent_send, agent_state]
-docs_version: 1.14.0
+docs_version: 1.16.0
 updated: 2026-11-25
 ---
 

@@ -14,20 +14,20 @@ const t = getI18n().t
 const actions: ScopeAction[] = ["message", "update", "close"]
 
 const actionLabelKeys: Record<ScopeAction, MessageKey> = {
-  message: "session.scopePolicy.message",
-  update: "session.scopePolicy.update",
-  close: "session.scopePolicy.close",
+  message: "agent.scopePolicy.message",
+  update: "agent.scopePolicy.update",
+  close: "agent.scopePolicy.close",
 }
 
 const sourceLabelKeys: Record<ScopePolicySource, MessageKey> = {
-  agent: "session.scopePolicy.source.agent",
-  override: "session.scopePolicy.source.override",
-  env: "session.scopePolicy.source.env",
-  default: "session.scopePolicy.source.default",
+  agent: "agent.scopePolicy.source.agent",
+  override: "agent.scopePolicy.source.override",
+  env: "agent.scopePolicy.source.env",
+  default: "agent.scopePolicy.source.default",
 }
 
 const policyOptions = $derived<SelectOption[]>([
-  { value: SCOPE_POLICY_INHERIT, label: t("session.scopePolicy.option.inherit") },
+  { value: SCOPE_POLICY_INHERIT, label: t("agent.scopePolicy.option.inherit") },
   { value: "ask", label: t("settings.scopePolicy.option.ask") },
   { value: "allow", label: t("settings.scopePolicy.option.allow") },
   { value: "deny", label: t("settings.scopePolicy.option.deny") },
@@ -40,14 +40,14 @@ function onSelect(action: ScopeAction, value: string): void {
 
 <div class="flex flex-col gap-2 shrink-0 rounded-lg border px-3 py-3" style="border-color:var(--border)">
   <div class="text-[11px] font-semibold uppercase tracking-wider px-0.5" style="color:var(--fg-dim)">
-    {t("session.scopePolicy.title")}
+    {t("agent.scopePolicy.title")}
   </div>
-  <p class="text-[12px] m-0" style="color:var(--fg-muted)">{t("session.scopePolicy.note")}</p>
+  <p class="text-[12px] m-0" style="color:var(--fg-muted)">{t("agent.scopePolicy.note")}</p>
   {#if vm.error}
-    <p class="text-sm m-0" role="alert" style="color:var(--recording)">{t("session.scopePolicy.error")}</p>
+    <p class="text-sm m-0" role="alert" style="color:var(--recording)">{t("agent.scopePolicy.error")}</p>
   {/if}
   {#if vm.loading && !vm.confirmed}
-    <p class="text-sm m-0" style="color:var(--fg-dim)">{t("session.scopePolicy.loading")}</p>
+    <p class="text-sm m-0" style="color:var(--fg-dim)">{t("agent.scopePolicy.loading")}</p>
   {:else if vm.confirmed}
     {#each actions as action (action)}
       <label class="flex flex-col gap-1.5">
@@ -64,16 +64,16 @@ function onSelect(action: ScopeAction, value: string): void {
         {#if vm.effectiveSource(action)}
           {@const src = vm.effectiveSource(action)!}
           <span class="text-[11px] px-0.5" style="color:var(--fg-muted)">
-            {t("session.scopePolicy.sourceLabel")}: {t(sourceLabelKeys[src])}
+            {t("agent.scopePolicy.sourceLabel")}: {t(sourceLabelKeys[src])}
           </span>
         {/if}
       </label>
     {/each}
     {#if vm.saving}
-      <p class="text-[12px] m-0" style="color:var(--fg-muted)">{t("session.scopePolicy.saving")}</p>
+      <p class="text-[12px] m-0" style="color:var(--fg-muted)">{t("agent.scopePolicy.saving")}</p>
     {/if}
   {:else if !vm.error}
-    <p class="text-sm m-0" style="color:var(--fg-dim)">{t("session.scopePolicy.empty")}</p>
+    <p class="text-sm m-0" style="color:var(--fg-dim)">{t("agent.scopePolicy.empty")}</p>
   {/if}
   {#if !vm.confirmed}
     <button
@@ -82,7 +82,7 @@ function onSelect(action: ScopeAction, value: string): void {
       style="color:var(--accent)"
       onclick={() => void vm.refresh()}
     >
-      {t("session.scopePolicy.retry")}
+      {t("agent.scopePolicy.retry")}
     </button>
   {/if}
 </div>
