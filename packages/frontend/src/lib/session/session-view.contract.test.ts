@@ -359,6 +359,87 @@ describe("remote tool output", () => {
   })
 })
 
+describe.each(["http", "ws"] as const)("crash during history open — %s", (transport) => {
+  it("surfaces the crash while the history request is still pending and hydrates its transcript", async () => {
+    vi.useFakeTimers()
+    const state = reduce(createInitialSessionState({ sessionId: "crash-open" }), {
+      sessionUpdate: "user_message",
+      messageId: "earlier",
+      content: { type: "text", text: "Before the crash" },
+    }).state
+    const initial = snapshotFrame(state, undefined, "meta")
+    const sse = makeLiveSSEBody()
+    const sockets = fakeSessionSockets()
+    let replyHistory: (response: Response) => void = () => {}
+    let events = 0
+    const history = new Promise<Response>((resolve) => {
+      replyHistory = resolve
+    })
+    const connected = createRemoteView({
+      agentId: "crash-open",
+      baseUrl: "http://be.local",
+      transport,
+      _WebSocket: sockets.WebSocket,
+      async _fetch(url) {
+        const { pathname } = new URL(url, "http://be.local")
+        if (pathname.endsWith("/history")) return history
+        if (pathname.endsWith("/events")) {
+          if (events++ > 0) return new Response(null, { status: 404 })
+          sse.pushRaw(initial)
+          return new Response(sse.body)
+        }
+        return Response.json({
+          agent: { status: "crashed", crashReason: "Killed by signal SIGTERM" },
+        })
+      },
+    })
+    let view: RemoteSessionView | undefined
+    void connected.then(
+      (value) => {
+        view = value
+      },
+      () => {},
+    )
+    try {
+      if (transport === "ws") {
+        sockets.latest().connect()
+        sockets.latest().receive(encodeWsFrame(initial))
+      }
+      await vi.advanceTimersByTimeAsync(0)
+      if (transport === "ws") sockets.latest().close(1006)
+      else sse.close()
+      await vi.advanceTimersByTimeAsync(1000)
+      if (transport === "ws") sockets.latest().close(closeCodeForStatus(404))
+      await vi.advanceTimersByTimeAsync(10)
+      expect(view).toBeDefined()
+      const attached = await connected
+      const reader = attached.patches.getReader()
+      try {
+        expect((await reader.read()).value).toMatchObject({
+          terminal: true,
+          terminalError: "Killed by signal SIGTERM",
+        })
+        replyHistory(
+          Response.json(
+            snapshotPayload(state, undefined, { range: { tail: true, maxBytes: 262_144 } }),
+          ),
+        )
+        expect((await reader.read()).value).toMatchObject({ history: "tail" })
+        expect(attached.state.messages).toEqual(state.messages)
+      } finally {
+        reader.releaseLock()
+      }
+    } finally {
+      replyHistory(new Response(null, { status: 404 }))
+      await connected.then(
+        (value) => value.close(),
+        () => {},
+      )
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe("terminal session stream", () => {
   const crashReason = "The provider process exited"
 

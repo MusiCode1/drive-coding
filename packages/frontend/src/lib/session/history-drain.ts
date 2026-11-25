@@ -9,10 +9,10 @@ type Queued = { batch: WireUpdateBatch; connection: number }
 export class HistoryGate {
   #open = true
   #failed = false
-  #waiters: Array<() => void> = []
+  #listeners = new Set<() => void>()
 
   get isOpen(): boolean {
-    return this.#open && !this.#failed
+    return this.#open
   }
 
   get failed(): boolean {
@@ -21,24 +21,24 @@ export class HistoryGate {
 
   close(): void {
     this.#open = false
+    this.#failed = false
   }
 
   open(): void {
     this.#open = true
-    const wake = this.#waiters.splice(0)
-    for (const w of wake) w()
+    this.#failed = false
+    for (const notify of this.#listeners) notify()
   }
 
   markFailed(): void {
     this.#failed = true
     this.#open = false
-    const wake = this.#waiters.splice(0)
-    for (const w of wake) w()
+    for (const notify of this.#listeners) notify()
   }
 
-  async wait(): Promise<void> {
-    if (this.#open && !this.#failed) return
-    await new Promise<void>((resolve) => this.#waiters.push(resolve))
+  onChange(notify: () => void): () => void {
+    this.#listeners.add(notify)
+    return () => this.#listeners.delete(notify)
   }
 }
 
@@ -48,6 +48,7 @@ export function filterBatchByWindow(
   warned: Set<number>,
   port: Pick<HistorySyncPort, "warn" | "emit">,
 ): WireUpdateBatch | null {
+  if (batch.updates.length === 0) return batch
   const kept: typeof batch.updates = []
   let droppedActivity = false
   for (const update of batch.updates) {
@@ -70,7 +71,6 @@ export function filterBatchByWindow(
 }
 
 function applyBatch(batch: WireUpdateBatch, port: HistorySyncPort): Patch[] {
-  if (batch.version <= port.getLastVersion()) return []
   let state = port.getState()
   const produced: Patch[] = []
   for (const update of batch.updates) {
@@ -96,47 +96,47 @@ export async function drainHistoryUpdates(
   signal: AbortSignal,
 ): Promise<void> {
   const queue: Queued[] = []
-  let streamDone = false
   const reader = stream.getReader()
-
-  const readLoop = (async () => {
-    try {
-      while (!signal.aborted) {
-        const { done, value } = await reader.read()
-        if (done) break
-        if (value) {
-          queue.push({ batch: value, connection: connectionOf(value) })
-        }
+  const finished = Promise.withResolvers<void>()
+  let streamDone = false
+  const flush = () => {
+    if (signal.aborted || (streamDone && gate.failed)) {
+      queue.length = 0
+      finished.resolve()
+      return
+    }
+    if (!gate.isOpen) return
+    for (const { batch, connection } of queue.splice(0)) {
+      if (connection > 0 && connection < activeConnection()) continue
+      if (batch.version <= port.getLastVersion()) continue
+      try {
+        const filtered = filterBatchByWindow(batch, window(), warnedOutside, port)
+        if (filtered) applyBatch(filtered, port)
+      } catch (error) {
+        port.warn("history-batch-apply-failed", { error })
       }
-    } finally {
-      reader.releaseLock()
+    }
+    if (streamDone) finished.resolve()
+  }
+  const unsubscribe = gate.onChange(flush)
+  const abort = () => {
+    flush()
+    void reader.cancel().catch(() => {})
+  }
+  signal.addEventListener("abort", abort, { once: true })
+  try {
+    while (!signal.aborted) {
+      const { done, value } = await reader.read()
+      if (done) break
+      queue.push({ batch: value, connection: connectionOf(value) })
+      flush()
     }
     streamDone = true
-  })()
-
-  const applyLoop = (async () => {
-    while (!signal.aborted) {
-      if (queue.length === 0) {
-        if (streamDone) return
-        await new Promise<void>((r) => setTimeout(r, 0))
-        continue
-      }
-      const item = queue.shift()
-      if (!item) continue
-      const active = activeConnection()
-      if (item.connection > 0 && item.connection < active) continue
-      if (gate.failed && streamDone) return
-      await gate.wait()
-      if (signal.aborted) return
-      const filtered = filterBatchByWindow(item.batch, window(), warnedOutside, port)
-      if (!filtered) continue
-      try {
-        applyBatch(filtered, port)
-      } catch (error) {
-        console.warn("RemoteSessionView: error applying patch, skipping", error)
-      }
-    }
-  })()
-
-  await Promise.all([readLoop, applyLoop])
+    flush()
+    await finished.promise
+  } finally {
+    reader.releaseLock()
+    signal.removeEventListener("abort", abort)
+    unsubscribe()
+  }
 }
