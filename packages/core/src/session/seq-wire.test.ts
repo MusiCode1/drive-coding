@@ -15,7 +15,7 @@ const mk = (overrides?: Partial<SessionState>): SessionState => ({
 })
 
 function meaningful(s: SessionState) {
-  const { version: _v, nextMessageSeq: _m, nextSegmentSeq: _g, ...rest } = s
+  const { version: _v, nextMessageSeq: _m, nextSegmentSeq: _g, wireSeqIndex: _w, ...rest } = s
   return {
     ...rest,
     messages: rest.messages.map((m) =>

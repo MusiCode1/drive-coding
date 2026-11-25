@@ -25,7 +25,15 @@ export function lookupWireSeqIndex(
   wireSeq: number,
   role?: SessionMessage["role"],
 ): number {
-  const idx = state.wireSeqIndex?.[wireSeq]
+  let idx = state.wireSeqIndex?.[wireSeq]
+  if (idx === undefined) {
+    for (let i = 0; i < state.messages.length; i++) {
+      if (state.messages[i]!.id === `m_${wireSeq}`) {
+        idx = i
+        break
+      }
+    }
+  }
   if (idx === undefined) return -1
   const msg = state.messages[idx]
   if (msg === undefined) return -1
