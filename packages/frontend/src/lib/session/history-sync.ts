@@ -1,13 +1,13 @@
 import { drainHistoryUpdates, HistoryGate } from "./history-drain"
 import type { SettledGet } from "./history-open"
-import { startParallelHistoryGet } from "./history-sync-parallel"
-import { triggerHistoryReload } from "./history-sync-trigger"
 import { emitHistoryState } from "./history-sync-emit"
 import { finishHistoryOpen } from "./history-sync-finish"
 import { loadFullHistory } from "./history-sync-load"
+import { startParallelHistoryGet } from "./history-sync-parallel"
 import type { HistorySyncPort } from "./history-sync-port"
 import { applyLegacyReconnect, planReconnect } from "./history-sync-reconnect"
-import type { HistoryWindow } from "./history-window"
+import { triggerHistoryReload } from "./history-sync-trigger"
+import { defaultWindow, type HistoryWindow } from "./history-window"
 import type { HistoryController } from "./session-view"
 import type { OpeningFrame } from "./wire/frame-decode"
 import type { FrameReader } from "./wire/frame-reader"
@@ -23,7 +23,6 @@ export class HistorySync implements HistoryController {
   #error: string | null = null
   #reloading = false
   #gate = new HistoryGate()
-  #generation = 0
   #reloadGeneration = 0
   #activeConnection = 0
   #genAbort: AbortController | null = null
@@ -58,15 +57,10 @@ export class HistorySync implements HistoryController {
   }
 
   beginParallelGet(): void {
-    const gen = ++this.#generation
     this.#genAbort?.abort()
     this.#genAbort = new AbortController()
     const signal = this.#genAbort.signal
     this.#pendingGet = startParallelHistoryGet(this.#pipe, signal)
-    void this.#pendingGet.then((r) => {
-      if (gen !== this.#generation) return
-      if (!r.ok) return
-    })
   }
 
   async finishOpen(opening: OpeningFrame): Promise<void> {
@@ -100,6 +94,9 @@ export class HistorySync implements HistoryController {
       () => this.#activeConnection,
       this.#warnedOutside,
       this.#drainAbort.signal,
+      () => {
+        void this.handleDriveReset()
+      },
     )
   }
 
@@ -161,6 +158,8 @@ export class HistorySync implements HistoryController {
 
   async handleDriveReset(): Promise<void> {
     if (!this.#metaMode) return
+    this.#window = defaultWindow(this.#port.getLastVersion())
+    this.#error = null
     await this.#triggerReload("reset")
   }
 

@@ -251,6 +251,51 @@ describe.each(["http", "ws"] as const)("full history order — %s", (transport) 
   })
 })
 
+describe.each(["http", "ws"] as const)("new empty session history — %s", (transport) => {
+  it("clears the previous history edge after a warm new-session reset", async () => {
+    let state = createInitialSessionState({ sessionId: "old" })
+    for (const text of ["first", "last"]) {
+      state = reduce(state, {
+        sessionUpdate: "user_message",
+        messageId: text,
+        content: { type: "text", text },
+      }).state
+    }
+    const { view, pushRaw } = await connectRemoteHarness(
+      transport,
+      state,
+      () => ({ status: 200, body: {} }),
+      () => state,
+      undefined,
+      1,
+    )
+    try {
+      expect(view.history.window.hasMore).toBe(true)
+      const version = state.version + 1
+      state = { ...createInitialSessionState({ sessionId: "new" }), version }
+      const frame = updateFrame(
+        state,
+        {
+          op: "reset",
+          version,
+          messages: [],
+          nextMessageSeq: 0,
+          nextSegmentSeq: 0,
+        },
+        "meta",
+      )
+      if (!frame) throw new Error("meta reset needs a frame")
+      pushRaw(frame)
+      await vi.waitFor(() => expect(view.state.messages).toHaveLength(0))
+      expect(view.history.window.hasMore).toBe(false)
+      await vi.waitFor(() => expect(view.history.reloading).toBe(false))
+      expect(view.state.sessionId).toBe("new")
+    } finally {
+      await view.close()
+    }
+  })
+})
+
 describeSessionViewContract("remote-http", () => createRemoteHarness("http"))
 describeSessionViewContract("remote-ws", () => createRemoteHarness("ws"))
 

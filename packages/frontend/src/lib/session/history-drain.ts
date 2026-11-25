@@ -94,6 +94,7 @@ export async function drainHistoryUpdates(
   activeConnection: () => number,
   warnedOutside: Set<number>,
   signal: AbortSignal,
+  onReset: () => void,
 ): Promise<void> {
   const queue: Queued[] = []
   const reader = stream.getReader()
@@ -111,7 +112,9 @@ export async function drainHistoryUpdates(
       if (batch.version <= port.getLastVersion()) continue
       try {
         const filtered = filterBatchByWindow(batch, window(), warnedOutside, port)
-        if (filtered) applyBatch(filtered, port)
+        if (!filtered) continue
+        applyBatch(filtered, port)
+        if (filtered.updates.some((update) => update.sessionUpdate === "_drive/reset")) onReset()
       } catch (error) {
         port.warn("history-batch-apply-failed", { error })
       }
