@@ -16,83 +16,43 @@ export const MCP_SERVER_DESCRIPTION =
 
 /** Returned on session_open so the catalog explains itself. */
 export const MCP_CONFIGURE_HINT =
-  "configOptions and modes are this CLI's live settings — not just model: also permission, agent persona, thinking, and whatever else it advertises. Each entry has id, a description, currentValue, and allowed values. To change any of them, pass sets: { \"<id>\": \"<value>\" } on session_send. Use only ids from this catalog. You opened this agent — you must session_close it when finished. If a turn is already running, wait until idle or pass force: true. Do not leave it live."
+  'configOptions and modes are this CLI\'s live settings — not just model: also permission, agent persona, thinking, and whatever else it advertises. Each entry has id, a description, currentValue, and allowed values. To change any of them, pass sets: { "<id>": "<value>" } on session_send. Use only ids from this catalog. You opened this agent — you must session_close it when finished. If a turn is already running, wait until idle or pass force: true. Do not leave it live.'
+
+export const MCP_AGENT_CONFIGURE_HINT =
+  'Use agentId from this result as agent in session_state, session_send and session_close. Apply live configOptions/modes IDs with session_send.sets: { "<id>": "<value>" }. Close the agent when done; wait for idle or pass force: true.'
 
 export const MCP_SERVER_INSTRUCTIONS = `# drive-coding MCP
 
-Remote control for live ACP agent processes managed by a drive-coding backend.
+Remote control for live ACP agents. Discover both tool vocabularies and their input schemas with \`tools/list\`. The workflow below uses \`session_*\`.
 
 ## Typical workflow
 
 1. **session_list** — see agents already running on this backend (id, cliKind, cwd, turnState).
-2. **session_open** — spawn a new agent; wait for \`sessionId\` (up to 30s). Save the returned \`agent\` UUID.
+2. **session_open** — pass \`cli\` and absolute \`cwd\`. Wait for \`sessionId\` (up to 30s) and save the returned \`agent\` UUID.
 3. **session_send** — send a user prompt to that \`agent\`; waits until the turn ends unless \`noWait\` or timeout.
 4. **session_state** — inspect turnState, modes, configOptions, errors without pulling the full message log.
 5. **session_close** — delete the agent and kill its CLI when finished.
 
-Re-use an existing agent from session_list instead of opening duplicates when appropriate.
+Reuse an existing agent when appropriate. Close any agent you opened when finished.
+If its turn is open, wait for idle or pass \`force: true\`.
 
-## You open it, you close it
+## Configure the child
 
-Whoever calls **session_open** owns that agent. You must **session_close** it when you are done — including when a conversation is already in progress. If \`turnState\` is not idle, wait for the turn to end, or pass \`force: true\`. Do not leave spawned agents running.
-
-## Configure the child (model, permissions, agent, …)
-
-Do not guess keys. \`session_open\` (and \`session_state\`) return that CLI's live catalog:
-
-- \`cli.displayName\` — which CLI this is
-- \`configOptions\` — full ACP options (id, name/description, category, currentValue, allowed values)
-- \`modes.availableModes\` — session modes (often permission / plan / bypass), each with id + description
-
-To apply a change, pass those ids on \`session_send.sets\` before the prompt. If an option is missing, this CLI does not expose it over MCP.
+Read the CLI name, \`configOptions\` and \`modes.availableModes\` from open/state.
+Apply live option IDs and allowed values via \`session_send.sets\` before the prompt.
 
 ## Identity header
 
 When drive-coding injects this server into a child agent, requests include \`X-Drive-Coding-Agent: <uuid>\`.
-That sets the caller identity for **session_open** (\`parentAgentId\`) and enables **notify_parent** for child agents.
+That sets the parent for **session_open** (any explicit \`parent\` must match) and enables **notify_parent** for child agents.
 Call **session_whoami** (no parameters) to discover your own agent UUID and runtime context from that header — the server does not guess from ENV.
-
-Example response (fields may be omitted when unavailable):
-
-\`\`\`json
-{
-  "agent": "<uuid>",
-  "cliKind": "cursor",
-  "cwd": "/abs/agent/cwd",
-  "hasParent": false,
-  "sessionId": "<acp-session>",
-  "backend": {
-    "pid": 591395,
-    "port": 4004,
-    "version": "0.19.0",
-    "uptimeSec": 323,
-    "publicBaseUrl": "https://example.test",
-    "cwd": "/path/to/backend",
-    "memory": {
-      "rssMB": 412,
-      "heapUsedMB": 89,
-      "rssBudgetMB": 1500,
-      "overBudget": false
-    }
-  },
-  "runtime": {
-    "cliPid": 250735,
-    "attached": true,
-    "busy": false,
-    "via": "http",
-    "memory": { "rssMB": 1840, "source": "proc" }
-  }
-}
-\`\`\`
 
 When child RSS cannot be measured (Windows, stale pid, /proc failure): \`runtime.memory\` is \`null\` and \`runtime.source\` is \`"unavailable"\`. Child memory is Linux-only in v1.
 
-The header is caller **identity**, not a login.
+The header supplies identity. See \`session_subscribe\` for subscriptions and \`session_surface\` for this agent’s UI and runtime instructions. Use \`session_note_set\`, \`session_field_set\` and \`session_field_delete\` to edit your record.
 
-Write calls (**session_close**, **session_send**) are limited to agents you spawned — your own
-subtree. Writing to any other agent raises a permission prompt to **your user**; until they
-answer, the call blocks, and a refusal comes back as \`scope-denied\`. Reads (**session_list**,
-**session_state**) are never restricted.
+Scoped sends and closes target your subtree. Outside it, scope policy controls
+permission escalation. A refusal returns \`scope-denied\`. Reads are unrestricted.
 
 ## Limits
 
@@ -114,72 +74,130 @@ export type McpToolName =
   | "session_note_set"
   | "session_field_set"
   | "session_field_delete"
+  | "agent_list"
+  | "agent_open"
+  | "agent_send"
+  | "agent_state"
+  | "agent_close"
+  | "agent_subscribe"
+  | "agent_whoami"
+  | "agent_surface"
+  | "agent_note_set"
+  | "agent_field_set"
+  | "agent_field_delete"
   | "notify_parent"
   | "docs_get"
 
-export const MCP_TOOL_META: Record<
-  Exclude<McpToolName, "notify_parent">,
-  { title: string; description: string }
-> = {
-  session_list: {
-    title: "List live agents",
-    description:
-      "Return every agent currently registered on this backend: id, cliKind, cwd, status, turnState, pid, attached. Same data as GET /api/agents. No parameters. Use before session_open to avoid duplicate spawns.",
-  },
-  session_open: {
-    title: "Open agent session",
-    description:
-      "Spawn a new ACP CLI agent and block until sessionId exists (30s cap). Returns { agent, sessionId, url, cli, modes, configOptions, hint }. You own this agent: call session_close when done, even if a turn is already running (wait for idle, or force). cli.displayName identifies the CLI. modes and configOptions are the live catalog (model, permission, agent persona, thinking, …) — pass those ids as session_send.sets. Required: cli (e.g. cursor, claude, codex), cwd (absolute path).",
-  },
-  session_send: {
-    title: "Send prompt to agent",
-    description:
-      "Run host.prompt and wait for turn end (default timeout 1800s). Returns { stopReason, text, messagesSince, lastTurnError } on completion, or { running: true } when noWait or timeout. Requires agent id from session_open or session_list. Optional sets applies that CLI's configOptions/modes (model, permission, agent, …) before the prompt — keys are option ids from session_open, not guessed names. Does not auto-close — the opener must session_close.",
-  },
-  session_state: {
-    title: "Read agent state",
-    description:
-      "Read in-process host.state for one agent. Default includes modes and configOptions (the live catalog with descriptions). Default omits messages/commands (large). Pass fields: [\"*\"] for full snapshot, or a subset like [\"turnState\", \"title\"]. Requires agent id.",
-  },
-  session_close: {
-    title: "Close agent session",
-    description:
-      "Delete the agent record and kill its CLI process (deleteAndKill). Refuses when turnState is not idle unless force: true — wait for the turn to finish or pass force. Missing agent returns { ok: true, alreadyClosed: true }. No ownership check: any caller can close any agent id.",
-  },
-  session_subscribe: {
-    title: "Subscribe to agent events",
-    description:
-      "Register the caller (or an explicit subscriber UUID) to receive turn-ended and stall-suspected events for the target agent. Duplicate subscribe with the same options is a no-op; repeating with new options (e.g. includeLastAssistantText) updates the subscription. Requires agent (target). subscriber defaults to X-Drive-Coding-Agent when present.",
-  },
-  session_whoami: {
-    title: "Who am I",
-    description:
-      "Discovery only — not authentication. Return the caller's identity (agent UUID, cliKind, cwd, parent, sessionId) plus backend envelope (pid, port, version, uptimeSec, publicBaseUrl, memory budget) and runtime envelope (cli pid, attached, busy, via, child RSS on Linux). No parameters. Missing or unknown header → error; the server does not guess from ENV. Child memory is Linux-only in v1; Windows returns runtime.memory null with source unavailable.",
-  },
-  session_surface: {
-    title: "Read this UI's surface prompt",
-    description:
-      "Return the drive-coding surface prompt for the calling agent: what this product is, how to reach this backend (loopback base, MCP endpoint, file proxy, public origin, your agent id), the session-bus tools, and the display capabilities of the chat UI — how to give the user a clickable link to a local file, embed an image, or render a mermaid diagram. Same body as GET /api/agent-prompt, which normally arrives through a CLI hook; call this when that hook is not wired. No parameters; identity comes from X-Drive-Coding-Agent. Read it before dumping a raw filesystem path at the user.",
-  },
-  session_note_set: {
-    title: "Set session note",
-    description:
-      "Replace the caller's shared session note (userNotes on the agent record). No agent parameter — identity from X-Drive-Coding-Agent only. Replaces the entire note string.",
-  },
-  session_field_set: {
-    title: "Set session field",
-    description:
-      "Merge one key into the caller's sessionFields map (get → merge key → update). No agent parameter — identity from X-Drive-Coding-Agent only. Empty key after trim is rejected.",
-  },
-  session_field_delete: {
-    title: "Delete session field",
-    description:
-      "Remove one key from the caller's sessionFields map. No agent parameter — identity from X-Drive-Coding-Agent only. Empty key after trim is rejected.",
-  },
+export const MCP_TOOL_ALIASES = {
+  session_list: "agent_list",
+  session_open: "agent_open",
+  session_send: "agent_send",
+  session_state: "agent_state",
+  session_close: "agent_close",
+  session_subscribe: "agent_subscribe",
+  session_whoami: "agent_whoami",
+  session_surface: "agent_surface",
+  session_note_set: "agent_note_set",
+  session_field_set: "agent_field_set",
+  session_field_delete: "agent_field_delete",
+} as const satisfies Partial<Record<McpToolName, McpToolName>>
+
+type ToolMeta = { title: string; description: string }
+
+function aliasMeta<T extends keyof typeof MCP_TOOL_ALIASES>(
+  legacy: T,
+  title: string,
+  base: string,
+  legacyFields = "",
+  canonicalFields = "",
+): Record<T | (typeof MCP_TOOL_ALIASES)[T], ToolMeta> {
+  const canonical = MCP_TOOL_ALIASES[legacy]
+  return {
+    [legacy]: {
+      title,
+      description: [base, legacyFields, `Alternate name: ${canonical}.`].filter(Boolean).join(" "),
+    },
+    [canonical]: {
+      title,
+      description: [base, canonicalFields, `Alternate name: ${legacy}.`].filter(Boolean).join(" "),
+    },
+  } as Record<T | (typeof MCP_TOOL_ALIASES)[T], ToolMeta>
+}
+
+export const MCP_TOOL_META: Record<Exclude<McpToolName, "notify_parent">, ToolMeta> = {
+  ...aliasMeta(
+    "session_list",
+    "List live agents",
+    "List registered agents and live CLI status. Check before opening a duplicate.",
+    "Legacy fields: userNotes, sessionFields, connectionCount.",
+    "Canonical fields: agentNotes, agentFields, viewerCount.",
+  ),
+  ...aliasMeta(
+    "session_open",
+    "Open agent",
+    "Wait up to 30s for sessionId. Inspect cli, modes and configOptions. Use session_send.sets with live IDs and session_close when finished.",
+    "Input uses cli and cwd. Returns agent UUID in agent.",
+    "Input uses cliKind and cwd. Use returned agentId as agent in the recommended workflow.",
+  ),
+  ...aliasMeta(
+    "session_send",
+    "Send prompt to agent",
+    "Apply sets using live option IDs, then send a prompt. Wait up to timeoutSec (default 1800), or return { running: true } on timeout or noWait.",
+    "Input uses agent.",
+    "Input uses agentId.",
+  ),
+  ...aliasMeta(
+    "session_state",
+    "Read agent state",
+    'Read selected host state, including the live options by default. Pass fields: ["*"] for the full snapshot.',
+    "Input and result use agent.",
+    "Input and result use agentId.",
+  ),
+  ...aliasMeta(
+    "session_close",
+    "Close agent",
+    "Delete one agent and kill its CLI. Scope applies. Wait for idle or pass force. A missing record returns alreadyClosed.",
+    "Input and result use agent.",
+    "Input and result use agentId.",
+  ),
+  ...aliasMeta(
+    "session_subscribe",
+    "Subscribe to agent events",
+    "Receive turn-ended and stall-suspected events. Repeated calls update options on the same subscription. The caller is the default subscriber.",
+    "Inputs use agent and subscriber.",
+    "Inputs use agentId and subscriberAgentId.",
+  ),
+  ...aliasMeta(
+    "session_whoami",
+    "Read caller identity",
+    "Read caller identity, optional ACP sessionId, agent memory, backend and child runtime. Requires a registered X-Drive-Coding-Agent header. Child RSS may be unavailable.",
+    "Identity uses agent.",
+    "Identity uses agentId, agentNotes and agentFields.",
+  ),
+  ...aliasMeta(
+    "session_surface",
+    "Read agent surface prompt",
+    "Read the same Markdown as GET /api/agent-prompt: runtime, chat rendering, capabilities, agent memory and charter. Requires caller identity.",
+  ),
+  ...aliasMeta(
+    "session_note_set",
+    "Set agent note",
+    "Replace the caller’s entire note by header identity. Empty text clears it.",
+  ),
+  ...aliasMeta(
+    "session_field_set",
+    "Set agent field",
+    "Set one field on the caller’s record by header identity. Field key must be nonempty after trim.",
+  ),
+  ...aliasMeta(
+    "session_field_delete",
+    "Delete agent field",
+    "Remove one field on the caller’s record by header identity. A missing key is a successful no-op.",
+  ),
   docs_get: {
     title: "Get agent documentation",
     description:
-      "Fetch drive-coding agent-facing docs without the repository. Pass id for full markdown, tags or query for index entries, or omit all for the full catalog (same as GET /api/docs).",
+      "Read the full documentation catalog, search with tags or query, or pass id for Markdown.",
   },
 }
 

@@ -7,7 +7,7 @@ import {
   type AgentRegistry,
   AgentSubscribeInput,
   MCP_NOTIFY_PARENT_META,
-  MCP_TOOL_META,
+  McpAgentSubscribeInput,
 } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
@@ -18,31 +18,14 @@ import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { senderFromRecord, wrapAgentText } from "./drive-message-source.js"
 import type { McpRequestContext } from "./http-mcp.js"
 
-const log = createLogger("backend.mcp.agent-events")
+import { jsonResult, McpToolError, registerArkTool, registerToolPair } from "./mcp-tool-alias.js"
 
-type ArkRegister = (
-  server: McpServer,
-  name: string,
-  meta: { title: string; description: string },
-  ark: { toJsonSchema: () => object; (data: unknown): unknown },
-  handler: (parsed: unknown) => Promise<{
-    content: Array<{ type: "text"; text: string }>
-    isError?: true
-  }>,
-) => void
+const log = createLogger("backend.mcp.agent-events")
 
 type McpToolDeps = {
   registry: AgentRegistry
   agentSessionRegistry: AgentSessionRegistry
   eventBus: AgentEventBus
-}
-
-function jsonResult(value: unknown) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(value) }] }
-}
-
-function jsonError(message: string) {
-  return { isError: true as const, content: [{ type: "text" as const, text: message }] }
 }
 
 /** Merge notifyOnDone and includeLastAssistantText from session_open input into the create body. */
@@ -64,24 +47,21 @@ export function registerAgentEventMcpTools(
   deps: McpToolDeps,
   ctx: McpRequestContext,
   callerRecord: Awaited<ReturnType<AgentRegistry["get"]>>,
-  registerArkTool: ArkRegister,
 ): void {
   const callerAgentId = ctx.callerAgentId
 
-  registerArkTool(
+  registerToolPair(
     server,
     "session_subscribe",
-    MCP_TOOL_META.session_subscribe,
     AgentSubscribeInput,
-    async (raw) => {
-      const input = raw as typeof AgentSubscribeInput.infer
+    async (input) => {
       const target = await deps.registry.get(input.agent)
-      if (!target) return jsonError("agent not found")
+      if (!target) throw new McpToolError("agent not found", "agent_not_found")
 
       const subscriberId =
         input.subscriber !== undefined && input.subscriber !== "" ? input.subscriber : callerAgentId
       if (!subscriberId) {
-        return jsonError(`subscriber required — pass subscriber or ${AGENT_ID_HEADER} header`)
+        throw new McpToolError(`subscriber required — pass subscriber or ${AGENT_ID_HEADER} header`)
       }
       return checkScopedWrite({
         token: ctx.scopeToken,
@@ -91,12 +71,27 @@ export function registerAgentEventMcpTools(
         registry: deps.registry,
         sessionRegistry: deps.agentSessionRegistry,
       }).then((allowed) => {
-        if (!allowed) return jsonError(JSON.stringify(SCOPE_DENIED_BODY))
+        if (!allowed) throw new McpToolError(JSON.stringify(SCOPE_DENIED_BODY))
         deps.eventBus.subscribe(input.agent, subscriberId, {
           includeLastAssistantText: input.includeLastAssistantText === true,
         })
-        return jsonResult({ ok: true, agent: input.agent, subscriber: subscriberId })
+        return { ok: true, agent: input.agent, subscriber: subscriberId }
       })
+    },
+    {
+      input: {
+        schema: McpAgentSubscribeInput,
+        normalize: ({ agentId, subscriberAgentId, includeLastAssistantText }) => ({
+          agent: agentId,
+          subscriber: subscriberAgentId,
+          includeLastAssistantText,
+        }),
+      },
+      project: ({ ok, agent, subscriber }) => ({
+        ok,
+        agentId: agent,
+        subscriberAgentId: subscriber,
+      }),
     },
   )
 
@@ -107,16 +102,15 @@ export function registerAgentEventMcpTools(
       "notify_parent",
       MCP_NOTIFY_PARENT_META,
       AgentNotifyParentInput,
-      async (raw) => {
-        const input = raw as typeof AgentNotifyParentInput.infer
+      async (input) => {
         const parentHostResult = await deps.agentSessionRegistry.getOrCreateHost(parentId)
         if (!parentHostResult.ok) {
-          return jsonError(`parent session host did not start: ${parentHostResult.reason}`)
+          throw new McpToolError(`parent session host did not start: ${parentHostResult.reason}`)
         }
         const { host: parentHost } = parentHostResult.entry
         const sessionId = parentHost.state.sessionId
         if (typeof sessionId !== "string" || sessionId.length === 0) {
-          return jsonError("parent has no sessionId")
+          throw new McpToolError("parent has no sessionId")
         }
 
         const callerSender = callerRecord ? senderFromRecord(callerRecord) : undefined

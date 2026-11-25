@@ -9,8 +9,8 @@ read_when:
 tags: [errors, rpc]
 surface: [http, mcp]
 stability: stable
-docs_version: 1.13.0
-updated: 2026-11-24
+docs_version: 1.14.0
+updated: 2026-11-25
 ---
 
 # Errors
@@ -69,6 +69,16 @@ event remains reserved for protocol compatibility. This server never emits it.
 - **session_close** when **`turnState !== idle`** without **`force: true`** → tool error; use
   force only when you accept stopping mid-turn.
 - **`MCP_HTTP=0`** → MCP endpoint disabled (connection failure at HTTP layer).
+
+Canonical tools may return `isError: true` with a code in result-level `_meta["drive-coding/errorCode"]`. The legacy tools retain their error text.
+
+| Code | When |
+|---|---|
+| `agent_not_found` | A target lookup fails for state, send or subscribe, or the caller record disappears during field deletion. |
+| `agent_host_unavailable` | State has a record without a host, or open/send cannot acquire a host. |
+| `no_active_acp_session` | Send reaches a host without an active ACP session ID. |
+
+Validation, scope denial and provider errors keep their existing error shapes. Discover availability through `tools/list`. A send timeout can return `{ running: true }` while the original turn continues.
 
 ## Decision cheatsheet
 

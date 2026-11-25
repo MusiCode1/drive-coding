@@ -1,20 +1,20 @@
 import { describe, expect, it } from "vitest"
 import {
-  SURFACE_ABOUT,
-  SURFACE_CAPABILITIES,
-  SURFACE_DISPLAY,
-  SURFACE_PROMPT_PIECES,
   buildFsFileUrl,
   buildSurfacePrompt,
   buildSurfaceRuntime,
   resolveSurfaceRuntimeEnv,
+  SURFACE_ABOUT,
+  SURFACE_CAPABILITIES,
+  SURFACE_DISPLAY,
+  SURFACE_PROMPT_PIECES,
 } from "./index.js"
 
 const runtime = {
   baseUrl: "http://127.0.0.1:4001",
   port: 4001,
   pid: 4242,
-  publicBaseUrl: "https://drive-coding-dev-vps.musicode.ovh",
+  publicBaseUrl: "https://drive-coding.example.test",
   agentId: "agent-abc",
   parentAgentId: "parent-xyz",
 }
@@ -22,20 +22,18 @@ const runtime = {
 describe("buildFsFileUrl", () => {
   it("encodes file:// absolute paths", () => {
     const url = buildFsFileUrl(
-      "https://drive-coding-dev-vps.musicode.ovh",
-      "/home/user/.cursor/plans/Architecture review plan-fe63ed36.plan.md",
+      "https://drive-coding.example.test",
+      "/workspace/plans/Example plan.md",
     )
     expect(url).toBe(
-      "https://drive-coding-dev-vps.musicode.ovh/api/fs/file?uri=" +
-        encodeURIComponent(
-          "file:///home/user/.cursor/plans/Architecture review plan-fe63ed36.plan.md",
-        ),
+      "https://drive-coding.example.test/api/fs/file?uri=" +
+        encodeURIComponent("file:///workspace/plans/Example plan.md"),
     )
   })
 
   it("accepts an existing file:// URI", () => {
     expect(buildFsFileUrl("http://127.0.0.1:4000", "file:///tmp/a.md")).toBe(
-      "http://127.0.0.1:4000/api/fs/file?uri=" + encodeURIComponent("file:///tmp/a.md"),
+      `http://127.0.0.1:4000/api/fs/file?uri=${encodeURIComponent("file:///tmp/a.md")}`,
     )
   })
 })
@@ -47,7 +45,7 @@ describe("buildSurfaceRuntime", () => {
     expect(text).toContain("**Port:** 4001")
     expect(text).toContain("http://127.0.0.1:4001/api/mcp")
     expect(text).toContain("agent-abc")
-    expect(text).toContain("https://drive-coding-dev-vps.musicode.ovh")
+    expect(text).toContain("https://drive-coding.example.test")
     expect(text).toContain("/api/fs/file?uri=")
   })
 
@@ -57,7 +55,7 @@ describe("buildSurfaceRuntime", () => {
     expect(text).toContain("| `DRIVE_CODING_BASE` | `http://127.0.0.1:4001` |")
     expect(text).toContain("| `DC_BASE` | `http://127.0.0.1:4001` |")
     expect(text).toContain("| `DRIVE_CODING_AGENT_ID` | `agent-abc` |")
-    expect(text).toContain("| `PUBLIC_BASE_URL` | `https://drive-coding-dev-vps.musicode.ovh` |")
+    expect(text).toContain("| `PUBLIC_BASE_URL` | `https://drive-coding.example.test` |")
     expect(text).toContain("| `DC_PARENT` | `parent-xyz` |")
     expect(text).toContain("Prefer **`DRIVE_CODING_BASE`**")
     expect(text).toContain("Prefer **`PUBLIC_BASE_URL`**")
@@ -146,7 +144,7 @@ describe("memory piece (slice session-memory C1)", () => {
       userNotes: "check the sync",
       sessionFields: { branch: "dev" },
     })
-    expect(out).toContain("# Session memory")
+    expect(out).toContain("# Agent memory")
     expect(out).toContain("## Notes")
     expect(out).toContain("check the sync")
     expect(out).toContain("## Fields")
@@ -164,13 +162,16 @@ describe("memory piece (slice session-memory C1)", () => {
       charter: "Verify the patch.",
       userNotes: "note",
     })
-    expect(out.indexOf("# Session memory")).toBeLessThan(out.indexOf("# Your assignment"))
+    expect(out.indexOf("# Agent memory")).toBeLessThan(out.indexOf("# Your assignment"))
   })
 })
 
 describe("charter piece", () => {
   it("renders the charter under its own heading, last", () => {
-    const out = buildSurfacePrompt({ pieces: ["about", "charter"], charter: "You are the verifier." })
+    const out = buildSurfacePrompt({
+      pieces: ["about", "charter"],
+      charter: "You are the verifier.",
+    })
     expect(out).toContain("# Your assignment\n\nYou are the verifier.")
     expect(out.indexOf("# Your assignment")).toBeGreaterThan(out.indexOf("About drive-coding"))
   })
@@ -184,4 +185,20 @@ describe("charter piece", () => {
     const out = buildSurfacePrompt({ pieces: ["about", "charter"], charter: "   \n  " })
     expect(out).not.toContain("# Your assignment")
   })
+})
+
+it("preserves long dynamic memory and charter in their original order", () => {
+  const note = `  ${"note text\n".repeat(1_600)}  `
+  const field = "first value\nsecond value"
+  const charter = "first assignment line\nsecond assignment line"
+  const out = buildSurfacePrompt({
+    pieces: ["charter", "memory"],
+    userNotes: note,
+    sessionFields: { report: field, status: "ready" },
+    charter: `  ${charter}  `,
+  })
+  expect(out.length).toBeGreaterThan(14_000)
+  expect(out).toBe(
+    `# Agent memory\n\n## Notes\n\n${note}\n\n## Fields\n\n- **report**: ${field}\n- **status**: ready\n\n# Your assignment\n\n${charter}`,
+  )
 })

@@ -26,9 +26,7 @@ export const HealthBody = type({
 export type HealthBody = typeof HealthBody.infer
 
 export const AgentOpenInput = type({
-  cli: reqStr(
-    "ACP CLI kind to spawn (cliKind), e.g. cursor, claude, codex, opencode.",
-  ),
+  cli: reqStr("ACP CLI kind to spawn (cliKind), e.g. cursor, claude, codex, opencode."),
   cwd: reqStr("Absolute working directory for the new agent process."),
   "env?": type({ "[string]": "string" }).describe(
     "Extra environment variables merged into the child (after drive-coding injects DRIVE_CODING_BASE / DC_BASE).",
@@ -179,3 +177,37 @@ export const SessionStateMcpInput = AgentStateInput.and({
   ),
 })
 export type SessionStateMcpInput = typeof SessionStateMcpInput.infer
+
+/** Canonical MCP inputs. Legacy schemas above also serve existing CLI callers. */
+export const McpAgentOpenInput = AgentOpenInput.pick(
+  "cwd",
+  "env",
+  "closeOnTurnEnd",
+  "publicUrl",
+  "systemPrompt",
+  "roleLabel",
+).and({
+  cliKind: AgentOpenInput.get("cli"),
+  "permissionPolicy?": optStr("Permission policy for the new agent, e.g. allow_once."),
+  "parentAgentId?": optStr(
+    "Parent agent UUID. If X-Drive-Coding-Agent identifies a registered agent, that agent is the parent and any explicit parent must match. Otherwise, the explicit parent is used.",
+  ),
+  "subscribeOnOpenAgentId?": optStr(
+    "UUID of the agent to notify when this agent's turn ends (auto-subscribe on create).",
+  ),
+  "includeLastAssistantText?": optBool(
+    "When true with subscribeOnOpenAgentId, include a truncated assistant message in turn-ended prompts.",
+  ),
+})
+
+export const McpAgentSendInput = AgentSendInput.pick("prompt", "sets", "timeoutSec", "noWait").and({
+  agentId: AgentSendInput.get("agent"),
+})
+
+export const McpAgentCloseInput = AgentCloseInput.pick("force").and({
+  agentId: AgentCloseInput.get("agent"),
+})
+
+export const McpAgentStateInput = SessionStateMcpInput.pick("fields").and({
+  agentId: AgentStateInput.get("agent"),
+})

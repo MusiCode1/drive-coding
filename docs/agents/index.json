@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.13.0",
+  "docsVersion": "1.14.0",
   "docs": [
     {
       "id": "orientation",
@@ -12,7 +12,7 @@
       "tags": ["orientation"],
       "surface": ["http", "mcp", "cli"],
       "stability": "stable",
-      "docs_version": "1.10.0",
+      "docs_version": "1.14.0",
       "routes": ["GET /api/docs", "GET /api/docs/:id", "GET /api/openapi.json"],
       "mcp_tools": ["docs_get"],
       "path": "docs/agents/00-orientation.md",
@@ -65,7 +65,7 @@
       "tags": ["session", "ownership", "turnstate"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.12.0",
+      "docs_version": "1.14.0",
       "routes": [
         "GET /api/agents",
         "POST /api/agents",
@@ -76,25 +76,34 @@
       ],
       "mcp_tools": [
         "session_list",
+        "agent_list",
         "session_open",
+        "agent_open",
         "session_send",
+        "agent_send",
         "session_state",
+        "agent_state",
         "session_close",
+        "agent_close",
         "session_note_set",
+        "agent_note_set",
         "session_field_set",
-        "session_field_delete"
+        "agent_field_set",
+        "session_field_delete",
+        "agent_field_delete"
       ],
       "path": "docs/agents/20-session-lifecycle.md",
       "headings": [
         "Session lifecycle",
         "Typical MCP workflow",
+        "MCP tool names",
         "Open (spawn)",
         "Send (drive a turn)",
         "Close",
         "Viewer groups and liveness",
         "Identity header",
         "Inbound prompt envelope (receiver)",
-        "Session memory — your own note and fields",
+        "Agent memory — your own note and fields",
         "Configure during lifecycle",
         "CLI equivalents",
         "Limits (MCP)"
@@ -112,9 +121,16 @@
       "tags": ["config", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.2.0",
+      "docs_version": "1.14.0",
       "routes": [],
-      "mcp_tools": ["session_open", "session_send", "session_state"],
+      "mcp_tools": [
+        "session_open",
+        "session_send",
+        "session_state",
+        "agent_open",
+        "agent_send",
+        "agent_state"
+      ],
       "path": "docs/agents/30-child-config.md",
       "headings": [
         "Child config",
@@ -139,14 +155,14 @@
       "tags": ["output", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.13.0",
+      "docs_version": "1.14.0",
       "routes": [
         "GET /api/agents/:id/history",
         "GET /api/agents/:id/events",
         "GET /api/agents/:id/state",
         "POST /api/agents/:id/rpc"
       ],
-      "mcp_tools": ["session_send", "session_state"],
+      "mcp_tools": ["session_send", "session_state", "agent_send", "agent_state"],
       "path": "docs/agents/40-reading-output.md",
       "headings": [
         "Reading output",
@@ -263,9 +279,9 @@
       "tags": ["identity"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.10.5",
+      "docs_version": "1.14.0",
       "routes": ["POST /api/agents/:id/reply", "GET /api/scope-policy", "PATCH /api/scope-policy"],
-      "mcp_tools": ["session_whoami"],
+      "mcp_tools": ["session_whoami", "agent_whoami"],
       "path": "docs/agents/60-identity-and-scopes.md",
       "headings": [
         "Agent identity and scoped writes",
@@ -293,9 +309,17 @@
       "tags": ["subagents", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.10.3",
+      "docs_version": "1.14.0",
       "routes": ["GET /api/agent-prompt", "DELETE /api/agents"],
-      "mcp_tools": ["session_open", "notify_parent", "session_surface"],
+      "mcp_tools": [
+        "session_subscribe",
+        "agent_subscribe",
+        "session_open",
+        "agent_open",
+        "notify_parent",
+        "session_surface",
+        "agent_surface"
+      ],
       "path": "docs/agents/70-subagents.md",
       "headings": [
         "Subagents",
@@ -436,7 +460,7 @@
       "tags": ["errors", "rpc"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.13.0",
+      "docs_version": "1.14.0",
       "routes": [],
       "mcp_tools": [],
       "path": "docs/agents/95-errors.md",
@@ -486,7 +510,7 @@
       "tags": ["transports"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.13.0",
+      "docs_version": "1.14.0",
       "routes": [
         "GET /api/mcp",
         "POST /api/mcp",
@@ -494,7 +518,7 @@
         "POST /api/agents/:id/subscribe",
         "DELETE /api/agents/:id/connection"
       ],
-      "mcp_tools": ["session_subscribe"],
+      "mcp_tools": ["session_subscribe", "agent_subscribe"],
       "path": "docs/agents/97-transports.md",
       "headings": [
         "Transports",

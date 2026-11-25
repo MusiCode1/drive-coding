@@ -13,18 +13,22 @@ routes:
   - GET /api/agent-prompt
   - DELETE /api/agents
 mcp_tools:
+  - session_subscribe
+  - agent_subscribe
   - session_open
+  - agent_open
   - notify_parent
   - session_surface
-docs_version: 1.10.3
-updated: 2026-11-21
+  - agent_surface
+docs_version: 1.14.0
+updated: 2026-11-25
 ---
 
 # Subagents
 
 ## Opening a child
 
-Use MCP **session_open** (see `20-session-lifecycle`) with `parentAgentId` on the HTTP create path, or **`drive-coding agent open --parent <id>`** (`cli/help.ts:27-28`).
+Use MCP **session_open** (see `20-session-lifecycle`) with `parent` in MCP or `parentAgentId` on the HTTP create path, or **`drive-coding agent open --parent <id>`** (`cli/help.ts:27-28`).
 
 The child receives **`DC_PARENT`** in its environment when the server sets `parentAgentId` (`prompts/surface/runtime.ts:70-71`, `runtime.ts:119`).
 
@@ -47,13 +51,13 @@ Hooks and MCP **session_surface** use the same builder; this route is the HTTP m
 Call **session_surface** (no parameters; identity from `X-Drive-Coding-Agent`) when no CLI
 hook delivered the prompt: it returns the same plain-text body — what this product is, how to
 reach this backend, the session-bus tools, how to show the user files, images and diagrams,
-and your session memory.
+and your agent memory.
 
 ## notify_parent
 
 Registration lives in **`delivery/agent-events-mcp-tools.ts:99`** (not `mcp-write-tools.ts`).
 
-**`notify_parent` appears in the MCP tool list only when the session has `parentAgentId`.** A root session will not see it — that is expected, not a bug (`agent-events-mcp-tools.ts:95-99`).
+**`notify_parent` appears when the event bus is enabled and the caller record has a `parentAgentId`.**
 
 The tool prompts the parent's live session with your text (`agent-events-mcp-tools.ts:102-117`).
 When you are a known caller, that text is wrapped as **`drive-coding-msg` v1** with **`sender`**
@@ -62,6 +66,8 @@ set to **your** agent id/name and **`body`** equal to the notify text — same s
 user typed the message.
 
 HTTP alternative for event delivery: **`POST /api/agents/:id/subscribe`** (documented in `97-transports`).
+
+MCP discovery also lists `agent_surface` and, when the event bus is enabled, `agent_subscribe`. In the legacy workflow, call `session_subscribe` with the watched `agent`. The `subscriber` defaults to your registered caller identity.
 
 ## Closing agents
 

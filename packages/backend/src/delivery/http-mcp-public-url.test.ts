@@ -93,7 +93,11 @@ describe("defaultPublicUrl / loopbackBaseUrl", () => {
 })
 
 describe("session_open default bases (slice public-base-url)", () => {
-  async function openWithoutExplicitPublic(app: Hono, orchestrator: AgentOrchestrator) {
+  async function open(
+    app: Hono,
+    name: "session_open" | "agent_open",
+    overrides: { publicUrl?: string; base?: string } = {},
+  ) {
     const client = new Client({ name: "public-url-test", version: "0.0.0" })
     const transport = new StreamableHTTPClientTransport(new URL("http://mcp.test/api/mcp"), {
       fetch: (async (input, init) => {
@@ -103,11 +107,16 @@ describe("session_open default bases (slice public-base-url)", () => {
     })
     await client.connect(transport)
     const result = await client.callTool({
-      name: "session_open",
-      arguments: { cli: "cursor", cwd: "/tmp/public-url-test" },
+      name,
+      arguments: {
+        [name === "agent_open" ? "cliKind" : "cli"]: "cursor",
+        cwd: "/tmp/public-url-test",
+        ...overrides,
+      },
     })
     await client.close()
-    return { result, orchestrator }
+    expect(result.isError).toBeUndefined()
+    return result
   }
 
   function toolText(result: unknown): string {
@@ -115,41 +124,46 @@ describe("session_open default bases (slice public-base-url)", () => {
     return content?.find((c) => c.type === "text")?.text ?? ""
   }
 
-  it("with PUBLIC_BASE_URL → chat url is public; child env stays loopback", async () => {
-    const urlConfig = {
-      port: 4360,
-      host: "127.0.0.1",
-      publicBaseUrl: "https://public.example.com",
-    }
-    const env: NodeJS.ProcessEnv = {}
+  const names = ["session_open", "agent_open"] as const
+  it.each(names)(
+    "with PUBLIC_BASE_URL %s returns public chat URL and loopback child env",
+    async (name) => {
+      const urlConfig = {
+        port: 4360,
+        host: "127.0.0.1",
+        publicBaseUrl: "https://public.example.com",
+      }
+      const env: NodeJS.ProcessEnv = {}
 
-    const app = new Hono()
-    const registry = createInMemoryAgentRegistry()
-    const orchestrator = makeOrchestrator(registry)
-    registerMcpHttp(app, {
-      registry,
-      orchestrator,
-      agentSessionRegistry: makeStubSessionRegistry(),
-      env,
-      urlConfig,
-    })
+      const app = new Hono()
+      const registry = createInMemoryAgentRegistry()
+      const orchestrator = makeOrchestrator(registry)
+      registerMcpHttp(app, {
+        registry,
+        orchestrator,
+        agentSessionRegistry: makeStubSessionRegistry(),
+        env,
+        urlConfig,
+      })
 
-    const { result, orchestrator: orch } = await openWithoutExplicitPublic(app, orchestrator)
-    const body = JSON.parse(toolText(result)) as { url: string; sessionId: string; agent: string }
-    expect(body.url).toBe(
-      `https://public.example.com/chat/cursor/sess-${body.agent}?sessionTransport=http`,
-    )
-    expect(orch.createAndSpawn).toHaveBeenCalledWith(
-      expect.objectContaining({
-        env: expect.objectContaining({
-          DRIVE_CODING_BASE: "http://127.0.0.1:4360",
-          DC_BASE: "http://127.0.0.1:4360",
+      const result = await open(app, name)
+      const identity = name === "agent_open" ? "agentId" : "agent"
+      const body = JSON.parse(toolText(result)) as Record<string, string>
+      expect(body.url).toBe(
+        `https://public.example.com/chat/cursor/sess-${body[identity]}?sessionTransport=http`,
+      )
+      expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          env: expect.objectContaining({
+            DRIVE_CODING_BASE: "http://127.0.0.1:4360",
+            DC_BASE: "http://127.0.0.1:4360",
+          }),
         }),
-      }),
-    )
-  })
+      )
+    },
+  )
 
-  it("without PUBLIC_BASE_URL → chat url and child env both loopback", async () => {
+  it.each(names)("without PUBLIC_BASE_URL %s returns loopback chat URL and env", async (name) => {
     const urlConfig = { port: 4360, host: "127.0.0.1" }
     const env: NodeJS.ProcessEnv = {}
 
@@ -164,12 +178,13 @@ describe("session_open default bases (slice public-base-url)", () => {
       urlConfig,
     })
 
-    const { result, orchestrator: orch } = await openWithoutExplicitPublic(app, orchestrator)
-    const body = JSON.parse(toolText(result)) as { url: string; agent: string }
+    const result = await open(app, name)
+    const identity = name === "agent_open" ? "agentId" : "agent"
+    const body = JSON.parse(toolText(result)) as Record<string, string>
     expect(body.url).toBe(
-      `http://127.0.0.1:4360/chat/cursor/sess-${body.agent}?sessionTransport=http`,
+      `http://127.0.0.1:4360/chat/cursor/sess-${body[identity]}?sessionTransport=http`,
     )
-    expect(orch.createAndSpawn).toHaveBeenCalledWith(
+    expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
         env: expect.objectContaining({
           DRIVE_CODING_BASE: "http://127.0.0.1:4360",
@@ -178,4 +193,45 @@ describe("session_open default bases (slice public-base-url)", () => {
       }),
     )
   })
+  it.each([
+    {
+      name: "session_open",
+      base: "https://legacy.example.test/",
+      expected: "https://legacy.example.test",
+    },
+    {
+      name: "session_open",
+      base: "https://legacy.example.test/",
+      publicUrl: "https://public.example.test/",
+      expected: "https://public.example.test",
+    },
+    { name: "agent_open", base: "https://legacy.example.test/", expected: "http://127.0.0.1:4360" },
+    {
+      name: "agent_open",
+      publicUrl: "https://public.example.test/",
+      expected: "https://public.example.test",
+    },
+  ] as const)(
+    "$name uses $expected for explicit URL inputs",
+    async ({ name, expected, ...overrides }) => {
+      const app = new Hono()
+      const registry = createInMemoryAgentRegistry()
+      const orchestrator = makeOrchestrator(registry)
+      registerMcpHttp(app, {
+        registry,
+        orchestrator,
+        agentSessionRegistry: makeStubSessionRegistry(),
+        env: {},
+        urlConfig: { port: 4360, host: "127.0.0.1" },
+      })
+      const body = JSON.parse(toolText(await open(app, name, overrides)))
+      const id = body[name === "agent_open" ? "agentId" : "agent"]
+      expect(body.url).toBe(`${expected}/chat/cursor/sess-${id}?sessionTransport=http`)
+      expect(orchestrator.createAndSpawn).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          env: expect.objectContaining({ DRIVE_CODING_BASE: expected, DC_BASE: expected }),
+        }),
+      )
+    },
+  )
 })

@@ -42,10 +42,28 @@ describe("openapi and RPC doc coupling", () => {
     expect(ops).toHaveLength(42)
   })
 
-  it("McpToolName union has thirteen members (includes notify_parent)", () => {
+  it("keeps both MCP vocabularies and the two single-name tools", () => {
     const names = mcpToolNamesFromSource()
-    expect(names).toHaveLength(13)
-    expect(names).toContain("notify_parent")
+    const suffixes = [
+      "list",
+      "open",
+      "send",
+      "state",
+      "close",
+      "subscribe",
+      "whoami",
+      "surface",
+      "note_set",
+      "field_set",
+      "field_delete",
+    ]
+    expect(names.sort()).toEqual(
+      [
+        "docs_get",
+        "notify_parent",
+        ...suffixes.flatMap((suffix) => [`agent_${suffix}`, `session_${suffix}`]),
+      ].sort(),
+    )
   })
 
   it("openapi.json status codes match agent HTTP handlers for four core operations", () => {

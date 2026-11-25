@@ -17,7 +17,8 @@ routes:
   - DELETE /api/agents/:id/connection
 mcp_tools:
   - session_subscribe
-docs_version: 1.13.0
+  - agent_subscribe
+docs_version: 1.14.0
 updated: 2026-11-25
 ---
 
@@ -57,6 +58,8 @@ Events arrive in the subscriber's own session as a system envelope (`45-render-c
 `<event-kind>turn-ended</event-kind>` when a turn ends — not that the task is done — and
 `<event-kind>stall-suspected</event-kind>` when a turn looks stuck, a suspicion only. With
 `includeLastAssistantText`, turn-ended carries a truncated preview of the agent's last reply.
+
+MCP discovery also lists the alternate name `agent_subscribe` while the bus is enabled. Both names use the same subscription and scope checks.
 
 ## MCP Streamable HTTP — `/api/mcp`
 

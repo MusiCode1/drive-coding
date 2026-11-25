@@ -14,13 +14,15 @@ routes:
   - GET /api/openapi.json
 mcp_tools:
   - docs_get
-docs_version: 1.10.0
-updated: 2026-11-18
+docs_version: 1.14.0
+updated: 2026-11-25
 ---
 
 # Orientation
 
 ## What drive-coding is
+
+Discover MCP tool names and schemas with `tools/list`. The [lifecycle guide](20-session-lifecycle.md) lists the canonical `agent_*` names alongside the `session_*` names used in these examples.
 
 drive-coding is a drive-first, voice-capable UI for **ACP-compatible coding agents**
 (Cursor, Claude Code, Codex, OpenCode, and others).

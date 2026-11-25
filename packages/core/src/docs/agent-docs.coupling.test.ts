@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { CONFIG_SPECS } from "../config/specs.js"
 import { CLI_KINDS } from "../schemas/agent.js"
-import { MCP_TOOL_META } from "../schemas/mcp-docs.js"
+import { MCP_TOOL_ALIASES, MCP_TOOL_META } from "../schemas/mcp-docs.js"
 import { RPC_METHODS } from "../session/rpc-methods.js"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
@@ -16,6 +16,40 @@ const UI_REFERENCE_DOC = path.join(REPO_ROOT, "docs/agents/46-ui-reference.md")
 const ROUTES_ROOT = path.join(REPO_ROOT, "packages/frontend/src/routes")
 
 describe("agent-docs coupling", () => {
+  it("declares every MCP alias under its public owner and keeps the legacy example", () => {
+    const lifecycle = fs.readFileSync(LIFECYCLE_DOC, "utf8")
+    const owners = {
+      "20-session-lifecycle.md": [
+        "list",
+        "open",
+        "send",
+        "state",
+        "close",
+        "note_set",
+        "field_set",
+        "field_delete",
+      ],
+      "60-identity-and-scopes.md": ["whoami"],
+      "70-subagents.md": ["subscribe", "surface"],
+    }
+    for (const [doc, suffixes] of Object.entries(owners)) {
+      const frontmatter = fs
+        .readFileSync(path.join(REPO_ROOT, "docs/agents", doc), "utf8")
+        .split("---")[1]
+      for (const suffix of suffixes) {
+        expect(frontmatter).toContain(`  - session_${suffix}\n`)
+        expect(frontmatter).toContain(`  - agent_${suffix}\n`)
+      }
+    }
+    for (const [legacy, alias] of Object.entries(MCP_TOOL_ALIASES)) {
+      expect(lifecycle).toContain(`| \`${legacy}\` | \`${alias}\` |`)
+    }
+    const example = lifecycle.split("Example workflow inputs")[1]?.split("```")[1]
+    expect(example).toMatch(/^session_open\s+\{"cli":.*"cwd":/m)
+    expect(example).toMatch(/^session_send\s+\{"agent":.*"sets":/m)
+    expect(example).toMatch(/^session_close\s+\{"agent":/m)
+  })
+
   it("20-session-lifecycle stays aligned with MCP lifecycle tools and owner TTL env", () => {
     const doc = fs.readFileSync(LIFECYCLE_DOC, "utf8")
     const LIFECYCLE = ["session_open", "session_send", "session_state", "session_close"]

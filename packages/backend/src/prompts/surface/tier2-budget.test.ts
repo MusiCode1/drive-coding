@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest"
 import {
+  MCP_AGENT_CONFIGURE_HINT,
   MCP_CONFIGURE_HINT,
+  MCP_NOTIFY_PARENT_META,
   MCP_SERVER_DESCRIPTION,
   MCP_SERVER_INSTRUCTIONS,
   MCP_TOOL_META,
-  MCP_NOTIFY_PARENT_META,
 } from "@drive-coding/core"
+import { describe, expect, it } from "vitest"
 import { buildSurfacePrompt, type SurfaceRuntimeInfo } from "../index.js"
 import { TIER2_BUDGET_CHARS } from "./tier2-budget.js"
 
@@ -21,6 +22,25 @@ function toolCatalogChars(): number {
     ...Object.entries(MCP_TOOL_META),
     ["notify_parent", MCP_NOTIFY_PARENT_META],
   ]
+  const suffixes = [
+    "list",
+    "open",
+    "send",
+    "state",
+    "close",
+    "subscribe",
+    "whoami",
+    "surface",
+    "note_set",
+    "field_set",
+    "field_delete",
+  ]
+  const expected = [
+    "docs_get",
+    "notify_parent",
+    ...suffixes.flatMap((suffix) => [`agent_${suffix}`, `session_${suffix}`]),
+  ].sort()
+  expect(entries.map(([name]) => name).sort()).toEqual(expected)
   return entries.reduce(
     (s, [name, v]) => s + name.length + v.title.length + v.description.length,
     0,
@@ -38,6 +58,7 @@ describe("tier2 surface + MCP catalog budget", () => {
       toolCatalogChars() +
       MCP_SERVER_DESCRIPTION.length +
       MCP_CONFIGURE_HINT.length +
+      MCP_AGENT_CONFIGURE_HINT.length +
       surface.length
 
     // Measured 2026-11-03 on edge: total=13,708 — only 292 chars of headroom.

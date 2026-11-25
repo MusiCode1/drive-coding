@@ -9,9 +9,9 @@ read_when:
 tags: [config, session]
 surface: [http, mcp]
 stability: stable
-mcp_tools: [session_open, session_send, session_state]
-docs_version: 1.2.0
-updated: 2026-09-28
+mcp_tools: [session_open, session_send, session_state, agent_open, agent_send, agent_state]
+docs_version: 1.14.0
+updated: 2026-11-25
 ---
 
 # Child config
@@ -55,6 +55,8 @@ POST /api/agents
 ```
 
 MCP **`session_open`** accepts **`permission`** with the same enum values.
+
+The catalog also lists `agent_open` (whose policy input is `permissionPolicy`), `agent_state` and `agent_send`. The examples below use the legacy workflow.
 
 Validated **policy enum** (what the backend enforces):
 

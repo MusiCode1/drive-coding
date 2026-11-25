@@ -3,10 +3,10 @@
  */
 
 import type { Agent, AgentRegistry, CreateAgentInput } from "@drive-coding/core"
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/connection"
-import { describe, expect, it, vi } from "vitest"
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { Hono } from "hono"
+import { describe, expect, it, vi } from "vitest"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { createAgentOrchestrator } from "../app/agent-orchestrator.js"
 import { registerAgentPromptHttp } from "../delivery/http-agent-prompt.js"
@@ -41,52 +41,44 @@ function promptOptsFromAgent(agent: Agent) {
   }
 }
 
-async function invokeSessionSurfaceMcp(agent: Agent): Promise<string> {
-  let handler:
-    | ((parsed: unknown) => Promise<{ content: Array<{ type: "text"; text: string }> }>)
-    | undefined
-  const registerArkTool = vi.fn(
-    (
-      _server: McpServer,
-      _name: string,
-      _meta: { title: string; description: string },
-      _ark: { toJsonSchema: () => object; (data: unknown): unknown },
-      h: (parsed: unknown) => Promise<{ content: Array<{ type: "text"; text: string }> }>,
-    ) => {
-      handler = h
-    },
+async function readMcpSurfaces(agent: Agent): Promise<string[]> {
+  type Handler = (args: unknown) => Promise<{ content: Array<{ type: "text"; text: string }> }>
+  const handlers = new Map<string, Handler>()
+  const server = {
+    registerTool: (name: string, _config: unknown, handler: Handler) => handlers.set(name, handler),
+  } as unknown as McpServer
+  registerSessionSurfaceMcpTool(server, { urlConfig }, { callerAgentId: agent.id }, agent)
+  expect([...handlers.keys()].sort()).toEqual(["agent_surface", "session_surface"])
+  return Promise.all(
+    ["session_surface", "agent_surface"].map(async (name) => {
+      const handler = handlers.get(name)
+      if (!handler) throw new Error(`${name} handler not registered`)
+      const result = await handler({})
+      return result.content[0]?.text ?? ""
+    }),
   )
-  registerSessionSurfaceMcpTool(
-    {} as McpServer,
-    { urlConfig },
-    { callerAgentId: agent.id },
-    agent,
-    registerArkTool,
+}
+
+function expectWorkflow(prompt: string): void {
+  expect(prompt).toContain("tools/list")
+  expect(prompt).toContain("agent_*")
+  expect(prompt).toMatch(/call \*\*session_open\*\* with `cli` and absolute `cwd`/)
+  expect(prompt).toContain(
+    "`agent` UUID for **session_state**, **session_send** and **session_close**",
   )
-  if (handler === undefined) throw new Error("session_surface handler not registered")
-  const result = await handler({})
-  return result.content[0]?.text ?? ""
+  expect(prompt).toContain("session_send.sets")
+  expect(prompt).toContain("session_whoami")
+  expect(prompt).toContain("session_note_set")
 }
 
 describe("surface prompt — three delivery paths", () => {
   it("HTTP, MCP compose, and orchestrator connect opts share one text (assignment once)", async () => {
-    const agent = sampleAgent()
-
+    const agent = sampleAgent({
+      userNotes: `  ${"note line\n".repeat(1_800)}  `,
+      sessionFields: { report: "first line\nsecond line", status: "ready" },
+      systemPrompt: `  ${charter}  `,
+    })
     const direct = buildAgentPromptText(promptOptsFromAgent(agent), urlConfig)
-
-    const registry: AgentRegistry = {
-      get: vi.fn(async (id: string) => (id === agent.id ? agent : null)),
-      list: vi.fn(async () => [agent]),
-      create: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-    }
-
-    const app = new Hono()
-    registerAgentPromptHttp(app, { registry, urlConfig })
-    const httpBody = await (await app.request(`/api/agent-prompt?agent=${agent.id}`)).text()
-
-    const mcpBody = await invokeSessionSurfaceMcp(agent)
 
     let connectAgentPrompt: string | undefined
     const connectionRegistry: ConnectionRegistry = {
@@ -142,6 +134,9 @@ describe("surface prompt — three delivery paths", () => {
           cliKind: input.cliKind,
           cwd: input.cwd,
           systemPrompt: input.systemPrompt ?? null,
+          parentAgentId: input.parentAgentId,
+          userNotes: agent.userNotes,
+          sessionFields: agent.sessionFields,
         })
         state.set(row.id, row)
         return row
@@ -173,16 +168,48 @@ describe("surface prompt — three delivery paths", () => {
       cliKind: "codex",
       cwd: agent.cwd,
       modelOverride: null,
-      systemPrompt: charter,
+      systemPrompt: agent.systemPrompt,
+      parentAgentId: agent.parentAgentId,
     })
 
-    expect(httpBody).toBe(direct)
-    expect(mcpBody).toBe(direct)
+    const app = new Hono()
+    registerAgentPromptHttp(app, { registry: spawnRegistry, urlConfig })
+    const readHttp = async () => [
+      await (await app.request(`/api/agent-prompt?agent=${agent.id}`)).text(),
+      await (
+        await app.request("/api/agent-prompt", { headers: { "X-Drive-Coding-Agent": agent.id } })
+      ).text(),
+    ]
+    const prompts = [
+      ...(await readHttp()),
+      ...(await readMcpSurfaces(agent)),
+      connectAgentPrompt ?? "",
+    ]
+    for (const prompt of prompts) {
+      expect(prompt).toBe(direct)
+      expectWorkflow(prompt)
+      expect(prompt.length).toBeGreaterThan(14_000)
+      expect(prompt).toContain(agent.id)
+      expect(prompt).toContain("parent-uuid")
+      expect(prompt).toContain(agent.userNotes)
+      expect(prompt).toContain("- **report**: first line\nsecond line")
+      expect(prompt.indexOf("# Agent memory")).toBeLessThan(prompt.indexOf("# Your assignment"))
+      expect(prompt.match(/# Your assignment/g)?.length).toBe(1)
+      expect(prompt.endsWith(charter)).toBe(true)
+    }
+
+    const edited = await spawnRegistry.update(agent.id, {
+      userNotes: "new note",
+      sessionFields: { report: "updated\nreport" },
+    })
+    const refreshed = buildAgentPromptText(promptOptsFromAgent(edited), urlConfig)
+    for (const prompt of [...(await readHttp()), ...(await readMcpSurfaces(edited))]) {
+      expect(prompt).toBe(refreshed)
+      expect(prompt).toContain("new note")
+      expect(prompt).toContain("updated\nreport")
+      expectWorkflow(prompt)
+    }
     expect(connectAgentPrompt).toBe(direct)
-    expect(direct).toContain(agent.id)
-    expect(direct).toContain("# Your assignment")
-    expect(direct.match(/# Your assignment/g)?.length).toBe(1)
-    expect(direct).toContain(charter)
   })
 })
 

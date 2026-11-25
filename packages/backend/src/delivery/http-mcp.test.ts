@@ -146,7 +146,12 @@ function makeOrchestrator(registry: AgentRegistry): AgentOrchestrator {
   }
 }
 
-function makeApp(opts?: { mcpHttp?: string; sidecar?: string; subscribeOnOpen?: boolean }) {
+function makeApp(opts?: {
+  mcpHttp?: string
+  sidecar?: string
+  subscribeOnOpen?: boolean
+  noEventBus?: boolean
+}) {
   // Hermetic: without this, displayName comes from the machine's ~/.config/drive-coding/cli-specs.jsonc
   // (measured 18/11/2026: a configured machine returned its own display name and failed the test).
   const env: NodeJS.ProcessEnv = {
@@ -167,7 +172,7 @@ function makeApp(opts?: { mcpHttp?: string; sidecar?: string; subscribeOnOpen?: 
     agentSessionRegistry,
     env,
     urlConfig: { port: 4000, host: "127.0.0.1" },
-    eventBus,
+    eventBus: opts?.noEventBus ? undefined : eventBus,
   })
   return { app, registry, orchestrator, agentSessionRegistry, eventBus }
 }
@@ -223,11 +228,29 @@ describe("agent docs contract discovery", () => {
   }
 
   async function expectDiscovery(expectedVersion: string | undefined): Promise<void> {
-    const { app } = makeApp()
+    const { app, registry } = makeApp()
     registerDocsHttp(app)
     const client = await connectClient(app)
     try {
       const appVersion = resolveAppVersion()
+      const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-version-probe" })
+      const identified = await connectClient(app, { [AGENT_ID_HEADER]: caller.id })
+      try {
+        for (const name of ["session_whoami", "agent_whoami"]) {
+          const result = await identified.callTool({ name, arguments: {} })
+          expect(result.isError).toBeUndefined()
+          const whoami = JSON.parse(toolText(result))
+          expect(whoami.backend.version).toBe(appVersion)
+          expect(whoami[name === "agent_whoami" ? "agentId" : "agent"]).toBe(caller.id)
+          if (name === "agent_whoami" && expectedVersion !== undefined) {
+            expect(whoami.contractVersion).toBe(expectedVersion)
+          } else {
+            expect(whoami).not.toHaveProperty("contractVersion")
+          }
+        }
+      } finally {
+        await identified.close()
+      }
       expect(client.getServerVersion()?.version).toBe(appVersion)
 
       const catalog = await app.request("/api/docs")
@@ -343,36 +366,150 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     expect(res.status).toBe(404)
   })
 
-  it("real MCP client: initialize + tools/list includes session_list", async () => {
-    const { app } = makeApp()
-    const client = await connectClient(app)
-    const version = client.getServerVersion()
-    const instructions = client.getInstructions()
-    const { tools } = await client.listTools()
-    await client.close()
-    expect(version?.description).toBeTruthy()
-    expect(version?.title).toBeTruthy()
-    expect(instructions).toContain("session_open")
-    expect(instructions).toContain("configOptions")
-    expect(instructions).toContain("session_whoami")
-    expect(tools.map((t) => t.name).sort()).toEqual([
-      "docs_get",
-      "session_close",
-      "session_field_delete",
-      "session_field_set",
-      "session_list",
-      "session_note_set",
-      "session_open",
-      "session_send",
-      "session_state",
-      "session_subscribe",
-      "session_surface",
-      "session_whoami",
-    ])
-    const openTool = tools.find((t) => t.name === "session_open")
-    const schema = openTool?.inputSchema as { properties?: { cli?: { description?: string } } }
-    expect(schema?.properties?.cli?.description).toContain("cliKind")
-  })
+  it.each(["root", "child", "no bus"] as const)(
+    "discovers the exact MCP roster (%s)",
+    async (kind) => {
+      const { app, registry } = makeApp({ noEventBus: kind === "no bus" })
+      const parent = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-parent" })
+      const caller = await registry.create({
+        cliKind: "cursor",
+        cwd: "/tmp/mcp-child",
+        parentAgentId: parent.id,
+      })
+      const client = await connectClient(
+        app,
+        kind === "root" ? undefined : { [AGENT_ID_HEADER]: caller.id },
+      )
+      const { tools } = await client.listTools()
+      const version = client.getServerVersion()
+      const instructions = client.getInstructions()
+      const guide = await client.readResource({ uri: "drive-coding://guide" })
+      await client.close()
+
+      expect(version?.description).toBeTruthy()
+      expect(version?.title).toBeTruthy()
+      expect(instructions).toMatch(/\*\*session_open\*\*.*`cli`.*`cwd`/)
+      expect(instructions).toContain("session_send.sets")
+      expect(instructions).toContain("session_whoami")
+      expect(guide.contents).toEqual([
+        {
+          uri: "drive-coding://guide",
+          mimeType: "text/markdown",
+          text: instructions,
+        },
+      ])
+
+      const pairs = [
+        ["session_close", "agent_close"],
+        ["session_field_delete", "agent_field_delete"],
+        ["session_field_set", "agent_field_set"],
+        ["session_list", "agent_list"],
+        ["session_note_set", "agent_note_set"],
+        ["session_open", "agent_open"],
+        ["session_send", "agent_send"],
+        ["session_state", "agent_state"],
+        ["session_subscribe", "agent_subscribe"],
+        ["session_surface", "agent_surface"],
+        ["session_whoami", "agent_whoami"],
+      ]
+      const enabled = pairs.filter(
+        ([legacy]) => kind !== "no bus" || legacy !== "session_subscribe",
+      )
+      expect(tools.map((tool) => tool.name).sort()).toEqual(
+        [...enabled.flat(), "docs_get", ...(kind === "child" ? ["notify_parent"] : [])].sort(),
+      )
+      for (const [legacy, canonical] of enabled) {
+        expect(tools.find((tool) => tool.name === legacy)?.description).toContain(canonical)
+        expect(tools.find((tool) => tool.name === canonical)?.description).toContain(legacy)
+      }
+      const canonicalOpen = tools.find((tool) => tool.name === "agent_open")
+      expect(Object.keys(canonicalOpen?.inputSchema.properties ?? {}).sort()).toEqual(
+        [
+          "cliKind",
+          "cwd",
+          "env",
+          "permissionPolicy",
+          "parentAgentId",
+          "closeOnTurnEnd",
+          "subscribeOnOpenAgentId",
+          "includeLastAssistantText",
+          "publicUrl",
+          "systemPrompt",
+          "roleLabel",
+        ].sort(),
+      )
+      expect(canonicalOpen?.inputSchema.required?.sort()).toEqual(["cliKind", "cwd"])
+      const schemas: Record<string, { allowed: string[]; required: string[] }> = {
+        agent_send: {
+          allowed: ["agentId", "prompt", "sets", "timeoutSec", "noWait"],
+          required: ["agentId", "prompt"],
+        },
+        session_send: {
+          allowed: [
+            "agent",
+            "prompt",
+            "sets",
+            "timeoutSec",
+            "noWait",
+            "file",
+            "marker",
+            "idleTimeoutSec",
+            "keep",
+          ],
+          required: ["agent", "prompt"],
+        },
+        agent_close: { allowed: ["agentId", "force"], required: ["agentId"] },
+        session_close: { allowed: ["agent", "force"], required: ["agent"] },
+        agent_state: { allowed: ["agentId", "fields"], required: ["agentId"] },
+        session_state: { allowed: ["agent", "fields"], required: ["agent"] },
+        agent_subscribe: {
+          allowed: ["agentId", "subscriberAgentId", "includeLastAssistantText"],
+          required: ["agentId"],
+        },
+        session_subscribe: {
+          allowed: ["agent", "subscriber", "includeLastAssistantText"],
+          required: ["agent"],
+        },
+        session_open: {
+          allowed: [
+            "cli",
+            "cwd",
+            "env",
+            "permission",
+            "parent",
+            "closeOnTurnEnd",
+            "notifyOnDone",
+            "includeLastAssistantText",
+            "base",
+            "port",
+            "json",
+            "publicUrl",
+            "systemPrompt",
+            "roleLabel",
+          ],
+          required: ["cli", "cwd"],
+        },
+      }
+      for (const prefix of ["session", "agent"]) {
+        for (const name of ["list", "whoami", "surface"])
+          schemas[`${prefix}_${name}`] = { allowed: [], required: [] }
+        schemas[`${prefix}_note_set`] = { allowed: ["text"], required: ["text"] }
+        schemas[`${prefix}_field_set`] = { allowed: ["key", "value"], required: ["key", "value"] }
+        schemas[`${prefix}_field_delete`] = { allowed: ["key"], required: ["key"] }
+      }
+      for (const tool of tools) {
+        const schema = schemas[tool.name]
+        if (!schema) continue
+        expect(Object.keys(tool.inputSchema.properties ?? {}).sort(), tool.name).toEqual(
+          schema.allowed.sort(),
+        )
+        expect((tool.inputSchema.required ?? []).sort(), tool.name).toEqual(schema.required.sort())
+      }
+      const openTool = tools.find((t) => t.name === "session_open")
+      const schema = openTool?.inputSchema as { properties?: { cli?: { description?: string } } }
+      expect(schema?.properties?.cli?.description).toContain("cliKind")
+    },
+  )
 
   it("lists guide resource with usage markdown", async () => {
     const { app } = makeApp()
@@ -440,61 +577,75 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
 })
 
 describe("session_open rollback after spawn", () => {
-  it.each([
-    { mode: "host unavailable", cause: "session host did not start: not-found" },
-    { mode: "timeout", cause: "session did not come up within 30s" },
-    { mode: "host throws", cause: "handshake failed" },
-    { mode: "record remains", cause: "handshake failed", status: "Agent close failed" },
-    { mode: "close throws", cause: "handshake failed", status: "Agent close failed" },
-    { mode: "lookup throws", cause: "handshake failed", status: "Agent close status unknown" },
-  ])("keeps the original error and verifies rollback ($mode)", async ({ mode, cause, status }) => {
-    const { app, registry, orchestrator, agentSessionRegistry } = makeApp()
-    const client = await connectClient(app)
-    const close = vi.mocked(orchestrator.deleteAndKill)
-    let id = ""
-    let now = Date.now()
-    const clock = vi.spyOn(Date, "now").mockImplementation(() => now)
-    vi.mocked(agentSessionRegistry.getOrCreateHost).mockImplementation(async (agentId) => {
-      id = agentId
-      if (mode === "host unavailable") return { ok: false, reason: "not-found" }
-      if (mode === "timeout") {
-        // Advance the polling clock only when the waiter looks up the host.
-        vi.mocked(agentSessionRegistry.getHost).mockImplementationOnce(() => {
-          now += 31_000
-          return undefined
-        })
-        return { ok: true, entry: {} as never }
-      }
-      throw new Error(cause)
-    })
-    if (mode === "record remains") close.mockResolvedValueOnce(undefined)
-    if (mode === "close throws") close.mockRejectedValueOnce(new Error("close unavailable"))
-    if (mode === "lookup throws") {
-      vi.spyOn(registry, "get").mockRejectedValueOnce(new Error("lookup unavailable"))
-    }
-
-    try {
-      const result = await client.callTool({
-        name: "session_open",
-        arguments: { cli: "cursor", cwd: process.cwd() },
+  it.each(
+    [
+      { mode: "host unavailable", cause: "session host did not start: not-found" },
+      { mode: "dead connection", cause: "session host did not start: conn-dead" },
+      { mode: "timeout", cause: "session did not come up within 30s" },
+      { mode: "host throws", cause: "handshake failed" },
+      { mode: "record remains", cause: "handshake failed", status: "Agent close failed" },
+      { mode: "close throws", cause: "handshake failed", status: "Agent close failed" },
+      { mode: "lookup throws", cause: "handshake failed", status: "Agent close status unknown" },
+    ].flatMap((row) => ["session_open", "agent_open"].map((name) => ({ ...row, name }))),
+  )(
+    "$name keeps the original error and verifies rollback ($mode)",
+    async ({ name, mode, cause, status }) => {
+      const { app, registry, orchestrator, agentSessionRegistry } = makeApp()
+      const client = await connectClient(app)
+      const close = vi.mocked(orchestrator.deleteAndKill)
+      let id = ""
+      let now = Date.now()
+      const clock = vi.spyOn(Date, "now").mockImplementation(() => now)
+      vi.mocked(agentSessionRegistry.getOrCreateHost).mockImplementation(async (agentId) => {
+        id = agentId
+        if (mode === "host unavailable") return { ok: false, reason: "not-found" }
+        if (mode === "dead connection") return { ok: false, reason: "conn-dead" }
+        if (mode === "timeout") {
+          // Advance the polling clock only when the waiter looks up the host.
+          vi.mocked(agentSessionRegistry.getHost).mockImplementationOnce(() => {
+            now += 31_000
+            return undefined
+          })
+          return { ok: true, entry: {} as never }
+        }
+        throw new Error(cause)
       })
-      expect(isToolError(result)).toBe(true)
-      expect(id).not.toBe("")
-      expect(close).toHaveBeenCalledExactlyOnceWith(id)
-      expect(toolText(result)).toContain(cause)
-      expect(toolText(result)).toContain(status ?? "Agent removed")
-      expect(toolText(result)).toContain(`agent=${id}`)
-      if (!status) {
-        expect(toolText(result)).toContain("process termination was not verified")
-        expect(await registry.get(id)).toBeNull()
-      } else if (mode !== "lookup throws") {
-        expect(await registry.get(id)).not.toBeNull()
+      if (mode === "record remains") close.mockResolvedValueOnce(undefined)
+      if (mode === "close throws") close.mockRejectedValueOnce(new Error("close unavailable"))
+      if (mode === "lookup throws") {
+        vi.spyOn(registry, "get").mockRejectedValueOnce(new Error("lookup unavailable"))
       }
-    } finally {
-      clock.mockRestore()
-      await client.close()
-    }
-  })
+
+      try {
+        const result = await client.callTool({
+          name,
+          arguments: { [name === "agent_open" ? "cliKind" : "cli"]: "cursor", cwd: process.cwd() },
+        })
+        expect(isToolError(result)).toBe(true)
+        const classified =
+          name === "agent_open" && ["host unavailable", "dead connection"].includes(mode)
+        expect(result._meta?.["drive-coding/errorCode"]).toBe(
+          classified ? "agent_host_unavailable" : undefined,
+        )
+        expect(orchestrator.createAndSpawn).toHaveBeenCalledOnce()
+        expect(agentSessionRegistry.getOrCreateHost).toHaveBeenCalledOnce()
+        expect(id).not.toBe("")
+        expect(close).toHaveBeenCalledExactlyOnceWith(id)
+        expect(toolText(result)).toContain(cause)
+        expect(toolText(result)).toContain(status ?? "Agent removed")
+        expect(toolText(result)).toContain(`agent=${id}`)
+        if (!status) {
+          expect(toolText(result)).toContain("process termination was not verified")
+          expect(await registry.get(id)).toBeNull()
+        } else if (mode !== "lookup throws") {
+          expect(await registry.get(id)).not.toBeNull()
+        }
+      } finally {
+        clock.mockRestore()
+        await client.close()
+      }
+    },
+  )
 })
 
 describe("session_open / session_close (slice session-bus-mcp C1)", () => {
@@ -1533,11 +1684,15 @@ describe("session memory MCP tools (slice session-memory C1)", () => {
 describe("scoped envelope MCP integration", () => {
   afterEach(resetScopePolicyForTests)
 
-  it.each([
-    { update: "deny", message: "allow", allowed: false },
-    { update: "allow", message: "deny", allowed: false },
-    { update: "allow", message: "allow", allowed: true },
-  ] as const)("update=$update message=$message", async ({ update, message, allowed }) => {
+  it.each(
+    (
+      [
+        { update: "deny", message: "allow", allowed: false },
+        { update: "allow", message: "deny", allowed: false },
+        { update: "allow", message: "allow", allowed: true },
+      ] as const
+    ).flatMap((row) => (["session_send", "agent_send"] as const).map((name) => ({ ...row, name }))),
+  )("$name update=$update message=$message", async ({ update, message, allowed, name }) => {
     const { app, registry, agentSessionRegistry } = makeApp()
     const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-caller" })
     const target = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-target" })
@@ -1549,17 +1704,25 @@ describe("scoped envelope MCP integration", () => {
     const prompt = "merge & <body>"
     try {
       const result = await client.callTool({
-        name: "session_send",
-        arguments: { agent: target.id, prompt, sets: { model: "fast" }, noWait: true },
+        name,
+        arguments: {
+          [name === "agent_send" ? "agentId" : "agent"]: target.id,
+          prompt,
+          sets: { model: "fast" },
+          noWait: true,
+        },
       })
       expect(isToolError(result)).toBe(!allowed)
       if (!allowed) {
+        expect(result._meta).toBeUndefined()
+        expect(JSON.parse(toolText(result))).toMatchObject({ error: "scope-denied" })
         expect(agentSessionRegistry.getOrCreateHost).not.toHaveBeenCalled()
         expect(agentSessionRegistry.hosts.size).toBe(0)
       } else {
         const host = agentSessionRegistry.hosts.get(target.id)
-        expect(host?.setConfigOption).toHaveBeenCalledWith("model", "fast")
-        expect(host?.prompt).toHaveBeenCalledWith(
+        expect(host?.setConfigOption).toHaveBeenCalledExactlyOnceWith("model", "fast")
+        expect(host?.setConfigOption).toHaveBeenCalledBefore(host?.prompt ?? vi.fn())
+        expect(host?.prompt).toHaveBeenCalledExactlyOnceWith(
           `sess-${target.id}`,
           serializeDriveMessage({
             source: "agent",
@@ -1572,4 +1735,515 @@ describe("scoped envelope MCP integration", () => {
       await client.close()
     }
   })
+})
+
+describe("canonical agent tools over Streamable HTTP", () => {
+  it("opens with canonical inputs and a registered parent, then notifies and closes once", async () => {
+    const { app, registry, orchestrator, agentSessionRegistry, eventBus } = makeApp({
+      subscribeOnOpen: true,
+    })
+    const parent = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-parent" })
+    const stranger = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-other" })
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: ` ${parent.id} ` })
+    try {
+      const contradicted = await client.callTool({
+        name: "agent_open",
+        arguments: { cliKind: "cursor", cwd: "/tmp/mcp-child", parentAgentId: stranger.id },
+      })
+      expect(contradicted.isError).toBe(true)
+      expect(contradicted._meta).toBeUndefined()
+      expect(orchestrator.createAndSpawn).not.toHaveBeenCalled()
+      expect(agentSessionRegistry.getOrCreateHost).not.toHaveBeenCalled()
+
+      const invalid = await client.callTool({
+        name: "agent_open",
+        arguments: { cli: "cursor", cwd: "/tmp/mcp-child" },
+      })
+      expect(invalid.isError).toBe(true)
+      expect(invalid._meta).toBeUndefined()
+      expect(orchestrator.createAndSpawn).not.toHaveBeenCalled()
+
+      const opened = await client.callTool({
+        name: "agent_open",
+        arguments: {
+          cliKind: "cursor",
+          cli: "codex",
+          cwd: "/tmp/mcp-child",
+          parentAgentId: parent.id,
+          parent: stranger.id,
+          permissionPolicy: "allow_once",
+          permission: "reject_once",
+          subscribeOnOpenAgentId: parent.id,
+          notifyOnDone: stranger.id,
+          includeLastAssistantText: true,
+        },
+      })
+      expect(opened.isError).toBeUndefined()
+      const body = JSON.parse(toolText(opened))
+      const id: string = body.agentId
+      expect(id).toEqual(expect.any(String))
+      expect(body).not.toHaveProperty("agent")
+      expect(body.sessionId).toBe(`sess-${id}`)
+      expect(body.url).toContain("?sessionTransport=http")
+      expect(body.hint).toMatch(
+        /agentId.*as agent in session_state, session_send and session_close/,
+      )
+      expect(body.hint).toContain("session_send.sets")
+      expect(orchestrator.createAndSpawn).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          cliKind: "cursor",
+          permissionPolicy: "allow_once",
+          parentAgentId: parent.id,
+          notifyOnDone: parent.id,
+          includeLastAssistantText: true,
+        }),
+      )
+      expect(agentSessionRegistry.getOrCreateHost).toHaveBeenCalledExactlyOnceWith(id)
+      expect(eventBus.subscribersOf(id)).toEqual([parent.id])
+      const child = await connectClient(app, { [AGENT_ID_HEADER]: id })
+      try {
+        const { tools } = await child.listTools()
+        expect(tools.filter(({ name }) => name === "notify_parent")).toHaveLength(1)
+        const reply = await child.callTool({ name: "notify_parent", arguments: { text: "ready" } })
+        expect(JSON.parse(toolText(reply))).toEqual({ ok: true, parent: parent.id })
+        expect(agentSessionRegistry.hosts.get(parent.id)?.prompt).toHaveBeenCalledOnce()
+      } finally {
+        await child.close()
+      }
+      const grandchild = await registry.create({
+        cliKind: "cursor",
+        cwd: "/tmp/mcp-grandchild",
+        parentAgentId: id,
+      })
+      const host = agentSessionRegistry.hosts.get(id)
+      if (!host) throw new Error("expected opened host")
+      host.state.turnState = "calling-tool"
+      const busy = await client.callTool({ name: "agent_close", arguments: { agentId: id } })
+      expect(busy.isError).toBe(true)
+      expect(busy._meta).toBeUndefined()
+      expect(orchestrator.deleteAndKill).not.toHaveBeenCalled()
+      const closed = await client.callTool({
+        name: "agent_close",
+        arguments: { agentId: id, force: true },
+      })
+      expect(JSON.parse(toolText(closed))).toEqual({ ok: true, agentId: id })
+      expect(orchestrator.deleteAndKill).toHaveBeenCalledExactlyOnceWith(id)
+      expect(await registry.get(grandchild.id)).not.toBeNull()
+      const repeated = await client.callTool({ name: "agent_close", arguments: { agentId: id } })
+      expect(JSON.parse(toolText(repeated))).toEqual({ ok: true, agentId: id, alreadyClosed: true })
+      expect(orchestrator.deleteAndKill).toHaveBeenCalledOnce()
+    } finally {
+      await client.close()
+    }
+  })
+
+  it("projects a single record into both vocabularies and keeps empty metadata", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-projection" })
+    await registry.update(caller.id, { userNotes: "", sessionFields: {} })
+    await agentSessionRegistry.getOrCreateHost(caller.id)
+    vi.mocked(agentSessionRegistry.getConnectionCount).mockReturnValue(3)
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: caller.id })
+    const read = async (name: string, args = {}) => {
+      const result = await client.callTool({ name, arguments: args })
+      expect(result.isError).toBeUndefined()
+      return JSON.parse(toolText(result))
+    }
+    try {
+      const legacy = await read("session_list")
+      const canonical = await read("agent_list")
+      const { userNotes, sessionFields, connectionCount, ...legacyRow } = legacy.agents[0]
+      expect(legacyRow).toMatchObject({
+        id: caller.id,
+        pid: null,
+        attached: false,
+        busy: false,
+        lastMessageAt: null,
+        lastSeenAt: null,
+        turnState: "idle",
+        displayName: expect.any(String),
+      })
+      expect([userNotes, sessionFields, connectionCount]).toEqual(["", {}, 3])
+      expect(canonical).toEqual({
+        agents: [{ ...legacyRow, agentNotes: "", agentFields: {}, viewerCount: 3 }],
+      })
+      const fields = ["title", "unavailable"]
+      expect(await read("session_state", { agent: caller.id, fields })).toEqual({
+        agent: caller.id,
+        title: "",
+      })
+      expect(await read("agent_state", { agentId: caller.id, fields })).toEqual({
+        agentId: caller.id,
+        title: "",
+      })
+      const defaultState = await read("agent_state", { agentId: caller.id })
+      expect(defaultState).not.toHaveProperty("commands")
+      expect(await read("agent_state", { agentId: caller.id, fields: [] })).toEqual(defaultState)
+      expect(
+        await read("agent_state", { agentId: caller.id, fields: ["title", "*"] }),
+      ).toHaveProperty("commands")
+      expect(await read("agent_whoami")).toMatchObject({
+        agentId: caller.id,
+        agentNotes: "",
+        agentFields: {},
+        sessionId: `sess-${caller.id}`,
+        runtime: { memory: null, source: "unavailable" },
+      })
+      expect(await read("session_whoami")).toMatchObject({
+        agent: caller.id,
+        userNotes: "",
+        sessionFields: {},
+      })
+    } finally {
+      await client.close()
+    }
+  })
+
+  it("validates send before effects and ignores a simultaneous legacy target", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const target = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-send" })
+    const other = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-other" })
+    await agentSessionRegistry.getOrCreateHost(target.id)
+    const host = agentSessionRegistry.hosts.get(target.id)
+    if (!host) throw new Error("expected target host")
+    vi.mocked(agentSessionRegistry.getOrCreateHost).mockClear()
+    const client = await connectClient(app)
+    try {
+      for (const args of [
+        { agent: target.id, prompt: "invalid" },
+        { agentId: target.id, prompt: 1 },
+      ]) {
+        const invalid = await client.callTool({ name: "agent_send", arguments: args })
+        expect(invalid.isError).toBe(true)
+        expect(invalid._meta).toBeUndefined()
+      }
+      expect(agentSessionRegistry.getOrCreateHost).not.toHaveBeenCalled()
+
+      const sent = await client.callTool({
+        name: "agent_send",
+        arguments: {
+          agentId: target.id,
+          agent: other.id,
+          prompt: "hi",
+          sets: { model: "fast", persona: "review" },
+        },
+      })
+      expect(sent.isError).toBeUndefined()
+      expect(JSON.parse(toolText(sent))).toMatchObject({ stopReason: "end_turn", text: "echo:hi" })
+      expect(host.setConfigOption.mock.calls).toEqual([
+        ["model", "fast"],
+        ["persona", "review"],
+      ])
+      expect(host.setConfigOption).toHaveBeenCalledBefore(host.prompt)
+      expect(host.prompt).toHaveBeenCalledExactlyOnceWith(`sess-${target.id}`, "hi")
+      expect(agentSessionRegistry.getOrCreateHost).toHaveBeenCalledExactlyOnceWith(target.id)
+    } finally {
+      await client.close()
+    }
+  })
+
+  it.each(["session_send", "agent_send"])(
+    "keeps failure classes and prevents config/prompt in %s",
+    async (name) => {
+      const { app, registry, orchestrator, agentSessionRegistry } = makeApp()
+      const row = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-send-error" })
+      await agentSessionRegistry.getOrCreateHost(row.id)
+      const host = agentSessionRegistry.hosts.get(row.id)
+      if (!host) throw new Error("expected row host")
+      const get = vi.mocked(agentSessionRegistry.getOrCreateHost)
+      const client = await connectClient(app)
+      const canonical = name === "agent_send"
+      const call = (id: string) =>
+        client.callTool({
+          name,
+          arguments: {
+            [canonical ? "agentId" : "agent"]: id,
+            prompt: "hi",
+            sets: { model: "fast" },
+          },
+        })
+      try {
+        get.mockClear()
+        const missing = await call("missing")
+        expect(toolText(missing)).toBe("agent not found")
+        expect(missing._meta?.["drive-coding/errorCode"]).toBe(
+          canonical ? "agent_not_found" : undefined,
+        )
+        expect(get).not.toHaveBeenCalled()
+        for (const reason of ["not-found", "conn-dead"] as const) {
+          get.mockResolvedValueOnce({ ok: false, reason })
+          const unavailable = await call(row.id)
+          expect(toolText(unavailable)).toBe(`session host did not start: ${reason}`)
+          expect(unavailable._meta?.["drive-coding/errorCode"]).toBe(
+            canonical ? "agent_host_unavailable" : undefined,
+          )
+        }
+        get.mockRejectedValueOnce(new Error("session host did not start: not-found"))
+        const rejection = await call(row.id)
+        expect(rejection.isError).toBe(true)
+        expect(toolText(rejection)).toBe("session host did not start: not-found")
+        expect(rejection._meta).toBeUndefined()
+        host.state.sessionId = null
+        const inactive = await call(row.id)
+        expect(toolText(inactive)).toBe("no sessionId — run session_open first")
+        expect(inactive._meta?.["drive-coding/errorCode"]).toBe(
+          canonical ? "no_active_acp_session" : undefined,
+        )
+        expect(host.setConfigOption).not.toHaveBeenCalled()
+        expect(host.prompt).not.toHaveBeenCalled()
+        expect(orchestrator.deleteAndKill).not.toHaveBeenCalled()
+      } finally {
+        await client.close()
+      }
+    },
+  )
+
+  it("keeps field deletion on the registered caller and distinguishes a disappearing row", async () => {
+    const { app, registry } = makeApp()
+    const row = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-memory" })
+    const update = vi.spyOn(registry, "update")
+    const call = async (headers?: Record<string, string>) => {
+      const client = await connectClient(app, headers)
+      try {
+        return await client.callTool({ name: "agent_field_delete", arguments: { key: "missing" } })
+      } finally {
+        await client.close()
+      }
+    }
+    for (const headers of [
+      undefined,
+      { [AGENT_ID_HEADER]: "00000000-0000-4000-8000-000000000001" },
+    ]) {
+      const unknown = await call(headers)
+      expect(unknown.isError).toBe(true)
+      expect(toolText(unknown)).toContain(AGENT_ID_HEADER)
+      expect(unknown._meta).toBeUndefined()
+    }
+    const headers = { [AGENT_ID_HEADER]: row.id }
+    const noop = await call(headers)
+    expect(JSON.parse(toolText(noop))).toEqual({ ok: true })
+    const lookup = vi.spyOn(registry, "get")
+    const identified = await connectClient(app, headers)
+    try {
+      lookup.mockResolvedValueOnce(row).mockResolvedValueOnce(null)
+      const deleted = await identified.callTool({
+        name: "agent_field_delete",
+        arguments: { key: "missing" },
+      })
+      expect(deleted.isError).toBe(true)
+      expect(deleted._meta?.["drive-coding/errorCode"]).toBe("agent_not_found")
+      expect(toolText(deleted)).toBe("agent not found")
+      expect(update).not.toHaveBeenCalled()
+    } finally {
+      await identified.close()
+    }
+  })
+})
+
+describe("C1 identity, event bus and turn boundaries", () => {
+  it("serves the recommendation in raw initialize and the guide", async () => {
+    const { app } = makeApp()
+    const response = await app.request("/api/mcp", {
+      method: "POST",
+      headers: {
+        Accept: "application/json, text/event-stream",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-11-25",
+          clientInfo: { name: "workflow-probe", version: "1.0.0" },
+          capabilities: {},
+        },
+      }),
+    })
+    expect(response.status).toBe(200)
+    const { result } = await response.json()
+    expect(result.serverInfo.version).toBe(resolveAppVersion())
+    expect(result.instructions).toMatch(/\*\*session_open\*\*.*`cli`.*`cwd`/)
+    expect(result.instructions).toContain("session_send.sets")
+    const client = await connectClient(app)
+    try {
+      const guide = await client.readResource({ uri: "drive-coding://guide" })
+      expect(guide.contents[0]).toMatchObject({ text: result.instructions })
+    } finally {
+      await client.close()
+    }
+  })
+
+  it("uses one subscription across names and updates the option on that subscription", async () => {
+    const { app, registry, eventBus } = makeApp()
+    const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-subscriber" })
+    const target = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-watched" })
+    const subscribe = vi.spyOn(eventBus, "subscribe")
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: caller.id })
+    try {
+      const absent = await client.callTool({
+        name: "agent_subscribe",
+        arguments: { agentId: "missing" },
+      })
+      expect(absent.isError).toBe(true)
+      expect(absent._meta?.["drive-coding/errorCode"]).toBe("agent_not_found")
+      expect(subscribe).not.toHaveBeenCalled()
+      const legacy = await client.callTool({
+        name: "session_subscribe",
+        arguments: { agent: target.id },
+      })
+      expect(JSON.parse(toolText(legacy))).toEqual({
+        ok: true,
+        agent: target.id,
+        subscriber: caller.id,
+      })
+      for (const includeLastAssistantText of [false, true]) {
+        const canonical = await client.callTool({
+          name: "agent_subscribe",
+          arguments: { agentId: target.id, includeLastAssistantText },
+        })
+        expect(JSON.parse(toolText(canonical))).toEqual({
+          ok: true,
+          agentId: target.id,
+          subscriberAgentId: caller.id,
+        })
+        expect(eventBus.subscribersOf(target.id)).toEqual([caller.id])
+        expect(eventBus.optionsOf(target.id, caller.id)?.includeLastAssistantText).toBe(
+          includeLastAssistantText,
+        )
+      }
+      expect(subscribe.mock.calls).toEqual([
+        [target.id, caller.id, { includeLastAssistantText: false }],
+        [target.id, caller.id, { includeLastAssistantText: false }],
+        [target.id, caller.id, { includeLastAssistantText: true }],
+      ])
+    } finally {
+      await client.close()
+    }
+  })
+
+  it("edits the caller's memory through canonical and legacy names", async () => {
+    const { app, registry } = makeApp()
+    const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-caller-memory" })
+    const other = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-other-memory" })
+    const update = vi.spyOn(registry, "update")
+    const client = await connectClient(app, { [AGENT_ID_HEADER]: caller.id })
+    try {
+      const actions = [
+        ["agent_note_set", { text: "note", agentId: other.id }],
+        ["session_field_set", { key: "keep", value: "legacy" }],
+        ["agent_field_set", { key: " report ", value: "first\nsecond", agentId: other.id }],
+        ["agent_field_delete", { key: " report " }],
+        ["session_note_set", { text: "" }],
+      ] as const
+      for (const [name, args] of actions) {
+        const result = await client.callTool({ name, arguments: args })
+        expect(JSON.parse(toolText(result))).toEqual({ ok: true })
+      }
+      const invalid = await client.callTool({
+        name: "agent_field_set",
+        arguments: { key: " ", value: "invalid" },
+      })
+      expect(invalid.isError).toBe(true)
+      expect(invalid._meta).toBeUndefined()
+      expect(update.mock.calls).toEqual([
+        [caller.id, { userNotes: "note" }],
+        [caller.id, { sessionFields: { keep: "legacy" } }],
+        [caller.id, { sessionFields: { keep: "legacy", report: "first\nsecond" } }],
+        [caller.id, { sessionFields: { keep: "legacy" } }],
+        [caller.id, { userNotes: "" }],
+      ])
+      expect((await registry.get(other.id))?.userNotes).toBeUndefined()
+    } finally {
+      await client.close()
+    }
+  })
+
+  it("keeps the canonical send alive through timeout and projects unavailable state", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const agent = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-timeout" })
+    const client = await connectClient(app)
+    try {
+      for (const [id, code] of [
+        ["missing", "agent_not_found"],
+        [agent.id, "agent_host_unavailable"],
+      ]) {
+        const state = await client.callTool({ name: "agent_state", arguments: { agentId: id } })
+        expect(state.isError).toBe(true)
+        expect(state._meta?.["drive-coding/errorCode"]).toBe(code)
+      }
+      expect(agentSessionRegistry.getOrCreateHost).not.toHaveBeenCalled()
+      await agentSessionRegistry.getOrCreateHost(agent.id)
+      const host = agentSessionRegistry.hosts.get(agent.id)
+      if (!host) throw new Error("expected target host")
+      let finishTurn = () => {}
+      const turn = new Promise<void>((resolve) => {
+        finishTurn = resolve
+      })
+      host.prompt.mockImplementationOnce(() => turn)
+      try {
+        const sent = await client.callTool({
+          name: "agent_send",
+          arguments: { agentId: agent.id, timeoutSec: 0.01, prompt: "continue" },
+        })
+        expect(JSON.parse(toolText(sent))).toEqual({ running: true })
+        expect(host.prompt).toHaveBeenCalledExactlyOnceWith(`sess-${agent.id}`, "continue")
+      } finally {
+        finishTurn()
+      }
+    } finally {
+      await client.close()
+    }
+  })
+})
+
+it.each(["session_open", "agent_open"])(
+  "%s leaves spawn failures before an allocated ID in the existing error layer",
+  async (name) => {
+    const { app, orchestrator, agentSessionRegistry } = makeApp()
+    vi.mocked(orchestrator.createAndSpawn).mockRejectedValueOnce(new Error("fixture spawn failed"))
+    const client = await connectClient(app)
+    try {
+      const result = await client.callTool({
+        name,
+        arguments: {
+          [name === "agent_open" ? "cliKind" : "cli"]: "cursor",
+          cwd: "/tmp/mcp-spawn-failure",
+        },
+      })
+      expect(result.isError).toBe(true)
+      expect(result._meta).toBeUndefined()
+      expect(toolText(result)).toBe("fixture spawn failed")
+      expect(orchestrator.createAndSpawn).toHaveBeenCalledOnce()
+      expect(orchestrator.deleteAndKill).not.toHaveBeenCalled()
+      expect(agentSessionRegistry.getOrCreateHost).not.toHaveBeenCalled()
+    } finally {
+      await client.close()
+    }
+  },
+)
+
+it("keeps scope denial ahead of canonical close even with force", async () => {
+  const { app, registry, orchestrator, agentSessionRegistry } = makeApp()
+  const caller = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-close-caller" })
+  const target = await registry.create({ cliKind: "cursor", cwd: "/tmp/mcp-close-target" })
+  const client = await connectClient(app, { [SCOPE_HEADER]: issueToken(caller.id) })
+  setScopePolicyOverride({ close: "deny" })
+  try {
+    for (const [name, idKey] of [
+      ["session_close", "agent"],
+      ["agent_close", "agentId"],
+    ] as const) {
+      const result = await client.callTool({ name, arguments: { [idKey]: target.id, force: true } })
+      expect(result.isError).toBe(true)
+      expect(result._meta).toBeUndefined()
+      expect(JSON.parse(toolText(result))).toMatchObject({ error: "scope-denied" })
+    }
+    expect(orchestrator.deleteAndKill).not.toHaveBeenCalled()
+    expect(agentSessionRegistry.getHost).not.toHaveBeenCalled()
+    expect(await registry.get(target.id)).not.toBeNull()
+  } finally {
+    resetScopePolicyForTests()
+    await client.close()
+  }
 })

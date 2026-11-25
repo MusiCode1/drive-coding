@@ -15,8 +15,8 @@ routes:
   - GET /api/agents/:id/events
   - GET /api/agents/:id/state
   - POST /api/agents/:id/rpc
-mcp_tools: [session_send, session_state]
-docs_version: 1.13.0
+mcp_tools: [session_send, session_state, agent_send, agent_state]
+docs_version: 1.14.0
 updated: 2026-11-25
 ---
 
@@ -27,6 +27,8 @@ absent/zero), the turn keeps running. You need a **pull** or **stream** path to 
 errors, and **`turnState`**.
 
 ## session_state / session_send results (MCP)
+
+The MCP catalog also lists `agent_state` and `agent_send`, whose target input is `agentId`. The examples use `session_state` and `session_send` with `agent`.
 
 **session_state** returns **`host.state`** snapshot fields you request:
 

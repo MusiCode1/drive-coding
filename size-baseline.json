@@ -200,10 +200,10 @@
       "codeLines": 126
     },
     "packages/backend/src/delivery/http-mcp.ts": {
-      "metric": 372,
-      "impurity": 15,
+      "metric": 248,
+      "impurity": 7,
       "class": "mixed",
-      "codeLines": 323
+      "codeLines": 211
     },
     "packages/backend/src/delivery/http-options.ts": {
       "metric": 14,

@@ -18,15 +18,23 @@ routes:
   - POST /api/agents/:id/presence
 mcp_tools:
   - session_list
+  - agent_list
   - session_open
+  - agent_open
   - session_send
+  - agent_send
   - session_state
+  - agent_state
   - session_close
+  - agent_close
   - session_note_set
+  - agent_note_set
   - session_field_set
+  - agent_field_set
   - session_field_delete
-docs_version: 1.12.0
-updated: 2026-11-18
+  - agent_field_delete
+docs_version: 1.14.0
+updated: 2026-11-25
 ---
 
 # Session lifecycle
@@ -55,6 +63,37 @@ Re-use an existing agent from **session_list** instead of spawning duplicates.
 
 HTTP mirrors the same lifecycle: `POST /api/agents` (create), agent-scoped routes under
 `/api/agents/:id/…`, `DELETE /api/agents/:id` (close).
+
+## MCP tool names
+
+Discover the tools and their input schemas with `tools/list`. The workflow above
+uses the legacy names. Use the input schema of the specific tool you call.
+
+| Workflow name | Alternate name | Canonical input or result |
+|---|---|---|
+| `session_list` | `agent_list` | Result items keep `id` and expose `agentNotes`, `agentFields` and `viewerCount`. |
+| `session_open` | `agent_open` | Pass `cliKind` and absolute `cwd`. Optional renamed inputs are `permissionPolicy`, `parentAgentId` and `subscribeOnOpenAgentId`. The canonical URL input is `publicUrl`. The result uses `agentId`. |
+| `session_send` | `agent_send` | The target input is `agentId`. The result is the same in both forms. |
+| `session_state` | `agent_state` | The target input and identity in the result are `agentId`. |
+| `session_close` | `agent_close` | The target input and identity in the result are `agentId`. |
+| `session_subscribe` | `agent_subscribe` | Uses `agentId` and `subscriberAgentId`. |
+| `session_whoami` | `agent_whoami` | Returns `agentId`, `agentNotes` and `agentFields` when available. |
+| `session_surface` | `agent_surface` | Both return the same Markdown prompt. |
+| `session_note_set` | `agent_note_set` | Both replace the caller's note using `text`. Empty text clears it. |
+| `session_field_set` | `agent_field_set` | Both set one field using `key` and `value`. |
+| `session_field_delete` | `agent_field_delete` | Both delete one field using `key`. |
+
+If you explicitly call `agent_open`, use the returned `agentId` as the `agent`
+argument in the recommended `session_state`, `session_send` and `session_close`
+workflow. Apply config with `session_send.sets` using IDs from the live catalog.
+
+Example workflow inputs (with a synthetic agent ID and workspace):
+
+```text
+session_open  {"cli":"cursor","cwd":"/path/to/workspace"}
+session_send  {"agent":"00000000-0000-4000-8000-000000000001","prompt":"Review the plan","sets":{"<option-id>":"<allowed-value>"}}
+session_close {"agent":"00000000-0000-4000-8000-000000000001"}
+```
 
 ## Open (spawn)
 
@@ -101,9 +140,7 @@ Closing an agent — `DELETE /api/agents/:id`, **session_close**, or `drive-codi
 **`parentAgentId` are not** closed with it: they keep running and you must close each one
 yourself (`agent-orchestrator.ts:260-284` · `http-agents.ts:135-142`).
 
-Scope note: MCP tool copy states **no ownership check on session_close** (any id may be
-closed), while server instructions also describe scoped writes for subtree — see report
-§11 divergence 1; stage-3 scope doc is authoritative for guard rails.
+MCP close checks write scope before checking the agent and turn state. See [identity and scopes](60-identity-and-scopes.md).
 
 ## Viewer groups and liveness
 
@@ -145,7 +182,7 @@ valid v1 envelope. Tags inside prose or examples are **not** detected as envelop
 valid envelope pasted as the whole message parses the same way — still **not** proof of identity
 or user approval. The UI may show envelope XML as plain text today — see `render-contract`.
 
-## Session memory — your own note and fields
+## Agent memory — your own note and fields
 
 Three MCP tools let an agent keep memory on **its own** agent record, so it outlives a
 compaction or a reconnect. They take no agent id: the caller is identified by the
@@ -164,7 +201,7 @@ Keys are trimmed; an empty key is rejected. Where the memory shows up:
   `sessionFields`) — and in `session_whoami`;
 - in the UI: the note as the session memo, the fields in the side panel's **Fields** list;
 - in the agent's own surface prompt (hook, `GET /api/agent-prompt`, `session_surface`), as a
-  `# Session memory` section with `## Notes` and `## Fields` — so the agent reads it back.
+  `# Agent memory` section with `## Notes` and `## Fields` — so the agent reads it back.
 
 The user can edit the note from the UI too (`PATCH /api/agents/:id` accepts `userNotes`), so
 treat it as shared, not private to the agent.
