@@ -50,7 +50,7 @@ event remains reserved for protocol compatibility. This server never emits it.
 |---|---|---|
 | **GET …/history** | No host — `{ error: "Agent connection not found" }` | Bad **`fromMessage`**; unknown **`before`** seq; empty **`before=`** or **`tail=`**; **`maxBytes`** without `tail`/`before` or invalid; `tail` + `before` / `fromMessage` conflicts |
 | **GET …/state** | Same 404 body | — |
-| **GET …/events?snapshot=** | No host (404 before attach) | Invalid `snapshot` (not `full` or `meta`) |
+| **GET …/events?snapshot=** | No host — **404 after** a valid `snapshot` passes parsing | Invalid `snapshot` (not `full` or `meta`); empty/missing ⇒ `full` |
 
 **404 on host routes ≠ "agent UUID unknown"** — check **`GET /api/agents/:id`** for registry truth.
 

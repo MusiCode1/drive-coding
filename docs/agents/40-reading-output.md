@@ -84,7 +84,7 @@ GET /api/agents/:id/events?snapshot=full
 GET /api/agents/:id/events?snapshot=meta
 ```
 
-- **`snapshot=meta`** — opening frame omits message history and includes `historyOmitted: { messageCount }`; updates after `session/load` use `_drive/reset` plus session tail only (no messages). Same on the [session WebSocket](97-transports.md) via `?snapshot=meta`. Invalid values → **400**; WebSocket closes with **4400**.
+- **`snapshot=meta`** — opening frame omits message history and includes `historyOmitted: { messageCount }`; updates after `session/load` prepend `_drive/reset` plus session tail only (no messages in that frame). **Replay after a load still arrives as live per-message updates** on the same stream — clients that want an empty transcript until they fetch pages must hold a window or reload (slice 1 FE: `HistorySync`). Same contract on the [session WebSocket](97-transports.md) via `?snapshot=meta`. Invalid values → **400**; WebSocket closes with **4400**. On `/events`, invalid `snapshot` is checked before **404** (unknown agent still gets **400**); empty `snapshot=` is treated as `full`.
 - Missing or empty `snapshot` → **full** (backward compatible).
 
 Protocol (event names):
