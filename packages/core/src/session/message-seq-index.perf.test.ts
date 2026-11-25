@@ -9,9 +9,9 @@ describe("wire seq index fold performance", () => {
   it(`folding ${N} whole messages with seq stays within baseline scale`, () => {
     let state = createInitialSessionState({ sessionId: "perf" })
     const updates = Array.from({ length: N }, (_, i) => ({
-      sessionUpdate: "user_message" as const,
+      sessionUpdate: "user_message_chunk" as const,
       messageId: `mid-${i}`,
-      content: [{ type: "text" as const, text: `line ${i}` }],
+      content: { type: "text" as const, text: `line ${i}` },
       _meta: { [SEQ_META_KEY]: i },
     }))
     const start = performance.now()

@@ -9,7 +9,12 @@
  */
 import { applyPatch } from "./apply-patch"
 import { recordCarried } from "./carried"
-import { lookupWireSeqIndex, syncWireSeqIndex, wireSeqSlotTaken } from "./message-seq-index"
+import {
+  lookupWireSeqIndex,
+  syncWireSeqIndex,
+  syncWireSeqIndexRaw,
+  wireSeqSlotTaken,
+} from "./message-seq-index"
 import { SEQ_META_KEY } from "./to-session-update"
 import {
   applyToolOutputDelta,
@@ -702,15 +707,13 @@ function handleWholeMessage(
     )
     const addPatch: Patch = { version: newVersion, op: "add-message", message: msg }
     const added = applyPatch(state, addPatch)
-    return {
-      state: {
-        ...added,
-        nextSegmentSeq,
-        turnState,
-        ...(messageTimestamps !== state.messageTimestamps ? { messageTimestamps } : {}),
-      },
-      patches: [addPatch],
+    const withTs = {
+      ...added,
+      nextSegmentSeq,
+      turnState,
+      ...(messageTimestamps !== state.messageTimestamps ? { messageTimestamps } : {}),
     }
+    return { state: syncWireSeqIndexRaw(state, withTs, "add", msg), patches: [addPatch] }
   }
 
   const old = state.messages[idx] as SessionMessage & { role: "user" | "thought" | "assistant" }
