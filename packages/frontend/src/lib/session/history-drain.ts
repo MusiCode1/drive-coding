@@ -5,6 +5,10 @@ import type { WireUpdateBatch } from "./wire/frame-decode"
 import { connectionOf } from "./wire/frame-reader"
 
 type Queued = { batch: WireUpdateBatch; connection: number }
+type WindowUpdates = {
+  hold(update: WireUpdateBatch["updates"][number], seq: number, version: number): boolean
+  covered(seq: number, version: number): boolean
+}
 
 export class HistoryGate {
   #open = true
@@ -40,6 +44,18 @@ export class HistoryGate {
     this.#listeners.add(notify)
     return () => this.#listeners.delete(notify)
   }
+
+  waitOrFail(): Promise<void> {
+    if (this.isOpen) return Promise.resolve()
+    if (this.failed) return Promise.reject(new Error("History gate failed"))
+    return new Promise((resolve, reject) => {
+      const unsubscribe = this.onChange(() => {
+        unsubscribe()
+        if (this.failed) reject(new Error("History gate failed"))
+        else resolve()
+      })
+    })
+  }
 }
 
 export function filterBatchByWindow(
@@ -47,17 +63,20 @@ export function filterBatchByWindow(
   window: HistoryWindow,
   warned: Set<number>,
   port: Pick<HistorySyncPort, "warn" | "emit" | "getState">,
+  older?: WindowUpdates,
 ): WireUpdateBatch | null {
   if (batch.updates.length === 0) return batch
   const kept: typeof batch.updates = []
   let droppedActivity = false
   for (const update of batch.updates) {
     const seq = seqFromUpdate(update)
+    if (seq !== null && older?.covered(seq, batch.version)) continue
     if (
       isOutsideWindow(seq, window) &&
       !port.getState().messages.some(({ id }) => id === `m_${seq}`)
     ) {
-      if (seq !== null && !warned.has(seq)) {
+      const held = seq !== null && older?.hold(update, seq, batch.version)
+      if (!held && seq !== null && !warned.has(seq)) {
         warned.add(seq)
         port.warn("history-outside-window", { seq })
       }
@@ -109,6 +128,7 @@ export async function drainHistoryUpdates(
   signal: AbortSignal,
   isMetaMode: () => boolean,
   onReset: () => void,
+  older?: WindowUpdates,
 ): Promise<void> {
   const queue: Queued[] = []
   const reader = stream.getReader()
@@ -129,7 +149,7 @@ export async function drainHistoryUpdates(
   const apply = (item: Queued) => {
     if (!current(item)) return
     try {
-      const filtered = filterBatchByWindow(item.batch, window(), warnedOutside, port)
+      const filtered = filterBatchByWindow(item.batch, window(), warnedOutside, port, older)
       if (filtered) applyBatch(filtered, port)
       else port.replace(port.getState(), item.batch.version)
     } catch (error) {

@@ -5,7 +5,7 @@ import type { HistoryState } from "$lib/view-models/history-state.svelte"
 let { history }: { history: HistoryState } = $props()
 const t = getI18n().t
 const showBar = $derived(history.window.hasMore || history.error !== null)
-const disabled = $derived(history.reloading)
+const disabled = $derived(history.reloading || history.loadingOlder)
 </script>
 
 {#if showBar}
@@ -20,14 +20,13 @@ const disabled = $derived(history.reloading)
         {t("chat.history.retry")}
       </button>
     {:else if history.window.hasMore}
-      <span class="text-muted-foreground">{t("chat.history.hasOlder")}</span>
       <button
         type="button"
         class="underline"
         disabled={disabled}
-        onclick={() => void history.loadFull()}
+        onclick={() => void history.loadOlder()}
       >
-        {t("chat.history.loadAll")}
+        {t("chat.history.hasOlder")}
       </button>
     {/if}
   </div>

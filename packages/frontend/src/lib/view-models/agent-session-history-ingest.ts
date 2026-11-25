@@ -87,7 +87,6 @@ export async function consumeViewPatches(
         deps.setIsLoadingHistory(value.historyState.reloading)
       }
       if (emission.activity === true) deps.noteAgentActivity()
-      if (emission.history === "full") deps.setIsLoadingHistory(true)
 
       const patches = emission.patches
       const resetPatches = patches.filter(
@@ -104,7 +103,7 @@ export async function consumeViewPatches(
         const bumpEpoch =
           attachWindow ||
           emission.history === "tail" ||
-          emission.history === "full" ||
+          emission.history === "older" ||
           emission.history === "reset"
         if (bumpEpoch) {
           attachWindow = false
@@ -121,10 +120,6 @@ export async function consumeViewPatches(
       }
 
       deps.syncFromViewState(view.state)
-
-      if (emission.history === "full" && !value?.historyState?.reloading) {
-        deps.setIsLoadingHistory(false)
-      }
     }
   } catch {
     // stream closed or aborted

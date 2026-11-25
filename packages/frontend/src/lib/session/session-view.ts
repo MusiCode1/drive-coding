@@ -30,12 +30,14 @@ export type ViewEmission = {
   terminal?: true
   /** Crash reason fetched by the view after the session stream ends. */
   terminalError?: string
-  history?: "tail" | "full" | "reload" | "reset"
+  history?: "tail" | "older" | "reload" | "reset"
   activity?: true
   historyState?: {
     window: HistoryWindowState
     error: string | null
     reloading: boolean
+    loadingOlder: boolean
+    olderError: string | null
   }
 }
 
@@ -43,7 +45,9 @@ export type HistoryController = {
   readonly window: HistoryWindowState
   readonly error: string | null
   readonly reloading: boolean
-  loadFull(): Promise<void>
+  readonly loadingOlder: boolean
+  readonly olderError: string | null
+  loadOlder(): Promise<void>
   retry(): Promise<void>
 }
 

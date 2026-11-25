@@ -14,7 +14,7 @@ afterEach(() => {
 })
 
 describe("HistoryEdge", () => {
-  it("shows load-all when hasMore", () => {
+  it("shows the earlier-messages button when hasMore", () => {
     const history = new HistoryState()
     history.window = { firstSeq: 1, lastSeq: 5, hasMore: true, watermark: 0 }
     const target = document.createElement("div")
@@ -22,13 +22,13 @@ describe("HistoryEdge", () => {
     try {
       flushSync()
       expect(target.textContent).toContain("chat.history.hasOlder")
-      expect(target.textContent).toContain("chat.history.loadAll")
+      expect(target.querySelector("button")?.textContent).toContain("chat.history.hasOlder")
     } finally {
       unmount(app)
     }
   })
 
-  it("disables Load all while reloading and enables it again after hydration", () => {
+  it("disables the earlier-messages button while reloading and enables it again after hydration", () => {
     const history = new HistoryState()
     history.window = { firstSeq: 1, lastSeq: 5, hasMore: true, watermark: 0 }
     const target = document.createElement("div")

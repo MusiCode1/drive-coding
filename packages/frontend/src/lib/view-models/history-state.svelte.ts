@@ -11,6 +11,8 @@ export class HistoryState {
   window = $state<HistoryWindowState>(emptyWindow())
   error = $state<string | null>(null)
   reloading = $state(false)
+  loadingOlder = $state(false)
+  olderError = $state<string | null>(null)
   #controller: HistoryController | null = null
 
   bind(controller: HistoryController): void {
@@ -22,25 +24,27 @@ export class HistoryState {
     this.window = emptyWindow()
     this.error = null
     this.reloading = false
+    this.loadingOlder = false
+    this.olderError = null
     this.#controller = null
   }
 
   pullFromController(): void {
     const c = this.#controller
     if (!c) return
-    this.window = { ...c.window }
-    this.error = c.error
-    this.reloading = c.reloading
+    this.applyEmission(c)
   }
 
   applyEmission(state: NonNullable<ViewEmission["historyState"]>): void {
     this.window = { ...state.window }
     this.error = state.error
     this.reloading = state.reloading
+    this.loadingOlder = state.loadingOlder
+    this.olderError = state.olderError
   }
 
-  loadFull(): Promise<void> {
-    return this.#controller?.loadFull() ?? Promise.resolve()
+  loadOlder(): Promise<void> {
+    return this.#controller?.loadOlder() ?? Promise.resolve()
   }
 
   retry(): Promise<void> {

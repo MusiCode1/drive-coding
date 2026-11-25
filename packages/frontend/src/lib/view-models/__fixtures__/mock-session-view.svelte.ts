@@ -35,7 +35,9 @@ export class MockSessionView implements SessionView {
     window: { firstSeq: null, lastSeq: null, hasMore: false, watermark: 0 },
     error: null,
     reloading: false,
-    loadFull: async () => {},
+    loadingOlder: false,
+    olderError: null,
+    loadOlder: async () => {},
     retry: async () => {},
   }
 
