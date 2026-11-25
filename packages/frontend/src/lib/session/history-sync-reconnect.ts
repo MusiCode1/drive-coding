@@ -1,11 +1,16 @@
 import type { SessionState } from "@drive-coding/core/session"
+import type { HistoryPreserve } from "./history-preserve"
 import { shouldReloadOnReconnect } from "./history-reload"
 import { emitHistoryState, legacyReconnect } from "./history-sync-emit"
 import { triggerHistoryReload } from "./history-sync-trigger"
 import { defaultWindow } from "./history-window"
 import type { OpeningFrame } from "./wire/frame-decode"
 
-type ReloadInput = { tag: "reload" | "reset"; seed: SessionState }
+export type ReloadInput = {
+  tag: "reload" | "reset"
+  seed: SessionState
+  preserve?: HistoryPreserve
+}
 type ReloadOptions = Omit<
   Parameters<typeof triggerHistoryReload>[0],
   keyof ReloadInput | "setError" | "setReloading" | "signal"
@@ -18,9 +23,9 @@ export class HistoryReload {
 
   constructor(private readonly opts: ReloadOptions) {}
 
-  run(input: ReloadInput, signal: AbortSignal): Promise<boolean> {
+  async run(input: ReloadInput, signal: AbortSignal): Promise<boolean> {
     this.input = input
-    return triggerHistoryReload({
+    const success = await triggerHistoryReload({
       ...this.opts,
       ...input,
       signal,
@@ -31,6 +36,8 @@ export class HistoryReload {
         this.reloading = reloading
       },
     })
+    if (success && this.input === input) this.input = undefined
+    return success
   }
 
   finishLegacy(opening: OpeningFrame, begin: () => void, clearFloors: () => void): void {

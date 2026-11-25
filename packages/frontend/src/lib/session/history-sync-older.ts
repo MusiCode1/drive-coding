@@ -63,6 +63,16 @@ export class OlderHistory {
     this.#floors = []
   }
 
+  retainFloors(before?: number): void {
+    if (before === undefined) {
+      this.clearFloors()
+      return
+    }
+    this.#floors = this.#floors
+      .filter((floor) => floor.firstSeq < before)
+      .map((floor) => ({ ...floor, before: Math.min(floor.before, before) }))
+  }
+
   hold(update: WireSessionUpdate, seq: number, version: number): boolean {
     const held = this.#held
     if (!held) return false

@@ -416,6 +416,101 @@ describe.each(["http", "ws"] as const)("history transport contract — %s", (tra
     expect(host.requests.slice(1).every(({ url }) => url.searchParams.has("tail"))).toBe(true)
   })
 
+  it.each([
+    "preserve",
+    "retry",
+    "gap",
+    "different identity",
+    "unfinished tool",
+    "active without user",
+    "active prefix",
+    "reset",
+  ] as const)("handles loaded pages after reconnect (%s)", async (scenario) => {
+    const tool =
+      scenario === "unfinished tool" ? toolUpdate(session(), "in_progress").state : session()
+    const old = ["earlier", "middle", "boundary"].reduce(
+      (state, text) => addMessage(state, text).state,
+      tool,
+    )
+    const active = scenario === "active without user" || scenario === "active prefix"
+    const initial = {
+      ...old,
+      turnState: active ? ("responding" as const) : ("idle" as const),
+      messages: old.messages.map((message, index) =>
+        message.role !== "tool" && (scenario === "active without user" || (active && index !== 0))
+          ? { ...message, role: "assistant" as const }
+          : message,
+      ),
+    }
+    const boundary = initial.messages.at(-1)
+    if (!boundary || boundary.role === "tool") throw new Error("Missing transcript boundary")
+    const boundarySeq = Number(boundary.id.slice(2))
+    host.history(tail(initial, 1), beforePage(initial, boundarySeq, 4096))
+    view = await host.connect(initial)
+    await view.history.loadOlder()
+    expect(view.state.messages).toHaveLength(initial.messages.length)
+    const current = {
+      ...initial,
+      version: initial.version + 2,
+      messages: initial.messages.with(-1, {
+        ...boundary,
+        messageId: scenario === "different identity" ? "replacement" : boundary.messageId,
+        segments: [{ id: "s_0", text: "refreshed boundary" }],
+      }),
+    }
+    const next = scenario === "gap" ? updated(current, "after a gap").state : current
+    host.history(scenario === "retry" ? fail(404) : tail(next, 1))
+    if (scenario === "reset") {
+      host.feed(resetFrame(next))
+      await tick()
+    } else {
+      await host.reconnect(next)
+    }
+    if (scenario === "retry") {
+      expect(view.history.error).toBeTruthy()
+      host.history(tail(next, 1))
+      await view.history.retry()
+    }
+    const preserved = scenario === "preserve" || scenario === "retry"
+    expect(view.state.messages.map(({ id }) => id)).toEqual(
+      (preserved ? initial.messages : next.messages.slice(-1)).map(({ id }) => id),
+    )
+    expect(view.history.window.hasMore).toBe(!preserved)
+    const last = view.state.messages.at(-1)
+    if (preserved)
+      expect(last?.role !== "tool" && last?.segments[0]?.text).toBe("refreshed boundary")
+  })
+
+  it("clears preservation input after a successful reload", async () => {
+    const initial = transcript("earlier", "middle", "boundary")
+    host.history(tail(initial, 1), beforePage(initial, 2, 4096))
+    view = await host.connect(initial)
+    await view.history.loadOlder()
+    const next = { ...initial, version: initial.version + 1 }
+    host.history(tail(next, 1))
+    await host.reconnect(next)
+    expect(view.state.messages).toHaveLength(3)
+    host.history(tail(next, 1))
+    await view.history.retry()
+    expect(view.state.messages.map(({ id }) => id)).toEqual(["m_2"])
+    expect(view.history.window.firstSeq).toBe(2)
+  })
+
+  it("uses the actual last live message as the overlap boundary", async () => {
+    const initial = transcript("older", "middle", "initial tail")
+    host.history(tail(initial, 1), beforePage(initial, 2, 4096))
+    view = await host.connect(initial)
+    await view.history.loadOlder()
+    const live = updated(initial, "live after opening")
+    host.feed(live.frame)
+    await tick()
+    expect(view.history.window.lastSeq).toBe(2)
+    const next = { ...live.state, version: live.state.version + 1 }
+    host.history(tail(next, 1))
+    await host.reconnect(next)
+    expect(view.state.messages.map(({ id }) => id)).toEqual(["m_0", "m_1", "m_2", "m_3"])
+  })
+
   it("requests the earlier page after a legacy reconnect keeps the window", async () => {
     const state = transcript("earlier", "tail")
     host.history(tail(state, 1))
