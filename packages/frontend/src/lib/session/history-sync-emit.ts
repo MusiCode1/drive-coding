@@ -8,17 +8,19 @@ export type HistoryEmitCtx = {
   window: HistoryWindow
   error: string | null
   reloading: boolean
+  loadingOlder: boolean
+  olderError: string | null
 }
 
 export function applyEmitHistory(
   port: HistorySyncPort,
   ctx: HistoryEmitCtx,
-  tag: ViewEmission["history"],
+  tag: Exclude<ViewEmission["history"], "older">,
   watermark: number,
   page?: SnapshotPayload["page"],
 ): HistoryWindow {
   const window = windowFromPayload(watermark, page)
-  if (page === undefined && tag !== "full") port.warn("history-page-missing")
+  if (page === undefined) port.warn("history-page-missing")
   const state = port.getState()
   const patches = state.messages.length > 0 || tag !== "tail" ? [snapshotResetPatch(state)] : []
   if (patches.length === 0 && !window.hasMore) return window
@@ -26,7 +28,7 @@ export function applyEmitHistory(
     patches,
     updates: [],
     history: tag,
-    historyState: { window, error: ctx.error, reloading: ctx.reloading },
+    historyState: { ...ctx, window },
   })
   return window
 }
@@ -35,16 +37,17 @@ export function emitHistoryState(port: HistorySyncPort, ctx: HistoryEmitCtx): vo
   port.emit({
     patches: [],
     updates: [],
-    historyState: { window: ctx.window, error: ctx.error, reloading: ctx.reloading },
+    historyState: ctx,
   })
 }
 
-export function legacyReconnect(port: HistorySyncPort, snapshot: SessionState): void {
+export function legacyReconnect(port: HistorySyncPort, snapshot: SessionState): boolean {
   const sessionChanged = snapshot.sessionId !== port.getSessionId()
-  if (!sessionChanged && snapshot.version <= port.getLastVersion()) return
+  if (!sessionChanged && snapshot.version <= port.getLastVersion()) return false
   port.replace(snapshot, snapshot.version)
   port.setSessionId(snapshot.sessionId)
   port.resetReadMark()
   port.emit({ patches: [snapshotResetPatch(snapshot)], updates: [] })
   port.reconnected()
+  return true
 }

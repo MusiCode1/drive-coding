@@ -3,18 +3,17 @@ import type { SSEReaderOptions } from "./reader-types"
 
 function historyQueryToSearchParams(query: HistoryQuery): URLSearchParams {
   const params = new URLSearchParams()
-  if ("full" in query && query.full) {
-    return params
-  }
   if ("tail" in query && query.tail) {
     params.set("tail", "1")
     params.set("maxBytes", String(query.maxBytes))
     return params
   }
-  const before = query as Extract<HistoryQuery, { before: number }>
-  params.set("before", String(before.before))
-  params.set("maxBytes", String(before.maxBytes))
-  return params
+  if ("before" in query && typeof query.before === "number") {
+    params.set("before", String(query.before))
+    params.set("maxBytes", String(query.maxBytes))
+    return params
+  }
+  throw new Error("History requests require tail or before")
 }
 
 export function createHttpHistoryPipe(
@@ -27,7 +26,7 @@ export function createHttpHistoryPipe(
   return {
     async get(query, signal) {
       const qs = historyQueryToSearchParams(query).toString()
-      const url = qs.length > 0 ? `${historyUrl}?${qs}` : historyUrl
+      const url = `${historyUrl}?${qs}`
       const response = await doFetch(url, { headers, signal })
       let body: unknown
       try {

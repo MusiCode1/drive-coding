@@ -1,4 +1,11 @@
+import { tick } from "svelte"
 import type { HistoryController, HistoryWindowState, ViewEmission } from "$lib/session/session-view"
+
+type OlderObserver = {
+  onApplying(): void
+  onApplied(): void
+  reset(): void
+}
 
 const emptyWindow = (): HistoryWindowState => ({
   firstSeq: null,
@@ -11,6 +18,10 @@ export class HistoryState {
   window = $state<HistoryWindowState>(emptyWindow())
   error = $state<string | null>(null)
   reloading = $state(false)
+  loadingOlder = $state(false)
+  olderError = $state<string | null>(null)
+  shiftNext = $state(false)
+  #olderObserver?: OlderObserver
   #controller: HistoryController | null = null
 
   bind(controller: HistoryController): void {
@@ -19,28 +30,54 @@ export class HistoryState {
   }
 
   resetFields(): void {
+    this.resetViewport()
     this.window = emptyWindow()
     this.error = null
     this.reloading = false
+    this.loadingOlder = false
+    this.olderError = null
     this.#controller = null
+  }
+
+  observeOlder(observer: OlderObserver): () => void {
+    this.#olderObserver = observer
+    return () => {
+      if (this.#olderObserver === observer) this.#olderObserver = undefined
+    }
+  }
+
+  resetViewport(): void {
+    this.shiftNext = false
+    this.#olderObserver?.reset()
+  }
+
+  onOlderApplying(): void {
+    this.#olderObserver?.onApplying()
+    this.shiftNext = true
+  }
+
+  async onOlderApplied(): Promise<void> {
+    this.#olderObserver?.onApplied()
+    await tick()
+    this.shiftNext = false
   }
 
   pullFromController(): void {
     const c = this.#controller
     if (!c) return
-    this.window = { ...c.window }
-    this.error = c.error
-    this.reloading = c.reloading
+    this.applyEmission(c)
   }
 
   applyEmission(state: NonNullable<ViewEmission["historyState"]>): void {
     this.window = { ...state.window }
     this.error = state.error
     this.reloading = state.reloading
+    this.loadingOlder = state.loadingOlder
+    this.olderError = state.olderError
   }
 
-  loadFull(): Promise<void> {
-    return this.#controller?.loadFull() ?? Promise.resolve()
+  loadOlder(): Promise<void> {
+    return this.#controller?.loadOlder() ?? Promise.resolve()
   }
 
   retry(): Promise<void> {

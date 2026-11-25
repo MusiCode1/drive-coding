@@ -89,7 +89,13 @@ async function connectRemoteHarness(
   const fetchHistory = async (url: string) => {
     const { pathname, searchParams } = new URL(url, base.baseUrl)
     if (pathname.endsWith("/history")) {
-      const range = searchParams.has("tail") ? { tail: true as const, maxBytes } : undefined
+      const before = searchParams.get("before")
+      const range =
+        before !== null
+          ? { before: Number(before), maxBytes }
+          : searchParams.has("tail")
+            ? { tail: true as const, maxBytes }
+            : undefined
       return Response.json(snapshotPayload(liveState(), undefined, { range }), { status: 200 })
     }
     throw new Error(`Unexpected HTTP request: ${url}`)
@@ -222,8 +228,8 @@ async function createRemoteHarness(transport: SessionTransport): Promise<Contrac
 
 // ── shared contract ──────────────────────────────────────────────────────────
 
-describe.each(["http", "ws"] as const)("full history order — %s", (transport) => {
-  it("replaces the visible tail in the order of a full snapshot", async () => {
+describe.each(["http", "ws"] as const)("paged history order — %s", (transport) => {
+  it("prepends all pages in the order of a folded full snapshot", async () => {
     let snapshot = createInitialSessionState({ sessionId: "order" })
     for (const text of ["first", "second", "last"]) {
       snapshot = reduce(snapshot, {
@@ -242,8 +248,14 @@ describe.each(["http", "ws"] as const)("full history order — %s", (transport) 
     )
     try {
       expect(view.state.messages.map(({ id }) => id)).toEqual(["m_2"])
-      await view.history.loadFull()
-      expect(view.state.messages.map(({ id }) => id)).toEqual(snapshot.messages.map(({ id }) => id))
+      await view.history.loadOlder()
+      expect(view.state.messages.map(({ id }) => id)).toEqual(["m_1", "m_2"])
+      await view.history.loadOlder()
+      const folded = snapshotPayload(snapshot).updates.reduce(
+        (state, update) => reduce(state, update).state,
+        createInitialSessionState({ sessionId: snapshot.sessionId }),
+      )
+      expect(view.state.messages.map(({ id }) => id)).toEqual(folded.messages.map(({ id }) => id))
       expect(view.history.window.hasMore).toBe(false)
     } finally {
       await view.close()

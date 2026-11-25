@@ -1,12 +1,10 @@
-import type { SessionState } from "@drive-coding/core/session"
 import { drainHistoryUpdates, HistoryGate } from "./history-drain"
 import type { SettledGet } from "./history-open"
 import { fetchTail } from "./history-reload"
 import { finishHistoryOpen } from "./history-sync-finish"
-import { loadFullHistory } from "./history-sync-load"
+import { OlderHistory } from "./history-sync-older"
 import type { HistorySyncPort } from "./history-sync-port"
-import { applyLegacyReconnect, planReconnect } from "./history-sync-reconnect"
-import { triggerHistoryReload } from "./history-sync-trigger"
+import { HistoryReload, planReconnect, type ReloadInput } from "./history-sync-reconnect"
 import { defaultWindow, type HistoryWindow } from "./history-window"
 import type { HistoryController } from "./session-view"
 import type { OpeningFrame } from "./wire/frame-decode"
@@ -16,10 +14,10 @@ export class HistorySync implements HistoryController {
   readonly #port: HistorySyncPort
   readonly #pipe: SessionPipe
   readonly #sleep: (ms: number) => Promise<void>
+  readonly #older: OlderHistory
+  readonly #reload: HistoryReload
 
   #window: HistoryWindow = { firstSeq: null, lastSeq: null, hasMore: false, watermark: 0 }
-  #error: string | null = null
-  #reloading = false
   #gate = new HistoryGate()
   #activeConnection = 0
   #genAbort = new AbortController()
@@ -29,25 +27,47 @@ export class HistorySync implements HistoryController {
   #pendingGet?: Promise<SettledGet>
   #opening = false
   #nextOpening?: { frame: OpeningFrame; connection: number }
-  #reloadInput?: { tag: "reload" | "reset"; seed: SessionState }
 
   constructor(port: HistorySyncPort, pipe: SessionPipe, sleep: (ms: number) => Promise<void>) {
     this.#port = port
     this.#pipe = pipe
     this.#sleep = sleep
+    const historyCtx = {
+      port,
+      history: pipe.history,
+      gate: this.#gate,
+      emitCtx: () => this.#emitCtx(),
+      setWindow: (window: HistoryWindow) => {
+        this.#window = window
+      },
+    }
+    this.#older = new OlderHistory({ ...historyCtx, signal: () => this.#genAbort.signal })
+    this.#reload = new HistoryReload({
+      ...historyCtx,
+      sleep,
+      settleFloors: (before) => this.#older.retainFloors(before),
+    })
   }
 
   get window(): HistoryWindow {
     return this.#window
   }
   get error(): string | null {
-    return this.#error
+    return this.#reload.error
   }
   get reloading(): boolean {
-    return this.#reloading
+    return this.#reload.reloading
   }
-  #beginRequest(): AbortController {
+  get loadingOlder(): boolean {
+    return this.#older.loadingOlder
+  }
+  get olderError(): string | null {
+    return this.#older.olderError
+  }
+  #beginRequest(clearFloors = true): AbortController {
     this.#genAbort.abort()
+    this.#older.cancel()
+    if (clearFloors) this.#older.clearFloors()
     this.#genAbort = new AbortController()
     return this.#genAbort
   }
@@ -97,6 +117,7 @@ export class HistorySync implements HistoryController {
       () => {
         void this.handleDriveReset()
       },
+      this.#older,
     )
   }
 
@@ -105,34 +126,20 @@ export class HistorySync implements HistoryController {
     this.#nextOpening = undefined
     this.#pendingGet = undefined
     this.#genAbort.abort()
+    this.#older.cancel()
+    this.#older.clearFloors()
     this.#drainAbort?.abort()
     this.#gate.markFailed()
   }
 
-  async loadFull(): Promise<void> {
-    if (this.#reloading) return
-    await loadFullHistory({
-      port: this.#port,
-      history: this.#pipe.history,
-      gate: this.#gate,
-      signal: this.#beginRequest().signal,
-      emitCtx: () => this.#emitCtx(),
-      setReloading: (v) => {
-        this.#reloading = v
-      },
-      setError: (e) => {
-        this.#error = e
-      },
-      setWindow: (w) => {
-        this.#window = w
-      },
-    })
+  loadOlder(): Promise<void> {
+    return this.#older.load()
   }
 
   async retry(): Promise<void> {
-    const retry = this.#reloadInput ?? { tag: "reload", seed: this.#port.getState() }
-    this.#error = null
-    await this.#triggerReload(retry.tag, retry.seed)
+    const retry = this.#reload.input ?? { tag: "reload", seed: this.#port.getState() }
+    this.#reload.error = null
+    await this.#triggerReload(retry)
   }
 
   async handleReconnected(opening: OpeningFrame, connectionId: number): Promise<void> {
@@ -144,51 +151,43 @@ export class HistorySync implements HistoryController {
     const action = planReconnect(opening, this.#port.getSessionId(), this.#port.getLastVersion())
     this.#metaMode = opening.historyOmitted !== undefined
     if (action === "legacy") {
-      this.#genAbort.abort()
-      applyLegacyReconnect(this.#port, opening)
+      this.#reload.finishLegacy(
+        opening,
+        () => this.#beginRequest(false),
+        () => this.#older.clearFloors(),
+      )
       return
     }
     if (action === "noop") return
     this.#port.resetReadMark()
-    if (await this.#triggerReload(action, opening.state)) this.#port.reconnected()
+    const preserve =
+      action === "reload" ? { state: this.#port.getState(), window: this.#window } : undefined
+    if (await this.#triggerReload({ tag: action, seed: opening.state, preserve }))
+      this.#port.reconnected()
   }
 
   async handleDriveReset(): Promise<void> {
     if (!this.#metaMode) return
     this.#window = defaultWindow(this.#port.getLastVersion())
-    this.#error = null
+    this.#reload.error = null
     this.#warnedOutside.clear()
-    await this.#triggerReload("reset", this.#port.getState())
+    await this.#triggerReload({ tag: "reset", seed: this.#port.getState() })
   }
 
   setConnectionId(id: number): void {
     this.#activeConnection = id
   }
 
-  async #triggerReload(tag: "reload" | "reset", seed: SessionState): Promise<boolean> {
-    this.#reloadInput = { tag, seed }
-    return triggerHistoryReload({
-      port: this.#port,
-      history: this.#pipe.history,
-      gate: this.#gate,
-      signal: this.#beginRequest().signal,
-      sleep: this.#sleep,
-      emitCtx: () => this.#emitCtx(),
-      setWindow: (w) => {
-        this.#window = w
-      },
-      setReloading: (v) => {
-        this.#reloading = v
-      },
-      setError: (e) => {
-        this.#error = e
-      },
-      tag,
-      seed,
-    })
+  async #triggerReload(input: ReloadInput): Promise<boolean> {
+    return this.#reload.run(input, this.#beginRequest(input.preserve === undefined).signal)
   }
 
   #emitCtx(): import("./history-sync-emit").HistoryEmitCtx {
-    return { window: this.#window, error: this.#error, reloading: this.#reloading }
+    return {
+      window: this.#window,
+      error: this.error,
+      reloading: this.reloading,
+      ...this.#older.fields(),
+    }
   }
 }
