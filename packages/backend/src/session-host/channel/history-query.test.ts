@@ -26,4 +26,28 @@ describe("parseHistoryQuery", () => {
     const r = parseHistoryQuery((k) => (k === "maxBytes" ? "1000" : undefined))
     expect(r.ok).toBe(false)
   })
+
+  it("rejects empty before", () => {
+    const r = parseHistoryQuery((k) =>
+      k === "before" ? "" : k === "maxBytes" ? "1000" : undefined,
+    )
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.body).toEqual({ error: "before must be a non-negative seq" })
+  })
+
+  it("rejects tail=1 without maxBytes", () => {
+    const r = parseHistoryQuery((k) => (k === "tail" ? "1" : undefined))
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.body).toEqual({ error: "maxBytes is required with tail or before" })
+  })
+
+  it("clamps large maxBytes", () => {
+    const r = parseHistoryQuery((k) =>
+      k === "tail" ? "1" : k === "maxBytes" ? "10000000" : undefined,
+    )
+    expect(r.ok).toBe(true)
+    if (r.ok && r.opts.range && "tail" in r.opts.range) {
+      expect(r.opts.range.maxBytes).toBeLessThanOrEqual(1_048_576)
+    }
+  })
 })

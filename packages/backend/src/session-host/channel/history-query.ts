@@ -24,6 +24,9 @@ export function parseHistoryQuery(get: (key: string) => string | undefined): His
     return { ok: false, status: 400, body: { error: "tail must be 1 when set" } }
   }
   const hasTail = tail === "1"
+  if (beforeRaw !== undefined && beforeRaw.trim() === "") {
+    return { ok: false, status: 400, body: { error: "before must be a non-negative seq" } }
+  }
   const hasBefore = beforeRaw !== undefined
   const hasFrom = fromMessage !== undefined && fromMessage !== ""
 
