@@ -187,7 +187,6 @@ describe("openViewer", () => {
   })
 
   it("meta snapshot matches for sse and ws viewers", async () => {
-    const h = setup()
     const hostState: SessionState = {
       ...createInitialSessionState({ sessionId: "test-session" }),
       version: 5,

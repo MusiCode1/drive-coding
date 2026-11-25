@@ -5,7 +5,6 @@ import {
   createInitialSessionState,
   encodeWsFrame,
   serializeFrame,
-  snapshotFrame,
 } from "@drive-coding/core/session"
 import { flushSync, mount, unmount } from "svelte"
 import { afterEach, describe, expect, it, vi } from "vitest"

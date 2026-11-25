@@ -1,4 +1,3 @@
-import type { ChannelResponse } from "@drive-coding/core/session"
 import type { HistoryPipe, HistoryQuery } from "./pipe"
 import type { SSEReaderOptions } from "./reader-types"
 

@@ -187,8 +187,8 @@ describe("updateFrame meta reset", () => {
       nextSegmentSeq: 0,
     }
     const frame = updateFrame(state, patch, "meta")
-    expect(frame).not.toBeNull()
-    const batch = JSON.parse(frame!.data) as { params: { update: { sessionUpdate: string } } }[]
+    if (!frame) throw new Error("Expected a meta reset frame")
+    const batch = JSON.parse(frame.data) as { params: { update: { sessionUpdate: string } } }[]
     expect(batch.map((n) => n.params.update.sessionUpdate)).toContain("_drive/reset")
     expect(batch.some((n) => String(n.params.update.sessionUpdate).endsWith("_message"))).toBe(
       false,
