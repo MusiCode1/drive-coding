@@ -163,6 +163,7 @@ vi.stubGlobal("location", { protocol: "http:", host: "localhost:5173", search: "
 let uuidCounter = 0
 vi.stubGlobal("crypto", { randomUUID: () => `test-uuid-${uuidCounter++}` })
 
+import { withHistoryTail } from "./__fixtures__/meta-history-fetch"
 import { AgentSession } from "./agent-session.svelte"
 import { Settings } from "./settings.svelte"
 import { Speaker } from "./speaker.svelte"
@@ -174,11 +175,17 @@ async function connectFrameFeed(
   state: SessionState,
   onRpc?: (body: unknown) => void,
 ) {
-  const initial = snapshotFrame(state)
+  const initial = snapshotFrame(state, undefined, "meta")
   const opts = { agentId: "parity-agent", baseUrl: "http://be.local", transport }
   if (transport === "ws") {
     const sockets = fakeSessionSockets()
-    const connecting = createRemoteView({ ...opts, _WebSocket: sockets.WebSocket })
+    const connecting = createRemoteView({
+      ...opts,
+      _WebSocket: sockets.WebSocket,
+      _fetch: withHistoryTail(opts.baseUrl, state, async () => {
+        throw new Error("Unexpected HTTP request in WS parity test")
+      }),
+    })
     const socket = sockets.latest()
     const push = (frame: SseFrame) => socket.receive(encodeWsFrame(frame))
     if (onRpc) {
@@ -206,17 +213,18 @@ async function connectFrameFeed(
   const push = (frame: SseFrame) => controller.enqueue(encoder.encode(serializeFrame(frame)))
   const view = await createRemoteView({
     ...opts,
-    _fetch: async (url, init) => {
+    _fetch: withHistoryTail(opts.baseUrl, state, async (url, init) => {
       if (onRpc && init?.method === "POST") {
         expect(url).toBe("http://be.local/api/agents/parity-agent/rpc")
         onRpc(JSON.parse(String(init.body)))
         return Response.json({}, { status: 202 })
       }
-      expect(url).toBe("http://be.local/api/agents/parity-agent/events")
+      expect(new URL(url).pathname).toBe("/api/agents/parity-agent/events")
+      expect(new URL(url).searchParams.get("snapshot")).toBe("meta")
       init?.signal?.addEventListener("abort", () => controller.close(), { once: true })
       push(initial)
       return new Response(stream, { headers: { "Content-Type": "text/event-stream" } })
-    },
+    }),
   })
   return { view, push }
 }
@@ -523,13 +531,16 @@ describe("failed session switch over HTTP", () => {
     const send = (frame: SseFrame) => writer.write(encoder.encode(serializeFrame(frame)))
     const rpc = Promise.withResolvers<Response>()
     const view = createRemoteSessionView("restore-test", "http://be.local", {
-      _fetch: async (url) =>
-        url.endsWith("/events")
-          ? new Response(sse.readable, { headers: { "Content-Type": "text/event-stream" } })
-          : rpc.promise,
+      _fetch: withHistoryTail("http://be.local", before, async (url) => {
+        const path = new URL(url, "http://be.local").pathname
+        if (path.endsWith("/events")) {
+          return new Response(sse.readable, { headers: { "Content-Type": "text/event-stream" } })
+        }
+        return rpc.promise
+      }),
     })
     const connecting = view.connect()
-    await send(snapshotFrame(before))
+    await send(snapshotFrame(before, undefined, "meta"))
     await connecting
     const agent = new AgentSession({ view })
     agent._setStatusForTest("connected")

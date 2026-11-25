@@ -1,17 +1,15 @@
-import {
-  createInitialSessionState,
-  RPC_METHODS,
-  serializeFrame,
-  snapshotFrame,
-} from "@drive-coding/core/session"
+import { createInitialSessionState, RPC_METHODS, serializeFrame } from "@drive-coding/core/session"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createRemoteSessionView } from "$lib/session/create-session-view"
+import { metaSnapshotFrame, withHistoryTail } from "./__fixtures__/meta-history-fetch"
 import { AgentSession } from "./agent-session.svelte"
 
 const current = "current-session"
 const other = "other-session"
 const cwd = "/project"
-const snapshot = serializeFrame(snapshotFrame(createInitialSessionState({ sessionId: current })))
+const hostState = createInitialSessionState({ sessionId: current })
+const snapshot = serializeFrame(metaSnapshotFrame(hostState))
+const baseUrl = "http://be.local"
 
 describe("session deletion through the backend session view", () => {
   let view: ReturnType<typeof createRemoteSessionView>
@@ -24,9 +22,10 @@ describe("session deletion through the backend session view", () => {
     capabilities = { delete: {} }
     deletedResponse = Response.json({ ok: true })
     calls.length = 0
-    view = createRemoteSessionView("test-agent", "http://be.local", {
-      _fetch: async (url, init) => {
-        if (url.endsWith("/events")) {
+    view = createRemoteSessionView("test-agent", baseUrl, {
+      _fetch: withHistoryTail(baseUrl, hostState, async (url, init) => {
+        const path = new URL(url, baseUrl).pathname
+        if (path.endsWith("/events")) {
           return new Response(
             new ReadableStream({
               start(controller) {
@@ -47,8 +46,8 @@ describe("session deletion through the backend session view", () => {
           })
         }
         if (rpc.method === RPC_METHODS.deleteSession) return deletedResponse
-        throw new Error("Unexpected test host path")
-      },
+        throw new Error(`Unexpected test host path: ${url}`)
+      }),
     })
     await view.connect()
     session = new AgentSession({ view })

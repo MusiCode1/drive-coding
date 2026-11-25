@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 import { deleteAgent } from "$lib/adapters/agents-api"
 import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import { fakeSessionSockets } from "$lib/session/__contract__/fake-session-socket"
+import { historyTailResponse, metaSnapshotFrame } from "./__fixtures__/meta-history-fetch"
 import type { SessionTransport } from "$lib/session/session-transport"
 import { MockSessionView } from "./__fixtures__/mock-session-view.svelte"
 import { AgentSession } from "./agent-session.svelte"
@@ -69,7 +70,8 @@ async function attachWithError(
   }
   await attaching
   expect(session.status).toBe("error")
-  expect(sockets.instances.length + fetch.mock.calls.length).toBe(1)
+  // C4 parallel tail GET: one WS socket or one events stream, plus /history.
+  expect(sockets.instances.length + fetch.mock.calls.length).toBe(2)
   return session
 }
 
@@ -107,17 +109,22 @@ describe.each(["http", "ws"] as const)("%s authentication guidance", (transport)
   it("clears guidance when a subsequent attach succeeds", async () => {
     const session = await attachWithError(transport, JSON.stringify(authRequired))
     expect(session.authMethods).toEqual(methods)
-    const frame = snapshotFrame(createInitialSessionState({ sessionId: "authenticated" }))
+    const open = createInitialSessionState({ sessionId: "authenticated" })
+    const frame = metaSnapshotFrame(open)
     const sockets = fakeSessionSockets()
     vi.stubGlobal("WebSocket", sockets.WebSocket)
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (_url, init: RequestInit) => {
+      vi.fn(async (url, init?: RequestInit) => {
+        const path = new URL(String(url), "http://be.local").pathname
+        if (path.endsWith("/history")) {
+          return Response.json(historyTailResponse(open, { history: "omit" }), { status: 200 })
+        }
         return new Response(
           new ReadableStream({
             start(controller) {
               controller.enqueue(new TextEncoder().encode(serializeFrame(frame)))
-              init.signal?.addEventListener("abort", () => controller.close(), { once: true })
+              init?.signal?.addEventListener("abort", () => controller.close(), { once: true })
             },
           }),
         )
