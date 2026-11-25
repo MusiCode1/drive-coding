@@ -6,7 +6,6 @@ import {
 } from "@drive-coding/core/session"
 import { afterEach, expect, it, vi } from "vitest"
 import { fakeSessionSockets } from "$lib/session/__contract__/fake-session-socket"
-import { historyTailResponse } from "./__fixtures__/meta-history-fetch"
 import { AgentSession } from "./agent-session.svelte"
 
 afterEach(() => {
@@ -21,15 +20,17 @@ it("shows the provider crash reason after a terminal session WebSocket reconnect
   vi.stubGlobal("location", { protocol: "http:", host: "localhost" })
 
   const crashReason = "ENOENT: provider binary not found"
-  const openState = createInitialSessionState({ sessionId: "session-1" })
-  const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
-    const url = String(input)
-    if (url.includes("/history")) {
-      return Response.json(historyTailResponse(openState, { history: "omit" }), { status: 200 })
+  const fetchAgent = vi.fn(async (input: RequestInfo | URL) => {
+    const { pathname } = new URL(String(input), "http://localhost")
+    if (pathname.endsWith("/api/agents/agent-crash/history")) {
+      return Response.json({ version: 0, updates: [] })
     }
-    return Response.json({ agent: { cwd: "/project", status: "crashed", crashReason } })
+    if (pathname.endsWith("/api/agents/agent-crash")) {
+      return Response.json({ agent: { cwd: "/project", status: "crashed", crashReason } })
+    }
+    throw new Error(`Unexpected agent request: ${pathname}`)
   })
-  vi.stubGlobal("fetch", fetchImpl)
+  vi.stubGlobal("fetch", fetchAgent)
   const session = new AgentSession()
   const attaching = session.attachRemoteToLiveAgent({
     agentId: "agent-crash",
@@ -40,7 +41,7 @@ it("shows the provider crash reason after a terminal session WebSocket reconnect
   const initialSocket = sockets.latest()
   initialSocket.connect()
   initialSocket.receive(
-    encodeWsFrame(snapshotFrame(openState, undefined, "meta")),
+    encodeWsFrame(snapshotFrame(createInitialSessionState({ sessionId: "session-1" }))),
   )
   await attaching
   expect(session.status).toBe("connected")
@@ -50,12 +51,11 @@ it("shows the provider crash reason after a terminal session WebSocket reconnect
   await vi.advanceTimersByTimeAsync(1000)
   expect(sockets.instances).toHaveLength(2)
   sockets.latest().close(closeCodeForStatus(404))
-  await vi.advanceTimersByTimeAsync(0)
-  await vi.waitFor(() => expect(session.error).toBe(crashReason), { timeout: 5000 })
-
+  await vi.advanceTimersByTimeAsync(10)
   expect(session.error).toBe(crashReason)
-  expect(fetchImpl).toHaveBeenCalled()
-  expect(fetchImpl.mock.calls.some(([u]) => String(u).includes("/api/agents/agent-crash"))).toBe(
-    true,
+
+  const metadataCalls = fetchAgent.mock.calls.filter(([input]) =>
+    new URL(String(input), "http://localhost").pathname.endsWith("/api/agents/agent-crash"),
   )
+  expect(metadataCalls).toHaveLength(1)
 })

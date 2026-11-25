@@ -1,18 +1,12 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { reduce } from "./reduce"
-import { createInitialSessionState, type Patch, type SessionState } from "./types"
+import { createInitialSessionState, type Patch } from "./types"
 
 function loadFixture(name: string): unknown {
   return JSON.parse(
     readFileSync(new URL(`../../tests/fixtures/${name}.json`, import.meta.url), "utf8"),
   )
-}
-
-/** C1 wireSeqIndex is derived — exclude from golden equality (seq-wire / replay tests cover it). */
-function stateForGolden(state: SessionState): SessionState {
-  const { wireSeqIndex: _ignored, ...rest } = state
-  return rest
 }
 
 function foldWithoutRules() {
@@ -24,7 +18,7 @@ function foldWithoutRules() {
     state = next.state
     patches.push(...next.patches)
   }
-  return { state: stateForGolden(state), patches }
+  return { state, patches }
 }
 
 describe("tool calls without output rules", () => {

@@ -294,7 +294,7 @@ describe("replay — carried נרשם בשני המסלולים", () => {
     )
     const replayed = applyAllPatches(patches, createInitialSessionState({ sessionId: null }))
 
-    expect({ ...replayed, wireSeqIndex: undefined }).toEqual({ ...finalState, wireSeqIndex: undefined })
+    expect(replayed).toEqual(finalState)
     // ...ולא "שווה כי שניהם ריקים": שתי המשבצות אכן שם, בעוגנים שלהן.
     expect(finalState.carried).toEqual([
       { key: "plan:__default__", after: "m_0", update: carriedFrames[1] },
@@ -312,6 +312,6 @@ describe("replay — carried נרשם בשני המסלולים", () => {
     const replayed = applyAllPatches(patches, createInitialSessionState({ sessionId: null }))
 
     expect(finalState.carried).toEqual([])
-    expect({ ...replayed, wireSeqIndex: undefined }).toEqual({ ...finalState, wireSeqIndex: undefined })
+    expect(replayed).toEqual(finalState)
   })
 })
