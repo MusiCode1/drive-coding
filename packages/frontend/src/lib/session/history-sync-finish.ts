@@ -1,63 +1,46 @@
-import { applyOpeningGet, buildWindowFromPayload, type SettledGet } from "./history-open"
-import { fetchTailWithRetries, openAttemptLimit } from "./history-reload"
-import type { HistoryEmitCtx } from "./history-sync-emit"
-import { applyEmitHistory } from "./history-sync-emit"
+import { gone, HISTORY_OPEN_ERROR, historyPage, type SettledGet } from "./history-open"
+import { fetchTailWithRetries } from "./history-reload"
+import { applyEmitHistory, type HistoryEmitCtx } from "./history-sync-emit"
 import type { HistorySyncPort } from "./history-sync-port"
-import type { HistoryWindow } from "./history-window"
+import { defaultWindow, foldPage, type HistoryWindow } from "./history-window"
 import { snapshotResetPatch } from "./remote-session-stream"
 import type { OpeningFrame } from "./wire/frame-decode"
-import type { FrameReader } from "./wire/frame-reader"
 import type { HistoryPipe } from "./wire/pipe"
 
 export type FinishOpenCtx = {
   port: HistorySyncPort
   history: HistoryPipe
-  reader: FrameReader
   sleep: (ms: number) => Promise<void>
-  signal: AbortSignal
-  pendingGet: Promise<SettledGet> | null
+  controller: AbortController
+  pendingGet: Promise<SettledGet>
   emitCtx: () => HistoryEmitCtx
   setWindow: (w: HistoryWindow) => void
-  setMetaMode: (v: boolean) => void
 }
 
 export async function finishHistoryOpen(opening: OpeningFrame, ctx: FinishOpenCtx): Promise<void> {
-  ctx.setMetaMode(opening.historyOmitted !== undefined)
-  const settled = (await ctx.pendingGet) ?? { ok: false as const, err: new Error("no get") }
-  const emit = (
-    tag: Parameters<typeof applyEmitHistory>[2],
-    watermark: number,
-    page?: Parameters<typeof applyEmitHistory>[4],
-  ) => {
-    ctx.setWindow(applyEmitHistory(ctx.port, ctx.emitCtx(), tag, watermark, page))
-  }
-  let result = await applyOpeningGet(
-    opening,
-    settled,
-    true,
-    ctx.port,
-    ctx.history,
-    ctx.signal,
-    emit,
-  )
-
-  if (!result.ok && opening.historyOmitted !== undefined) {
-    for (let attempt = 1; attempt < openAttemptLimit() && !result.ok; attempt++) {
-      const retry = await fetchTailWithRetries(ctx.history, ctx.signal, 1, ctx.sleep)
-      result = await applyOpeningGet(opening, retry, false, ctx.port, ctx.history, ctx.signal, emit)
+  if (!opening.historyOmitted) {
+    ctx.controller.abort()
+    ctx.setWindow(defaultWindow(opening.state.version))
+    if (opening.state.messages.length > 0) {
+      ctx.port.emit({ patches: [snapshotResetPatch(opening.state)], updates: [], history: "tail" })
     }
+    return
   }
 
-  if (!result.ok && opening.historyOmitted !== undefined) {
-    ctx.reader.close()
-    throw new Error("RemoteSessionView: history tail fetch failed")
+  const { signal } = ctx.controller
+  const first = await ctx.pendingGet
+  signal.throwIfAborted()
+  let page = historyPage(first)
+  if (!page || page.version < opening.state.version) {
+    // A pre-opening 404 or an older page requires another GET as soon as the opening arrives.
+    if (!gone(first) && !page) await ctx.sleep(1000)
+    page = await fetchTailWithRetries(ctx.history, signal, 2, opening.state.version, (ms) =>
+      ctx.sleep(ms * 2),
+    )
   }
+  signal.throwIfAborted()
+  if (!page) throw new Error(HISTORY_OPEN_ERROR)
 
-  if (opening.historyOmitted === undefined && opening.state.messages.length > 0) {
-    ctx.port.emit({ patches: [snapshotResetPatch(opening.state)], updates: [] })
-  }
-
-  if (result.ok) {
-    ctx.setWindow(buildWindowFromPayload(result.watermark, result.page))
-  }
+  ctx.port.replace(foldPage(opening.state, page), page.version)
+  ctx.setWindow(applyEmitHistory(ctx.port, ctx.emitCtx(), "tail", page.version, page.page))
 }

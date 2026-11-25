@@ -5,7 +5,6 @@ import { applyEmitHistory, emitHistoryState, type HistoryEmitCtx } from "./histo
 import type { HistorySyncPort } from "./history-sync-port"
 import type { HistoryWindow } from "./history-window"
 import { foldPage } from "./history-window"
-import type { ViewEmission } from "./session-view"
 import type { HistoryPipe } from "./wire/pipe"
 
 export async function loadFullHistory(opts: {
@@ -13,30 +12,17 @@ export async function loadFullHistory(opts: {
   history: HistoryPipe
   gate: HistoryGate
   signal: AbortSignal
-  gen: number
-  reloadGeneration: number
   emitCtx: () => HistoryEmitCtx
   setReloading: (v: boolean) => void
   setError: (e: string | null) => void
   setWindow: (w: HistoryWindow) => void
 }): Promise<boolean> {
-  const {
-    port,
-    history,
-    gate,
-    signal,
-    gen,
-    reloadGeneration,
-    emitCtx,
-    setReloading,
-    setError,
-    setWindow,
-  } = opts
+  const { port, history, gate, signal, emitCtx, setReloading, setError, setWindow } = opts
   gate.close()
   setReloading(true)
   emitHistoryState(port, emitCtx())
   const settled = await settleGet(history.get({ full: true }, signal))
-  if (gen !== reloadGeneration) return false
+  if (signal.aborted) return false
   setReloading(false)
   if (!settled.ok || settled.res.status !== 200) {
     setError("history load failed")
@@ -51,7 +37,7 @@ export async function loadFullHistory(opts: {
     emitHistoryState(port, emitCtx())
     return false
   }
-  const seed = createInitialSessionState({ sessionId: payload.sessionId ?? "" })
+  const seed = createInitialSessionState({ sessionId: payload.sessionId })
   const folded = { ...foldPage(seed, payload), sessionId: payload.sessionId }
   port.replace(folded, payload.version)
   setWindow(applyEmitHistory(port, emitCtx(), "full", payload.version, payload.page))
@@ -60,5 +46,3 @@ export async function loadFullHistory(opts: {
   emitHistoryState(port, emitCtx())
   return true
 }
-
-export type EmitTag = NonNullable<ViewEmission["history"]>

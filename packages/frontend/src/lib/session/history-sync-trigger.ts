@@ -1,8 +1,9 @@
-import { runReloadTail } from "./history-reload"
+import type { SessionState } from "@drive-coding/core/session"
+import type { HistoryGate } from "./history-drain"
+import { fetchTailWithRetries } from "./history-reload"
 import { applyEmitHistory, emitHistoryState, type HistoryEmitCtx } from "./history-sync-emit"
 import type { HistorySyncPort } from "./history-sync-port"
-import type { HistoryGate } from "./history-drain"
-import type { HistoryWindow } from "./history-window"
+import { foldPage, type HistoryWindow } from "./history-window"
 import type { HistoryPipe } from "./wire/pipe"
 
 export async function triggerHistoryReload(opts: {
@@ -15,10 +16,9 @@ export async function triggerHistoryReload(opts: {
   setWindow: (w: HistoryWindow) => void
   setReloading: (v: boolean) => void
   setError: (e: string | null) => void
-  stampGen: () => number
-  currentGen: () => number
   tag: "reload" | "reset"
-}): Promise<void> {
+  seed: SessionState
+}): Promise<boolean> {
   const {
     port,
     history,
@@ -29,27 +29,23 @@ export async function triggerHistoryReload(opts: {
     setWindow,
     setReloading,
     setError,
-    stampGen,
-    currentGen,
     tag,
+    seed,
   } = opts
   gate.close()
   setReloading(true)
   emitHistoryState(port, emitCtx())
-  const gen = stampGen()
-  const ok = await runReloadTail(
-    port,
-    history,
-    signal,
-    sleep,
-    (t, watermark, page) => {
-      setWindow(applyEmitHistory(port, emitCtx(), t, watermark, page))
-    },
-    tag,
-  )
-  if (gen !== currentGen()) return
+  const page = await fetchTailWithRetries(history, signal, 5, seed.version, sleep)
+  if (signal.aborted) return false
   setReloading(false)
-  setError(ok ? null : "history reload failed — retry")
-  ok ? gate.open() : gate.markFailed()
+  setError(page ? null : "history reload failed — retry")
+  if (page) {
+    port.replace(foldPage(seed, page), page.version)
+    setWindow(applyEmitHistory(port, emitCtx(), tag, page.version, page.page))
+    gate.open()
+  } else {
+    gate.markFailed()
+  }
   emitHistoryState(port, emitCtx())
+  return page !== null
 }

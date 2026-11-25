@@ -31,7 +31,10 @@ export async function openRemoteSession(opts: {
   }
 
   history.beginParallelGet()
-  const { opening, updates } = await reader.connect()
+  const { opening, updates } = await reader.connect().catch((error: unknown) => {
+    history.close()
+    throw error
+  })
   history.setConnectionId(reader.currentConnectionId)
   applyOpening(opening)
   const ready = history.finishOpen(opening)
@@ -51,6 +54,8 @@ export async function openRemoteSession(opts: {
       readToEnd(probe).then(() => "ended" as const),
     ])
   } catch (error) {
+    history.close()
+    reader.close()
     void buffered.cancel().catch(() => {})
     throw error
   } finally {

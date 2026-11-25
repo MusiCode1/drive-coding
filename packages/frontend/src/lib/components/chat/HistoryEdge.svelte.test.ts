@@ -28,6 +28,25 @@ describe("HistoryEdge", () => {
     }
   })
 
+  it("disables Load all while reloading and enables it again after hydration", () => {
+    const history = new HistoryState()
+    history.window = { firstSeq: 1, lastSeq: 5, hasMore: true, watermark: 0 }
+    const target = document.createElement("div")
+    const app = mount(HistoryEdge, { target, props: { history } })
+    try {
+      flushSync(() => {
+        history.reloading = true
+      })
+      expect(target.querySelector("button")?.disabled).toBe(true)
+      flushSync(() => {
+        history.reloading = false
+      })
+      expect(target.querySelector("button")?.disabled).toBe(false)
+    } finally {
+      unmount(app)
+    }
+  })
+
   it("shows error and retry after failures", () => {
     const history = new HistoryState()
     history.error = "network"

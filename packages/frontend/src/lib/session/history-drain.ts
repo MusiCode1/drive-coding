@@ -46,14 +46,17 @@ export function filterBatchByWindow(
   batch: WireUpdateBatch,
   window: HistoryWindow,
   warned: Set<number>,
-  port: Pick<HistorySyncPort, "warn" | "emit">,
+  port: Pick<HistorySyncPort, "warn" | "emit" | "getState">,
 ): WireUpdateBatch | null {
   if (batch.updates.length === 0) return batch
   const kept: typeof batch.updates = []
   let droppedActivity = false
   for (const update of batch.updates) {
     const seq = seqFromUpdate(update)
-    if (isOutsideWindow(seq, window)) {
+    if (
+      isOutsideWindow(seq, window) &&
+      !port.getState().messages.some(({ id }) => id === `m_${seq}`)
+    ) {
       if (seq !== null && !warned.has(seq)) {
         warned.add(seq)
         port.warn("history-outside-window", { seq })
@@ -94,6 +97,7 @@ export async function drainHistoryUpdates(
   activeConnection: () => number,
   warnedOutside: Set<number>,
   signal: AbortSignal,
+  isMetaMode: () => boolean,
   onReset: () => void,
 ): Promise<void> {
   const queue: Queued[] = []
@@ -107,19 +111,20 @@ export async function drainHistoryUpdates(
       return
     }
     if (!gate.isOpen) return
-    for (const { batch, connection } of queue.splice(0)) {
-      if (connection > 0 && connection < activeConnection()) continue
-      if (batch.version <= port.getLastVersion()) continue
-      try {
-        const filtered = filterBatchByWindow(batch, window(), warnedOutside, port)
-        if (!filtered) continue
-        applyBatch(filtered, port)
-        if (filtered.updates.some((update) => update.sessionUpdate === "_drive/reset")) onReset()
-      } catch (error) {
-        port.warn("history-batch-apply-failed", { error })
-      }
-    }
+    for (const item of queue.splice(0)) apply(item)
     if (streamDone) finished.resolve()
+  }
+  const current = ({ batch, connection }: Queued) =>
+    (connection === 0 || connection >= activeConnection()) && batch.version > port.getLastVersion()
+  const apply = (item: Queued) => {
+    if (!current(item)) return
+    try {
+      const filtered = filterBatchByWindow(item.batch, window(), warnedOutside, port)
+      if (filtered) applyBatch(filtered, port)
+      else port.replace(port.getState(), item.batch.version)
+    } catch (error) {
+      port.warn("history-batch-apply-failed", { error })
+    }
   }
   const unsubscribe = gate.onChange(flush)
   const abort = () => {
@@ -131,8 +136,16 @@ export async function drainHistoryUpdates(
     while (!signal.aborted) {
       const { done, value } = await reader.read()
       if (done) break
-      queue.push({ batch: value, connection: connectionOf(value) })
-      flush()
+      const item = { batch: value, connection: connectionOf(value) }
+      if (isMetaMode() && value.updates.some((update) => update.sessionUpdate === "_drive/reset")) {
+        if (!current(item)) continue
+        queue.length = 0
+        apply(item)
+        onReset()
+      } else {
+        queue.push(item)
+        flush()
+      }
     }
     streamDone = true
     flush()

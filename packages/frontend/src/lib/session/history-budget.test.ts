@@ -10,8 +10,12 @@ function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name)
     if (entry.isDirectory()) return walk(path)
-    return /\.ts$/.test(entry.name) && !/\.test\.ts$/.test(entry.name) ? [path] : []
+    return /\.ts$/.test(entry.name) && !/\.test(?:\.svelte)?\.ts$/.test(entry.name) ? [path] : []
   })
+}
+
+function inlineBudget(source: string): boolean {
+  return /maxBytes\s*[:=]\s*\d/.test(source)
 }
 
 describe("history-budget (F2)", () => {
@@ -19,10 +23,18 @@ describe("history-budget (F2)", () => {
     const hits: string[] = []
     for (const file of walk(sessionDir)) {
       const text = readFileSync(file, "utf8")
-      if (/maxBytes\s*[:=]\s*\d/.test(text)) {
+      if (inlineBudget(text)) {
         hits.push(relative(root, file))
       }
     }
     expect(hits).toEqual([])
+  })
+
+  it("flags an inline override in an option or in a URL", () => {
+    expect(inlineBudget("history.get({tail: true, maxBytes: 123})")).toBe(true)
+    expect(inlineBudget("fetch('/history?tail=1&maxBytes=999')")).toBe(true)
+    expect(inlineBudget("history.get({tail: true, maxBytes: HISTORY_PAGE_BYTES_DEFAULT})")).toBe(
+      false,
+    )
   })
 })

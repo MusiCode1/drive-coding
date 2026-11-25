@@ -13,6 +13,7 @@ import {
   type SessionState,
   selectRange,
   serializeFrame,
+  snapshotPayload,
 } from "@drive-coding/core/session"
 import { type IntentFrame, toWireFrames } from "@drive-coding/core/session/testing"
 import { splitIntoSentences } from "@drive-coding/core/voice/sentence-boundary"
@@ -522,6 +523,75 @@ describe("replay-quiet meta path", () => {
     expect(harness2.enqueueCount()).toBe(0)
     harness2.destroy()
   })
+
+  it("keeps a visible tail and its full-history replacement quiet", async () => {
+    const fullState = makeSnapshot({ version: 505, messages: [historicalMessage()] })
+    const opening = metaSnapshotFrame(fullState)
+    const base = makeMockFetch([[{ event: "snapshot", data: opening.data }]])
+    const harness = createQuietHarness([], async (url, init) => {
+      const { pathname, searchParams } = new URL(url)
+      if (pathname.endsWith("/history")) {
+        return jsonResponse(
+          searchParams.has("tail") ? historyTailResponse(fullState) : snapshotPayload(fullState),
+        )
+      }
+      return base(url, init)
+    })
+    try {
+      await harness.view.connect()
+      await flushEffects()
+      expect(harness.agent.bubbles).toHaveLength(1)
+      expect(harness.enqueueCount()).toBe(0)
+      await harness.view.history.loadFull()
+      await flushEffects()
+      expect(harness.agent.bubbles).toHaveLength(1)
+      expect(harness.enqueueCount()).toBe(0)
+    } finally {
+      harness.destroy()
+    }
+  })
+
+  it.each([false, true])(
+    "speaks only reconnect additions within the same session (replacement=%s)",
+    async (replacement) => {
+      const first = makeSnapshot({
+        version: 200,
+        messages: [historicalMessage(1)],
+        turnState: "responding",
+      })
+      const next = makeSnapshot({
+        sessionId: replacement ? "replacement" : first.sessionId,
+        version: 201,
+        messages: [
+          historicalMessage(1),
+          {
+            id: "m_1",
+            role: "assistant",
+            messageId: "new-response",
+            segments: [{ id: "s_8", text: "A new sentence is ready to hear after reconnect." }],
+          },
+        ],
+        turnState: "responding",
+      })
+      let requests = 0
+      const base = makeMockFetch(
+        [first, next].map((state) => [{ event: "snapshot", data: metaSnapshotFrame(state).data }]),
+      )
+      const harness = createQuietHarness([], async (url, init) => {
+        if (new URL(url).pathname.endsWith("/history"))
+          return jsonResponse(historyTailResponse(requests++ === 0 ? first : next))
+        return base(url, init)
+      })
+      try {
+        await harness.view.connect()
+        await vi.waitFor(() => expect(harness.agent.bubbles).toHaveLength(2))
+        await flushEffects(16)
+        expect(harness.enqueueCount()).toBe(replacement ? 0 : 1)
+      } finally {
+        harness.destroy()
+      }
+    },
+  )
 
   it("meta — oversized session tail marks hasMore (HistoryEdge signal)", () => {
     const fullState = makeSnapshot({

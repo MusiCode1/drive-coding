@@ -1,45 +1,39 @@
+import type { SessionState } from "@drive-coding/core/session"
 import { drainHistoryUpdates, HistoryGate } from "./history-drain"
 import type { SettledGet } from "./history-open"
-import { emitHistoryState } from "./history-sync-emit"
+import { fetchTail } from "./history-reload"
 import { finishHistoryOpen } from "./history-sync-finish"
 import { loadFullHistory } from "./history-sync-load"
-import { startParallelHistoryGet } from "./history-sync-parallel"
 import type { HistorySyncPort } from "./history-sync-port"
 import { applyLegacyReconnect, planReconnect } from "./history-sync-reconnect"
 import { triggerHistoryReload } from "./history-sync-trigger"
 import { defaultWindow, type HistoryWindow } from "./history-window"
 import type { HistoryController } from "./session-view"
 import type { OpeningFrame } from "./wire/frame-decode"
-import type { FrameReader } from "./wire/frame-reader"
 import type { SessionPipe } from "./wire/pipe"
 
 export class HistorySync implements HistoryController {
   readonly #port: HistorySyncPort
   readonly #pipe: SessionPipe
-  readonly #reader: FrameReader
   readonly #sleep: (ms: number) => Promise<void>
 
   #window: HistoryWindow = { firstSeq: null, lastSeq: null, hasMore: false, watermark: 0 }
   #error: string | null = null
   #reloading = false
   #gate = new HistoryGate()
-  #reloadGeneration = 0
   #activeConnection = 0
-  #genAbort: AbortController | null = null
+  #genAbort = new AbortController()
   #warnedOutside = new Set<number>()
   #metaMode = false
   #drainAbort: AbortController | null = null
-  #pendingGet: Promise<SettledGet> | null = null
+  #pendingGet?: Promise<SettledGet>
+  #opening = false
+  #nextOpening?: { frame: OpeningFrame; connection: number }
+  #reloadInput?: { tag: "reload" | "reset"; seed: SessionState }
 
-  constructor(
-    port: HistorySyncPort,
-    pipe: SessionPipe,
-    reader: FrameReader,
-    sleep: (ms: number) => Promise<void>,
-  ) {
+  constructor(port: HistorySyncPort, pipe: SessionPipe, sleep: (ms: number) => Promise<void>) {
     this.#port = port
     this.#pipe = pipe
-    this.#reader = reader
     this.#sleep = sleep
   }
 
@@ -52,33 +46,38 @@ export class HistorySync implements HistoryController {
   get reloading(): boolean {
     return this.#reloading
   }
-  get activeConnection(): number {
-    return this.#activeConnection
+  #beginRequest(): AbortController {
+    this.#genAbort.abort()
+    this.#genAbort = new AbortController()
+    return this.#genAbort
   }
 
   beginParallelGet(): void {
-    this.#genAbort?.abort()
-    this.#genAbort = new AbortController()
-    const signal = this.#genAbort.signal
-    this.#pendingGet = startParallelHistoryGet(this.#pipe, signal)
+    this.#gate.open()
+    this.#opening = true
+    this.#pendingGet = fetchTail(this.#pipe.history, this.#beginRequest().signal)
   }
 
   async finishOpen(opening: OpeningFrame): Promise<void> {
+    this.#metaMode = opening.historyOmitted !== undefined
+    const pendingGet = this.#pendingGet
+    this.#pendingGet = undefined
+    if (!pendingGet) throw new Error("History opening GET not started")
     await finishHistoryOpen(opening, {
       port: this.#port,
       history: this.#pipe.history,
-      reader: this.#reader,
       sleep: this.#sleep,
-      signal: this.#genAbort?.signal ?? new AbortController().signal,
-      pendingGet: this.#pendingGet,
+      controller: this.#genAbort,
+      pendingGet,
       emitCtx: () => this.#emitCtx(),
       setWindow: (w) => {
         this.#window = w
       },
-      setMetaMode: (v) => {
-        this.#metaMode = v
-      },
     })
+    this.#opening = false
+    const next = this.#nextOpening
+    this.#nextOpening = undefined
+    if (next) void this.handleReconnected(next.frame, next.connection)
   }
 
   async start(
@@ -94,6 +93,7 @@ export class HistorySync implements HistoryController {
       () => this.#activeConnection,
       this.#warnedOutside,
       this.#drainAbort.signal,
+      () => this.#metaMode,
       () => {
         void this.handleDriveReset()
       },
@@ -101,23 +101,21 @@ export class HistorySync implements HistoryController {
   }
 
   close(): void {
-    this.#genAbort?.abort()
+    this.#opening = false
+    this.#nextOpening = undefined
+    this.#pendingGet = undefined
+    this.#genAbort.abort()
     this.#drainAbort?.abort()
     this.#gate.markFailed()
   }
 
   async loadFull(): Promise<void> {
     if (this.#reloading) return
-    const gen = ++this.#reloadGeneration
-    this.#genAbort?.abort()
-    this.#genAbort = new AbortController()
     await loadFullHistory({
       port: this.#port,
       history: this.#pipe.history,
       gate: this.#gate,
-      signal: this.#genAbort.signal,
-      gen,
-      reloadGeneration: this.#reloadGeneration,
+      signal: this.#beginRequest().signal,
       emitCtx: () => this.#emitCtx(),
       setReloading: (v) => {
         this.#reloading = v
@@ -132,49 +130,48 @@ export class HistorySync implements HistoryController {
   }
 
   async retry(): Promise<void> {
+    const retry = this.#reloadInput ?? { tag: "reload", seed: this.#port.getState() }
     this.#error = null
-    this.#gate.open()
-    emitHistoryState(this.#port, this.#emitCtx())
-    await this.#triggerReload("reload")
+    await this.#triggerReload(retry.tag, retry.seed)
   }
 
   async handleReconnected(opening: OpeningFrame, connectionId: number): Promise<void> {
     this.#activeConnection = connectionId
-    const action = planReconnect(
-      this.#port,
-      opening,
-      this.#port.getSessionId(),
-      this.#port.getLastVersion(),
-    )
+    if (this.#opening) {
+      this.#nextOpening = { frame: opening, connection: connectionId }
+      return
+    }
+    const action = planReconnect(opening, this.#port.getSessionId(), this.#port.getLastVersion())
+    this.#metaMode = opening.historyOmitted !== undefined
     if (action === "legacy") {
+      this.#genAbort.abort()
       applyLegacyReconnect(this.#port, opening)
       return
     }
     if (action === "noop") return
     this.#port.resetReadMark()
-    await this.#triggerReload(action)
-    this.#port.reconnected()
+    if (await this.#triggerReload(action, opening.state)) this.#port.reconnected()
   }
 
   async handleDriveReset(): Promise<void> {
     if (!this.#metaMode) return
     this.#window = defaultWindow(this.#port.getLastVersion())
     this.#error = null
-    await this.#triggerReload("reset")
+    this.#warnedOutside.clear()
+    await this.#triggerReload("reset", this.#port.getState())
   }
 
   setConnectionId(id: number): void {
     this.#activeConnection = id
   }
 
-  async #triggerReload(tag: "reload" | "reset"): Promise<void> {
-    this.#genAbort?.abort()
-    this.#genAbort = new AbortController()
-    await triggerHistoryReload({
+  async #triggerReload(tag: "reload" | "reset", seed: SessionState): Promise<boolean> {
+    this.#reloadInput = { tag, seed }
+    return triggerHistoryReload({
       port: this.#port,
       history: this.#pipe.history,
       gate: this.#gate,
-      signal: this.#genAbort.signal,
+      signal: this.#beginRequest().signal,
       sleep: this.#sleep,
       emitCtx: () => this.#emitCtx(),
       setWindow: (w) => {
@@ -186,9 +183,8 @@ export class HistorySync implements HistoryController {
       setError: (e) => {
         this.#error = e
       },
-      stampGen: () => ++this.#reloadGeneration,
-      currentGen: () => this.#reloadGeneration,
       tag,
+      seed,
     })
   }
 

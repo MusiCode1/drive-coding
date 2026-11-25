@@ -1,8 +1,6 @@
 import type { SessionState, SnapshotPayload } from "@drive-coding/core/session"
-import { connWarn } from "$lib/util/conn-log"
-import { buildWindowFromPayload } from "./history-open"
 import type { HistorySyncPort } from "./history-sync-port"
-import type { HistoryWindow } from "./history-window"
+import { type HistoryWindow, windowFromPayload } from "./history-window"
 import { snapshotResetPatch } from "./remote-session-stream"
 import type { ViewEmission } from "./session-view"
 
@@ -19,14 +17,11 @@ export function applyEmitHistory(
   watermark: number,
   page?: SnapshotPayload["page"],
 ): HistoryWindow {
-  let window = buildWindowFromPayload(watermark, page)
-  if (page === undefined && tag !== "full") {
-    connWarn("history-page-missing", {})
-    window = { ...window, hasMore: false }
-  }
+  const window = windowFromPayload(watermark, page)
+  if (page === undefined && tag !== "full") port.warn("history-page-missing")
   const state = port.getState()
-  const patches = state.messages.length > 0 ? [snapshotResetPatch(state)] : []
-  if (patches.length === 0 && tag === "tail") return window
+  const patches = state.messages.length > 0 || tag !== "tail" ? [snapshotResetPatch(state)] : []
+  if (patches.length === 0 && !window.hasMore) return window
   port.emit({
     patches,
     updates: [],

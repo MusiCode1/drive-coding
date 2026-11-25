@@ -40,7 +40,7 @@ export function wireRemoteHistorySync(
   binding: RemoteHistoryPortBinding,
   sleep: (ms: number) => Promise<void>,
 ): HistorySync {
-  const history = new HistorySync(createRemoteHistoryPort(binding), pipe, reader, sleep)
+  const history = new HistorySync(createRemoteHistoryPort(binding), pipe, sleep)
   reader.onReconnected = (snapshot, opening) => {
     const frame = opening ?? { state: snapshot }
     void history.handleReconnected(frame, reader.currentConnectionId)
