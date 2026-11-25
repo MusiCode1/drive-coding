@@ -1,3 +1,15 @@
+## 2026-11-25 02:25 — slice `fast-session-open-1` C0 (אליעזר)
+
+ענף: `slice/fast-session-open-1` @ base `1b323d96`. worktree: `.worktrees/fast-session-open-1`.
+
+**שערי בסיס:** core `1055 passed` (3 כשלים קדם-קיימים ב-docs gates); backend vitest `1547 passed`; FE `2118 passed`; `tsc --build` 0; `typecheck:fe` 0.
+
+**עוגנים §0:** `openViewer` 6 · `drainRemoteUpdates` 2 · `readViewEmission` 3 · `SubagentTranscriptRouter` 2 · `decodeSnapshotFrame` 3 · `waitForSnapshot` 2 · `RemoteSessionView` 20 · `createRemoteView` 18 · `history-query`/`parseSnapshotMode` — ייווצרו ב-C3.
+
+**TTFP לפני:** אין סשן לא-פעיל ≥20MB על BE חי (גדול ביותר `1fa7a97f` ~5.8MB, `tail-budget-probe`); פרוב `ttfp-probe.mjs` נוצר ב-docs; מדידת P1/P2 נדחית ל-C6 אחרי מימוש. **סטייה:** תקציב ה-DoD דורש ≥20MB — נדרש `session/load` לפני C6.
+
+---
+
 ## 2026-11-25 01:10 — slice `subagent-identity-gate` (אליעזר)
 
 ענף: `slice/subagent-identity-gate` @ base `0fd374b2`. worktree: `.worktrees/subagent-identity-gate`.
