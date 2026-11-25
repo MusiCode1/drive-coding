@@ -9,6 +9,7 @@
  */
 import { applyPatch } from "./apply-patch"
 import { recordCarried } from "./carried"
+import { lookupWireSeqIndex, syncWireSeqIndex, wireSeqSlotTaken } from "./message-seq-index"
 import { SEQ_META_KEY } from "./to-session-update"
 import {
   applyToolOutputDelta,
@@ -93,8 +94,7 @@ function allocMessageId(
 ): { id: string; nextMessageSeq: number } {
   if (wireSeq !== undefined) {
     const id = `m_${wireSeq}`
-    const taken = state.messages.some((m) => m.id === id)
-    if (!taken) {
+    if (!wireSeqSlotTaken(state, wireSeq)) {
       return { id, nextMessageSeq: Math.max(state.nextMessageSeq, wireSeq + 1) }
     }
   }
@@ -192,7 +192,7 @@ function chunkTargetIndex(
   wireSeq?: number,
 ): number {
   if (wireSeq !== undefined) {
-    const bySeq = state.messages.findIndex((m) => m.id === `m_${wireSeq}` && m.role === role)
+    const bySeq = lookupWireSeqIndex(state, wireSeq, role)
     if (bySeq !== -1) return bySeq
   }
   let targetIdx = state.messages.length - 1
@@ -273,13 +273,17 @@ function handleTextChunk(
     const messages = [...state.messages]
     messages[targetIdx] = updatedMsg
     return {
-      state: {
-        ...state,
-        version: newVersion,
-        messages,
-        nextSegmentSeq: state.nextSegmentSeq + 1,
-        turnState: newTurnState,
-      },
+      state: syncWireSeqIndex(
+        state,
+        {
+          ...state,
+          version: newVersion,
+          messages,
+          nextSegmentSeq: state.nextSegmentSeq + 1,
+          turnState: newTurnState,
+        },
+        patch,
+      ),
       patches: [patch],
     }
   } else {
@@ -306,15 +310,11 @@ function handleTextChunk(
       state,
     )
     const patch: Patch = { version: newVersion, op: "add-message", message: msg }
+    const next = applyPatch(state, patch)
     return {
-      state: {
-        ...state,
-        version: newVersion,
-        messages: [...state.messages, msg],
-        nextMessageSeq,
-        nextSegmentSeq: state.nextSegmentSeq + 1,
-        turnState: newTurnState,
-      },
+      state: isVoiceMessage(meta)
+        ? { ...next, turnState: state.turnState }
+        : { ...next, turnState: newTurnState },
       patches: [patch],
     }
   }
@@ -378,15 +378,9 @@ function handleToolCall(
 
   const newVersion = state.version + 1
   const patch: Patch = { version: newVersion, op: "add-message", message: msg }
-
+  const next = applyPatch(state, patch)
   return {
-    state: {
-      ...state,
-      version: newVersion,
-      messages: [...state.messages, msg],
-      nextMessageSeq,
-      turnState: "calling-tool", // C1: tool_call → 'calling-tool'
-    },
+    state: { ...next, turnState: "calling-tool" },
     patches: [patch],
   }
 }
@@ -663,7 +657,7 @@ function handleWholeMessage(
   const wireSeq = wireSeqOf(u)
   let idx = state.messages.findIndex((m) => m.role === role && m.messageId === messageId)
   if (idx === -1 && wireSeq !== undefined) {
-    idx = state.messages.findIndex((m) => m.id === `m_${wireSeq}`)
+    idx = lookupWireSeqIndex(state, wireSeq, role)
   }
   const newVersion = state.version + 1
   const turnState: TurnStateValue = isVoiceMessage(metaOf(u))
@@ -706,17 +700,16 @@ function handleWholeMessage(
       },
       state,
     )
+    const addPatch: Patch = { version: newVersion, op: "add-message", message: msg }
+    const added = applyPatch(state, addPatch)
     return {
       state: {
-        ...state,
-        version: newVersion,
-        messages: [...state.messages, msg],
-        nextMessageSeq,
+        ...added,
         nextSegmentSeq,
         turnState,
         ...(messageTimestamps !== state.messageTimestamps ? { messageTimestamps } : {}),
       },
-      patches: [{ version: newVersion, op: "add-message", message: msg }],
+      patches: [addPatch],
     }
   }
 
@@ -734,16 +727,21 @@ function handleWholeMessage(
   )
   const messages = [...state.messages]
   messages[idx] = msg
+  const setPatch: Patch = { version: newVersion, op: "set-message", targetId: old.id, message: msg }
   return {
-    state: {
-      ...state,
-      version: newVersion,
-      messages,
-      nextSegmentSeq,
-      turnState,
-      ...(messageTimestamps !== state.messageTimestamps ? { messageTimestamps } : {}),
-    },
-    patches: [{ version: newVersion, op: "set-message", targetId: old.id, message: msg }],
+    state: syncWireSeqIndex(
+      state,
+      {
+        ...state,
+        version: newVersion,
+        messages,
+        nextSegmentSeq,
+        turnState,
+        ...(messageTimestamps !== state.messageTimestamps ? { messageTimestamps } : {}),
+      },
+      setPatch,
+    ),
+    patches: [setPatch],
   }
 }
 

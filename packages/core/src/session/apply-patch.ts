@@ -7,6 +7,7 @@
  * ─── slice session-state-reducer C2 (TDD) ───
  */
 import { recordCarried } from "./carried"
+import { syncWireSeqIndex } from "./message-seq-index"
 import type { Patch, SessionMessage, SessionState, TurnStateValue } from "./types"
 
 /** גוזר nextSeq מ-id בצורת prefix_<n> (m_3 → 4, s_0 → 1). */
@@ -21,6 +22,7 @@ function nextSeqFrom(id: string): number {
  * לא זורק — patch על targetId שלא קיים → no-op (מחזיר state ללא שינוי).
  */
 export function applyPatch(state: SessionState, patch: Patch): SessionState {
+  const apply = (next: SessionState): SessionState => syncWireSeqIndex(state, next, patch)
   switch (patch.op) {
     case "add-message": {
       // update message counter
@@ -41,14 +43,14 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
             : patch.message.role === "assistant"
               ? "responding"
               : state.turnState // user = no change
-      return {
+      return apply({
         ...state,
         version: patch.version,
         messages: [...state.messages, patch.message],
         nextMessageSeq: nextMsgSeq,
         nextSegmentSeq: nextSegSeq,
         turnState: newTurnStateMsg,
-      }
+      })
     }
 
     // ─── slice acp-v2-reduce: upsert של הודעה שלמה (ACP v2) ───
@@ -66,13 +68,13 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
       }
       const messages = [...state.messages]
       messages[idx] = patch.message
-      return {
+      return apply({
         ...state,
         version: patch.version,
         messages,
         nextMessageSeq: Math.max(state.nextMessageSeq, nextSeqFrom(patch.message.id)),
         nextSegmentSeq: nextSegSeq,
-      }
+      })
     }
 
     case "append-segment": {
@@ -97,13 +99,13 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
           : old.role === "assistant"
             ? "responding"
             : state.turnState
-      return {
+      return apply({
         ...state,
         version: patch.version,
         messages,
         nextSegmentSeq: nextSegSeq,
         turnState: newTurnStateSeg,
-      }
+      })
     }
 
     case "update-tool": {
@@ -119,18 +121,18 @@ export function applyPatch(state: SessionState, patch: Patch): SessionState {
       }
       const messages = [...state.messages]
       messages[idx] = updatedMsg
-      return { ...state, version: patch.version, messages }
+      return apply({ ...state, version: patch.version, messages })
     }
 
     case "reset": {
-      return {
+      return apply({
         ...state,
         version: patch.version,
         messages: patch.messages,
         nextMessageSeq: patch.nextMessageSeq,
         nextSegmentSeq: patch.nextSegmentSeq,
         carried: patch.carried ?? [],
-      }
+      })
     }
 
     case "update-session": {

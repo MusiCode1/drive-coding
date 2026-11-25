@@ -178,6 +178,11 @@ export type SessionState = {
   version: number
   sessionId: string | null
   messages: SessionMessage[]
+  /**
+   * Wire seq (`m_<n>`) → index in `messages`. Maintained incrementally for O(1)
+   * joins during snapshot folds; not part of wire/snapshot equality.
+   */
+  wireSeqIndex?: Record<number, number>
   /** מונה דטרמיניסטי ל-ids של messages (m_<n>) */
   nextMessageSeq: number
   /** מונה דטרמיניסטי ל-ids של segments (s_<n>) */
