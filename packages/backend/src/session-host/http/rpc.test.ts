@@ -495,7 +495,7 @@ describe("POST /api/agents/:id/rpc", () => {
         sessions: [{ sessionId: "s1" }, { sessionId: "s2" }],
       })
       ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = {
-        sessionCapabilities: { delete: {} },
+        sessionCapabilities: { list: {}, delete: {} },
       }
       const registry = makeMockRegistry(host, makeMockBroadcaster())
       const app = makeApp(registry)
@@ -507,11 +507,11 @@ describe("POST /api/agents/:id/rpc", () => {
         sessionCapabilities: unknown
       }
       expect(json.sessions).toEqual([{ sessionId: "s1" }, { sessionId: "s2" }])
-      expect(json.sessionCapabilities).toEqual({ delete: {} })
+      expect(json.sessionCapabilities).toEqual({ list: {}, delete: {} })
       expect(host.listSessions).toHaveBeenCalledTimes(1)
     })
 
-    it("missing sessions in the host result → sessions:[] ; missing capabilities → null", async () => {
+    it("missing list capability returns an empty legacy result without calling the host", async () => {
       const host = makeMockHost(makeMockState())
       ;(host.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({})
       ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = undefined
@@ -526,10 +526,14 @@ describe("POST /api/agents/:id/rpc", () => {
       }
       expect(json.sessions).toEqual([])
       expect(json.sessionCapabilities).toBeNull()
+      expect(host.listSessions).not.toHaveBeenCalled()
     })
 
     it("host.listSessions -32601 → 200 {sessions:[], sessionCapabilities} (CF-safe)", async () => {
       const host = makeMockHost(makeMockState())
+      ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = {
+        sessionCapabilities: { list: {} },
+      }
       ;(host.listSessions as ReturnType<typeof vi.fn>).mockRejectedValue(
         Object.assign(new Error("Method not found"), { code: -32601 }),
       )
@@ -543,11 +547,15 @@ describe("POST /api/agents/:id/rpc", () => {
         sessionCapabilities: unknown
       }
       expect(json.sessions).toEqual([])
-      expect(json.sessionCapabilities).toBeNull()
+      expect(json.sessionCapabilities).toEqual({ list: {} })
+      expect(host.listSessions).toHaveBeenCalledOnce()
     })
 
     it("host.listSessions rejecting non-32601 → 502 with {error, code}", async () => {
       const host = makeMockHost(makeMockState())
+      ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = {
+        sessionCapabilities: { list: {} },
+      }
       ;(host.listSessions as ReturnType<typeof vi.fn>).mockRejectedValue(
         Object.assign(new Error("boom"), { code: -32000 }),
       )
@@ -875,6 +883,9 @@ describe("POST /api/agents/:id/rpc", () => {
   describe("deleteSession (blocking, -32601 graceful)", () => {
     it("happy path: 200 {ok:true}; passes sessionId to host", async () => {
       const host = makeMockHost(makeMockState())
+      ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = {
+        sessionCapabilities: { delete: {} },
+      }
       const registry = makeMockRegistry(host, makeMockBroadcaster())
       const app = makeApp(registry)
 
@@ -890,6 +901,9 @@ describe("POST /api/agents/:id/rpc", () => {
 
     it("-32601 (unsupported) → 200 {ok:false, unsupported:true}, NOT 500", async () => {
       const host = makeMockHost(makeMockState())
+      ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = {
+        sessionCapabilities: { delete: {} },
+      }
       ;(host.deleteSession as ReturnType<typeof vi.fn>).mockRejectedValue(
         Object.assign(new Error("Method not found"), { code: -32601 }),
       )
@@ -904,10 +918,14 @@ describe("POST /api/agents/:id/rpc", () => {
       const json = (await res.json()) as unknown as { ok: boolean; unsupported: boolean }
       expect(json.ok).toBe(false)
       expect(json.unsupported).toBe(true)
+      expect(host.deleteSession).toHaveBeenCalledOnce()
     })
 
     it("non-32601 error → 502 with {error, code}", async () => {
       const host = makeMockHost(makeMockState())
+      ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = {
+        sessionCapabilities: { delete: {} },
+      }
       ;(host.deleteSession as ReturnType<typeof vi.fn>).mockRejectedValue(
         Object.assign(new Error("disk full"), { code: -32000 }),
       )
@@ -1189,6 +1207,9 @@ describe("POST /api/agents/:id/rpc", () => {
 
     it("listSessions with invalid waitMs → 200 (ignored silently)", async () => {
       const host = makeMockHost(makeMockState())
+      ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = {
+        sessionCapabilities: { list: {} },
+      }
       ;(host.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({ sessions: [] })
       const registry = makeMockRegistry(host, makeMockBroadcaster())
       const app = makeApp(registry)
@@ -1238,6 +1259,9 @@ describe("POST /api/agents/:id/rpc", () => {
 
     it("session/list returns the blocking 200 body, not a 202 ack", async () => {
       const host = makeMockHost(makeMockState())
+      ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = {
+        sessionCapabilities: { list: {} },
+      }
       host.listSessions = vi.fn().mockResolvedValue({ sessions: [{ sessionId: "a" }] })
       const registry = makeMockRegistry(host, makeMockBroadcaster())
       const app = makeApp(registry)
@@ -1249,6 +1273,9 @@ describe("POST /api/agents/:id/rpc", () => {
 
     it("session/delete maps -32601 to the graceful unsupported body", async () => {
       const host = makeMockHost(makeMockState())
+      ;(host as unknown as { agentCapabilities: unknown }).agentCapabilities = {
+        sessionCapabilities: { delete: {} },
+      }
       host.deleteSession = vi.fn().mockRejectedValue({ code: -32601, message: "nope" })
       const registry = makeMockRegistry(host, makeMockBroadcaster())
       const app = makeApp(registry)

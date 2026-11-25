@@ -338,10 +338,10 @@
       "codeLines": 214
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 898,
-      "impurity": 22,
+      "metric": 860,
+      "impurity": 17,
       "class": "scattered",
-      "codeLines": 568
+      "codeLines": 540
     },
     "packages/backend/src/session-host/turn-lifecycle.ts": {
       "metric": 93,
@@ -1076,10 +1076,10 @@
       "codeLines": 55
     },
     "packages/provider/src/client/client.ts": {
-      "metric": 526,
-      "impurity": 7,
+      "metric": 378,
+      "impurity": 5,
       "class": "mixed",
-      "codeLines": 306
+      "codeLines": 211
     },
     "packages/provider/src/config/cli-config-file.ts": {
       "metric": 307,

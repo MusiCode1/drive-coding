@@ -30,7 +30,7 @@ import type {
   SessionNotification,
 } from "@agentclientprotocol/sdk"
 import { type AcpTransport, createFromLineWire } from "@drive-coding/acp-wire"
-import type { Patch, SessionConfigOption, SessionState, ToolOutputRules } from "@drive-coding/core/session"
+import type { Patch, SessionListQuery, SessionState, ToolOutputRules } from "@drive-coding/core/session"
 import {
   applyPatch,
   applyPendingRequest,
@@ -56,6 +56,7 @@ import { parseExtResult } from "@drive-coding/provider/extensions"
 import { msgOf } from "./error-message.js"
 import { createPendingRequests } from "./pending-requests.js"
 import { defaultRequestTimeouts } from "./request-timeout.js"
+import { createSessionHostClientActions } from "./session-host-client-actions.js"
 import {
   configOptionsAfterLoad,
   createPatchChannel,
@@ -360,7 +361,7 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & TurnTimingH
    * JSON-RPC errors propagate AS-IS (including code -32601) — the rpc route maps them.
    * S4: exposed via POST /api/agents/:id/rpc {method:"session/list"}
    */
-  listSessions(): Promise<Record<string, unknown>>
+  listSessions(options?: SessionListQuery): ReturnType<AcpClient["listSessions"]>
 
   /**
    * Passthrough to client.deleteSession(sessionId).
@@ -375,6 +376,7 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & TurnTimingH
    * ships them in the listSessions response so the FE can gate the delete button.
    */
   readonly agentCapabilities: AcpClient["capabilities"]
+  readonly sessionCapabilitiesSource?: "warm-legacy"
   emitExtNotification(method: string, params: Record<string, unknown>): void
 }
 
@@ -595,6 +597,12 @@ export async function createSessionHostFromConnection(
   const client: AcpClient = warmReattach
     ? createAttachedAcpClient(transport, callbacks)
     : await _createAcpClient(transport, callbacks, clientOpts)
+  const { getAgentCapabilities, ...clientActions } = createSessionHostClientActions({
+    client,
+    isDisposed: () => disposed,
+    getSessionId: () => currentState.sessionId,
+    setConfigOptions: (configOptions) => applySessionChanges({ configOptions }),
+  })
 
   // ── slice http-usable C1: capabilities → SessionState ────────────────────
   // 🔴 חייב להיות **אחרי** יצירת ה-client: תגובת ה-initialize מחליפה את אובייקט
@@ -841,57 +849,11 @@ export async function createSessionHostFromConnection(
       elicitPending.respond(requestId, response)
     },
 
-    async setMode(modeId: string): Promise<void> {
-      if (disposed) throw new Error("SessionHost disposed")
-      if (!currentState.sessionId) throw new Error("No session")
-      await client.setSessionMode({ sessionId: currentState.sessionId, modeId })
+    ...clientActions,
+    get agentCapabilities() {
+      return getAgentCapabilities()
     },
-
-    async setConfigOption(configId: string, value: string | boolean): Promise<void> {
-      if (disposed) throw new Error("SessionHost disposed")
-      if (!currentState.sessionId) throw new Error("No session")
-      // slice http-state-gaps C1: capture configOptions from CLI response (last-write-wins)
-      const result = await client.setSessionConfigOption({
-        sessionId: currentState.sessionId,
-        configId,
-        value,
-      })
-      const configOptions = Array.isArray(result?.configOptions)
-        ? (result.configOptions as SessionConfigOption[])
-        : null
-      if (configOptions !== null) applySessionChanges({ configOptions })
-    },
-
-    async extMethod(
-      method: string,
-      params: Record<string, unknown>,
-    ): Promise<Record<string, unknown>> {
-      if (disposed) throw new Error("SessionHost disposed")
-      return client.extMethod(method, params)
-    },
-
-    async setSessionModel(model: string): Promise<void> {
-      if (disposed) throw new Error("SessionHost disposed")
-      if (!currentState.sessionId) throw new Error("No session")
-      await client.setSessionModel({ sessionId: currentState.sessionId, modelId: model })
-    },
-    // ─── slice remote-session-mgmt C1: session list/delete + capabilities ───
-    // Passthroughs — JSON-RPC errors (incl. code -32601) propagate AS-IS; the rpc
-    // route maps them. No wrapping/absorbing here.
-
-    async listSessions(): Promise<Record<string, unknown>> {
-      if (disposed) throw new Error("SessionHost disposed")
-      return (await client.listSessions()) as Record<string, unknown>
-    },
-
-    async deleteSession(sessionId: string): Promise<void> {
-      if (disposed) throw new Error("SessionHost disposed")
-      await client.deleteSession(sessionId)
-    },
-
-    get agentCapabilities(): AcpClient["capabilities"] {
-      return client.capabilities
-    },
+    ...(warmReattach && { sessionCapabilitiesSource: "warm-legacy" as const }),
     ...{ emitExtNotification: handleExtNotification },
     ...turnHostMethods,
   }

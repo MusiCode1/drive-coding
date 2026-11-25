@@ -411,6 +411,7 @@ describe("session-host HTTP — remote-session-mgmt C3 (real host + real route)"
 
   it("listSessions returns 200 {sessions, sessionCapabilities} from the real host", async () => {
     const { app, mockClient } = await setup()
+    mockClient.capabilities = { sessionCapabilities: { list: {} } }
     ;(mockClient.listSessions as ReturnType<typeof vi.fn>).mockResolvedValue({
       sessions: [{ sessionId: "s1", cwd: "/connection/cwd" }],
     })
@@ -419,8 +420,7 @@ describe("session-host HTTP — remote-session-mgmt C3 (real host + real route)"
     expect(res.status).toBe(200)
     const json = (await res.json()) as { sessions: unknown[]; sessionCapabilities: unknown }
     expect(json.sessions).toEqual([{ sessionId: "s1", cwd: "/connection/cwd" }])
-    // mock client capabilities {} → sessionCapabilities absent → null
-    expect(json.sessionCapabilities).toBeNull()
+    expect(json.sessionCapabilities).toEqual({ list: {} })
   })
 
   it("loadSession over the route switches the real host's session and returns {sessionId, version}", async () => {
@@ -462,6 +462,7 @@ describe("session-host HTTP — remote-session-mgmt C3 (real host + real route)"
 
   it("deleteSession happy path over the route → {ok:true}", async () => {
     const { app, mockClient } = await setup()
+    mockClient.capabilities = { sessionCapabilities: { delete: {} } }
 
     const res = await postRpcIntegration(app, {
       method: "deleteSession",
@@ -474,6 +475,7 @@ describe("session-host HTTP — remote-session-mgmt C3 (real host + real route)"
 
   it("deleteSession: -32601 from the CLI → 200 {ok:false, unsupported:true} (graceful, not 500)", async () => {
     const { app, mockClient } = await setup()
+    mockClient.capabilities = { sessionCapabilities: { delete: {} } }
     ;(mockClient.deleteSession as ReturnType<typeof vi.fn>).mockRejectedValue(
       Object.assign(new Error("Method not found"), { code: -32601 }),
     )
