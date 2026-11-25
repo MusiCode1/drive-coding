@@ -82,15 +82,15 @@ async function connectRemoteHarness(
   handleRequest: HandleRequest,
   liveState: () => SessionState,
   transformWsFrame: FrameTransform = (frame) => frame,
+  maxBytes = 262_144,
 ) {
   const initialFrame = snapshotFrame(snapshot, undefined, "meta")
   const base = { agentId: "agent-contract", baseUrl: "http://be.local", transport }
-  const historyBody = () =>
-    snapshotPayload(liveState(), undefined, { range: { tail: true, maxBytes: 262_144 } })
   const fetchHistory = async (url: string) => {
-    const path = new URL(url, base.baseUrl).pathname
-    if (path.endsWith("/history")) {
-      return Response.json(historyBody(), { status: 200 })
+    const { pathname, searchParams } = new URL(url, base.baseUrl)
+    if (pathname.endsWith("/history")) {
+      const range = searchParams.has("tail") ? { tail: true as const, maxBytes } : undefined
+      return Response.json(snapshotPayload(liveState(), undefined, { range }), { status: 200 })
     }
     throw new Error(`Unexpected HTTP request: ${url}`)
   }
@@ -221,6 +221,35 @@ async function createRemoteHarness(transport: SessionTransport): Promise<Contrac
 }
 
 // ── shared contract ──────────────────────────────────────────────────────────
+
+describe.each(["http", "ws"] as const)("full history order — %s", (transport) => {
+  it("replaces the visible tail in the order of a full snapshot", async () => {
+    let snapshot = createInitialSessionState({ sessionId: "order" })
+    for (const text of ["first", "second", "last"]) {
+      snapshot = reduce(snapshot, {
+        sessionUpdate: "user_message",
+        messageId: text,
+        content: { type: "text", text },
+      }).state
+    }
+    const { view } = await connectRemoteHarness(
+      transport,
+      snapshot,
+      () => ({ status: 200, body: {} }),
+      () => snapshot,
+      undefined,
+      1,
+    )
+    try {
+      expect(view.state.messages.map(({ id }) => id)).toEqual(["m_2"])
+      await view.history.loadFull()
+      expect(view.state.messages.map(({ id }) => id)).toEqual(snapshot.messages.map(({ id }) => id))
+      expect(view.history.window.hasMore).toBe(false)
+    } finally {
+      await view.close()
+    }
+  })
+})
 
 describeSessionViewContract("remote-http", () => createRemoteHarness("http"))
 describeSessionViewContract("remote-ws", () => createRemoteHarness("ws"))

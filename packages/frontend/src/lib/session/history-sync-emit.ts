@@ -20,7 +20,7 @@ export function applyEmitHistory(
   page?: SnapshotPayload["page"],
 ): HistoryWindow {
   let window = buildWindowFromPayload(watermark, page)
-  if (page === undefined) {
+  if (page === undefined && tag !== "full") {
     connWarn("history-page-missing", {})
     window = { ...window, hasMore: false }
   }

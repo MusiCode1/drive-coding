@@ -1,6 +1,6 @@
-import type { SnapshotPayload } from "@drive-coding/core/session"
+import { createInitialSessionState } from "@drive-coding/core/session"
 import type { HistoryGate } from "./history-drain"
-import { settleGet } from "./history-open"
+import { parseHistoryBody, settleGet } from "./history-open"
 import { applyEmitHistory, emitHistoryState, type HistoryEmitCtx } from "./history-sync-emit"
 import type { HistorySyncPort } from "./history-sync-port"
 import type { HistoryWindow } from "./history-window"
@@ -44,15 +44,15 @@ export async function loadFullHistory(opts: {
     emitHistoryState(port, emitCtx())
     return false
   }
-  const body = settled.res.body
-  const payload = typeof body === "object" && body !== null ? (body as SnapshotPayload) : null
+  const payload = parseHistoryBody(settled.res.body)
   if (!payload) {
     setError("history load failed")
     gate.markFailed()
     emitHistoryState(port, emitCtx())
     return false
   }
-  const folded = foldPage(port.getState(), payload)
+  const seed = createInitialSessionState({ sessionId: payload.sessionId ?? "" })
+  const folded = { ...foldPage(seed, payload), sessionId: payload.sessionId }
   port.replace(folded, payload.version)
   setWindow(applyEmitHistory(port, emitCtx(), "full", payload.version, payload.page))
   setError(null)
