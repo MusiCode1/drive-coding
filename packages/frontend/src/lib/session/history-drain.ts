@@ -89,6 +89,16 @@ function applyBatch(batch: WireUpdateBatch, port: HistorySyncPort): Patch[] {
   return produced
 }
 
+function isMetaReset({ updates }: WireUpdateBatch): boolean {
+  // Meta resets carry session metadata but omit the transcript. A bare reset
+  // or a reset with messages already carries the full reset for legacy replay.
+  return (
+    updates[0]?.sessionUpdate === "_drive/reset" &&
+    updates.some((update) => update.sessionUpdate === "_drive/session_update") &&
+    !updates.some((update) => seqFromUpdate(update) !== null)
+  )
+}
+
 export async function drainHistoryUpdates(
   stream: ReadableStream<WireUpdateBatch>,
   port: HistorySyncPort,
@@ -137,7 +147,7 @@ export async function drainHistoryUpdates(
       const { done, value } = await reader.read()
       if (done) break
       const item = { batch: value, connection: connectionOf(value) }
-      if (isMetaMode() && value.updates.some((update) => update.sessionUpdate === "_drive/reset")) {
+      if (isMetaMode() && isMetaReset(value)) {
         if (!current(item)) continue
         queue.length = 0
         apply(item)
