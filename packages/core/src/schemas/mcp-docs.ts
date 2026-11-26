@@ -89,10 +89,17 @@ When child RSS cannot be measured (Windows, stale pid, /proc failure): \`runtime
 
 The header is caller **identity**, not a login.
 
-Write calls (**session_close**, **session_send**) are limited to agents you spawned — your own
+Write calls (**session_close**, **session_send**, **agent_cancel**) are limited to agents you spawned — your own
 subtree. Writing to any other agent raises a permission prompt to **your user**; until they
 answer, the call blocks, and a refusal comes back as \`scope-denied\`. Reads (**session_list**,
 **session_state**) are never restricted.
+
+## Cancel an active turn
+
+Call **agent_cancel** with \`{agentId}\` to request cancellation of that agent's active turn.
+A \`cancel-requested\` outcome is best-effort acceptance. Poll **session_state** for \`turnState: "idle"\`.
+Repeated calls during the same active turn share one provider request. While idle,
+disconnected, or switching sessions the outcome is \`no-active-turn\`; nothing is queued.
 
 ## Agent event subscriptions
 
@@ -116,6 +123,7 @@ export type McpToolName =
   | "session_state"
   | "session_close"
   | "session_subscribe"
+  | "agent_cancel"
   | "agent_unsubscribe"
   | "session_whoami"
   | "session_surface"
@@ -158,6 +166,11 @@ export const MCP_TOOL_META: Record<
     title: "Subscribe to agent events",
     description:
       "Register the caller (or an explicit subscriber UUID) to receive turn-ended and stall-suspected events for the target agent. Duplicate subscribe with the same options is a no-op; repeating with new options (e.g. includeLastAssistantText) updates the subscription. Requires agent (target). subscriber defaults to X-Drive-Coding-Agent when present.",
+  },
+  agent_cancel: {
+    title: "Cancel the active turn",
+    description:
+      "Request best-effort cancellation of the current turn for agentId. Returns cancel-requested for an active turn and sends one provider request per turn. Returns no-active-turn when there is no active host or turn, including during session switches. Poll session_state for idle. Uses the same message scope as session/cancel.",
   },
   agent_unsubscribe: {
     title: "Unsubscribe from agent events",

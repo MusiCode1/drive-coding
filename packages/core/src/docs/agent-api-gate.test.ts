@@ -6,13 +6,13 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, "../../../..")
 
 describe("agent-api gate helpers", () => {
-  it("parses fourteen McpToolName union members from mcp-docs.ts", async () => {
+  it("parses fifteen McpToolName union members from mcp-docs.ts", async () => {
     const { mcpToolVocabulary } = await import(
       // @ts-expect-error — gate scripts are Node ESM outside the TS program
       "../../../../scripts/lint-agent-docs.mjs"
     )
     const names = mcpToolVocabulary(REPO_ROOT)
-    expect(names).toHaveLength(14)
+    expect(names).toHaveLength(15)
     expect(names).toContain("notify_parent")
     expect(names).toContain("session_open")
   })

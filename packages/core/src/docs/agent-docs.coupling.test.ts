@@ -45,6 +45,25 @@ describe("agent-docs coupling", () => {
     }
   })
 
+  it("agent_cancel is discoverable in the lifecycle, state, scope and RPC docs", () => {
+    expect(MCP_TOOL_META.agent_cancel?.description).toContain("session/cancel")
+    for (const name of [
+      "20-session-lifecycle",
+      "40-reading-output",
+      "50-rpc",
+      "60-identity-and-scopes",
+    ]) {
+      const doc = fs.readFileSync(path.join(REPO_ROOT, "docs/agents", `${name}.md`), "utf8")
+      const delimiter = "\n---\n"
+      const end = doc.indexOf(delimiter)
+      expect(end).toBeGreaterThan(0)
+      expect(doc.slice(0, end)).toMatch(
+        /^ {2}- agent_cancel$|^mcp_tools: \[.*\bagent_cancel\b.*\]$/m,
+      )
+      expect(doc.slice(end + delimiter.length)).toContain("`agent_cancel")
+    }
+  })
+
   it("80-providers lists every CLI_KINDS entry", () => {
     const doc = fs.readFileSync(PROVIDERS_DOC, "utf8")
     const kinds = [...CLI_KINDS]

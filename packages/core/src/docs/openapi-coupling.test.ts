@@ -41,11 +41,16 @@ describe("openapi and RPC doc coupling", () => {
     expect(ops).toHaveLength(44)
   })
 
-  it("McpToolName union includes both agent-event tools and notify_parent", () => {
+  it("McpToolName union includes agent_cancel, both agent-event tools and notify_parent", () => {
     const names = mcpToolNamesFromSource()
-    expect(names).toHaveLength(14)
+    expect(names).toHaveLength(15)
     expect(names).toEqual(
-      expect.arrayContaining(["notify_parent", "session_subscribe", "agent_unsubscribe"]),
+      expect.arrayContaining([
+        "notify_parent",
+        "session_subscribe",
+        "agent_unsubscribe",
+        "agent_cancel",
+      ]),
     )
   })
 

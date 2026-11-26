@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.16.0",
+  "docsVersion": "1.17.0",
   "docs": [
     {
       "id": "orientation",
@@ -56,7 +56,7 @@
     {
       "id": "session-lifecycle",
       "title": "Session lifecycle — open, send, close",
-      "summary": "How to open an agent, drive a turn, close it, and keep session viewers alive.",
+      "summary": "How to open an agent, send and cancel turns, close the agent, and keep viewers alive.",
       "read_when": [
         "You need to spawn an agent and get its id",
         "A turn is running and you must decide between waiting and forcing",
@@ -65,7 +65,7 @@
       "tags": ["session", "ownership", "turnstate"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.15.0",
+      "docs_version": "1.17.0",
       "routes": [
         "GET /api/agents",
         "POST /api/agents",
@@ -79,6 +79,7 @@
         "session_open",
         "session_send",
         "session_state",
+        "agent_cancel",
         "session_close",
         "session_note_set",
         "session_field_set",
@@ -90,6 +91,7 @@
         "Typical MCP workflow",
         "Open (spawn)",
         "Send (drive a turn)",
+        "Cancel the active turn",
         "Close",
         "Viewer groups and liveness",
         "Identity header",
@@ -139,14 +141,14 @@
       "tags": ["output", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.13.0",
+      "docs_version": "1.17.0",
       "routes": [
         "GET /api/agents/:id/history",
         "GET /api/agents/:id/events",
         "GET /api/agents/:id/state",
         "POST /api/agents/:id/rpc"
       ],
-      "mcp_tools": ["session_send", "session_state"],
+      "mcp_tools": ["session_send", "session_state", "agent_cancel"],
       "path": "docs/agents/40-reading-output.md",
       "headings": [
         "Reading output",
@@ -232,11 +234,11 @@
         "You need the canonical list of RPC method names and what each one expects"
       ],
       "tags": ["rpc", "session"],
-      "surface": ["http"],
+      "surface": ["http", "mcp"],
       "stability": "transitional",
-      "docs_version": "1.12.0",
+      "docs_version": "1.17.0",
       "routes": ["POST /api/agents/:id/rpc"],
-      "mcp_tools": [],
+      "mcp_tools": ["agent_cancel"],
       "path": "docs/agents/50-rpc.md",
       "headings": [
         "Agent session RPC",
@@ -263,14 +265,14 @@
       "tags": ["identity"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.15.0",
+      "docs_version": "1.17.0",
       "routes": [
         "POST /api/agents/:id/reply",
         "DELETE /api/agents/:id/subscribe",
         "GET /api/scope-policy",
         "PATCH /api/scope-policy"
       ],
-      "mcp_tools": ["agent_unsubscribe", "session_whoami"],
+      "mcp_tools": ["agent_cancel", "agent_unsubscribe", "session_whoami"],
       "path": "docs/agents/60-identity-and-scopes.md",
       "headings": [
         "Agent identity and scoped writes",

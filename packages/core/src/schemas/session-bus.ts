@@ -122,6 +122,12 @@ export const AgentCloseInput = type({
 })
 export type AgentCloseInput = typeof AgentCloseInput.infer
 
+export const AgentCancelInput = type({
+  "+": "reject",
+  agentId: reqStr("Target agent UUID from session_open or session_list."),
+})
+export type AgentCancelInput = typeof AgentCancelInput.infer
+
 export const AgentStateInput = type({
   agent: reqStr("Agent UUID to read state for."),
 })

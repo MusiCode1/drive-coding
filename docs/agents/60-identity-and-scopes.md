@@ -16,10 +16,11 @@ routes:
   - GET /api/scope-policy
   - PATCH /api/scope-policy
 mcp_tools:
+  - agent_cancel
   - agent_unsubscribe
   - session_whoami
-docs_version: 1.15.0
-updated: 2026-11-25
+docs_version: 1.17.0
+updated: 2026-11-26
 ---
 
 # Agent identity and scoped writes
@@ -112,7 +113,7 @@ Three independent global selectors — **`ask`**, **`allow`**, or **`deny`** —
 
 | Group | Examples |
 |-------|----------|
-| **message** | MCP `session_send`, RPC `session/prompt` and `session/cancel`, subscriptions |
+| **message** | MCP `session_send` and `agent_cancel`, RPC `session/prompt` and `session/cancel`, subscriptions |
 | **update** | HTTP `PATCH`, `POST …/reply`, viewer detach, RPC config/session control methods |
 | **close** | HTTP `DELETE` agent, MCP `session_close`, RPC `session/delete` |
 
@@ -129,6 +130,10 @@ on that caller. The grant starts at dispatch. It still applies if the provider l
 rejects the prompt, and either agent's normal closure removes it. It applies only to
 that pair and those three actions. Cancellation, system notifications, `notify_parent`,
 and sends without a scoped agent token do not create it.
+
+MCP `agent_cancel {agentId}` uses the same `session/cancel` permission,
+permanent message grant and reply grant as RPC. Scope is checked before
+looking up the target host, including when the target is idle.
 
 ### Agent HTTP write routes
 

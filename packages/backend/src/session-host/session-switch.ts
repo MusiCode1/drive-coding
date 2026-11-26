@@ -1,6 +1,8 @@
 import type { CreateElicitationResponse, RequestPermissionResponse } from "@agentclientprotocol/sdk"
 import { applyPatch, type Patch, type SessionState } from "@drive-coding/core/session"
 
+export const SWITCHING_SESSION_ID = "__drive_switching__"
+
 type Transcript = Pick<SessionState, "messages" | "nextMessageSeq" | "nextSegmentSeq" | "carried">
 
 interface SessionSwitchDeps {
