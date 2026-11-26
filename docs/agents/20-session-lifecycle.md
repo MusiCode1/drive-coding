@@ -33,8 +33,8 @@ mcp_tools:
   - agent_field_set
   - session_field_delete
   - agent_field_delete
-docs_version: 1.16.0
-updated: 2026-11-25
+docs_version: 1.17.0
+updated: 2026-11-26
 ---
 
 # Session lifecycle
@@ -111,9 +111,15 @@ Optional highlights:
 - **`permission`** — policy for the new agent (`allow_once`, `allow_always`, `reject_once`, `ask`).
 - **`parent`** / header **`X-Drive-Coding-Agent`** — sub-agent wiring (`parentAgentId`).
 - **`closeOnTurnEnd`** — auto-close after first clean turn end.
-- **`publicUrl` / `base`** — backend URL used to build chat links and child env.
+- **`publicUrl`** — base for the returned chat link. With legacy `session_open`, `base`
+  also works and `publicUrl` takes precedence when supplied, including an empty string.
+  With canonical `agent_open`, use `publicUrl`. By default, both use the instance's
+  configured public origin, falling back to its local HTTP base. MCP ignores `port`.
 
 MCP **`session_open`** returns `{ agent, sessionId, url, cli, modes, configOptions, hint }`.
+The link is `<base>/chat/<cliKind>/<sessionId>?sessionTransport=http`. An empty
+`publicUrl` returns a relative link. The child uses the instance's local API address
+through `DRIVE_CODING_BASE` and `DC_BASE`, and receives its own agent identity at launch.
 The hint explains that **`sets` on session_send** must use ids from that catalog.
 
 ## Send (drive a turn)
@@ -235,8 +241,10 @@ drive-coding agent state --agent ID
 drive-coding agent close --agent ID [--force]
 ```
 
-`open` injects **`DRIVE_CODING_BASE`** and **`DC_BASE`** into the child; with `--parent`,
-also **`DC_PARENT`**.
+`--base` chooses the HTTP endpoint for the CLI, and `--public-url` overrides the printed
+chat link base, which defaults to the endpoint the CLI used. The instance injects
+**`DRIVE_CODING_BASE`** and **`DC_BASE`** into the child. With `--parent`, the child
+also receives **`DC_PARENT`**.
 
 ## Limits (MCP)
 

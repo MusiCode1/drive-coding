@@ -42,6 +42,7 @@ export type ParseCreateAgentFailure = {
 export function parseCreateAgentBody(
   body: unknown,
   env: NodeJS.ProcessEnv,
+  options?: { sidecarSizeBase?: string },
 ): { ok: true; value: CreateAndSpawnInput } | { ok: false; error: ParseCreateAgentFailure } {
   const parsed = CreateAgentInputFull(body)
   if (parsed instanceof type.errors) {
@@ -79,7 +80,13 @@ export function parseCreateAgentBody(
   }
 
   if (parsed.env !== undefined && sidecarKinds(env).has(parsed.cliKind)) {
-    const size = encodeSidecarAgentEnv(parsed.env).length
+    // Preserve the MCP input budget while forwarding the caller's validated env.
+    const { sidecarSizeBase } = options ?? {}
+    const measuredEnv =
+      sidecarSizeBase === undefined
+        ? parsed.env
+        : { ...parsed.env, DRIVE_CODING_BASE: sidecarSizeBase, DC_BASE: sidecarSizeBase }
+    const size = encodeSidecarAgentEnv(measuredEnv).length
     if (size > SIDECAR_INPUT_ENV_LIMIT) {
       return {
         ok: false,
