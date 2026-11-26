@@ -188,7 +188,18 @@ export class AgentSession {
   status = $state<AgentSessionStatus>("idle")
   /** מה המודל עושה בתור הנוכחי. idle = אין תור פעיל. */
   turnState = $state<TurnState>("idle")
-  error = $state<string | null>(null)
+  #error = $state<string | null>(null)
+  #errorFromTurn = false
+  get error(): string | null {
+    return this.#error
+  }
+  set error(value: string | null) {
+    this.#error = value
+    this.#errorFromTurn = false
+  }
+  get hasTurnError(): boolean {
+    return this.#errorFromTurn
+  }
   authMethods = $state<ReadonlyArray<GuidanceAuthMethod>>([])
   bubbles = $state<Bubble[]>([])
   // ─── slice session-state-reducer C4: מצב SessionState פנימי (base ל-reduce) ─── (additive)
@@ -460,11 +471,6 @@ export class AgentSession {
    */
   #answeredPermissionId: number | null = null
   #answeredElicitationId: number | null = null
-  /**
-   * ה-error string שהסנכרון מ-lastTurnError עצמו כתב — מאפשר ניקוי ממוקד (תור חדש
-   * מנקה רק באנר שמקורו כאן; אזהרה אחרת — reply failed / כשל-שיגור — שורדת, מכוון).
-   */
-  #errorFromTurn: string | null = null
 
   // ─── slice ws-reconnect-infra: reconnect internals ───
   /** ה-cliKind של ה-attach/loadSession האחרון — נדרש ל-cold reconnect.
@@ -531,13 +537,10 @@ export class AgentSession {
 
     // ─── slice view-switch C3-ו.2: lastTurnError → session.error (דו-כיווני, ממוקד) ───
     if (viewState.lastTurnError) {
-      this.error = `prompt failed: ${viewState.lastTurnError.message}`
-      this.#errorFromTurn = this.error
-    } else if (this.error !== null && this.error === this.#errorFromTurn) {
-      // תור חדש מנקה **רק** באנר שמקורו כאן — אזהרה ממקור אחר (reply failed, כשל-שיגור)
-      // שורדת (הצד השני של אותו מטבע: known-gap — שום דבר לא מנקה אזהרות כאלה, S6 לא סוגר).
+      this.#error = `prompt failed: ${viewState.lastTurnError.message}`
+      this.#errorFromTurn = true
+    } else if (this.#errorFromTurn) {
       this.error = null
-      this.#errorFromTurn = null
     }
   }
 
@@ -644,13 +647,19 @@ export class AgentSession {
   }
 
   // slice http-live-side-effects: onSseReconnected אינו אופציונלי יותר — הגוף מספק אותו תמיד.
-  #connectRemoteView(agentId: string) {
-    return createRemoteView({
+  async #connectRemoteView(agentId: string) {
+    const view = await createRemoteView({
       agentId,
       transport: this.#sessionTransport,
       headers: { "Acp-Connection-Id": this.#connectionId },
       onSseReconnected: () => this._onSseReconnectedForTest(),
     })
+    const { sessionId } = view.state
+    if (sessionId == null) {
+      await view.close()
+      throw new Error("remote mode: backend did not provide a sessionId")
+    }
+    return { view, sessionId }
   }
 
   /**
@@ -709,6 +718,22 @@ export class AgentSession {
     this.#cliKind = ctx.cliKind
   }
 
+  #beginRemoteAttach(input: { cwd: string; cliKind: string; transport: SessionTransport }): void {
+    // Reject a second attach before cleanup can close the current connection.
+    if (this.status === "connecting" || this.status === "connected") {
+      throw new Error(`cannot attach in status ${this.status}`)
+    }
+    this.#cleanup()
+    this.error = null
+    this.authMethods = []
+    this.#errorSurfaced = false
+    this.bubbles = []
+    this.#setStatus("connecting")
+    this.cwd = input.cwd
+    this.#cliKind = input.cliKind
+    this.#sessionTransport = input.transport
+  }
+
   /** Starts a new backend-owned session and connects its view. */
   attachRemote = async (input: {
     cwd: string
@@ -716,28 +741,8 @@ export class AgentSession {
     systemPrompt?: string | null
     transport: SessionTransport
   }): Promise<void> => {
-    // 0. ⚠️⚠️ בדיקת חיבור כפול קודמת לניקוי
-    // (חיבור-חוזר במצב connected היה הורג agent+host+תת-תהליך חי לפני שהוא זורק).
-    if (this.status === "connecting" || this.status === "connected") {
-      throw new Error(`cannot attach in status ${this.status}`)
-    }
-    // 0ב. ⚠️ פרק #view קיים דרך #cleanup() — לא ידנית (deleteAgent חי רק שם).
-    this.#cleanup()
+    this.#beginRemoteAttach(input)
 
-    // 1. בלוק-איפוס זהה ל-attach + איפוס מרחב-ה-ids של pending (guard-זהות, ר' C3-ו)
-    this.error = null
-    this.authMethods = []
-    this.#errorSurfaced = false
-    this.bubbles = []
-    this.#answeredPermissionId = null
-    this.#answeredElicitationId = null
-
-    this.#setStatus("connecting")
-    this.cwd = input.cwd
-    this.#cliKind = input.cliKind
-    this.#sessionTransport = input.transport
-
-    let attached = false
     try {
       // 3. HTTP בלבד. מיד אחריו: agentId מוצב — #cleanup מוחק לפיו; אם ההשמה נדחית
       // לשלב 6, הניקוי בשלב 5 או 8 לא יקבל את המזהה,
@@ -749,49 +754,26 @@ export class AgentSession {
       })
       this.agentId = agentId
 
-      // 4.
-      const view = await this.#connectRemoteView(agentId)
-
-      // 5. כשל-מהיר: אם ה-BE לא סיפק sessionId — סגור + #cleanup (agent/host/child כבר
-      // נוצרו בשלב 3; close() לבדו לא מוחק את ה-agent, רק #cleanup עושה זאת).
-      if (view.state.sessionId == null) {
-        await view.close()
-        this.#cleanup()
-        this.error = "remote mode: backend did not provide a sessionId"
-        this.#errorSurfaced = true
-        this.#setStatus("error")
-        return
-      }
-
-      // slice http-cold-parity: אימוץ ה-sessionId מהסנאפשוט — תקדים חי זהה ב-
-      // attachRemoteToLiveAgent (slice http-state-gaps C4). מיד אחרי בלוק הכשל-המהיר
-      // (שכבר הבטיח view.state.sessionId != null) ולפני this.#view = view.
-      this.#enterSession(view.state.sessionId)
+      const { view, sessionId } = await this.#connectRemoteView(agentId)
+      this.#enterSession(sessionId)
 
       // 6.
       this.#view = view
       void this.#consumeViewPatches(view)
       this.#setStatus("connected")
-      attached = true
     } catch (e) {
       // 8. כל שלבים 3-6 עטופים — createAgent/connect() שנדחים לא ישאירו status="connecting" לנצח
       this.#cleanup()
       Object.assign(this, sessionAttachFailure(e))
       this.#errorSurfaced = true
       this.#setStatus("error")
+      return
     }
-    // slice http-cold-parity: שחזור-בחירות best-effort — בכוונה מחוץ ל-try. גרסה
-    // שמניחה את זה בתוך ה-try הופכת כשל-RPC חולף אחד לחיבור-מוצלח→status="error"+
-    // #cleanup() — הורגת agent+host+child שזה עתה נוצרו. ר' הבריף §4/Commit 1#4.
-    // ⚠️ דגל מקומי ולא `this.status === "connected"`: השומר בראש המתודה מצמצם את
-    // הטיפוס של this.status, ו-TS אינו עוקב אחרי ההשמה שבתוך #setStatus — לכן
-    // ההשוואה סומנה כ"בלתי-אפשרית". הדגל מבטא את אותו תנאי בדיוק, ונראה ל-TS.
-    if (attached) {
-      try {
-        await this.#applyRememberedConfig()
-      } catch {
-        /* שחזור-בחירות הוא נוחות, לא תנאי-חיבור */
-      }
+    // Restoring preferences is best-effort and must not tear down an attached agent.
+    try {
+      await this.#applyRememberedConfig()
+    } catch {
+      // The session is already connected.
     }
   }
 
@@ -806,47 +788,12 @@ export class AgentSession {
       transport: SessionTransport
     } & ManualTitleInput,
   ): Promise<void> => {
-    // 0. ⚠️⚠️ קודם guard-הכפילות, ורק אחריו #cleanup() — אותו סדר קריטי כמו attachRemote
-    // (חיבור-חוזר במצב connected היה הורג חיבור קיים לפני שהוא זורק).
-    if (this.status === "connecting" || this.status === "connected") {
-      throw new Error(`cannot attach in status ${this.status}`)
-    }
-    // 0ב. פרק חיבור קיים דרך #cleanup() — לא ידנית.
-    this.#cleanup()
-
-    // 1. בלוק-איפוס זהה ל-attachRemote + איפוס מרחב-ה-ids של pending (guard-זהות)
-    this.error = null
-    this.authMethods = []
-    this.#errorSurfaced = false
-    this.bubbles = []
-    this.#answeredPermissionId = null
-    this.#answeredElicitationId = null
-
-    this.#setStatus("connecting")
+    this.#beginRemoteAttach(input)
     this.agentId = input.agentId
-    this.cwd = input.cwd
-    this.#cliKind = input.cliKind
-    this.#sessionTransport = input.transport
 
     try {
-      // 3. ללא createAgent — ה-host קיים ב-BE. createRemoteView כבר קורא connect()
-      // בעצמו (memoized, M8); החתימה מקבלת אובייקט opts (התקדים attachRemote:1204).
-      const view = await this.#connectRemoteView(input.agentId)
-
-      // 4. כשל-מהיר: sessionId מה-snapshot (מקור-האמת). ⚠️ סטייה מודעת מהבריף:
-      // keepAgent:true — #cleanup() רגיל קורא deleteAgent(agentId), והיה הורג את
-      // הסוכן **החי** שאנחנו מתחברים אליו (ב-attachRemote הסוכן נוצר באותה מתודה
-      // ולכן מחיקה נכונה; כאן הסוכן שייך למשתמשת וחייב לשרוד כשל).
-      if (view.state.sessionId == null) {
-        await view.close()
-        this.#cleanup({ keepAgent: true })
-        this.error = "remote mode: backend did not provide a sessionId"
-        this.#errorSurfaced = true
-        this.#setStatus("error")
-        return
-      }
-
-      this.#enterSession(view.state.sessionId)
+      const { view, sessionId } = await this.#connectRemoteView(input.agentId)
+      this.#enterSession(sessionId)
       if (this.agentId === input.agentId) applyManualTitleFromAttach(this, input, false)
 
       // 5. #consumeViewPatches מכמת בזהות (this.#view !== view → break) — כמו attachRemote.
