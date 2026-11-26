@@ -644,10 +644,10 @@
       "codeLines": 135
     },
     "packages/frontend/src/lib/components/connect/ActiveProcessesPanel.svelte": {
-      "metric": 133,
-      "impurity": 4,
+      "metric": 46,
+      "impurity": 2,
       "class": "mixed",
-      "codeLines": 592
+      "codeLines": 162
     },
     "packages/frontend/src/lib/components/connect/CwdPathCombo.svelte": {
       "metric": 97,
@@ -944,10 +944,10 @@
       "codeLines": 13
     },
     "packages/frontend/src/lib/view-models/active-agents.svelte.ts": {
-      "metric": 90,
-      "impurity": 5,
+      "metric": 81,
+      "impurity": 3,
       "class": "mixed",
-      "codeLines": 68
+      "codeLines": 72
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
       "metric": 1562,

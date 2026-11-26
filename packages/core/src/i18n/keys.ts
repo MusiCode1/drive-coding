@@ -270,6 +270,11 @@ export type MessageKey =
   // ─── agent-tree-display ─── (slice agent-tree-display)
   | "connect.agents.subAgentsOf"
   | "connect.agents.childCount"
+  | "connect.agents.tree.descendant"
+  | "connect.agents.tree.descendants"
+  | "connect.agents.tree.orphan"
+  | "connect.agents.tree.cycle"
+  | "connect.agents.tree.parent"
   | "connect.agents.watcherCount"
   | "connect.agents.openedBy"
   // ─── מסך / wake-lock ─── (slice-wake-lock)

@@ -250,6 +250,11 @@ export const he: Catalog = {
   // ─── agent-tree-display ─── (slice agent-tree-display)
   "connect.agents.subAgentsOf": "סוכני משנה",
   "connect.agents.childCount": "סוכנים ילדים",
+  "connect.agents.tree.descendant": "סוכן משנה",
+  "connect.agents.tree.descendants": "סוכני משנה",
+  "connect.agents.tree.orphan": "הורה חסר",
+  "connect.agents.tree.cycle": "קישור מחזורי",
+  "connect.agents.tree.parent": "של:",
   "connect.agents.watcherCount": "צופים",
   "connect.agents.openedBy": "נפתח על ידי",
   // ─── מסך / wake-lock ─── (slice-wake-lock)

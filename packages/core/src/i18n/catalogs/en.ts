@@ -255,6 +255,11 @@ export const en: Catalog = {
   // ─── agent-tree-display ─── (slice agent-tree-display)
   "connect.agents.subAgentsOf": "Sub-agents",
   "connect.agents.childCount": "Child agents",
+  "connect.agents.tree.descendant": "sub-agent",
+  "connect.agents.tree.descendants": "sub-agents",
+  "connect.agents.tree.orphan": "Missing parent",
+  "connect.agents.tree.cycle": "Cyclic link",
+  "connect.agents.tree.parent": "Parent:",
   "connect.agents.watcherCount": "viewers",
   "connect.agents.openedBy": "opened by",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
