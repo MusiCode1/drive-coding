@@ -18,8 +18,14 @@ export type FramePipe = {
 
 export type RpcKind = "rpc" | "reply"
 
+export type RpcCallOptions = {
+  timeoutMs?: number
+  /** Return this HTTP status as soon as headers arrive. */
+  statusOnlyOn?: number
+}
+
 export type RpcPipe = {
-  call(kind: RpcKind, body: unknown): Promise<ChannelResponse>
+  call(kind: RpcKind, body: unknown, options?: RpcCallOptions): Promise<ChannelResponse>
   label(kind: RpcKind): string
 }
 

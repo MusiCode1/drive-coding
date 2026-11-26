@@ -22,6 +22,7 @@ import {
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { registerView, type ViewDebugInfo } from "$lib/debug/session-registry"
 import type { HistorySync } from "./history-sync"
+import type { PromptDispatchOutcome } from "./prompt-dispatch"
 import { closeRemoteSession } from "./remote-session-close"
 import { openRemoteSession } from "./remote-session-connect"
 import { advanceReadWaterMark, emitView, enqueueEmission } from "./remote-session-emission"
@@ -36,6 +37,7 @@ import {
   remoteLoadSession,
   remoteNewSession,
   remotePrompt,
+  remotePromptTo,
   remoteRespond,
   remoteSetConfigOption,
   remoteSetMode,
@@ -273,6 +275,17 @@ export class RemoteSessionView implements SessionView {
   deleteSession = (sessionId: string) => remoteDeleteSession(this.#rpcDeps(), sessionId)
   prompt = (content: string | PromptBlocks, meta?: Record<string, unknown>) =>
     remotePrompt(this.#rpcDeps(), content, meta)
+  async promptTo(
+    expectedSessionId: string,
+    content: string | PromptBlocks,
+    meta?: Record<string, unknown>,
+  ): Promise<PromptDispatchOutcome> {
+    if (this.#lifetime.signal.aborted || this.targetIdentity?.sessionId !== expectedSessionId) {
+      return { kind: "not-started" }
+    }
+    return remotePromptTo(this.#pipe.rpc, expectedSessionId, content, meta)
+  }
+
   cancel = () => remoteCancel(this.#rpcDeps())
   setMode = (mode: string) => remoteSetMode(this.#rpcDeps(), mode)
   setConfigOption = (key: string, value: unknown) =>
