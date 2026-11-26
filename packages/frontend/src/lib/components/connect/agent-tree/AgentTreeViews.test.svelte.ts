@@ -3,7 +3,17 @@ import type { AgentPublic } from "@drive-coding/core"
 import { buildAgentTree } from "@drive-coding/core/agents/agent-tree"
 import { mount, tick, unmount } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { listAgents } from "$lib/adapters/agents-api"
 import Harness from "./AgentTreeViews.harness.svelte"
+
+vi.mock("$app/state", () => ({
+  navigating: { to: null },
+  page: { url: new URL("http://localhost/") },
+}))
+vi.mock("$lib/adapters/agents-api", async (original) => ({
+  ...(await original<typeof import("$lib/adapters/agents-api")>()),
+  listAgents: vi.fn(),
+}))
 
 function agent(id: string, parentAgentId?: string, busy?: boolean): AgentPublic {
   return {
@@ -12,6 +22,7 @@ function agent(id: string, parentAgentId?: string, busy?: boolean): AgentPublic 
     title: id,
     parentAgentId,
     busy,
+    acpSessionId: `${id}-session`,
     cliKind: "codex",
     modelOverride: null,
     status: "ready",
@@ -33,6 +44,7 @@ let target: HTMLDivElement
 let app: ReturnType<typeof Harness>
 
 beforeEach(() => {
+  vi.mocked(listAgents).mockResolvedValue(fixture)
   const storage = new Map<string, string>()
   vi.stubGlobal("localStorage", {
     getItem: (key: string) => storage.get(key) ?? null,
@@ -55,7 +67,7 @@ function rows(): HTMLElement[] {
 
 describe("agent tree views", () => {
   it("keeps keyed rows in preorder with descendant and busy counts, and focuses the deep parent", async () => {
-    app.setTree(buildAgentTree(fixture))
+    app.update({ tree: buildAgentTree(fixture) })
     await tick()
     const initial = rows()
     expect(initial.map((row) => row.dataset.agentId)).toEqual(fixture.map((agent) => agent.id))
@@ -67,7 +79,7 @@ describe("agent tree views", () => {
     link?.click()
     expect(document.activeElement).toBe(initial[2])
 
-    app.setTree(buildAgentTree(fixture.map((agent) => ({ ...agent, busy: false }))))
+    app.update({ tree: buildAgentTree(fixture.map((agent) => ({ ...agent, busy: false }))) })
     await tick()
     expect(rows()).toHaveLength(initial.length)
     for (const [index, row] of rows().entries()) {
@@ -77,14 +89,14 @@ describe("agent tree views", () => {
   })
 
   it("shows an anomaly on the affected root and retains its children", async () => {
-    app.setTree(
-      buildAgentTree([
+    app.update({
+      tree: buildAgentTree([
         agent("lost", "missing"),
         agent("lost-child", "lost"),
         agent("loop", "loop"),
         agent("loop-child", "loop"),
       ]),
-    )
+    })
     await tick()
 
     const result = rows()
@@ -116,8 +128,8 @@ async function clickButton(text: string, container: ParentNode = target): Promis
 
 describe("agent drill-down", () => {
   it("shows one level, moves focus, and supports breadcrumb and step-by-step return", async () => {
-    app.setMode("flat")
-    app.setTree(buildAgentTree(fixture))
+    app.update({ mode: "flat" })
+    app.update({ tree: buildAgentTree(fixture) })
     await tick()
     expect(rowIds()).toEqual(["root"])
 
@@ -138,8 +150,8 @@ describe("agent drill-down", () => {
   })
 
   it("tracks a reparented branch and falls back to its updated nearest surviving ancestor", async () => {
-    app.setMode("flat")
-    app.setTree(buildAgentTree(fixture))
+    app.update({ mode: "flat" })
+    app.update({ tree: buildAgentTree(fixture) })
     await tick()
     await clickButton("4", rows()[0])
     await clickButton("2", rows()[0])
@@ -148,12 +160,12 @@ describe("agent drill-down", () => {
     const moved = fixture.map((agent) =>
       agent.id === "grandchild" ? { ...agent, parentAgentId: "sibling" } : agent,
     )
-    app.setTree(buildAgentTree(moved))
+    app.update({ tree: buildAgentTree(moved) })
     await tick()
     expect(rowIds()).toEqual(["great-grandchild"])
     expect(target.querySelector("nav")?.textContent).toContain("sibling")
 
-    app.setTree(buildAgentTree(moved.filter((agent) => agent.id !== "grandchild")))
+    app.update({ tree: buildAgentTree(moved.filter((agent) => agent.id !== "grandchild")) })
     await tick()
     expect(rowIds()).toEqual([])
     expect(target.querySelector('[aria-current="location"]')?.textContent).toBe("sibling")
@@ -163,10 +175,10 @@ describe("agent drill-down", () => {
   })
 
   it("preserves a bounded branch during loading and offers close when it disappears", async () => {
-    app.setMode("flat", "child")
+    app.update({ mode: "flat", initialBranchId: "child" })
     await tick()
     expect(target.textContent).toContain("Loading agent branch")
-    app.setTree(buildAgentTree(fixture))
+    app.update({ tree: buildAgentTree(fixture) })
     await tick()
     expect(rowIds()).toEqual(["grandchild"])
     expect(target.querySelector("nav")?.textContent).not.toContain("root")
@@ -178,7 +190,7 @@ describe("agent drill-down", () => {
     expect(rowIds()).toEqual(["grandchild"])
     expect(target.querySelector("nav button")).toBeNull()
 
-    app.setTree(buildAgentTree(fixture.filter((agent) => agent.id !== "child")))
+    app.update({ tree: buildAgentTree(fixture.filter((agent) => agent.id !== "child")) })
     await tick()
     expect(target.textContent).toContain("This branch is no longer available")
     await clickButton("Close branch")
@@ -186,22 +198,52 @@ describe("agent drill-down", () => {
   })
 
   it("applies the responsive default until a native toggle records an explicit choice", async () => {
-    app.setMode("toggle")
-    app.setTree(buildAgentTree(fixture))
+    app.update({ mode: "toggle" })
+    app.update({ tree: buildAgentTree(fixture) })
     await tick()
     expect(target.querySelector('[aria-pressed="true"]')?.textContent?.trim()).toBe("Tree")
 
-    app.setMobile(true)
+    app.update({ mobile: true })
     await tick()
     expect(target.querySelector('[aria-pressed="true"]')?.textContent?.trim()).toBe("Flat")
     expect(rowIds()).toEqual(["root"])
 
     await clickButton("Tree")
     expect(rowIds()).toEqual(fixture.map((agent) => agent.id))
-    app.setMobile(false)
-    app.setMobile(true)
+    app.update({ mobile: false })
+    app.update({ mobile: true })
     await tick()
     expect(target.querySelector('[aria-pressed="true"]')?.textContent?.trim()).toBe("Tree")
+    expect(localStorage.getItem("drive-coding-v2-settings")).toContain('"agentListView":"tree"')
+  })
+})
+
+describe("agent relationship badges", () => {
+  it("shows both relationships, explains a blocked move and closes an unavailable branch", async () => {
+    app.update({ mode: "toggle", mobile: true, tree: buildAgentTree(fixture) })
+    await tick()
+    await clickButton("Tree")
+    app.update({ mode: "header" })
+    await tick()
+    const parent = target.querySelector<HTMLButtonElement>(
+      'button[aria-label="Sub-agent of: root"]',
+    )
+    expect(parent?.getAttribute("aria-disabled")).toBe("true")
+    expect(
+      document.getElementById(parent?.getAttribute("aria-describedby") ?? "")?.textContent,
+    ).toContain("Wait for the turn and pending requests")
+
+    await clickButton("2")
+    await vi.waitFor(() => expect(document.body.querySelector('[role="dialog"]')).not.toBeNull())
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain("grandchild")
+    expect(document.body.querySelector('[role="dialog"] nav')?.textContent).not.toContain("root")
+
+    app.update({ tree: buildAgentTree(fixture.filter((agent) => agent.id !== "child")) })
+    await tick()
+    const dialog = document.body.querySelector('[role="dialog"]')
+    expect(dialog?.textContent).toContain("This branch is no longer available")
+    await clickButton("Close branch", dialog ?? document.body)
+    expect(document.activeElement?.id).toBe("chat-session-title")
     expect(localStorage.getItem("drive-coding-v2-settings")).toContain('"agentListView":"tree"')
   })
 })

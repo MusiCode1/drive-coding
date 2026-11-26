@@ -263,6 +263,13 @@ export const he: Catalog = {
   "connect.agents.tree.unavailable": "ענף הסוכנים כבר אינו זמין",
   "connect.agents.tree.closeBranch": "סגור את הענף",
   "connect.agents.tree.loading": "ענף הסוכנים נטען",
+  "connect.agents.tree.childOf": "סוכן משנה של:",
+  "connect.agents.tree.waitIdle": "יש להמתין לסיום התור והבקשות הממתינות",
+  "connect.agents.tree.transition": "יש להמתין לסיום המעבר בין שיחות",
+  "connect.agents.tree.parentUnavailable": "שיחת ההורה אינה זמינה",
+  "connect.agents.tree.returned": "פתיחת שיחת ההורה נכשלה. חזרת לשיחה המקורית.",
+  "connect.agents.tree.reopen":
+    "פתיחת שיחת ההורה ושחזור השיחה נכשלו. אפשר לפתוח מחדש את הכתובת המקורית:",
   "connect.agents.watcherCount": "צופים",
   "connect.agents.openedBy": "נפתח על ידי",
   // ─── מסך / wake-lock ─── (slice-wake-lock)

@@ -283,6 +283,12 @@ export type MessageKey =
   | "connect.agents.tree.unavailable"
   | "connect.agents.tree.closeBranch"
   | "connect.agents.tree.loading"
+  | "connect.agents.tree.childOf"
+  | "connect.agents.tree.waitIdle"
+  | "connect.agents.tree.transition"
+  | "connect.agents.tree.parentUnavailable"
+  | "connect.agents.tree.returned"
+  | "connect.agents.tree.reopen"
   | "connect.agents.watcherCount"
   | "connect.agents.openedBy"
   // ─── מסך / wake-lock ─── (slice-wake-lock)

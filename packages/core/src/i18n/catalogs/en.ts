@@ -268,6 +268,14 @@ export const en: Catalog = {
   "connect.agents.tree.unavailable": "This branch is no longer available",
   "connect.agents.tree.closeBranch": "Close branch",
   "connect.agents.tree.loading": "Loading agent branch",
+  "connect.agents.tree.childOf": "Sub-agent of:",
+  "connect.agents.tree.waitIdle": "Wait for the turn and pending requests to finish",
+  "connect.agents.tree.transition": "Wait for the current session transition to finish",
+  "connect.agents.tree.parentUnavailable": "The parent session is unavailable",
+  "connect.agents.tree.returned":
+    "Could not open the parent session. The original chat is open again.",
+  "connect.agents.tree.reopen":
+    "Could not open the parent session or restore this chat. Reopen the original address:",
   "connect.agents.watcherCount": "viewers",
   "connect.agents.openedBy": "opened by",
   // ─── מסך / wake-lock ─── (slice-wake-lock)
