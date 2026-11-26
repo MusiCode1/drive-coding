@@ -13,6 +13,7 @@ import type { MessageKey } from "@drive-coding/core/i18n"
 import { transcribe } from "../adapters/voice/transcribe"
 import { Recorder } from "../engines/recorder"
 import { probeMicPermission } from "../util/mic-permission"
+import type { DictateSubmit } from "./dictate-submit.svelte"
 import type { ComposerDraft } from "./composer-draft.svelte"
 import type { Mic } from "./mic.svelte"
 
@@ -54,6 +55,7 @@ export class Dictate {
   readonly #mic: Mic
   readonly #recorder: Recorder
   readonly #recovery: DictatePendingRecovery
+  readonly #submit?: DictateSubmit
   readonly #getInputDeviceId?: () => string | null
   #inFlight: Promise<FinishListeningResult> | null = null
 
@@ -61,12 +63,14 @@ export class Dictate {
     draft: ComposerDraft
     mic: Mic
     recovery: DictatePendingRecovery
+    submit?: DictateSubmit
     getInputDeviceId?: () => string | null
   }) {
     this.#draft = opts.draft
     this.#mic = opts.mic
     this.#recorder = new Recorder()
     this.#recovery = opts.recovery
+    this.#submit = opts.submit
     this.#getInputDeviceId = opts.getInputDeviceId
   }
 
@@ -88,6 +92,24 @@ export class Dictate {
       return this.#runTranscribe()
     }
     return Promise.resolve({ ok: false, error: "dictate.error.generic" })
+  }
+
+  async finishListeningForSubmit(
+    target: Parameters<DictateSubmit["finish"]>[0],
+    snapshot: Parameters<DictateSubmit["finish"]>[1],
+    live: Parameters<DictateSubmit["finish"]>[3],
+  ): Promise<void> {
+    if (!this.#submit || this.state !== "listening") return
+    this.state = "busy"
+    let stopped = false
+    try {
+      await this.#submit.finish(target, snapshot, () => {
+        stopped = true
+        return this.#recorder.stop()
+      }, live)
+    } finally {
+      this.state = stopped ? "idle" : "listening"
+    }
   }
 
   toggle = async (): Promise<void> => {

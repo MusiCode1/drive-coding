@@ -13,6 +13,7 @@ import {
   setLive,
   setMic,
   setModelStatus,
+  setPromptRetry,
   setResponsive,
   setSession,
   setSettings,
@@ -34,6 +35,8 @@ import type { Settings } from "$lib/view-models/settings.svelte"
 import type { Speaker } from "$lib/view-models/speaker.svelte"
 import type { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
 import { UiShellVM, type InputMode } from "$lib/view-models/ui-shell.svelte"
+import { PromptRetry } from "$lib/view-models/prompt-retry.svelte"
+import { DictateSubmit } from "$lib/view-models/dictate-submit.svelte"
 import RecordFooter from "../RecordFooter.svelte"
 
 let {
@@ -142,6 +145,8 @@ const composerDraft = new ComposerDraft()
 setI18n(fakeI18n)
 setComposerDraft(composerDraft)
 setDictate(fakeDictate)
+const prompts = new PromptRetry({ current: () => null, isCurrent: () => false }, () => {})
+setPromptRetry({ prompts, dictateSubmit: new DictateSubmit(prompts) })
 setSession(fakeSession)
 setResponsive(fakeResponsive)
 setUiShell(uiShell)

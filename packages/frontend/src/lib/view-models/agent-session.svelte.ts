@@ -14,7 +14,6 @@ import type {
   SessionNotification,
   UsageUpdate,
 } from "@agentclientprotocol/sdk"
-import type { PromptBlocks } from "@drive-coding/provider/client"
 import { createAgent, deleteAgent, releaseConnection } from "$lib/adapters/agents-api"
 import type { SessionInfo } from "$lib/adapters/sessions"
 import type { CuesEngine } from "$lib/engines/cues"
@@ -63,7 +62,6 @@ import {
   applyTitleFromSessionInput,
   type ManualTitleInput,
   setManualTitleOnAgent,
-  syncTitleFromViewState,
 } from "$lib/view-models/agent-session-manual-title"
 import {
   endSessionScope,
@@ -76,6 +74,8 @@ import {
   newListedSession,
   switchListedSession,
 } from "$lib/view-models/agent-session-switch-listed-session"
+import { type LegacyPromptOptions, sendLegacyPrompt } from "./agent-session-prompt-send"
+import { syncViewMetadata, syncViewTurnError } from "./agent-session-view-sync"
 import { formatAcpError } from "$lib/view-models/format-acp-error"
 import { SessionScope } from "$lib/view-models/session-scoped-state.svelte"
 import { SessionsCacheScope } from "$lib/view-models/sessions-cache-scope.svelte"
@@ -443,6 +443,7 @@ export class AgentSession {
       view: () => this.#view,
       sessionId: () => this.#sessionId,
       cache: () => this.sessionsCache,
+      cliKind: () => this.#cliKind,
       detachWith: (reason) => this.#detachWith(reason),
     }
   }
@@ -499,46 +500,14 @@ export class AgentSession {
    * נקרא אחרי כל batch patches מ-view.patches.
    */
   #syncFromViewState(viewState: SessionState): void {
-    // ─── slice view-switch C3-ו: view נלכד פעם אחת — משמש את ה-shim של pending למטה ───
     const view = this.#view
     if (!view) return
-    this.#noteAgentActivity() // watchdog §2 — מסלול HTTP (batch patches)
-    // turnState (נגזר מסוג patch ב-reduce) — ✅ ללא תנאי, ה-BE הוא הסמכות (isSpuriousIdle בוטל)
-    const vt = viewState.turnState as TurnState
-    if (vt !== this.turnState) this.#setTurnState(vt)
-    syncTitleFromViewState(this, viewState.title)
-    // contextUsage (אופציונלי — אפסר לאמץ ל-UsageUpdate סטרקטורלית)
-    if (viewState.contextUsage !== this.contextUsage) {
-      this.contextUsage = viewState.contextUsage as typeof this.contextUsage
-    }
-    // commands
-    this.availableCommands = viewState.commands as typeof this.availableCommands
-    // modes
-    this.modes = viewState.modes as typeof this.modes
-    // configOptions
-    this.configOptions = viewState.configOptions as typeof this.configOptions
-    // quota
-    if (viewState.quota !== this.quota) this.quota = viewState.quota
-    // ─── slice http-usable C1: capabilities from SessionState → #capabilities ───
-    // Capabilities come from the host snapshot. A missing value preserves the current capabilities.
-    if (viewState.capabilities !== null && viewState.capabilities !== this.#capabilities) {
-      this.#capabilities = viewState.capabilities as NormalizedCapabilities
-    }
-
-    // ─── slice view-switch C3-ו.1: pending (permission + elicitation) — guard-זהות ───
+    this.#noteAgentActivity()
+    syncViewMetadata(this, viewState, (state) => this.#setTurnState(state), this.#capabilities,
+      (value) => { this.#capabilities = value })
     this.#syncPendingPermission(viewState.pending.permission, view)
     this.#syncPendingElicitation(viewState.pending.elicitation, view)
-
-    // ─── slice view-switch C3-ו.2: lastTurnError → session.error (דו-כיווני, ממוקד) ───
-    if (viewState.lastTurnError) {
-      this.error = `prompt failed: ${viewState.lastTurnError.message}`
-      this.#errorFromTurn = this.error
-    } else if (this.error !== null && this.error === this.#errorFromTurn) {
-      // תור חדש מנקה **רק** באנר שמקורו כאן — אזהרה ממקור אחר (reply failed, כשל-שיגור)
-      // שורדת (הצד השני של אותו מטבע: known-gap — שום דבר לא מנקה אזהרות כאלה, S6 לא סוגר).
-      this.error = null
-      this.#errorFromTurn = null
-    }
+    this.#errorFromTurn = syncViewTurnError(this, viewState, this.#errorFromTurn)
   }
 
   /**
@@ -961,45 +930,8 @@ export class AgentSession {
 
   // ─── פרומפטים (prompting) ────────────────────────────────────
 
-  /**
-   * שולח פרומפט (טקסט + אופציונלי attachments). `opts.recordingId` שמור עבור slice 10.
-   * מחזיר Promise שמסתיים כשהתור מושלם (או נדחה בשגיאה).
-   *
-   * ─── slice-image-paste Commit 4b ───
-   * opts.attachments — תמונות שנדחסו (ImageAttachment[]) — נשלחות כ-image blocks.
-   * guard: if (!text.trim() && atts.length === 0) → לא שולח (finding אביגיל r2).
-   * תמונה-בלבד (בלי טקסט): content = [image-blocks בלבד] (ללא text-block ריק).
-   */
-  sendPrompt = async (
-    text: string,
-    opts?: { recordingId?: string; attachments?: { mimeType: string; dataBase64: string }[] },
-  ): Promise<void> => {
-    if (this.status !== "connected") return
-    const view = this.#view
-    if (!view) return
-    // ─── slice-image-paste Commit 4b: guard מורחב — תמונה-בלבד מותרת ───
-    const atts = opts?.attachments ?? []
-    if (!text.trim() && atts.length === 0) return
-
-    // Slice 4: לכידה לטובת הקשר הקריינות
-    this.lastUserMessage = text
-
-    // ─── slice-image-paste Commit 4b: בניית content (PromptBlocks) ───
-    const content: PromptBlocks = [
-      ...(text.trim() ? [{ type: "text" as const, text }] : []),
-      ...atts.map((a) => ({ type: "image" as const, mimeType: a.mimeType, data: a.dataBase64 })),
-    ]
-
-    this.#setTurnState("waiting")
-
-    try {
-      const meta = opts?.recordingId !== undefined ? { recordingId: opts.recordingId } : undefined
-      await view.prompt(content, meta)
-    } catch (err: unknown) {
-      this.#setTurnState("idle")
-      this.error = `prompt failed: ${formatAcpError(err)}`
-    }
-  }
+  sendPrompt = (text: string, opts?: LegacyPromptOptions): Promise<void> =>
+    sendLegacyPrompt(this, this.#view, (state) => this.#setTurnState(state), text, opts)
 
   /** Opens a fixture session from the development chat route. */
   openMockSession = async (name: string, cwd: string): Promise<void> => {

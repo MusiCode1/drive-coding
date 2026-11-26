@@ -1,3 +1,45 @@
+<script module lang="ts">
+import type { createPromptRecoveryDb } from "$lib/adapters/prompt-recovery-idb"
+
+// Serial transactions with rollback, shared by the source, ownership and UI fixtures.
+export function promptTestDb() {
+  const disk = new Map<string, Map<string, unknown>>()
+  let queue: Promise<unknown> = Promise.resolve()
+  const transact: ReturnType<typeof createPromptRecoveryDb>["transact"] = (mode, reads, apply) => {
+    const operation = queue.then(() => {
+      const snapshot = new Map([...disk].map(([name, rows]) => [name, new Map(rows)]))
+      const objectStore = (name: string) => {
+        const existing = snapshot.get(name)
+        const rows = existing ?? new Map<string, unknown>()
+        if (!existing) snapshot.set(name, rows)
+        return {
+          get: (key: IDBValidKey) => rows.get(JSON.stringify(key)),
+          put: (data: unknown, key: IDBValidKey) => rows.set(JSON.stringify(key), data),
+          delete(key: IDBValidKey | IDBKeyRange) {
+            if (typeof key === "object" && "lower" in key) {
+              const [owner] = key.lower as unknown[]
+              for (const saved of rows.keys()) {
+                const parsed: unknown = JSON.parse(saved)
+                if (Array.isArray(parsed) && parsed[0] === owner) rows.delete(saved)
+              }
+            } else rows.delete(JSON.stringify(key))
+          },
+        }
+      }
+      const values = reads.map(({ store, key }) => objectStore(store).get(key as IDBValidKey))
+      const result = apply({ objectStore } as unknown as IDBTransaction, values)
+      if (mode === "readwrite") {
+        for (const [name, rows] of snapshot) disk.set(name, rows)
+      }
+      return result
+    })
+    queue = operation.catch(() => undefined)
+    return operation
+  }
+  return { transact }
+}
+</script>
+
 <script lang="ts">
 /**
  * type-area-harness.svelte — harness for mounting TypeArea in component tests.
@@ -27,6 +69,7 @@ import {
   setI18n,
   setMic,
   setModelStatus,
+  setPromptRetry,
   setSession,
   setSettings,
   setUiShell,
@@ -35,13 +78,16 @@ import {
 import type { MessageKey } from "@drive-coding/core/i18n"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
-import type { Dictate, DictateState, FinishListeningResult } from "$lib/view-models/dictate.svelte"
+import { createDictateRecovery } from "$lib/engines/pending-capture-wiring"
+import { Dictate, type DictateState, type FinishListeningResult } from "$lib/view-models/dictate.svelte"
 import type { I18nVM } from "$lib/view-models/i18n.svelte"
 import type { Mic, MicState } from "$lib/view-models/mic.svelte"
 import type { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
 import type { InputMode, UiShellVM } from "$lib/view-models/ui-shell.svelte"
 import type { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
+import { PromptRetry } from "$lib/view-models/prompt-retry.svelte"
+import { DictateSubmit } from "$lib/view-models/dictate-submit.svelte"
 import TypeArea from "../TypeArea.svelte"
 
 let props: {
@@ -54,6 +100,7 @@ let props: {
   session?: { status: AgentSession["status"] }
   dir?: "rtl" | "ltr"
   micPermissionDenied?: boolean
+  owned?: { prompts: PromptRetry; dictateSubmit: DictateSubmit }
 } = $props()
 
 const fakeI18n = {
@@ -123,7 +170,19 @@ setSettings(fakeSettings)
 setVoiceMode(fakeVoiceMode)
 setModelStatus(fakeModelStatus)
 setComposerDraft(composerDraft)
-setDictate(fakeDictate as unknown as Dictate)
+const prompts = new PromptRetry({ current: () => null, isCurrent: () => false }, () => {})
+if (props.owned) {
+  setPromptRetry(props.owned)
+  setDictate(new Dictate({
+    mic: fakeMic as unknown as Mic,
+    draft: composerDraft,
+    recovery: createDictateRecovery(),
+    submit: props.owned.dictateSubmit,
+  }))
+} else {
+  setPromptRetry({ prompts, dictateSubmit: new DictateSubmit(prompts), legacyFixture: () => true })
+  setDictate(fakeDictate as unknown as Dictate)
+}
 setMic(fakeMic as unknown as Mic)
 setUiShell(fakeUiShell as unknown as UiShellVM)
 </script>

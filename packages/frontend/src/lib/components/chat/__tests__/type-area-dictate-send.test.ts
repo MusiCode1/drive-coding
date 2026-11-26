@@ -4,17 +4,43 @@
  *
  * ─── slice dictate-to-input-polish (C1) ───
  */
-import { mount, unmount } from "svelte"
+import { flushSync, mount, unmount } from "svelte"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { createDictateSubmitSourceDb } from "$lib/adapters/dictate-submit-source"
+import { createFailedPromptStore } from "$lib/adapters/failed-prompt-store"
+import type { RecordTarget } from "$lib/engines/pending-capture-wiring"
+import { promptOwner } from "$lib/engines/prompt-payload"
+import type { SessionView } from "$lib/session/session-view"
+import { DictateSubmit } from "$lib/view-models/dictate-submit.svelte"
+import { PromptRetry } from "$lib/view-models/prompt-retry.svelte"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import type { FinishListeningResult } from "$lib/view-models/dictate.svelte"
-import TypeAreaHarness from "./type-area-harness.svelte"
+import TypeAreaHarness, { promptTestDb } from "./type-area-harness.svelte"
+
+const recorder = vi.hoisted(() => ({ start: vi.fn(), stop: vi.fn() }))
+vi.mock("$lib/engines/recorder", () => ({
+  Recorder: class {
+    start = recorder.start
+    stop = recorder.stop
+  },
+}))
+vi.mock("$lib/engines/image-attachment", () => ({
+  fileToImageAttachment: async () => ({
+    id: "fixture-attachment", mimeType: "image/png", dataBase64: "QUJD", previewUrl: "blob:fixture", bytes: 3,
+  }),
+  revokeAttachment: () => {},
+}))
 
 let target: HTMLDivElement | null = null
 let app: object | null = null
 
+let ownedVm: PromptRetry | undefined
+
 afterEach(() => {
   if (app !== null) unmount(app)
+  ownedVm?.dispose()
+  ownedVm = undefined
+  localStorage.clear()
   target?.remove()
   target = null
   app = null
@@ -22,6 +48,8 @@ afterEach(() => {
 
 function mountHarness(props: {
   enterToSend?: boolean
+  supportsImageInput?: boolean
+  owned?: { prompts: PromptRetry; dictateSubmit: DictateSubmit }
   dictateState?: "idle" | "listening" | "busy"
   finishListening?: () => Promise<FinishListeningResult>
   sendPrompt?: (text: string, opts?: { attachments?: unknown[] }) => void
@@ -33,6 +61,8 @@ function mountHarness(props: {
     target,
     props: {
       enterToSend: props.enterToSend ?? false,
+      supportsImageInput: props.supportsImageInput,
+      owned: props.owned,
       dictateState: props.dictateState,
       finishListening: props.finishListening,
       sendPrompt: props.sendPrompt ?? (() => {}),
@@ -192,5 +222,93 @@ describe("TypeArea — idle typed send remains synchronous until first await", (
     expect(finishListening).not.toHaveBeenCalled()
     expect(sendPrompt).toHaveBeenCalledOnce()
     expect(sendPrompt).toHaveBeenCalledWith("hello", { attachments: [] })
+  })
+})
+
+describe("owned Dictate Submit through the TypeArea and Prompt DB", () => {
+  it.each([
+    { text: "", image: false, move: false },
+    { text: "   ", image: true, move: false },
+    { text: "", image: true, move: true },
+    { text: "   ", image: false, move: true },
+  ])("preserves a real payload with an empty STT result ($text/$image/$move)", async ({ text, image, move }) => {
+    const db = promptTestDb()
+    const store = createFailedPromptStore(db)
+    const sourceDb = createDictateSubmitSourceDb(db)
+    const base = "https://fixture.local"
+    const transport = vi.fn().mockResolvedValue({ kind: "accepted" })
+    const view = { promptTo: transport } as unknown as SessionView
+    const forSession = (id: string, generation: number): RecordTarget => ({
+      view, generation, agentId: `agent-${generation}`, backendBaseUrl: base,
+      ownerKey: promptOwner(base, "fixture", id),
+    })
+    const a = forSession("A", 1)
+    const b = forSession("B", 2)
+    let active = a
+    const targets = { current: () => active, isCurrent: (entry: RecordTarget) => entry === active }
+    const prompts = new PromptRetry(targets, vi.fn(), store)
+    ownedVm = prompts
+    const stt = Promise.withResolvers<{ text: string; recordingId: string }>()
+    const speech = vi.fn(() => stt.promise)
+    const dictateSubmit = new DictateSubmit(prompts, sourceDb, speech)
+    recorder.start.mockReset().mockResolvedValue(undefined)
+    recorder.stop.mockReset().mockResolvedValue({
+      blob: new Blob(["fixture audio"], { type: "audio/webm" }), mimeType: "audio/webm",
+    })
+    const form = mountHarness({ owned: { prompts, dictateSubmit }, supportsImageInput: image })
+    const mic = form.querySelector<HTMLButtonElement>('button[aria-label="dictate.start"]')
+    if (!mic) throw new Error("Missing Dictate button")
+    const setText = (value: string) => {
+      const textarea = getTextarea()
+      textarea.value = value
+      textarea.dispatchEvent(new Event("input", { bubbles: true }))
+      flushSync()
+    }
+    if (image) {
+      const file = form.querySelector('input[type="file"]')
+      if (!file) throw new Error("Missing image input")
+      Object.defineProperty(file, "files", { value: [new File(["abc"], "fixture.png", { type: "image/png" })] })
+      file.dispatchEvent(new Event("change", { bubbles: true }))
+      await vi.waitFor(() => expect(target?.querySelector("img")).not.toBeNull())
+    } else {
+      setText("typed A")
+    }
+    mic.click()
+    await vi.waitFor(() => expect(mic.getAttribute("aria-pressed")).toBe("true"))
+    getSubmitButton(form).click()
+    await vi.waitFor(() => expect(speech).toHaveBeenCalledOnce())
+    const persisted = await sourceDb.load(a.ownerKey)
+    expect(persisted?.snapshot.text).toBe(image ? "" : "typed A")
+    expect(persisted?.snapshot.attachments).toHaveLength(image ? 1 : 0)
+    expect(recorder.stop).toHaveBeenCalledOnce()
+    expect(transport).not.toHaveBeenCalled()
+
+    if (move) {
+      active = b
+      setText("typed B")
+    } else if (!image) {
+      setText("updated A")
+    }
+    stt.resolve({ text, recordingId: "irrelevant-dictate-id" })
+    if (move) {
+      await vi.waitFor(async () =>
+        expect((await sourceDb.load(a.ownerKey))?.capture.transcribedText).toBe(text))
+      expect(transport).not.toHaveBeenCalled()
+      expect(getTextarea().value).toBe("typed B")
+      expect(await sourceDb.load(b.ownerKey)).toBeUndefined()
+      active = forSession("A", 3)
+      const reopened = new DictateSubmit(prompts, createDictateSubmitSourceDb(db), speech)
+      await reopened.refresh()
+      const captured = reopened.source
+      if (!captured) throw new Error("Missing restored Dictate source")
+      await reopened.resume(captured)
+    }
+    await vi.waitFor(() => expect(transport).toHaveBeenCalledOnce())
+    expect(transport).toHaveBeenCalledWith("A", image
+      ? [{ type: "image", mimeType: "image/png", data: "QUJD" }]
+      : [{ type: "text", text: move ? "typed A" : "updated A" }], undefined)
+    expect(speech).toHaveBeenCalledOnce()
+    expect(await sourceDb.load(a.ownerKey)).toBeUndefined()
+    if (!move) expect(getTextarea().value).toBe("")
   })
 })

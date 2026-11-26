@@ -30,6 +30,11 @@ export type RecordTargetSource = {
   isCurrent(target: RecordTarget): boolean
 }
 
+export function sameRecordTarget(active: RecordTarget | null, expected: RecordTarget): boolean {
+  return active?.ownerKey === expected.ownerKey && active.view === expected.view &&
+    active.agentId === expected.agentId && active.generation === expected.generation
+}
+
 export type RecordCaptureEntry = Readonly<{
   ownerKey: string
   revision: number
@@ -47,7 +52,7 @@ type RecordSlot = {
 type RecordAttempt = {
   canTranscribe(): boolean
   transcribe: TranscribeContext["transcribe"]
-  onSend(text: string, recordingId: string): boolean
+  onSend(text: string, recordingId: string, captureId: string): boolean | Promise<boolean>
 }
 
 export function createRecordAttempt(
@@ -72,7 +77,26 @@ export class RecordCaptureCoordinator {
   readonly #store = createRecordCaptureStore()
   readonly #owners = new Map<string | null, RecordSlot>()
 
-  constructor(private readonly notify: () => void) {}
+  constructor(
+    private readonly notify: () => void,
+    private readonly hasReceipt?: (owner: string, captureId: string) => Promise<boolean>,
+    private readonly onStorageError?: (owner: string) => void,
+  ) {}
+
+  async #checkReceipt(owner: string, recovery: PendingCaptureRecovery, isCurrent: () => boolean) {
+    const capture = recovery.capture
+    if (!capture || !this.hasReceipt) return true
+    try {
+      if (await this.hasReceipt(owner, capture.id)) {
+        if (isCurrent()) await recovery.dismiss()
+        return false
+      }
+      return isCurrent()
+    } catch {
+      if (isCurrent()) this.onStorageError?.(owner)
+      return false
+    }
+  }
 
   #slot(ownerKey: string | null): RecordSlot {
     const existing = this.#owners.get(ownerKey)
@@ -104,8 +128,14 @@ export class RecordCaptureCoordinator {
     const { revision, entry } = slot
     const recovery = this.#recovery(ownerKey)
     await recovery.hydrate()
-    if (slot.active || slot.revision !== revision || slot.entry !== entry || !isCurrent()) return
-    this.#publish(ownerKey, slot, recovery, true)
+    const current = () =>
+      !slot.active && slot.revision === revision && slot.entry === entry && isCurrent()
+    if (!current()) return
+    if (this.hasReceipt && !(await this.#checkReceipt(ownerKey, recovery, current))) {
+      if (current()) this.#publish(ownerKey, slot, recovery, true, true)
+      return
+    }
+    if (current()) this.#publish(ownerKey, slot, recovery, true)
   }
 
   async process(
@@ -155,7 +185,7 @@ export class RecordCaptureCoordinator {
     return this.#store.forOwner(entry.ownerKey).remove(entry.capture.id)
   }
 
-  #transcribe(
+  async #transcribe(
     ownerKey: string,
     slot: RecordSlot,
     operation: symbol,
@@ -166,6 +196,10 @@ export class RecordCaptureCoordinator {
     const captureId = recovery.capture?.id
     const isCaptureCurrent = (id: string) =>
       slot.active === operation && slot.revision === revision && captureId === id
+    if (
+      captureId === undefined ||
+      (this.hasReceipt && !(await this.#checkReceipt(ownerKey, recovery, () => isCaptureCurrent(captureId))))
+    ) return
     if (!recovery.capture?.transcribedText && !attempt.canTranscribe()) return
     return recovery.retry({
       transcribe: attempt.transcribe,
@@ -173,7 +207,7 @@ export class RecordCaptureCoordinator {
       verifyHandoff: (id) =>
         isCaptureCurrent(id) ? this.#store.forOwner(ownerKey).matches(id) : Promise.resolve(false),
       onSend: (text: string, recordingId: string) =>
-        captureId !== undefined && isCaptureCurrent(captureId) && attempt.onSend(text, recordingId),
+        captureId !== undefined && isCaptureCurrent(captureId) && attempt.onSend(text, recordingId, captureId),
     })
   }
 
@@ -193,10 +227,11 @@ export class RecordCaptureCoordinator {
     slot: RecordSlot,
     recovery: PendingCaptureRecovery,
     restored: boolean,
+    hideAction = false,
   ) {
     const capture = recovery.capture
     slot.recovery = capture ? recovery : undefined
-    slot.entry = capture ? { ownerKey, revision: slot.revision, capture, restored } : undefined
+    slot.entry = capture && !hideAction ? { ownerKey, revision: slot.revision, capture, restored } : undefined
     this.notify()
   }
 }

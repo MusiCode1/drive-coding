@@ -37,6 +37,8 @@ import type { PresencePoller } from "./view-models/presence-poller.svelte"
 import type { NotifyEngine } from "./engines/notify.svelte"
 import type { ComposerDraft } from "./view-models/composer-draft.svelte"
 import type { SessionMemoVM } from "./view-models/session-memo.svelte"
+import type { DictateSubmit } from "./view-models/dictate-submit.svelte"
+import type { PromptRetry } from "./view-models/prompt-retry.svelte"
 import type { Dictate } from "./view-models/dictate.svelte"
 import type { AudioDevicesVM } from "./view-models/audio-devices.svelte"
 import type { SessionScopePolicy } from "./view-models/session-scope-policy.svelte"
@@ -126,3 +128,11 @@ export const [getSessionScopePolicy, setSessionScopePolicy] = createContext<Sess
 
 // ─── agent-voice ─── (slice codex-voice-poc — the agent's native Live)
 export const [getAgentVoice, setAgentVoice] = createContext<AgentVoice>()
+
+
+// ─── Owned chat prompts ─────────────────────────────────
+export const [getPromptRetry, setPromptRetry] = createContext<{
+  prompts: PromptRetry
+  dictateSubmit: DictateSubmit
+  legacyFixture?: () => boolean
+}>()

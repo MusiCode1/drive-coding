@@ -8,6 +8,10 @@ import {
 import type { PendingCapture } from "@drive-coding/core/voice/pending-capture"
 import { flushSync, mount, unmount } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { createFailedPromptStore } from "$lib/adapters/failed-prompt-store"
+import { promptRecoveryDb } from "$lib/adapters/prompt-recovery-idb"
+import { promptTestDb } from "$lib/components/chat/__tests__/type-area-harness.svelte"
+import { promptPayload } from "$lib/engines/prompt-payload"
 import { transcribe } from "$lib/adapters/voice/transcribe"
 import { RecordCaptureCoordinator } from "$lib/engines/pending-capture-wiring"
 import { createRemoteView } from "$lib/session/create-session-view"
@@ -190,6 +194,7 @@ async function recordFailure(mic: NonNullable<typeof app>["mic"]) {
 }
 
 beforeEach(() => {
+  vi.spyOn(promptRecoveryDb, "transact").mockImplementation(promptTestDb().transact)
   prompts.length = 0
   fixture.records.clear()
   router.path = "/chat/fixture/A"
@@ -283,13 +288,13 @@ describe("Record entry and pending capture ownership", () => {
     })
     await vi.waitFor(() => expect(mic.canRetry).toBe(true))
     await mic.bindPendingActions().onRetry()
-    expect(prompts).toEqual([
+    await vi.waitFor(() => expect(prompts).toEqual([
       {
         sessionId: "A",
         content: [{ type: "text", text: transcript.text }],
         meta: { recordingId: transcript.recordingId },
       },
-    ])
+    ]))
     expect(transcribe).toHaveBeenCalledTimes(2)
   })
 
@@ -318,7 +323,7 @@ describe("Record entry and pending capture ownership", () => {
       expect(handlers.onRetry()).toBeUndefined()
       expect(handlers.onDismiss()).toBeUndefined()
       await mic.bindPendingActions().onRetry()
-      expect(prompts).toHaveLength(1)
+      await vi.waitFor(() => expect(prompts).toHaveLength(1))
     },
   )
 
@@ -381,6 +386,44 @@ describe("Record entry and pending capture ownership", () => {
       expect(transcribe).toHaveBeenCalledTimes(cached ? 0 : 2)
     },
   )
+
+  it("removes a restored Record with an existing receipt without STT or RPC", async () => {
+    fixture.records.set(owner(), seed("delivered", true))
+    const store = createFailedPromptStore(promptRecoveryDb)
+    const claimed = await store.adopt(owner(), promptPayload(transcript.text, [], ""), {
+      recordCaptureId: "delivered",
+    })
+    if (claimed.kind !== "claimed") throw new Error("Missing fixture claim")
+    await store.settle(claimed.record, { delivery: "accepted" })
+    const { mic } = await open()
+    await vi.waitFor(() => expect(fixture.remove).toHaveBeenCalledWith(owner(), "delivered"))
+    expect(mic.canRetry).toBe(false)
+    expect(transcribe).not.toHaveBeenCalled()
+    expect(prompts).toEqual([])
+    expect(await store.hasRecordReceipt(owner(), "delivered")).toBe(true)
+  })
+
+  it("blocks an old Record that passed matches after another tab already accepted it", async () => {
+    fixture.records.set(owner(), seed("checked-before-claim", true))
+    const { mic } = await open()
+    await vi.waitFor(() => expect(mic.canRetry).toBe(true))
+    const match = Promise.withResolvers<boolean>()
+    fixture.verify.mockReturnValueOnce(match.promise)
+    const retry = mic.bindPendingActions().onRetry()
+    await vi.waitFor(() => expect(fixture.verify).toHaveBeenCalledWith(owner(), true))
+    const otherTab = createFailedPromptStore(promptRecoveryDb)
+    const adopted = await otherTab.adopt(owner(), promptPayload(transcript.text, [], transcript.recordingId), {
+      recordCaptureId: "checked-before-claim",
+    })
+    if (adopted.kind !== "claimed") throw new Error("Missing other-tab claim")
+    await otherTab.settle(adopted.record, { delivery: "accepted" })
+    match.resolve(true)
+    await retry
+    expect(prompts).toEqual([])
+    expect(transcribe).not.toHaveBeenCalled()
+    expect(fixture.remove).toHaveBeenCalledWith(owner(), "checked-before-claim")
+    expect(await otherTab.hasRecordReceipt(owner(), "checked-before-claim")).toBe(true)
+  })
 
   it("rejects stale hydration after a new save supersedes the disk read", async () => {
     fixture.records.set(owner(), seed("old", true))

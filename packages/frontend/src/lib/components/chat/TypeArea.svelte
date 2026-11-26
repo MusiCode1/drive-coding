@@ -11,6 +11,7 @@
  *  - onpaste / ondrop / file-picker → fileToImageAttachment → tray
  *  - gating: session.supportsImageInput (kill-switch IMAGE_INPUT_ENABLED כבר ב-VM)
  */
+import { onDestroy } from "svelte"
 import type { AvailableCommand } from "@agentclientprotocol/sdk"
 import ImagePlusIcon from "@lucide/svelte/icons/image-plus"
 import Loader2Icon from "@lucide/svelte/icons/loader-2"
@@ -25,17 +26,15 @@ import {
   getI18n,
   getMic,
   getModelStatus,
+  getPromptRetry,
   getSession,
   getSettings,
   getUiShell,
   getVoiceMode,
 } from "$lib/context"
-import {
-  fileToImageAttachment,
-  type ImageAttachment,
-  revokeAttachment,
-} from "$lib/engines/image-attachment"
-import { runTypeAreaSubmit } from "$lib/actions/type-area-submit"
+import type { ImageAttachment } from "$lib/engines/image-attachment"
+import { imageHandlers } from "$lib/actions/type-area-images"
+import { clearCapturedComposer, runTypeAreaSubmit } from "$lib/actions/type-area-submit"
 import { applySlashSelection, matchSlashCommands } from "$lib/engines/slash-commands"
 import SlashCommandMenu from "./SlashCommandMenu.svelte"
 import PendingCaptureBanner from "./PendingCaptureBanner.svelte"
@@ -50,12 +49,23 @@ const mic = getMic()
 const uiShell = getUiShell()
 const i18n = getI18n()
 const t = i18n.t
+const { prompts, dictateSubmit, legacyFixture } = getPromptRetry()
 
 let taEl = $state<HTMLTextAreaElement>()
 const MAX_ROWS = 6
 
 // ─── image-attach tray state ─── (slice-image-paste)
-let attachments = $state<ImageAttachment[]>([])
+let trays = $state.raw(new Map<string, ImageAttachment[]>())
+const owner = () => prompts.targets.current()?.ownerKey ?? ""
+const attachments = $derived(trays.get(owner()) ?? [])
+const { handlePaste, handleDrop, handleDragOver, handleFileChange, removeAttachment, clearAttachments, dispose } =
+  imageHandlers(() => session.supportsImageInput, owner, () => trays, (next) => { trays = next })
+let destroyed = false
+let draftRevision = 0
+onDestroy(() => {
+  destroyed = true
+  dispose()
+})
 let fileInputEl = $state<HTMLInputElement>()
 
 // ─── slash-command dropdown state ─── (slice-slash-commands, Commit 2)
@@ -92,6 +102,7 @@ $effect(() => {
 })
 
 function acceptSlashSelection(cmd: AvailableCommand): void {
+  draftRevision++
   draft.setText(applySlashSelection(cmd))
   dismissed = false
   taEl?.focus()
@@ -168,79 +179,19 @@ $effect(() => {
 
 function onSubmit(e?: SubmitEvent) {
   e?.preventDefault()
-  void runTypeAreaSubmit({ isDisabled, dictateState: dictate.state, finishListening: () => dictate.finishListening(), draftText: () => draft.text, attachments, sendPrompt: (t, o) => session.sendPrompt(t, o), sessionStatus: () => session.status, clear: () => { draft.clear(); attachments.forEach(revokeAttachment); attachments = [] } })
-}
-
-// ─── image handlers (slice-image-paste) ─────────────────────────────────────
-
-async function processImageFile(file: File | Blob): Promise<void> {
-  try {
-    const att = await fileToImageAttachment(file)
-    // Svelte 5: השמה (לא mutation) לריאקטיביות
-    attachments = [...attachments, att]
-  } catch {
-    // מימד לא-נתמך / שגיאת דחיסה — התעלמות שקטה
-  }
-}
-
-function handlePaste(e: ClipboardEvent): void {
-  // gating: early-return בלי preventDefault אם לא תומך
-  if (!session.supportsImageInput) return
-
-  const items = e.clipboardData?.items
-  if (!items) return
-
-  let hasImage = false
-  for (const item of items) {
-    if (item.kind === "file" && item.type.startsWith("image/")) {
-      const file = item.getAsFile()
-      if (file) {
-        hasImage = true
-        void processImageFile(file)
-      }
-    }
-  }
-  // אם יש תמונה — מנע הכנסת הנתונים הגולמיים לtextarea
-  if (hasImage) e.preventDefault()
-  // paste של טקסט רגיל — ממשיך כרגיל (לא preventDefault)
-}
-
-function handleDragOver(e: DragEvent): void {
-  if (!session.supportsImageInput) return
-  e.preventDefault()
-}
-
-/** מעבד את קבצי-התמונה שב-FileList; שאר הטיפוסים מדולגים בשקט. */
-function processImageFiles(files: FileList): void {
-  for (const file of files) {
-    if (file.type.startsWith("image/")) void processImageFile(file)
-  }
-}
-
-function handleDrop(e: DragEvent): void {
-  if (!session.supportsImageInput) return
-  e.preventDefault()
-
-  const files = e.dataTransfer?.files
-  if (!files) return
-
-  processImageFiles(files)
-}
-
-function handleFileChange(e: Event): void {
-  if (!session.supportsImageInput) return
-  const input = e.currentTarget as HTMLInputElement
-  const files = input.files
-  if (!files) return
-
-  processImageFiles(files)
-  // reset input כדי שאפשר לבחור אותו קובץ שוב
-  input.value = ""
-}
-
-function removeAttachment(att: ImageAttachment): void {
-  revokeAttachment(att)
-  attachments = attachments.filter((a) => a.id !== att.id)
+  const key = owner()
+  let revision = draftRevision
+  void runTypeAreaSubmit({
+    session, dictate, prompts, dictateSubmit, legacyFixture, attachments,
+    draftText: () => {
+      revision = draftRevision
+      return draft.text
+    },
+    clear: (text, captured) => {
+      if (!destroyed) clearCapturedComposer(draft, text, revision === draftRevision,
+        () => clearAttachments(key, captured))
+    },
+  })
 }
 </script>
 
@@ -365,7 +316,7 @@ function removeAttachment(att: ImageAttachment): void {
     {/if}
     <textarea
       bind:this={taEl}
-      bind:value={draft.text}
+      bind:value={() => draft.text, (value) => { draftRevision++; draft.setText(value) }}
       placeholder={t("record.placeholder")}
       rows={1}
       disabled={isDisabled}

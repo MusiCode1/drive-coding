@@ -1,10 +1,18 @@
 <script lang="ts">
 import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import DisconnectBanner from "$lib/components/session/DisconnectBanner.svelte"
-import { getI18n, getSession } from "$lib/context"
+import PendingCaptureBanner from "./PendingCaptureBanner.svelte"
+import { getI18n, getPromptRetry, getSession } from "$lib/context"
 
 const session = getSession()
 const { t } = getI18n()
+const { prompts, dictateSubmit } = getPromptRetry()
+const entry = $derived(prompts.targets.current())
+const failed = $derived(prompts.record)
+const status = $derived(prompts.message)
+const action = $derived(prompts.action)
+const source = $derived(dictateSubmit.source)
+const dictated = $derived(dictateSubmit.payload)
 </script>
 
 <DisconnectBanner />
@@ -31,4 +39,50 @@ const { t } = getI18n()
   </div>
   <!-- slice auth-guidance: הדרכת-אימות ספציפית-ל-CLI (מתחת ל-error, רק כשיש authMethods) -->
   <AuthGuidance cliKind={session.cliKind} authMethods={session.authMethods} />
+{/if}
+
+{#if prompts.error}
+  <p class="mx-4 my-2 text-sm" style="color:var(--recording)" role="alert">{t(prompts.error)}</p>
+{/if}
+
+{#if entry && failed && status}
+  {@const target = entry}
+  {@const record = failed}
+  <div class="mx-4 my-2 p-3 rounded-lg border text-sm break-words" style="border-color:var(--recording)" role="alert">
+    <p>{t(status)}</p>
+    <p dir="auto" class="whitespace-pre-wrap">{record.payload.text.trim() ? record.payload.text : t("chat.prompt.imageOnly")}</p>
+    <div class="flex gap-3">
+      {#if action}
+        <button type="button" onclick={() => void prompts.retry(record, target)}>{t(action)}</button>
+      {/if}
+      {#if !prompts.claimActive}
+        <button type="button" onclick={() => void prompts.dismiss(record, target)}>{t("chat.error.dismiss")}</button>
+      {/if}
+    </div>
+  </div>
+  <AuthGuidance cliKind={session.cliKind} authMethods={prompts.authMethods} />
+{/if}
+
+{#if entry && source && !dictateSubmit.busy}
+  {@const target = entry}
+  {@const item = source}
+  {#if dictated}
+    <div class="mx-4 my-2 p-3 rounded-lg border text-sm break-words" style="border-color:var(--recording)" role="alert">
+      <p>{t("chat.prompt.notStarted")}</p>
+      {#if dictated.text.trim() || dictated.attachments.length}
+        <p dir="auto" class="whitespace-pre-wrap">{dictated.text.trim() ? dictated.text : t("chat.prompt.imageOnly")}</p>
+        <button type="button" onclick={() => void dictateSubmit.resume(item, target)}>{t("chat.send")}</button>
+      {/if}
+      <button type="button" onclick={() => void dictateSubmit.dismiss(item, target)}>{t("chat.error.dismiss")}</button>
+    </div>
+  {:else}
+    <PendingCaptureBanner
+      error={dictateSubmit.error}
+      canRetry={true}
+      restored={true}
+      onRetry={() => void dictateSubmit.resume(item, target)}
+      onDismiss={() => void dictateSubmit.dismiss(item, target)}
+      {t}
+    />
+  {/if}
 {/if}

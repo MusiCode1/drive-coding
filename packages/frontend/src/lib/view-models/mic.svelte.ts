@@ -8,6 +8,8 @@ import {
   type RecordTarget,
   type RecordTargetSource,
 } from "../engines/pending-capture-wiring"
+import { promptPayload } from "../engines/prompt-payload"
+import type { PromptRetry } from "./prompt-retry.svelte"
 import { Recorder } from "../engines/recorder"
 import { probeMicPermission } from "../util/mic-permission"
 import type { AgentSession } from "./agent-session.svelte"
@@ -25,7 +27,7 @@ export class Mic {
 
   #captureError = $state.raw<{ target: RecordTarget; error: MessageKey } | null>(null)
   #pendingRevision = $state(0)
-  readonly #pending = new RecordCaptureCoordinator(() => this.#pendingRevision++)
+  readonly #pending: RecordCaptureCoordinator
   readonly #recorder = new Recorder()
   #captureTarget: RecordTarget | null = null
   #active: ActiveAttempt | null = null
@@ -34,10 +36,17 @@ export class Mic {
     private readonly opts: {
       session: Pick<AgentSession, "sendPrompt">
       targets: RecordTargetSource
+      prompts?: PromptRetry
       cues?: CuesEngine
       getInputDeviceId?: () => string | null
     },
   ) {
+    const { prompts } = opts
+    this.#pending = new RecordCaptureCoordinator(
+      () => this.#pendingRevision++,
+      prompts && ((owner, id) => prompts.hasRecordReceipt(owner, id)),
+      prompts && ((owner) => prompts.report(owner, "chat.prompt.storageError")),
+    )
     void this.refreshPermissionHint()
   }
 
@@ -183,8 +192,12 @@ export class Mic {
   }
 
   #attempt(target: RecordTarget, operation: ActiveAttempt) {
-    return createRecordAttempt(target.backendBaseUrl, (text, recordingId) => {
+    return createRecordAttempt(target.backendBaseUrl, (text, recordingId, captureId) => {
       if (this.#active !== operation || !this.opts.targets.isCurrent(target)) return false
+      const prompts = this.opts.prompts
+      if (prompts) return prompts.adopt(target, promptPayload(text, [], recordingId), {
+        recordCaptureId: captureId,
+      })
       void this.opts.session.sendPrompt(text, { recordingId })
       return true
     })

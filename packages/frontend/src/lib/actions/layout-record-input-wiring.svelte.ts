@@ -1,16 +1,20 @@
 import { onDestroy, onMount, untrack } from "svelte"
 import type { beforeNavigate } from "$app/navigation"
 import { navigating, page } from "$app/state"
-import { setComposerDraft, setDictate, setMic } from "$lib/context"
+import { setComposerDraft, setDictate, setMic, setPromptRetry } from "$lib/context"
+import { promptOwner } from "$lib/engines/prompt-payload"
 import type { CuesEngine } from "$lib/engines/cues"
 import {
   createDictateRecovery,
+  sameRecordTarget,
   type RecordTarget,
   type RecordTargetSource,
 } from "$lib/engines/pending-capture-wiring"
 import type { SessionView } from "$lib/session/session-view"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
+import { DictateSubmit, bindComposerOwners } from "$lib/view-models/dictate-submit.svelte"
+import { PromptRetry } from "$lib/view-models/prompt-retry.svelte"
 import { Dictate } from "$lib/view-models/dictate.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
 
@@ -24,6 +28,7 @@ type RecordSession = Pick<
   | "agentId"
   | "onSessionEnd"
   | "sendPrompt"
+  | "lastUserMessage"
 >
 
 const inChat = (pathname: string | undefined) =>
@@ -95,25 +100,33 @@ export function installRecordInput(deps: {
     )
       return null
     const backendBaseUrl = identity.backendBaseUrl
-    const ownerKey = JSON.stringify([backendBaseUrl, cliKind, sessionId])
+    const ownerKey = promptOwner(backendBaseUrl, cliKind, sessionId)
     return { ownerKey, backendBaseUrl, view, agentId, generation }
   }
 
   const targets: RecordTargetSource = {
     current,
-    isCurrent(target) {
-      const active = current()
-      return (
-        active?.ownerKey === target.ownerKey &&
-        active.view === target.view &&
-        active.agentId === target.agentId &&
-        active.generation === target.generation
-      )
-    },
+    isCurrent: (target) => sameRecordTarget(current(), target),
   }
-  const mic = new Mic({ session, targets, cues, getInputDeviceId })
+  const prompts = new PromptRetry(targets, (text) => { session.lastUserMessage = text })
+  const dictateSubmit = new DictateSubmit(prompts)
+  const mic = new Mic({ session, targets, cues, getInputDeviceId, prompts })
   const draft = new ComposerDraft()
-  const dictate = new Dictate({ mic, draft, getInputDeviceId, recovery: createDictateRecovery() })
+  const dictate = new Dictate({
+    mic, draft, getInputDeviceId, recovery: createDictateRecovery(), submit: dictateSubmit,
+  })
+  const legacyFixture = () => import.meta.env.DEV && !session.ingestView() &&
+    session.sessionId?.startsWith("mock:") === true
+
+  bindComposerOwners(targets, draft)
+  onMount(() => {
+    void dictate.hydratePending()
+    return prompts.watch(() => {
+      const target = current()
+      void dictateSubmit.refresh(target)
+      if (target) void mic.hydratePending(target)
+    }, (owner) => dictateSubmit.ownerDeleted(owner))
+  })
 
   $effect(() => {
     if (leavingView) {
@@ -124,9 +137,12 @@ export function installRecordInput(deps: {
     }
     const target = current()
     void mic.hydrationRevision
-    if (target) untrack(() => void mic.hydratePending(target))
+    untrack(() => {
+      void prompts.refresh(target)
+      void dictateSubmit.refresh(target)
+      if (target) void mic.hydratePending(target)
+    })
   })
-  onMount(() => void dictate.hydratePending())
 
   return {
     mic,
@@ -134,6 +150,7 @@ export function installRecordInput(deps: {
       setMic(mic)
       setComposerDraft(draft)
       setDictate(dictate)
+      setPromptRetry({ prompts, dictateSubmit, legacyFixture })
     },
   }
 }

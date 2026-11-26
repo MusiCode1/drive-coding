@@ -1,3 +1,5 @@
+import { failedPromptStore } from "$lib/adapters/failed-prompt-store"
+import { promptOwner } from "$lib/engines/prompt-payload"
 import type { SessionView } from "$lib/session/session-view"
 import type { SessionEndReason } from "$lib/view-models/agent-session-session-end"
 import type { SessionsCacheScope } from "$lib/view-models/sessions-cache-scope.svelte"
@@ -6,6 +8,7 @@ export type DeleteSessionDeps = {
   view: () => SessionView | null
   sessionId: () => string | null
   cache: () => SessionsCacheScope
+  cliKind: () => string | null
   detachWith: (reason: SessionEndReason) => void
 }
 
@@ -18,6 +21,10 @@ export async function deleteSession(d: DeleteSessionDeps, sessionId: string): Pr
   const view = d.view()
   if (!view) return false
 
+  const cliKind = d.cliKind()
+  const backend = view.targetIdentity?.backendBaseUrl
+  const owner = cliKind && backend ? promptOwner(backend, cliKind, sessionId) : undefined
+
   try {
     await view.deleteSession(sessionId)
   } catch (e) {
@@ -26,11 +33,13 @@ export async function deleteSession(d: DeleteSessionDeps, sessionId: string): Pr
     else d.cache().setError(e)
     return false
   }
+  const cleaned = owner === undefined || await failedPromptStore.deleteOwner(owner)
   if (d.view() !== view) return false
   d.cache().remove(view, sessionId)
   const wasActive = sessionId === d.sessionId()
   if (wasActive) {
     d.detachWith("delete")
   }
+  if (!cleaned) d.cache().setError(new Error("Could not clear saved prompt after session deletion"))
   return wasActive
 }

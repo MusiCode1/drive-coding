@@ -61,6 +61,14 @@ afterEach(() => {
 })
 
 describe("Mic pending capture", () => {
+  it("keeps the explicit empty recordingId on existing scoped Record callers", async () => {
+    vi.mocked(transcribe).mockResolvedValueOnce({ text: "synthetic transcript", recordingId: "" })
+    const mic = createMic()
+    await mic.toggle()
+    await mic.toggle()
+    expect(fakeSession.sendPrompt).toHaveBeenCalledWith("synthetic transcript", { recordingId: "" })
+  })
+
   it("quarantines ownerless Record and skips both STT and sending", async () => {
     target = null
     const mic = createMic()
