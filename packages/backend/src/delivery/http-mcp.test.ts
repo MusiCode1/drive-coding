@@ -733,12 +733,7 @@ describe("session_open / session_close (slice session-bus-mcp C1)", () => {
     await client.close()
     expect(orchestrator.createAndSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
-        env: expect.objectContaining({
-          FOO: "bar",
-          DC_PARENT: "parent-agent",
-          DC_BASE: "http://127.0.0.1:4055",
-          DRIVE_CODING_BASE: "http://127.0.0.1:4055",
-        }),
+        env: { FOO: "bar", DC_PARENT: "parent-agent" },
         parentAgentId: "parent-agent",
       }),
     )

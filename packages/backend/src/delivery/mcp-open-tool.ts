@@ -54,10 +54,7 @@ export function registerMcpOpenTool(
     async (input) => {
       const explicit = input.publicUrl ?? input.base
       const chatBase = (explicit ?? defaultPublicUrl(deps.urlConfig)).replace(/\/$/, "")
-      const childBase = (explicit ?? loopbackBaseUrl(deps.urlConfig)).replace(/\/$/, "")
       const env: Record<string, string> = { ...(input.env ?? {}) }
-      env.DRIVE_CODING_BASE = childBase
-      env.DC_BASE = childBase
 
       const headerParent = callerAgentId
       const explicitParent =
@@ -80,7 +77,9 @@ export function registerMcpOpenTool(
       applySessionOpenCreateFields(body, input, effectiveParent)
       applyNotifyOnDoneToOpenBody(body, input.notifyOnDone, input.includeLastAssistantText)
 
-      const parsed = parseCreateAgentBody(body, deps.env)
+      const parsed = parseCreateAgentBody(body, deps.env, {
+        sidecarSizeBase: (explicit ?? loopbackBaseUrl(deps.urlConfig)).replace(/\/$/, ""),
+      })
       if (!parsed.ok) throw new McpToolError(parsed.error.body.error)
 
       const created = await deps.orchestrator.createAndSpawn(parsed.value)

@@ -29,7 +29,7 @@ export const AgentOpenInput = type({
   cli: reqStr("ACP CLI kind to spawn (cliKind), e.g. cursor, claude, codex, opencode."),
   cwd: reqStr("Absolute working directory for the new agent process."),
   "env?": type({ "[string]": "string" }).describe(
-    "Extra environment variables merged into the child (after drive-coding injects DRIVE_CODING_BASE / DC_BASE).",
+    "Extra environment variables for the child. The instance's DRIVE_CODING_BASE, DC_BASE, and agent identity take precedence at launch.",
   ),
   "permission?": optStr(
     "Permission policy for the new agent (permissionPolicy), e.g. allow_once, bypassPermissions.",
@@ -47,12 +47,14 @@ export const AgentOpenInput = type({
     "When true with notifyOnDone, turn-ended prompts include a truncated preview of the last assistant message.",
   ),
   "base?": optStr(
-    "Public base URL of this drive-coding backend (legacy alias for publicUrl). Used to build chat url and DC_BASE env.",
+    "Legacy alias for the returned chat URL base. publicUrl takes precedence when supplied.",
   ),
-  "port?": optNum("Ignored over MCP — use publicUrl/base for the backend URL."),
+  "port?": optNum(
+    "Ignored over MCP. Use publicUrl or legacy base to set the returned chat URL base.",
+  ),
   "json?": optBool("Ignored over MCP — MCP always returns JSON in content[].text."),
   "publicUrl?": optStr(
-    "Public base URL of this drive-coding backend, e.g. http://127.0.0.1:4001. Default: loopback on PORT.",
+    "Base for the returned chat URL. Defaults to the instance's public origin, otherwise its local HTTP base. Child API wiring uses the instance's local addresses.",
   ),
   "systemPrompt?": type("string | null").describe(
     "Optional project charter (system prompt) forwarded to createAndSpawn — same as POST /api/agents.",
