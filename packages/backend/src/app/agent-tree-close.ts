@@ -123,7 +123,8 @@ export function createAgentTreeClose(deps: CloseDependencies, log: Logger) {
         if (first?.status === "rejected" && outcomes.every((item) => item.status === "rejected")) {
           throw first.reason
         }
-        return {}
+        if ("error" in lookup || lookup.wasTurnState === undefined) return {}
+        return { wasTurnState: lookup.wasTurnState }
       }
       if ("error" in lookup) throw lookup.error
       if (!lookup.exists) return {}

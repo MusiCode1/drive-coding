@@ -1313,6 +1313,40 @@ describe("internal agent tree closure", () => {
     h.expectEffects(stop, { started: [id, root] })
   })
 
+  it("retains a busy host sample taken before a reentrant direct close", async () => {
+    const h = makeCloseHarness()
+    const root = h.seed("parent")
+    const child = h.seed("target", root, "waiting")
+    let direct: Promise<void> | undefined
+    h.getHost.mockImplementationOnce((id) => {
+      const host = h.readHost(id)
+      direct = h.orch.deleteAndKill(id)
+      return host
+    })
+    const entries: LogEntry[] = []
+    const off = addSink((entry) => entries.push(entry))
+
+    try {
+      const result = await h.orch.closeTree(root)
+      expect(direct).toBeInstanceOf(Promise)
+      h.expectEffects(stop, { started: [child, root] })
+      expect(result).toEqual(expectClosed([child, root], [child]))
+      expect(
+        entries.filter(
+          (entry) =>
+            entry.ns === "backend.orchestrator" && entry.msg === "closed a busy agent in the tree",
+        ),
+      ).toEqual([
+        expect.objectContaining({
+          level: "warn",
+          fields: { agentId: child, wasTurnState: "waiting" },
+        }),
+      ])
+    } finally {
+      off()
+    }
+  })
+
   it("keeps direct close and crash cleanup scoped to the selected agent", async () => {
     const h = makeCloseHarness()
     const parent = h.seed("parent", undefined, "waiting")
