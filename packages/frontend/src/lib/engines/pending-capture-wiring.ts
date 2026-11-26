@@ -2,6 +2,7 @@
  * Layout wiring for pending voice captures. Dictate uses the legacy global slot.
  * Record operations hold a stable recovery and share an owner revision in this tab.
  */
+import type { MessageKey } from "@drive-coding/core/i18n"
 import type { PendingCapture } from "@drive-coding/core/voice/pending-capture"
 import { createPendingCaptureStore } from "../adapters/pending-capture-store"
 import { createRecordCaptureStore } from "../adapters/record-capture-store"
@@ -9,6 +10,7 @@ import { transcribe } from "../adapters/voice/transcribe"
 import type { SessionView } from "../session/session-view"
 import { beUrl } from "../util/be-url"
 import { PendingCaptureRecovery, type TranscribeContext } from "./pending-capture-recovery"
+import { promptOwner } from "./prompt-payload"
 
 export function createDictateRecovery(): PendingCaptureRecovery {
   return new PendingCaptureRecovery(createPendingCaptureStore(), {
@@ -28,6 +30,78 @@ export type RecordTarget = Readonly<{
 export type RecordTargetSource = {
   current(): RecordTarget | null
   isCurrent(target: RecordTarget): boolean
+}
+
+type RecordSessionIdentity = {
+  cliKind: string | null
+  sessionId: string | null
+  agentId: string | null
+  status: string
+  isLoadingHistory: boolean
+  ingestView(): SessionView | null
+}
+
+export function readRecordTarget(
+  session: RecordSessionIdentity,
+  generation: number,
+  leavingView: SessionView | null,
+  routeId: string | null,
+  params: { cliKind?: string; sessionId?: string },
+): RecordTarget | null {
+  const { cliKind, sessionId, agentId } = session
+  if (session.status !== "connected" || session.isLoadingHistory || !cliKind || !sessionId || !agentId) {
+    return null
+  }
+  const view = session.ingestView()
+  const identity = view?.targetIdentity
+  if (!view || view === leavingView || !identity?.backendBaseUrl || identity.sessionId !== sessionId) {
+    return null
+  }
+  if (
+    routeId !== "/chat" &&
+    (routeId !== "/chat/[cliKind]/[sessionId]" || params.cliKind !== cliKind || params.sessionId !== sessionId)
+  ) {
+    return null
+  }
+  const { backendBaseUrl } = identity
+  return { ownerKey: promptOwner(backendBaseUrl, cliKind, sessionId), backendBaseUrl, view, agentId, generation }
+}
+
+type PromptRecoveryView = {
+  targets: RecordTargetSource
+  refresh(target?: RecordTarget | null): Promise<void>
+  report(owner: string, error?: MessageKey): void
+  dispose(): void
+}
+
+export function watchPromptRecovery(
+  prompts: PromptRecoveryView,
+  subscribeDeleted: (listener: (owner: string, failed: boolean) => void) => () => void,
+  refreshSources: () => void,
+  onDeleted: (owner: string) => void,
+): () => void {
+  const focus = () => {
+    void prompts.refresh()
+    refreshSources()
+  }
+  const visible = () => {
+    if (document.visibilityState === "visible") focus()
+  }
+  const unsubscribe = subscribeDeleted((owner, failed) => {
+    prompts.report(owner, failed ? "chat.prompt.storageError" : undefined)
+    if (failed) return
+    onDeleted(owner)
+    const active = prompts.targets.current()
+    if (active?.ownerKey === owner) void prompts.refresh(active)
+  })
+  window.addEventListener("focus", focus)
+  document.addEventListener("visibilitychange", visible)
+  return () => {
+    window.removeEventListener("focus", focus)
+    document.removeEventListener("visibilitychange", visible)
+    unsubscribe()
+    prompts.dispose()
+  }
 }
 
 export function sameRecordTarget(active: RecordTarget | null, expected: RecordTarget): boolean {

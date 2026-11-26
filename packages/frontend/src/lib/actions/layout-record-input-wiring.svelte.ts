@@ -2,10 +2,10 @@ import { onDestroy, onMount, untrack } from "svelte"
 import type { beforeNavigate } from "$app/navigation"
 import { navigating, page } from "$app/state"
 import { setComposerDraft, setDictate, setMic, setPromptRetry } from "$lib/context"
-import { promptOwner } from "$lib/engines/prompt-payload"
 import type { CuesEngine } from "$lib/engines/cues"
 import {
   createDictateRecovery,
+  readRecordTarget,
   sameRecordTarget,
   type RecordTarget,
   type RecordTargetSource,
@@ -13,7 +13,7 @@ import {
 import type { SessionView } from "$lib/session/session-view"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
-import { DictateSubmit, bindComposerOwners } from "$lib/view-models/dictate-submit.svelte"
+import { DictateSubmit } from "$lib/view-models/dictate-submit.svelte"
 import { PromptRetry } from "$lib/view-models/prompt-retry.svelte"
 import { Dictate } from "$lib/view-models/dictate.svelte"
 import { Mic } from "$lib/view-models/mic.svelte"
@@ -33,6 +33,22 @@ type RecordSession = Pick<
 
 const inChat = (pathname: string | undefined) =>
   pathname === "/chat" || pathname?.startsWith("/chat/")
+
+function bindComposerOwners(targets: RecordTargetSource, draft: ComposerDraft): void {
+  const drafts = new Map<string, string>()
+  let previous: string | undefined
+  $effect.pre(() => {
+    const owner = targets.current()?.ownerKey
+    if (!owner || owner === previous) return
+    untrack(() => {
+      if (previous) {
+        drafts.set(previous, draft.text)
+        draft.setText(drafts.get(owner) ?? "")
+      }
+      previous = owner
+    })
+  })
+}
 
 export function installRecordInput(deps: {
   session: RecordSession
@@ -74,34 +90,7 @@ export function installRecordInput(deps: {
   function current(): RecordTarget | null {
     // Superseding navigation can skip beforeNavigate. Read the live router on every call.
     if (navigating.to || routeBlock !== null || stackBlock !== null) return null
-    const { cliKind, sessionId, agentId } = session
-    if (
-      session.status !== "connected" ||
-      session.isLoadingHistory ||
-      !cliKind ||
-      !sessionId ||
-      !agentId
-    )
-      return null
-    const view = session.ingestView()
-    const identity = view?.targetIdentity
-    if (
-      !view ||
-      view === leavingView ||
-      !identity?.backendBaseUrl ||
-      identity.sessionId !== sessionId
-    )
-      return null
-    if (
-      page.route.id !== "/chat" &&
-      (page.route.id !== "/chat/[cliKind]/[sessionId]" ||
-        page.params.cliKind !== cliKind ||
-        page.params.sessionId !== sessionId)
-    )
-      return null
-    const backendBaseUrl = identity.backendBaseUrl
-    const ownerKey = promptOwner(backendBaseUrl, cliKind, sessionId)
-    return { ownerKey, backendBaseUrl, view, agentId, generation }
+    return readRecordTarget(session, generation, leavingView, page.route.id, page.params)
   }
 
   const targets: RecordTargetSource = {

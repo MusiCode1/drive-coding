@@ -1,4 +1,3 @@
-import { untrack } from "svelte"
 import type { MessageKey } from "@drive-coding/core/i18n"
 import { transcribe } from "../adapters/voice/transcribe"
 import {
@@ -9,9 +8,8 @@ import {
 } from "../adapters/dictate-submit-source"
 import { appendDictation } from "../engines/append-dictation"
 import { PendingCaptureRecovery } from "../engines/pending-capture-recovery"
-import type { RecordTarget, RecordTargetSource } from "../engines/pending-capture-wiring"
+import type { RecordTarget } from "../engines/pending-capture-wiring"
 import { type PromptPayload, hasPromptContent, promptPayload } from "../engines/prompt-payload"
-import type { ComposerDraft } from "./composer-draft.svelte"
 import type { PromptRetry } from "./prompt-retry.svelte"
 
 type LiveDraft = { text(): string; adopted(text: string): void }
@@ -198,21 +196,4 @@ export class DictateSubmit {
       if (active?.ownerKey === owner) void this.refresh(active)
     }
   }
-}
-
-// Normal Dictate still appends to the shared draft. Park it between live chat owners.
-export function bindComposerOwners(targets: RecordTargetSource, draft: ComposerDraft): void {
-  const drafts = new Map<string, string>()
-  let previous: string | undefined
-  $effect.pre(() => {
-    const owner = targets.current()?.ownerKey
-    if (!owner || owner === previous) return
-    untrack(() => {
-      if (previous) {
-        drafts.set(previous, draft.text)
-        draft.setText(drafts.get(owner) ?? "")
-      }
-      previous = owner
-    })
-  })
 }

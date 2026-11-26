@@ -4,10 +4,14 @@ import {
   canSendStoredPrompt,
   failedPromptStore,
 } from "../adapters/failed-prompt-store"
-import type { RecordTarget, RecordTargetSource } from "../engines/pending-capture-wiring"
-import { type PromptPayload, buildPrompt, parsePromptOwner } from "../engines/prompt-payload"
-import type { PromptDispatchOutcome } from "../session/prompt-dispatch"
-import { type GuidanceAuthMethod, readGuidanceAuthMethods } from "../util/auth-guidance"
+import {
+  type RecordTarget,
+  type RecordTargetSource,
+  watchPromptRecovery,
+} from "../engines/pending-capture-wiring"
+import type { PromptPayload } from "../engines/prompt-payload"
+import type { GuidanceAuthMethod } from "../util/auth-guidance"
+import { deliverClaimedPrompt } from "./agent-session-prompt-send"
 
 type Store = typeof failedPromptStore
 type Adoption = Parameters<Store["adopt"]>[2]
@@ -30,7 +34,6 @@ export class PromptRetry {
     private readonly store: Store = failedPromptStore,
     private readonly now = Date.now,
   ) {}
-
   hasRecordReceipt(owner: string, id: string): Promise<boolean> {
     return this.store.hasRecordReceipt(owner, id)
   }
@@ -92,33 +95,15 @@ export class PromptRetry {
   }
 
   watch(refreshSources: () => void, onDeleted: (owner: string) => void): () => void {
-    const focus = () => {
-      void this.refresh()
-      refreshSources()
-    }
-    const visible = () => { if (document.visibilityState === "visible") focus() }
-    const unsubscribe = this.store.onOwnerDeleted((owner, failed) => {
-      this.report(owner, failed ? "chat.prompt.storageError" : undefined)
-      if (failed) return
-      onDeleted(owner)
-      const active = this.targets.current()
-      if (active?.ownerKey === owner) void this.refresh(active)
-    })
-    window.addEventListener("focus", focus)
-    document.addEventListener("visibilitychange", visible)
-    return () => {
-      window.removeEventListener("focus", focus)
-      document.removeEventListener("visibilitychange", visible)
-      unsubscribe()
-      this.dispose()
-    }
+    return watchPromptRecovery(
+      this, (listener) => this.store.onOwnerDeleted(listener), refreshSources, onDeleted,
+    )
   }
 
   dispose(): void {
     ++this.#revision
     clearTimeout(this.#expiry)
   }
-
   async adopt(target: RecordTarget, payload: PromptPayload, origin?: Adoption): Promise<boolean> {
     const result = await this.#mutate(target, async () => {
       if (!target.view.promptTo) {
@@ -197,50 +182,18 @@ export class PromptRetry {
     queueMicrotask(() => void this.#dispatch(target, record))
   }
 
-  async #dispatch(target: RecordTarget, record: FailedPrompt): Promise<void> {
-    const { owner, payload, claimUntil = 0 } = record
-    if (claimUntil <= this.now()) return
-    const { sessionId } = parsePromptOwner(owner)
-    const { content, meta } = buildPrompt(payload)
-    let outcome: PromptDispatchOutcome = { kind: "not-started" }
-    try {
-      if (this.targets.isCurrent(target) && target.view.promptTo) {
-        let current: FailedPrompt | undefined
-        try {
-          current = await this.store.load(owner)
-        } catch {
-          this.report(owner, "chat.prompt.storageError")
-          return
-        }
-        if (current?.attemptId !== record.attemptId || current.version !== record.version) return
-        if (claimUntil <= this.now()) return
-        if (this.targets.isCurrent(target)) {
-          outcome = await target.view.promptTo(sessionId, content, meta)
-        }
-      }
-    } catch {
-      outcome = { kind: "unknown" }
-    }
-    if (outcome.kind === "accepted" && this.targets.isCurrent(target)) this.onDispatch(payload.text)
-    try {
-      if (this.targets.current()?.ownerKey === owner) ++this.#revision
-      if (outcome.kind === "rejected") {
-        const { reason, retryable } = outcome
-        const authMethods = reason === "auth-required" ? outcome.authMethods : undefined
-        if (await this.store.settle(record, { delivery: "rejected", reason, retryable })) {
-          this.#guidance = new Map(this.#guidance).set(owner, {
-            attemptId: record.attemptId,
-            methods: readGuidanceAuthMethods(authMethods),
-          })
-        }
-      } else {
-        await this.store.settle(record, { delivery: outcome.kind })
-      }
-    } catch {
-      this.report(owner, "chat.prompt.storageError")
-    } finally {
-      const active = this.targets.current()
-      if (active?.ownerKey === owner) void this.refresh(active)
-    }
+  #dispatch(target: RecordTarget, record: FailedPrompt): Promise<void> {
+    return deliverClaimedPrompt(target, record, {
+      targets: this.targets,
+      store: this.store,
+      now: () => this.now(),
+      onDispatch: (text) => this.onDispatch(text),
+      report: (owner, error) => this.report(owner, error),
+      refresh: (active) => this.refresh(active),
+      invalidate: () => { ++this.#revision },
+      showGuidance: (owner, attemptId, methods) => {
+        this.#guidance = new Map(this.#guidance).set(owner, { attemptId, methods })
+      },
+    })
   }
 }
