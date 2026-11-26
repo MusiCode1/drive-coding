@@ -105,6 +105,7 @@ function makeStubSessionRegistry(): AgentSessionRegistry & { hosts: Map<string, 
             messageId: null,
             segments: [{ id: "s_a", text: `echo:${content}` }],
           })
+          return { stopReason: "end_turn", lastTurnError: null }
         })
         hosts.set(id, created)
         host = created
@@ -925,6 +926,116 @@ describe("session_send / session_state (slice session-bus-mcp C2)", () => {
     expect(body.text).toBe("echo:hello-c2")
     const host = agentSessionRegistry.hosts.get(opened.agent)
     expect(host?.prompt).toHaveBeenCalledWith(`sess-${opened.agent}`, "hello-c2")
+  })
+
+  it("session_send takes a resolved refusal from the prompt's own completion", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    try {
+      const opened = await openCursor(client, "/tmp/mcp-c2-refusal")
+      const host = agentSessionRegistry.hosts.get(opened.agent)
+      if (!host) throw new Error("Expected an open host")
+      const lastTurnError = { message: "refusal", at: 1234 }
+      host.prompt.mockResolvedValueOnce({ stopReason: "refusal", lastTurnError })
+
+      const result = await client.callTool({
+        name: "session_send",
+        arguments: { agent: opened.agent, prompt: "refuse" },
+      })
+      expect(isToolError(result)).toBe(false)
+      expect(JSON.parse(toolText(result))).toEqual({
+        stopReason: "refusal",
+        lastTurnError,
+        text: "",
+        messagesSince: [],
+      })
+    } finally {
+      await client.close()
+    }
+  })
+
+  it("session_send normalizes a rejection from its own promise", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    try {
+      const opened = await openCursor(client, "/tmp/mcp-c2-rejected")
+      const host = agentSessionRegistry.hosts.get(opened.agent)
+      if (!host) throw new Error("Expected an open host")
+      host.prompt.mockRejectedValueOnce({
+        message: "Internal error",
+        data: { details: "A failed" },
+      })
+
+      const result = await client.callTool({
+        name: "session_send",
+        arguments: { agent: opened.agent, prompt: "A" },
+      })
+      expect(isToolError(result)).toBe(false)
+      expect(JSON.parse(toolText(result))).toEqual({
+        stopReason: "A failed",
+        lastTurnError: { message: "A failed", at: expect.any(Number) },
+        text: "",
+        messagesSince: [],
+      })
+    } finally {
+      await client.close()
+    }
+  })
+
+  it("session_send reports A's rejection after B records a limit", async () => {
+    const { app, agentSessionRegistry } = makeApp()
+    const client = await connectClient(app)
+    const secondClient = await connectClient(app)
+    try {
+      const opened = await openCursor(client, "/tmp/mcp-c2-overlap")
+      const host = agentSessionRegistry.hosts.get(opened.agent)
+      if (!host) throw new Error("Expected an open host")
+      let signalStarted!: () => void
+      let rejectFirst!: (error: Error) => void
+      const started = new Promise<void>((resolve) => {
+        signalStarted = resolve
+      })
+      const first = new Promise<never>((_, reject) => {
+        rejectFirst = reject
+      })
+      const lastTurnError = { message: "max_tokens", at: 1234 }
+      host.prompt
+        .mockImplementationOnce(() => {
+          signalStarted()
+          return first
+        })
+        .mockImplementationOnce(async () => {
+          host.state.lastTurnError = lastTurnError
+          return { stopReason: "max_tokens", lastTurnError }
+        })
+
+      const sendA = client.callTool({
+        name: "session_send",
+        arguments: { agent: opened.agent, prompt: "A" },
+      })
+      await started
+      const resultB = await secondClient.callTool({
+        name: "session_send",
+        arguments: { agent: opened.agent, prompt: "B" },
+      })
+      rejectFirst(new Error("A failed"))
+      const resultA = await sendA
+      expect(isToolError(resultA)).toBe(false)
+      expect(isToolError(resultB)).toBe(false)
+      expect(JSON.parse(toolText(resultB))).toMatchObject({
+        stopReason: "max_tokens",
+        lastTurnError,
+      })
+      expect(JSON.parse(toolText(resultA))).toEqual({
+        stopReason: "A failed",
+        lastTurnError: { message: "A failed", at: expect.any(Number) },
+        text: "",
+        messagesSince: [],
+      })
+      expect(host.state.lastTurnError).toBe(lastTurnError)
+    } finally {
+      await Promise.all([client.close(), secondClient.close()])
+    }
   })
 
   it("session_send noWait returns {running:true} without waiting for prompt", async () => {

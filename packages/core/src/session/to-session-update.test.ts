@@ -333,6 +333,26 @@ describe("patch → session/update", () => {
     expect(back.lastTurnError).toEqual({ message: "refusal", at: 1234 })
   })
 
+  it.each(["cancelled", "max_tokens"] as const)(
+    "idle %s survives both the live patch and a fresh snapshot",
+    (stopReason) => {
+      const initial = mk()
+      const cancelled = stopReason === "cancelled"
+      const lastTurnError = cancelled ? null : { message: stopReason, at: 1234 }
+      const changes = {
+        turnState: "idle" as const,
+        lastTurnError,
+        ...(cancelled ? { stopReason } : {}),
+      }
+      const frame = { sessionUpdate: "state_update", state: "idle", stopReason }
+      const live = patchToSessionUpdates(initial, { version: 1, op: "update-session", changes })
+      expect(live).toEqual([expect.objectContaining(frame)])
+      const snapshot = stateToSessionUpdates({ ...initial, ...changes })
+      expect(snapshot).toContainEqual(expect.objectContaining(frame))
+      expect(replay(snapshot).lastTurnError).toEqual(lastTurnError)
+    },
+  )
+
   it("opaque unwraps to the update itself — no wrapper on an update-shaped wire", () => {
     // 🟢 השורה היפה: `opaque` נשא update שהליבה לא הבינה. על חוט שהוא ממילא
     // session/update, הוא פשוט הוא עצמו — ולכן `plan` מגיע ל-FE בלי שה-BE

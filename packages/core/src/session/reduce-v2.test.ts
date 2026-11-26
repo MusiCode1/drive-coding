@@ -219,6 +219,37 @@ describe("reduce v2 — state_update", () => {
     expect(state.lastTurnError?.message).toBe("refusal")
   })
 
+  it("remembers clean cancellation when decoding idle and clears it on later updates", () => {
+    const cancelled = {
+      sessionUpdate: "state_update",
+      state: "idle",
+      stopReason: "cancelled",
+    }
+    const { state, patches } = reduce(mkState(), cancelled)
+    expect(state).toMatchObject({ stopReason: "cancelled", lastTurnError: null })
+    expect(patches[0]).toMatchObject({ changes: { stopReason: "cancelled" } })
+    for (const update of [
+      { sessionUpdate: "state_update", state: "running", _meta: { "_drive/turnState": "waiting" } },
+      { sessionUpdate: "state_update", state: "running" },
+      { sessionUpdate: "state_update", state: "idle" },
+    ]) {
+      const cleared = reduce(state, update)
+      expect(cleared.state.stopReason).toBeNull()
+      expect(cleared.patches[0]).toMatchObject({ changes: { stopReason: null } })
+    }
+  })
+
+  it("keeps a rejected turn's error even when its message is a clean stop reason", () => {
+    const { state } = reduce(mkState(), {
+      sessionUpdate: "state_update",
+      state: "idle",
+      stopReason: "cancelled",
+      _meta: { "_drive/at": 1234 },
+    })
+    expect(state.lastTurnError).toEqual({ message: "cancelled", at: 1234 })
+    expect(state.stopReason).toBeUndefined()
+  })
+
   it("requires_action maps to waiting and leaves pending alone", () => {
     const s = mkState()
     const { state } = reduce(s, { sessionUpdate: "state_update", state: "requires_action" })

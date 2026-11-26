@@ -45,7 +45,7 @@ function makeMockState(version = 3): SessionState {
   return { ...createInitialSessionState({ sessionId: null }), version }
 }
 
-function makeMockHost(state: SessionState): ExtendedSessionHost {
+function makeMockHost(state: SessionState, stopReason = "end_turn"): ExtendedSessionHost {
   return {
     state,
     patches: new ReadableStream({ start() {} }),
@@ -53,6 +53,7 @@ function makeMockHost(state: SessionState): ExtendedSessionHost {
       const msg = synthesizeUserMessage(state, content as string | PromptBlocks, meta)
       const applied = applyUserMessage(state, msg)
       Object.assign(state, applied.state)
+      return { stopReason, lastTurnError: null }
     }),
     newSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
     loadSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
@@ -1004,23 +1005,26 @@ describe("POST /api/agents/:id/rpc", () => {
       },
     )
 
-    it("waitMs success → 200 {ok:true, timedOut:false, messagesSince}", async () => {
-      const state = makeMockState(10)
-      const host = makeMockHost(state)
-      const registry = makeMockRegistry(host, makeMockBroadcaster())
-      const app = makeApp(registry)
+    it.each(["end_turn", "refusal", "max_tokens", "cancelled"])(
+      "waitMs success with %s → 200 {ok:true, timedOut:false, messagesSince, stopReason}",
+      async (stopReason) => {
+        const state = makeMockState(10)
+        const host = makeMockHost(state, stopReason)
+        const registry = makeMockRegistry(host, makeMockBroadcaster())
+        const app = makeApp(registry)
 
-      const res = await postRpc(app, "agent-1", {
-        method: "prompt",
-        params: { sessionId: "s1", content: "hello wait" },
-        waitMs: 5000,
-      })
-      expect(res.status).toBe(200)
-      const json = await res.json()
-      expect(json).toMatchObject({ ok: true, timedOut: false, version: 11 })
-      expect(json.messagesSince).toHaveLength(1)
-      expect(json.messagesSince?.[0]).toMatchObject({ role: "user" })
-    })
+        const res = await postRpc(app, "agent-1", {
+          method: "prompt",
+          params: { sessionId: "s1", content: "hello wait" },
+          waitMs: 5000,
+        })
+        expect(res.status).toBe(200)
+        const json = await res.json()
+        expect(json).toMatchObject({ ok: true, timedOut: false, version: 11, stopReason })
+        expect(json.messagesSince).toHaveLength(1)
+        expect(json.messagesSince?.[0]).toMatchObject({ role: "user" })
+      },
+    )
 
     it("waitMs turn failure → 200 {ok:false, error from rejection, messagesSince}", async () => {
       const state = makeMockState(11)
@@ -1121,7 +1125,16 @@ describe("POST /api/agents/:id/rpc", () => {
       })
 
       const registry = makeMockRegistry(
-        host as unknown as ExtendedSessionHost,
+        {
+          ...makeMockHost(host.state),
+          get state() {
+            return host.state
+          },
+          async prompt(sessionId, content, meta) {
+            await host.prompt(sessionId, content, meta)
+            return { stopReason: "end_turn", lastTurnError: null }
+          },
+        },
         makeMockBroadcaster(),
       )
       const app = makeApp(registry)

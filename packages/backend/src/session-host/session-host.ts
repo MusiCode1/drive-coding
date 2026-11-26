@@ -34,8 +34,6 @@ import type { Patch, SessionListQuery, SessionState, ToolOutputRules } from "@dr
 import {
   applyPatch,
   applyPendingRequest,
-  applyTurnEnd,
-  applyTurnStart,
   applyUserMessage,
   clearPendingRequest,
   createInitialSessionState,
@@ -53,8 +51,8 @@ import type {
 import { createAcpClient, createAttachedAcpClient } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { parseExtResult } from "@drive-coding/provider/extensions"
-import { msgOf } from "./error-message.js"
 import { createPendingRequests } from "./pending-requests.js"
+import { createPromptTurn, type PromptTurnCompletion } from "./prompt-turn.js"
 import { defaultRequestTimeouts } from "./request-timeout.js"
 import { createSessionHostClientActions } from "./session-host-client-actions.js"
 import {
@@ -299,7 +297,13 @@ export type SessionHostFromConnOptions = {
  * and for driving session configuration.
  * S4 exposes these via HTTP endpoints.
  */
-export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & TurnTimingHost & ScopePermissionHost & {
+export type ExtendedSessionHost = Omit<SessionHost, "loadSession" | "prompt"> & {
+  prompt(
+    sessionId: string,
+    content: string | PromptBlocks,
+    meta?: Record<string, unknown>,
+  ): Promise<PromptTurnCompletion>
+
   /**
    * Switch sessions, resetting and flipping the session ID before CLI replay.
    * Failure restores the previous transcript with a fresh reset and rethrows.
@@ -378,7 +382,8 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & TurnTimingH
   readonly agentCapabilities: AcpClient["capabilities"]
   readonly sessionCapabilitiesSource?: "warm-legacy"
   emitExtNotification(method: string, params: Record<string, unknown>): void
-}
+} & TurnTimingHost &
+  ScopePermissionHost
 
 /**
  * createSessionHostFromConnection — production factory.
@@ -674,52 +679,18 @@ export async function createSessionHostFromConnection(
     patches: patchStream,
 
     dispose,
-    // C3 turn boundaries — waiting before add-message (hotfix).
-    // slice agent-charter C2: transformPromptForAcp prepends charter to ACP only.
-    async prompt(
-      sessionId: string,
-      content: string | PromptBlocks,
-      meta?: Record<string, unknown>,
-    ): Promise<void> {
-      if (disposed) throw new Error("SessionHost disposed")
-      const turn = ++turnLifecycle.turnSeq
-      stampTurnStart()
-      emit(applyTurnStart(currentState)) // 1. waiting — לפני ה-await, ולפני add-message (hotfix)
-      const msg = synthesizeUserMessage(currentState, content, meta)
-      const applied = applyUserMessage(currentState, msg)
-      currentState = applied.state
-      emitPatches(applied.patches) // 2. add-message — role="user" משמר waiting (מלכודת ג')
-      try {
-        const acpContent = transformPromptForAcp?.(content) ?? content
-        await client.prompt(sessionId, acpContent)
-        if (turn === turnLifecycle.turnSeq) {
-          emitTurnEnd(applyTurnEnd(currentState), {
-            stopReason: "end_turn",
-            contextUsage: currentState.contextUsage,
-            acpSessionId: currentState.sessionId,
-          }) // 3א. הצלחה
-          maybeScheduleCloseOnTurnEnd()
-          // slice http-state-gaps C3: refresh quota at turn end — the brief asked for
-          // it and it was missing (calev finding 7). A turn is exactly when usage
-          // changes. Non-blocking, and guarded by the same generation/in-flight rules.
-          if (currentState.sessionId) startQuotaFetch(currentState.sessionId)
-        }
-      } catch (err) {
-        if (turn === turnLifecycle.turnSeq) {
-          const error =
-            turn === turnLifecycle.cancelledTurn
-              ? undefined
-              : { message: msgOf(err), at: Date.now() }
-          emitTurnEnd(applyTurnEnd(currentState, error), {
-            stopReason: error?.message,
-            lastTurnError: error ?? null,
-            contextUsage: currentState.contextUsage,
-            acpSessionId: currentState.sessionId,
-          }) // 3ב. שגיאה — אין closeOnTurnEnd (הסוכן נשאר כראיה)
-        }
-        throw err // rethrow — הקורא הישיר עדיין רואה את השגיאה
-      }
-    },
+    ...createPromptTurn({
+      client,
+      isDisposed: () => disposed,
+      getState: () => currentState,
+      emit,
+      lifecycle: turnLifecycle,
+      stampTurnStart,
+      emitTurnEnd,
+      maybeScheduleCloseOnTurnEnd,
+      transformPromptForAcp,
+      startQuotaFetch,
+    }),
 
     /**
      * Cold create (no prior sessionId): thin path — ACP session/new + optional
@@ -753,7 +724,12 @@ export async function createSessionHostFromConnection(
       const { oldSessionId, snapshot } = sessionSwitch.emitSessionSwitchReset()
       // Sentinel ≠ any real ACP sessionId → handleUpdate drops outgoing tails.
       // null would pass the filter (host-with-no-session pass-through) and re-fill.
-      currentState = { ...currentState, sessionId: "__drive_switching__" }
+      currentState = {
+        ...currentState,
+        sessionId: "__drive_switching__",
+        lastTurnError: null,
+        stopReason: null,
+      }
 
       try {
         const result = await client.newSession(sessionOpts)
@@ -762,6 +738,7 @@ export async function createSessionHostFromConnection(
         applySessionChanges({
           turnState: "idle",
           lastTurnError: null,
+          stopReason: null,
           quota: null,
           title: "",
           ...(configOptions.length > 0 ? { configOptions } : {}),
@@ -791,7 +768,12 @@ export async function createSessionHostFromConnection(
       // 4. Flip sessionId BEFORE the await — otherwise the step-5 filter would
       //    drop the new session's replay (arriving during the await; streamHistory
       //    runs inside the CLI's loadSession handler) and let in old-session tails.
-      currentState = { ...currentState, sessionId: opts.sessionId }
+      currentState = {
+        ...currentState,
+        sessionId: opts.sessionId,
+        lastTurnError: null,
+        stopReason: null,
+      }
 
       // 6.
       try {
@@ -807,6 +789,7 @@ export async function createSessionHostFromConnection(
         applySessionChanges({
           turnState: "idle",
           lastTurnError: null,
+          stopReason: null,
           ...(mergedConfigOptions.length > 0 ? { configOptions: mergedConfigOptions } : {}),
           ...(isSameSession ? {} : { quota: null }),
         })
@@ -817,25 +800,6 @@ export async function createSessionHostFromConnection(
       } catch (err) {
         sessionSwitch.rollbackSessionSwitch(oldSessionId, snapshot)
         throw err
-      }
-    },
-
-    async cancel(sessionId: string) {
-      if (disposed) throw new Error("SessionHost disposed")
-      const turn = turnLifecycle.turnSeq // מסמן, ❌ לא מקדם
-      turnLifecycle.cancelledTurn = turn
-      try {
-        await client.cancel(sessionId)
-      } catch {
-        // best-effort — תואם ל-local
-      }
-      if (turn === turnLifecycle.turnSeq) {
-        emitTurnEnd(applyTurnEnd(currentState), {
-          stopReason: "cancelled",
-          contextUsage: currentState.contextUsage,
-          acpSessionId: currentState.sessionId,
-        }) // אותה גדר בדיוק כמו ב-prompt
-        maybeScheduleCloseOnTurnEnd()
       }
     },
 
