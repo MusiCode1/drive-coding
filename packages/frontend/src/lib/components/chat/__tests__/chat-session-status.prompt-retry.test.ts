@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { flushSync, mount, unmount } from "svelte"
+import { fromStore, writable } from "svelte/store"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { createFailedPromptStore, PROMPT_CLAIM_MS } from "$lib/adapters/failed-prompt-store"
 import type { RecordTarget } from "$lib/engines/pending-capture-wiring"
@@ -34,14 +35,16 @@ describe("ChatSessionStatus saved prompts", () => {
     ]))
     if (claimed.kind !== "claimed") throw new Error("Missing fixture claim")
     await store.settle(claimed.record, { delivery: "rejected", reason: "session-mismatch", retryable: true })
-    let active = target("B", 2)
-    vm = new PromptRetry({ current: () => active, isCurrent: (entry) => entry === active }, vi.fn(), store)
+    const active = fromStore(writable(target("B", 2)))
+    vm = new PromptRetry({
+      current: () => active.current, isCurrent: (entry) => entry === active.current,
+    }, vi.fn(), store)
     component = mount(Harness, { target: document.body, props: { prompts: vm } })
 
     await vm.refresh()
     flushSync()
     expect(document.body.textContent).not.toContain("לא נשלח — השיחה הוחלפה")
-    active = target("A", 3)
+    active.current = target("A", 3)
     await vm.refresh()
     flushSync()
     const alert = document.querySelector('[role="alert"]')
