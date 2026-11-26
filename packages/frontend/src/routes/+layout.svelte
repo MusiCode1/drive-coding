@@ -7,6 +7,7 @@ import PlaybackDebugPanel from "$lib/components/debug/PlaybackDebugPanel.svelte"
 import "../app.css"
 import { OrderAllocator } from "@drive-coding/core/voice/tts-queue"
 import { onDestroy, onMount } from "svelte"
+import { beforeNavigate } from "$app/navigation"
 import { page } from "$app/state"
 import { env } from "$env/dynamic/public"
 import {
@@ -17,12 +18,9 @@ import {
   setChatScroll,
   setCliAvailability,
   setContentViewer,
-  setComposerDraft,
   setSessionMemo,
   setCues,
-  setDictate,
   setI18n,
-  setMic,
   setModals,
   setNotify,
   setModelStatus,
@@ -39,7 +37,6 @@ import { AudioPlaylist } from "$lib/engines/audio-playlist.svelte"
 import { createConfigChangeRefresher } from "$lib/engines/config-change-socket"
 import { ttsStatus } from "$lib/view-models/tts-status.svelte"
 import { CuesEngine } from "$lib/engines/cues"
-import { createPendingCaptureWiring } from "$lib/engines/pending-capture-wiring"
 import MediaSessionPlaylistSync from "$lib/components/layout/MediaSessionPlaylistSync.svelte"
 import { PlayableSink } from "$lib/engines/playable-sink"
 import { WakeLockEngine } from "$lib/engines/wake-lock"
@@ -48,6 +45,7 @@ import { notifyTexts } from "$lib/notify-texts"
 import type { ChatScrollBridge } from "$lib/types/chat-scroll"
 import { beWsUrl } from "$lib/util/be-url"
 import { bindSessionLifecycle } from "$lib/actions/session-lifecycle"
+import { installRecordInput } from "$lib/actions/layout-record-input-wiring.svelte"
 import { installVoiceStack } from "$lib/actions/layout-voice-wiring.svelte"
 import {
   installSessionScopePolicy,
@@ -64,11 +62,8 @@ import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
 import { ContentViewerVM } from "$lib/view-models/content-viewer.svelte"
 import { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
 import { I18nVM } from "$lib/view-models/i18n.svelte"
-import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
 import { SessionMemoVM } from "$lib/view-models/session-memo.svelte"
-import { Dictate } from "$lib/view-models/dictate.svelte"
 import { AudioDevicesVM } from "$lib/view-models/audio-devices.svelte"
-import { Mic } from "$lib/view-models/mic.svelte"
 import { ModalsVM } from "$lib/view-models/modals.svelte"
 import { PresencePoller } from "$lib/view-models/presence-poller.svelte"
 import { RecentProjects } from "$lib/view-models/recent-projects.svelte"
@@ -106,29 +101,17 @@ const audioPlaylist = new AudioPlaylist(sharedAudioStream)
 // ─── audio-devices ─── (slice mic-device-selection)
 const audioDevices = new AudioDevicesVM({ settings })
 
-// ─── mic ─── (slice 3; voice-pending-persistence recovery)
-const { micRecovery, dictateRecovery } = createPendingCaptureWiring()
-const mic = new Mic({
+// ─── Record · Dictate · composer ───
+const { mic, installContexts: installRecordContexts } = installRecordInput({
   session,
+  beforeNavigate,
   cues,
-  recovery: micRecovery,
   getInputDeviceId: () => audioDevices.effectiveInputId,
 })
-
-// ─── composer-draft ─── (slice dictate-to-input)
-const composerDraft = new ComposerDraft()
 
 // ─── session-memo ─── (slice session-memo-pad)
 // המעקב אחרי הסשן הפעיל יושב בתוך ה-VM (חוק זהב #4) — כאן רק הרכבה.
 const sessionMemo = new SessionMemoVM(session)
-
-// ─── dictate ─── (slice dictate-to-input — תלוי ב-composerDraft + mic)
-const dictate = new Dictate({
-  draft: composerDraft,
-  mic,
-  recovery: dictateRecovery,
-  getInputDeviceId: () => audioDevices.effectiveInputId,
-})
 
 // ─── theme ─── (redesign-1) — declared before Live getter; instance assigned below Live block
 let theme!: ThemeVM
@@ -238,8 +221,8 @@ setI18n(i18n)
 setSettings(settings)
 setCues(cues)
 setSession(session)
+installRecordContexts()
 setAudioPlaylist(audioPlaylist)
-setMic(mic)
 setModelStatus(modelStatus)
 setBubblePlayer(bubblePlayer)
 setTheme(theme)
@@ -252,9 +235,7 @@ setRecentProjects(recentProjects)
 setCliAvailability(cliAvailability)
 setPresencePoller(presencePoller)
 setNotify(notify)
-setComposerDraft(composerDraft)
 setSessionMemo(sessionMemo)
-setDictate(dictate)
 setAudioDevices(audioDevices)
 
 // ─── chat-scroll bridge ─── (slice chat-virtualization)
@@ -278,12 +259,6 @@ const dcOptIn = typeof localStorage !== "undefined" && localStorage.getItem("__d
 if (__DC_ENABLED__ || dcOptIn) {
   void installDebugSurface()
 }
-
-// ─── pending-capture ─── (slice voice-pending-persistence)
-onMount(() => {
-  void mic.hydratePending()
-  void dictate.hydratePending()
-})
 
 // ─── config-change-socket ─── (slice cli-specs-hot-reload)
 // Wiring only: the socket, lifecycle and reconnect live in the engine (golden rule

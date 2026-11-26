@@ -2,8 +2,8 @@
  * mic.test.svelte.ts — pending capture recovery wiring for Mic.
  * (slice voice-pending-persistence, Commit 2)
  */
-import { beforeEach, describe, expect, it, vi } from "vitest"
-import type { MicPendingRecovery } from "./mic.svelte"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import type { RecordTarget } from "../engines/pending-capture-wiring"
 
 const { mockStart, mockStop } = vi.hoisted(() => ({
   mockStart: vi.fn(),
@@ -21,81 +21,91 @@ vi.mock("../adapters/voice/transcribe", () => ({
   transcribe: vi.fn(),
 }))
 
+import { transcribe } from "../adapters/voice/transcribe"
+import { _resetForTests, setBeUrlBase } from "../util/be-url"
 import { Mic } from "./mic.svelte"
-import type { AgentSession } from "./agent-session.svelte"
 
-const fakeSession = {
-  sendPrompt: vi.fn(),
-} as unknown as AgentSession
+const fakeSession = { sendPrompt: vi.fn().mockResolvedValue(undefined) }
+const initialTarget = {
+  ownerKey: "test-owner",
+  agentId: "test-agent",
+  backendBaseUrl: "https://record.local",
+  generation: 1,
+  view: {} as RecordTarget["view"],
+}
+let target: RecordTarget | null
 
-function createRecovery(
-  overrides: Partial<MicPendingRecovery> = {},
-): MicPendingRecovery {
-  return {
-    hasPending: false,
-    hydrate: vi.fn().mockResolvedValue(null),
-    dismiss: vi.fn().mockResolvedValue(undefined),
-    processBlob: vi.fn().mockResolvedValue({ ok: true, text: "hello", recordingId: "" }),
-    retry: vi.fn().mockResolvedValue({ ok: true, text: "hello", recordingId: "" }),
-    ...overrides,
-  }
+function createMic(getInputDeviceId?: () => string | null) {
+  return new Mic({
+    session: fakeSession,
+    targets: {
+      current: () => target,
+      isCurrent: (candidate) => candidate === target,
+    },
+    getInputDeviceId,
+  })
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.mocked(transcribe).mockReset()
+  target = initialTarget
+  setBeUrlBase(initialTarget.backendBaseUrl)
   mockStart.mockResolvedValue(undefined)
   mockStop.mockResolvedValue({ blob: new Blob(["audio"]), mimeType: "audio/webm" })
 })
 
+afterEach(() => {
+  _resetForTests()
+  vi.unstubAllGlobals()
+})
+
 describe("Mic pending capture", () => {
-  it("retryTranscribe delegates to recovery when idle and pending exists", async () => {
-    const recovery = createRecovery({ hasPending: true })
-    const mic = new Mic({ session: fakeSession, recovery })
-
-    await mic.retryTranscribe()
-
-    expect(recovery.retry).toHaveBeenCalledOnce()
+  it("quarantines ownerless Record and skips both STT and sending", async () => {
+    target = null
+    const mic = createMic()
+    await mic.toggle()
+    target = initialTarget
+    await mic.toggle()
+    expect(transcribe).not.toHaveBeenCalled()
+    expect(fakeSession.sendPrompt).not.toHaveBeenCalled()
+    expect(mic.canRetry).toBe(false)
     expect(mic.state).toBe("idle")
   })
 
-  it("dismiss clears error via recovery", async () => {
-    const recovery = createRecovery()
-    const mic = new Mic({ session: fakeSession, recovery })
-    mic.error = "mic.error.transcribe"
-    mic.pendingRestored = true
-
-    await mic.dismiss()
-
-    expect(recovery.dismiss).toHaveBeenCalledOnce()
+  it("shows late stop failures only under the entry that owns the device operation", async () => {
+    const stopped = Promise.withResolvers<never>()
+    mockStop.mockReturnValueOnce(stopped.promise)
+    const mic = createMic()
+    await mic.toggle()
+    const finishing = mic.toggle()
+    target = { ...initialTarget, ownerKey: "another-owner", generation: 2 }
+    stopped.reject(new Error("device stopped unexpectedly"))
+    await finishing
     expect(mic.error).toBeNull()
-    expect(mic.pendingRestored).toBe(false)
+    expect(mic.state).toBe("idle")
   })
 
-  it("hydratePending sets restored flag and error from capture", async () => {
-    const recovery = createRecovery({
-      hydrate: vi.fn().mockResolvedValue({ lastError: "mic.error.transcribe" }),
-    })
-    const mic = new Mic({ session: fakeSession, recovery })
-
-    await mic.hydratePending()
-
+  it("preserves audio when the backend changes before STT and retries at the verified base", async () => {
+    const mic = createMic()
+    await mic.toggle()
+    setBeUrlBase("https://different.local")
+    await mic.toggle()
+    expect(transcribe).not.toHaveBeenCalled()
     expect(mic.pendingRestored).toBe(true)
-    expect(mic.error).toBe("mic.error.transcribe")
-  })
-
-  it("canRetry reflects recovery.hasPending", () => {
-    const recovery = createRecovery()
-    const mic = new Mic({ session: fakeSession, recovery })
-
-    expect(mic.canRetry).toBe(false)
-    ;(recovery as { hasPending: boolean }).hasPending = true
     expect(mic.canRetry).toBe(true)
+    setBeUrlBase(initialTarget.backendBaseUrl)
+    vi.mocked(transcribe).mockResolvedValueOnce({ text: "fixture", recordingId: "fixture-id" })
+    await mic.bindPendingActions().onRetry()
+    expect(transcribe).toHaveBeenCalledWith(expect.any(Blob), {
+      recordSttProxyBaseUrl: "https://record.local/proxy/google/",
+    })
+    expect(fakeSession.sendPrompt).toHaveBeenCalledWith("fixture", { recordingId: "fixture-id" })
   })
 
   it("NotAllowedError flags permissionDenied and shows no text error", async () => {
     mockStart.mockRejectedValueOnce(new DOMException("denied", "NotAllowedError"))
-    const recovery = createRecovery({ hasPending: false })
-    const mic = new Mic({ session: fakeSession, recovery })
+    const mic = createMic()
 
     await mic.toggle()
 
@@ -118,8 +128,7 @@ describe("Mic pending capture", () => {
         query: vi.fn().mockResolvedValue({ state: "granted" }),
       },
     })
-    const recovery = createRecovery()
-    const mic = new Mic({ session: fakeSession, recovery })
+    const mic = createMic()
 
     const p = mic.toggle()
     expect(mic.state).toBe("requesting")
@@ -148,8 +157,7 @@ describe("Mic pending capture", () => {
         ),
       },
     })
-    const recovery = createRecovery()
-    const mic = new Mic({ session: fakeSession, recovery })
+    const mic = createMic()
 
     const p = mic.toggle()
     expect(mockStart).toHaveBeenCalledOnce()
@@ -170,8 +178,7 @@ describe("Mic pending capture", () => {
         query: vi.fn().mockResolvedValue({ state: "prompt" }),
       },
     })
-    const recovery = createRecovery()
-    const mic = new Mic({ session: fakeSession, recovery })
+    const mic = createMic()
 
     const p = mic.toggle()
     expect(mockStart).toHaveBeenCalledOnce()
@@ -191,8 +198,7 @@ describe("Mic pending capture", () => {
         query: vi.fn().mockResolvedValue({ state: "prompt" }),
       },
     })
-    const recovery = createRecovery()
-    const mic = new Mic({ session: fakeSession, recovery })
+    const mic = createMic()
 
     await mic.refreshPermissionHint()
 
@@ -208,11 +214,7 @@ describe("Mic input device (mic-device-selection)", () => {
         query: vi.fn().mockResolvedValue({ state: "granted" }),
       },
     })
-    const mic = new Mic({
-      session: fakeSession,
-      recovery: createRecovery(),
-      getInputDeviceId: () => "mic-x",
-    })
+    const mic = createMic(() => "mic-x")
     await mic.toggle()
     expect(mockStart).toHaveBeenCalledWith("mic-x")
   })
@@ -224,7 +226,7 @@ describe("Mic input device (mic-device-selection)", () => {
         query: vi.fn().mockResolvedValue({ state: "granted" }),
       },
     })
-    const mic = new Mic({ session: fakeSession, recovery: createRecovery() })
+    const mic = createMic()
     await mic.toggle()
     expect(mockStart).toHaveBeenCalledWith(null)
   })

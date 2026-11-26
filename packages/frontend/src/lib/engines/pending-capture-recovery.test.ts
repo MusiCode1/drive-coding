@@ -4,10 +4,7 @@
  */
 import type { PendingCapture, PendingCaptureStore } from "@drive-coding/core/voice/pending-capture"
 import { describe, expect, it, vi } from "vitest"
-import {
-  PendingCaptureRecovery,
-  type TranscribeContext,
-} from "./pending-capture-recovery"
+import { PendingCaptureRecovery, type TranscribeContext } from "./pending-capture-recovery"
 
 function sampleCapture(overrides: Partial<PendingCapture> = {}): PendingCapture {
   return {
@@ -49,11 +46,10 @@ describe("PendingCaptureRecovery", () => {
     const transcribe = vi.fn().mockResolvedValue({ text: "hello", recordingId: "rec-1" })
     const onSend = vi.fn()
 
-    const outcome = await recovery.processBlob(
-      new Blob(["audio"]),
-      "audio/webm",
-      { transcribe, onSend },
-    )
+    const outcome = await recovery.processBlob(new Blob(["audio"]), "audio/webm", {
+      transcribe,
+      onSend,
+    })
 
     expect(outcome).toEqual({ ok: true, text: "hello", recordingId: "rec-1" })
     expect(store.save).toHaveBeenCalledOnce()
@@ -71,11 +67,7 @@ describe("PendingCaptureRecovery", () => {
     })
     const transcribe = vi.fn().mockRejectedValue(new Error("403"))
 
-    const outcome = await recovery.processBlob(
-      new Blob(["audio"]),
-      "audio/webm",
-      { transcribe },
-    )
+    const outcome = await recovery.processBlob(new Blob(["audio"]), "audio/webm", { transcribe })
 
     expect(outcome).toEqual({ ok: false, error: "mic.error.transcribe" })
     expect(recovery.hasPending).toBe(true)
@@ -161,5 +153,80 @@ describe("PendingCaptureRecovery", () => {
     await expect(outcomePromise).resolves.toEqual({ ok: true, text: "hi", recordingId: "" })
     expect(onSend).toHaveBeenCalledOnce()
     resolveSend()
+  })
+})
+
+describe("Record handoff verification", () => {
+  it.each(["replacement", "dismiss", "cached"] as const)(
+    "rechecks the exact item synchronously after disk verification (%s)",
+    async (scenario) => {
+      const cached = scenario === "cached"
+      const blob = new Blob(["audio"])
+      const { store, getSlot } = createMockStore({
+        capture: sampleCapture(cached ? { transcribedText: "cached", recordingId: "old" } : {}),
+        blob,
+      })
+      const recovery = new PendingCaptureRecovery(store, {
+        source: "mic",
+        transcribeErrorKey: "mic.error.transcribe",
+      })
+      await recovery.hydrate()
+      const disk = Promise.withResolvers<boolean>()
+      let valid = true
+      const onSend = vi.fn()
+      const verifyHandoff = vi.fn(() => disk.promise)
+      const transcribe = vi.fn().mockResolvedValue({ text: "fixture", recordingId: "rec" })
+      const pending = recovery.retry({
+        transcribe,
+        onSend,
+        isCaptureCurrent: (id) => valid && id === "cap-1",
+        verifyHandoff,
+      })
+      await vi.waitFor(() => expect(verifyHandoff).toHaveBeenCalledWith("cap-1"))
+
+      disk.resolve(true)
+      valid = false
+      if (scenario === "replacement") await store.save(sampleCapture({ id: "new" }), blob)
+      else await store.remove("cap-1")
+      await pending
+
+      expect(onSend).not.toHaveBeenCalled()
+      expect(getSlot()?.capture.id).toBe(scenario === "replacement" ? "new" : undefined)
+      expect(transcribe).toHaveBeenCalledTimes(cached ? 0 : 1)
+      expect(store.remove).toHaveBeenCalledTimes(scenario === "replacement" ? 0 : 1)
+    },
+  )
+
+  it("retains the new text when the final synchronous guard rejects the handoff", async () => {
+    const { store, getSlot } = createMockStore()
+    const recovery = new PendingCaptureRecovery(store, {
+      source: "mic",
+      transcribeErrorKey: "mic.error.transcribe",
+    })
+    await recovery.processBlob(new Blob(["audio"]), "audio/webm", {
+      transcribe: vi.fn().mockResolvedValue({ text: "retained", recordingId: "rec" }),
+      verifyHandoff: vi.fn().mockResolvedValue(true),
+      onSend: () => false,
+    })
+    expect(getSlot()?.capture).toMatchObject({ transcribedText: "retained", recordingId: "rec" })
+    expect(store.remove).not.toHaveBeenCalled()
+  })
+
+  it("removes whitespace-only transcriptions without dispatch", async () => {
+    const { store, getSlot } = createMockStore()
+    const recovery = new PendingCaptureRecovery(store, {
+      source: "mic",
+      transcribeErrorKey: "mic.error.transcribe",
+    })
+    const verifyHandoff = vi.fn()
+    const onSend = vi.fn()
+    await recovery.processBlob(new Blob(["audio"]), "audio/webm", {
+      transcribe: vi.fn().mockResolvedValue({ text: "   ", recordingId: "rec" }),
+      verifyHandoff,
+      onSend,
+    })
+    expect(getSlot()).toBeNull()
+    expect(verifyHandoff).not.toHaveBeenCalled()
+    expect(onSend).not.toHaveBeenCalled()
   })
 })

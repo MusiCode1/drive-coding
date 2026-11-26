@@ -17,11 +17,11 @@
  *   (b) slice sessions-inline: timeout 15s→30s, עטוף withRetry (3 נסיונות, backoff 800ms)
  */
 
-import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { withRetry } from "@drive-coding/core/async/with-retry"
+import { withTimeout } from "@drive-coding/core/async/with-timeout"
 import { bytesToBase64 } from "./base64"
-import { googleGenAi } from "./sdks"
 import { saveRecording } from "./recordings"
+import { googleGenAi } from "./sdks"
 
 const TRANSCRIBE_TIMEOUT_MS = 30000 // הוגדל מ-15s: תמלול ארוך + thinking model
 
@@ -30,6 +30,7 @@ export async function transcribe(
   opts: {
     previousAssistantText?: string
     signal?: AbortSignal
+    recordSttProxyBaseUrl?: string
   } = {},
 ): Promise<{ text: string; recordingId: string }> {
   const audioBytes = new Uint8Array(await blob.arrayBuffer())
@@ -54,7 +55,7 @@ export async function transcribe(
     () =>
       withTimeout(
         (signal) =>
-          googleGenAi().models.generateContent({
+          googleGenAi(opts.recordSttProxyBaseUrl).models.generateContent({
             model: "gemini-flash-latest",
             contents: [
               {

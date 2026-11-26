@@ -1,13 +1,13 @@
 /**
- * pending-capture-store.ts — IndexedDB persistence for a single pending voice capture.
+ * pending-capture-store.ts — IndexedDB persistence for the global Dictate slot.
  * (slice voice-pending-persistence, Commit 0)
  *
- * Single slot per origin: a new save replaces any existing pending capture.
+ * Legacy Record rows share this database and are left untouched.
  */
 import {
-  parsePendingCapture,
   type PendingCapture,
   type PendingCaptureStore,
+  parsePendingCapture,
 } from "@drive-coding/core/voice/pending-capture"
 
 export type { PendingCaptureStore }
@@ -72,17 +72,18 @@ function txDone(tx: IDBTransaction): Promise<void> {
   })
 }
 
-function reqResult<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error("indexedDB request failed"))
-  })
-}
-
-async function clearAllStores(db: IDBDatabase): Promise<void> {
-  const tx = db.transaction([META_STORE, BLOBS_STORE], "readwrite")
-  tx.objectStore(META_STORE).clear()
-  tx.objectStore(BLOBS_STORE).clear()
+async function changeDictation(
+  database: IDBDatabase,
+  id: string,
+  update: (capture: PendingCapture, meta: IDBObjectStore, blobs: IDBObjectStore) => void,
+): Promise<void> {
+  const tx = database.transaction([META_STORE, BLOBS_STORE], "readwrite")
+  const meta = tx.objectStore(META_STORE)
+  const request = meta.get(id)
+  request.onsuccess = () => {
+    const capture = parsePendingCapture(request.result)
+    if (capture?.source === "dictate") update(capture, meta, tx.objectStore(BLOBS_STORE))
+  }
   await txDone(tx)
 }
 
@@ -97,50 +98,68 @@ function createIndexedDbPendingCaptureStore(): PendingCaptureStore {
   return {
     async load() {
       const database = await db()
-      const tx = database.transaction(META_STORE, "readonly")
-      const all = await reqResult(tx.objectStore(META_STORE).getAll())
-      await txDone(tx)
-      if (!Array.isArray(all) || all.length === 0) return null
-      const raw = all[0]
-      const capture = parsePendingCapture(raw)
-      if (!capture) return null
-
-      const blobTx = database.transaction(BLOBS_STORE, "readonly")
-      const blob = await reqResult(blobTx.objectStore(BLOBS_STORE).get(capture.id))
-      await txDone(blobTx)
-      if (!(blob instanceof Blob)) return null
-      return { capture, blob }
+      const tx = database.transaction([META_STORE, BLOBS_STORE], "readonly")
+      const done = txDone(tx)
+      let loaded: MemorySlot | null = null
+      const request = tx.objectStore(META_STORE).getAll()
+      request.onsuccess = () => {
+        const rows: unknown[] = request.result
+        const capture = rows.map(parsePendingCapture).find((row) => row?.source === "dictate")
+        if (!capture) return
+        const blob = tx.objectStore(BLOBS_STORE).get(capture.id)
+        blob.onsuccess = () => {
+          if (blob.result instanceof Blob) loaded = { capture, blob: blob.result }
+        }
+      }
+      await done
+      return loaded
     },
 
     async save(capture, blob) {
+      if (capture.source !== "dictate") return
       const database = await db()
-      await clearAllStores(database)
       const tx = database.transaction([META_STORE, BLOBS_STORE], "readwrite")
-      tx.objectStore(META_STORE).put(capture)
-      tx.objectStore(BLOBS_STORE).put(blob, capture.id)
+      const meta = tx.objectStore(META_STORE)
+      const blobs = tx.objectStore(BLOBS_STORE)
+      const request = meta.getAll()
+      request.onsuccess = () => {
+        const rows: unknown[] = request.result
+        // A legacy Record ID belongs to that row even if a caller presents the same ID.
+        if (
+          rows.some(
+            (raw) =>
+              typeof raw === "object" &&
+              raw !== null &&
+              "id" in raw &&
+              raw.id === capture.id &&
+              parsePendingCapture(raw)?.source !== "dictate",
+          )
+        )
+          return
+        for (const raw of rows) {
+          const existing = parsePendingCapture(raw)
+          if (existing?.source === "dictate") {
+            meta.delete(existing.id)
+            blobs.delete(existing.id)
+          }
+        }
+        meta.put(capture)
+        blobs.put(blob, capture.id)
+      }
       await txDone(tx)
     },
 
     async updateMeta(id, patch) {
-      const database = await db()
-      const readTx = database.transaction(META_STORE, "readonly")
-      const existing = await reqResult(readTx.objectStore(META_STORE).get(id))
-      await txDone(readTx)
-      const capture = parsePendingCapture(existing)
-      if (!capture) return
-
-      const updated = { ...capture, ...patch }
-      const writeTx = database.transaction(META_STORE, "readwrite")
-      writeTx.objectStore(META_STORE).put(updated)
-      await txDone(writeTx)
+      await changeDictation(await db(), id, (capture, meta) =>
+        meta.put({ ...capture, ...patch, id, source: "dictate" }),
+      )
     },
 
     async remove(id) {
-      const database = await db()
-      const tx = database.transaction([META_STORE, BLOBS_STORE], "readwrite")
-      tx.objectStore(META_STORE).delete(id)
-      tx.objectStore(BLOBS_STORE).delete(id)
-      await txDone(tx)
+      await changeDictation(await db(), id, (_capture, meta, blobs) => {
+        meta.delete(id)
+        blobs.delete(id)
+      })
     },
   }
 }
