@@ -61,7 +61,8 @@ const attachments = $derived(trays.get(owner()) ?? [])
 const updateTrays = (next: typeof trays) => {
   trays = next
 }
-const images = imageHandlers(() => session.supportsImageInput, owner, () => trays, updateTrays)
+const allowsImages = () => session.supportsImageInput
+const images = imageHandlers(allowsImages, owner, () => trays, updateTrays)
 let destroyed = false
 let draftRevision = 0
 onDestroy(() => {
@@ -252,7 +253,7 @@ const onSubmit = bindTypeAreaSubmit(
 
     <div class="type-area-left-tools flex gap-2 shrink-0">
     <!-- כפתור הוספת תמונה (גלוי רק כש-supportsImageInput) -->
-    {#if session.supportsImageInput}
+    {#if allowsImages()}
       <button
         type="button"
         onclick={() => fileInputEl?.click()}
