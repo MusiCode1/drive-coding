@@ -1,21 +1,6 @@
 /**
- * agent-orchestrator.ts — אורקסטרטור רזה (CUT-3b-ii rewire).
- *
- * תחומי אחריות:
- *   1. createAndSpawn: קורא ל-registry.create + connectionRegistry.connect
- *      → מחזיר { agentId, wsUrl:"", bridgePort:0 } (in-process pipe, אין WS-bridge).
- *      הסטטוס נשאר "spawning" — ה-FE מסמן "ready" דרך POST /api/agents/:id/session-attached.
- *   2. deleteAndKill: registry.update(closed) + connectionRegistry.close + registry.delete
- *   3. getBridgePort: תמיד 0 (in-process — אין WS-bridge אמיתי). נשמר לתאימות.
- *   4. התרסקויות: connectionRegistry.onCrash → registry.update(status=crashed).
- *
- * CUT-3b-ii — שינויים מ-bridge-manager:
- *   - connectSpawn (דרך connectionRegistry.connect) במקום bridgeManager.spawn
- *   - shapeEnv (opencode-only): verbatim מ-bridge-manager:71-83
- *   - modelOverride מועבר (avigail 🔴): ConnectOpts.modelOverride
- *   - bridgePort=0/wsUrl="" קבוע (avigail 🟡): in-process pipe, אין WS-bridge אמיתי
- *   - dead dedup path (if duplicate?.bridgePort) — נשמר כ-no-op (avigail 🟢):
- *     bridgePort תמיד 0, אז if(0) לעולם לא ייכנס — שינוי = שינוי התנהגות
+ * Composes agent spawning, connection crash handling, and the close service.
+ * Spawn returns "spawning". The frontend marks the agent ready after ACP attaches.
  */
 
 import type {
@@ -29,11 +14,10 @@ import { createLogger } from "@drive-coding/core/log"
 import { describeCrash } from "@drive-coding/provider/spawn"
 import type { ConnectionRegistry } from "../acp/connection-registry.js"
 import { buildAgentIdentityEnv } from "../agent-identity.js"
-import { clearGrantsFor, markClosing } from "../agent-scope.js"
-import { stopAgentUnit } from "../agents/agent-launcher.js"
 import { loopbackBaseUrl, type UrlConfig } from "../delivery/public-url.js"
 import { buildOpencodeConfigContent } from "../plugin-config.js"
 import { AUDIO_FRIENDLY_PROMPT, buildAgentPromptText } from "../prompts/index.js"
+import { type AgentHosts, type CloseTreeResult, createAgentTreeClose } from "./agent-tree-close.js"
 import { type CloseAllResult, closeAllAgents } from "./close-all-agents.js"
 
 /** Loopback BASE env every child gets (never PUBLIC_BASE_URL). */
@@ -97,6 +81,10 @@ export type AgentOrchestrator = {
   _getAgent?: (id: string) => Agent | null
 }
 
+type InternalAgentOrchestrator = AgentOrchestrator & {
+  closeTree(rootId: string): Promise<CloseTreeResult>
+}
+
 // ─── shapeEnv (verbatim מ-bridge-manager:71-83) ────────────────────────────────
 // opencode-only: הזרקת OPENCODE_CONFIG_CONTENT + PROMPT_INJECTOR_TEXT.
 // claude: ללא שינוי.
@@ -135,15 +123,11 @@ export function composeShapeEnv(
 export function createAgentOrchestrator(deps: {
   registry: AgentRegistry
   connectionRegistry: ConnectionRegistry
-  /**
-   * slice remote-warm-reconnect C2b (אופציונלי): רישום ה-hosts של ה-session-host.
-   * deleteAndKill וה-crash handler מסירים את ה-host מיד — אחרת GET /events ממשיך
-   * להגיש host מת עם snapshot ישן (ה-liveness check ב-getOrCreateHost מכסה גם
-   * lazy, אבל כאן סוגרים את החלון במיידי). אופציונלי — טסטים/נתיבים בלי host.
-   */
-  sessionHostRegistry?: { unregisterHost(agentId: string): void }
+  /** Optional host registry for immediate host removal on close or crash. */
+  sessionHostRegistry?: AgentHosts
   urlConfig?: UrlConfig
-}): AgentOrchestrator {
+}): InternalAgentOrchestrator {
+  const closeService = createAgentTreeClose(deps, log)
   const urlConfig = deps.urlConfig ?? { port: 4000, host: "127.0.0.1" }
   // מאזין התרסקויות: כש-connection מת, סמן סוכן כ-crashed + עדכן registry.
   deps.connectionRegistry.onCrash(async (agentId, info: BridgeCrashInfo) => {
@@ -266,33 +250,8 @@ export function createAgentOrchestrator(deps: {
       }
     },
 
-    async deleteAndKill(id: string): Promise<void> {
-      log.info({ agentId: id }, "deleteAndKill")
-      markClosing(id)
-      clearGrantsFor(id)
-      // slice remote-warm-reconnect C2b: הסרת host מיד (לפני close) — אין חלון
-      // שבו GET /events מחזיר host של סוכן שנמחק.
-      deps.sessionHostRegistry?.unregisterHost(id)
-
-      try {
-        await deps.registry.update(id, { status: "closed" })
-      } catch {
-        // התעלם
-      }
-
-      // 🔴 The kill half of the disconnect/kill split. `close()` only detaches a
-      // sidecar — deliberately, so the backend's own shutdown cannot take agents
-      // down with it. Ending an agent for good therefore has to stop its unit
-      // too, or a DELETE would leave a sidecar running with nobody to talk to.
-      await deps.connectionRegistry.close(id)
-      stopAgentUnit(id)
-
-      try {
-        await deps.registry.delete(id)
-      } catch {
-        // התעלם if already gone
-      }
-    },
+    deleteAndKill: closeService.deleteAndKill,
+    closeTree: closeService.closeBranch,
 
     // No await here on purpose: the whole operation lives in closeAllAgents,
     // and keeping this a single delegation keeps the orchestrator a router.

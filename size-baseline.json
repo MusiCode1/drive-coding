@@ -50,10 +50,10 @@
       "codeLines": 47
     },
     "packages/backend/src/app/agent-orchestrator.ts": {
-      "metric": 275,
-      "impurity": 11,
+      "metric": 269,
+      "impurity": 8,
       "class": "mixed",
-      "codeLines": 182
+      "codeLines": 181
     },
     "packages/backend/src/app/recordings-store.ts": {
       "metric": 130,
