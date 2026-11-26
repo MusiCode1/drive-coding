@@ -602,10 +602,10 @@
       "codeLines": 70
     },
     "packages/frontend/src/lib/components/chat/TypeArea.svelte": {
-      "metric": 194,
+      "metric": 192,
       "impurity": 9,
       "class": "mixed",
-      "codeLines": 411
+      "codeLines": 409
     },
     "packages/frontend/src/lib/components/chat/VoicePicker.svelte": {
       "metric": 58,
