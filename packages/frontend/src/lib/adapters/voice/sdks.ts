@@ -43,9 +43,9 @@ export function googleAi(model: string, headers?: Record<string, string>) {
  * baseUrl חייב להסתיים ב-`/` לפני שה-SDK מוסיף את ה-apiVersion (`v1beta`).
  * קוראים משתמשים ב: googleGenAi().models.generateContent(...)
  */
-export function googleGenAi(): GoogleGenAI {
+export function googleGenAi(proxyBaseUrl?: string): GoogleGenAI {
   return new GoogleGenAI({
     apiKey: "browser-placeholder",
-    httpOptions: { baseUrl: beUrl("/proxy/google/") },
+    httpOptions: { baseUrl: proxyBaseUrl ?? beUrl("/proxy/google/") },
   })
 }

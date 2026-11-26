@@ -20,6 +20,7 @@ const live = getLive()
 const voiceMode = getVoiceMode()
 const modelStatus = getModelStatus()
 const t = getI18n().t
+const pendingActions = $derived(mic.bindPendingActions())
 
 const STATE_CLASS: Record<MicState, string> = {
   idle: "",
@@ -116,8 +117,7 @@ function onClick() {
     error={mic.error}
     canRetry={mic.canRetry}
     restored={mic.pendingRestored}
-    onRetry={() => void mic.retryTranscribe()}
-    onDismiss={() => void mic.dismiss()}
+    {...pendingActions}
     {t}
   />
   {#if statusLine}

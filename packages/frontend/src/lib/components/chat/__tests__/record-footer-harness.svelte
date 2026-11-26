@@ -73,9 +73,7 @@ const fakeMic = {
   canRetry: false,
   pendingRestored: false,
   cancel: () => {},
-  retryTranscribe: async () => {},
-  dismiss: async () => {},
-  hydratePending: async () => {},
+  bindPendingActions: () => ({ onRetry: () => {}, onDismiss: () => {} }),
 } as unknown as Mic
 
 const liveState = $state({ open: liveOpen })

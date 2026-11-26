@@ -1,97 +1,109 @@
-/**
- * Mic — "האוזן" של המשתמש.
- *
- * נקודת כניסה (entry point) יחידה toggle() שמונעת על ידי רכיב ה-MicButton.
- * מכונת מצבים: idle → requesting → recording → transcribing → idle
- *
- * `requesting` = ממתינים ל-getUserMedia (דיאלוג הרשאה *או* פתיחת סטרים).
- * `awaitingPermissionDialog` = true רק כש-Permissions API אומר `prompt`
- * (מסביר UI של «ממתינים לאישור» — לא כשההרשאה כבר ניתנה).
- * עוברים ל-recording רק אחרי ש-getUserMedia הצליח.
- *
- * ─── slice voice-pending-persistence: IndexedDB pending + retry/dismiss/hydrate ───
- * ─── slice mic-permission-indication: requesting + hint לפני אישור ───
- */
-
+/** Device state for Record. Pending audio is scoped to the captured chat entry. */
 import type { MessageKey } from "@drive-coding/core/i18n"
 import type { CuesEngine } from "../engines/cues"
-import type { AgentSession } from "./agent-session.svelte"
+import {
+  createRecordAttempt,
+  RecordCaptureCoordinator,
+  type RecordCaptureEntry,
+  type RecordTarget,
+  type RecordTargetSource,
+} from "../engines/pending-capture-wiring"
 import { Recorder } from "../engines/recorder"
-import { transcribe } from "../adapters/voice/transcribe"
 import { probeMicPermission } from "../util/mic-permission"
+import type { AgentSession } from "./agent-session.svelte"
 
 export type MicState = "idle" | "requesting" | "recording" | "transcribing"
 
-type MicTranscribeContext = {
-  transcribe: (blob: Blob) => Promise<{ text: string; recordingId: string }>
-  onSend?: (text: string, recordingId: string) => void
-}
-
-type MicProcessOutcome =
-  | { ok: true; text: string; recordingId: string }
-  | { ok: false; error: MessageKey }
-
-/** Injected from +layout — keeps adapter/engine wiring out of this VM. */
-export type MicPendingRecovery = {
-  readonly hasPending: boolean
-  hydrate(): Promise<{ lastError?: MessageKey } | null>
-  dismiss(): Promise<void>
-  processBlob(
-    blob: Blob,
-    mimeType: string,
-    ctx: MicTranscribeContext,
-  ): Promise<MicProcessOutcome>
-  retry(ctx: MicTranscribeContext): Promise<MicProcessOutcome>
-}
+type ActiveAttempt = { entry?: RecordCaptureEntry }
 
 export class Mic {
   state: MicState = $state("idle")
-  error: MessageKey | null = $state(null)
-  pendingRestored = $state(false)
-  /** Soft hint when permission is still `prompt` (not granted yet). */
   permissionHint: MessageKey | null = $state(null)
-  /** True when the browser reports the mic as denied - surfaced as a crossed-out icon, not text. */
   permissionDenied: boolean = $state(false)
-  /** True only while requesting and Permissions API reports `prompt`. */
   awaitingPermissionDialog: boolean = $state(false)
+  hydrationRevision = $state(0)
 
-  readonly #session: AgentSession
-  readonly #recorder: Recorder
-  readonly #cues?: CuesEngine
-  readonly #recovery: MicPendingRecovery
-  readonly #getInputDeviceId?: () => string | null
+  #captureError = $state.raw<{ target: RecordTarget; error: MessageKey } | null>(null)
+  #pendingRevision = $state(0)
+  readonly #pending = new RecordCaptureCoordinator(() => this.#pendingRevision++)
+  readonly #recorder = new Recorder()
+  #captureTarget: RecordTarget | null = null
+  #active: ActiveAttempt | null = null
 
-  constructor(opts: {
-    session: AgentSession
-    cues?: CuesEngine
-    recovery: MicPendingRecovery
-    getInputDeviceId?: () => string | null
-  }) {
-    this.#session = opts.session
-    this.#recorder = new Recorder()
-    this.#cues = opts.cues
-    this.#recovery = opts.recovery
-    this.#getInputDeviceId = opts.getInputDeviceId
+  constructor(
+    private readonly opts: {
+      session: Pick<AgentSession, "sendPrompt">
+      targets: RecordTargetSource
+      cues?: CuesEngine
+      getInputDeviceId?: () => string | null
+    },
+  ) {
     void this.refreshPermissionHint()
   }
 
+  #entry(target: RecordTarget | null): RecordCaptureEntry | undefined {
+    // The coordinator owns the per-owner data. This dependency refreshes Svelte consumers.
+    void this.#pendingRevision
+    return target ? this.#pending.get(target.ownerKey) : undefined
+  }
+
   get canRetry(): boolean {
-    return this.#recovery.hasPending
+    return this.state === "idle" && !!this.#entry(this.opts.targets.current())
+  }
+
+  get pendingRestored(): boolean {
+    return this.#entry(this.opts.targets.current())?.restored ?? false
+  }
+
+  get error(): MessageKey | null {
+    const failure = this.#captureError
+    if (failure && this.opts.targets.isCurrent(failure.target)) return failure.error
+    return this.#entry(this.opts.targets.current())?.capture.lastError ?? null
+  }
+
+  bindPendingActions() {
+    const target = this.opts.targets.current()
+    const entry = this.#entry(target)
+    const failure = this.#captureError
+    const isCurrent = () => target && this.opts.targets.isCurrent(target)
+    return {
+      onRetry: () => {
+        if (!target || !isCurrent() || !entry || !this.#pending.has(entry)) return
+        if (this.state !== "idle") return
+        const operation = this.#beginAttempt(entry)
+        return this.#pending
+          .retry(entry, this.#attempt(target, operation))
+          .finally(() => this.#finishAttempt(operation, target))
+      },
+      onDismiss: () => {
+        if (!isCurrent() || (entry && !this.#pending.has(entry))) return
+        if (this.#captureError === failure) this.#captureError = null
+        if (!entry) return
+        const removing = this.#pending.dismiss(entry)
+        const operation = this.#active
+        if (operation?.entry?.capture.id === entry.capture.id) this.#finishAttempt(operation)
+        return removing
+      },
+    }
+  }
+
+  hydratePending(target: RecordTarget): Promise<void> {
+    return this.#pending.hydrate(target.ownerKey, () => this.opts.targets.isCurrent(target))
   }
 
   refreshPermissionHint = async (): Promise<void> => {
     const state = await probeMicPermission()
     this.permissionHint = state === "prompt" ? "mic.hint.needsAllow" : null
-    // "unknown" (no Permissions API) must not erase a denial the catch below already saw.
+    // "unknown" cannot erase a denial already reported by getUserMedia.
     if (state !== "unknown") this.permissionDenied = state === "denied"
   }
 
   toggle = async (): Promise<void> => {
     if (this.state === "idle") {
+      const target = this.opts.targets.current()
+      this.#captureTarget = target
       this.state = "requesting"
-      this.error = null
-      this.pendingRestored = false
-      // Optimistic from last probe (constructor / prior refresh) — don't block start.
+      this.#captureError = null
       this.awaitingPermissionDialog = this.permissionHint === "mic.hint.needsAllow"
       void probeMicPermission().then((perm) => {
         if (this.state !== "requesting") return
@@ -99,18 +111,19 @@ export class Mic {
         this.permissionHint = perm === "prompt" ? "mic.hint.needsAllow" : null
       })
       try {
-        await this.#recorder.start(this.#getInputDeviceId?.() ?? null)
-      } catch (e: unknown) {
+        await this.#recorder.start(this.opts.getInputDeviceId?.() ?? null)
+      } catch (error) {
         this.state = "idle"
         this.awaitingPermissionDialog = false
-        if (e instanceof DOMException && e.name === "NotAllowedError") {
-          // Denial is shown by the mic icon (MicOff), so no text error here.
+        if (error instanceof DOMException && error.name === "NotAllowedError") {
           this.permissionDenied = true
           this.permissionHint = null
-        } else if (e instanceof DOMException && e.name === "NotFoundError") {
-          this.error = "mic.error.notFound"
         } else {
-          this.error = "mic.error.generic"
+          const key =
+            error instanceof DOMException && error.name === "NotFoundError"
+              ? "mic.error.notFound"
+              : "mic.error.generic"
+          this.#showCaptureError(target, key)
         }
         void this.refreshPermissionHint()
         return
@@ -119,89 +132,61 @@ export class Mic {
       this.awaitingPermissionDialog = false
       this.permissionHint = null
       this.permissionDenied = false
-      this.#cues?.play("recordingStart")
+      this.opts.cues?.play("recordingStart")
       return
     }
 
-    if (this.state === "requesting") {
-      // getUserMedia in flight — ignore extra taps
-      return
+    if (this.state !== "recording") return
+    const target = this.#captureTarget
+    const operation = this.#beginAttempt()
+    this.opts.cues?.play("recordingStop")
+    try {
+      const { blob, mimeType } = await this.#recorder.stop()
+      const attempt = target && this.#attempt(target, operation)
+      await this.#pending.process(target?.ownerKey ?? null, blob, mimeType, attempt)
+    } catch (error) {
+      console.warn("[mic] capture failed", error)
+      this.#showCaptureError(target, "mic.error.generic")
+    } finally {
+      this.#finishAttempt(operation, target)
     }
-
-    if (this.state === "recording") {
-      this.state = "transcribing"
-      this.#cues?.play("recordingStop")
-      let blob: Blob
-      let mimeType: string
-      try {
-        const result = await this.#recorder.stop()
-        blob = result.blob
-        mimeType = result.mimeType
-      } catch (e: unknown) {
-        this.state = "idle"
-        console.warn("[mic] recorder.stop() failed", e)
-        this.error = "mic.error.generic"
-        return
-      }
-
-      await this.#runTranscribe(blob, mimeType)
-      return
-    }
-  }
-
-  retryTranscribe = async (): Promise<void> => {
-    if (!this.#recovery.hasPending) return
-    if (this.state !== "idle") return
-    this.state = "transcribing"
-    this.error = null
-    this.pendingRestored = false
-    const outcome = await this.#recovery.retry(this.#transcribeContext())
-    this.state = "idle"
-    if (!outcome.ok) {
-      this.error = outcome.error
-    }
-  }
-
-  hydratePending = (): Promise<void> => {
-    return this.#recovery.hydrate().then((capture) => {
-      if (!capture) return
-      this.pendingRestored = true
-      if (capture.lastError) {
-        this.error = capture.lastError
-      }
-    })
-  }
-
-  dismiss = (): Promise<void> => {
-    return this.#recovery.dismiss().then(() => {
-      this.error = null
-      this.pendingRestored = false
-    })
   }
 
   cancel(): void {
     if (this.state === "recording") {
       void this.#recorder.stop().catch(() => {})
       this.state = "idle"
-      this.error = null
+      this.#captureError = null
     }
-    // requesting: cannot abort getUserMedia reliably — leave until resolve/reject
+    // A pending getUserMedia cannot be reliably aborted.
   }
 
-  #transcribeContext(): MicTranscribeContext {
-    return {
-      transcribe: (blob) => transcribe(blob),
-      onSend: (text, recordingId) => {
-        void this.#session.sendPrompt(text, { recordingId })
-      },
-    }
+  #showCaptureError(target: RecordTarget | null, error: MessageKey) {
+    if (target && this.opts.targets.isCurrent(target)) this.#captureError = { target, error }
   }
 
-  #runTranscribe = async (blob: Blob, mimeType: string): Promise<void> => {
-    const outcome = await this.#recovery.processBlob(blob, mimeType, this.#transcribeContext())
+  #beginAttempt(entry?: RecordCaptureEntry): ActiveAttempt {
+    const operation = { entry }
+    this.#active = operation
+    this.#captureError = null
+    this.state = "transcribing"
+    return operation
+  }
+
+  #finishAttempt(operation: ActiveAttempt, target?: RecordTarget | null): void {
+    if (this.#active !== operation) return
+    this.#active = null
     this.state = "idle"
-    if (!outcome.ok) {
-      this.error = outcome.error
+    if (target && !this.opts.targets.isCurrent(target)) {
+      if (this.opts.targets.current()?.ownerKey === target.ownerKey) this.hydrationRevision++
     }
+  }
+
+  #attempt(target: RecordTarget, operation: ActiveAttempt) {
+    return createRecordAttempt(target.backendBaseUrl, (text, recordingId) => {
+      if (this.#active !== operation || !this.opts.targets.isCurrent(target)) return false
+      void this.opts.session.sendPrompt(text, { recordingId })
+      return true
+    })
   }
 }

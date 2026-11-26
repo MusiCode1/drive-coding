@@ -49,6 +49,7 @@ import type { SSEReaderOptions } from "./wire/reader-types"
 export type RemoteViewOptions = Pick<SSEReaderOptions, "_sleep" | "_now" | "_fetch"> & {
   connectionId?: string
   baseUrl?: string
+  targetBackendBaseUrl?: string
   /** Called after a reconnect replaces the view state. */
   onSseReconnected?: () => void
 }
@@ -62,6 +63,7 @@ export class RemoteSessionView implements SessionView {
   readonly #history: HistorySync
   readonly #sleep: (ms: number) => Promise<void>
   readonly #agentMetadataOptions: Parameters<typeof readTerminalEmission>[2]
+  readonly #targetBackendBaseUrl?: string
   readonly connectionId?: string
 
   #state: SessionState
@@ -81,6 +83,7 @@ export class RemoteSessionView implements SessionView {
     this.#pipe = pipe
     this.connectionId = opts.connectionId
     this.#agentMetadataOptions = { baseUrl: opts.baseUrl, fetcher: opts._fetch }
+    this.#targetBackendBaseUrl = opts.targetBackendBaseUrl
     registerView(this) // תצפית בלבד — ר' debug/session-registry.ts
     this.#onSseReconnected = opts.onSseReconnected
     this.#sleep = opts._sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
@@ -122,6 +125,11 @@ export class RemoteSessionView implements SessionView {
   }
 
   // ─── SessionView: state ───
+
+  get targetIdentity(): SessionView["targetIdentity"] {
+    const backendBaseUrl = this.#targetBackendBaseUrl
+    return backendBaseUrl ? { backendBaseUrl, sessionId: this.#sessionId } : undefined
+  }
 
   get state(): SessionState {
     return this.#state

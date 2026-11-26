@@ -15,8 +15,11 @@ import { safeUUID } from "../util/uuid"
 export type TranscribeContext = {
   transcribe: (blob: Blob) => Promise<{ text: string; recordingId: string }>
   onTranscribed?: (text: string) => void
-  onSend?: (text: string, recordingId: string) => void
+  /** A synchronous false retains the transcript for a later handoff. */
+  onSend?: (text: string, recordingId: string) => unknown
   onAppend?: (text: string) => void
+  isCaptureCurrent?: (id: string) => boolean
+  verifyHandoff?: (id: string) => Promise<boolean>
 }
 
 export type ProcessOutcome =
@@ -68,11 +71,12 @@ export class PendingCaptureRecovery {
     this.#blob = null
   }
 
-  async processBlob(
-    blob: Blob,
-    mimeType: string,
-    ctx: TranscribeContext,
-  ): Promise<ProcessOutcome> {
+  async processBlob(blob: Blob, mimeType: string, ctx: TranscribeContext): Promise<ProcessOutcome> {
+    await this.saveCapture(blob, mimeType)
+    return this.#runTranscribe(ctx)
+  }
+
+  async saveCapture(blob: Blob, mimeType: string): Promise<void> {
     const capture: PendingCapture = {
       id: safeUUID(),
       source: this.#source,
@@ -83,7 +87,6 @@ export class PendingCaptureRecovery {
     await this.#store.save(capture, blob)
     this.#capture = capture
     this.#blob = blob
-    return this.#runTranscribe(ctx)
   }
 
   async retry(ctx: TranscribeContext): Promise<ProcessOutcome> {
@@ -99,6 +102,9 @@ export class PendingCaptureRecovery {
     if (!capture || !blob) {
       return { ok: false, error: this.#transcribeErrorKey }
     }
+    const isCurrent = () => ctx.isCaptureCurrent?.(capture.id) !== false
+    const interrupted = { ok: false, error: this.#transcribeErrorKey } as const
+    if (!isCurrent()) return interrupted
 
     let text: string
     let recordingId: string
@@ -111,16 +117,20 @@ export class PendingCaptureRecovery {
         const result = await ctx.transcribe(blob)
         text = result.text
         recordingId = result.recordingId
+        if (!isCurrent()) return interrupted
         await this.#store.updateMeta(capture.id, {
           transcribedText: text,
           recordingId,
         })
+        if (!isCurrent()) return interrupted
         this.#capture = { ...capture, transcribedText: text, recordingId }
       } catch (e: unknown) {
+        if (!isCurrent()) return interrupted
         console.warn("[pending-capture-recovery] transcribe() failed", e)
         await this.#store.updateMeta(capture.id, {
           lastError: this.#transcribeErrorKey,
         })
+        if (!isCurrent()) return interrupted
         this.#capture = { ...capture, lastError: this.#transcribeErrorKey }
         return { ok: false, error: this.#transcribeErrorKey }
       }
@@ -128,14 +138,17 @@ export class PendingCaptureRecovery {
 
     ctx.onTranscribed?.(text)
 
+    const outcome = { ok: true, text, recordingId } as const
     if (text.trim().length > 0) {
-      ctx.onSend?.(text, recordingId)
+      if (ctx.verifyHandoff && !(await ctx.verifyHandoff(capture.id))) return outcome
+      if (!isCurrent() || ctx.onSend?.(text, recordingId) === false) return outcome
       ctx.onAppend?.(text)
     }
 
+    if (!isCurrent()) return outcome
     await this.#store.remove(capture.id)
     this.#capture = null
     this.#blob = null
-    return { ok: true, text, recordingId }
+    return outcome
   }
 }

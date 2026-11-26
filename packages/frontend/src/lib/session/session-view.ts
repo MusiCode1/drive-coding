@@ -83,6 +83,8 @@ export function readViewEmission(
 export interface SessionView {
   /** מצב הסשן העכשווי — כולל כל שדות SessionState מ-C1 (status, turnState, pending, ...). */
   readonly state: SessionState
+  /** The connection namespace and the session ID used by prompt routing. */
+  readonly targetIdentity?: Readonly<{ backendBaseUrl: string; sessionId: string | null }>
 
   /**
    * ReadableStream<ViewEmission> — patch + raw update delivery channel.
