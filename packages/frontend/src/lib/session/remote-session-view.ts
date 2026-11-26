@@ -128,7 +128,7 @@ export class RemoteSessionView implements SessionView {
 
   get targetIdentity(): SessionView["targetIdentity"] {
     const backendBaseUrl = this.#targetBackendBaseUrl
-    if (backendBaseUrl) return { backendBaseUrl, sessionId: this.#sessionId }
+    return backendBaseUrl ? { backendBaseUrl, sessionId: this.#sessionId } : undefined
   }
 
   get state(): SessionState {
