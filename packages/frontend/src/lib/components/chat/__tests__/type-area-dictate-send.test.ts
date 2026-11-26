@@ -119,7 +119,7 @@ async function flushMicrotasks(): Promise<void> {
 describe("TypeArea — send during listening (dictate-to-input-polish)", () => {
   it("listening + empty draft + voice stub sends directly without showing voice in textarea", async () => {
     const sendPrompt = vi.fn()
-    const finishListening = vi.fn(async () => ({ ok: true, text: "voice" } as const))
+    const finishListening = vi.fn(async () => ({ ok: true, text: "voice" }) as const)
     const form = mountHarness({ dictateState: "listening", finishListening, sendPrompt })
 
     const textarea = getTextarea()
@@ -138,7 +138,7 @@ describe("TypeArea — send during listening (dictate-to-input-polish)", () => {
 
   it("listening + typed text + voice stub sends combined body", async () => {
     const sendPrompt = vi.fn()
-    const finishListening = vi.fn(async () => ({ ok: true, text: "voice" } as const))
+    const finishListening = vi.fn(async () => ({ ok: true, text: "voice" }) as const)
     mountHarness({ dictateState: "listening", finishListening, sendPrompt })
 
     const textarea = getTextarea()
@@ -210,7 +210,7 @@ describe("TypeArea — send during listening (dictate-to-input-polish)", () => {
 
   it("Enter with enterToSend during listening triggers send", async () => {
     const sendPrompt = vi.fn()
-    const finishListening = vi.fn(async () => ({ ok: true, text: "voice" } as const))
+    const finishListening = vi.fn(async () => ({ ok: true, text: "voice" }) as const)
     mountHarness({ dictateState: "listening", enterToSend: true, finishListening, sendPrompt })
 
     const textarea = getTextarea()

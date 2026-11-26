@@ -34,7 +34,7 @@ import {
 } from "$lib/context"
 import type { ImageAttachment } from "$lib/engines/image-attachment"
 import { imageHandlers } from "$lib/actions/type-area-images"
-import { clearCapturedComposer, runTypeAreaSubmit } from "$lib/actions/type-area-submit"
+import { bindTypeAreaSubmit } from "$lib/actions/type-area-submit"
 import { applySlashSelection, matchSlashCommands } from "$lib/engines/slash-commands"
 import SlashCommandMenu from "./SlashCommandMenu.svelte"
 import PendingCaptureBanner from "./PendingCaptureBanner.svelte"
@@ -58,13 +58,15 @@ const MAX_ROWS = 6
 let trays = $state.raw(new Map<string, ImageAttachment[]>())
 const owner = () => prompts.targets.current()?.ownerKey ?? ""
 const attachments = $derived(trays.get(owner()) ?? [])
-const { handlePaste, handleDrop, handleDragOver, handleFileChange, removeAttachment, clearAttachments, dispose } =
-  imageHandlers(() => session.supportsImageInput, owner, () => trays, (next) => { trays = next })
+const updateTrays = (next: typeof trays) => {
+  trays = next
+}
+const images = imageHandlers(() => session.supportsImageInput, owner, () => trays, updateTrays)
 let destroyed = false
 let draftRevision = 0
 onDestroy(() => {
   destroyed = true
-  dispose()
+  images.dispose()
 })
 let fileInputEl = $state<HTMLInputElement>()
 
@@ -177,22 +179,17 @@ $effect(() => {
   }
 })
 
-function onSubmit(e?: SubmitEvent) {
-  e?.preventDefault()
-  const key = owner()
-  let revision = draftRevision
-  void runTypeAreaSubmit({
-    session, dictate, prompts, dictateSubmit, legacyFixture, attachments,
-    draftText: () => {
-      revision = draftRevision
-      return draft.text
-    },
-    clear: (text, captured) => {
-      if (!destroyed) clearCapturedComposer(draft, text, revision === draftRevision,
-        () => clearAttachments(key, captured))
-    },
-  })
-}
+const onSubmit = bindTypeAreaSubmit(
+  { session, dictate, prompts, dictateSubmit, legacyFixture },
+  {
+    draft,
+    owner,
+    revision: () => draftRevision,
+    isMounted: () => !destroyed,
+    attachments: () => attachments,
+    clearAttachments: images.clearAttachments,
+  },
+)
 </script>
 
 <!-- container אנכי: tray מעל, form מתחת (לשמר items-end בתוך ה-form) -->
@@ -223,7 +220,7 @@ function onSubmit(e?: SubmitEvent) {
           />
           <button
             type="button"
-            onclick={() => removeAttachment(att)}
+            onclick={() => images.removeAttachment(att)}
             aria-label={t("attach.remove")}
             class="absolute -top-1.5 -right-1.5 w-4.5 h-4.5 rounded-full flex items-center justify-center"
             style="background:var(--fg-dim); color:var(--bg-card)"
@@ -239,8 +236,8 @@ function onSubmit(e?: SubmitEvent) {
     onsubmit={onSubmit}
     class="type-area-form flex gap-2 items-stretch w-full"
     style="--control-h: 2.5rem"
-    ondrop={handleDrop}
-    ondragover={handleDragOver}
+    ondrop={images.handleDrop}
+    ondragover={images.handleDragOver}
   >
     <!-- hidden file input -->
     <input
@@ -250,7 +247,7 @@ function onSubmit(e?: SubmitEvent) {
       capture
       multiple
       class="hidden"
-      onchange={handleFileChange}
+      onchange={images.handleFileChange}
     />
 
     <div class="type-area-left-tools flex gap-2 shrink-0">
@@ -327,7 +324,7 @@ function onSubmit(e?: SubmitEvent) {
       aria-activedescendant={menuOpen ? `slash-opt-${selectedIndex}` : undefined}
       class="type-area-control w-full rounded-xl px-3 py-2.5 text-sm resize-none outline-none border relative"
       style="background:var(--bg-card); border-color:var(--border); color:var(--fg); min-height:var(--control-h); max-height:calc({MAX_ROWS} * 1.5em + 1.25rem)"
-      onpaste={handlePaste}
+      onpaste={images.handlePaste}
       onkeydown={(e) => {
         // ─── slice-slash-commands: keydown-intercept לדפדוף-בתפריט ───────────
         // Cmd/Ctrl+Enter תמיד שולח — לא נבלע כאן (החרגת המקש המשולב במפורש).

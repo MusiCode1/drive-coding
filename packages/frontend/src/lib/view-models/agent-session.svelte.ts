@@ -503,8 +503,8 @@ export class AgentSession {
     const view = this.#view
     if (!view) return
     this.#noteAgentActivity()
-    syncViewMetadata(this, viewState, (state) => this.#setTurnState(state), this.#capabilities,
-      (value) => { this.#capabilities = value })
+    syncViewMetadata(this, viewState, (state) => this.#setTurnState(state))
+    this.#capabilities = (viewState.capabilities as NormalizedCapabilities) ?? this.#capabilities
     this.#syncPendingPermission(viewState.pending.permission, view)
     this.#syncPendingElicitation(viewState.pending.elicitation, view)
     this.#errorFromTurn = syncViewTurnError(this, viewState, this.#errorFromTurn)

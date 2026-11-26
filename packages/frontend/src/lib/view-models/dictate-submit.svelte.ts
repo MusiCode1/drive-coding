@@ -9,7 +9,7 @@ import {
 } from "../adapters/dictate-submit-source"
 import { PendingCaptureRecovery } from "../engines/pending-capture-recovery"
 import type { RecordTarget } from "../engines/pending-capture-wiring"
-import { type PromptPayload, dictatePromptPayload, hasPromptContent } from "../engines/prompt-payload"
+import { type PromptPayload, dictatedPayload, hasPromptContent } from "../engines/prompt-payload"
 import type { PromptRetry } from "./prompt-retry.svelte"
 
 type LiveDraft = { text(): string; adopted(text: string): void }
@@ -44,8 +44,8 @@ export class DictateSubmit {
 
   get payload(): PromptPayload | undefined {
     const source = this.source
-    if (!source || source.capture.transcribedText === undefined) return
-    return dictatePromptPayload(source.snapshot, source.snapshot.text, source.capture.transcribedText)
+    const text = source?.capture.transcribedText
+    return source && text !== undefined ? dictatedPayload(source.snapshot, text) : undefined
   }
 
   async refresh(target = this.prompts.targets.current()): Promise<void> {
@@ -160,7 +160,7 @@ export class DictateSubmit {
         if (!saved) return false
         const current = this.prompts.targets.isCurrent(target)
         const draftText = current && live ? live.text() : snapshot.text
-        const payload = dictatePromptPayload(snapshot, draftText, text)
+        const payload = dictatedPayload(snapshot, text, draftText)
         if (!hasPromptContent(payload) && !hasPromptContent(snapshot)) return true
         if (!current || !hasPromptContent(payload)) return false
         const adopted = await this.prompts.adopt(target, payload, {

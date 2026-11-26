@@ -52,10 +52,10 @@ export function parsePromptOwner(owner: string) {
   return { backendBaseUrl: value[0], cliKind: value[1], sessionId: value[2] }
 }
 
-export function dictatePromptPayload(
+export function dictatedPayload(
   snapshot: PromptPayload,
-  draftText: string,
   transcription: string,
+  draftText = snapshot.text,
 ): PromptPayload {
   return promptPayload(appendDictation(draftText, transcription).trim(), snapshot.attachments)
 }

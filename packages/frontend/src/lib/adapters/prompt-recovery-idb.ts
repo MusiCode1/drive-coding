@@ -48,7 +48,10 @@ export function readSlot(raw: unknown, owner: string): PromptSlot {
 
 export type PromptStamp = Pick<FailedPrompt, "owner" | "version" | "attemptId">
 
-export function matches(record: FailedPrompt | undefined, expected: PromptStamp): record is FailedPrompt {
+export function matches(
+  record: FailedPrompt | undefined,
+  expected: PromptStamp,
+): record is FailedPrompt {
   return (
     record?.owner === expected.owner &&
     record.version === expected.version &&

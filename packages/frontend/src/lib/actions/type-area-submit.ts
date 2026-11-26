@@ -6,7 +6,7 @@ import type { Dictate } from "$lib/view-models/dictate.svelte"
 import type { DictateSubmit } from "$lib/view-models/dictate-submit.svelte"
 import type { PromptRetry } from "$lib/view-models/prompt-retry.svelte"
 
-export async function runTypeAreaSubmit(opts: {
+type SubmitOptions = {
   session: Pick<AgentSession, "status" | "sendPrompt">
   dictate: Pick<Dictate, "state" | "finishListening" | "finishListeningForSubmit">
   prompts: PromptRetry
@@ -15,7 +15,9 @@ export async function runTypeAreaSubmit(opts: {
   draftText: () => string
   attachments: ImageAttachment[]
   clear: (expectedText: string, attachments: ImageAttachment[]) => void
-}): Promise<void> {
+}
+
+async function runTypeAreaSubmit(opts: SubmitOptions): Promise<void> {
   const { session, dictate, prompts, dictateSubmit, draftText, attachments, clear } = opts
   if (session.status !== "connected" || dictate.state === "busy") return
   const listening = dictate.state === "listening"
@@ -52,12 +54,35 @@ export async function runTypeAreaSubmit(opts: {
   if (adopted && prompts.targets.isCurrent(target)) clear(expected, attachments)
 }
 
-export function clearCapturedComposer(
-  draft: { text: string; clear(): void },
-  expectedText: string,
-  sameRevision: boolean,
-  clearAttachments: () => void,
+export function bindTypeAreaSubmit(
+  options: Omit<SubmitOptions, "draftText" | "clear" | "attachments">,
+  composer: {
+    draft: { text: string; clear(): void }
+    owner(): string
+    revision(): number
+    isMounted(): boolean
+    attachments(): ImageAttachment[]
+    clearAttachments(owner: string, attachments: ImageAttachment[]): void
+  },
 ) {
-  if (sameRevision && draft.text === expectedText) draft.clear()
-  clearAttachments()
+  return (event?: SubmitEvent) => {
+    event?.preventDefault()
+    const owner = composer.owner()
+    let revision = composer.revision()
+    void runTypeAreaSubmit({
+      ...options,
+      attachments: composer.attachments(),
+      draftText: () => {
+        revision = composer.revision()
+        return composer.draft.text
+      },
+      clear: (text, attachments) => {
+        if (!composer.isMounted()) return
+        if (revision === composer.revision() && composer.draft.text === text) {
+          composer.draft.clear()
+        }
+        composer.clearAttachments(owner, attachments)
+      },
+    })
+  }
 }

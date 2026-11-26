@@ -1,5 +1,4 @@
 import type { SessionState } from "@drive-coding/core/session"
-import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 import { syncTitleFromViewState } from "./agent-session-manual-title"
 import type { AgentSession, TurnState } from "./agent-session.svelte"
 
@@ -20,8 +19,6 @@ export function syncViewMetadata(
   session: SessionMetadata,
   state: SessionState,
   setTurnState: (turn: TurnState) => void,
-  capabilities: NormalizedCapabilities | null,
-  setCapabilities: (value: NormalizedCapabilities) => void,
 ) {
   if (state.turnState !== session.turnState) setTurnState(state.turnState as TurnState)
   syncTitleFromViewState(session, state.title)
@@ -32,9 +29,6 @@ export function syncViewMetadata(
   session.modes = state.modes as typeof session.modes
   session.configOptions = state.configOptions as typeof session.configOptions
   if (state.quota !== session.quota) session.quota = state.quota
-  if (state.capabilities !== null && state.capabilities !== capabilities) {
-    setCapabilities(state.capabilities as NormalizedCapabilities)
-  }
 }
 
 export function syncViewTurnError(
