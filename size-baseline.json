@@ -338,10 +338,10 @@
       "codeLines": 214
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 779,
-      "impurity": 10,
+      "metric": 754,
+      "impurity": 9,
       "class": "scattered",
-      "codeLines": 478
+      "codeLines": 459
     },
     "packages/backend/src/session-host/turn-lifecycle.ts": {
       "metric": 93,
@@ -602,10 +602,10 @@
       "codeLines": 70
     },
     "packages/frontend/src/lib/components/chat/TypeArea.svelte": {
-      "metric": 243,
-      "impurity": 10,
+      "metric": 193,
+      "impurity": 9,
       "class": "mixed",
-      "codeLines": 439
+      "codeLines": 409
     },
     "packages/frontend/src/lib/components/chat/VoicePicker.svelte": {
       "metric": 58,
@@ -950,10 +950,10 @@
       "codeLines": 72
     },
     "packages/frontend/src/lib/view-models/agent-session.svelte.ts": {
-      "metric": 1504,
-      "impurity": 25,
+      "metric": 1438,
+      "impurity": 24,
       "class": "scattered",
-      "codeLines": 993
+      "codeLines": 956
     },
     "packages/frontend/src/lib/view-models/bubble-player.svelte.ts": {
       "metric": 328,
@@ -1040,10 +1040,10 @@
       "codeLines": 192
     },
     "packages/frontend/src/routes/+page.svelte": {
-      "metric": 390,
+      "metric": 319,
       "impurity": 8,
       "class": "mixed",
-      "codeLines": 292
+      "codeLines": 231
     },
     "packages/frontend/src/routes/bt-test/+page.svelte": {
       "metric": 329,

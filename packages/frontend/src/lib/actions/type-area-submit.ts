@@ -1,38 +1,88 @@
-/**
- * type-area-submit.ts — submit orchestration for TypeArea (slice dictate-to-input-polish, C1).
- */
-
 import { appendDictation } from "$lib/engines/append-dictation"
 import type { ImageAttachment } from "$lib/engines/image-attachment"
+import { hasPromptContent, promptPayload } from "$lib/engines/prompt-payload"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
-import type { DictateState, FinishListeningResult } from "$lib/view-models/dictate.svelte"
+import type { Dictate } from "$lib/view-models/dictate.svelte"
+import type { DictateSubmit } from "$lib/view-models/dictate-submit.svelte"
+import type { PromptRetry } from "$lib/view-models/prompt-retry.svelte"
 
-export async function runTypeAreaSubmit(opts: {
-  isDisabled: boolean
-  dictateState: DictateState
-  finishListening: () => Promise<FinishListeningResult>
+type SubmitOptions = {
+  session: Pick<AgentSession, "status" | "sendPrompt">
+  dictate: Pick<Dictate, "state" | "finishListening" | "finishListeningForSubmit">
+  prompts: PromptRetry
+  dictateSubmit: DictateSubmit
+  legacyFixture?: () => boolean
   draftText: () => string
   attachments: ImageAttachment[]
-  sendPrompt: (text: string, opts: { attachments: ImageAttachment[] }) => void
-  sessionStatus: () => AgentSession["status"]
-  clear: () => void
-}): Promise<void> {
-  if (opts.isDisabled) return
-  if (opts.dictateState === "busy") return
+  clear: (expectedText: string, attachments: ImageAttachment[]) => void
+}
 
-  if (opts.dictateState === "listening") {
-    const result = await opts.finishListening()
-    if (!result.ok) return
-    if (opts.sessionStatus() !== "connected") return
-    const body = appendDictation(opts.draftText().trim(), result.text).trim()
-    if (!body && opts.attachments.length === 0) return
-    opts.sendPrompt(body, { attachments: opts.attachments })
-    opts.clear()
+async function runTypeAreaSubmit(opts: SubmitOptions): Promise<void> {
+  const { session, dictate, prompts, dictateSubmit, draftText, attachments, clear } = opts
+  if (session.status !== "connected" || dictate.state === "busy") return
+  const listening = dictate.state === "listening"
+  const target = prompts.targets.current()
+  if (!target) {
+    if (!opts.legacyFixture?.()) return
+    const result = listening ? await dictate.finishListening() : ({ ok: true, text: "" } as const)
+    if (!result.ok || session.status !== "connected" || !opts.legacyFixture()) return
+    const expected = draftText()
+    const text = appendDictation(expected, result.text).trim()
+    if (!text && !attachments.length) return
+    void session.sendPrompt(text, { attachments })
+    clear(expected, attachments)
     return
   }
 
-  const text = opts.draftText().trim()
-  if (!text && opts.attachments.length === 0) return
-  opts.sendPrompt(text, { attachments: opts.attachments })
-  opts.clear()
+  if (dictateSubmit.source || prompts.record) {
+    prompts.report(target.ownerKey, "chat.prompt.resolvePrevious")
+    return
+  }
+
+  const expected = draftText()
+  const snapshot = promptPayload(expected, attachments)
+  if (listening) {
+    await dictate.finishListeningForSubmit(target, snapshot, {
+      text: draftText,
+      adopted: (text) => clear(text, attachments),
+    })
+    return
+  }
+
+  if (!hasPromptContent(snapshot)) return
+  const adopted = await prompts.adopt(target, snapshot)
+  if (adopted && prompts.targets.isCurrent(target)) clear(expected, attachments)
+}
+
+export function bindTypeAreaSubmit(
+  options: Omit<SubmitOptions, "draftText" | "clear" | "attachments">,
+  composer: {
+    draft: { text: string; clear(): void }
+    owner(): string
+    revision(): number
+    isMounted(): boolean
+    attachments(): ImageAttachment[]
+    clearAttachments(owner: string, attachments: ImageAttachment[]): void
+  },
+) {
+  return (event?: SubmitEvent) => {
+    event?.preventDefault()
+    const owner = composer.owner()
+    let revision = composer.revision()
+    void runTypeAreaSubmit({
+      ...options,
+      attachments: composer.attachments(),
+      draftText: () => {
+        revision = composer.revision()
+        return composer.draft.text
+      },
+      clear: (text, attachments) => {
+        if (!composer.isMounted()) return
+        if (revision === composer.revision() && composer.draft.text === text) {
+          composer.draft.clear()
+        }
+        composer.clearAttachments(owner, attachments)
+      },
+    })
+  }
 }

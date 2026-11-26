@@ -3,6 +3,8 @@
  */
 import type { MessageKey } from "@drive-coding/core/i18n"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { RecordTarget } from "../engines/pending-capture-wiring"
+import { promptPayload } from "../engines/prompt-payload"
 import type { DictatePendingRecovery } from "./dictate.svelte"
 
 const { mockStart, mockStop, mockTranscribe } = vi.hoisted(() => ({
@@ -287,4 +289,21 @@ describe("Dictate input device (mic-device-selection)", () => {
     await dictate.toggle()
     expect(mockStart).toHaveBeenCalledWith(null)
   })
+})
+
+it("keeps normal Dictate capture separate when the owned Submit port is missing", async () => {
+  const { dictate, draft, recovery } = createDictate()
+  const target = {} as RecordTarget
+  dictate.state = "listening"
+  const adopted = vi.fn()
+  await dictate.finishListeningForSubmit(target, promptPayload("fixture"), {
+    text: () => "fixture",
+    adopted,
+  })
+  expect(draft.text).toBe("")
+  expect(mockStop).not.toHaveBeenCalled()
+  expect(adopted).not.toHaveBeenCalled()
+  await dictate.toggle()
+  expect(recovery.processBlob).toHaveBeenCalledOnce()
+  expect(draft.text).toBe("hello world")
 })

@@ -15,6 +15,7 @@ import type {
 } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import type { SessionListPage } from "$lib/adapters/sessions"
+import type { PromptDispatchOutcome } from "./prompt-dispatch"
 
 export type ViewTerminal = { terminal: true; terminalError?: string }
 
@@ -102,6 +103,13 @@ export interface SessionView {
    * meta: תיק אטום שיצורף ל-SessionMessage (S3 — meta passthrough).
    */
   prompt(content: string | PromptBlocks, meta?: Record<string, unknown>): Promise<void>
+
+  /** Submit a prompt pinned to a captured target and report delivery evidence. */
+  promptTo?(
+    expectedSessionId: string,
+    content: string | PromptBlocks,
+    meta?: Record<string, unknown>,
+  ): Promise<PromptDispatchOutcome>
 
   /** מבטל תור פעיל. מגדיר turnState='idle'. */
   cancel(): Promise<void>

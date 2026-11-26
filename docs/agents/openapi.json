@@ -2,319 +2,14 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.17.2",
+    "version": "1.18.0",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
-    "/api/scope-policy": {
-      "get": {
-        "operationId": "get_api_scope_policy",
-        "summary": "GET /api/scope-policy",
-        "responses": {
-          "200": {
-            "description": "Scope action policy snapshot",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScopePolicySnapshot"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "operationId": "patch_api_scope_policy",
-        "summary": "PATCH /api/scope-policy",
-        "responses": {
-          "200": {
-            "description": "Updated scope action policy snapshot",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ScopePolicySnapshot"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid JSON, policies shape, enum, or empty patch",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ScopePolicyPatchBody"
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/voice/live/token": {
+    "/api/agents/:id/subscribe": {
       "post": {
-        "operationId": "post_api_voice_live_token",
-        "summary": "POST /api/voice/live/token",
-        "responses": {
-          "200": {
-            "description": "Live token",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid JSON or body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "502": {
-            "description": "Token mint failed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "No Gemini API key on backend",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced.",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "systemInstruction": {
-                    "type": "string"
-                  },
-                  "actions": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "model": {
-                    "type": "string"
-                  },
-                  "voiceName": {
-                    "type": "string"
-                  }
-                },
-                "required": ["systemInstruction", "actions"]
-              },
-              "x-drive-coding-contract": "none"
-            }
-          }
-        }
-      }
-    },
-    "/api/diag": {
-      "get": {
-        "operationId": "get_api_diag",
-        "summary": "GET /api/diag",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/health": {
-      "get": {
-        "operationId": "get_api_health",
-        "summary": "GET /api/health",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/usage/tokens": {
-      "get": {
-        "operationId": "get_api_usage_tokens",
-        "summary": "GET /api/usage/tokens",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/usage/clis": {
-      "get": {
-        "operationId": "get_api_usage_clis",
-        "summary": "GET /api/usage/clis",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/fs/file": {
-      "get": {
-        "operationId": "get_api_fs_file",
-        "summary": "GET /api/fs/file",
-        "responses": {
-          "200": {
-            "description": "Full file body",
-            "content": {
-              "application/octet-stream": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "206": {
-            "description": "Partial content (Range)",
-            "content": {
-              "application/octet-stream": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad or missing uri",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Access denied",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "File not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "File too large",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Unsupported file type",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "416": {
-            "description": "Range not satisfiable"
-          }
-        }
-      }
-    },
-    "/api/docs": {
-      "get": {
-        "operationId": "get_api_docs",
-        "summary": "GET /api/docs",
-        "responses": {
-          "200": {
-            "description": "Agent docs catalog with version block",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/docs/:id": {
-      "get": {
-        "operationId": "get_api_docs_id",
-        "summary": "GET /api/docs/:id",
+        "operationId": "post_api_agents_id_subscribe",
+        "summary": "POST /api/agents/:id/subscribe",
         "parameters": [
           {
             "name": "id",
@@ -326,40 +21,31 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Full markdown document including front matter",
+          "204": {
+            "description": "Subscription registered"
+          },
+          "400": {
+            "description": "Invalid JSON or subscribe body",
             "content": {
-              "text/markdown": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "type": "object"
                 }
               }
-            },
-            "headers": {
-              "X-Drive-Coding-App-Version": {
+            }
+          },
+          "403": {
+            "description": "Subscriber scope denied",
+            "content": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Drive-Coding-Docs-Version": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Drive-Coding-Route-Count": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Drive-Coding-Generated-At": {
-                "schema": {
-                  "type": "string"
+                  "type": "object"
                 }
               }
             }
           },
           "404": {
-            "description": "Unknown document id",
+            "description": "Agent not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -368,133 +54,24 @@
               }
             }
           }
-        }
-      }
-    },
-    "/api/openapi.json": {
-      "get": {
-        "operationId": "get_api_openapi_json",
-        "summary": "GET /api/openapi.json",
-        "responses": {
-          "200": {
-            "description": "OpenAPI spec with x-drive-coding extension",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/projects": {
-      "delete": {
-        "operationId": "delete_api_projects",
-        "summary": "DELETE /api/projects",
-        "responses": {
-          "204": {
-            "description": "Project history cleared"
-          },
-          "400": {
-            "description": "cwd required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSubscribeBody"
               }
             }
           }
         }
       },
-      "get": {
-        "operationId": "get_api_projects",
-        "summary": "GET /api/projects",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/client-log": {
-      "post": {
-        "operationId": "post_api_client_log",
-        "summary": "POST /api/client-log",
-        "responses": {
-          "204": {
-            "description": "Log entries accepted"
-          },
-          "400": {
-            "description": "Bad JSON or payload",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Rate limit exceeded"
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced.",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "entries": {
-                    "type": "array",
-                    "items": {
-                      "type": "object"
-                    }
-                  }
-                }
-              },
-              "x-drive-coding-contract": "none"
-            }
-          }
-        }
-      }
-    },
-    "/api/usage/summary": {
-      "get": {
-        "operationId": "get_api_usage_summary",
-        "summary": "GET /api/usage/summary",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/cli-logo/:cliId": {
-      "get": {
-        "operationId": "get_api_cli_logo_cliId",
-        "summary": "GET /api/cli-logo/:cliId",
+      "delete": {
+        "operationId": "delete_api_agents_id_subscribe",
+        "summary": "DELETE /api/agents/:id/subscribe",
         "parameters": [
           {
-            "name": "cliId",
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {
@@ -503,95 +80,21 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Logo bytes",
-            "content": {
-              "application/octet-stream": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Unknown CLI or missing logo",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Logo file too large",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "415": {
-            "description": "Unsupported logo file type",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agent-prompt": {
-      "get": {
-        "operationId": "get_api_agent_prompt",
-        "summary": "GET /api/agent-prompt",
-        "responses": {
-          "200": {
-            "description": "Plain-text surface prompt",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
+          "204": {
+            "description": "Subscription removed or already absent"
           },
           "400": {
-            "description": "Missing agent id",
+            "description": "Invalid JSON or unsubscribe body",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "type": "object"
                 }
               }
             }
           },
-          "404": {
-            "description": "Unknown agent",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/mcp": {
-      "post": {
-        "operationId": "post_api_mcp",
-        "summary": "POST /api/mcp",
-        "responses": {
-          "200": {
-            "description": "OK",
+          "403": {
+            "description": "Subscriber scope denied",
             "content": {
               "application/json": {
                 "schema": {
@@ -600,35 +103,13 @@
               }
             }
           }
-        }
-      },
-      "get": {
-        "operationId": "get_api_mcp",
-        "summary": "GET /api/mcp",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "delete_api_mcp",
-        "summary": "DELETE /api/mcp",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentUnsubscribeBody"
               }
             }
           }
@@ -775,145 +256,37 @@
         }
       }
     },
-    "/api/options": {
+    "/api/agent-prompt": {
       "get": {
-        "operationId": "get_api_options",
-        "summary": "GET /api/options",
+        "operationId": "get_api_agent_prompt",
+        "summary": "GET /api/agent-prompt",
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Plain-text surface prompt",
             "content": {
-              "application/json": {
+              "text/plain": {
                 "schema": {
-                  "type": "object"
+                  "type": "string"
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/api/agents/:id/subscribe": {
-      "post": {
-        "operationId": "post_api_agents_id_subscribe",
-        "summary": "POST /api/agents/:id/subscribe",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Subscription registered"
           },
           "400": {
-            "description": "Invalid JSON or subscribe body",
+            "description": "Missing agent id",
             "content": {
-              "application/json": {
+              "text/plain": {
                 "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Subscriber scope denied",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
+                  "type": "string"
                 }
               }
             }
           },
           "404": {
-            "description": "Agent not found",
+            "description": "Unknown agent",
             "content": {
-              "application/json": {
+              "text/plain": {
                 "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentSubscribeBody"
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "delete_api_agents_id_subscribe",
-        "summary": "DELETE /api/agents/:id/subscribe",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Subscription removed or already absent"
-          },
-          "400": {
-            "description": "Invalid JSON or unsubscribe body",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Subscriber scope denied",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AgentUnsubscribeBody"
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/tts/capabilities": {
-      "get": {
-        "operationId": "get_api_tts_capabilities",
-        "summary": "GET /api/tts/capabilities",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
+                  "type": "string"
                 }
               }
             }
@@ -922,6 +295,42 @@
       }
     },
     "/api/agents/:id": {
+      "patch": {
+        "operationId": "patch_api_agents_id",
+        "summary": "PATCH /api/agents/:id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAgentInput"
+              }
+            }
+          }
+        }
+      },
       "get": {
         "operationId": "get_api_agents_id",
         "summary": "GET /api/agents/:id",
@@ -976,10 +385,169 @@
             }
           }
         }
-      },
-      "patch": {
-        "operationId": "patch_api_agents_id",
-        "summary": "PATCH /api/agents/:id",
+      }
+    },
+    "/api/cli-availability": {
+      "get": {
+        "operationId": "get_api_cli_availability",
+        "summary": "GET /api/cli-availability",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/cli-logo/:cliId": {
+      "get": {
+        "operationId": "get_api_cli_logo_cliId",
+        "summary": "GET /api/cli-logo/:cliId",
+        "parameters": [
+          {
+            "name": "cliId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Logo bytes",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown CLI or missing logo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Logo file too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported logo file type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/usage/clis": {
+      "get": {
+        "operationId": "get_api_usage_clis",
+        "summary": "GET /api/usage/clis",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/client-log": {
+      "post": {
+        "operationId": "post_api_client_log",
+        "summary": "POST /api/client-log",
+        "responses": {
+          "204": {
+            "description": "Log entries accepted"
+          },
+          "400": {
+            "description": "Bad JSON or payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "entries": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              },
+              "x-drive-coding-contract": "none"
+            }
+          }
+        }
+      }
+    },
+    "/api/docs": {
+      "get": {
+        "operationId": "get_api_docs",
+        "summary": "GET /api/docs",
+        "responses": {
+          "200": {
+            "description": "Agent docs catalog with version block",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/docs/:id": {
+      "get": {
+        "operationId": "get_api_docs_id",
+        "summary": "GET /api/docs/:id",
         "parameters": [
           {
             "name": "id",
@@ -992,7 +560,39 @@
         ],
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Full markdown document including front matter",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "headers": {
+              "X-Drive-Coding-App-Version": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Drive-Coding-Docs-Version": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Drive-Coding-Route-Count": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Drive-Coding-Generated-At": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown document id",
             "content": {
               "application/json": {
                 "schema": {
@@ -1001,23 +601,114 @@
               }
             }
           }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PatchAgentInput"
+        }
+      }
+    },
+    "/api/openapi.json": {
+      "get": {
+        "operationId": "get_api_openapi_json",
+        "summary": "GET /api/openapi.json",
+        "responses": {
+          "200": {
+            "description": "OpenAPI spec with x-drive-coding extension",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
               }
             }
           }
         }
       }
     },
-    "/api/reload-config": {
-      "post": {
-        "operationId": "post_api_reload_config",
-        "summary": "POST /api/reload-config",
+    "/api/fs/file": {
+      "get": {
+        "operationId": "get_api_fs_file",
+        "summary": "GET /api/fs/file",
+        "responses": {
+          "200": {
+            "description": "Full file body",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Partial content (Range)",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad or missing uri",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Access denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "File not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported file type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "Range not satisfiable"
+          }
+        }
+      }
+    },
+    "/api/diag": {
+      "get": {
+        "operationId": "get_api_diag",
+        "summary": "GET /api/diag",
         "responses": {
           "200": {
             "description": "OK",
@@ -1237,6 +928,261 @@
         }
       }
     },
+    "/api/voice/live/token": {
+      "post": {
+        "operationId": "post_api_voice_live_token",
+        "summary": "POST /api/voice/live/token",
+        "responses": {
+          "200": {
+            "description": "Live token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON or body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Token mint failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "No Gemini API key on backend",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "systemInstruction": {
+                    "type": "string"
+                  },
+                  "actions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "voiceName": {
+                    "type": "string"
+                  }
+                },
+                "required": ["systemInstruction", "actions"]
+              },
+              "x-drive-coding-contract": "none"
+            }
+          }
+        }
+      }
+    },
+    "/api/mcp": {
+      "post": {
+        "operationId": "post_api_mcp",
+        "summary": "POST /api/mcp",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_mcp",
+        "summary": "GET /api/mcp",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_mcp",
+        "summary": "DELETE /api/mcp",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/options": {
+      "get": {
+        "operationId": "get_api_options",
+        "summary": "GET /api/options",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects": {
+      "delete": {
+        "operationId": "delete_api_projects",
+        "summary": "DELETE /api/projects",
+        "responses": {
+          "204": {
+            "description": "Project history cleared"
+          },
+          "400": {
+            "description": "cwd required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_projects",
+        "summary": "GET /api/projects",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reload-config": {
+      "post": {
+        "operationId": "post_api_reload_config",
+        "summary": "POST /api/reload-config",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scope-policy": {
+      "get": {
+        "operationId": "get_api_scope_policy",
+        "summary": "GET /api/scope-policy",
+        "responses": {
+          "200": {
+            "description": "Scope action policy snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopePolicySnapshot"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "operationId": "patch_api_scope_policy",
+        "summary": "PATCH /api/scope-policy",
+        "responses": {
+          "200": {
+            "description": "Updated scope action policy snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScopePolicySnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid JSON, policies shape, enum, or empty patch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopePolicyPatchBody"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/:cliKind/:sessionId": {
       "get": {
         "operationId": "get_api_sessions_cliKind_sessionId",
@@ -1292,10 +1238,192 @@
         }
       }
     },
-    "/api/cli-availability": {
+    "/api/usage/tokens": {
       "get": {
-        "operationId": "get_api_cli_availability",
-        "summary": "GET /api/cli-availability",
+        "operationId": "get_api_usage_tokens",
+        "summary": "GET /api/usage/tokens",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tts/capabilities": {
+      "get": {
+        "operationId": "get_api_tts_capabilities",
+        "summary": "GET /api/tts/capabilities",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/usage/summary": {
+      "get": {
+        "operationId": "get_api_usage_summary",
+        "summary": "GET /api/usage/summary",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "get_api_health",
+        "summary": "GET /api/health",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/:id/connection": {
+      "delete": {
+        "operationId": "delete_api_agents_id_connection",
+        "summary": "DELETE /api/agents/:id/connection",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Viewer connection released"
+          },
+          "403": {
+            "description": "Viewer detach scope denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No connection registry for agent"
+          }
+        }
+      }
+    },
+    "/api/agents/:id/events": {
+      "get": {
+        "operationId": "get_api_agents_id_events",
+        "summary": "GET /api/agents/:id/events",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Server-Sent Events stream",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Agent authentication required (auth_required, with authMethods)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/:id/history": {
+      "get": {
+        "operationId": "get_api_agents_id_history",
+        "summary": "GET /api/agents/:id/history",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agents/:id/presence": {
+      "post": {
+        "operationId": "post_api_agents_id_presence",
+        "summary": "POST /api/agents/:id/presence",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -1388,62 +1516,6 @@
         "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced."
       }
     },
-    "/api/agents/:id/state": {
-      "get": {
-        "operationId": "get_api_agents_id_state",
-        "summary": "GET /api/agents/:id/state",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agents/:id/history": {
-      "get": {
-        "operationId": "get_api_agents_id_history",
-        "summary": "GET /api/agents/:id/history",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/agents/:id/rpc": {
       "post": {
         "operationId": "post_api_agents_id_rpc",
@@ -1516,7 +1588,7 @@
             }
           },
           "409": {
-            "description": "any session/load while a turn is active",
+            "description": "Session load while a turn is active or prompt target mismatch before dispatch",
             "content": {
               "application/json": {
                 "schema": {
@@ -1526,7 +1598,7 @@
                       "type": "string"
                     },
                     "code": {
-                      "const": "session_busy"
+                      "enum": ["session_busy", "prompt_session_mismatch"]
                     }
                   },
                   "required": ["error", "code"]
@@ -1624,10 +1696,10 @@
         "description": "No runtime schema validates this body (measured 2026-09-28). The shape below is descriptive, not enforced."
       }
     },
-    "/api/agents/:id/presence": {
-      "post": {
-        "operationId": "post_api_agents_id_presence",
-        "summary": "POST /api/agents/:id/presence",
+    "/api/agents/:id/state": {
+      "get": {
+        "operationId": "get_api_agents_id_state",
+        "summary": "GET /api/agents/:id/state",
         "parameters": [
           {
             "name": "id",
@@ -1648,78 +1720,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/api/agents/:id/events": {
-      "get": {
-        "operationId": "get_api_agents_id_events",
-        "summary": "GET /api/agents/:id/events",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Server-Sent Events stream",
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Agent authentication required (auth_required, with authMethods)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agents/:id/connection": {
-      "delete": {
-        "operationId": "delete_api_agents_id_connection",
-        "summary": "DELETE /api/agents/:id/connection",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Viewer connection released"
-          },
-          "403": {
-            "description": "Viewer detach scope denied",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No connection registry for agent"
           }
         }
       }

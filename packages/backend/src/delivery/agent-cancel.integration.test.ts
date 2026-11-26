@@ -335,19 +335,11 @@ describe("agent_cancel with an active SessionHost", () => {
     },
   )
 
-  it("keeps an adopted cancellation separate from a different RPC prompt", async () => {
+  it("keeps an adopted cancellation separate from a different direct host prompt", async () => {
     const fixture = await makeFixture()
     const foreignResult = deferred<PromptResult>()
     fixture.provider.prompt.mockReturnValueOnce(foreignResult.promise)
-    const waiting = fixture.app.request(`/api/agents/${fixture.agentId}/rpc`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        method: RPC_METHODS.prompt,
-        params: { sessionId: sessionB, content: "prompt for another session" },
-        waitMs: 4_000,
-      }),
-    })
+    const waiting = fixture.host.prompt(sessionB, "prompt for another session")
     await vi.waitFor(() =>
       expect(fixture.provider.prompt).toHaveBeenCalledExactlyOnceWith(
         sessionB,
@@ -364,12 +356,9 @@ describe("agent_cancel with an active SessionHost", () => {
 
     fixture.assistantUpdate(sessionA, "late output from the cancelled session")
     foreignResult.resolve({ stopReason: "refusal" })
-    const response = await waiting
-    expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({
-      ok: true,
-      timedOut: false,
+    await expect(waiting).resolves.toEqual({
       stopReason: "refusal",
+      lastTurnError: expect.objectContaining({ message: "refusal" }),
     })
 
     expect(fixture.onTurnEnded).toHaveBeenCalledTimes(1)

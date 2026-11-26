@@ -1,7 +1,5 @@
 <script lang="ts">
 import type { AgentPublic } from "@drive-coding/core"
-import Loader2Icon from "@lucide/svelte/icons/loader-2"
-import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw"
 import { onMount, untrack } from "svelte"
 import { goto } from "$app/navigation"
 import { connectAgent } from "$lib/actions/connect-agent"
@@ -11,14 +9,13 @@ import { fetchServerOptions } from "$lib/adapters/options"
 import type { RecentProject } from "$lib/adapters/recent-projects"
 import AuthGuidance from "$lib/components/AuthGuidance.svelte"
 import ActiveProcessesPanel from "$lib/components/connect/ActiveProcessesPanel.svelte"
+import ConnectCliField from "$lib/components/connect/ConnectCliField.svelte"
 import CwdPathCombo from "$lib/components/connect/CwdPathCombo.svelte"
 import RecentProjectsPanel from "$lib/components/connect/RecentProjectsPanel.svelte"
 import ContentViewerDialog from "$lib/components/modals/ContentViewerDialog.svelte"
 import FolderPickerDialog from "$lib/components/modals/FolderPickerDialog.svelte"
 import LoadingModal from "$lib/components/modals/LoadingModal.svelte"
 import LanguageSelect from "$lib/components/settings/LanguageSelect.svelte"
-import CliBadge from "$lib/components/ui/CliBadge.svelte"
-import Select, { type SelectOption } from "$lib/components/ui/Select.svelte"
 import {
   getActiveAgents,
   getCliAvailability,
@@ -28,7 +25,6 @@ import {
   getSettings,
 } from "$lib/context"
 import { sessionPathWithTransport } from "$lib/session/session-url"
-import { cliDisplayName } from "$lib/util/cli-display"
 import { resolveCliKind } from "$lib/util/resolve-cli-kind"
 
 const settings = getSettings()
@@ -148,6 +144,15 @@ async function refreshCliAvailability() {
     <h1>{t("connect.title")}</h1>
     <p class="subtitle">{t("connect.subtitle")}</p>
 
+    {#if session.promptCleanupFailed}
+      <div class="error flex items-start justify-between gap-2" role="alert">
+        <span>{t("chat.prompt.deleteCleanupError")}</span>
+        <button type="button" onclick={() => { session.promptCleanupFailed = false }}>
+          {t("chat.error.dismiss")}
+        </button>
+      </div>
+    {/if}
+
     <ActiveProcessesPanel onReconnect={handleReconnect} />
 
     <!-- connect-recent-projects: רשימת תיקיות אחרונות — מ-GET /api/projects (registry) -->
@@ -159,50 +164,12 @@ async function refreshCliAvailability() {
         <LanguageSelect />
       </label>
 
-      <label>
-        <span class="cli-label-row">
-          {t("connect.cli.label")}
-          {#if cliAvailability.loading}
-            <Loader2Icon size={14} class="animate-spin" style="color:var(--fg-dim)" aria-hidden="true" />
-            <span class="cli-hint">{t("connect.cli.loading")}</span>
-          {:else if cliAvailability.error}
-            <!-- §2/§6/§9 Q3: fallback = מציג הכול + אינדיקציה חלשה (לא באנר חוסם) -->
-            <span class="cli-hint">{t("connect.cli.showAll")}</span>
-          {/if}
-          <button
-            type="button"
-            class="cli-refresh-btn"
-            onclick={() => void refreshCliAvailability()}
-            aria-label={t("connect.cli.refresh")}
-            title={t("connect.cli.refresh")}
-            disabled={cliAvailability.loading}
-          >
-            <RefreshCwIcon size={13} strokeWidth={2} />
-          </button>
-        </span>
-        <!-- Select.value נשאר cliKind גם אם הוא disabled ב-options (למקרה reconnect) —
-             האפשרויות מגיעות מ-cliAvailability.registry (הרג'יסטרי מהשרת, מונע-שרת);
-             מי שלא available מקבל disabled פר-option (§1, §4 Commit 2). -->
-        <Select
-          value={cliKind}
-          options={cliAvailability.registry.map((k) => ({
-            value: k,
-            label: cliDisplayName(k, cliAvailability.details[k]?.displayName),
-            disabled: !cliAvailability.available.includes(k),
-            description: cliAvailability.available.includes(k)
-              ? null
-              : t("connect.cli.notInstalled"),
-          }))}
-          title={t("connect.cli.label")}
-          ariaLabel={t("connect.cli.label")}
-          disabled={session.status === "connecting"}
-          onchange={(v) => (cliKind = v)}
-        >
-          {#snippet icon(opt: SelectOption)}
-            <CliBadge id={opt.value} logo={cliAvailability.details[opt.value]?.logo} variant="icon" />
-          {/snippet}
-        </Select>
-      </label>
+      <ConnectCliField
+        value={cliKind}
+        connecting={session.status === "connecting"}
+        onChange={(kind) => (cliKind = kind)}
+        onRefresh={() => void refreshCliAvailability()}
+      />
 
       <label>
         <span>{t("connect.cwd.label")}</span>
@@ -318,44 +285,6 @@ async function refreshCliAvailability() {
   }
 
   /* slice cli-availability: ספינר-טעינה / אינדיקציית-fallback ליד תווית ה-dropdown */
-  .cli-label-row {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-
-  .cli-hint {
-    font-size: 0.75rem;
-    font-weight: 400;
-    color: var(--fg-dim);
-  }
-
-  /* slice cli-specs-hot-reload: refresh button next to the CLI dropdown */
-  .cli-refresh-btn {
-    margin-inline-start: auto;
-    padding: 0;
-    flex-shrink: 0;
-    display: grid;
-    place-items: center;
-    /* 44px hit target (mobile-parity); negative margin-block keeps the label row compact. */
-    width: 44px;
-    height: 44px;
-    margin-block: -0.625rem;
-    background: transparent;
-    border-radius: 0.375rem; /* border:none already comes from the generic button rule */
-    color: var(--fg-dim);
-  }
-
-  .cli-refresh-btn:hover:not(:disabled) {
-    color: var(--fg);
-    background: var(--bg-elev);
-  }
-
-  .cli-refresh-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   button {
     margin-top: 0.5rem;
     padding: 0.8rem;

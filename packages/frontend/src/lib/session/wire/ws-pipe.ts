@@ -9,7 +9,13 @@ import {
   WS_RPC_METHOD,
 } from "@drive-coding/core/session"
 import { PRESENCE_INTERVAL_MS } from "$lib/engines/liveness-thresholds"
-import { type HistoryPipe, PipeError, type RpcKind, type SessionPipe } from "./pipe"
+import {
+  type HistoryPipe,
+  PipeError,
+  type RpcCallOptions,
+  type RpcKind,
+  type SessionPipe,
+} from "./pipe"
 import type { ClearIntervalFn, IntervalId, SetIntervalFn } from "./reader-types"
 
 type WsOptions = {
@@ -34,6 +40,7 @@ function closedError(): PipeError {
 type PendingRequest = {
   resolve: (response: ChannelResponse) => void
   reject: (error: PipeError) => void
+  timer?: ReturnType<typeof setTimeout>
 }
 
 const stubHistory: HistoryPipe = {
@@ -62,12 +69,19 @@ export function createWsSessionPipe(url: string, opts: WsOptions = {}): SessionP
       },
     })
 
+    function takePending(id: number): PendingRequest | undefined {
+      const request = pending.get(id)
+      if (!request) return
+      pending.delete(id)
+      if (request.timer !== undefined) clearTimeout(request.timer)
+      return request
+    }
+
     function finish(error?: PipeError): void {
       ended = true
       listeners.abort()
       if (timer !== undefined) unschedule(timer)
-      for (const request of pending.values()) request.reject(error ?? closedError())
-      pending.clear()
+      for (const id of pending.keys()) takePending(id)?.reject(error ?? closedError())
       if (error) frames.error(error)
       else frames.close()
     }
@@ -110,9 +124,7 @@ export function createWsSessionPipe(url: string, opts: WsOptions = {}): SessionP
           frames.enqueue(frame)
         } else if (message?.kind === "response") {
           const { id, result } = message.response
-          const request = pending.get(id)
-          pending.delete(id)
-          request?.resolve(result)
+          takePending(id)?.resolve(result)
         }
       },
       listenerOptions,
@@ -157,11 +169,22 @@ export function createWsSessionPipe(url: string, opts: WsOptions = {}): SessionP
       },
     }
 
-    function call(kind: RpcKind, body: unknown): Promise<ChannelResponse> {
+    function call(
+      kind: RpcKind,
+      body: unknown,
+      options?: RpcCallOptions,
+    ): Promise<ChannelResponse> {
       if (ended || socket.readyState !== Socket.OPEN) return Promise.reject(closedError())
       return new Promise((resolve, reject) => {
         const id = ++nextId
-        pending.set(id, { resolve, reject })
+        const timeoutMs = options?.timeoutMs
+        const timer =
+          timeoutMs === undefined
+            ? undefined
+            : setTimeout(() => {
+                takePending(id)?.reject(new PipeError(0, undefined, "WS session RPC timed out"))
+              }, timeoutMs)
+        pending.set(id, { resolve, reject, timer })
         try {
           socket.send(
             encodeWsClientRequest({
@@ -172,7 +195,7 @@ export function createWsSessionPipe(url: string, opts: WsOptions = {}): SessionP
             }),
           )
         } catch (error) {
-          pending.delete(id)
+          takePending(id)
           reject(error)
         }
       })
@@ -192,7 +215,8 @@ export function createWsSessionPipe(url: string, opts: WsOptions = {}): SessionP
       },
     },
     rpc: {
-      call: (kind, body) => active?.call(kind, body) ?? Promise.reject(closedError()),
+      call: (kind, body, options) =>
+        active?.call(kind, body, options) ?? Promise.reject(closedError()),
       label: (kind) => `WS ${kind}`,
     },
     history: opts.history ?? stubHistory,

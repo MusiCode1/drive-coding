@@ -24,7 +24,6 @@
 import type {
   CreateElicitationRequest,
   CreateElicitationResponse,
-  NewSessionRequest,
   RequestPermissionRequest,
   RequestPermissionResponse,
   SessionNotification,
@@ -57,11 +56,7 @@ import { createAcpClient, createAttachedAcpClient } from "@drive-coding/provider
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { parseExtResult } from "@drive-coding/provider/extensions"
 import { createPendingRequests } from "./pending-requests.js"
-import {
-  type CancelActiveTurnOutcome,
-  createPromptTurn,
-  type PromptTurnCompletion,
-} from "./prompt-turn.js"
+import { createPromptTurn } from "./prompt-turn.js"
 import { defaultRequestTimeouts } from "./request-timeout.js"
 import { createSessionHostClientActions } from "./session-host-client-actions.js"
 import {
@@ -73,11 +68,10 @@ import { attachScopePermission, type ScopePermissionHost } from "./session-host-
 import {
   createSessionHostSwitchActions,
   type LoadSessionOptions,
+  type SessionMcpOpts,
 } from "./session-host-switch-actions.js"
 import { createSessionSwitch } from "./session-switch.js"
 import { createTurnLifecycleHandlers, type TurnTimingHost } from "./turn-lifecycle.js"
-
-type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
 
 // ─── C2: createSessionHost ───────────────────────────────────────────────────
 
@@ -306,11 +300,9 @@ export type SessionHostFromConnOptions = {
  * S4 exposes these via HTTP endpoints.
  */
 export type ExtendedSessionHost = Omit<SessionHost, "loadSession" | "prompt"> & {
-  prompt(
-    sessionId: string,
-    content: string | PromptBlocks,
-    meta?: Record<string, unknown>,
-  ): Promise<PromptTurnCompletion>
+  /** True while a session switch is preparing to assign its new ID. */
+  readonly isSessionSwitchPreFlip?: boolean
+  prompt: ReturnType<typeof createPromptTurn>["prompt"]
 
   /**
    * Switch sessions, resetting and flipping the session ID before CLI replay.
@@ -318,7 +310,7 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession" | "prompt"> & 
    * Reload of the current session requires an idle turn.
    */
   loadSession(opts: LoadSessionOptions): Promise<{ sessionId: string; version: number }>
-  cancelActiveTurn(): CancelActiveTurnOutcome
+  cancelActiveTurn: ReturnType<typeof createPromptTurn>["cancelActiveTurn"]
   /**
    * Respond to a pending permission request.
    * requestId is a sequential counter (0, 1, 2...) assigned internally.
@@ -668,6 +660,10 @@ export async function createSessionHostFromConnection(
     closePatches()
   }
 
+  function bumpQuotaGeneration(): void {
+    quotaGeneration++
+  }
+
   const sessionSwitch = createSessionSwitch({
     get state() {
       return currentState
@@ -675,9 +671,7 @@ export async function createSessionHostFromConnection(
     set state(state) {
       currentState = state
     },
-    bumpQuotaGeneration: () => {
-      quotaGeneration++
-    },
+    bumpQuotaGeneration,
     turnLifecycle,
     permPending,
     elicitPending,
@@ -697,11 +691,12 @@ export async function createSessionHostFromConnection(
     transformPromptForAcp,
     startQuotaFetch,
   })
-  const { warmNewSession, loadSession } = createSessionHostSwitchActions({
+  const switchActions = createSessionHostSwitchActions({
     client,
     sessionSwitch,
     applySessionChanges,
     handleUpdate,
+    bumpQuotaGeneration,
     startQuotaFetch,
     isDisposed: () => disposed,
     getState: () => currentState,
@@ -710,17 +705,6 @@ export async function createSessionHostFromConnection(
     },
   })
 
-  async function coldNewSession(sessionOpts: Parameters<AcpClient["newSession"]>[0]) {
-    const result = await client.newSession(sessionOpts)
-    const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
-    currentState = { ...currentState, sessionId: result.sessionId, configOptions }
-    if (configOptions.length > 0) applySessionChanges({ configOptions })
-    publishResponseModes(handleUpdate, result.sessionId, result.modes)
-    quotaGeneration++
-    startQuotaFetch(result.sessionId)
-    return result
-  }
-
   // ── ExtendedSessionHost ───────────────────────────────────────────────────
 
   return {
@@ -728,25 +712,16 @@ export async function createSessionHostFromConnection(
       return currentState
     },
 
+    get isSessionSwitchPreFlip() {
+      return sessionSwitch.isPreFlip
+    },
+
     patches: patchStream,
 
     dispose,
     ...turnOperations,
 
-    /**
-     * Cold create (no prior sessionId): thin path — ACP session/new + optional
-     * configOptions patch (registry getOrCreateHost). Warm (already had a
-     * session): switch preamble like loadSession so HTTP "new session" clears
-     * transcript; sessionId parked on a sentinel until the CLI returns the id.
-     */
-    newSession(opts: { cwd: string; _meta?: Record<string, unknown> } & SessionMcpOpts) {
-      if (disposed) return Promise.reject(new Error("SessionHost disposed"))
-      const hadSession = currentState.sessionId !== null
-      const sessionOpts = { ...opts, mcpServers: opts.mcpServers ?? [] }
-      return hadSession ? warmNewSession(sessionOpts) : coldNewSession(sessionOpts)
-    },
-
-    loadSession,
+    ...switchActions,
 
     respondPermission(requestId: number, response: RequestPermissionResponse): void {
       if (disposed) return // slice handoff-foundations C1: no-op after dispose

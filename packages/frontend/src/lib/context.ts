@@ -12,34 +12,36 @@
  */
 
 import { createContext } from "svelte"
-import type { AgentSession } from "./view-models/agent-session.svelte"
+import type { AudioPlaylist } from "./engines/audio-playlist.svelte"
+import type { CuesEngine } from "./engines/cues"
+import type { NotifyEngine } from "./engines/notify.svelte"
 import type { ChatScrollBridge } from "./types/chat-scroll"
+import type { ActiveAgents } from "./view-models/active-agents.svelte"
+import type { AgentSession } from "./view-models/agent-session.svelte"
+import type { AgentVoice } from "./view-models/agent-voice.svelte"
+import type { AudioDevicesVM } from "./view-models/audio-devices.svelte"
+import type { BubblePlayer } from "./view-models/bubble-player.svelte"
 import type { CliAvailability } from "./view-models/cli-availability.svelte"
+import type { ComposerDraft } from "./view-models/composer-draft.svelte"
+import type { ContentViewerVM } from "./view-models/content-viewer.svelte"
+import type { ModelStatus } from "./view-models/derived/model-status.svelte"
+import type { VoiceMode } from "./view-models/derived/voice-mode.svelte"
+import type { Dictate } from "./view-models/dictate.svelte"
+import type { DictateSubmit } from "./view-models/dictate-submit.svelte"
 import type { I18nVM } from "./view-models/i18n.svelte"
+import type { Live } from "./view-models/live.svelte"
 import type { Mic } from "./view-models/mic.svelte"
+import type { ModalsVM } from "./view-models/modals.svelte"
+import type { PresencePoller } from "./view-models/presence-poller.svelte"
+import type { PromptRetry } from "./view-models/prompt-retry.svelte"
+import type { RecentProjects } from "./view-models/recent-projects.svelte"
 import type { ResponsiveVM } from "./view-models/responsive.svelte"
+import type { SessionMemoVM } from "./view-models/session-memo.svelte"
+import type { SessionScopePolicy } from "./view-models/session-scope-policy.svelte"
 import type { Settings } from "./view-models/settings.svelte"
 import type { Speaker } from "./view-models/speaker.svelte"
 import type { ThemeVM } from "./view-models/theme.svelte"
 import type { UiShellVM } from "./view-models/ui-shell.svelte"
-import type { AgentVoice } from "./view-models/agent-voice.svelte"
-import type { Live } from "./view-models/live.svelte"
-import type { VoiceMode } from "./view-models/derived/voice-mode.svelte"
-import type { ModelStatus } from "./view-models/derived/model-status.svelte"
-import type { CuesEngine } from "./engines/cues"
-import type { ModalsVM } from "./view-models/modals.svelte"
-import type { ActiveAgents } from "./view-models/active-agents.svelte"
-import type { BubblePlayer } from "./view-models/bubble-player.svelte"
-import type { ContentViewerVM } from "./view-models/content-viewer.svelte"
-import type { RecentProjects } from "./view-models/recent-projects.svelte"
-import type { AudioPlaylist } from "./engines/audio-playlist.svelte"
-import type { PresencePoller } from "./view-models/presence-poller.svelte"
-import type { NotifyEngine } from "./engines/notify.svelte"
-import type { ComposerDraft } from "./view-models/composer-draft.svelte"
-import type { SessionMemoVM } from "./view-models/session-memo.svelte"
-import type { Dictate } from "./view-models/dictate.svelte"
-import type { AudioDevicesVM } from "./view-models/audio-devices.svelte"
-import type { SessionScopePolicy } from "./view-models/session-scope-policy.svelte"
 
 // ─── i18n ──────────────────────────────────────────
 export const [getI18n, setI18n] = createContext<I18nVM>()
@@ -126,3 +128,10 @@ export const [getSessionScopePolicy, setSessionScopePolicy] = createContext<Sess
 
 // ─── agent-voice ─── (slice codex-voice-poc — the agent's native Live)
 export const [getAgentVoice, setAgentVoice] = createContext<AgentVoice>()
+
+// ─── Owned chat prompts ─────────────────────────────────
+export const [getPromptRetry, setPromptRetry] = createContext<{
+  prompts: PromptRetry
+  dictateSubmit: DictateSubmit
+  legacyFixture?: () => boolean
+}>()

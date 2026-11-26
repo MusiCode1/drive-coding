@@ -1,8 +1,7 @@
 import { RPC_METHODS, type SessionListQuery, type SessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { normalizeSessionInfo, type SessionListPage } from "$lib/adapters/sessions"
-import type { SessionPipe } from "./wire/pipe"
-import { resultOf } from "./wire/pipe"
+import { resultOf, type SessionPipe } from "./wire/pipe"
 
 const RETURN_VALUE_EXT_METHODS = new Set<string>(["_drive/getQuota"])
 const NOT_SUPPORTED_EXT_RETURN_VALUE = "not supported in remote mode — use state instead"
@@ -109,6 +108,9 @@ export async function remoteDeleteSession(
     ) as Error & { code: number }
     err.code = -32601
     throw err
+  }
+  if (res?.ok !== true) {
+    throw new Error("RemoteSessionView: deleteSession response did not confirm deletion")
   }
 }
 

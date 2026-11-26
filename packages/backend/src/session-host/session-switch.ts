@@ -29,6 +29,7 @@ export function createSessionSwitch(deps: SessionSwitchDeps) {
   function endTransition(): void {
     activeSwitches--
   }
+  let preFlipCount = 0
 
   function assertCanLoad(_sessionId: string): void {
     if (deps.state.turnState !== "idle") {
@@ -38,7 +39,8 @@ export function createSessionSwitch(deps: SessionSwitchDeps) {
 
   // Invalidation and reset must stay synchronous with the sessionId flip
   // when nothing is pending. Yielding would admit tails from the previous turn.
-  function beginSessionSwitchInvalidate(): void {
+  function beginPreFlip(): void {
+    preFlipCount++
     deps.turnLifecycle.turnSeq++
     deps.turnLifecycle.cancelledTurn = -1
     deps.bumpQuotaGeneration()
@@ -114,7 +116,13 @@ export function createSessionSwitch(deps: SessionSwitchDeps) {
     endTransition,
     isSwitching: () => activeSwitches > 0,
     assertCanLoad,
-    beginSessionSwitchInvalidate,
+    get isPreFlip() {
+      return preFlipCount > 0
+    },
+    beginPreFlip,
+    endPreFlip() {
+      preFlipCount--
+    },
     cancelOpenPendingSync,
     emitSessionSwitchReset,
     rollbackSessionSwitch,

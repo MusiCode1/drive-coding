@@ -48,6 +48,100 @@ describe("WS session pipe", () => {
     pipe.close()
   })
 
+  it("expires only the missing ACK and ignores it when a later RPC uses the same socket", async () => {
+    vi.useFakeTimers()
+    const { pipe, sockets } = setup()
+    try {
+      await pipe.frames.open(new AbortController().signal)
+      const socket = sockets.latest()
+      socket.connect()
+      const takeLastRequestId = () => {
+        const message = decodeWsClientMessage(socket.sent.at(-1) ?? "")
+        if (message?.kind !== "request") throw new Error("Expected a WS request")
+        return message.request.id
+      }
+      const connectionTimers = vi.getTimerCount()
+      const prompt = pipe.rpc.call("rpc", { method: "session/prompt" }, { timeoutMs: 30_000 })
+      const timedOut = expect(prompt).rejects.toThrow("WS session RPC timed out")
+      const promptId = takeLastRequestId()
+      const legacy = pipe.rpc.call("rpc", { method: "session/cancel" })
+      const legacyId = takeLastRequestId()
+
+      expect(vi.getTimerCount()).toBe(connectionTimers + 1)
+      await vi.advanceTimersByTimeAsync(30_000)
+      await timedOut
+      expect(vi.getTimerCount()).toBe(connectionTimers)
+      expect(socket.readyState).toBe(1)
+
+      const later = pipe.rpc.call("reply", { requestId: 5 }, { timeoutMs: 30_000 })
+      const laterId = takeLastRequestId()
+      expect(laterId).not.toBe(promptId)
+      const settled = vi.fn()
+      const laterResult = later.then(settled, settled)
+      socket.receive(encodeWsServerResponse(promptId, { status: 202, body: { version: 1 } }))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(vi.getTimerCount()).toBe(connectionTimers + 1)
+      expect(settled).not.toHaveBeenCalled()
+      socket.receive(encodeWsServerResponse(legacyId, { status: 202, body: { version: 2 } }))
+      socket.receive(encodeWsServerResponse(laterId, { status: 200, body: { ok: true } }))
+      await expect(legacy).resolves.toEqual({ status: 202, body: { version: 2 } })
+      await laterResult
+      expect(settled).toHaveBeenCalledExactlyOnceWith({ status: 200, body: { ok: true } })
+      expect(vi.getTimerCount()).toBe(connectionTimers)
+      expect(sockets.instances).toHaveLength(1)
+    } finally {
+      pipe.close()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each(["close", "stop", "abort"] as const)("clears timed requests on %s", async (action) => {
+    vi.useFakeTimers()
+    const { pipe, sockets } = setup()
+    try {
+      const abort = new AbortController()
+      const frames = await pipe.frames.open(abort.signal)
+      const socket = sockets.latest()
+      socket.connect()
+      socket.receive(snapshot)
+      const pending = pipe.rpc.call("rpc", {}, { timeoutMs: 30_000 })
+      const closed = expect(pending).rejects.toMatchObject({ status: 0 })
+      const end = {
+        close: () => socket.close(4409),
+        stop: () => pipe.close(),
+        abort: () => abort.abort(),
+      }
+      end[action]()
+      await closed
+      expect(vi.getTimerCount()).toBe(0)
+      for await (const frame of frames) {
+        expect(["snapshot", "taken-over"]).toContain(frame.event)
+      }
+    } finally {
+      pipe.close()
+      vi.useRealTimers()
+    }
+  })
+
+  it("clears the timed request when send throws", async () => {
+    vi.useFakeTimers()
+    const { pipe, sockets } = setup()
+    try {
+      await pipe.frames.open(new AbortController().signal)
+      const socket = sockets.latest()
+      socket.connect()
+      const connectionTimers = vi.getTimerCount()
+      vi.spyOn(socket, "send").mockImplementationOnce(() => {
+        throw new Error("send failed")
+      })
+      await expect(pipe.rpc.call("rpc", {}, { timeoutMs: 30_000 })).rejects.toThrow("send failed")
+      expect(vi.getTimerCount()).toBe(connectionTimers)
+    } finally {
+      pipe.close()
+      vi.useRealTimers()
+    }
+  })
+
   it.each([1000, 1001])("ends frames and rejects pending RPC equally on close %i", async (code) => {
     const { pipe, sockets } = setup()
     await expect(pipe.rpc.call("rpc", {})).rejects.toMatchObject({ status: 0 })

@@ -4,6 +4,8 @@
  *
  * ─── slice live-input-mode (Commit 1) ───
  */
+
+import type { MessageKey } from "@drive-coding/core/i18n"
 import {
   setAgentVoice,
   setAudioPlaylist,
@@ -13,6 +15,7 @@ import {
   setLive,
   setMic,
   setModelStatus,
+  setPromptRetry,
   setResponsive,
   setSession,
   setSettings,
@@ -20,20 +23,21 @@ import {
   setUiShell,
   setVoiceMode,
 } from "$lib/context"
-import type { MessageKey } from "@drive-coding/core/i18n"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
-import type { I18nVM } from "$lib/view-models/i18n.svelte"
 import type { AgentVoice } from "$lib/view-models/agent-voice.svelte"
-import type { Live } from "$lib/view-models/live.svelte"
-import type { Mic } from "$lib/view-models/mic.svelte"
-import type { Dictate } from "$lib/view-models/dictate.svelte"
 import { ComposerDraft } from "$lib/view-models/composer-draft.svelte"
 import type { ModelStatus } from "$lib/view-models/derived/model-status.svelte"
+import type { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
+import type { Dictate } from "$lib/view-models/dictate.svelte"
+import { DictateSubmit } from "$lib/view-models/dictate-submit.svelte"
+import type { I18nVM } from "$lib/view-models/i18n.svelte"
+import type { Live } from "$lib/view-models/live.svelte"
+import type { Mic } from "$lib/view-models/mic.svelte"
+import { PromptRetry } from "$lib/view-models/prompt-retry.svelte"
 import type { ResponsiveVM } from "$lib/view-models/responsive.svelte"
 import type { Settings } from "$lib/view-models/settings.svelte"
 import type { Speaker } from "$lib/view-models/speaker.svelte"
-import type { VoiceMode } from "$lib/view-models/derived/voice-mode.svelte"
-import { UiShellVM, type InputMode } from "$lib/view-models/ui-shell.svelte"
+import { type InputMode, UiShellVM } from "$lib/view-models/ui-shell.svelte"
 import RecordFooter from "../RecordFooter.svelte"
 
 let {
@@ -142,6 +146,8 @@ const composerDraft = new ComposerDraft()
 setI18n(fakeI18n)
 setComposerDraft(composerDraft)
 setDictate(fakeDictate)
+const prompts = new PromptRetry({ current: () => null, isCurrent: () => false }, () => {})
+setPromptRetry({ prompts, dictateSubmit: new DictateSubmit(prompts) })
 setSession(fakeSession)
 setResponsive(fakeResponsive)
 setUiShell(uiShell)

@@ -18,7 +18,7 @@ ext_methods:
   - _drive/voice/listVoices
   - _drive/voice/speak
 mcp_tools: [agent_cancel]
-docs_version: 1.17.2
+docs_version: 1.18.0
 updated: 2026-11-26
 ---
 
@@ -166,6 +166,8 @@ For `session/prompt` on ACP v1, a completed wait returns
 to all five reasons. A rejected prompt returns
 `{ version, ok: false, timedOut: false, messagesSince, error: { message, code? } }`.
 
+`session/prompt` (including the legacy `prompt` alias) checks `params.sessionId` against the active session just before dispatch. If the ID differs, the host has no active session, or a switch has started but has yet to assign its target ID, the response is **`409`** with `{ error: "Prompt session no longer matches the active session", code: "prompt_session_mismatch" }`. This applies with or without `waitMs`. The rejected request creates no user message or turn. To retry, wait until the original session is active and send the prompt to that session.
+
 Management methods (`session/list`, `session/load`, `session/new`, `session/delete`) **ignore** `waitMs` and return method-specific status codes. Any **`session/load`** while a turn is active returns **`409`** with `{ error, code: "session_busy" }`. The active turn continues. **`session/new`** is still allowed during a turn.
 
 ## HTTP status codes
@@ -181,6 +183,7 @@ Management methods (`session/list`, `session/load`, `session/new`, `session/dele
 | `202` | Fire-and-forget success for the six wait-capable methods | `dispatchRpcBody` |
 | `200` | Blocking wait results, management results, or `-32601` degradations | `rpc-respond-wait.ts`, `rpc-session-mgmt.ts` |
 | `409` | Any `session/load` while a turn is active | `rpc-session-mgmt.ts` |
+| `409` | `session/prompt` target mismatch before dispatch | `rpc-prompt.ts` |
 | `502` | Upstream/session errors on management calls | `rpc-session-mgmt.ts` |
 
 Scoped writes may deny before dispatch — see `60-identity-and-scopes`.

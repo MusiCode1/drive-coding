@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
+import { AGENT_ID_HEADER } from "../../agent-identity.js"
+import * as agentScope from "../../agent-scope.js"
 import { createInMemoryAgentRegistry } from "../../agents/registry.js"
 import { SCOPE_HEADER } from "../../scope-write.js"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
@@ -9,8 +11,8 @@ const caller = { header: () => undefined }
 
 function setup() {
   const host = {
-    state: { version: 3 },
-    prompt: vi.fn().mockResolvedValue(undefined),
+    state: { version: 3, sessionId: "session-id", messages: [] },
+    prompt: vi.fn().mockResolvedValue({ stopReason: "end_turn", lastTurnError: null }),
     listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
     agentCapabilities: { sessionCapabilities: { list: {} } },
     loadSession: vi.fn().mockRejectedValue(new SessionBusyError()),
@@ -39,6 +41,57 @@ describe("dispatchRpcBody", () => {
       await dispatchRpcBody(deps, "agent", { method: "session/prompt", params }, caller),
     ).toEqual({ status: 202, body: { version: 3 } })
     expect(host.prompt).toHaveBeenCalledWith("session-id", "hello", undefined)
+  })
+
+  it("rechecks the live session after caller lookup, before granting a reply or starting a turn", async () => {
+    const { deps, host } = setup()
+    let releaseLookup = () => {}
+    const lookup = new Promise<null>((resolve) => {
+      releaseLookup = () => resolve(null)
+    })
+    const getCaller = vi.spyOn(deps.registry, "get").mockReturnValue(lookup)
+    const recordDispatch = vi.spyOn(agentScope, "recordPromptDispatch")
+    const identified = {
+      header: (name: string) => (name === AGENT_ID_HEADER ? "sender" : undefined),
+    }
+    const body = {
+      method: "session/prompt",
+      waitMs: 100,
+      params: { sessionId: "session-id", content: "hello", meta: { recordingId: "" } },
+    }
+    try {
+      const response = dispatchRpcBody(deps, "agent", body, identified)
+      await vi.waitFor(() => expect(getCaller).toHaveBeenCalledWith("sender"))
+      const switchedState = { ...host.state, sessionId: "other-session" }
+      host.state = switchedState
+      releaseLookup()
+
+      expect(await response).toEqual({
+        status: 409,
+        body: {
+          error: "Prompt session no longer matches the active session",
+          code: "prompt_session_mismatch",
+        },
+      })
+      expect(host.state).toBe(switchedState)
+      expect(host.prompt).not.toHaveBeenCalled()
+      expect(recordDispatch).not.toHaveBeenCalled()
+
+      const params = { ...body.params, sessionId: "other-session" }
+      expect(await dispatchRpcBody(deps, "agent", { ...body, params }, identified)).toEqual({
+        status: 200,
+        body: { version: 3, ok: true, timedOut: false, messagesSince: [], stopReason: "end_turn" },
+      })
+      expect(host.prompt).toHaveBeenCalledExactlyOnceWith(
+        params.sessionId,
+        params.content,
+        params.meta,
+      )
+      expect(recordDispatch).toHaveBeenCalledOnce()
+    } finally {
+      releaseLookup()
+      recordDispatch.mockRestore()
+    }
   })
 
   it("returns the blocking list result even with invalid waitMs", async () => {

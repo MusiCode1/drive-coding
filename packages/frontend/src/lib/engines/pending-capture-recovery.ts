@@ -15,8 +15,9 @@ import { safeUUID } from "../util/uuid"
 export type TranscribeContext = {
   transcribe: (blob: Blob) => Promise<{ text: string; recordingId: string }>
   onTranscribed?: (text: string) => void
-  /** A synchronous false retains the transcript for a later handoff. */
-  onSend?: (text: string, recordingId: string) => unknown
+  /** False retains the transcript. A promise covers durable local handoff only. */
+  onSend?: (text: string, recordingId: string) => boolean | void | Promise<boolean>
+  handoffEmpty?: boolean
   onAppend?: (text: string) => void
   isCaptureCurrent?: (id: string) => boolean
   verifyHandoff?: (id: string) => Promise<boolean>
@@ -109,7 +110,10 @@ export class PendingCaptureRecovery {
     let text: string
     let recordingId: string
 
-    if (capture.transcribedText !== undefined && capture.transcribedText.length > 0) {
+    if (
+      capture.transcribedText !== undefined &&
+      (ctx.handoffEmpty || capture.transcribedText.length > 0)
+    ) {
       text = capture.transcribedText
       recordingId = capture.recordingId
     } else {
@@ -117,31 +121,29 @@ export class PendingCaptureRecovery {
         const result = await ctx.transcribe(blob)
         text = result.text
         recordingId = result.recordingId
-        if (!isCurrent()) return interrupted
-        await this.#store.updateMeta(capture.id, {
-          transcribedText: text,
-          recordingId,
-        })
-        if (!isCurrent()) return interrupted
-        this.#capture = { ...capture, transcribedText: text, recordingId }
       } catch (e: unknown) {
         if (!isCurrent()) return interrupted
         console.warn("[pending-capture-recovery] transcribe() failed", e)
-        await this.#store.updateMeta(capture.id, {
-          lastError: this.#transcribeErrorKey,
-        })
+        await this.#store.updateMeta(capture.id, { lastError: this.#transcribeErrorKey })
         if (!isCurrent()) return interrupted
         this.#capture = { ...capture, lastError: this.#transcribeErrorKey }
         return { ok: false, error: this.#transcribeErrorKey }
       }
+      if (!isCurrent()) return interrupted
+      await this.#store.updateMeta(capture.id, { transcribedText: text, recordingId })
+      if (!isCurrent()) return interrupted
+      this.#capture = { ...capture, transcribedText: text, recordingId }
     }
 
     ctx.onTranscribed?.(text)
 
     const outcome = { ok: true, text, recordingId } as const
-    if (text.trim().length > 0) {
+    if (text.trim().length > 0 || ctx.handoffEmpty) {
       if (ctx.verifyHandoff && !(await ctx.verifyHandoff(capture.id))) return outcome
-      if (!isCurrent() || ctx.onSend?.(text, recordingId) === false) return outcome
+      if (!isCurrent()) return outcome
+      const handoff = ctx.onSend?.(text, recordingId)
+      const adopted = typeof handoff === "object" ? await handoff : handoff
+      if (adopted === false || !isCurrent()) return outcome
       ctx.onAppend?.(text)
     }
 

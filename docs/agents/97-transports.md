@@ -21,7 +21,7 @@ mcp_tools:
   - session_subscribe
   - agent_subscribe
   - agent_unsubscribe
-docs_version: 1.17.2
+docs_version: 1.18.0
 updated: 2026-11-26
 ---
 
@@ -106,6 +106,10 @@ requests. Invalid `snapshot` closes with **4400** (same contract as SSE).
   HTTP POST in `params`. The response is
   `{jsonrpc:"2.0", id, result:{status, body}}`. With a scoped caller, pass
   the scope header in the upgrade request.
+  A `session/prompt` target mismatch returns `result.status: 409` with
+  `result.body.code: "prompt_session_mismatch"` on the matching request ID.
+  The socket stays open. A matching fire-and-forget prompt returns
+  `result.status: 202` with `result.body: {version}`.
 - **`POST /api/agents/:id/presence`** renews the viewer row. Send
   `Acp-Connection-Id` with the viewer's ID. WS and SSE viewer rows use the same
   `HTTP_OWNER_TTL_MS`.

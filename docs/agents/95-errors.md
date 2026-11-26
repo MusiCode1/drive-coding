@@ -9,7 +9,7 @@ read_when:
 tags: [errors, rpc]
 surface: [http, mcp]
 stability: stable
-docs_version: 1.16.0
+docs_version: 1.18.0
 updated: 2026-11-25
 ---
 
@@ -29,6 +29,7 @@ Use status code **and body shape** — many endpoints share **404** with differe
 | **401** | Agent authentication required (`kind: "auth_required"`) | Read `authMethods` and authenticate before retrying. |
 | **404** | Agent connection missing or dead | The agent record may still exist in the registry. |
 | **409** + `code: "session_busy"` | Any `session/load` while a turn is active | Wait for the turn to reach `idle`, or stop it, before loading. |
+| **409** + `code: "prompt_session_mismatch"` | The prompt was rejected before dispatch because the requested session was unavailable as the active target | Retry only once the original session is active. |
 | **502** | Upstream ACP/session RPC failed on blocking management calls | Inspect `error` / `code` body. |
 
 ## SSE `GET /api/agents/:id/events`
@@ -85,6 +86,7 @@ Validation, scope denial and provider errors keep their existing error shapes. D
 
 ```
 202 on RPC prompt     → work may have started; verify turnState + lastTurnError
+409 prompt mismatch   → no prompt dispatched; retry in the original session
 404 on /history       → no session host; agent may still exist
 401 on /events or RPC → authenticate using authMethods before retrying
 200 timedOut:true     → turn still running; keep polling
