@@ -136,12 +136,11 @@ export function createFailedPromptStore(db = promptRecoveryDb, now = Date.now) {
   function retry(expected: PromptStamp) {
     return db.transact("readwrite", [rowRead(expected.owner)], (tx, [raw]) => {
       const { record, version } = readSlot(raw, expected.owner)
-      if (!matches(record, expected) || !canSendStoredPrompt(record) ||
-          (record.claimUntil ?? 0) > now()) return
+      if (!matches(record, expected) || !canSendStoredPrompt(record)) return
+      if ((record.claimUntil ?? 0) > now()) return
       return claim(tx, record.owner, version + 1, record.payload, record.recordCaptureId)
     })
   }
-
   function settle(expected: PromptStamp, outcome: Completion) {
     return db.transact("readwrite", [rowRead(expected.owner)], (tx, [raw]) => {
       const { record, version } = readSlot(raw, expected.owner)
@@ -157,7 +156,6 @@ export function createFailedPromptStore(db = promptRecoveryDb, now = Date.now) {
       return true
     })
   }
-
   function dismiss(expected: PromptStamp) {
     return db.transact("readwrite", [rowRead(expected.owner)], (tx, [raw]) => {
       const { record, version } = readSlot(raw, expected.owner)

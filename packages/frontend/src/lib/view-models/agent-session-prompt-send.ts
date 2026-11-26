@@ -94,3 +94,40 @@ export async function deliverClaimedPrompt(
     if (active?.ownerKey === owner) void refresh(active)
   }
 }
+
+type PromptRecoveryView = {
+  targets: RecordTargetSource
+  refresh(target?: RecordTarget | null): Promise<void>
+  report(owner: string, error?: MessageKey): void
+  dispose(): void
+}
+
+export function watchPromptRecovery(
+  prompts: PromptRecoveryView,
+  subscribeDeleted: (listener: (owner: string, failed: boolean) => void) => () => void,
+  refreshSources: () => void,
+  onDeleted: (owner: string) => void,
+): () => void {
+  const focus = () => {
+    void prompts.refresh()
+    refreshSources()
+  }
+  const visible = () => {
+    if (document.visibilityState === "visible") focus()
+  }
+  const unsubscribe = subscribeDeleted((owner, failed) => {
+    prompts.report(owner, failed ? "chat.prompt.storageError" : undefined)
+    if (failed) return
+    onDeleted(owner)
+    const active = prompts.targets.current()
+    if (active?.ownerKey === owner) void prompts.refresh(active)
+  })
+  window.addEventListener("focus", focus)
+  document.addEventListener("visibilitychange", visible)
+  return () => {
+    window.removeEventListener("focus", focus)
+    document.removeEventListener("visibilitychange", visible)
+    unsubscribe()
+    prompts.dispose()
+  }
+}

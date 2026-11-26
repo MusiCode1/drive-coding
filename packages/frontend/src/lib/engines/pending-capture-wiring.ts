@@ -2,7 +2,6 @@
  * Layout wiring for pending voice captures. Dictate uses the legacy global slot.
  * Record operations hold a stable recovery and share an owner revision in this tab.
  */
-import type { MessageKey } from "@drive-coding/core/i18n"
 import type { PendingCapture } from "@drive-coding/core/voice/pending-capture"
 import { createPendingCaptureStore } from "../adapters/pending-capture-store"
 import { createRecordCaptureStore } from "../adapters/record-capture-store"
@@ -65,43 +64,6 @@ export function readRecordTarget(
   }
   const { backendBaseUrl } = identity
   return { ownerKey: promptOwner(backendBaseUrl, cliKind, sessionId), backendBaseUrl, view, agentId, generation }
-}
-
-type PromptRecoveryView = {
-  targets: RecordTargetSource
-  refresh(target?: RecordTarget | null): Promise<void>
-  report(owner: string, error?: MessageKey): void
-  dispose(): void
-}
-
-export function watchPromptRecovery(
-  prompts: PromptRecoveryView,
-  subscribeDeleted: (listener: (owner: string, failed: boolean) => void) => () => void,
-  refreshSources: () => void,
-  onDeleted: (owner: string) => void,
-): () => void {
-  const focus = () => {
-    void prompts.refresh()
-    refreshSources()
-  }
-  const visible = () => {
-    if (document.visibilityState === "visible") focus()
-  }
-  const unsubscribe = subscribeDeleted((owner, failed) => {
-    prompts.report(owner, failed ? "chat.prompt.storageError" : undefined)
-    if (failed) return
-    onDeleted(owner)
-    const active = prompts.targets.current()
-    if (active?.ownerKey === owner) void prompts.refresh(active)
-  })
-  window.addEventListener("focus", focus)
-  document.addEventListener("visibilitychange", visible)
-  return () => {
-    window.removeEventListener("focus", focus)
-    document.removeEventListener("visibilitychange", visible)
-    unsubscribe()
-    prompts.dispose()
-  }
 }
 
 export function sameRecordTarget(active: RecordTarget | null, expected: RecordTarget): boolean {

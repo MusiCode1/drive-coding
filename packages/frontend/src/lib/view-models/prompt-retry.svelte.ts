@@ -4,14 +4,10 @@ import {
   canSendStoredPrompt,
   failedPromptStore,
 } from "../adapters/failed-prompt-store"
-import {
-  type RecordTarget,
-  type RecordTargetSource,
-  watchPromptRecovery,
-} from "../engines/pending-capture-wiring"
+import type { RecordTarget, RecordTargetSource } from "../engines/pending-capture-wiring"
 import type { PromptPayload } from "../engines/prompt-payload"
 import type { GuidanceAuthMethod } from "../util/auth-guidance"
-import { deliverClaimedPrompt } from "./agent-session-prompt-send"
+import { deliverClaimedPrompt, watchPromptRecovery } from "./agent-session-prompt-send"
 
 type Store = typeof failedPromptStore
 type Adoption = Parameters<Store["adopt"]>[2]
