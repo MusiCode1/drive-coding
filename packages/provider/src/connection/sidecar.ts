@@ -48,6 +48,8 @@ export type SidecarConnectOpts = {
   cliKind: SpawnBridgeInput["cliKind"]
   /** The sidecar's own pid, from the launcher or a ping. Null if unknown. */
   sidecarPid?: number | null
+  /** Trust the probe's image flag only after the backend checks the connected path. */
+  resolveAttachedImage?: () => boolean | undefined
 }
 
 /**
@@ -59,6 +61,7 @@ export type SidecarConnectOpts = {
  */
 export async function connectSidecar(opts: SidecarConnectOpts): Promise<ProviderConnection> {
   const transport = await connectUnix(opts.socketPath)
+  const image = opts.resolveAttachedImage?.()
 
   const lineListeners = new Set<(line: string) => void>()
   const frameListeners = new Set<(f: WireFrame) => void>()
@@ -66,6 +69,7 @@ export async function connectSidecar(opts: SidecarConnectOpts): Promise<Provider
   const changeListeners = new Set<(busy: boolean) => void>()
   const tracker = createTurnTracker()
   let caps = staticCapsFor(opts.cliKind)
+  if (typeof image === "boolean") caps = { ...caps, image }
   let lastBusy = false
   let closed = false
 
