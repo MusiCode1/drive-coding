@@ -10,6 +10,7 @@
  */
 
 import {
+  closeCodeForStatus,
   createInitialSessionState,
   decodeWsClientMessage,
   encodeWsFrame,
@@ -19,11 +20,91 @@ import {
   snapshotPayload,
 } from "@drive-coding/core/session"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { _resetForTests, setBeUrlBase } from "$lib/util/be-url"
 import { fakeSessionSockets } from "./__contract__/fake-session-socket"
 import { createRemoteView } from "./create-session-view.js"
 import { RemoteSessionView } from "./remote-session-view.js"
 
 const encoder = new TextEncoder()
+
+describe("Record target identity", () => {
+  afterEach(() => {
+    _resetForTests()
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+  })
+
+  it.each([
+    ["http", undefined, "https://configured.local/proxy"],
+    ["http", "", "https://page.local"],
+    ["http", "http://explicit.local/prefix/", "http://explicit.local/prefix"],
+    ["ws", undefined, "https://configured.local/proxy"],
+    ["ws", "", "https://configured.local/proxy"],
+    ["ws", "http://explicit.local/prefix/", "http://explicit.local/prefix"],
+  ] as const)(
+    "binds %s identity to the connection (base %s)",
+    async (transport, baseUrl, owner) => {
+      vi.useFakeTimers()
+      vi.stubGlobal("location", { origin: "https://page.local" })
+      setBeUrlBase("https://configured.local/proxy/")
+      const sockets = fakeSessionSockets()
+      const state = createInitialSessionState({ sessionId: "sess-1" })
+      const snapshot = snapshotFrame(state, undefined, "meta")
+      let events = 0
+      let endEvents = () => {}
+      const fetcher = vi.fn(async (url: string) => {
+        if (url.includes("/events")) {
+          if (events++ > 0) return new Response(null, { status: 404 })
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(encoder.encode(serializeFrame(snapshot)))
+                endEvents = () => controller.close()
+              },
+            }),
+          )
+        }
+        if (url.includes("/history"))
+          return Response.json(snapshotPayload(state, undefined, { history: "omit" }))
+        return Response.json({ agent: { crashReason: "test exit" } })
+      })
+      const connected = createRemoteView({
+        agentId: "record-target",
+        transport,
+        baseUrl,
+        _WebSocket: sockets.WebSocket,
+        _fetch: fetcher,
+      })
+      if (transport === "ws") {
+        const socket = sockets.latest()
+        expect(socket.url).toContain(owner.replace(/^http/, "ws") + "/ws/session/record-target?")
+        socket.connect()
+        socket.receive(encodeWsFrame(snapshot))
+      }
+      const view = await connected
+      try {
+        const historyBase = baseUrl === "" ? "" : owner
+        expect(fetcher.mock.calls.map(([url]) => url.split("?")[0])).toContain(
+          historyBase + "/api/agents/record-target/history",
+        )
+        setBeUrlBase("https://different.local")
+        expect(view.targetIdentity).toEqual({ backendBaseUrl: owner, sessionId: "sess-1" })
+        if (transport === "ws") sockets.latest().close(1006)
+        else endEvents()
+        await vi.advanceTimersByTimeAsync(1000)
+        if (transport === "ws") sockets.latest().close(closeCodeForStatus(404))
+        await vi.advanceTimersByTimeAsync(0)
+        const terminalBase =
+          transport === "ws" && baseUrl === undefined ? "https://different.local" : historyBase
+        expect(fetcher.mock.calls.map(([url]) => url)).toContain(
+          terminalBase + "/api/agents/record-target",
+        )
+      } finally {
+        await view.close()
+      }
+    },
+  )
+})
 
 describe("reply failure through RemoteSessionView", () => {
   const openingState = {

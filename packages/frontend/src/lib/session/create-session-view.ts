@@ -23,6 +23,22 @@ function resolveConnectionId(opts: RemoteSessionViewOptions): string {
   )
 }
 
+function targetBackendBase(connectionBase: string): string | undefined {
+  const page = typeof location === "undefined" ? undefined : location
+  try {
+    const url = new URL(connectionBase || "/", page?.href ?? page?.origin)
+    if (url.search || url.hash) return
+    if (url.protocol === "ws:") url.protocol = "http:"
+    if (url.protocol === "wss:") url.protocol = "https:"
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      return url.origin + url.pathname.replace(/\/$/, "")
+    }
+  } catch {
+    // No verifiable namespace for a malformed base or an SSR-relative URL.
+    return undefined
+  }
+}
+
 /** Constructs the HTTP/SSE view. The caller connects it when ready. */
 export function createRemoteSessionView(
   agentId: string,
@@ -42,7 +58,12 @@ export function createRemoteSessionView(
     history: createHttpHistoryPipe(`${agentUrl}/history`, wireOptions),
     close() {}, // FrameReader owns and aborts the SSE request.
   }
-  return new RemoteSessionView(agentId, pipe, { ...opts, baseUrl, connectionId })
+  return new RemoteSessionView(agentId, pipe, {
+    ...opts,
+    baseUrl,
+    connectionId,
+    targetBackendBaseUrl: targetBackendBase(baseUrl),
+  })
 }
 
 export async function createRemoteView(
@@ -73,7 +94,14 @@ export async function createRemoteView(
     view = new RemoteSessionView(
       agentId,
       createWsSessionPipe(url, { _WebSocket: rest._WebSocket, history }),
-      { ...rest, baseUrl: base, connectionId },
+      {
+        ...rest,
+        baseUrl: base,
+        connectionId,
+        targetBackendBaseUrl: url.startsWith("ws://ssr-stub/")
+          ? undefined
+          : targetBackendBase(url.slice(0, -path.length)),
+      },
     )
   } else {
     view = createRemoteSessionView(agentId, base ?? beUrl("").replace(/\/$/, ""), rest)
