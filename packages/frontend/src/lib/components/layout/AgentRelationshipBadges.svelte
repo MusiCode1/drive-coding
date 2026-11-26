@@ -37,7 +37,7 @@ async function openParent() {
   try {
     const result = await openRelatedAgent({
       source,
-      parent: () => agents.tree.parentOf(sourceId),
+      parent: () => agents.tree.parentOf(source.id),
       session,
       ...navigation,
       reconnect: (agent) => reconnectAgent({ agent, session, settings }),

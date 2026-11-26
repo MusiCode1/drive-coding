@@ -1,4 +1,6 @@
 <script lang="ts">
+import { untrack } from "svelte"
+import type { RelatedAgentNavigation } from "$lib/actions/open-related-agent"
 import AgentRelationshipBadges from "$lib/components/layout/AgentRelationshipBadges.svelte"
 import {
   setActiveAgents,
@@ -38,12 +40,9 @@ setResponsive({
     return fixtureState.mobile
   },
 } as Parameters<typeof setResponsive>[0])
-setSession({
-  status: "connected",
-  agentId: "child",
-  sessionId: "child-session",
-  turnState: "thinking",
-} as Parameters<typeof setSession>[0])
+const props: { session: Parameters<typeof setSession>[0]; navigation: RelatedAgentNavigation } =
+  $props()
+setSession(untrack(() => props.session))
 export function update(patch: Partial<State>): void {
   fixtureState = { ...fixtureState, ...patch }
   if (patch.tree) agents.agents = patch.tree.preOrder.map((node) => node.agent)
@@ -67,10 +66,11 @@ export const closedCount = () => closed
 
 {#if fixtureState.mode === "header"}
   <span id="chat-session-title" tabindex="-1">Session title</span>
-  <AgentRelationshipBadges
-    sourceId="child"
-    navigation={{ currentUrl: () => "/chat", isNavigating: () => false, goto: async () => {}, reopen: () => {} }}
-  />
+  {#if props.session.agentId}
+    {#key props.session.agentId}
+      <AgentRelationshipBadges sourceId={props.session.agentId} navigation={props.navigation} />
+    {/key}
+  {/if}
 {:else if fixtureState.mode === "toggle"}
   <AgentTreeModeToggle children={list} />
 {:else}

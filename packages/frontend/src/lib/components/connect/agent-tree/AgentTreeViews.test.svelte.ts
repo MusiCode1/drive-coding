@@ -3,7 +3,9 @@ import type { AgentPublic } from "@drive-coding/core"
 import { buildAgentTree } from "@drive-coding/core/agents/agent-tree"
 import { mount, tick, unmount } from "svelte"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import type { RelatedAgentNavigation } from "$lib/actions/open-related-agent"
 import { listAgents } from "$lib/adapters/agents-api"
+import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import Harness from "./AgentTreeViews.harness.svelte"
 
 vi.mock("$app/state", () => ({
@@ -40,8 +42,42 @@ const fixture = [
   agent("sibling", "root"),
 ]
 
+function headerSession() {
+  const session = $state({
+    agentId: "child" as AgentSession["agentId"],
+    sessionId: "child-session" as AgentSession["sessionId"],
+    status: "connected" as AgentSession["status"],
+    turnState: "thinking" as AgentSession["turnState"],
+    sessionTransport: "http" as const,
+    error: null as AgentSession["error"],
+  })
+  const listeners = new Set<Parameters<AgentSession["onSessionEnd"]>[0]>()
+  return Object.assign(session, {
+    onSessionEnd(listener: Parameters<AgentSession["onSessionEnd"]>[0]) {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+    leaveRunning: vi.fn<AgentSession["leaveRunning"]>(async () => {
+      for (const listener of listeners) listener("leave-running")
+      session.agentId = null
+      session.sessionId = null
+      session.status = "idle"
+      await tick()
+    }),
+    attachRemoteToLiveAgent: vi.fn<AgentSession["attachRemoteToLiveAgent"]>(async ({ agentId }) => {
+      session.agentId = agentId
+      session.sessionId = `${agentId}-session`
+      session.status = "connected"
+    }),
+  })
+}
+
 let target: HTMLDivElement
 let app: ReturnType<typeof Harness>
+let session: ReturnType<typeof headerSession>
+let goto: ReturnType<typeof vi.fn<RelatedAgentNavigation["goto"]>>
 
 beforeEach(() => {
   vi.mocked(listAgents).mockResolvedValue(fixture)
@@ -52,7 +88,14 @@ beforeEach(() => {
   })
   target = document.createElement("div")
   document.body.appendChild(target)
-  app = mount(Harness, { target })
+  session = headerSession()
+  let url = "/chat/codex/child-session?sessionTransport=http"
+  goto = vi.fn<RelatedAgentNavigation["goto"]>(async (next) => {
+    url = next
+  })
+  const navigation = { currentUrl: () => url, isNavigating: () => false, goto, reopen: vi.fn() }
+  const sessionStub: Partial<AgentSession> = session
+  app = mount(Harness, { target, props: { session: sessionStub as AgentSession, navigation } })
 })
 
 afterEach(async () => {
@@ -245,5 +288,39 @@ describe("agent relationship badges", () => {
     await clickButton("Close branch", dialog ?? document.body)
     expect(document.activeElement?.id).toBe("chat-session-title")
     expect(localStorage.getItem("drive-coding-v2-settings")).toContain('"agentListView":"tree"')
+  })
+
+  it("attaches to the latest parent and navigates after the source header unmounts", async () => {
+    session.turnState = "idle"
+    app.update({ mode: "header", tree: buildAgentTree(fixture) })
+    await tick()
+    const button = target.querySelector<HTMLButtonElement>(
+      'button[aria-label="Sub-agent of: root"]',
+    )
+    expect(button?.getAttribute("aria-disabled")).toBe("false")
+
+    const leave = session.leaveRunning.getMockImplementation()
+    let sourceUnmounted = false
+    session.leaveRunning.mockImplementationOnce(async () => {
+      await leave?.()
+      sourceUnmounted = button?.isConnected === false
+      const refreshed = fixture.map((agent) =>
+        agent.id === "root" ? { ...agent, cwd: "/projects/refreshed-root" } : agent,
+      )
+      app.update({ tree: buildAgentTree(refreshed) })
+    })
+    button?.click()
+
+    await vi.waitFor(() => {
+      expect(session.attachRemoteToLiveAgent.mock.calls.map(([input]) => input.agentId)).toEqual([
+        "root",
+      ])
+      expect(goto).toHaveBeenCalledExactlyOnceWith("/chat/codex/root-session?sessionTransport=http")
+    })
+    expect(sourceUnmounted).toBe(true)
+    expect(session.leaveRunning).toHaveBeenCalledTimes(1)
+    expect(session.attachRemoteToLiveAgent).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ agentId: "root", cwd: "/projects/refreshed-root" }),
+    )
   })
 })
