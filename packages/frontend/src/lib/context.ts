@@ -129,7 +129,6 @@ export const [getSessionScopePolicy, setSessionScopePolicy] = createContext<Sess
 // ─── agent-voice ─── (slice codex-voice-poc — the agent's native Live)
 export const [getAgentVoice, setAgentVoice] = createContext<AgentVoice>()
 
-
 // ─── Owned chat prompts ─────────────────────────────────
 export const [getPromptRetry, setPromptRetry] = createContext<{
   prompts: PromptRetry

@@ -74,7 +74,8 @@ export function imageHandlers(
       processImageFiles(input.files)
       input.value = ""
     },
-    removeAttachment: (attachment: ImageAttachment) => clearAttachments(currentOwner(), [attachment]),
+    removeAttachment: (attachment: ImageAttachment) =>
+      clearAttachments(currentOwner(), [attachment]),
     clearAttachments,
     dispose() {
       disposed = true

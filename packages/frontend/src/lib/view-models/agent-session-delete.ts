@@ -33,7 +33,7 @@ export async function deleteSession(d: DeleteSessionDeps, sessionId: string): Pr
     else d.cache().setError(e)
     return false
   }
-  const cleaned = owner === undefined || await failedPromptStore.deleteOwner(owner)
+  const cleaned = owner === undefined || (await failedPromptStore.deleteOwner(owner))
   if (d.view() !== view) return false
   d.cache().remove(view, sessionId)
   const wasActive = sessionId === d.sessionId()

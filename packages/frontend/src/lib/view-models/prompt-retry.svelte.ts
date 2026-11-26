@@ -15,10 +15,15 @@ type Adoption = Parameters<Store["adopt"]>[2]
 export class PromptRetry {
   #shown = $state.raw<{ target: RecordTarget; record: FailedPrompt | undefined }>()
   #errors = $state.raw(new Map<string, MessageKey>())
-  #guidance = $state.raw(new Map<string, {
-    attemptId: string
-    methods: ReadonlyArray<GuidanceAuthMethod>
-  }>())
+  #guidance = $state.raw(
+    new Map<
+      string,
+      {
+        attemptId: string
+        methods: ReadonlyArray<GuidanceAuthMethod>
+      }
+    >(),
+  )
   #revision = 0
   #busy = new Set<string>()
   #clock = $state(0)
@@ -47,7 +52,7 @@ export class PromptRetry {
   get authMethods(): ReadonlyArray<GuidanceAuthMethod> {
     const record = this.record
     const guidance = record && this.#guidance.get(record.owner)
-    return guidance?.attemptId === record?.attemptId ? guidance?.methods ?? [] : []
+    return guidance?.attemptId === record?.attemptId ? (guidance?.methods ?? []) : []
   }
 
   get claimActive(): boolean {
@@ -92,7 +97,10 @@ export class PromptRetry {
 
   watch(refreshSources: () => void, onDeleted: (owner: string) => void): () => void {
     return watchPromptRecovery(
-      this, (listener) => this.store.onOwnerDeleted(listener), refreshSources, onDeleted,
+      this,
+      (listener) => this.store.onOwnerDeleted(listener),
+      refreshSources,
+      onDeleted,
     )
   }
 
@@ -109,8 +117,10 @@ export class PromptRetry {
       const adoption = await this.store.adopt(target.ownerKey, payload, origin)
       if (adoption.kind === "already-adopted") return true
       if (adoption.kind !== "claimed") {
-        this.report(target.ownerKey, adoption.kind === "occupied"
-          ? "chat.prompt.resolvePrevious" : "chat.prompt.storageError")
+        this.report(
+          target.ownerKey,
+          adoption.kind === "occupied" ? "chat.prompt.resolvePrevious" : "chat.prompt.storageError",
+        )
         return false
       }
       this.#adopted(target, adoption.record)
@@ -120,7 +130,8 @@ export class PromptRetry {
   }
 
   retry(expected: FailedPrompt, target = this.targets.current()): Promise<void | undefined> {
-    if (!target || target.ownerKey !== expected.owner || !target.view.promptTo) return Promise.resolve()
+    if (!target || target.ownerKey !== expected.owner || !target.view.promptTo)
+      return Promise.resolve()
     return this.#mutate(target, async () => {
       const record = await this.store.retry(expected)
       if (record) this.#adopted(target, record)
@@ -186,7 +197,9 @@ export class PromptRetry {
       onDispatch: (text) => this.onDispatch(text),
       report: (owner, error) => this.report(owner, error),
       refresh: (active) => this.refresh(active),
-      invalidate: () => { ++this.#revision },
+      invalidate: () => {
+        ++this.#revision
+      },
       showGuidance: (owner, attemptId, methods) => {
         this.#guidance = new Map(this.#guidance).set(owner, { attemptId, methods })
       },

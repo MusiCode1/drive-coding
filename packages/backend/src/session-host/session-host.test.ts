@@ -409,53 +409,58 @@ async function setupRpcPromptHost() {
 }
 
 describe("RPC prompts during session switches", () => {
-  it.each(["new", "load"])("rejects the old ID in the real %s pre-flip window", async (operation) => {
-    const { host, client, prompt, onTurnEnded } = await setupRpcPromptHost()
-    try {
-      const permission = host.requestScopePermission({
-        callerId: "caller",
-        targetId: "agent",
-        verb: "send",
-      })
-      expect(host.state.pending.permission).not.toBeNull()
+  it.each(["new", "load"])(
+    "rejects the old ID in the real %s pre-flip window",
+    async (operation) => {
+      const { host, client, prompt, onTurnEnded } = await setupRpcPromptHost()
+      try {
+        const permission = host.requestScopePermission({
+          callerId: "caller",
+          targetId: "agent",
+          verb: "send",
+        })
+        expect(host.state.pending.permission).not.toBeNull()
 
-      const switching =
-        operation === "new"
-          ? host.newSession({ cwd: "/test" })
-          : host.loadSession({ cwd: "/test", sessionId: "B" })
-      const beforePrompt = host.state
-      expect(beforePrompt.sessionId).toBe("A")
-      expect(host.isSessionSwitchPreFlip).toBe(true)
+        const switching =
+          operation === "new"
+            ? host.newSession({ cwd: "/test" })
+            : host.loadSession({ cwd: "/test", sessionId: "B" })
+        const beforePrompt = host.state
+        expect(beforePrompt.sessionId).toBe("A")
+        expect(host.isSessionSwitchPreFlip).toBe(true)
 
-      const stale = prompt("A", 100)
-      expect(host.state).toBe(beforePrompt)
-      expect(host.getTurnStartedAt()).toBe(0)
-      expect(client.prompt).not.toHaveBeenCalled()
-      expect(await stale).toEqual({
-        kind: "json",
-        status: 409,
-        body: {
-          error: "Prompt session no longer matches the active session",
-          code: "prompt_session_mismatch",
-        },
-      })
-      await switching
-      expect(await permission).toBe("deny")
-      expect(onTurnEnded).not.toHaveBeenCalled()
-      const patches = await drainPatches(host)
-      expect(patches.some((patch) => patch.op === "add-message")).toBe(false)
-      expect(
-        patches.some((patch) => patch.op === "update-session" && patch.changes.turnState === "waiting"),
-      ).toBe(false)
+        const stale = prompt("A", 100)
+        expect(host.state).toBe(beforePrompt)
+        expect(host.getTurnStartedAt()).toBe(0)
+        expect(client.prompt).not.toHaveBeenCalled()
+        expect(await stale).toEqual({
+          kind: "json",
+          status: 409,
+          body: {
+            error: "Prompt session no longer matches the active session",
+            code: "prompt_session_mismatch",
+          },
+        })
+        await switching
+        expect(await permission).toBe("deny")
+        expect(onTurnEnded).not.toHaveBeenCalled()
+        const patches = await drainPatches(host)
+        expect(patches.some((patch) => patch.op === "add-message")).toBe(false)
+        expect(
+          patches.some(
+            (patch) => patch.op === "update-session" && patch.changes.turnState === "waiting",
+          ),
+        ).toBe(false)
 
-      expect(host.state.sessionId).toBe("B")
-      expect(host.isSessionSwitchPreFlip).toBe(false)
-      expect(await prompt("B")).toEqual({ kind: "accepted" })
-      expect(client.prompt).toHaveBeenCalledExactlyOnceWith("B", "hello")
-    } finally {
-      await host.dispose()
-    }
-  })
+        expect(host.state.sessionId).toBe("B")
+        expect(host.isSessionSwitchPreFlip).toBe(false)
+        expect(await prompt("B")).toEqual({ kind: "accepted" })
+        expect(client.prompt).toHaveBeenCalledExactlyOnceWith("B", "hello")
+      } finally {
+        await host.dispose()
+      }
+    },
+  )
 
   it("keeps a late error from an already accepted prompt out of the next session's turn", async () => {
     const { host, client, prompt, onTurnEnded } = await setupRpcPromptHost()

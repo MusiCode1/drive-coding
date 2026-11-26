@@ -110,7 +110,10 @@ export class PendingCaptureRecovery {
     let text: string
     let recordingId: string
 
-    if (capture.transcribedText !== undefined && (ctx.handoffEmpty || capture.transcribedText.length > 0)) {
+    if (
+      capture.transcribedText !== undefined &&
+      (ctx.handoffEmpty || capture.transcribedText.length > 0)
+    ) {
       text = capture.transcribedText
       recordingId = capture.recordingId
     } else {

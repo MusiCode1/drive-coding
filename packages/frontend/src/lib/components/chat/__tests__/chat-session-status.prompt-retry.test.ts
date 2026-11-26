@@ -26,19 +26,32 @@ describe("ChatSessionStatus saved prompts", () => {
     const promptTo = vi.fn().mockResolvedValue({ kind: "accepted" })
     const view = { promptTo } as unknown as SessionView
     const target = (id: string, generation: number): RecordTarget => ({
-      ownerKey: promptOwner(base, "fixture", id), backendBaseUrl: base,
-      generation, agentId: `fixture-${generation}`, view,
+      ownerKey: promptOwner(base, "fixture", id),
+      backendBaseUrl: base,
+      generation,
+      agentId: `fixture-${generation}`,
+      view,
     })
     const a = target("A", 1)
-    const claimed = await store.adopt(a.ownerKey, promptPayload("", [
-      { mimeType: "image/png", dataBase64: "QUJDREVGRw==" },
-    ]))
+    const claimed = await store.adopt(
+      a.ownerKey,
+      promptPayload("", [{ mimeType: "image/png", dataBase64: "QUJDREVGRw==" }]),
+    )
     if (claimed.kind !== "claimed") throw new Error("Missing fixture claim")
-    await store.settle(claimed.record, { delivery: "rejected", reason: "session-mismatch", retryable: true })
+    await store.settle(claimed.record, {
+      delivery: "rejected",
+      reason: "session-mismatch",
+      retryable: true,
+    })
     const active = fromStore(writable(target("B", 2)))
-    vm = new PromptRetry({
-      current: () => active.current, isCurrent: (entry) => entry === active.current,
-    }, vi.fn(), store)
+    vm = new PromptRetry(
+      {
+        current: () => active.current,
+        isCurrent: (entry) => entry === active.current,
+      },
+      vi.fn(),
+      store,
+    )
     component = mount(Harness, { target: document.body, props: { prompts: vm } })
 
     await vm.refresh()
@@ -51,12 +64,18 @@ describe("ChatSessionStatus saved prompts", () => {
     expect(alert?.textContent).toContain("לא נשלח — השיחה הוחלפה")
     expect(alert?.querySelector('[dir="auto"]')?.textContent?.trim()).toBe("הודעה עם תמונות בלבד")
     expect(document.body.innerHTML).not.toContain("QUJDREVGRw==")
-    const retry = [...document.querySelectorAll("button")].find((button) => button.textContent?.trim() === "נסה לשלוח שוב")
+    const retry = [...document.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "נסה לשלוח שוב",
+    )
     expect(retry).toBeDefined()
     retry?.click()
-    await vi.waitFor(() => expect(promptTo).toHaveBeenCalledWith("A", [
-      { type: "image", mimeType: "image/png", data: "QUJDREVGRw==" },
-    ], undefined))
+    await vi.waitFor(() =>
+      expect(promptTo).toHaveBeenCalledWith(
+        "A",
+        [{ type: "image", mimeType: "image/png", data: "QUJDREVGRw==" }],
+        undefined,
+      ),
+    )
   })
 
   it("offers only dismissal for unknown delivery once its claim expires", async () => {
@@ -65,8 +84,11 @@ describe("ChatSessionStatus saved prompts", () => {
     const store = createFailedPromptStore(promptTestDb(), clock)
     const base = "https://fixture.local"
     const active: RecordTarget = {
-      ownerKey: promptOwner(base, "fixture", "A"), backendBaseUrl: base,
-      generation: 1, agentId: "agent-1", view: {} as SessionView,
+      ownerKey: promptOwner(base, "fixture", "A"),
+      backendBaseUrl: base,
+      generation: 1,
+      agentId: "agent-1",
+      view: {} as SessionView,
     }
     const claimed = await store.adopt(active.ownerKey, promptPayload("synthetic body"))
     if (claimed.kind !== "claimed") throw new Error("Missing fixture claim")
@@ -74,13 +96,17 @@ describe("ChatSessionStatus saved prompts", () => {
     component = mount(Harness, { target: document.body, props: { prompts: vm } })
     await vm.refresh()
     flushSync()
-    expect(document.querySelector('[role="alert"] [dir="auto"]')?.textContent?.trim()).toBe("synthetic body")
+    expect(document.querySelector('[role="alert"] [dir="auto"]')?.textContent?.trim()).toBe(
+      "synthetic body",
+    )
     expect(document.querySelectorAll("button")).toHaveLength(0)
 
     now += PROMPT_CLAIM_MS
     await vm.refresh()
     flushSync()
-    const buttons = [...document.querySelectorAll("button")].map((button) => button.textContent?.trim())
+    const buttons = [...document.querySelectorAll("button")].map((button) =>
+      button.textContent?.trim(),
+    )
     expect(buttons).toEqual(["סגור שגיאה"])
     expect(document.querySelector('[dir="auto"]')?.textContent?.trim()).toBe("synthetic body")
   })

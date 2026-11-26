@@ -139,8 +139,16 @@ describe("session deletion through the backend session view", () => {
       throw new Error("Missing fixture claims")
     }
     const source = await sources.save({
-      owner: b, snapshot: promptPayload("synthetic Dictate"), version: 1,
-      capture: { source: "dictate", id: "inactive-audio", mimeType: "audio/webm", recordingId: "", createdAt: "fixture" },
+      owner: b,
+      snapshot: promptPayload("synthetic Dictate"),
+      version: 1,
+      capture: {
+        source: "dictate",
+        id: "inactive-audio",
+        mimeType: "audio/webm",
+        recordingId: "",
+        createdAt: "fixture",
+      },
       blob: new Blob(["fixture"]),
     })
     const delayed = Promise.withResolvers<Response>()
@@ -164,7 +172,9 @@ describe("session deletion through the backend session view", () => {
   it("reports local storage failure while preserving the active ACP delete result", async () => {
     const saved = await store.adopt(owner(current), promptPayload("synthetic current"))
     if (saved.kind !== "claimed") throw new Error("Missing fixture claim")
-    vi.mocked(promptRecoveryDb.transact).mockRejectedValueOnce(new Error("synthetic storage failure"))
+    vi.mocked(promptRecoveryDb.transact).mockRejectedValueOnce(
+      new Error("synthetic storage failure"),
+    )
     expect(await session.deleteSession(current)).toBe(true)
     expect(session.status).toBe("idle")
     expect(session.sessionsCache.error).toContain("Could not clear saved prompt")
@@ -173,7 +183,9 @@ describe("session deletion through the backend session view", () => {
 
   it("retains the source and receipt unless ACP delete is confirmed", async () => {
     const key = owner(other)
-    const adopted = await store.adopt(key, promptPayload("synthetic inactive"), { recordCaptureId: "record" })
+    const adopted = await store.adopt(key, promptPayload("synthetic inactive"), {
+      recordCaptureId: "record",
+    })
     if (adopted.kind !== "claimed") throw new Error("Missing fixture claim")
     for (const response of [
       Response.json({ ok: false, unsupported: true }),

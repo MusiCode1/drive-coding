@@ -296,7 +296,10 @@ it("keeps normal Dictate capture separate when the owned Submit port is missing"
   const target = {} as RecordTarget
   dictate.state = "listening"
   const adopted = vi.fn()
-  await dictate.finishListeningForSubmit(target, promptPayload("fixture"), { text: () => "fixture", adopted })
+  await dictate.finishListeningForSubmit(target, promptPayload("fixture"), {
+    text: () => "fixture",
+    adopted,
+  })
   expect(draft.text).toBe("")
   expect(mockStop).not.toHaveBeenCalled()
   expect(adopted).not.toHaveBeenCalled()

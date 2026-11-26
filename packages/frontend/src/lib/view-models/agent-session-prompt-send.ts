@@ -1,7 +1,12 @@
 import type { MessageKey } from "@drive-coding/core/i18n"
 import type { FailedPrompt, failedPromptStore } from "$lib/adapters/failed-prompt-store"
 import type { RecordTarget, RecordTargetSource } from "$lib/engines/pending-capture-wiring"
-import { buildPrompt, hasPromptContent, parsePromptOwner, promptPayload } from "$lib/engines/prompt-payload"
+import {
+  buildPrompt,
+  hasPromptContent,
+  parsePromptOwner,
+  promptPayload,
+} from "$lib/engines/prompt-payload"
 import type { PromptDispatchOutcome } from "$lib/session/prompt-dispatch"
 import type { SessionView } from "$lib/session/session-view"
 import { type GuidanceAuthMethod, readGuidanceAuthMethods } from "$lib/util/auth-guidance"

@@ -1,7 +1,13 @@
 <script lang="ts">
 import { createI18n } from "@drive-coding/core/i18n"
 import { untrack } from "svelte"
-import { setCliAvailability, setI18n, setPresencePoller, setPromptRetry, setSession } from "$lib/context"
+import {
+  setCliAvailability,
+  setI18n,
+  setPresencePoller,
+  setPromptRetry,
+  setSession,
+} from "$lib/context"
 import type { AgentSession } from "$lib/view-models/agent-session.svelte"
 import { CliAvailability } from "$lib/view-models/cli-availability.svelte"
 import { DictateSubmit } from "$lib/view-models/dictate-submit.svelte"

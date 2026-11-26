@@ -1,8 +1,64 @@
+import { type } from "arktype"
+import { promptPayloadSchema } from "../engines/prompt-payload"
+
 export const PROMPT_DB_NAME = "drive-coding-prompt-recovery"
 export const PROMPT_STORE = "prompts"
 export const RECORD_RECEIPTS = "record-receipts"
 export const DICTATE_SOURCES = "dictate-submit"
 const OPERATION_MS = 5_000
+
+const recordSchema = type({
+  owner: "string",
+  attemptId: "string > 0",
+  version: "number.integer > 0",
+  payload: promptPayloadSchema,
+  delivery: "'unknown' | 'not-started' | 'rejected'",
+  "reason?": "string",
+  "retryable?": "boolean",
+  "claimUntil?": "number",
+  "recordCaptureId?": "string",
+})
+export type FailedPrompt = typeof recordSchema.infer
+
+const slotSchema = type({
+  owner: "string",
+  version: "number.integer >= 0",
+  "deleted?": "boolean",
+  "record?": recordSchema,
+})
+export const receiptSchema = type({
+  initialAttemptId: "string > 0",
+  version: "number.integer > 0",
+})
+
+export type PromptSlot = typeof slotSchema.infer
+
+export function readSlot(raw: unknown, owner: string): PromptSlot {
+  if (raw === undefined) return { owner, version: 0 }
+  const row = slotSchema.assert(raw)
+  if (
+    row.owner !== owner ||
+    (row.record &&
+      (row.deleted || row.record.owner !== owner || row.record.version !== row.version))
+  ) {
+    throw new Error("Invalid stored prompt owner")
+  }
+  return row
+}
+
+export type PromptStamp = Pick<FailedPrompt, "owner" | "version" | "attemptId">
+
+export function matches(record: FailedPrompt | undefined, expected: PromptStamp): record is FailedPrompt {
+  return (
+    record?.owner === expected.owner &&
+    record.version === expected.version &&
+    record.attemptId === expected.attemptId
+  )
+}
+
+export function receiptKey(owner: string, id: string): [string, string] {
+  return [owner, id]
+}
 
 type Read = { store: string; key: IDBValidKey | IDBKeyRange }
 
@@ -71,7 +127,9 @@ export function createPromptRecoveryDb() {
     if (Date.now() >= deadline) throw storageTimeout()
     return new Promise<T>((resolve, reject) => {
       const stores = [...new Set(reads.map(({ store }) => store))]
-      const tx = db.transaction(stores, mode, { durability: mode === "readwrite" ? "strict" : "default" })
+      const tx = db.transaction(stores, mode, {
+        durability: mode === "readwrite" ? "strict" : "default",
+      })
       let finished = false
       let applied = false
       let value: T
@@ -85,20 +143,23 @@ export function createPromptRecoveryDb() {
         if (ok && applied) resolve(value)
         else reject(failure ?? tx.error ?? new Error("Prompt storage transaction failed"))
       }
-      const timer = setTimeout(() => {
-        if (finished) return
-        try {
-          tx.abort()
-          failure = storageTimeout()
-          finish(false)
-        } catch {
-          // An already finished transaction can have a completion event queued.
-          fallback = setTimeout(() => {
+      const timer = setTimeout(
+        () => {
+          if (finished) return
+          try {
+            tx.abort()
             failure = storageTimeout()
             finish(false)
-          }, 0)
-        }
-      }, Math.max(0, deadline - Date.now()))
+          } catch {
+            // An already finished transaction can have a completion event queued.
+            fallback = setTimeout(() => {
+              failure = storageTimeout()
+              finish(false)
+            }, 0)
+          }
+        },
+        Math.max(0, deadline - Date.now()),
+      )
       tx.oncomplete = () => finish(true)
       tx.onabort = () => finish(false)
       const values: unknown[] = []

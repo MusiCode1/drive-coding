@@ -22,7 +22,7 @@ export async function runTypeAreaSubmit(opts: {
   const target = prompts.targets.current()
   if (!target) {
     if (!opts.legacyFixture?.()) return
-    const result = listening ? await dictate.finishListening() : { ok: true, text: "" } as const
+    const result = listening ? await dictate.finishListening() : ({ ok: true, text: "" } as const)
     if (!result.ok || session.status !== "connected" || !opts.legacyFixture()) return
     const expected = draftText()
     const text = appendDictation(expected, result.text).trim()

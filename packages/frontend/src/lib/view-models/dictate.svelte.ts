@@ -103,10 +103,15 @@ export class Dictate {
     this.state = "busy"
     let stopped = false
     try {
-      await this.#submit.finish(target, snapshot, () => {
-        stopped = true
-        return this.#recorder.stop()
-      }, live)
+      await this.#submit.finish(
+        target,
+        snapshot,
+        () => {
+          stopped = true
+          return this.#recorder.stop()
+        },
+        live,
+      )
     } finally {
       this.state = stopped ? "idle" : "listening"
     }

@@ -3,9 +3,18 @@ import type { NormalizedCapabilities } from "@drive-coding/provider/types"
 import { syncTitleFromViewState } from "./agent-session-manual-title"
 import type { AgentSession, TurnState } from "./agent-session.svelte"
 
-type SessionMetadata = Pick<AgentSession,
-  "turnState" | "sessionTitle" | "contextUsage" | "availableCommands" | "modes" |
-  "configOptions" | "quota" | "error"> & Parameters<typeof syncTitleFromViewState>[0]
+type SessionMetadata = Pick<
+  AgentSession,
+  | "turnState"
+  | "sessionTitle"
+  | "contextUsage"
+  | "availableCommands"
+  | "modes"
+  | "configOptions"
+  | "quota"
+  | "error"
+> &
+  Parameters<typeof syncTitleFromViewState>[0]
 
 export function syncViewMetadata(
   session: SessionMetadata,

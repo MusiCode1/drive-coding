@@ -288,13 +288,15 @@ describe("Record entry and pending capture ownership", () => {
     })
     await vi.waitFor(() => expect(mic.canRetry).toBe(true))
     await mic.bindPendingActions().onRetry()
-    await vi.waitFor(() => expect(prompts).toEqual([
-      {
-        sessionId: "A",
-        content: [{ type: "text", text: transcript.text }],
-        meta: { recordingId: transcript.recordingId },
-      },
-    ]))
+    await vi.waitFor(() =>
+      expect(prompts).toEqual([
+        {
+          sessionId: "A",
+          content: [{ type: "text", text: transcript.text }],
+          meta: { recordingId: transcript.recordingId },
+        },
+      ]),
+    )
     expect(transcribe).toHaveBeenCalledTimes(2)
   })
 
@@ -412,9 +414,13 @@ describe("Record entry and pending capture ownership", () => {
     const retry = mic.bindPendingActions().onRetry()
     await vi.waitFor(() => expect(fixture.verify).toHaveBeenCalledWith(owner(), true))
     const otherTab = createFailedPromptStore(promptRecoveryDb)
-    const adopted = await otherTab.adopt(owner(), promptPayload(transcript.text, [], transcript.recordingId), {
-      recordCaptureId: "checked-before-claim",
-    })
+    const adopted = await otherTab.adopt(
+      owner(),
+      promptPayload(transcript.text, [], transcript.recordingId),
+      {
+        recordCaptureId: "checked-before-claim",
+      },
+    )
     if (adopted.kind !== "claimed") throw new Error("Missing other-tab claim")
     await otherTab.settle(adopted.record, { delivery: "accepted" })
     match.resolve(true)

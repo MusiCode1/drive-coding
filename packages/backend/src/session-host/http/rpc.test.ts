@@ -976,49 +976,52 @@ describe("POST /api/agents/:id/rpc", () => {
     it.each([
       { method: "session/prompt", active: "s2", requested: "s1", waitMs: undefined },
       { method: "prompt", active: null, requested: "s1", waitMs: 0 },
-      { method: "prompt", active: SWITCHING_SESSION_ID, requested: SWITCHING_SESSION_ID, waitMs: 50 },
-    ])("returns 409 for $method while session $active cannot receive the prompt", async ({
-      method,
-      active,
-      requested,
-      waitMs,
-    }) => {
-      const state = makeMockState(3, active)
-      const host = makeMockHost(state)
-      const app = makeApp(makeMockRegistry(host, makeMockBroadcaster()))
-      const payload = {
-        content: [
-          { type: "image", mimeType: "image/png", data: "aGVsbG8=" },
-          { type: "text", text: "inspect this" },
-        ],
-        meta: { recordingId: "" },
-      }
+      {
+        method: "prompt",
+        active: SWITCHING_SESSION_ID,
+        requested: SWITCHING_SESSION_ID,
+        waitMs: 50,
+      },
+    ])(
+      "returns 409 for $method while session $active cannot receive the prompt",
+      async ({ method, active, requested, waitMs }) => {
+        const state = makeMockState(3, active)
+        const host = makeMockHost(state)
+        const app = makeApp(makeMockRegistry(host, makeMockBroadcaster()))
+        const payload = {
+          content: [
+            { type: "image", mimeType: "image/png", data: "aGVsbG8=" },
+            { type: "text", text: "inspect this" },
+          ],
+          meta: { recordingId: "" },
+        }
 
-      const response = await postRpc(app, "agent-1", {
-        method,
-        waitMs,
-        params: { ...payload, sessionId: requested },
-      })
-      expect(response.status).toBe(409)
-      expect(await response.json()).toEqual({
-        error: "Prompt session no longer matches the active session",
-        code: "prompt_session_mismatch",
-      })
-      expect(host.prompt).not.toHaveBeenCalled()
-      expect(state.version).toBe(3)
-      expect(state.messages).toEqual([])
-      expect(state.turnState).toBe("idle")
+        const response = await postRpc(app, "agent-1", {
+          method,
+          waitMs,
+          params: { ...payload, sessionId: requested },
+        })
+        expect(response.status).toBe(409)
+        expect(await response.json()).toEqual({
+          error: "Prompt session no longer matches the active session",
+          code: "prompt_session_mismatch",
+        })
+        expect(host.prompt).not.toHaveBeenCalled()
+        expect(state.version).toBe(3)
+        expect(state.messages).toEqual([])
+        expect(state.turnState).toBe("idle")
 
-      state.sessionId = "s2"
-      const accepted = await postRpc(app, "agent-1", {
-        method,
-        waitMs: 0,
-        params: { ...payload, sessionId: "s2" },
-      })
-      expect(accepted.status).toBe(202)
-      expect(await accepted.json()).toEqual({ version: 4 })
-      expect(host.prompt).toHaveBeenCalledExactlyOnceWith("s2", payload.content, payload.meta)
-    })
+        state.sessionId = "s2"
+        const accepted = await postRpc(app, "agent-1", {
+          method,
+          waitMs: 0,
+          params: { ...payload, sessionId: "s2" },
+        })
+        expect(accepted.status).toBe(202)
+        expect(await accepted.json()).toEqual({ version: 4 })
+        expect(host.prompt).toHaveBeenCalledExactlyOnceWith("s2", payload.content, payload.meta)
+      },
+    )
 
     it("without waitMs → 202 regression (byte-for-byte contract)", async () => {
       const state = makeMockState(7)

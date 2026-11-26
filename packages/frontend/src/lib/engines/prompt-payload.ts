@@ -1,5 +1,6 @@
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { type } from "arktype"
+import { appendDictation } from "./append-dictation"
 
 const promptImage = type({ mimeType: "string", dataBase64: "string" })
 export const promptPayloadSchema = type({
@@ -49,4 +50,12 @@ export function parsePromptOwner(owner: string) {
   const value = ownerTuple.assert(parsed)
   if (promptOwner(...value) !== owner) throw new Error("Invalid prompt owner")
   return { backendBaseUrl: value[0], cliKind: value[1], sessionId: value[2] }
+}
+
+export function dictatePromptPayload(
+  snapshot: PromptPayload,
+  draftText: string,
+  transcription: string,
+): PromptPayload {
+  return promptPayload(appendDictation(draftText, transcription).trim(), snapshot.attachments)
 }

@@ -169,7 +169,11 @@ export function createWsSessionPipe(url: string, opts: WsOptions = {}): SessionP
       },
     }
 
-    function call(kind: RpcKind, body: unknown, options?: RpcCallOptions): Promise<ChannelResponse> {
+    function call(
+      kind: RpcKind,
+      body: unknown,
+      options?: RpcCallOptions,
+    ): Promise<ChannelResponse> {
       if (ended || socket.readyState !== Socket.OPEN) return Promise.reject(closedError())
       return new Promise((resolve, reject) => {
         const id = ++nextId

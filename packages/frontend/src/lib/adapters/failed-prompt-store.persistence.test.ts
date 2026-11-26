@@ -8,10 +8,14 @@ import { PROMPT_STORE, createPromptRecoveryDb } from "./prompt-recovery-idb"
 
 const a = promptOwner("https://fixture.local", "fixture", "A")
 const b = promptOwner("https://other-fixture.local", "fixture", "A")
-const payload = promptPayload("synthetic text", [
-  { mimeType: "image/png", dataBase64: "QUFB" },
-  { mimeType: "image/jpeg", dataBase64: "QkJC" },
-], "")
+const payload = promptPayload(
+  "synthetic text",
+  [
+    { mimeType: "image/png", dataBase64: "QUFB" },
+    { mimeType: "image/jpeg", dataBase64: "QkJC" },
+  ],
+  "",
+)
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -32,7 +36,11 @@ describe("saved prompts", () => {
     expect(await two.load(a)).toMatchObject({ delivery: "unknown", payload })
     expect(await two.dismiss(claimed.record)).toBe(false)
     expect(await two.retry(claimed.record)).toBeUndefined()
-    await one.settle(claimed.record, { delivery: "rejected", reason: "session-mismatch", retryable: true })
+    await one.settle(claimed.record, {
+      delivery: "rejected",
+      reason: "session-mismatch",
+      retryable: true,
+    })
     const reopened = await two.load(a)
     if (!reopened) throw new Error("Missing replacement")
     const [retry, other] = await Promise.all([two.retry(reopened), one.retry(reopened)])
@@ -80,15 +88,28 @@ describe("saved prompts", () => {
     const one = createFailedPromptStore(db)
     const two = createFailedPromptStore(db)
     const initial = await sources.save({
-      owner: a, snapshot: payload, version: 1,
-      capture: { source: "dictate", id: "audio-A", recordingId: "", mimeType: "audio/webm", createdAt: "fixture" },
+      owner: a,
+      snapshot: payload,
+      version: 1,
+      capture: {
+        source: "dictate",
+        id: "audio-A",
+        recordingId: "",
+        mimeType: "audio/webm",
+        createdAt: "fixture",
+      },
       blob: new Blob(["fixture"]),
     })
-    const ready = await sources.save({
-      ...initial, capture: { ...initial.capture, transcribedText: "synthetic speech" },
-    }, initial.version)
-    expect(await one.adopt(a, payload, { dictate: { id: "audio-A", version: initial.version } }))
-      .toEqual({ kind: "stale" })
+    const ready = await sources.save(
+      {
+        ...initial,
+        capture: { ...initial.capture, transcribedText: "synthetic speech" },
+      },
+      initial.version,
+    )
+    expect(
+      await one.adopt(a, payload, { dictate: { id: "audio-A", version: initial.version } }),
+    ).toEqual({ kind: "stale" })
     const origin = { dictate: { id: "audio-A", version: ready.version } }
     const claim = await one.adopt(a, payload, origin)
     if (claim.kind !== "claimed") throw new Error("Missing Dictate claim")
@@ -103,9 +124,14 @@ describe("prompt IndexedDB operation deadline", () => {
   it("rejects blocked and late opens, closes late handles and permits a fresh open", async () => {
     vi.useFakeTimers()
     const requests = Array.from({ length: 3 }, () => ({
-      onblocked: () => {}, onsuccess: () => {}, result: { close: vi.fn() },
+      onblocked: () => {},
+      onsuccess: () => {},
+      result: { close: vi.fn() },
     }))
-    const open = vi.fn().mockReturnValueOnce(requests[0]).mockReturnValueOnce(requests[1])
+    const open = vi
+      .fn()
+      .mockReturnValueOnce(requests[0])
+      .mockReturnValueOnce(requests[1])
       .mockReturnValueOnce(requests[2])
     vi.stubGlobal("indexedDB", { open })
     const db = createPromptRecoveryDb()
@@ -130,7 +156,9 @@ describe("prompt IndexedDB operation deadline", () => {
     vi.useFakeTimers()
     const get = { result: undefined, onsuccess: () => {} }
     const tx = {
-      oncomplete: () => {}, onabort: () => {}, abort: vi.fn(),
+      oncomplete: () => {},
+      onabort: () => {},
+      abort: vi.fn(),
       objectStore: () => ({ get: () => get }),
     }
     const result = { transaction: () => tx, close: vi.fn() }

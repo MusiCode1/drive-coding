@@ -5,17 +5,16 @@ import {
   DictateSourceConflict,
   dictateSubmitCaptureStore,
   dictateSubmitSourceDb,
+  resolveDictateSubmitSource,
 } from "../adapters/dictate-submit-source"
-import { appendDictation } from "../engines/append-dictation"
 import { PendingCaptureRecovery } from "../engines/pending-capture-recovery"
 import type { RecordTarget } from "../engines/pending-capture-wiring"
-import { type PromptPayload, hasPromptContent, promptPayload } from "../engines/prompt-payload"
+import { type PromptPayload, dictatePromptPayload, hasPromptContent } from "../engines/prompt-payload"
 import type { PromptRetry } from "./prompt-retry.svelte"
 
 type LiveDraft = { text(): string; adopted(text: string): void }
 type Candidate = { source: DictateSubmitSource; expectedVersion?: number }
 type StopCapture = () => Promise<{ blob: Blob; mimeType: string }>
-
 export class DictateSubmit {
   #shown = $state.raw<{ target: RecordTarget; source: DictateSubmitSource | undefined }>()
   #busy = $state.raw(new Set<string>())
@@ -30,7 +29,7 @@ export class DictateSubmit {
 
   get source(): DictateSubmitSource | undefined {
     const shown = this.#shown
-    return shown && this.prompts.targets.isCurrent(shown.target) ? shown.source : undefined
+    if (shown && this.prompts.targets.isCurrent(shown.target)) return shown.source
   }
 
   get busy(): boolean {
@@ -39,16 +38,14 @@ export class DictateSubmit {
   }
 
   get error(): MessageKey | undefined {
-    return this.source?.capture.transcribedText === undefined
-      ? this.source?.capture.lastError
-      : undefined
+    const capture = this.source?.capture
+    return capture?.transcribedText === undefined ? capture?.lastError : undefined
   }
 
   get payload(): PromptPayload | undefined {
     const source = this.source
     if (!source || source.capture.transcribedText === undefined) return
-    return promptPayload(appendDictation(source.snapshot.text, source.capture.transcribedText).trim(),
-      source.snapshot.attachments)
+    return dictatePromptPayload(source.snapshot, source.snapshot.text, source.capture.transcribedText)
   }
 
   async refresh(target = this.prompts.targets.current()): Promise<void> {
@@ -59,7 +56,8 @@ export class DictateSubmit {
       const stored = await this.db.load(owner)
       if (revision !== this.#revision || !this.prompts.targets.isCurrent(target)) return
       const candidate = this.#ram.get(owner)
-      const useCandidate = candidate && (!stored || stored.capture.id === candidate.source.capture.id)
+      const useCandidate =
+        candidate && (!stored || stored.capture.id === candidate.source.capture.id)
       this.#shown = { target, source: useCandidate ? candidate.source : stored }
     } catch {
       if (revision !== this.#revision || !this.prompts.targets.isCurrent(target)) return
@@ -83,7 +81,7 @@ export class DictateSubmit {
   ): Promise<void> {
     await this.#operate(target, async () => {
       const owner = target.ownerKey
-      if (this.#ram.has(owner) || await this.db.load(owner)) {
+      if (this.#ram.has(owner) || (await this.db.load(owner))) {
         this.prompts.report(owner, "chat.prompt.resolvePrevious")
         return
       }
@@ -93,7 +91,10 @@ export class DictateSubmit {
     })
   }
 
-  async resume(expected: DictateSubmitSource, target = this.prompts.targets.current()): Promise<void> {
+  async resume(
+    expected: DictateSubmitSource,
+    target = this.prompts.targets.current(),
+  ): Promise<void> {
     if (!target || target.ownerKey !== expected.owner) return
     await this.#operate(target, async () => {
       const source = await this.#validated(expected)
@@ -104,7 +105,10 @@ export class DictateSubmit {
     })
   }
 
-  async dismiss(expected: DictateSubmitSource, target = this.prompts.targets.current()): Promise<void> {
+  async dismiss(
+    expected: DictateSubmitSource,
+    target = this.prompts.targets.current(),
+  ): Promise<void> {
     if (!target || target.ownerKey !== expected.owner) return
     await this.#operate(target, async () => {
       const stored = await this.db.load(expected.owner)
@@ -119,29 +123,26 @@ export class DictateSubmit {
   }
 
   async #validated(expected: DictateSubmitSource) {
-    const { owner, capture, version } = expected
-    const candidate = this.#ram.get(owner)
-    if (candidate?.source === expected) {
-      if (candidate.expectedVersion !== undefined) {
-        const persisted = await this.db.load(owner)
-        if (persisted?.capture.id !== capture.id || persisted.version !== candidate.expectedVersion) {
-          this.#ram.delete(owner)
-          return
-        }
-      }
-      const saved = await this.db.save(expected, candidate.expectedVersion)
-      this.#ram.delete(owner)
-      return saved
-    }
-    const stored = await this.db.load(owner)
-    if (stored?.capture.id === capture.id && stored.version === version) return stored
+    const candidate = this.#ram.get(expected.owner)
+    const matching = candidate?.source === expected ? candidate : undefined
+    const source = await resolveDictateSubmitSource(this.db, expected, matching)
+    if (matching) this.#ram.delete(expected.owner)
+    return source
   }
 
-  #capture(target: RecordTarget, snapshot: PromptPayload, live?: LiveDraft, initial?: DictateSubmitSource) {
+  #capture(
+    target: RecordTarget,
+    snapshot: PromptPayload,
+    live?: LiveDraft,
+    initial?: DictateSubmitSource,
+  ) {
     const owner = target.ownerKey
     let saved = initial
     const store = dictateSubmitCaptureStore({
-      owner, snapshot, initial, db: this.db,
+      owner,
+      snapshot,
+      initial,
+      db: this.db,
       onCandidate: (source, expectedVersion) => this.#ram.set(owner, { source, expectedVersion }),
       onSaved: (source) => {
         this.#ram.delete(owner)
@@ -149,7 +150,8 @@ export class DictateSubmit {
       },
     })
     const recovery = new PendingCaptureRecovery(store, {
-      source: "dictate", transcribeErrorKey: "dictate.error.transcribe",
+      source: "dictate",
+      transcribeErrorKey: "dictate.error.transcribe",
     })
     const context = {
       transcribe: (blob: Blob) => this.speech(blob),
@@ -158,14 +160,13 @@ export class DictateSubmit {
         if (!saved) return false
         const current = this.prompts.targets.isCurrent(target)
         const draftText = current && live ? live.text() : snapshot.text
-        const payload = promptPayload(appendDictation(draftText, text).trim(), snapshot.attachments)
+        const payload = dictatePromptPayload(snapshot, draftText, text)
         if (!hasPromptContent(payload) && !hasPromptContent(snapshot)) return true
         if (!current || !hasPromptContent(payload)) return false
         const adopted = await this.prompts.adopt(target, payload, {
           dictate: { id: saved.capture.id, version: saved.version },
         })
         if (adopted && this.prompts.targets.isCurrent(target)) live?.adopted(draftText)
-        // An accepted handoff already removed this source in the claim transaction.
         return adopted
       },
     }

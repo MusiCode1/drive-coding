@@ -11,20 +11,28 @@ import { PromptRetry } from "./prompt-retry.svelte"
 const base = "https://fixture.local"
 const owner = (id: string) => promptOwner(base, "fixture", id)
 const pending = new Set<PromptRetry>()
-const aPayload = promptPayload("synthetic A", [
-  { mimeType: "image/png", dataBase64: "QUFB" },
-  { mimeType: "image/jpeg", dataBase64: "QkJC" },
-], "")
+const aPayload = promptPayload(
+  "synthetic A",
+  [
+    { mimeType: "image/png", dataBase64: "QUFB" },
+    { mimeType: "image/jpeg", dataBase64: "QkJC" },
+  ],
+  "",
+)
 
 function setup() {
   let now = 1
   const db = promptTestDb()
   const store = createFailedPromptStore(db, () => now)
   const reloadedStore = createFailedPromptStore(db, () => now)
-  const transport = vi.fn<NonNullable<SessionView["promptTo"]>>()
+  const transport = vi
+    .fn<NonNullable<SessionView["promptTo"]>>()
     .mockResolvedValue({ kind: "accepted" })
   const entry = (id: string, generation: number): RecordTarget => ({
-    ownerKey: owner(id), backendBaseUrl: base, generation, agentId: `agent-${generation}`,
+    ownerKey: owner(id),
+    backendBaseUrl: base,
+    generation,
+    agentId: `agent-${generation}`,
     view: { promptTo: transport } as unknown as SessionView,
   })
   let active = $state.raw<RecordTarget | null>(entry("A", 1))
@@ -38,9 +46,19 @@ function setup() {
   const reload = new PromptRetry(targets, vi.fn(), reloadedStore, () => now)
   pending.add(reload)
   return {
-    store, reloadedStore, prompts, reload, transport, targets, onDispatch,
-    move(id: string, generation: number) { active = entry(id, generation) },
-    advance(ms: number) { now += ms },
+    store,
+    reloadedStore,
+    prompts,
+    reload,
+    transport,
+    targets,
+    onDispatch,
+    move(id: string, generation: number) {
+      active = entry(id, generation)
+    },
+    advance(ms: number) {
+      now += ms
+    },
   }
 }
 
@@ -65,9 +83,14 @@ describe("owned prompt delivery", () => {
     move("B", 2)
     await prompts.refresh()
     network.resolve({
-      kind: "rejected", reason: "session-mismatch", retryable: true, error: "synthetic 409",
+      kind: "rejected",
+      reason: "session-mismatch",
+      retryable: true,
+      error: "synthetic 409",
     })
-    await vi.waitFor(async () => expect((await store.load(owner("A")))?.reason).toBe("session-mismatch"))
+    await vi.waitFor(async () =>
+      expect((await store.load(owner("A")))?.reason).toBe("session-mismatch"),
+    )
     expect(prompts.record).toBeUndefined()
     expect(onDispatch).not.toHaveBeenCalled()
 
@@ -82,36 +105,41 @@ describe("owned prompt delivery", () => {
     await vi.waitFor(async () => expect(await store.load(owner("A"))).toBeUndefined())
   })
 
-  it.each([false, true])("keeps the Record receipt and payload when the live guard stops after commit (expired=%s)", async (expired) => {
-    const { store, reloadedStore, prompts, transport, targets, advance, move } = setup()
-    const committed = Promise.withResolvers<void>()
-    const resume = Promise.withResolvers<void>()
-    const realAdopt = store.adopt
-    vi.spyOn(store, "adopt").mockImplementation(async (...args) => {
-      const result = await realAdopt(...args)
-      committed.resolve()
-      await resume.promise
-      return result
-    })
-    const submission = prompts.adopt(targets.current()!, aPayload, { recordCaptureId: "record-1" })
-    await committed.promise
-    expect(await reloadedStore.hasRecordReceipt(owner("A"), "record-1")).toBe(true)
-    if (expired) advance(PROMPT_CLAIM_MS)
-    move("B", 2)
-    resume.resolve()
-    expect(await submission).toBe(true)
-    await vi.waitFor(async () => {
-      const stored = await store.load(owner("A"))
-      expect(stored).toMatchObject({
-        payload: aPayload,
-        delivery: expired ? "unknown" : "not-started",
+  it.each([false, true])(
+    "keeps the Record receipt and payload when the live guard stops after commit (expired=%s)",
+    async (expired) => {
+      const { store, reloadedStore, prompts, transport, targets, advance, move } = setup()
+      const committed = Promise.withResolvers<void>()
+      const resume = Promise.withResolvers<void>()
+      const realAdopt = store.adopt
+      vi.spyOn(store, "adopt").mockImplementation(async (...args) => {
+        const result = await realAdopt(...args)
+        committed.resolve()
+        await resume.promise
+        return result
       })
-      if (expired) expect(stored).toHaveProperty("claimUntil", 1 + PROMPT_CLAIM_MS)
-      else expect(stored).not.toHaveProperty("claimUntil")
-    })
-    expect(transport).not.toHaveBeenCalled()
-    expect(prompts.record).toBeUndefined()
-  })
+      const submission = prompts.adopt(targets.current()!, aPayload, {
+        recordCaptureId: "record-1",
+      })
+      await committed.promise
+      expect(await reloadedStore.hasRecordReceipt(owner("A"), "record-1")).toBe(true)
+      if (expired) advance(PROMPT_CLAIM_MS)
+      move("B", 2)
+      resume.resolve()
+      expect(await submission).toBe(true)
+      await vi.waitFor(async () => {
+        const stored = await store.load(owner("A"))
+        expect(stored).toMatchObject({
+          payload: aPayload,
+          delivery: expired ? "unknown" : "not-started",
+        })
+        if (expired) expect(stored).toHaveProperty("claimUntil", 1 + PROMPT_CLAIM_MS)
+        else expect(stored).not.toHaveProperty("claimUntil")
+      })
+      expect(transport).not.toHaveBeenCalled()
+      expect(prompts.record).toBeUndefined()
+    },
+  )
 
   it("reports failures before dispatch and keeps the durable unknown on failed settlement", async () => {
     const { prompts, store, transport, targets, reload } = setup()

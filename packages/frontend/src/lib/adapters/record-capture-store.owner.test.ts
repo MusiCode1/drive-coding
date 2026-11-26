@@ -132,7 +132,9 @@ describe("Record capture slots", () => {
     expect(await reloaded.matches("transferred")).toBe(true)
     await original.save(capture("new-recording"), blob)
     await reloaded.remove("transferred")
-    expect((await adapter.createRecordCaptureStore().forOwner(A).load())?.capture.id).toBe("new-recording")
+    expect((await adapter.createRecordCaptureStore().forOwner(A).load())?.capture.id).toBe(
+      "new-recording",
+    )
   })
 
   it("may show a last read on disk failure and requires a fresh read for handoff", async () => {

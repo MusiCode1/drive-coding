@@ -50,17 +50,26 @@ export function createDictateSubmitSourceDb(db = promptRecoveryDb) {
     change: (current: DictateSubmitSource | undefined, table: IDBObjectStore) => T,
   ) {
     parsePromptOwner(owner)
-    return db.transact(mode, [
-      { store: PROMPT_STORE, key: owner },
-      { store: DICTATE_SOURCES, key: owner },
-    ], (tx, [slot, source]) => {
-      const table = tx.objectStore(DICTATE_SOURCES)
-      if (typeof slot === "object" && slot !== null && "deleted" in slot && slot.deleted === true) {
-        if (mode === "readonly") return change(undefined, table)
-        throw new DictateSourceConflict("deleted")
-      }
-      return change(readDictateSource(source, owner), table)
-    })
+    return db.transact(
+      mode,
+      [
+        { store: PROMPT_STORE, key: owner },
+        { store: DICTATE_SOURCES, key: owner },
+      ],
+      (tx, [slot, source]) => {
+        const table = tx.objectStore(DICTATE_SOURCES)
+        if (
+          typeof slot === "object" &&
+          slot !== null &&
+          "deleted" in slot &&
+          slot.deleted === true
+        ) {
+          if (mode === "readonly") return change(undefined, table)
+          throw new DictateSourceConflict("deleted")
+        }
+        return change(readDictateSource(source, owner), table)
+      },
+    )
   }
 
   const load = (owner: string) => operation(owner, "readonly", (current) => current)
@@ -69,7 +78,8 @@ export function createDictateSubmitSourceDb(db = promptRecoveryDb) {
       if (
         current?.version !== expectedVersion ||
         (current && current.capture.id !== source.capture.id)
-      ) throw new DictateSourceConflict()
+      )
+        throw new DictateSourceConflict()
       const row = { ...source, version: (current?.version ?? 0) + 1 }
       readDictateSource(row, row.owner)
       table.put(row, row.owner)
@@ -116,4 +126,22 @@ export function dictateSubmitCaptureStore(opts: {
       if (current?.capture.id === id) await opts.db.remove(current)
     },
   }
+}
+
+export async function resolveDictateSubmitSource(
+  db: typeof dictateSubmitSourceDb,
+  expected: DictateSubmitSource,
+  candidate: { expectedVersion?: number } | undefined,
+): Promise<DictateSubmitSource | undefined> {
+  const { owner, capture, version } = expected
+  if (!candidate) {
+    const stored = await db.load(owner)
+    if (stored?.capture.id === capture.id && stored.version === version) return stored
+    return
+  }
+  if (candidate.expectedVersion !== undefined) {
+    const stored = await db.load(owner)
+    if (stored?.capture.id !== capture.id || stored.version !== candidate.expectedVersion) return
+  }
+  return db.save(expected, candidate.expectedVersion)
 }

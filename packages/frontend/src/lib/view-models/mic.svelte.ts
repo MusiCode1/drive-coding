@@ -195,9 +195,10 @@ export class Mic {
     return createRecordAttempt(target.backendBaseUrl, (text, recordingId, captureId) => {
       if (this.#active !== operation || !this.opts.targets.isCurrent(target)) return false
       const prompts = this.opts.prompts
-      if (prompts) return prompts.adopt(target, promptPayload(text, [], recordingId), {
-        recordCaptureId: captureId,
-      })
+      if (prompts)
+        return prompts.adopt(target, promptPayload(text, [], recordingId), {
+          recordCaptureId: captureId,
+        })
       void this.opts.session.sendPrompt(text, { recordingId })
       return true
     })

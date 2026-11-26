@@ -97,24 +97,30 @@ export function installRecordInput(deps: {
     current,
     isCurrent: (target) => sameRecordTarget(current(), target),
   }
-  const prompts = new PromptRetry(targets, (text) => { session.lastUserMessage = text })
+  const prompts = new PromptRetry(targets, (text) => {
+    session.lastUserMessage = text
+  })
   const dictateSubmit = new DictateSubmit(prompts)
   const mic = new Mic({ session, targets, cues, getInputDeviceId, prompts })
   const draft = new ComposerDraft()
   const dictate = new Dictate({
-    mic, draft, getInputDeviceId, recovery: createDictateRecovery(), submit: dictateSubmit,
+    mic,
+    draft,
+    getInputDeviceId,
+    recovery: createDictateRecovery(),
+    submit: dictateSubmit,
   })
-  const legacyFixture = () => import.meta.env.DEV && !session.ingestView() &&
-    session.sessionId?.startsWith("mock:") === true
+  const legacyFixture = () =>
+    import.meta.env.DEV && !session.ingestView() && session.sessionId?.startsWith("mock:") === true
 
+  const hydrateVoiceSources = (target = current()) => {
+    void dictateSubmit.refresh(target)
+    if (target) void mic.hydratePending(target)
+  }
   bindComposerOwners(targets, draft)
   onMount(() => {
     void dictate.hydratePending()
-    return prompts.watch(() => {
-      const target = current()
-      void dictateSubmit.refresh(target)
-      if (target) void mic.hydratePending(target)
-    }, (owner) => dictateSubmit.ownerDeleted(owner))
+    return prompts.watch(hydrateVoiceSources, (owner) => dictateSubmit.ownerDeleted(owner))
   })
 
   $effect(() => {
@@ -128,8 +134,7 @@ export function installRecordInput(deps: {
     void mic.hydrationRevision
     untrack(() => {
       void prompts.refresh(target)
-      void dictateSubmit.refresh(target)
-      if (target) void mic.hydratePending(target)
+      hydrateVoiceSources(target)
     })
   })
 

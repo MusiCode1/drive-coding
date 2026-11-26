@@ -48,27 +48,50 @@ export function readRecordTarget(
   params: { cliKind?: string; sessionId?: string },
 ): RecordTarget | null {
   const { cliKind, sessionId, agentId } = session
-  if (session.status !== "connected" || session.isLoadingHistory || !cliKind || !sessionId || !agentId) {
+  if (
+    session.status !== "connected" ||
+    session.isLoadingHistory ||
+    !cliKind ||
+    !sessionId ||
+    !agentId
+  ) {
     return null
   }
   const view = session.ingestView()
   const identity = view?.targetIdentity
-  if (!view || view === leavingView || !identity?.backendBaseUrl || identity.sessionId !== sessionId) {
+  if (
+    !view ||
+    view === leavingView ||
+    !identity?.backendBaseUrl ||
+    identity.sessionId !== sessionId
+  ) {
     return null
   }
   if (
     routeId !== "/chat" &&
-    (routeId !== "/chat/[cliKind]/[sessionId]" || params.cliKind !== cliKind || params.sessionId !== sessionId)
+    (routeId !== "/chat/[cliKind]/[sessionId]" ||
+      params.cliKind !== cliKind ||
+      params.sessionId !== sessionId)
   ) {
     return null
   }
   const { backendBaseUrl } = identity
-  return { ownerKey: promptOwner(backendBaseUrl, cliKind, sessionId), backendBaseUrl, view, agentId, generation }
+  return {
+    ownerKey: promptOwner(backendBaseUrl, cliKind, sessionId),
+    backendBaseUrl,
+    view,
+    agentId,
+    generation,
+  }
 }
 
 export function sameRecordTarget(active: RecordTarget | null, expected: RecordTarget): boolean {
-  return active?.ownerKey === expected.ownerKey && active.view === expected.view &&
-    active.agentId === expected.agentId && active.generation === expected.generation
+  return (
+    active?.ownerKey === expected.ownerKey &&
+    active.view === expected.view &&
+    active.agentId === expected.agentId &&
+    active.generation === expected.generation
+  )
 }
 
 export type RecordCaptureEntry = Readonly<{
@@ -234,8 +257,10 @@ export class RecordCaptureCoordinator {
       slot.active === operation && slot.revision === revision && captureId === id
     if (
       captureId === undefined ||
-      (this.hasReceipt && !(await this.#checkReceipt(ownerKey, recovery, () => isCaptureCurrent(captureId))))
-    ) return
+      (this.hasReceipt &&
+        !(await this.#checkReceipt(ownerKey, recovery, () => isCaptureCurrent(captureId))))
+    )
+      return
     if (!recovery.capture?.transcribedText && !attempt.canTranscribe()) return
     return recovery.retry({
       transcribe: attempt.transcribe,
@@ -243,7 +268,9 @@ export class RecordCaptureCoordinator {
       verifyHandoff: (id) =>
         isCaptureCurrent(id) ? this.#store.forOwner(ownerKey).matches(id) : Promise.resolve(false),
       onSend: (text: string, recordingId: string) =>
-        captureId !== undefined && isCaptureCurrent(captureId) && attempt.onSend(text, recordingId, captureId),
+        captureId !== undefined &&
+        isCaptureCurrent(captureId) &&
+        attempt.onSend(text, recordingId, captureId),
     })
   }
 
@@ -267,7 +294,8 @@ export class RecordCaptureCoordinator {
   ) {
     const capture = recovery.capture
     slot.recovery = capture ? recovery : undefined
-    slot.entry = capture && !hideAction ? { ownerKey, revision: slot.revision, capture, restored } : undefined
+    slot.entry =
+      capture && !hideAction ? { ownerKey, revision: slot.revision, capture, restored } : undefined
     this.notify()
   }
 }
