@@ -1,6 +1,34 @@
 <script module lang="ts">
 import type { AgentPublic } from "@drive-coding/core"
+import type { AgentTree, AgentTreeNode } from "@drive-coding/core/agents/agent-tree"
+import type { Snippet } from "svelte"
 import { basename } from "$lib/util/path"
+
+export type AgentTreeRow = Snippet<[AgentTreeNode<AgentPublic>, (() => void)?]>
+
+export function agentBranchPath(
+  tree: AgentTree<AgentPublic>,
+  trail: readonly string[],
+  boundary: string | undefined,
+): AgentPublic[] {
+  const outside = new Set<string>()
+  for (const id of trail.slice().reverse()) {
+    const agent = tree.byId.get(id)?.agent
+    if (!agent || outside.has(id)) continue
+    if (boundary === undefined) return tree.pathTo(id)
+
+    const path: AgentPublic[] = []
+    let member: AgentPublic | undefined = agent
+    while (member && !outside.has(member.id)) {
+      path.push(member)
+      if (member.id === boundary) return path.reverse()
+      member = tree.parentOf(member.id)
+    }
+    for (const member of path) outside.add(member.id)
+  }
+  const root = boundary === undefined ? undefined : tree.byId.get(boundary)?.agent
+  return root ? [root] : []
+}
 
 export function agentTreeName(agent: AgentPublic): string {
   return agent.title?.trim() || agent.roleLabel || basename(agent.cwd) || agent.id
@@ -18,11 +46,9 @@ export function focusAgentRow(list: HTMLElement | undefined, id: string): void {
 </script>
 
 <script lang="ts">
-import type { AgentTree, AgentTreeNode } from "@drive-coding/core/agents/agent-tree"
-import type { Snippet } from "svelte"
 import { getI18n } from "$lib/context"
 
-const { tree, row }: { tree: AgentTree<AgentPublic>; row: Snippet<[AgentTreeNode<AgentPublic>]> } = $props()
+const { tree, row }: { tree: AgentTree<AgentPublic>; row: AgentTreeRow } = $props()
 const { t } = getI18n()
 let list: HTMLUListElement | undefined = $state()
 </script>

@@ -5,8 +5,10 @@ import { onDestroy, onMount } from "svelte"
 import { getMachineStats } from "$lib/adapters/system-api"
 import { getActiveAgents, getI18n, getSettings } from "$lib/context"
 import { resizeDrag } from "$lib/util/resize-drag"
+import AgentDrillList from "./agent-tree/AgentDrillList.svelte"
 import AgentProcessRow from "./agent-tree/AgentProcessRow.svelte"
 import AgentTreeList from "./agent-tree/AgentTreeList.svelte"
+import AgentTreeModeToggle from "./agent-tree/AgentTreeModeToggle.svelte"
 import MachineStatsBar from "./MachineStatsBar.svelte"
 
 const { onReconnect }: { onReconnect: (agent: AgentPublic) => void } = $props()
@@ -47,8 +49,8 @@ onMount(() => activeAgents.subscribe(refreshMachine))
 onDestroy(() => clearTimeout(confirmTimer))
 </script>
 
-{#snippet row(node: AgentTreeNode<AgentPublic>)}
-  <AgentProcessRow {node} {onReconnect} onKill={handleKill} onCancelKill={cancelKillConfirm} confirming={confirmingId === node.agent.id} />
+{#snippet row(node: AgentTreeNode<AgentPublic>, onOpenBranch?: () => void)}
+  <AgentProcessRow {node} {onOpenBranch} {onReconnect} onKill={handleKill} onCancelKill={cancelKillConfirm} confirming={confirmingId === node.agent.id} />
 {/snippet}
 
 <section class="active-panel">
@@ -76,7 +78,15 @@ onDestroy(() => clearTimeout(confirmTimer))
     </div>
   {:else}
     <div class="agent-scroll chat-scroll" style:max-height={`${dragHeight ?? settings.activePanelHeight}px`}>
-      <AgentTreeList tree={activeAgents.tree} {row} />
+      <AgentTreeModeToggle>
+        {#snippet children(view)}
+          {#if view === "tree"}
+            <AgentTreeList tree={activeAgents.tree} {row} />
+          {:else}
+            <AgentDrillList tree={activeAgents.tree} {row} />
+          {/if}
+        {/snippet}
+      </AgentTreeModeToggle>
     </div>
     <div
       class="resize-handle"

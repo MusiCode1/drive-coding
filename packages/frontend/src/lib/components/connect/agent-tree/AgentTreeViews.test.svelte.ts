@@ -2,7 +2,7 @@
 import type { AgentPublic } from "@drive-coding/core"
 import { buildAgentTree } from "@drive-coding/core/agents/agent-tree"
 import { mount, tick, unmount } from "svelte"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import Harness from "./AgentTreeViews.harness.svelte"
 
 function agent(id: string, parentAgentId?: string, busy?: boolean): AgentPublic {
@@ -33,6 +33,11 @@ let target: HTMLDivElement
 let app: ReturnType<typeof Harness>
 
 beforeEach(() => {
+  const storage = new Map<string, string>()
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+  })
   target = document.createElement("div")
   document.body.appendChild(target)
   app = mount(Harness, { target })
@@ -41,6 +46,7 @@ beforeEach(() => {
 afterEach(async () => {
   await unmount(app)
   target.remove()
+  vi.unstubAllGlobals()
 })
 
 function rows(): HTMLElement[] {
@@ -92,5 +98,110 @@ describe("agent tree views", () => {
     expect(result[1]?.textContent).not.toContain("Missing parent")
     expect(result[2]?.textContent).toContain("Cyclic link")
     expect(result[3]?.textContent).not.toContain("Cyclic link")
+  })
+})
+
+function rowIds(): (string | undefined)[] {
+  return rows().map((row) => row.dataset.agentId)
+}
+
+async function clickButton(text: string, container: ParentNode = target): Promise<void> {
+  const button = Array.from(container.querySelectorAll("button")).find((candidate) =>
+    candidate.textContent?.trim().startsWith(text),
+  )
+  expect(button, `button beginning with "${text}"`).toBeDefined()
+  button?.click()
+  await tick()
+}
+
+describe("agent drill-down", () => {
+  it("shows one level, moves focus, and supports breadcrumb and step-by-step return", async () => {
+    app.setMode("flat")
+    app.setTree(buildAgentTree(fixture))
+    await tick()
+    expect(rowIds()).toEqual(["root"])
+
+    await clickButton("4", rows()[0])
+    expect(rowIds()).toEqual(["child", "sibling"])
+    expect(document.activeElement).toBe(rows()[0])
+    await clickButton("2", rows()[0])
+    await clickButton("1", rows()[0])
+    expect(rowIds()).toEqual(["great-grandchild"])
+
+    await clickButton("root", target.querySelector("nav") ?? target)
+    expect(rowIds()).toEqual(["child", "sibling"])
+    expect(document.activeElement).toBe(rows()[0])
+
+    await clickButton("Back")
+    expect(rowIds()).toEqual(["root"])
+    expect(document.activeElement).toBe(rows()[0])
+  })
+
+  it("tracks a reparented branch and falls back to its updated nearest surviving ancestor", async () => {
+    app.setMode("flat")
+    app.setTree(buildAgentTree(fixture))
+    await tick()
+    await clickButton("4", rows()[0])
+    await clickButton("2", rows()[0])
+    await clickButton("1", rows()[0])
+
+    const moved = fixture.map((agent) =>
+      agent.id === "grandchild" ? { ...agent, parentAgentId: "sibling" } : agent,
+    )
+    app.setTree(buildAgentTree(moved))
+    await tick()
+    expect(rowIds()).toEqual(["great-grandchild"])
+    expect(target.querySelector("nav")?.textContent).toContain("sibling")
+
+    app.setTree(buildAgentTree(moved.filter((agent) => agent.id !== "grandchild")))
+    await tick()
+    expect(rowIds()).toEqual([])
+    expect(target.querySelector('[aria-current="location"]')?.textContent).toBe("sibling")
+    await clickButton("Back")
+    expect(rowIds()).toEqual(["child", "sibling"])
+    expect(document.activeElement).toBe(rows()[1])
+  })
+
+  it("preserves a bounded branch during loading and offers close when it disappears", async () => {
+    app.setMode("flat", "child")
+    await tick()
+    expect(target.textContent).toContain("Loading agent branch")
+    app.setTree(buildAgentTree(fixture))
+    await tick()
+    expect(rowIds()).toEqual(["grandchild"])
+    expect(target.querySelector("nav")?.textContent).not.toContain("root")
+    expect(target.querySelector("nav button")).toBeNull()
+
+    await clickButton("1", rows()[0])
+    expect(rowIds()).toEqual(["great-grandchild"])
+    await clickButton("Back")
+    expect(rowIds()).toEqual(["grandchild"])
+    expect(target.querySelector("nav button")).toBeNull()
+
+    app.setTree(buildAgentTree(fixture.filter((agent) => agent.id !== "child")))
+    await tick()
+    expect(target.textContent).toContain("This branch is no longer available")
+    await clickButton("Close branch")
+    expect(app.closedCount()).toBe(1)
+  })
+
+  it("applies the responsive default until a native toggle records an explicit choice", async () => {
+    app.setMode("toggle")
+    app.setTree(buildAgentTree(fixture))
+    await tick()
+    expect(target.querySelector('[aria-pressed="true"]')?.textContent?.trim()).toBe("Tree")
+
+    app.setMobile(true)
+    await tick()
+    expect(target.querySelector('[aria-pressed="true"]')?.textContent?.trim()).toBe("Flat")
+    expect(rowIds()).toEqual(["root"])
+
+    await clickButton("Tree")
+    expect(rowIds()).toEqual(fixture.map((agent) => agent.id))
+    app.setMobile(false)
+    app.setMobile(true)
+    await tick()
+    expect(target.querySelector('[aria-pressed="true"]')?.textContent?.trim()).toBe("Tree")
+    expect(localStorage.getItem("drive-coding-v2-settings")).toContain('"agentListView":"tree"')
   })
 })

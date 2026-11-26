@@ -16,9 +16,10 @@ interface Props {
   onKill?: (id: string) => void
   onCancelKill?: () => void
   confirming?: boolean
+  onOpenBranch?: () => void
 }
 
-const { node, onReconnect, onKill, onCancelKill, confirming = false }: Props = $props()
+const { node, onReconnect, onKill, onCancelKill, confirming, onOpenBranch }: Props = $props()
 const i18n = getI18n()
 const t = i18n.t
 const cliAvailability = getCliAvailability()
@@ -48,6 +49,14 @@ function formatDate(iso: string): string {
 }
 </script>
 
+{#snippet counts()}
+  {node.descendantCount}
+  {t(node.descendantCount === 1 ? "connect.agents.tree.descendant" : "connect.agents.tree.descendants")}
+  {#if node.busyDescendantCount > 0}
+    · {node.busyDescendantCount} {t("connect.agents.working")}
+  {/if}
+{/snippet}
+
   <div class="agent-row">
     <div class="agent-top">
       <div class="agent-info">
@@ -74,13 +83,14 @@ function formatDate(iso: string): string {
         {/if}
         {#if node.descendantCount > 0}
           <span class="meta-sep">·</span>
-          <span class="child-count" >
-            {node.descendantCount}
-            {t(node.descendantCount === 1 ? "connect.agents.tree.descendant" : "connect.agents.tree.descendants")}
-            {#if node.busyDescendantCount > 0}
-              · {node.busyDescendantCount} {t("connect.agents.working")}
-            {/if}
-          </span>
+          {#if onOpenBranch}
+            <button type="button" class="child-count branch-button" onclick={onOpenBranch}>
+              {@render counts()}
+              <span aria-hidden="true" class="chevron">›</span>
+            </button>
+          {:else}
+            <span class="child-count">{@render counts()}</span>
+          {/if}
         {/if}
         {#if agent.title}
           <span class="meta-sep">·</span>
@@ -115,7 +125,7 @@ function formatDate(iso: string): string {
       </button>
 
       <Popover.Root
-        open={confirming}
+        open={confirming ?? false}
         onOpenChange={(next) => { if (!next && confirming) onCancelKill?.() }}
       >
         <Popover.Trigger>
@@ -171,6 +181,22 @@ function formatDate(iso: string): string {
     font-size: 0.72rem;
     color: var(--fg-dim);
     flex-shrink: 0;
+  }
+
+  .branch-button {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.1rem 0.35rem;
+    cursor: pointer;
+    color: var(--fg);
+  }
+
+  .chevron {
+    display: inline-block;
+  }
+
+  .chevron:dir(rtl) {
+    transform: scaleX(-1);
   }
 
   .agent-row {
