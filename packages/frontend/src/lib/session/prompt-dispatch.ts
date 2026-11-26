@@ -1,4 +1,6 @@
-import type { ChannelResponse } from "@drive-coding/core/session"
+import { type ChannelResponse, RPC_METHODS } from "@drive-coding/core/session"
+import type { PromptBlocks } from "@drive-coding/provider/client"
+import type { RpcPipe } from "./wire/pipe"
 
 export const PROMPT_DISPATCH_TIMEOUT_MS = 30_000
 
@@ -15,6 +17,25 @@ export type PromptDispatchOutcome =
   | { kind: "accepted" }
   | ({ kind: "rejected"; error: string } & PromptRejection)
   | { kind: "unknown" }
+
+export async function dispatchOwnedPrompt(
+  pipe: RpcPipe,
+  sessionId: string,
+  content: string | PromptBlocks,
+  meta?: Record<string, unknown>,
+): Promise<PromptDispatchOutcome> {
+  try {
+    const response = await pipe.call(
+      "rpc",
+      { method: RPC_METHODS.prompt, params: { sessionId, content, meta } },
+      { timeoutMs: PROMPT_DISPATCH_TIMEOUT_MS, statusOnlyOn: 202 },
+    )
+    return classifyPromptDispatch(response)
+  } catch {
+    // Transport errors cannot establish whether the host received the prompt.
+    return { kind: "unknown" }
+  }
+}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)

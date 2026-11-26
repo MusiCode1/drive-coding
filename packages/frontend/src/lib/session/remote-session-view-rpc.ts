@@ -1,12 +1,7 @@
 import { RPC_METHODS, type SessionListQuery, type SessionState } from "@drive-coding/core/session"
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { normalizeSessionInfo, type SessionListPage } from "$lib/adapters/sessions"
-import {
-  classifyPromptDispatch,
-  PROMPT_DISPATCH_TIMEOUT_MS,
-  type PromptDispatchOutcome,
-} from "./prompt-dispatch"
-import { resultOf, type RpcPipe, type SessionPipe } from "./wire/pipe"
+import { resultOf, type SessionPipe } from "./wire/pipe"
 
 const RETURN_VALUE_EXT_METHODS = new Set<string>(["_drive/getQuota"])
 const NOT_SUPPORTED_EXT_RETURN_VALUE = "not supported in remote mode — use state instead"
@@ -125,25 +120,6 @@ export async function remotePrompt(
   meta?: Record<string, unknown>,
 ): Promise<void> {
   await rpc(deps, RPC_METHODS.prompt, { sessionId: deps.getSessionId(), content, meta })
-}
-
-export async function remotePromptTo(
-  pipe: RpcPipe,
-  sessionId: string,
-  content: string | PromptBlocks,
-  meta?: Record<string, unknown>,
-): Promise<PromptDispatchOutcome> {
-  try {
-    const response = await pipe.call(
-      "rpc",
-      { method: RPC_METHODS.prompt, params: { sessionId, content, meta } },
-      { timeoutMs: PROMPT_DISPATCH_TIMEOUT_MS, statusOnlyOn: 202 },
-    )
-    return classifyPromptDispatch(response)
-  } catch {
-    // Transport errors cannot establish whether the host received the prompt.
-    return { kind: "unknown" }
-  }
 }
 
 export async function remoteCancel(deps: RemoteSessionRpcDeps): Promise<void> {

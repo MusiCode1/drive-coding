@@ -219,11 +219,19 @@ describe("owned prompt evidence on the WebSocket", () => {
     try {
       opened = await openWsView()
       const { view, socket } = opened
-      const acceptedByHost = vi.fn()
+      const hostPrompt = vi.fn()
+      const sendOnSocket = socket.send.bind(socket)
+      vi.spyOn(socket, "send").mockImplementation((frame) => {
+        sendOnSocket(frame)
+        if (!delivered) return
+        const message = decodeWsClientMessage(frame)
+        if (message?.kind === "request" && message.request.method === "_drive/rpc") {
+          hostPrompt(message.request.params)
+        }
+      })
       const settled = vi.fn()
       const attempt = view.promptTo("A", "hello").then(settled)
       const id = readPromptRequest(socket)
-      if (delivered) acceptedByHost(id)
       socket.receive(encodeWsServerResponse(id + 1, { status: 202, body: { version: 1 } }))
       socket.receive(JSON.stringify({ jsonrpc: "2.0", id, result: { status: "202", body: {} } }))
 
@@ -232,7 +240,14 @@ describe("owned prompt evidence on the WebSocket", () => {
       await vi.advanceTimersByTimeAsync(1)
       expect(settled).toHaveBeenCalledExactlyOnceWith({ kind: "unknown" })
       await attempt
-      expect(acceptedByHost).toHaveBeenCalledTimes(delivered ? 1 : 0)
+      if (delivered) {
+        expect(hostPrompt).toHaveBeenCalledExactlyOnceWith({
+          method: "session/prompt",
+          params: { sessionId: "A", content: "hello" },
+        })
+      } else {
+        expect(hostPrompt).not.toHaveBeenCalled()
+      }
       expect(socket.readyState).toBe(1)
     } finally {
       await opened?.view.close()

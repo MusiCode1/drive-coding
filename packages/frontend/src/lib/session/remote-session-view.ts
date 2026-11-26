@@ -22,7 +22,7 @@ import {
 import type { PromptBlocks } from "@drive-coding/provider/client"
 import { registerView, type ViewDebugInfo } from "$lib/debug/session-registry"
 import type { HistorySync } from "./history-sync"
-import type { PromptDispatchOutcome } from "./prompt-dispatch"
+import { dispatchOwnedPrompt, type PromptDispatchOutcome } from "./prompt-dispatch"
 import { closeRemoteSession } from "./remote-session-close"
 import { openRemoteSession } from "./remote-session-connect"
 import { advanceReadWaterMark, emitView, enqueueEmission } from "./remote-session-emission"
@@ -37,7 +37,6 @@ import {
   remoteLoadSession,
   remoteNewSession,
   remotePrompt,
-  remotePromptTo,
   remoteRespond,
   remoteSetConfigOption,
   remoteSetMode,
@@ -283,7 +282,7 @@ export class RemoteSessionView implements SessionView {
     if (this.#lifetime.signal.aborted || this.targetIdentity?.sessionId !== expectedSessionId) {
       return { kind: "not-started" }
     }
-    return remotePromptTo(this.#pipe.rpc, expectedSessionId, content, meta)
+    return dispatchOwnedPrompt(this.#pipe.rpc, expectedSessionId, content, meta)
   }
 
   cancel = () => remoteCancel(this.#rpcDeps())
