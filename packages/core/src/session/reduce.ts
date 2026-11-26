@@ -32,7 +32,7 @@ import type {
   SessionUsage,
   TurnStateValue,
 } from "./types"
-import { AVAILABLE_MODES_META } from "./types"
+import { AVAILABLE_MODES_META, isCleanStopReason } from "./types"
 
 // ─── internal helpers ───
 
@@ -768,23 +768,23 @@ function handleStateUpdate(
 ): { state: SessionState; patches: Patch[] } {
   const meta = metaOf(u)
   const s = u.state
-  const rawMeta = typeof u._meta === "object" && u._meta !== null ? u._meta : {}
-  const fine = (rawMeta as Record<string, unknown>)["_drive/turnState"]
+  const fine = meta?.["_drive/turnState"]
+  const clearedReason = state.stopReason != null ? { stopReason: null } : {}
 
   // ⚠️ הרזולוציה העדינה גוברת כשהיא שם. הפולט שלנו (`to-session-update.ts`)
   // מטביע אותה ב-`_meta` דווקא מפני ש-`state_update` מכיר שלוש דרגות ואנחנו
   // חמש; כשהיא קיימת היא סמכותית, ואין צורך בהיגיון-הרצפה שמתחת.
   if (typeof fine === "string" && RUNNING_SUBSTATES.has(fine as TurnStateValue)) {
-    if (state.turnState === fine) return { state, patches: [] }
+    if (state.turnState === fine && state.stopReason == null) return { state, patches: [] }
     const newVersion = state.version + 1
     const turnState = fine as TurnStateValue
     return {
-      state: { ...state, version: newVersion, turnState },
+      state: { ...state, version: newVersion, turnState, ...clearedReason },
       patches: [
         {
           version: newVersion,
           op: "update-session",
-          changes: { turnState },
+          changes: { turnState, ...clearedReason },
           ...(meta !== undefined ? { meta } : {}),
         },
       ],
@@ -795,12 +795,12 @@ function handleStateUpdate(
     if (RUNNING_SUBSTATES.has(state.turnState)) return { state, patches: [] }
     const newVersion = state.version + 1
     return {
-      state: { ...state, version: newVersion, turnState: "waiting" },
+      state: { ...state, version: newVersion, turnState: "waiting", ...clearedReason },
       patches: [
         {
           version: newVersion,
           op: "update-session",
-          changes: { turnState: "waiting" },
+          changes: { turnState: "waiting", ...clearedReason },
           ...(meta !== undefined ? { meta } : {}),
         },
       ],
@@ -811,28 +811,30 @@ function handleStateUpdate(
     // stopReason רגיל = סיום תקין. כל שאר הערכים הם כשל שצריך להיראות —
     // ⇒ allowlist, לא denylist: ערך חדש שלא נכיר ייחשב כשל ולא ייבלע.
     const stopReason = typeof u.stopReason === "string" ? u.stopReason : undefined
-    const clean =
-      stopReason === undefined || stopReason === "end_turn" || stopReason === "cancelled"
     // ⚠️ **החותמת מגיעה מה-frame, לא מכאן.** הקובץ הזה מוצהר טהור בכותרתו
     // ("אפס Date.now()"), ולכן `reduce` אינו רשאי להמציא זמן — הקליפה היא
-    // שמחזיקה שעון (`session-host.ts:691` מטביע `Date.now()` ב-applyTurnEnd).
+    // שמחזיקה שעון (מחזור חיי התור ב-host מטביע `Date.now()`).
     // ‏ACP שומר את `_meta` בדיוק לזה: *"attach additional metadata"*.
     // ‏0 = הפולט לא הטביע. ‏`.at` אינו מרונדר בשום מקום ב-FE (רק `.message`),
     // ולכן אפס-זריקה גובר: עדיף הודעה בלי זמן מאשר לבלוע את השגיאה.
-    const meta = (typeof u._meta === "object" && u._meta !== null ? u._meta : {}) as Record<
-      string,
-      unknown
-    >
-    const at = typeof meta["_drive/at"] === "number" ? (meta["_drive/at"] as number) : 0
-    const lastTurnError = clean ? null : { message: stopReason as string, at }
+    const at = meta?.["_drive/at"]
+    const lastTurnError =
+      stopReason !== undefined && (typeof at === "number" || !isCleanStopReason(stopReason))
+        ? { message: stopReason, at: typeof at === "number" ? at : 0 }
+        : null
     const newVersion = state.version + 1
+    const changes = {
+      turnState: "idle" as const,
+      lastTurnError,
+      ...(stopReason === "cancelled" && lastTurnError === null ? { stopReason } : clearedReason),
+    }
     return {
-      state: { ...state, version: newVersion, turnState: "idle", lastTurnError },
+      state: { ...state, version: newVersion, ...changes },
       patches: [
         {
           version: newVersion,
           op: "update-session",
-          changes: { turnState: "idle", lastTurnError },
+          changes,
           ...(meta !== undefined ? { meta } : {}),
         },
       ],

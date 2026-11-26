@@ -238,14 +238,18 @@ function changesToUpdates(changes: Record<string, unknown>): WireSessionUpdate[]
 
   // turnState + lastTurnError → state_update אחד. השניים נוסעים יחד תמיד:
   // ‏`idle` בלי הסיבה שלו הוא בדיוק אובדן-המידע שאנחנו מנסים למנוע.
-  if ("turnState" in changes || "lastTurnError" in changes) {
+  if ("turnState" in changes || "lastTurnError" in changes || "stopReason" in changes) {
     const turnState = changes.turnState as string | undefined
     const err = changes.lastTurnError as { message: string; at: number } | null | undefined
-    if (turnState === "idle" || (turnState === undefined && err !== undefined)) {
+    const reason = typeof changes.stopReason === "string" ? changes.stopReason : undefined
+    if (
+      turnState === "idle" ||
+      (turnState === undefined && (err !== undefined || reason !== undefined))
+    ) {
       out.push({
         sessionUpdate: "state_update",
         state: "idle",
-        stopReason: err ? err.message : "end_turn",
+        stopReason: reason ?? err?.message ?? "end_turn",
         ...(err ? { _meta: { "_drive/at": err.at } } : {}),
       })
     } else if (turnState !== undefined) {
@@ -546,6 +550,7 @@ export function stateToSessionUpdates(
         contextUsage: state.contextUsage,
         turnState: state.turnState,
         lastTurnError: state.lastTurnError,
+        stopReason: state.stopReason,
         status: state.status,
         pending: state.pending,
         capabilities: state.capabilities,

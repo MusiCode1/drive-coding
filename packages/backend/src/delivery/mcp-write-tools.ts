@@ -18,6 +18,7 @@ import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import type { ScopeEnforcementDeps } from "../bind-scope-enforcement.js"
 import { guardMcpWrite } from "../bind-scope-enforcement.js"
 import { scopeDeniedBody } from "../scope-write.js"
+import { msgOf } from "../session-host/error-message.js"
 import { raceKeepRunning } from "../session-host/http/rpc-wait.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { type ResolvedSender, wrapPromptContent } from "./drive-message-source.js"
@@ -153,19 +154,17 @@ export function registerMcpWriteTools(
       const messagesSince = host.state.messages.slice(from)
       const text = assistantTextSince(messagesSince)
       if (raced.outcome === "rejected") {
-        const err = host.state.lastTurnError
+        const message = msgOf(raced.error)
         return {
-          stopReason:
-            err?.message ??
-            (raced.error instanceof Error ? raced.error.message : String(raced.error)),
-          lastTurnError: err,
+          stopReason: message,
+          lastTurnError: { message, at: Date.now() },
           text,
           messagesSince,
         }
       }
       return {
-        stopReason: host.state.lastTurnError?.message ?? "end_turn",
-        lastTurnError: host.state.lastTurnError,
+        stopReason: raced.value.stopReason,
+        lastTurnError: raced.value.lastTurnError,
         text,
         messagesSince,
       }

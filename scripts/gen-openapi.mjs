@@ -279,7 +279,8 @@ const SPECIAL = {
         },
       },
       200: {
-        description: "Blocking waitMs completion or method-specific JSON result",
+        description:
+          "Waited completion or method-specific JSON result. An ACP v1 prompt result includes ok: true, timedOut: false, messagesSince, and stopReason, including on refusal or limit. A wait timeout returns ok: false and timedOut: true while the turn continues.",
         content: {
           "application/json": {
             schema: { type: "object" },

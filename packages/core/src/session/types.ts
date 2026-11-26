@@ -226,6 +226,8 @@ export type SessionState = {
    * ─── slice session-host-pending-surface C1 ───
    */
   lastTurnError: { message: string; at: number } | null
+  /** Idle reason when it cannot be inferred from lastTurnError or end_turn. */
+  stopReason?: string | null
 
   /**
    * updates שהליבה אינה מכירה (`plan` / `plan_update` / כל סוג עתידי),
@@ -332,6 +334,7 @@ export type Patch =
           | "capabilities"
           | "quota"
           | "lastTurnError"
+          | "stopReason"
         >
       >
       meta?: Record<string, unknown>
@@ -506,16 +509,24 @@ export function clearPendingRequest(
 
 /** תחילת תור: turnState="waiting" ומנקה lastTurnError. no-op אם שניהם כבר במצב הזה. */
 export function applyTurnStart(state: SessionState): { state: SessionState; patches: Patch[] } {
-  if (state.turnState === "waiting" && state.lastTurnError === null) {
+  if (state.turnState === "waiting" && state.lastTurnError === null && state.stopReason == null) {
     return { state, patches: [] }
   }
   const newVersion = state.version + 1
-  const changes = { turnState: "waiting" as const, lastTurnError: null }
+  const changes = {
+    turnState: "waiting" as const,
+    lastTurnError: null,
+    ...(state.stopReason != null ? { stopReason: null } : {}),
+  }
   const patch: Patch = { version: newVersion, op: "update-session", changes }
   return {
     state: { ...state, version: newVersion, ...changes },
     patches: [patch],
   }
+}
+
+export function isCleanStopReason(stopReason: string): boolean {
+  return stopReason === "end_turn" || stopReason === "cancelled"
 }
 
 /**
@@ -529,12 +540,18 @@ export function applyTurnStart(state: SessionState): { state: SessionState; patc
 export function applyTurnEnd(
   state: SessionState,
   error?: { message: string; at: number },
+  stopReason?: string,
 ): { state: SessionState; patches: Patch[] } {
   if (error === undefined && state.turnState === "idle") {
     return { state, patches: [] }
   }
   const newVersion = state.version + 1
-  const changes = { turnState: "idle" as const, lastTurnError: error ?? null }
+  const explicitReason = stopReason === (error?.message ?? "end_turn") ? null : (stopReason ?? null)
+  const changes = {
+    turnState: "idle" as const,
+    lastTurnError: error ?? null,
+    ...(explicitReason !== null || state.stopReason != null ? { stopReason: explicitReason } : {}),
+  }
   const patch: Patch = { version: newVersion, op: "update-session", changes }
   return {
     state: { ...state, version: newVersion, ...changes },

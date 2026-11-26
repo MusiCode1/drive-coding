@@ -251,7 +251,7 @@ describe("openSessionUrl", () => {
     ).toBe("error")
   })
 
-  it("returns error when switchSession leaves session in error state", async () => {
+  it.each(["connected", "error"])("returns error on a failed switch (%s)", async (status) => {
     const session = makeSession({
       status: "connected",
       cliKind: "claude",
@@ -260,7 +260,7 @@ describe("openSessionUrl", () => {
         .mockResolvedValue({ sessionId: "sess-b", cwd: "/proj", title: "", updatedAt: "" }),
     })
     session.switchSession.mockImplementation(async () => {
-      session.status = "error"
+      session.status = status
       session.error = "switchSession failed: boom"
     })
 
@@ -351,6 +351,37 @@ describe("openSessionUrl", () => {
     expect(session.sessionId).toBe("sess-target")
   })
 
+  it.each(["http", "ws"] as const)(
+    "opens a live session with a saved turn error via %s and keeps the banner",
+    async (transport) => {
+      const agent = makeAgent({ id: "00000000-0000-4000-8000-000000000004" })
+      listAgentsMock.mockResolvedValue([agent])
+      const view = new MockSessionView()
+      view.connect("sess-target")
+      view.state = {
+        ...view.state,
+        lastTurnError: { message: "refusal", at: 1 },
+        stopReason: "refusal",
+      }
+      vi.mocked(createRemoteView).mockResolvedValue(
+        view as unknown as Awaited<ReturnType<typeof createRemoteView>>,
+      )
+      const session = new AgentSession()
+      const outcome = await openSessionUrl({
+        cliKind: agent.cliKind,
+        sessionId: "sess-target",
+        session,
+        settings: { sessionTransport: transport } as never,
+      })
+
+      expect(session.status).toBe("connected")
+      expect(session.sessionId).toBe("sess-target")
+      expect(session.turnState).toBe("idle")
+      expect(session.error).toBe("prompt failed: refusal")
+      expect(outcome).toBe("connected")
+    },
+  )
+
   it.each([
     [{ agentNotes: "canonical", agentFields: { state: "ready" } }, "canonical", { state: "ready" }],
     [{ userNotes: "legacy", sessionFields: { state: "idle" } }, "legacy", { state: "idle" }],
@@ -434,19 +465,18 @@ describe("openSessionUrl", () => {
         acpSessionId: "sess-target",
       }),
     ])
-    const session = makeSession()
-    session.attachRemoteToLiveAgent.mockImplementation(async () => {
-      session.status = "error"
-      session.error = "reconnect failed"
-    })
+    vi.mocked(createRemoteView).mockRejectedValue(new Error("reconnect failed"))
+    const session = new AgentSession()
 
     expect(
       await openSessionUrl({
         cliKind: "claude",
         sessionId: "sess-target",
-        session: session as never,
+        session,
         settings: { sessionTransport: null } as never,
       }),
     ).toBe("error")
+    expect(session.status).toBe("error")
+    expect(session.error).toBe("reconnect failed")
   })
 })

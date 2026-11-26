@@ -16,8 +16,8 @@ routes:
   - GET /api/agents/:id/state
   - POST /api/agents/:id/rpc
 mcp_tools: [session_send, session_state, agent_send, agent_state]
-docs_version: 1.16.0
-updated: 2026-11-25
+docs_version: 1.17.1
+updated: 2026-11-26
 ---
 
 # Reading output
@@ -35,9 +35,14 @@ The MCP catalog also lists `agent_state` and `agent_send`, whose target input is
 - Default: **`turnState`**, modes, **`configOptions`**, errors — **not** full message logs.
 - **`fields: ["*"]`** for a large snapshot when you accept the payload size.
 
-**session_send** on completion returns **`text`**, **`stopReason`**, **`messagesSince`**, and
-**`lastTurnError`** when the turn ends. On **`noWait`** or timeout → **`{ running: true }`**;
-keep polling.
+**session_send** returns `{ text, stopReason, messagesSince, lastTurnError }` for a completed wait.
+For an ACP v1 result, `stopReason` is exactly `end_turn`, `cancelled`, `refusal`,
+`max_tokens`, or `max_turn_requests`. The first two have `lastTurnError: null`.
+Refusal and limits use `lastTurnError: { message, at }` with the reason as the message.
+A rejected request uses the normalized rejection message in `stopReason` and `lastTurnError.message`.
+
+With `noWait: true`, or when the wait reaches `timeoutSec` (default 1800 seconds),
+the response is `{ running: true }`. Follow the turn through state or the session stream.
 
 ## One-shot HTTP snapshot
 
@@ -106,6 +111,12 @@ Status codes:
 
 Design: subscribe after snapshot so replay excludes patches already in frame-zero.
 
+For a completed ACP v1 turn, the live `state_update` with `state: "idle"` and
+the next snapshot's idle update carry the same `stopReason`. Use
+`_meta["_drive/at"]` on that update for the recorded error timestamp when present.
+The live `_drive/agent_event` notification for `turn-ended` carries the agent ID
+and the same reason.
+
 In snapshots and live updates, `current_mode_update` may include
 `_meta["_drive/availableModes"]`, the non-empty list of available modes reported
 by the CLI. Each entry has an `id` and `name` and may have a `description`.
@@ -141,11 +152,14 @@ creation, so changes apply to new hosts.
 
 Fire-and-forget (**202** `{ version }`) for prompt/cancel/config when **`waitMs`** is 0 or omitted.
 
-With **`waitMs` 1..60000** on prompt-like methods:
+With **`waitMs` 1..60000** on `session/prompt`, HTTP **200** carries one of these bodies.
 
-- **200** success: `{ version, ok: true, timedOut: false, messagesSince?, result? }`
-- **200** turn failure: `{ ok: false, timedOut: false, error, messagesSince? }`
-- **200** timeout: `{ ok: false, timedOut: true }` — **turn continues**; use SSE/history.
+- ACP v1 completion returns `{ version, ok: true, timedOut: false, messagesSince, stopReason }`.
+  `ok: true` means an ACP result arrived, including results with a refusal or limit.
+- Request rejection returns `{ version, ok: false, timedOut: false, error, messagesSince }`.
+  `error` includes `message` and carries `code` when available.
+- Wait timeout returns `{ version, ok: false, timedOut: true }`. The turn continues.
+  Follow its result through SSE or history.
 
 Invalid **`waitMs`** (non-integer, negative, **> 60000**) → **400** — not clamped.
 

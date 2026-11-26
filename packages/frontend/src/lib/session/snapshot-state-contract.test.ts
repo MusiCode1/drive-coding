@@ -70,6 +70,7 @@ const sampledState = {
   title: "Review",
   commands: [{ name: "help", description: "Show help" }],
   lastTurnError: null,
+  stopReason: undefined,
 } satisfies SessionState
 
 const internalFields = {
@@ -127,6 +128,15 @@ describe("session snapshot state contract", () => {
       lastTurnError: { message: "Prompt failed", at: 1234 },
     }
     checkSnapshot(failed, snapshotPayload(failed))
+  })
+
+  it("round-trips an idle cancellation and its exact stop reason", () => {
+    const cancelled: SessionState = {
+      ...sampledState,
+      turnState: "idle",
+      stopReason: "cancelled",
+    }
+    checkSnapshot(cancelled, snapshotPayload(cancelled))
   })
 
   it("fails the same check when the mode update is omitted", () => {

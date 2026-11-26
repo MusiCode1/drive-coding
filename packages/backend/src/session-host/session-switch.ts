@@ -2,6 +2,7 @@ import type { CreateElicitationResponse, RequestPermissionResponse } from "@agen
 import { applyPatch, type Patch, type SessionState } from "@drive-coding/core/session"
 
 type Transcript = Pick<SessionState, "messages" | "nextMessageSeq" | "nextSegmentSeq" | "carried">
+type SwitchSnapshot = Transcript & Pick<SessionState, "lastTurnError" | "stopReason">
 
 interface SessionSwitchDeps {
   state: SessionState
@@ -56,12 +57,16 @@ export function createSessionSwitch(deps: SessionSwitchDeps) {
       nextMessageSeq,
       nextSegmentSeq,
       carried,
+      lastTurnError,
+      stopReason,
     } = deps.state
-    const snapshot: Transcript = {
+    const snapshot: SwitchSnapshot = {
       messages,
       nextMessageSeq,
       nextSegmentSeq,
       carried: carried ?? [],
+      lastTurnError,
+      ...(stopReason !== undefined ? { stopReason } : {}),
     }
     applyAndEmit({
       op: "reset",
@@ -73,13 +78,22 @@ export function createSessionSwitch(deps: SessionSwitchDeps) {
     return { oldSessionId, preResetConfigOptions, snapshot }
   }
 
-  function rollbackSessionSwitch(oldSessionId: string | null, snapshot: Transcript): void {
+  function rollbackSessionSwitch(
+    oldSessionId: string | null,
+    { lastTurnError, stopReason, ...transcript }: SwitchSnapshot,
+  ): void {
     deps.state = { ...deps.state, sessionId: oldSessionId }
-    applyAndEmit({ op: "reset", version: deps.state.version + 1, ...snapshot })
+    applyAndEmit({ op: "reset", version: deps.state.version + 1, ...transcript })
     applyAndEmit({
       op: "update-session",
       version: deps.state.version + 1,
-      changes: { turnState: "idle" },
+      changes: {
+        turnState: "idle",
+        lastTurnError,
+        ...(stopReason !== undefined || deps.state.stopReason != null
+          ? { stopReason: stopReason ?? null }
+          : {}),
+      },
     })
   }
 

@@ -442,6 +442,23 @@ describe("applyTurnStart", () => {
 })
 
 describe("applyTurnEnd", () => {
+  it("keeps an explicit cancellation in the idle patch and clears it on the next turn", () => {
+    const waiting = applyTurnStart(createInitialSessionState({ sessionId: "s1" })).state
+    const cancelled = applyTurnEnd(waiting, undefined, "cancelled")
+    expect(cancelled.patches).toEqual([
+      {
+        version: waiting.version + 1,
+        op: "update-session",
+        changes: { turnState: "idle", stopReason: "cancelled", lastTurnError: null },
+      },
+    ])
+    expect(cancelled.patches.reduce(applyPatch, waiting)).toEqual(cancelled.state)
+    expect(applyTurnEnd(cancelled.state)).toEqual({ state: cancelled.state, patches: [] })
+    expect(applyTurnStart(cancelled.state).patches[0]).toMatchObject({
+      changes: { turnState: "waiting", stopReason: null },
+    })
+  })
+
   it("no error, on state in waiting → turnState idle, lastTurnError null", () => {
     const s0 = { ...createInitialSessionState({ sessionId: null }), turnState: "waiting" as const }
     const { state, patches } = applyTurnEnd(s0)

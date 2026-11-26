@@ -17,8 +17,8 @@ ext_methods:
   - _drive/voice/stop
   - _drive/voice/listVoices
   - _drive/voice/speak
-docs_version: 1.15.0
-updated: 2026-11-25
+docs_version: 1.17.1
+updated: 2026-11-26
 ---
 
 # Agent session RPC
@@ -149,8 +149,16 @@ Six methods honor optional top-level `waitMs` (1–60000) on the HTTP handler (`
 - `session/prompt` · `session/cancel` · `session/set_mode` · `session/set_config_option` · `_drive/ext` · `_drive/set_session_model`
 
 Without `waitMs` (or `0`), those six return **`202`** with `{ version }` only (`dispatchRpcBody`).
-With valid `waitMs`, the handler waits and returns **`200`** result bodies (or **`200`** `{ ok: false, timedOut: true }` on timeout — `respondRpcWait`).
+With valid `waitMs`, the handler waits and returns **`200`**. On timeout the body is
+`{ version, ok: false, timedOut: true }` and the operation keeps running.
 Invalid `waitMs` on those six → **`400`** `{ error: "invalid waitMs" }` (`dispatchRpcBody`).
+
+For `session/prompt` on ACP v1, a completed wait returns
+`{ version, ok: true, timedOut: false, messagesSince, stopReason }`. The
+`stopReason` is `end_turn`, `cancelled`, `refusal`, `max_tokens`, or
+`max_turn_requests`. `ok: true` means the agent returned a result and applies
+to all five reasons. A rejected prompt returns
+`{ version, ok: false, timedOut: false, messagesSince, error: { message, code? } }`.
 
 Management methods (`session/list`, `session/load`, `session/new`, `session/delete`) **ignore** `waitMs` and return method-specific status codes. Any **`session/load`** while a turn is active returns **`409`** with `{ error, code: "session_busy" }`. The active turn continues. **`session/new`** is still allowed during a turn.
 

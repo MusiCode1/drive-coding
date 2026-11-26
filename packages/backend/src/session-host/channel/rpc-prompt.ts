@@ -100,6 +100,12 @@ export async function dispatchRpcPrompt(
   return {
     kind: "json",
     status: 200,
-    body: { version: host.state.version, ok: true, timedOut: false, messagesSince },
+    body: {
+      version: host.state.version,
+      ok: true,
+      timedOut: false,
+      messagesSince,
+      stopReason: raced.value.stopReason,
+    },
   }
 }
