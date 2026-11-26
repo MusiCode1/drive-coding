@@ -15,11 +15,9 @@
  *
  * ─── Deliberately a pipe, not an agent host ──────────────────────────────────
  *
- * Decision א of the sidecar design: **zero ACP parsing here.** Bytes from the
- * socket go to the child's stdin, bytes from the child's stdout go to the
- * socket. The one exception is `_drive/ping`, which `listenUnix` answers at the
- * transport boundary and never forwards — so the CLI never sees a method it
- * does not know.
+ * ACP lines pass through the relay unchanged. A bounded tap learns the image
+ * flag from the first initialize exchange. The transport answers `_drive/ping`
+ * with identity and the learned flag without forwarding the ping to the CLI.
  *
  * Session state, ownership and turn tracking stay in the backend, which already
  * owns them. A sidecar that also held them would be a second source of truth
@@ -41,7 +39,7 @@
  */
 
 import { dirname } from "node:path"
-import { listenUnix } from "@drive-coding/acp-wire/node"
+import { type AcpTransport, listenUnix } from "@drive-coding/acp-wire/node"
 import { createLogger, initLogger, parseEnvConfig } from "@drive-coding/core/log"
 import { removeAgentFiles, writeAgentMeta } from "../agents/agent-sockets.js"
 import { consumeSidecarAgentEnv } from "../agents/sidecar-agent-env.js"
@@ -51,6 +49,7 @@ import {
   lineSplitter,
   type SidecarMode,
 } from "../agents/sidecar-backend.js"
+import { createInitializeCapabilitiesTap } from "../agents/sidecar-initialize-capabilities.js"
 
 const agentEnv = import.meta.main ? consumeSidecarAgentEnv(process.env) : undefined
 
@@ -101,6 +100,7 @@ export async function runSidecar(args: Args): Promise<void> {
   log.info({ agentId: args.agentId, cliKind: args.cliKind, mode }, "backend ready")
 
   const handle = await listenUnix(args.socket)
+  const initialize = createInitializeCapabilitiesTap<AcpTransport>()
   const startedAt = new Date().toISOString()
 
   // Describe ourselves next to the socket, so the directory can be read without
@@ -119,21 +119,26 @@ export async function runSidecar(args: Args): Promise<void> {
   // one a caller means when it says "the agent's process". `cliPid` is the CLI
   // underneath, useful for diagnostics and for nothing else: it is our child,
   // so signalling it from outside would bypass the sidecar's own teardown.
-  handle.onPing(() => ({
-    agentId: args.agentId,
-    cliKind: args.cliKind,
-    cwd: args.cwd,
-    pid: process.pid,
-    cliPid: backend.cliPid,
-    mode: backend.mode,
-    startedAt,
-    hasOwner: handle.current() !== undefined,
-  }))
+  handle.onPing(() => {
+    const initCapabilities = initialize.capabilities
+    return {
+      agentId: args.agentId,
+      cliKind: args.cliKind,
+      cwd: args.cwd,
+      pid: process.pid,
+      cliPid: backend.cliPid,
+      mode: backend.mode,
+      startedAt,
+      hasOwner: handle.current() !== undefined,
+      ...(initCapabilities === undefined ? {} : { initCapabilities }),
+    }
+  })
   log.info({ socket: args.socket }, "listening")
 
   // Agent → whoever currently owns the socket. No owner ⇒ dropped (see above).
   backend.onLine((line) => {
     const peer = handle.current()
+    initialize.onResponse(peer, line)
     if (peer === undefined) return
     const w = peer.writable.getWriter()
     void w.write(new TextEncoder().encode(`${line}\n`)).catch(() => {
@@ -144,10 +149,14 @@ export async function runSidecar(args: Args): Promise<void> {
 
   // Owner → child. A replacement peer re-subscribes; the old reader ends with it.
   handle.onAccept((peer) => {
+    initialize.onAccept(peer)
     void (async () => {
       const reader = peer.readable.getReader()
       const decoder = new TextDecoder()
-      const inbound = lineSplitter((line) => backend.write(line))
+      const inbound = lineSplitter((line) => {
+        initialize.onRequest(peer, handle.current(), line)
+        backend.write(line)
+      })
       try {
         for (;;) {
           const { done, value } = await reader.read()

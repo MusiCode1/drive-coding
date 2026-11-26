@@ -25,13 +25,14 @@
  * answer a real quota snapshot and `{ok:true}`.
  */
 
+import { lstatSync, statSync } from "node:fs"
 import { configDefault } from "@drive-coding/core/config/specs"
 import { createLogger } from "@drive-coding/core/log"
 import type { ConnectOpts, ProviderConnection } from "@drive-coding/provider/connection"
 import { connectSidecar } from "@drive-coding/provider/connection"
 import type { SpawnBridgeInput } from "@drive-coding/provider/spawn"
 import { type LaunchOpts, launchOrAttachAgent } from "../agents/agent-launcher.js"
-import { probeAgentSocket } from "../agents/agent-sockets.js"
+import { agentSocketPath, probeAgentSocket } from "../agents/agent-sockets.js"
 import { deploymentDir, ensureDeploymentDir } from "../agents/deployment-dir.js"
 
 const log = createLogger("backend.acp.sidecar")
@@ -82,6 +83,31 @@ export class RestoreSidecarGone extends Error {
   }
 }
 
+/** Compare the private deployment path before probing and after connecting. */
+function socketGeneration(dir: string, path: string): string | undefined {
+  try {
+    const directory = statSync(dir, { bigint: true })
+    const socket = lstatSync(path, { bigint: true })
+    if (!directory.isDirectory() || !socket.isSocket()) return undefined
+    return [
+      directory.dev,
+      directory.ino,
+      socket.dev,
+      socket.ino,
+      socket.ctimeNs,
+      socket.birthtimeNs,
+    ].join(":")
+  } catch {
+    return undefined
+  }
+}
+
+function isCanonicalTimestamp(value: unknown): boolean {
+  if (typeof value !== "string") return false
+  const time = Date.parse(value)
+  return Number.isFinite(time) && new Date(time).toISOString() === value
+}
+
 /**
  * Launch (or attach to) the agent's sidecar and return a ProviderConnection.
  *
@@ -96,6 +122,8 @@ export async function connectViaSidecar(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ProviderConnection> {
   const socketDir = ensureDeploymentDir(socketDirForEnv(env))
+  const socket = agentSocketPath(socketDir, agentId)
+  const generation = socketGeneration(socketDir, socket)
   const launched = await launchOrAttachAgent({
     agentId,
     cliKind,
@@ -112,9 +140,25 @@ export async function connectViaSidecar(
   }
 
   let sidecarPid: number | null = null
+  let resolveAttachedImage: (() => boolean | undefined) | undefined
   if (launched.kind === "attached") {
-    const pid = launched.probe.state === "alive" ? launched.probe.info?.pid : undefined
+    const info = launched.probe.state === "alive" ? launched.probe.info : undefined
+    const pid = info?.pid
     sidecarPid = typeof pid === "number" ? pid : null
+    const image = info?.initCapabilities?.image
+    if (
+      typeof image === "boolean" &&
+      generation !== undefined &&
+      info?.agentId === agentId &&
+      info.cliKind === cliKind &&
+      typeof pid === "number" &&
+      Number.isInteger(pid) &&
+      pid > 0 &&
+      isCanonicalTimestamp(info.startedAt)
+    ) {
+      resolveAttachedImage = () =>
+        socketGeneration(socketDir, launched.socket) === generation ? image : undefined
+    }
   } else {
     // Freshly launched: systemd-run returns as soon as the unit is queued, so
     // the socket does not exist yet. Poll the ping rather than the file — a
@@ -135,5 +179,5 @@ export async function connectViaSidecar(
   }
 
   log.info({ agentId, cliKind, how: launched.kind, sidecarPid }, "connected via sidecar")
-  return connectSidecar({ socketPath: launched.socket, cliKind, sidecarPid })
+  return connectSidecar({ socketPath: launched.socket, cliKind, sidecarPid, resolveAttachedImage })
 }

@@ -47,7 +47,10 @@ import { connect } from "node:net"
 import { join } from "node:path"
 import { decodePing, decodePong, encodePing, type PingInfo } from "@drive-coding/acp-wire"
 import { createLogger } from "@drive-coding/core/log"
-import { getStateDir } from "../paths.js"
+import {
+  MAX_SIDECAR_CONTROL_BYTES,
+  SidecarInitCapabilities,
+} from "./sidecar-initialize-capabilities.js"
 
 const log = createLogger("backend.agents.sockets")
 
@@ -84,11 +87,8 @@ export class SocketPathTooLongError extends Error {
  * With this the snapshot stops being load-bearing for identity. "Live socket
  * with no record" stops being a category, because the record is right there.
  *
- * ⚠️ No sessionId here, deliberately. The sidecar is a pipe and does not parse
- * ACP (design decision א), so it never learns one — and a session id is the part
- * that changes, while a file next to a socket should describe what is stable.
- * The session id stays in the registry snapshot, which is written by the side
- * that actually knows it.
+ * The session id stays in the backend's registry snapshot. The optional image
+ * capability is held in memory by the sidecar and sent in its pong.
  */
 export type AgentSocketMeta = {
   agentId: string
@@ -171,9 +171,11 @@ export function listAgentSockets(dir: string): string[] {
     .map((n) => n.slice(0, -SOCKET_SUFFIX.length))
 }
 
+type SidecarPingInfo = PingInfo & { initCapabilities?: typeof SidecarInitCapabilities.infer }
+
 export type SocketProbe =
   /** Connected, and the peer answered `_drive/ping`. */
-  | { state: "alive"; info?: PingInfo }
+  | { state: "alive"; info?: SidecarPingInfo }
   /** Connected, but no pong within the budget — bound and not responding. */
   | { state: "wedged" }
   /** ECONNREFUSED — the file outlived its process; it was unlinked. */
@@ -191,6 +193,27 @@ export type SocketProbe =
    */
   | { state: "unknown"; code?: string }
 
+function decodeProbePong(line: string, id: string): SocketProbe | undefined {
+  const pong = decodePong(line, id)
+  if (pong === null) return undefined
+  if (pong.info === undefined) return { state: "alive" }
+  if (pong.info?.initCapabilities === undefined) return { state: "alive", info: pong.info }
+
+  // Preserve the legacy decoder's liveness verdict and validate the envelope
+  // independently before using the optional capability.
+  const { initCapabilities, ...info } = pong.info
+  const envelope = JSON.parse(line.trim()) as Record<string, unknown>
+  if (
+    envelope.jsonrpc === "2.0" &&
+    !("method" in envelope) &&
+    !("error" in envelope) &&
+    SidecarInitCapabilities.allows(initCapabilities)
+  ) {
+    return { state: "alive", info: { ...info, initCapabilities } }
+  }
+  return { state: "alive", info }
+}
+
 /**
  * Probe one socket. Never throws.
  *
@@ -203,7 +226,9 @@ export function probeAgentSocket(path: string, timeoutMs = 1000): Promise<Socket
   return new Promise((resolve) => {
     const id = `probe-${Date.now()}`
     let done = false
-    let buffered = ""
+    let buffer: Buffer | undefined
+    let received = 0
+    let lineStart = 0
 
     const sock = connect(path)
     const finish = (result: SocketProbe): void => {
@@ -219,20 +244,29 @@ export function probeAgentSocket(path: string, timeoutMs = 1000): Promise<Socket
 
     sock.on("connect", () => sock.write(encodePing(id)))
     sock.on("data", (chunk: Buffer) => {
-      buffered += chunk.toString("utf8")
-      let nl = buffered.indexOf("\n")
-      while (nl !== -1) {
-        const line = buffered.slice(0, nl)
-        buffered = buffered.slice(nl + 1)
-        const pong = decodePong(line, id)
-        if (pong !== null) {
-          finish(pong.info === undefined ? { state: "alive" } : { state: "alive", info: pong.info })
+      if (done) return
+      buffer ??= Buffer.allocUnsafe(MAX_SIDECAR_CONTROL_BYTES)
+      const withinBudget = chunk.subarray(0, MAX_SIDECAR_CONTROL_BYTES - received)
+      const chunkStart = received
+      withinBudget.copy(buffer, chunkStart)
+      received += withinBudget.length
+      for (
+        let nl = withinBudget.indexOf(0x0a);
+        nl !== -1;
+        nl = withinBudget.indexOf(0x0a, nl + 1)
+      ) {
+        const lineEnd = chunkStart + nl
+        const pong = decodeProbePong(buffer.toString("utf8", lineStart, lineEnd), id)
+        if (pong !== undefined) {
+          finish(pong)
           return
         }
-        nl = buffered.indexOf("\n")
+        lineStart = lineEnd + 1
       }
+      if (received === MAX_SIDECAR_CONTROL_BYTES) finish({ state: "wedged" })
     })
     sock.on("error", (err) => {
+      if (done) return
       const code = (err as NodeJS.ErrnoException).code
       if (code === "ECONNREFUSED") {
         // The listener is gone; the inode is not. Remove it so the next scan
