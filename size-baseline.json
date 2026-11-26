@@ -644,10 +644,10 @@
       "codeLines": 135
     },
     "packages/frontend/src/lib/components/connect/ActiveProcessesPanel.svelte": {
-      "metric": 46,
+      "metric": 48,
       "impurity": 2,
       "class": "mixed",
-      "codeLines": 162
+      "codeLines": 172
     },
     "packages/frontend/src/lib/components/connect/CwdPathCombo.svelte": {
       "metric": 97,
