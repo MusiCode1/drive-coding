@@ -34,7 +34,7 @@ export const he: Catalog = {
   "chat.error.dismiss": "סגור שגיאה",
   "chat.prompt.placeholder": "כתוב prompt…",
   "chat.prompt.sessionMismatch": "לא נשלח — השיחה הוחלפה",
-  "chat.prompt.deliveryUnknown": "לא ניתן לאשר אם ההודעה נשלחה",
+  "chat.prompt.deliveryUnknown": "לא ידוע אם נמסר",
   "chat.prompt.notStarted": "ההודעה טרם נשלחה",
   "chat.prompt.rejected": "שליחת ההודעה נדחתה",
   "chat.prompt.retry": "נסה לשלוח שוב",

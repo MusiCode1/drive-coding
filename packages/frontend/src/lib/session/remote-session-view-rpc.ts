@@ -114,6 +114,9 @@ export async function remoteDeleteSession(
     err.code = -32601
     throw err
   }
+  if (res?.ok !== true) {
+    throw new Error("RemoteSessionView: deleteSession response did not confirm deletion")
+  }
 }
 
 export async function remotePrompt(

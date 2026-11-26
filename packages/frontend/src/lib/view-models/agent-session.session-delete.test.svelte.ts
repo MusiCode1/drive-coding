@@ -171,13 +171,15 @@ describe("session deletion through the backend session view", () => {
     expect(await store.load(owner(current))).toEqual(saved.record)
   })
 
-  it("retains the source and receipt for unsupported and failed ACP delete", async () => {
+  it("retains the source and receipt unless ACP delete is confirmed", async () => {
     const key = owner(other)
     const adopted = await store.adopt(key, promptPayload("synthetic inactive"), { recordCaptureId: "record" })
     if (adopted.kind !== "claimed") throw new Error("Missing fixture claim")
     for (const response of [
       Response.json({ ok: false, unsupported: true }),
       Response.json({ error: "synthetic failure" }, { status: 502 }),
+      Response.json({}),
+      Response.json({ ok: false }),
     ]) {
       deletedResponse = response
       await expect(session.deleteSession(other)).resolves.toBe(false)
