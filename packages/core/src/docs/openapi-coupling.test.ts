@@ -106,6 +106,21 @@ describe("openapi and RPC doc coupling", () => {
     expect(keys("delete", "/api/agents/:id")).toEqual(["204", "404"])
   })
 
+  it("publishes both RPC conflict codes in the schema and prose", () => {
+    const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8"))
+    const rpc = spec.paths["/api/agents/:id/rpc"].post.responses
+    const schema = rpc["409"].content["application/json"].schema
+    expect(schema.properties).toEqual({
+      error: { type: "string" },
+      code: { enum: ["session_busy", "prompt_session_mismatch"] },
+    })
+    expect(schema.required).toEqual(["error", "code"])
+    expect(rpc["202"].content["application/json"].schema.required).toEqual(["version"])
+    const doc = fs.readFileSync(RPC_DOC, "utf8")
+    expect(doc).toContain('code: "session_busy"')
+    expect(doc).toContain('code: "prompt_session_mismatch"')
+  })
+
   it("openapi.json status codes match agent docs HTTP handlers", () => {
     const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8")) as {
       paths: Record<string, Record<string, { responses?: Record<string, unknown> }>>

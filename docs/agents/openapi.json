@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.17.0",
+    "version": "1.18.0",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
@@ -1398,7 +1398,7 @@
             }
           },
           "409": {
-            "description": "any session/load while a turn is active",
+            "description": "Session load while a turn is active or prompt target mismatch before dispatch",
             "content": {
               "application/json": {
                 "schema": {
@@ -1408,7 +1408,7 @@
                       "type": "string"
                     },
                     "code": {
-                      "const": "session_busy"
+                      "enum": ["session_busy", "prompt_session_mismatch"]
                     }
                   },
                   "required": ["error", "code"]

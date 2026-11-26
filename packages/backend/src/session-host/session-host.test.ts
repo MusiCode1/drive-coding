@@ -14,9 +14,11 @@
 import { describe, expect, it, vi } from "vitest"
 import type { SessionNotification } from "@agentclientprotocol/sdk"
 import type { AcpClient, AcpClientCallbacks } from "@drive-coding/provider/client"
+import type { ProviderConnection } from "@drive-coding/provider/connection"
 import type { SessionState, Patch } from "@drive-coding/core/session"
 import { createInitialSessionState } from "@drive-coding/core/session"
-import { createSessionHost } from "./session-host.js"
+import { dispatchRpcPrompt } from "./channel/rpc-prompt.js"
+import { createSessionHost, createSessionHostFromConnection } from "./session-host.js"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -375,5 +377,116 @@ describe("SessionHost — dispose() (handoff-foundations C1)", () => {
     const { done } = await reader.read()
     reader.releaseLock()
     expect(done).toBe(true)
+  })
+})
+
+async function setupRpcPromptHost() {
+  const conn = {
+    wire: { onLine: () => () => {}, write: vi.fn(() => true) },
+    onCrash: () => () => {},
+  } as unknown as ProviderConnection
+  const client = {
+    ...makeMockAcpClient(),
+    capabilities: {},
+    newSession: vi
+      .fn()
+      .mockResolvedValueOnce({ sessionId: "A" })
+      .mockResolvedValue({ sessionId: "B" }),
+    loadSession: vi.fn().mockResolvedValue({ sessionId: "B" }),
+  }
+  const onTurnEnded = vi.fn()
+  const host = await createSessionHostFromConnection(conn, {
+    _createAcpClient: async () => client as unknown as AcpClient,
+    onTurnEnded,
+  })
+  await host.newSession({ cwd: "/test" })
+  const prompt = (sessionId: string, waitMs: number | null = null) =>
+    dispatchRpcPrompt(host, sessionId, "hello", { recordingId: "" }, waitMs, undefined, {
+      token: undefined,
+      targetId: "agent",
+    })
+  return { host, client, prompt, onTurnEnded }
+}
+
+describe("RPC prompts during session switches", () => {
+  it.each(["new", "load"])("rejects the old ID in the real %s pre-flip window", async (operation) => {
+    const { host, client, prompt, onTurnEnded } = await setupRpcPromptHost()
+    try {
+      const permission = host.requestScopePermission({
+        callerId: "caller",
+        targetId: "agent",
+        verb: "send",
+      })
+      expect(host.state.pending.permission).not.toBeNull()
+
+      const switching =
+        operation === "new"
+          ? host.newSession({ cwd: "/test" })
+          : host.loadSession({ cwd: "/test", sessionId: "B" })
+      const beforePrompt = host.state
+      expect(beforePrompt.sessionId).toBe("A")
+      expect(host.isSessionSwitchPreFlip).toBe(true)
+
+      const stale = prompt("A", 100)
+      expect(host.state).toBe(beforePrompt)
+      expect(host.getTurnStartedAt()).toBe(0)
+      expect(client.prompt).not.toHaveBeenCalled()
+      expect(await stale).toEqual({
+        kind: "json",
+        status: 409,
+        body: {
+          error: "Prompt session no longer matches the active session",
+          code: "prompt_session_mismatch",
+        },
+      })
+      await switching
+      expect(await permission).toBe("deny")
+      expect(onTurnEnded).not.toHaveBeenCalled()
+      const patches = await drainPatches(host)
+      expect(patches.some((patch) => patch.op === "add-message")).toBe(false)
+      expect(
+        patches.some((patch) => patch.op === "update-session" && patch.changes.turnState === "waiting"),
+      ).toBe(false)
+
+      expect(host.state.sessionId).toBe("B")
+      expect(host.isSessionSwitchPreFlip).toBe(false)
+      expect(await prompt("B")).toEqual({ kind: "accepted" })
+      expect(client.prompt).toHaveBeenCalledExactlyOnceWith("B", "hello")
+    } finally {
+      await host.dispose()
+    }
+  })
+
+  it("keeps a late error from an already accepted prompt out of the next session's turn", async () => {
+    const { host, client, prompt, onTurnEnded } = await setupRpcPromptHost()
+    let rejectA: (error: Error) => void = () => {}
+    let finishB: () => void = () => {}
+    const promptA = new Promise<void>((_, reject) => {
+      rejectA = reject
+    })
+    const promptB = new Promise<void>((resolve) => {
+      finishB = resolve
+    })
+    client.prompt.mockReturnValueOnce(promptA).mockReturnValueOnce(promptB)
+    try {
+      expect(await prompt("A")).toEqual({ kind: "accepted" })
+      await host.newSession({ cwd: "/test" })
+      expect(await prompt("B")).toEqual({ kind: "accepted" })
+      const runningB = host.state
+      expect(runningB.turnState).toBe("waiting")
+      expect(runningB.messages).toHaveLength(1)
+      rejectA(new Error("late A failure"))
+      await expect(promptA).rejects.toThrow("late A failure")
+      expect(host.state).toBe(runningB)
+      expect(onTurnEnded).not.toHaveBeenCalled()
+      finishB()
+      await promptB
+      expect(onTurnEnded).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ acpSessionId: "B" }),
+      )
+    } finally {
+      finishB()
+      await host.dispose()
+    }
   })
 })

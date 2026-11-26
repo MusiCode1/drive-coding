@@ -13,6 +13,7 @@ import {
   wrapPromptContent,
 } from "../../delivery/drive-message-source.js"
 import type { ExtendedSessionHost } from "../session-host.js"
+import { SWITCHING_SESSION_ID } from "../session-switch.js"
 import { codeOf, messageOf } from "./rpc-respond-wait.js"
 import { raceKeepRunning } from "./rpc-wait.js"
 
@@ -39,6 +40,7 @@ export const PromptParams = type({
 export type RpcPromptOutcome =
   | { kind: "accepted" }
   | { kind: "json"; status: 200; body: Record<string, unknown> }
+  | { kind: "json"; status: 409; body: { error: string; code: "prompt_session_mismatch" } }
 
 /** Resolve caller identity only for session/prompt (after params validation). */
 export async function resolveCallerSenderForPrompt(
@@ -61,6 +63,22 @@ export async function dispatchRpcPrompt(
   sender: ResolvedSender | undefined,
   scope: { token: string | undefined; targetId: string },
 ): Promise<RpcPromptOutcome> {
+  // Caller lookup has completed. Read the live target and start the prompt in the same tick.
+  const activeSessionId = host.state.sessionId
+  if (
+    activeSessionId !== sessionId ||
+    activeSessionId === SWITCHING_SESSION_ID ||
+    host.isSessionSwitchPreFlip === true
+  ) {
+    return {
+      kind: "json",
+      status: 409,
+      body: {
+        error: "Prompt session no longer matches the active session",
+        code: "prompt_session_mismatch",
+      },
+    }
+  }
   const wrapped = wrapPromptContent(sender, content)
   const from = waitMs === null ? 0 : host.state.messages.length
   recordPromptDispatch(scope.token, scope.targetId)

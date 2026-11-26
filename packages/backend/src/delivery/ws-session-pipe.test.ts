@@ -224,6 +224,54 @@ it("answers a request sent immediately, before the viewer receives a snapshot", 
   }
 })
 
+it.each([undefined, 0, 50])("returns a correlated prompt conflict with waitMs %s", async (waitMs) => {
+  const h = await setup()
+  const socket = new Socket()
+  const done = h.start(socket)
+  try {
+    await vi.waitFor(() => expect(socket.frames[0]?.event).toBe("snapshot"))
+    const switched = { ...h.host.state, sessionId: "other-session" }
+    h.host.state = switched
+    socket.request(1, WS_RPC_METHOD, { ...promptBody, waitMs })
+    await vi.waitFor(() =>
+      expect(socket.messages).toContainEqual({
+        kind: "response",
+        response: {
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            status: 409,
+            body: {
+              error: "Prompt session no longer matches the active session",
+              code: "prompt_session_mismatch",
+            },
+          },
+        },
+      }),
+    )
+    expect(h.host.prompt).not.toHaveBeenCalled()
+    expect(h.host.state).toBe(switched)
+    expect(socket.frames.map((frame) => frame.event)).toEqual(["snapshot"])
+    expect(socket.close).not.toHaveBeenCalled()
+
+    socket.request(2, WS_RPC_METHOD, {
+      method: "prompt",
+      params: { ...promptBody.params, sessionId: "other-session" },
+    })
+    await vi.waitFor(() =>
+      expect(socket.messages).toContainEqual({
+        kind: "response",
+        response: { jsonrpc: "2.0", id: 2, result: { status: 202, body: { version: 0 } } },
+      }),
+    )
+    expect(h.host.prompt).toHaveBeenCalledExactlyOnceWith("other-session", "Hi", undefined)
+  } finally {
+    socket.close()
+    await done
+    await h.stop()
+  }
+})
+
 it.each(["detach", "close", "error"])("cancels an opening viewer on %s", async (event) => {
   const h = await setup({ delayed: true })
   const socket = new Socket()

@@ -290,12 +290,15 @@ const SPECIAL = {
       401: jsonErrorResponse("Agent authentication required (auth_required, with authMethods)"),
       404: jsonErrorResponse("Agent connection not found"),
       409: {
-        description: "any session/load while a turn is active",
+        description: "Session load while a turn is active or prompt target mismatch before dispatch",
         content: {
           "application/json": {
             schema: {
               type: "object",
-              properties: { error: { type: "string" }, code: { const: "session_busy" } },
+              properties: {
+                error: { type: "string" },
+                code: { enum: ["session_busy", "prompt_session_mismatch"] },
+              },
               required: ["error", "code"],
             },
           },

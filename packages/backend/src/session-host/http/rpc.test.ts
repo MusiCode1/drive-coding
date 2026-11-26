@@ -24,7 +24,8 @@ import {
   createInitialSessionState,
   synthesizeUserMessage,
 } from "@drive-coding/core/session"
-import type { AcpClient, AcpClientCallbacks, PromptBlocks } from "@drive-coding/provider/client"
+import type { AcpClient, PromptBlocks } from "@drive-coding/provider/client"
+import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { AGENT_ID_HEADER, buildAgentMcpServers } from "../../agent-identity.js"
@@ -34,15 +35,14 @@ import { setSelfBaseUrlForTests } from "../../instances.js"
 import { resetScopePolicyForTests, setScopePolicyOverride } from "../../scope-policy.js"
 import type { PatchesBroadcaster } from "../patches-broadcaster.js"
 import type { AgentSessionRegistry, HostResult } from "../registry.js"
-import type { ExtendedSessionHost } from "../session-host.js"
-import { createSessionHost } from "../session-host.js"
-import { SessionBusyError } from "../session-switch.js"
+import { createSessionHostFromConnection, type ExtendedSessionHost } from "../session-host.js"
+import { SessionBusyError, SWITCHING_SESSION_ID } from "../session-switch.js"
 import { registerRpcRoute } from "./rpc.js"
 
 // ── mock helpers ──────────────────────────────────────────────────────────────
 
-function makeMockState(version = 3): SessionState {
-  return { ...createInitialSessionState({ sessionId: null }), version }
+function makeMockState(version = 3, sessionId: string | null = "s1"): SessionState {
+  return { ...createInitialSessionState({ sessionId }), version }
 }
 
 function makeMockHost(state: SessionState): ExtendedSessionHost {
@@ -233,7 +233,7 @@ describe("POST /api/agents/:id/rpc", () => {
 
   describe("method delegation", () => {
     it("prompt: calls host.prompt with sessionId + content", async () => {
-      const host = makeMockHost(makeMockState())
+      const host = makeMockHost(makeMockState(3, "sess-42"))
       const registry = makeMockRegistry(host, makeMockBroadcaster())
       const app = makeApp(registry)
 
@@ -973,6 +973,53 @@ describe("POST /api/agents/:id/rpc", () => {
   // ─── slice rpc-wait C1: prompt + waitMs ───
 
   describe("prompt waitMs (slice rpc-wait C1)", () => {
+    it.each([
+      { method: "session/prompt", active: "s2", requested: "s1", waitMs: undefined },
+      { method: "prompt", active: null, requested: "s1", waitMs: 0 },
+      { method: "prompt", active: SWITCHING_SESSION_ID, requested: SWITCHING_SESSION_ID, waitMs: 50 },
+    ])("returns 409 for $method while session $active cannot receive the prompt", async ({
+      method,
+      active,
+      requested,
+      waitMs,
+    }) => {
+      const state = makeMockState(3, active)
+      const host = makeMockHost(state)
+      const app = makeApp(makeMockRegistry(host, makeMockBroadcaster()))
+      const payload = {
+        content: [
+          { type: "image", mimeType: "image/png", data: "aGVsbG8=" },
+          { type: "text", text: "inspect this" },
+        ],
+        meta: { recordingId: "" },
+      }
+
+      const response = await postRpc(app, "agent-1", {
+        method,
+        waitMs,
+        params: { ...payload, sessionId: requested },
+      })
+      expect(response.status).toBe(409)
+      expect(await response.json()).toEqual({
+        error: "Prompt session no longer matches the active session",
+        code: "prompt_session_mismatch",
+      })
+      expect(host.prompt).not.toHaveBeenCalled()
+      expect(state.version).toBe(3)
+      expect(state.messages).toEqual([])
+      expect(state.turnState).toBe("idle")
+
+      state.sessionId = "s2"
+      const accepted = await postRpc(app, "agent-1", {
+        method,
+        waitMs: 0,
+        params: { ...payload, sessionId: "s2" },
+      })
+      expect(accepted.status).toBe(202)
+      expect(await accepted.json()).toEqual({ version: 4 })
+      expect(host.prompt).toHaveBeenCalledExactlyOnceWith("s2", payload.content, payload.meta)
+    })
+
     it("without waitMs → 202 regression (byte-for-byte contract)", async () => {
       const state = makeMockState(7)
       const host = makeMockHost(state)
@@ -1105,8 +1152,12 @@ describe("POST /api/agents/:id/rpc", () => {
 
   describe("prompt waitMs integration (real SessionHost)", () => {
     it("messagesSince from real host.prompt synthesizeUserMessage path", async () => {
-      const host = await createSessionHost({
-        createClient: async (_callbacks: AcpClientCallbacks) => {
+      const connection = {
+        wire: { onLine: () => () => {}, write: vi.fn(() => true) },
+        onCrash: () => () => {},
+      } as unknown as ProviderConnection
+      const host = await createSessionHostFromConnection(connection, {
+        _createAcpClient: async () => {
           const mock = {
             newSession: vi.fn().mockResolvedValue({ sessionId: "test-session-id" }),
             loadSession: vi.fn().mockResolvedValue({ sessionId: "test-session-id" }),
@@ -1119,25 +1170,25 @@ describe("POST /api/agents/:id/rpc", () => {
           return mock as unknown as AcpClient
         },
       })
+      await host.newSession({ cwd: "/test" })
 
-      const registry = makeMockRegistry(
-        host as unknown as ExtendedSessionHost,
-        makeMockBroadcaster(),
-      )
-      const app = makeApp(registry)
-
-      const res = await postRpc(app, "agent-1", {
-        method: "prompt",
-        params: { sessionId: "test-session-id", content: "integration hello" },
-        waitMs: 500,
-      })
-      expect(res.status).toBe(200)
-      const json = await res.json()
-      expect(json.ok).toBe(true)
-      expect(json.messagesSince).toHaveLength(1)
-      const first = json.messagesSince?.[0] as { role: string; segments: { text: string }[] }
-      expect(first.role).toBe("user")
-      expect(first.segments[0]?.text).toBe("integration hello")
+      try {
+        const app = makeApp(makeMockRegistry(host, makeMockBroadcaster()))
+        const res = await postRpc(app, "agent-1", {
+          method: "prompt",
+          params: { sessionId: "test-session-id", content: "integration hello" },
+          waitMs: 500,
+        })
+        expect(res.status).toBe(200)
+        const json = await res.json()
+        expect(json.ok).toBe(true)
+        expect(json.messagesSince).toHaveLength(1)
+        const first = json.messagesSince?.[0] as { role: string; segments: { text: string }[] }
+        expect(first.role).toBe("user")
+        expect(first.segments[0]?.text).toBe("integration hello")
+      } finally {
+        await host.dispose()
+      }
     })
   })
 

@@ -3,6 +3,8 @@ import { applyPatch, type Patch, type SessionState } from "@drive-coding/core/se
 
 type Transcript = Pick<SessionState, "messages" | "nextMessageSeq" | "nextSegmentSeq" | "carried">
 
+export const SWITCHING_SESSION_ID = "__drive_switching__"
+
 interface SessionSwitchDeps {
   state: SessionState
   turnLifecycle: { turnSeq: number; cancelledTurn: number }
@@ -17,6 +19,8 @@ export class SessionBusyError extends Error {
 }
 
 export function createSessionSwitch(deps: SessionSwitchDeps) {
+  let preFlipCount = 0
+
   function assertCanLoad(_sessionId: string): void {
     if (deps.state.turnState !== "idle") {
       throw new SessionBusyError("Cannot load a session while a turn is active")
@@ -25,7 +29,8 @@ export function createSessionSwitch(deps: SessionSwitchDeps) {
 
   // Invalidation and reset must stay synchronous with the sessionId flip
   // when nothing is pending. Yielding would admit tails from the previous turn.
-  function beginSessionSwitchInvalidate(): void {
+  function beginPreFlip(): void {
+    preFlipCount++
     deps.turnLifecycle.turnSeq++
     deps.turnLifecycle.cancelledTurn = -1
     deps.bumpQuotaGeneration()
@@ -85,7 +90,13 @@ export function createSessionSwitch(deps: SessionSwitchDeps) {
 
   return {
     assertCanLoad,
-    beginSessionSwitchInvalidate,
+    get isPreFlip() {
+      return preFlipCount > 0
+    },
+    beginPreFlip,
+    endPreFlip() {
+      preFlipCount--
+    },
     cancelOpenPendingSync,
     emitSessionSwitchReset,
     rollbackSessionSwitch,
