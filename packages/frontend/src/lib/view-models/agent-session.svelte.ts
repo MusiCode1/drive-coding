@@ -188,17 +188,10 @@ export class AgentSession {
   status = $state<AgentSessionStatus>("idle")
   /** מה המודל עושה בתור הנוכחי. idle = אין תור פעיל. */
   turnState = $state<TurnState>("idle")
-  #error = $state<string | null>(null)
-  #errorFromTurn = false
-  get error(): string | null {
-    return this.#error
-  }
-  set error(value: string | null) {
-    this.#error = value
-    this.#errorFromTurn = false
-  }
+  error = $state<string | null>(null)
+  #errorFromTurn: string | null = null
   get hasTurnError(): boolean {
-    return this.#errorFromTurn
+    return this.error !== null && this.error === this.#errorFromTurn
   }
   authMethods = $state<ReadonlyArray<GuidanceAuthMethod>>([])
   bubbles = $state<Bubble[]>([])
@@ -537,10 +530,11 @@ export class AgentSession {
 
     // ─── slice view-switch C3-ו.2: lastTurnError → session.error (דו-כיווני, ממוקד) ───
     if (viewState.lastTurnError) {
-      this.#error = `prompt failed: ${viewState.lastTurnError.message}`
-      this.#errorFromTurn = true
-    } else if (this.#errorFromTurn) {
-      this.error = null
+      this.error = `prompt failed: ${viewState.lastTurnError.message}`
+      this.#errorFromTurn = this.error
+    } else {
+      if (this.hasTurnError) this.error = null
+      this.#errorFromTurn = null
     }
   }
 
@@ -725,6 +719,7 @@ export class AgentSession {
     }
     this.#cleanup()
     this.error = null
+    this.#errorFromTurn = null
     this.authMethods = []
     this.#errorSurfaced = false
     this.bubbles = []
