@@ -1408,7 +1408,10 @@
                       "type": "string"
                     },
                     "code": {
-                      "enum": ["session_busy", "prompt_session_mismatch"]
+                      "enum": [
+                        "session_busy",
+                        "prompt_session_mismatch"
+                      ]
                     }
                   },
                   "required": ["error", "code"]
