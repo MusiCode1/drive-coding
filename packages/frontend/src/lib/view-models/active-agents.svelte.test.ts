@@ -10,8 +10,9 @@
  *  - setPersistent(id,true) קורא ל-adapter ואז refresh.
  *  - kill(id) קורא ל-deleteAgent ואז refresh.
  */
-import { describe, expect, it, vi, beforeEach } from "vitest"
+
 import type { AgentPublic } from "@drive-coding/core"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 
 // ─── mock agents-api ──────────────────────────────────────────────────────────
 vi.mock("$lib/adapters/agents-api", () => ({
@@ -20,7 +21,8 @@ vi.mock("$lib/adapters/agents-api", () => ({
   setAgentPersistent: vi.fn(),
 }))
 
-import { listAgents, deleteAgent, setAgentPersistent } from "$lib/adapters/agents-api"
+import { deleteAgent, listAgents, setAgentPersistent } from "$lib/adapters/agents-api"
+import { _setPageHiddenForTest } from "$lib/util/page-visibility.svelte"
 import { ActiveAgents } from "./active-agents.svelte"
 
 const mockListAgents = listAgents as ReturnType<typeof vi.fn>
@@ -137,86 +139,180 @@ describe("ActiveAgents.kill()", () => {
   })
 })
 
-// ─── grouped (slice agent-tree-display C0) ───────────────────────────────────
-
-function flatAgents(vm: ActiveAgents): AgentPublic[] {
-  return vm.grouped.flatMap((g) => [g.root, ...g.children])
+function pendingList() {
+  let resolve: (agents: AgentPublic[]) => void = () => {}
+  const promise = new Promise<AgentPublic[]>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
 }
 
-describe("ActiveAgents.grouped", () => {
-  it("ללא parentAgentId — כל הסוכנים שורשים עם children ריקים (שער 1)", () => {
-    const vm = new ActiveAgents()
-    vm.agents = [makeAgent({ id: "a" }), makeAgent({ id: "b" })]
-
-    expect(vm.grouped).toEqual([
-      { root: vm.agents[0], children: [] },
-      { root: vm.agents[1], children: [] },
+describe("ActiveAgents.tree", () => {
+  it("derives a stable tree once per successful list snapshot", async () => {
+    mockListAgents.mockResolvedValue([
+      makeAgent({ id: "root" }),
+      makeAgent({ id: "child", parentAgentId: "root" }),
+      makeAgent({ id: "grandchild", parentAgentId: "child", busy: true }),
     ])
-  })
-
-  it("הורה + 2 ילדים — שורש אחד עם 2 ילדים (שער 2)", () => {
     const vm = new ActiveAgents()
-    const parent = makeAgent({ id: "p" })
-    const c1 = makeAgent({ id: "c1", parentAgentId: "p" })
-    const c2 = makeAgent({ id: "c2", parentAgentId: "p" })
-    vm.agents = [parent, c1, c2]
+    expect(vm.hasSnapshot).toBe(false)
+    await vm.refresh()
 
-    expect(vm.grouped).toHaveLength(1)
-    expect(vm.grouped[0]?.root.id).toBe("p")
-    expect(vm.grouped[0]?.children.map((c) => c.id)).toEqual(["c1", "c2"])
+    const tree = vm.tree
+    expect(vm.tree).toBe(tree)
+    expect(vm.hasSnapshot).toBe(true)
+    expect(tree.preOrder.map((node) => node.agent.id)).toEqual(["root", "child", "grandchild"])
+    expect(tree.byId.get("root")?.busyDescendantCount).toBe(1)
+
+    mockListAgents.mockRejectedValueOnce(new Error("offline"))
+    await vm.refresh()
+    expect(vm.tree).toBe(tree)
+    expect(vm.hasSnapshot).toBe(true)
+
+    mockListAgents.mockResolvedValue([])
+    await vm.refresh()
+    expect(vm.tree).not.toBe(tree)
+    expect(vm.tree.roots).toEqual([])
+    expect(vm.hasSnapshot).toBe(true)
   })
+})
 
-  it("מעגל-שניים — אף סוכן לא נעלם (שער 3)", () => {
+describe("ActiveAgents shared refresh", () => {
+  it("joins the in-flight home GET and reuses its fresh result on a later mount", async () => {
+    vi.useFakeTimers()
+    const first = pendingList()
+    mockListAgents.mockReturnValueOnce(first.promise).mockResolvedValue([])
     const vm = new ActiveAgents()
-    vm.agents = [
-      makeAgent({ id: "a", parentAgentId: "b" }),
-      makeAgent({ id: "b", parentAgentId: "a" }),
-    ]
-
-    expect(flatAgents(vm)).toHaveLength(2)
-    expect(flatAgents(vm).map((a) => a.id).sort()).toEqual(["a", "b"])
-    for (const g of vm.grouped) {
-      expect(g.children).toEqual([])
+    const home = vm.refresh()
+    const stop = vm.subscribe()
+    try {
+      expect(mockListAgents).toHaveBeenCalledTimes(1)
+      first.resolve([])
+      await home
+      const stopFresh = vm.subscribe()
+      stopFresh()
+      expect(mockListAgents).toHaveBeenCalledTimes(1)
+    } finally {
+      stop()
+      vi.useRealTimers()
     }
   })
 
-  it("מעגל-3 — כל הסוכנים נראים כשורשים-יחידים", () => {
+  it("refreshes upon mount when the previous snapshot is stale", async () => {
+    vi.useFakeTimers()
     const vm = new ActiveAgents()
-    vm.agents = [
-      makeAgent({ id: "a", parentAgentId: "c" }),
-      makeAgent({ id: "b", parentAgentId: "a" }),
-      makeAgent({ id: "c", parentAgentId: "b" }),
-    ]
-
-    expect(flatAgents(vm)).toHaveLength(3)
-    expect(vm.grouped.every((g) => g.children.length === 0)).toBe(true)
+    mockListAgents.mockResolvedValue([])
+    await vm.refresh()
+    vi.setSystemTime(Date.now() + 12_000)
+    const stop = vm.subscribe()
+    try {
+      expect(mockListAgents).toHaveBeenCalledTimes(2)
+      await vm.refresh()
+    } finally {
+      stop()
+      vi.useRealTimers()
+    }
   })
 
-  it("הורה שכבר נסגר — ילד מוצג כשורש (שער 4)", () => {
+  it("keeps one visibility-aware clock until the last subscriber releases it", async () => {
+    vi.useFakeTimers()
+    mockListAgents.mockResolvedValue([])
     const vm = new ActiveAgents()
-    vm.agents = [makeAgent({ id: "child", parentAgentId: "gone" })]
-
-    expect(vm.grouped).toEqual([{ root: vm.agents[0], children: [] }])
+    const refreshMachine = vi.fn()
+    const stopPanel = vm.subscribe(refreshMachine)
+    const stopHeader = vm.subscribe()
+    try {
+      await vm.refresh()
+      expect(mockListAgents).toHaveBeenCalledTimes(1)
+      expect(refreshMachine).toHaveBeenCalledTimes(1)
+      expect(vi.getTimerCount()).toBe(1)
+      stopPanel()
+      _setPageHiddenForTest(true)
+      await vi.advanceTimersByTimeAsync(12_000)
+      expect(mockListAgents).toHaveBeenCalledTimes(1)
+      _setPageHiddenForTest(false)
+      await vi.advanceTimersByTimeAsync(12_000)
+      expect(mockListAgents).toHaveBeenCalledTimes(2)
+      expect(refreshMachine).toHaveBeenCalledTimes(1)
+    } finally {
+      stopHeader()
+      _setPageHiddenForTest(false)
+      vi.useRealTimers()
+    }
   })
 
-  it("self-parent מזוהם — מוצג כשורש (שער 5)", () => {
+  it("clears the timer and retries a failing request on remount", async () => {
+    vi.useFakeTimers()
     const vm = new ActiveAgents()
-    vm.agents = [makeAgent({ id: "x", parentAgentId: "x" })]
+    mockListAgents.mockRejectedValueOnce(new Error("offline")).mockResolvedValue([])
+    try {
+      const stopFirst = vm.subscribe()
+      await vm.refresh()
+      expect(vm.hasSnapshot).toBe(false)
+      stopFirst()
+      expect(vi.getTimerCount()).toBe(0)
 
-    expect(vm.grouped).toEqual([{ root: vm.agents[0], children: [] }])
+      const stopSecond = vm.subscribe()
+      expect(mockListAgents).toHaveBeenCalledTimes(2)
+      await vm.refresh()
+      expect(vm.hasSnapshot).toBe(true)
+      stopSecond()
+      await vi.advanceTimersByTimeAsync(24_000)
+      expect(mockListAgents).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
-  it("שלושה דורות — הנכד שורש נפרד (רמה אחת בלבד)", () => {
+  it("waits for a new list when a slow GET was captured before Kill", async () => {
+    const stale = pendingList()
+    const updated = pendingList()
+    mockListAgents.mockReturnValueOnce(stale.promise).mockReturnValueOnce(updated.promise)
+    mockDeleteAgent.mockResolvedValue(undefined)
     const vm = new ActiveAgents()
-    const parent = makeAgent({ id: "p" })
-    const child = makeAgent({ id: "c", parentAgentId: "p" })
-    const grand = makeAgent({ id: "g", parentAgentId: "c" })
-    vm.agents = [parent, child, grand]
+    const firstRead = vm.refresh()
+    const killed = vi.fn()
+    const mutation = vm.kill(fakeAgent.id).then(killed)
+    await Promise.resolve()
 
-    expect(vm.grouped).toHaveLength(2)
-    expect(vm.grouped[0]?.root.id).toBe("p")
-    expect(vm.grouped[0]?.children.map((a) => a.id)).toEqual(["c"])
-    expect(vm.grouped[1]?.root.id).toBe("g")
-    expect(vm.grouped[1]?.children).toEqual([])
+    stale.resolve([fakeAgent])
+    await firstRead
+    expect(mockListAgents).toHaveBeenCalledTimes(2)
+    expect(killed).not.toHaveBeenCalled()
+
+    updated.resolve([])
+    await mutation
+    expect(vm.tree.roots).toEqual([])
+  })
+
+  it("does not let an intervening GET satisfy the later of two mutations", async () => {
+    const stale = pendingList()
+    const middle = pendingList()
+    const final = pendingList()
+    mockListAgents
+      .mockReturnValueOnce(stale.promise)
+      .mockReturnValueOnce(middle.promise)
+      .mockReturnValueOnce(final.promise)
+    mockDeleteAgent.mockResolvedValue(undefined)
+    mockSetAgentPersistent.mockResolvedValue(undefined)
+    const vm = new ActiveAgents()
+    const firstRead = vm.refresh()
+    const killed = vm.kill("deleted")
+    await Promise.resolve()
+    stale.resolve([makeAgent({ id: "deleted" }), fakeAgent])
+    await firstRead
+    expect(mockListAgents).toHaveBeenCalledTimes(2)
+
+    const finishedPin = vi.fn()
+    const pinned = vm.setPersistent(fakeAgent.id, true).then(finishedPin)
+    await Promise.resolve()
+    middle.resolve([fakeAgent])
+    await killed
+    expect(mockListAgents).toHaveBeenCalledTimes(3)
+    expect(finishedPin).not.toHaveBeenCalled()
+
+    final.resolve([{ ...fakeAgent, persistent: true }])
+    await pinned
+    expect(vm.agents[0]?.persistent).toBe(true)
   })
 })

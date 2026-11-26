@@ -23,6 +23,8 @@ export const STORAGE_KEY = "drive-coding-v2-settings"
 
 const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL" // Sarah, ElevenLabs
 
+export type AgentListView = "tree" | "flat"
+
 export type PersistedSettings = {
   cliKind: string
   lastCwd: string
@@ -49,6 +51,7 @@ export type PersistedSettings = {
   projectSystemPrompt: Record<string, string>
   recentPanelHeight: number
   activePanelHeight: number
+  agentListView?: AgentListView
   sidebarWidthRem: number
   geminiPace: SpeechPace
   geminiTone: SpeechTone
@@ -88,6 +91,7 @@ export const DEFAULTS: PersistedSettings = {
   projectSystemPrompt: {},
   recentPanelHeight: 256,
   activePanelHeight: 256,
+  agentListView: undefined,
   sidebarWidthRem: DEFAULT_SIDEBAR_WIDTH_REM,
   geminiPace: "normal",
   geminiTone: "neutral",
@@ -114,6 +118,10 @@ export const LEGACY_DEFAULTS: Pick<
 function normalizeLoaded(parsed: Partial<PersistedSettings>): Partial<PersistedSettings> {
   return {
     ...parsed,
+    agentListView:
+      parsed.agentListView === "tree" || parsed.agentListView === "flat"
+        ? parsed.agentListView
+        : undefined,
     elevenLabsModelId: normalizeElevenLabsModelId(parsed.elevenLabsModelId),
     geminiModelId: normalizeGeminiModelId(parsed.geminiModelId),
     sidebarWidthRem: Number.isFinite(parsed.sidebarWidthRem)

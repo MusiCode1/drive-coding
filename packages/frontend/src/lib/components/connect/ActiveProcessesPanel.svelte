@@ -1,257 +1,62 @@
 <script lang="ts">
-/**
- * ActiveProcessesPanel — ווידג'ט "תהליכים פעילים" בטופס החיבור.
- *
- * מציג את כל ה-agents החיים בצד-השרת עם 2 פעולות לכל שורה:
- * Reconnect (חיבור מחדש עם אייקון תקע), Kill (הריגה עם אייקון פח + אישור 2-לחיצות).
- *
- * slice: active-processes-icons
- */
 import type { AgentPublic, MachineStats } from "@drive-coding/core"
-import PlugIcon from "@lucide/svelte/icons/plug"
-import Trash2Icon from "@lucide/svelte/icons/trash-2"
-import { Popover } from "bits-ui"
-import { hasConnectionRing, reconnectState } from "$lib/adapters/reconnect-state"
+import type { AgentTreeNode } from "@drive-coding/core/agents/agent-tree"
+import { onDestroy, onMount } from "svelte"
 import { getMachineStats } from "$lib/adapters/system-api"
-import CliBadge from "$lib/components/ui/CliBadge.svelte"
-import { getActiveAgents, getCliAvailability, getI18n, getSettings } from "$lib/context"
-import { formatRelativeTime } from "$lib/util/formatting"
-import { isPageHidden } from "$lib/util/page-visibility.svelte"
-import { basename } from "$lib/util/path"
+import { getActiveAgents, getI18n, getSettings } from "$lib/context"
 import { resizeDrag } from "$lib/util/resize-drag"
+import AgentDrillList from "./agent-tree/AgentDrillList.svelte"
+import AgentProcessRow from "./agent-tree/AgentProcessRow.svelte"
+import AgentTreeList from "./agent-tree/AgentTreeList.svelte"
+import AgentTreeModeToggle from "./agent-tree/AgentTreeModeToggle.svelte"
 import MachineStatsBar from "./MachineStatsBar.svelte"
 
-interface Props {
-  onReconnect: (agent: AgentPublic) => void
-}
-
-const { onReconnect }: Props = $props()
-
+const { onReconnect }: { onReconnect: (agent: AgentPublic) => void } = $props()
 const activeAgents = getActiveAgents()
-const i18n = getI18n()
-const t = i18n.t
+const { t } = getI18n()
 const settings = getSettings()
-// slice cli-branding (Commit 3): הרכיב חסר-props ל-displayName של ה-CLI, לכן צורך
-// את cliAvailability בעצמו (אין "מלמעלה" להעביר prop — ר' brief §4 C3).
-const cliAvailability = getCliAvailability()
-
 let dragHeight = $state<number | null>(null)
 let handleEl = $state<HTMLDivElement | null>(null)
-
-// אישור kill — מזהה ה-agent שמחכה לאישור שנייה
 let confirmingId = $state<string | null>(null)
-let confirmTimer = $state<ReturnType<typeof setTimeout> | null>(null)
-
-// מדדי-מכונה (RAM/CPU) — poll קיים 12s, בית ב-MachineStatsBar (slice be-machine-stats)
+let confirmTimer: ReturnType<typeof setTimeout> | undefined
 let machine = $state<MachineStats | null>(null)
 
-function refreshMachine() {
-  getMachineStats()
-    .then((m) => {
-      machine = m
-    })
-    .catch(() => {
-      // כישלון שקט — המחוון פשוט לא יתעדכן; לא לשבור את הפאנל
-    })
-}
-
-// C12: auto-refresh כל ~12s; לא מרענן אם הפאנל מוסתר (page-visibility משותף, slice liveness C3)
-$effect(() => {
-  void refreshMachine() // fetch ראשוני מיידי ב-mount
-  const interval = setInterval(() => {
-    if (isPageHidden()) return
-    void activeAgents.refresh()
-    void refreshMachine()
-  }, 12_000)
-  return () => clearInterval(interval)
-})
-
-function formatDate(iso: string): string {
-  if (!iso) return ""
+async function refreshMachine() {
   try {
-    return new Date(iso).toLocaleString("he-IL", {
-      day: "2-digit",
-      month: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    })
+    machine = await getMachineStats()
   } catch {
-    return iso
+    // Keep the last reading when the server cannot provide fresh machine stats.
   }
 }
 
-function statusColor(status: AgentPublic["status"]): string {
-  switch (status) {
-    case "ready":
-      return "var(--accent)"
-    case "busy":
-      return "var(--accent)"
-    case "starting":
-      return "var(--fg-muted, var(--fg-dim))"
-    case "crashed":
-    case "closed":
-      return "var(--recording)"
-    default:
-      return "var(--fg-dim)"
-  }
-}
-
-// מבטל מצב-אישור Kill (טיימר + state) — משמש גם ע"י handleKill (לחיצה שנייה /
-// לחיצה ראשונה על מחרוזת חדשה) וגם ע"י onOpenChange של ה-Popover (סגירה חיצונית:
-// Escape / קליק מחוץ לתוסף — bits-ui, ראה תיעוד ה-tooltip-portal למטה).
 function cancelKillConfirm() {
-  if (confirmTimer !== null) {
-    clearTimeout(confirmTimer)
-    confirmTimer = null
-  }
+  clearTimeout(confirmTimer)
   confirmingId = null
 }
 
 function handleKill(id: string) {
   if (confirmingId === id) {
-    // לחיצה שנייה — בצע
     cancelKillConfirm()
     void activeAgents.kill(id)
   } else {
-    // לחיצה ראשונה — בקש אישור (פותח את ה-tooltip המרחף, ר' Popover.Root למטה)
-    if (confirmTimer !== null) clearTimeout(confirmTimer)
+    clearTimeout(confirmTimer)
     confirmingId = id
     confirmTimer = setTimeout(cancelKillConfirm, 3000)
   }
 }
 
-// a11y ל-status-dot — ממד-חיבור נפרד ממצב-התהליך (הצבע). slice
-// reconnect-ws-takeover Commit 3 (3b): טבעת סביב ה-dot כש-attached===true,
-// בלי לגעת בצבע (שנשאר agent.status). ראה hasConnectionRing.
-function connectionTitle(agent: AgentPublic): string {
-  return hasConnectionRing(agent) ? t("connect.agents.connected") : t("connect.agents.disconnected")
-}
-
-function reconnectTitle(agent: AgentPublic): string {
-  return reconnectState(agent) === "disabled"
-    ? t("connect.agents.noSession")
-    : t("connect.agents.reconnect")
-}
+onMount(() => activeAgents.subscribe(refreshMachine))
+onDestroy(() => clearTimeout(confirmTimer))
 </script>
 
-{#snippet agentRow(agent: AgentPublic, childCount: number)}
-  <li class="agent-row" class:has-children={childCount > 0}>
-    <div class="agent-top">
-      <div class="agent-info">
-        <span
-          class="status-dot"
-          class:attached={hasConnectionRing(agent)}
-          style="background:{statusColor(agent.status)}"
-          title={connectionTitle(agent)}
-          aria-label={connectionTitle(agent)}
-        ></span>
-        <CliBadge id={agent.cliKind} displayName={cliAvailability.details[agent.cliKind]?.displayName} logo={cliAvailability.details[agent.cliKind]?.logo} variant="badge" />
-        {#if agent.roleLabel}
-          <span class="role-label" title={agent.roleLabel}><bdi>{agent.roleLabel}</bdi></span>
-        {/if}
-        {#if agent.openedByEmail}
-          <span class="opened-by" title={t("connect.agents.openedBy")}><bdi>{agent.openedByEmail}</bdi></span>
-        {/if}
-        <span class="folder-name" title={agent.cwd}><bdi>{basename(agent.cwd)}</bdi></span>
-        {#if (agent.connectionCount ?? 0) >= 2}
-          <span class="meta-sep">·</span>
-          <span class="watcher-count" title={t("connect.agents.watcherCount")}>
-            {agent.connectionCount} {t("connect.agents.watcherCount")}
-          </span>
-        {/if}
-        {#if childCount > 0}
-          <span class="meta-sep">·</span>
-          <span class="child-count" title={t("connect.agents.childCount")}>
-            {childCount} {t("connect.agents.childCount")}
-          </span>
-        {/if}
-        {#if agent.title}
-          <span class="meta-sep">·</span>
-          <span class="session-title" title={agent.title}><bdi>{agent.title}</bdi></span>
-        {/if}
-        {#if agent.busy}
-          <span class="meta-sep">·</span>
-          <span class="busy-indicator" aria-label={t("connect.agents.working")}>
-            <span class="busy-dot"></span>
-            <span class="busy-label">{t("connect.agents.working")}</span>
-          </span>
-        {/if}
-        {#if agent.lastMessageAt != null}
-          <span class="meta-sep">·</span>
-          <span class="last-msg" title={t("connect.agents.lastMessage")}>
-            {formatRelativeTime(agent.lastMessageAt, i18n.locale)}
-          </span>
-        {/if}
-      </div>
-
-      <div class="agent-actions">
-      <button
-        type="button"
-        class="action-btn icon-btn"
-        disabled={reconnectState(agent) === "disabled"}
-        onclick={() => onReconnect(agent)}
-        title={reconnectTitle(agent)}
-        aria-label={reconnectTitle(agent)}
-      >
-        <PlugIcon size={16} strokeWidth={1.75} />
-      </button>
-
-      <Popover.Root
-        open={confirmingId === agent.id}
-        onOpenChange={(next) => { if (!next && confirmingId === agent.id) cancelKillConfirm() }}
-      >
-        <Popover.Trigger>
-          {#snippet child({ props })}
-            <button
-              {...props}
-              type="button"
-              class="action-btn icon-btn kill-btn"
-              class:confirming={confirmingId === agent.id}
-              onclick={() => handleKill(agent.id)}
-              title={confirmingId === agent.id ? t("connect.agents.closeConfirm") : t("connect.agents.close")}
-              aria-label={confirmingId === agent.id ? t("connect.agents.closeConfirm") : t("connect.agents.close")}
-            >
-              <Trash2Icon size={16} strokeWidth={1.75} />
-            </button>
-          {/snippet}
-        </Popover.Trigger>
-        <Popover.Portal>
-          <Popover.Content
-            side="top"
-            sideOffset={5}
-            trapFocus={false}
-            dir={i18n.dir}
-            class="kill-confirm-tip"
-            onOpenAutoFocus={(e) => e.preventDefault()}
-          >
-            <span role="status">{t("connect.agents.closeConfirm")}</span>
-          </Popover.Content>
-        </Popover.Portal>
-      </Popover.Root>
-      </div>
-    </div>
-
-    <div class="agent-meta">
-      <span class="cwd-full" title={agent.cwd}><bdi>{agent.cwd}</bdi></span>
-      <span class="meta-right">
-        {#if agent.acpSessionId}
-          <span class="session-id">{agent.acpSessionId.slice(0, 8)}</span>
-          <span class="meta-sep">·</span>
-        {/if}
-        <span class="created-at">{formatDate(agent.createdAt)}</span>
-        {#if agent.pid}
-          <span class="meta-sep">·</span>
-          <span class="pid">pid: {agent.pid}</span>
-        {/if}
-      </span>
-    </div>
-  </li>
+{#snippet row(node: AgentTreeNode<AgentPublic>, onOpenBranch?: () => void)}
+  <AgentProcessRow {node} {onOpenBranch} {onReconnect} onKill={handleKill} onCancelKill={cancelKillConfirm} confirming={confirmingId === node.agent.id} />
 {/snippet}
 
 <section class="active-panel">
   <div class="panel-header">
     <span class="panel-title">
-      {t("connect.agents.title")}{activeAgents.agents.length > 0 ? ` (${activeAgents.agents.length})` : ""}
+      {t("connect.agents.title")}{activeAgents.tree.byId.size > 0 ? ` (${activeAgents.tree.byId.size})` : ""}
     </span>
     <button
       type="button"
@@ -267,26 +72,22 @@ function reconnectTitle(agent: AgentPublic): string {
 
   <MachineStatsBar stats={machine} />
 
-  {#if activeAgents.agents.length === 0}
+  {#if activeAgents.tree.byId.size === 0}
     <div class="empty-state">
       {t("connect.agents.empty")}
     </div>
   {:else}
-    <ul
-      class="agent-list chat-scroll"
-      style="max-height: {dragHeight ?? settings.activePanelHeight}px"
-    >
-      {#each activeAgents.grouped as group (group.root.id)}
-        {@render agentRow(group.root, group.children.length)}
-        {#if group.children.length > 0}
-          <ul class="agent-children" aria-label={t("connect.agents.subAgentsOf")}>
-            {#each group.children as child (child.id)}
-              {@render agentRow(child, 0)}
-            {/each}
-          </ul>
-        {/if}
-      {/each}
-    </ul>
+    <div class="agent-scroll chat-scroll" style:max-height={`${dragHeight ?? settings.activePanelHeight}px`}>
+      <AgentTreeModeToggle>
+        {#snippet children(view)}
+          {#if view === "tree"}
+            <AgentTreeList tree={activeAgents.tree} {row} />
+          {:else}
+            <AgentDrillList tree={activeAgents.tree} {row} />
+          {/if}
+        {/snippet}
+      </AgentTreeModeToggle>
+    </div>
     <div
       class="resize-handle"
       bind:this={handleEl}
@@ -362,100 +163,8 @@ function reconnectTitle(agent: AgentPublic): string {
     color: var(--fg-dim);
   }
 
-  .agent-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    overflow-y: auto;
-
-    /* ‏גובה המרפק = ‏מרכז ה-status-dot, ‏נגזר ולא מנוחש:
-         0.55rem  ‏ריפוד-עליון של .agent-row
-       + 0.85rem  ‏חצי מגובה ה-CliBadge (1.5rem ‏פנימי + 2×0.1rem ‏ריפוד = 1.7rem),
-                  ‏שהוא הגבוה ב-.agent-top ‏ולכן קובע את גובה השורה הראשונה,
-                  ‏ו-align-items:center ‏ממרכז אליו את הנקודה.
-       ‏משתנה אחד לכל שלושת הקטעים (‏אב · ‏עמוד · ‏מרפק) — ‏כך הם **‏תמיד נפגשים**.
-       ‏מוגדר כאן ולא על .agent-children, ‏כי שורת-האב אינה בתוכה. */
-    --tree-elbow-y: 1.4rem;
-
-    /* ‏ההזחה של קבוצת-הילדים, ‏וקו-העץ עצמו. ‏שניהם מדודים מקצה-הפאנל:
-       ‏שורת-אב מתחילה ב-0, ‏שורת-ילד מתחילה ב---tree-indent ⇒ ‏אותו קו-אנכי
-       ‏מתקבל בשתיהן דרך ה-calc ‏למטה. */
-    --tree-indent: 2.25rem;
-
-    /* ‏הריפוד-האופקי של .agent-row. ‏מקוזז מהזחת ה-ul ‏במקום להידרס —
-       🔴 ‏Svelte ‏עוטף סלקטור-צאצא ב-:where() ‏(‏ספציפיות **‏אפס**), ‏אז
-       `.agent-children > .agent-row{padding-inline-start:0}` ‏יוצא (0,2,0)
-       ‏בדיוק כמו `.agent-row.svelte-x`, ‏וסדר-המקור מכריע — ‏הבסיס ניצח
-       ‏והמרפק נעצר 0.9rem ‏לפני הנקודה. ‏קיזוז לא נכנס לקרב-הספציפיות. */
-    --tree-row-pad: 0.9rem;
-
-    /* ‏מרכז ה-status-dot ‏אופקית: ‏ריפוד-השורה + ‏חצי מקוטר הנקודה (8px). */
-    --tree-spine-x: calc(var(--tree-row-pad) + 0.25rem);
-  }
-
-  /* ‏כל ההזחה יושבת על ה-ul, ‏והשורה מוותרת על ה-padding ‏שלה בצד-ההתחלה —
-     ‏כך גם קו-ההפרדה התחתון מתחיל בהזחה ואינו חוצה את קו-העץ. */
-  .agent-children {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    padding-inline-start: calc(var(--tree-indent) - var(--tree-row-pad));
-  }
-
-  .agent-children > .agent-row {
-    position: relative;
-  }
-
-  /* ‏עמוד-השדרה — ‏קטע פר-ילד ולא קו אחד על הקבוצה, ‏כדי שהאחרון ייקטע
-     ‏במרפק ולא ימשיך לריק. */
-  .agent-children > .agent-row::before {
-    content: "";
-    position: absolute;
-    inset-inline-start: calc(var(--tree-spine-x) - var(--tree-indent) + var(--tree-row-pad));
-    top: 0;
-    bottom: 0;
-    border-inline-start: 1px solid var(--border-str);
-  }
-
-  /* ‏מכיל את הקטע היורד אל הילדים (‏ר' הכלל הבא). */
-  .agent-row.has-children {
-    position: relative;
-  }
-
-  /* ‏הקטע היורד מהאב — ‏מצויר על **‏שורת-האב עצמה**, ‏ממרכז הנקודה שלה ועד
-     ‏תחתית השורה. ‏ניסיון קודם מתח את הילד הראשון 0.6rem ‏כלפי מעלה, ‏אבל
-     ‏שורת-האב היא **‏שתי שורות** (‏תג + ‏מטא) ‏ולכן הקו לא הגיע לנקודה כלל. */
-  .agent-row.has-children::before {
-    content: "";
-    position: absolute;
-    inset-inline-start: var(--tree-spine-x);
-    top: var(--tree-elbow-y);
-    bottom: 0;
-    border-inline-start: 1px solid var(--border-str);
-  }
-
-  /* ‏הילד האחרון: ‏העמוד נעצר **‏במרפק** ‏ואינו ממשיך לריק שמתחתיו.
-     ‏עוגן יחסי ולא גובה קבוע — ‏גובה קבוע נשבר על ילד יחיד, ‏שהוא גם
-     first ‏וגם last, ‏וקיבל שני כללים סותרים. */
-  .agent-children > .agent-row:last-child::before {
-    bottom: calc(100% - var(--tree-elbow-y));
-  }
-
-  /* ‏המרפק מגיע עד **‏תוכן** ‏השורה. ‏בגרסה הקודמת הוא נעצר בקצה-התיבה,
-     ‏0.9rem ‏לפני התוכן, ‏ולכן נראה כקו תלוש בשולי הפאנל. */
-  .agent-children > .agent-row::after {
-    content: "";
-    position: absolute;
-    inset-inline-start: calc(var(--tree-spine-x) - var(--tree-indent) + var(--tree-row-pad));
-    top: var(--tree-elbow-y);
-    width: calc(var(--tree-indent) - var(--tree-spine-x));
-    border-top: 1px solid var(--border-str);
-  }
-
-  .child-count {
-    font-size: 0.72rem;
-    color: var(--fg-dim);
-    flex-shrink: 0;
+  .agent-scroll {
+    overflow: auto;
   }
 
   /* ידית גרירה לשינוי גובה — slice connect-panel-resize */
@@ -484,260 +193,4 @@ function reconnectTitle(agent: AgentPublic): string {
     background: var(--accent);
   }
 
-  .agent-row {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.35rem;
-    padding: 0.55rem 0.9rem;
-  }
-
-  /* ‏המפריד הוא **‏בין קבוצות**, ‏לא בין שורות. ‏קודם הוא היה border-bottom
-     ‏פר-שורה עם שני חריגים (‏אב-עם-ילדים · last-child), ‏ו-last-child ‏תפס גם
-     ‏את הילד האחרון של **‏כל** ‏קבוצה — ‏ולכן הקו הופיע רק בין ילד לילד
-     ‏ונעלם בגבול שבין קבוצה לקבוצה. ‏שורה עליונה על שורש-קבוצה, ‏חוץ
-     ‏מהראשונה, ‏נותנת בדיוק גבול אחד לכל קבוצה ‏ואפס חריגים. */
-  .agent-list > .agent-row:not(:first-child) {
-    border-top: 1px solid var(--border);
-  }
-
-  .agent-top {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .agent-info {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    flex: 1;
-    min-width: 0;
-    font-size: 0.82rem;
-  }
-
-  .agent-meta {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 0.4rem;
-    font-size: 0.72rem;
-    color: var(--fg-dim);
-    min-width: 0;
-  }
-
-  .meta-right {
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    gap: 0.4rem;
-  }
-
-  .meta-sep {
-    color: var(--fg-dim);
-    opacity: 0.5;
-  }
-
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-
-  /* טבעת-חיבור (3b, slice reconnect-ws-takeover Commit 3) — ממד נפרד מהצבע
-     (מצב-תהליך). רווח בצבע-הרקע ואז טבעת accent, כדי שהטבעת תיראה גם כש-
-     הצבע עצמו כבר accent (ready/busy). */
-  .status-dot.attached {
-    box-shadow:
-      0 0 0 2px var(--bg-elev),
-      0 0 0 4px var(--accent);
-  }
-
-  /* שם התיקייה (basename) — בולט בשורה העליונה */
-  .folder-name {
-    color: var(--fg);
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 0 1 auto;
-    min-width: 0;
-  }
-
-  /* role label (slice agent-role-label) — metadata beside CliBadge, not title/displayName */
-  .role-label {
-    color: var(--fg-dim);
-    font-size: 0.78rem;
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  /* opened-by email (slice session-attribution-core) — attribution beside role label */
-  .opened-by {
-    color: var(--fg-dim);
-    font-size: 0.78rem;
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  /* כותרת-הסשן (slice session-title-in-process-list) — תוכן-משתמש (עברית/אנגלית/
-     מעורב), ה-<bdi> ללא כפיית direction (בשונה מ-folder-name/cwd-full שהם נתיבים) —
-     כיוון לפי-תוכן. */
-  .session-title {
-    color: var(--fg-dim);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
-  /* הנתיב המלא — בתוך שורת המטא, בצד שמאל (flex:1). קיצוץ מתחילת
-     הנתיב: בסיס rtl ממקם את ה-ellipsis בהתחלה כך שזנב הנתיב תמיד נראה;
-     ה-<bdi> שומר על סדר ה-LTR התקין של הנתיב עצמו. */
-  .cwd-full {
-    display: block;
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    direction: rtl;
-    text-align: left;
-    font-size: 0.72rem;
-    color: var(--fg-dim);
-  }
-
-  .folder-name > :global(bdi),
-  .cwd-full > :global(bdi) {
-    direction: ltr;
-  }
-
-  .session-id {
-    font-family: monospace;
-    direction: ltr;
-  }
-
-  .last-msg {
-    direction: ltr;
-    flex-shrink: 0;
-  }
-
-  .created-at {
-    direction: ltr;
-  }
-
-  .pid {
-    direction: ltr;
-  }
-
-  .agent-actions {
-    display: flex;
-    gap: 0.3rem;
-    flex-shrink: 0;
-  }
-
-  .action-btn {
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: transparent;
-    font-size: 0.78rem;
-    cursor: pointer;
-    color: var(--fg-dim);
-    transition: color 0.15s, border-color 0.15s, background 0.15s;
-    margin-top: 0;
-    white-space: nowrap;
-  }
-
-  .action-btn:hover:not(:disabled) {
-    color: var(--fg);
-    border-color: var(--accent);
-  }
-
-  .action-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .icon-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.3rem;
-  }
-
-  .kill-btn {
-    color: var(--recording);
-    border-color: rgba(255, 79, 79, 0.3);
-  }
-
-  .kill-btn:hover:not(:disabled) {
-    background: rgba(255, 79, 79, 0.1);
-    border-color: var(--recording);
-    color: var(--recording);
-  }
-
-  .kill-btn.confirming {
-    background: rgba(255, 79, 79, 0.15);
-    border-color: var(--recording);
-    color: var(--recording);
-    font-weight: 600;
-  }
-
-  /* The portal keeps the confirmation visible outside the scrolling list. */
-  :global(.kill-confirm-tip) {
-    background: rgba(200, 40, 40, 0.88);
-    color: #fff;
-    font-size: 0.72rem;
-    font-weight: 600;
-    white-space: nowrap;
-    padding: 0.2rem 0.45rem;
-    border-radius: 5px;
-    z-index: 50;
-    pointer-events: none;
-    animation: tip-pop 0.12s ease-out both;
-  }
-
-  /* -global- כי ה-animation מוחל דרך :global() למעלה — שם ה-keyframes חייב
-     להישאר לא-מסוקפ כדי ש-Svelte לא ישנה אותו לשם מוסתר-hash שלא יתאים. */
-  @keyframes -global-tip-pop {
-    from { opacity: 0; transform: scale(0.85) translateY(3px); }
-    to   { opacity: 1; transform: scale(1)    translateY(0);   }
-  }
-
-  /* ─── busy indicator ─── (slice agent-busy-indicator) */
-  .busy-indicator {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    color: var(--accent);
-  }
-
-  .busy-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--accent);
-    animation: busy-pulse 1s ease-in-out infinite;
-    flex-shrink: 0;
-  }
-
-  .busy-label {
-    font-size: 0.72rem;
-    font-weight: 500;
-  }
-
-  @keyframes busy-pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.4; transform: scale(0.75); }
-  }
 </style>

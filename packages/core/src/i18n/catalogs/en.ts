@@ -255,6 +255,27 @@ export const en: Catalog = {
   // ─── agent-tree-display ─── (slice agent-tree-display)
   "connect.agents.subAgentsOf": "Sub-agents",
   "connect.agents.childCount": "Child agents",
+  "connect.agents.tree.descendant": "sub-agent",
+  "connect.agents.tree.descendants": "sub-agents",
+  "connect.agents.tree.orphan": "Missing parent",
+  "connect.agents.tree.cycle": "Cyclic link",
+  "connect.agents.tree.parent": "Parent:",
+  "connect.agents.tree.view": "Agent list view",
+  "connect.agents.tree.viewTree": "Tree",
+  "connect.agents.tree.viewFlat": "Flat",
+  "connect.agents.tree.path": "Agent branch",
+  "connect.agents.tree.back": "Back",
+  "connect.agents.tree.unavailable": "This branch is no longer available",
+  "connect.agents.tree.closeBranch": "Close branch",
+  "connect.agents.tree.loading": "Loading agent branch",
+  "connect.agents.tree.childOf": "Sub-agent of:",
+  "connect.agents.tree.waitIdle": "Wait for the turn and pending requests to finish",
+  "connect.agents.tree.transition": "Wait for the current session transition to finish",
+  "connect.agents.tree.parentUnavailable": "The parent session is unavailable",
+  "connect.agents.tree.returned":
+    "Could not open the parent session. The original chat is open again.",
+  "connect.agents.tree.reopen":
+    "Could not open the parent session or restore this chat. Reopen the original address:",
   "connect.agents.watcherCount": "viewers",
   "connect.agents.openedBy": "opened by",
   // ─── מסך / wake-lock ─── (slice-wake-lock)

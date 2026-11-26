@@ -20,7 +20,7 @@ import type { ElevenLabsTtsModelId, GeminiTtsModelId } from "../adapters/voice/t
 import type { Voice } from "../adapters/voice/voices"
 import { setBeUrlBase } from "../util/be-url"
 import { clampSidebarWidth } from "../util/sidebar-width"
-import { DEFAULTS, loadSettings, saveSettings } from "./settings-persistence"
+import { type AgentListView, DEFAULTS, loadSettings, saveSettings } from "./settings-persistence"
 import { SettingsScopePolicy } from "./settings-scope-policy.svelte"
 import { SettingsVoices } from "./settings-voices.svelte"
 import { coerceInputMode, type InputMode } from "./ui-shell.svelte"
@@ -110,6 +110,9 @@ export class Settings {
   recentPanelHeight = $state<number>(DEFAULTS.recentPanelHeight)
   activePanelHeight = $state<number>(DEFAULTS.activePanelHeight)
 
+  // ─── agent-tree-view ───
+  agentListView = $state<AgentListView | undefined>(DEFAULTS.agentListView)
+
   // ─── sidebar-resize ───
   sidebarWidthRem = $state<number>(DEFAULTS.sidebarWidthRem)
 
@@ -161,6 +164,7 @@ export class Settings {
     this.projectSystemPrompt = loaded.projectSystemPrompt
     this.recentPanelHeight = loaded.recentPanelHeight
     this.activePanelHeight = loaded.activePanelHeight
+    this.agentListView = loaded.agentListView
     this.sidebarWidthRem = Number.isFinite(loaded.sidebarWidthRem)
       ? clampSidebarWidth(loaded.sidebarWidthRem)
       : DEFAULTS.sidebarWidthRem
@@ -394,6 +398,17 @@ export class Settings {
     this.#persist()
   }
 
+  // ─── agent-tree-view ───
+
+  getAgentListView(isMobile: boolean): AgentListView {
+    return this.agentListView ?? (isMobile ? "flat" : "tree")
+  }
+
+  setAgentListView = (view: AgentListView): void => {
+    this.agentListView = view
+    this.#persist()
+  }
+
   // ─── sidebar-resize ───
 
   setSidebarWidthRem = (rem: number): void => {
@@ -477,6 +492,7 @@ export class Settings {
       projectSystemPrompt: this.projectSystemPrompt,
       recentPanelHeight: this.recentPanelHeight,
       activePanelHeight: this.activePanelHeight,
+      agentListView: this.agentListView,
       sidebarWidthRem: this.sidebarWidthRem,
       geminiPace: this.geminiPace,
       geminiTone: this.geminiTone,

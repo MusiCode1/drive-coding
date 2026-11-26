@@ -16,15 +16,25 @@
 
 import FolderIcon from "@lucide/svelte/icons/folder"
 import MenuIcon from "@lucide/svelte/icons/menu"
+import { goto } from "$app/navigation"
+import { navigating, page } from "$app/state"
+import type { RelatedAgentNavigation } from "$lib/actions/open-related-agent"
 import { getI18n, getResponsive, getSession, getUiShell } from "$lib/context"
 import { basename } from "$lib/util/path"
 // ─── slice session-budget-meter Commit 5 ───
+import AgentRelationshipBadges from "./AgentRelationshipBadges.svelte"
 import SessionBudgetMeter from "./SessionBudgetMeter.svelte"
 
 const responsive = getResponsive()
 const uiShell = getUiShell()
 const session = getSession()
 const t = getI18n().t
+const navigation: RelatedAgentNavigation = {
+  currentUrl: () => page.url.pathname + page.url.search + page.url.hash,
+  isNavigating: () => !!navigating.to,
+  goto,
+  reopen: (url) => window.location.assign(url),
+}
 
 // שם הסוכן — placeholder קבוע; redesign-3 יחבר לאפשרויות הסוכן
 const agentName = "drive-coding"
@@ -40,7 +50,7 @@ const headerLabel = $derived(session.sessionTitle?.trim() ? session.sessionTitle
      notched phone, because app.html asks for viewport-fit=cover. Padding (not margin) so the
      fade layer still covers the full strip. padding-inline keeps it clear of a landscape notch. -->
 <header
-  class="absolute top-0 inset-x-0 z-20 flex items-center gap-3 pb-8 pointer-events-none"
+  class="chat-header absolute top-0 inset-x-0 z-20 flex items-center gap-3 pb-8 pointer-events-none"
   style="padding-top:calc(0.75rem + var(--safe-t));
          padding-inline:calc(1rem + var(--safe-x))"
 >
@@ -63,28 +73,35 @@ const headerLabel = $derived(session.sessionTitle?.trim() ? session.sessionTitle
   {/if}
 
   <!-- center: עמודת הכותרת — תופסת את המקום שנשאר, נשברת עד 2 שורות -->
-  <div class="flex-1 min-w-0 flex items-center justify-center pointer-events-none">
+  <div class="session-heading flex-1 min-w-0 flex flex-col items-center justify-center gap-1 pointer-events-none">
     <span
-      class="{responsive.isMobile ? 'text-[13px]' : 'text-[15px]'} font-semibold text-center leading-tight line-clamp-2"
+      id="chat-session-title"
+      tabindex="-1"
+      class="max-w-full break-words {responsive.isMobile ? 'text-[13px]' : 'text-[15px]'} font-semibold text-center leading-tight line-clamp-2"
       title={headerLabel}
-    >{headerLabel}</span>
+    ><bdi>{headerLabel}</bdi></span>
+    {#if session.agentId}
+      {#key session.agentId}
+        <AgentRelationshipBadges sourceId={session.agentId} {navigation} />
+      {/key}
+    {/if}
   </div>
 
   <!-- קבוצת-סטטוס (inline-end): מד תקציב-סשן + cwd chip + נקודת-חיבור. בעברית inline-end = שמאל. -->
   <!-- קלאסים לוגיים בלבד: gap/px/py סימטריים (תקין). אסור ml/mr/pl/pr/left/right חדשים. -->
-  <div class="flex items-center gap-2 shrink-0">
+  <div class="header-status flex items-center gap-2 shrink-0">
     <!-- slice session-budget-meter Commit 5: מד ניצול-קונטקסט + popover quota רב-ספקי -->
     <SessionBudgetMeter />
     {#if cwdLabel}
       <!-- cwd chip: dir="ltr" נשאר רק על ה-chip (path הוא LTR), לא על הקבוצה -->
       <span
-        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono shrink-0"
+        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-mono shrink-0 max-w-[24vw] sm:max-w-[12rem]"
         style="background:var(--bg-card); border:1px solid var(--border)"
         dir="ltr"
         title={session.cwd ?? ""}
       >
-        <FolderIcon size={11} strokeWidth={2} style="color:var(--fg-dim)" />
-        <span class="font-semibold" style="color:var(--fg)">{cwdLabel}</span>
+        <FolderIcon class="shrink-0" size={11} strokeWidth={2} style="color:var(--fg-dim)" />
+        <bdi class="min-w-0 truncate font-semibold" style="color:var(--fg)">{cwdLabel}</bdi>
       </span>
     {/if}
     <!-- נקודת סטטוס: ירוק כשמחובר/חושב, אפור אחרת -->
@@ -99,3 +116,28 @@ const headerLabel = $derived(session.sessionTitle?.trim() ? session.sessionTitle
     </span>
   </div>
 </header>
+
+
+<style>
+  @media (max-width: 480px) {
+    .chat-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      row-gap: 0.3rem;
+    }
+
+    .session-heading {
+      display: contents;
+    }
+
+    #chat-session-title {
+      grid-column: 1;
+      grid-row: 1;
+    }
+
+    .header-status {
+      grid-column: 2;
+      grid-row: 1;
+    }
+  }
+</style>
