@@ -35,7 +35,7 @@ vi.mock("@drive-coding/provider/config", async (importOriginal) => ({
 }))
 
 const decisions = {
-  "POST /api/agents": "exempt",
+  "POST /api/agents": "scoped-with-notifyOnDone",
   "DELETE /api/agents": "subtree",
   "DELETE /api/agents/:id": "scoped",
   "DELETE /api/agents/:id/connection": "scoped",
@@ -43,6 +43,7 @@ const decisions = {
   "POST /api/agents/:id/presence": "exempt",
   "POST /api/agents/:id/reply": "scoped",
   "POST /api/agents/:id/rpc": "scoped",
+  "DELETE /api/agents/:id/subscribe": "scoped",
   "POST /api/agents/:id/subscribe": "scoped",
 } as const
 
@@ -157,6 +158,59 @@ describe("scope decisions on the production agent write routes", () => {
     expect(allowed.status).toBe(204)
     const unscoped = await request("POST", path, undefined, { subscriberAgentId: foreign })
     expect(unscoped.status).toBe(204)
+  })
+
+  it("checks notifyOnDone before creating through the production POST route", async () => {
+    const spawn = vi.spyOn(deps.orchestrator, "createAndSpawn").mockImplementation(async (input) => {
+      const agent = await deps.registry.create(input)
+      return {
+        agentId: agent.id,
+        cliKind: agent.cliKind,
+        cwd: agent.cwd,
+        wsUrl: "",
+        bridgePort: 0,
+        status: "spawning",
+      }
+    })
+    const create = (token: string, notifyOnDone?: string) =>
+      app.request("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", [SCOPE_HEADER]: token },
+        body: JSON.stringify({
+          cwd: stateDir,
+          cliKind: "claude",
+          notifyOnDone,
+          includeLastAssistantText: true,
+        }),
+      })
+
+    const denied = await create(issueToken(caller), foreign)
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ error: "scope-denied" })
+    expect(spawn).not.toHaveBeenCalled()
+
+    const allowed = await create(issueToken(caller), caller)
+    expect(allowed.status).toBe(201)
+    const { agentId } = (await allowed.json()) as { agentId: string }
+    expect(deps.agentEventBus.subscribersOf(agentId)).toEqual([caller])
+    expect(deps.agentEventBus.optionsOf(agentId, caller)).toEqual({ includeLastAssistantText: true })
+
+    expect((await create("synthetic-invalid-token")).status).toBe(201)
+    expect(spawn).toHaveBeenCalledTimes(2)
+  })
+
+  it("applies unsubscribe scope to the subscriber on the production DELETE route", async () => {
+    const path = `/api/agents/${foreign}/subscribe`
+    const body = { subscriberAgentId: child }
+    expect((await request("POST", path, issueToken(caller), body)).status).toBe(204)
+
+    const denied = await request("DELETE", path, issueToken(foreign), body)
+    expect(denied.status).toBe(403)
+    expect(await denied.json()).toMatchObject({ error: "scope-denied" })
+    expect(deps.agentEventBus.subscribersOf(foreign)).toEqual([child])
+
+    expect((await request("DELETE", path, issueToken(caller), body)).status).toBe(204)
+    expect(deps.agentEventBus.subscribersOf(foreign)).toEqual([])
   })
 
   it.each([false, true])("guard and grant for subscriptions (MCP=%s)", async (mcp) => {

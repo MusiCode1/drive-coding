@@ -1,7 +1,7 @@
 ---
 id: session-lifecycle
 title: Session lifecycle — open, send, close
-summary: How to open an agent, drive a turn, close it, and keep session viewers alive.
+summary: How to open an agent, send and cancel turns, close the agent, and keep viewers alive.
 read_when:
   - You need to spawn an agent and get its id
   - A turn is running and you must decide between waiting and forcing
@@ -21,12 +21,13 @@ mcp_tools:
   - session_open
   - session_send
   - session_state
+  - agent_cancel
   - session_close
   - session_note_set
   - session_field_set
   - session_field_delete
-docs_version: 1.12.0
-updated: 2026-11-18
+docs_version: 1.17.0
+updated: 2026-11-26
 ---
 
 # Session lifecycle
@@ -68,6 +69,11 @@ Optional highlights:
 - **`permission`** — policy for the new agent (`allow_once`, `allow_always`, `reject_once`, `ask`).
 - **`parent`** / header **`X-Drive-Coding-Agent`** — sub-agent wiring (`parentAgentId`).
 - **`closeOnTurnEnd`** — auto-close after first clean turn end.
+- **`notifyOnDone`** — subscriber agent UUID for automatic turn-ended notifications.
+  Both `session_open` and `POST /api/agents` check the subscriber's `subscribe`
+  scope before spawning. A denial aborts creation (HTTP 403 or MCP `scope-denied`).
+  Omit the field for ordinary creation. Set `includeLastAssistantText: true`
+  to include a truncated preview in the notification.
 - **`publicUrl` / `base`** — backend URL used to build chat links and child env.
 
 MCP **`session_open`** returns `{ agent, sessionId, url, cli, modes, configOptions, hint }`.
@@ -88,6 +94,19 @@ When **`turnState !== idle`**:
 - **session_close** / `DELETE` / CLI `close` **refuse** unless **`force: true`** (or CLI
   `--force`). Prefer waiting for idle unless you accept a hard stop.
 - Closing with force while a turn runs still kills the process; log may record prior turn state.
+
+## Cancel the active turn
+
+Call `agent_cancel` with `{ "agentId": "..." }` to cancel the current turn.
+`{ ok: true, agentId, outcome: "cancel-requested" }` confirms best-effort acceptance.
+Check **session_state** for `turnState: "idle"` before sending follow-up work.
+Repeated requests during that turn receive the same outcome and send one provider
+request in total.
+
+An idle agent, an agent without a live session, or a session switch returns
+`no-active-turn`. Call again once a turn is active in the current session.
+A missing agent record returns a tool error. Cancellation leaves the agent
+and conversation available, subject to the existing `closeOnTurnEnd` setting.
 
 ## Close
 

@@ -190,6 +190,7 @@ function makeMockHost(sessionId: string | null = null): ExtendedSessionHost {
     newSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
     loadSession: vi.fn().mockResolvedValue({ sessionId: "s1" }),
     cancel: vi.fn().mockResolvedValue(undefined),
+    cancelActiveTurn: () => "no-active-turn",
     setMode: vi.fn().mockResolvedValue(undefined),
     setConfigOption: vi.fn().mockResolvedValue(undefined),
     setSessionModel: vi.fn().mockResolvedValue(undefined),

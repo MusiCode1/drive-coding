@@ -34,7 +34,12 @@ import { z } from "zod"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { resolveAppVersion } from "../app-version.js"
-import { readScopeToken, stripScopePendingFromState } from "../scope-write.js"
+import {
+  checkNotifyOnDoneScope,
+  readScopeToken,
+  SCOPE_DENIED_BODY,
+  stripScopePendingFromState,
+} from "../scope-write.js"
 import type { AgentEventBus } from "../session-host/agent-events.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import {
@@ -270,31 +275,37 @@ function createSessionBusMcpServer(
       const parsed = parseCreateAgentBody(body, deps.env)
       if (!parsed.ok) return jsonError(parsed.error.body.error)
 
-      const created = await deps.orchestrator.createAndSpawn(parsed.value)
-      return withSessionOpenRollback(deps, created.agentId, async () => {
-        const hostResult = await deps.agentSessionRegistry.getOrCreateHost(created.agentId)
-        if (!hostResult.ok) {
-          throw new Error(`session host did not start: ${hostResult.reason}`)
-        }
-        const sessionId = await waitForSessionId(
-          deps.agentSessionRegistry,
-          created.agentId,
-          SESSION_OPEN_TIMEOUT_MS,
-        )
-        if (sessionId === undefined) {
-          throw new Error("session did not come up within 30s")
-        }
-        const host = deps.agentSessionRegistry.getHost(created.agentId)
-        return jsonResult({
-          agent: created.agentId,
-          sessionId,
-          url: `${chatBase}/chat/${input.cli}/${sessionId}?sessionTransport=http`,
-          cli: cliMeta(input.cli, deps.env),
-          modes: host?.state.modes,
-          configOptions: host?.state.configOptions,
-          hint: MCP_CONFIGURE_HINT,
-        })
-      })
+      const subscriber = parsed.value.notifyOnDone
+      if (subscriber && !(await checkNotifyOnDoneScope(scopeToken, subscriber, scopeDeps))) {
+        return jsonError(JSON.stringify(SCOPE_DENIED_BODY))
+      }
+
+      return deps.orchestrator.createAndSpawn(parsed.value).then(({ agentId }) =>
+        withSessionOpenRollback(deps, agentId, async () => {
+          const hostResult = await deps.agentSessionRegistry.getOrCreateHost(agentId)
+          if (!hostResult.ok) {
+            throw new Error(`session host did not start: ${hostResult.reason}`)
+          }
+          const sessionId = await waitForSessionId(
+            deps.agentSessionRegistry,
+            agentId,
+            SESSION_OPEN_TIMEOUT_MS,
+          )
+          if (sessionId === undefined) {
+            throw new Error("session did not come up within 30s")
+          }
+          const host = deps.agentSessionRegistry.getHost(agentId)
+          return jsonResult({
+            agent: agentId,
+            sessionId,
+            url: `${chatBase}/chat/${input.cli}/${sessionId}?sessionTransport=http`,
+            cli: cliMeta(input.cli, deps.env),
+            modes: host?.state.modes,
+            configOptions: host?.state.configOptions,
+            hint: MCP_CONFIGURE_HINT,
+          })
+        }),
+      )
     },
   )
 

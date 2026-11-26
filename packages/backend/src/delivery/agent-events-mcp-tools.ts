@@ -6,6 +6,7 @@ import {
   AgentNotifyParentInput,
   type AgentRegistry,
   AgentSubscribeInput,
+  AgentUnsubscribeInput,
   MCP_NOTIFY_PARENT_META,
   MCP_TOOL_META,
 } from "@drive-coding/core"
@@ -96,6 +97,34 @@ export function registerAgentEventMcpTools(
           includeLastAssistantText: input.includeLastAssistantText === true,
         })
         return jsonResult({ ok: true, agent: input.agent, subscriber: subscriberId })
+      })
+    },
+  )
+
+  registerArkTool(
+    server,
+    "agent_unsubscribe",
+    MCP_TOOL_META.agent_unsubscribe,
+    AgentUnsubscribeInput,
+    async (raw) => {
+      const input = raw as typeof AgentUnsubscribeInput.infer
+      const subscriberId = input.subscriberAgentId ?? callerAgentId
+      if (!subscriberId) {
+        return jsonError(
+          `subscriberAgentId required — pass subscriberAgentId or ${AGENT_ID_HEADER} header`,
+        )
+      }
+      return checkScopedWrite({
+        token: ctx.scopeToken,
+        targetId: subscriberId,
+        watchedId: input.agentId,
+        verb: "unsubscribe",
+        registry: deps.registry,
+        sessionRegistry: deps.agentSessionRegistry,
+      }).then((allowed) => {
+        if (!allowed) return jsonError(JSON.stringify(SCOPE_DENIED_BODY))
+        deps.eventBus.unsubscribe(input.agentId, subscriberId)
+        return jsonResult({ ok: true, agentId: input.agentId, subscriberAgentId: subscriberId })
       })
     },
   )

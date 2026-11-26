@@ -31,6 +31,7 @@ export type ScopedWriteDeps = {
   token: string | undefined
   targetId: string
   watchedId?: string
+  watchedAgentPendingCreation?: true
   verb: string
   registry: AgentRegistry
   sessionRegistry: AgentSessionRegistry
@@ -53,6 +54,25 @@ export async function checkScopedWrite(deps: ScopedWriteDeps): Promise<boolean> 
     )
   }
   return decision === "allow"
+}
+
+export type NotifyOnDoneScopeCheck = (
+  token: string | undefined,
+  subscriberAgentId: string,
+) => Promise<boolean>
+
+export function checkNotifyOnDoneScope(
+  token: string | undefined,
+  subscriberAgentId: string,
+  deps: Pick<ScopedWriteDeps, "registry" | "sessionRegistry">,
+): Promise<boolean> {
+  return checkScopedWrite({
+    ...deps,
+    token,
+    targetId: subscriberAgentId,
+    verb: "subscribe",
+    watchedAgentPendingCreation: true,
+  })
 }
 
 function agentToScopeParty(agent: Agent): ScopePartyInfo {
@@ -89,6 +109,7 @@ async function escalateScopePermission(
     targetId,
     verb,
     watchedId: deps.watchedId,
+    watchedAgentPendingCreation: deps.watchedAgentPendingCreation,
     agents: parties,
   })
 

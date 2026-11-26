@@ -56,10 +56,10 @@
       "codeLines": 182
     },
     "packages/backend/src/app/recordings-store.ts": {
-      "metric": 130,
-      "impurity": 17,
+      "metric": 105,
+      "impurity": 13,
       "class": "mixed",
-      "codeLines": 93
+      "codeLines": 75
     },
     "packages/backend/src/app-version.ts": {
       "metric": 35,
@@ -338,10 +338,10 @@
       "codeLines": 214
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 898,
-      "impurity": 22,
+      "metric": 855,
+      "impurity": 19,
       "class": "scattered",
-      "codeLines": 568
+      "codeLines": 531
     },
     "packages/backend/src/session-host/turn-lifecycle.ts": {
       "metric": 93,

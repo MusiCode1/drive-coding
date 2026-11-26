@@ -6,13 +6,13 @@ const HERE = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(HERE, "../../../..")
 
 describe("agent-api gate helpers", () => {
-  it("parses thirteen McpToolName union members from mcp-docs.ts", async () => {
+  it("parses fifteen McpToolName union members from mcp-docs.ts", async () => {
     const { mcpToolVocabulary } = await import(
       // @ts-expect-error — gate scripts are Node ESM outside the TS program
       "../../../../scripts/lint-agent-docs.mjs"
     )
     const names = mcpToolVocabulary(REPO_ROOT)
-    expect(names).toHaveLength(13)
+    expect(names).toHaveLength(15)
     expect(names).toContain("notify_parent")
     expect(names).toContain("session_open")
   })
@@ -44,7 +44,7 @@ describe("agent-api gate helpers", () => {
     const keys = documentableRouteKeys(REPO_ROOT)
     expect(keys.has("get /api/health")).toBe(true)
     expect(keys.has("get /*")).toBe(false)
-    // 42 since fix-session-url-hijack C1: GET /api/sessions/:cliKind/:sessionId
-    expect(keys.size).toBe(42)
+    // 44 after adding DELETE /api/recordings/:id
+    expect(keys.size).toBe(44)
   })
 })

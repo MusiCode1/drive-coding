@@ -12,12 +12,15 @@ surface: [http, mcp]
 stability: stable
 routes:
   - POST /api/agents/:id/reply
+  - DELETE /api/agents/:id/subscribe
   - GET /api/scope-policy
   - PATCH /api/scope-policy
 mcp_tools:
+  - agent_cancel
+  - agent_unsubscribe
   - session_whoami
-docs_version: 1.10.5
-updated: 2026-11-23
+docs_version: 1.17.0
+updated: 2026-11-26
 ---
 
 # Agent identity and scoped writes
@@ -110,7 +113,7 @@ Three independent global selectors — **`ask`**, **`allow`**, or **`deny`** —
 
 | Group | Examples |
 |-------|----------|
-| **message** | MCP `session_send`, RPC `session/prompt` and `session/cancel`, subscriptions |
+| **message** | MCP `session_send` and `agent_cancel`, RPC `session/prompt` and `session/cancel`, subscriptions |
 | **update** | HTTP `PATCH`, `POST …/reply`, viewer detach, RPC config/session control methods |
 | **close** | HTTP `DELETE` agent, MCP `session_close`, RPC `session/delete` |
 
@@ -128,11 +131,15 @@ rejects the prompt, and either agent's normal closure removes it. It applies onl
 that pair and those three actions. Cancellation, system notifications, `notify_parent`,
 and sends without a scoped agent token do not create it.
 
+MCP `agent_cancel {agentId}` uses the same `session/cancel` permission,
+permanent message grant and reply grant as RPC. Scope is checked before
+looking up the target host, including when the target is idle.
+
 ### Agent HTTP write routes
 
 | Write | Scope decision |
 |-------|----------------|
-| `POST /api/agents` | Creation is exempt |
+| `POST /api/agents` | Creation is exempt. With `notifyOnDone`, check `subscribe` scope for the subscriber before spawning. |
 | `DELETE /api/agents` | A valid scoped token closes its subtree and reports other agents in `skipped`. An invalid token returns `403` before closing any agent. With a master token or no token, the result is `{ closed, failed }` for the full fleet. |
 | `DELETE /api/agents/:id` | Close policy for the target |
 | `PATCH /api/agents/:id` | Update policy for the target |
@@ -141,11 +148,19 @@ and sends without a scoped agent token do not create it.
 | `POST /api/agents/:id/reply` | Update policy for the target |
 | `POST /api/agents/:id/rpc` | Policy for the RPC action. The read-only `session/list` is exempt. |
 | `POST /api/agents/:id/subscribe` | Message policy for the subscriber |
+| `DELETE /api/agents/:id/subscribe` | Message policy for the subscriber, with the separate `unsubscribe` verb |
 
 HTTP subscribe and MCP `session_subscribe` check the effective subscriber. A permanent
 `subscribe` grant lets the caller register that subscriber for events from any session.
-The prompt identifies both the subscriber and the watched session. `notifyOnDone` on
-agent creation currently registers without a subscriber scope decision.
+HTTP unsubscribe and MCP `agent_unsubscribe` also check the effective subscriber.
+For example, `agent_unsubscribe { agentId: "<watched>", subscriberAgentId: "<subscriber>" }`
+checks the scope of the subscriber in the request. A permanent `unsubscribe` grant lets
+that caller remove the same subscriber from events from any session. Each verb has its
+own grant. The prompt identifies both the subscriber and the watched session.
+`notifyOnDone` on
+`POST /api/agents` and `session_open` uses the same `subscribe` grant before the new
+agent spawns. The prompt identifies the subscriber and describes the watched agent as
+about to be created. After approval, creation registers the subscription for the new agent.
 
 ### HTTP API
 

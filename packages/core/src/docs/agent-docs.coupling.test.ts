@@ -29,6 +29,41 @@ describe("agent-docs coupling", () => {
     expect(doc).toContain(ttlEnv)
   })
 
+  it("unsubscribe is documented and discoverable in the three agent docs", () => {
+    expect(MCP_TOOL_META.agent_unsubscribe?.description).toContain("effective subscriber")
+    for (const name of ["60-identity-and-scopes", "70-subagents", "97-transports"]) {
+      const doc = fs.readFileSync(path.join(REPO_ROOT, "docs/agents", `${name}.md`), "utf8")
+      const delimiter = "\n---\n"
+      const end = doc.indexOf(delimiter)
+      expect(end).toBeGreaterThan(0)
+      const frontmatter = doc.slice(0, end)
+      const prose = doc.slice(end + delimiter.length)
+      expect(frontmatter).toMatch(/^ {2}- agent_unsubscribe$/m)
+      expect(frontmatter).toMatch(/^ {2}- DELETE \/api\/agents\/:id\/subscribe$/m)
+      expect(prose).toContain("`agent_unsubscribe")
+      expect(prose).toContain("`DELETE /api/agents/:id/subscribe`")
+    }
+  })
+
+  it("agent_cancel is discoverable in the lifecycle, state, scope and RPC docs", () => {
+    expect(MCP_TOOL_META.agent_cancel?.description).toContain("session/cancel")
+    for (const name of [
+      "20-session-lifecycle",
+      "40-reading-output",
+      "50-rpc",
+      "60-identity-and-scopes",
+    ]) {
+      const doc = fs.readFileSync(path.join(REPO_ROOT, "docs/agents", `${name}.md`), "utf8")
+      const delimiter = "\n---\n"
+      const end = doc.indexOf(delimiter)
+      expect(end).toBeGreaterThan(0)
+      expect(doc.slice(0, end)).toMatch(
+        /^ {2}- agent_cancel$|^mcp_tools: \[.*\bagent_cancel\b.*\]$/m,
+      )
+      expect(doc.slice(end + delimiter.length)).toContain("`agent_cancel")
+    }
+  })
+
   it("80-providers lists every CLI_KINDS entry", () => {
     const doc = fs.readFileSync(PROVIDERS_DOC, "utf8")
     const kinds = [...CLI_KINDS]

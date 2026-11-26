@@ -15,9 +15,9 @@ routes:
   - GET /api/agents/:id/events
   - GET /api/agents/:id/state
   - POST /api/agents/:id/rpc
-mcp_tools: [session_send, session_state]
-docs_version: 1.13.0
-updated: 2026-11-25
+mcp_tools: [session_send, session_state, agent_cancel]
+docs_version: 1.17.0
+updated: 2026-11-26
 ---
 
 # Reading output
@@ -36,6 +36,11 @@ errors, and **`turnState`**.
 **session_send** on completion returns **`text`**, **`stopReason`**, **`messagesSince`**, and
 **`lastTurnError`** when the turn ends. On **`noWait`** or timeout → **`{ running: true }`**;
 keep polling.
+
+After `agent_cancel` returns `cancel-requested`, poll **session_state** until
+`turnState` is `idle`. The outcome acknowledges the request. During a session
+switch the tool returns `no-active-turn`; retry it when the current session
+has an active turn.
 
 ## One-shot HTTP snapshot
 

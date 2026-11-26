@@ -16,7 +16,13 @@ import { Hono } from "hono"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as readProcessRssMod from "../adapters/read-process-rss.js"
 import { AGENT_ID_HEADER, DRIVE_CODING_AGENT_ID_ENV } from "../agent-identity.js"
-import { issueToken, SCOPE_HEADER } from "../agent-scope.js"
+import {
+  issueToken,
+  recordAllowAlwaysGrant,
+  recordReplyGrant,
+  resetAllowAlwaysGrantsForTests,
+  SCOPE_HEADER,
+} from "../agent-scope.js"
 import { createInMemoryAgentRegistry } from "../agents/registry.js"
 import type { AgentOrchestrator } from "../app/agent-orchestrator.js"
 import { setSelfBaseUrlForTests } from "../instances.js"
@@ -44,6 +50,7 @@ type HostStub = {
     }>
   }
   prompt: ReturnType<typeof vi.fn>
+  cancelActiveTurn: ReturnType<typeof vi.fn>
   setConfigOption: ReturnType<typeof vi.fn>
 }
 
@@ -84,6 +91,9 @@ function makeStubSessionRegistry(): AgentSessionRegistry & { hosts: Map<string, 
             messages: [],
           },
           prompt: vi.fn(),
+          cancelActiveTurn: vi.fn(() =>
+            created.state.turnState === "idle" ? "no-active-turn" : "cancel-requested",
+          ),
           setConfigOption: vi.fn(async () => {}),
         }
         created.prompt = vi.fn(async (_sid: string, content: string) => {
@@ -226,6 +236,8 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
     expect(instructions).toContain("configOptions")
     expect(instructions).toContain("session_whoami")
     expect(tools.map((t) => t.name).sort()).toEqual([
+      "agent_cancel",
+      "agent_unsubscribe",
       "docs_get",
       "session_close",
       "session_field_delete",
@@ -238,6 +250,31 @@ describe("POST /api/mcp (slice session-bus-mcp C0)", () => {
       "session_subscribe",
       "session_surface",
       "session_whoami",
+    ])
+    expect(instructions).toContain("agent_cancel")
+    const cancelTool = tools.find((t) => t.name === "agent_cancel")
+    expect(cancelTool?.inputSchema).toMatchObject({
+      type: "object",
+      required: ["agentId"],
+      additionalProperties: false,
+      properties: { agentId: { type: "string", minLength: 1 } },
+    })
+    expect(Object.keys(cancelTool?.inputSchema.properties ?? {})).toEqual(["agentId"])
+    expect(instructions).toContain("agent_unsubscribe")
+    expect(instructions).not.toContain("session_unsubscribe")
+    const unsubscribeTool = tools.find((t) => t.name === "agent_unsubscribe")
+    expect(unsubscribeTool?.inputSchema).toMatchObject({
+      type: "object",
+      required: ["agentId"],
+      additionalProperties: false,
+      properties: {
+        agentId: { type: "string", minLength: 1 },
+        subscriberAgentId: { type: "string", minLength: 1 },
+      },
+    })
+    expect(Object.keys(unsubscribeTool?.inputSchema.properties ?? {}).sort()).toEqual([
+      "agentId",
+      "subscriberAgentId",
     ])
     const openTool = tools.find((t) => t.name === "session_open")
     const schema = openTool?.inputSchema as { properties?: { cli?: { description?: string } } }
@@ -1014,6 +1051,7 @@ describe("session_whoami (slice mcp-whoami)", () => {
         messages: [],
       },
       prompt: vi.fn(),
+      cancelActiveTurn: vi.fn(() => "no-active-turn"),
       setConfigOption: vi.fn(),
     })
     const client = await connectClient(app, { [AGENT_ID_HEADER]: child.id })
@@ -1356,4 +1394,105 @@ describe("scoped envelope MCP integration", () => {
       await client.close()
     }
   })
+})
+
+describe("agent_cancel binding", () => {
+  afterEach(() => {
+    resetScopePolicyForTests()
+    resetAllowAlwaysGrantsForTests()
+  })
+
+  it("rejects bad input and the old tool name before looking up any host", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const { id: agentId } = await registry.create({ cwd: "/fixture", cliKind: "claude" })
+    const client = await connectClient(app)
+    try {
+      for (const args of [
+        {},
+        { agentId: "" },
+        { agent: agentId },
+        { agentId, agent: agentId },
+        { agentId, subscriber: agentId },
+        { agentId, force: true },
+      ]) {
+        const result = await client.callTool({ name: "agent_cancel", arguments: args })
+        expect(isToolError(result), JSON.stringify(args)).toBe(true)
+      }
+      const legacy = await client.callTool({
+        name: "session_cancel",
+        arguments: { agentId },
+      })
+      expect(isToolError(legacy)).toBe(true)
+      expect(agentSessionRegistry.getHost).not.toHaveBeenCalled()
+      expect(agentSessionRegistry.getOrCreateHost).not.toHaveBeenCalled()
+    } finally {
+      await client.close()
+    }
+  })
+
+  it("reports a missing agent and returns a no-op for a registered agent with no host or an idle host", async () => {
+    const { app, registry, agentSessionRegistry } = makeApp()
+    const { id: agentId } = await registry.create({ cwd: "/fixture", cliKind: "claude" })
+    const client = await connectClient(app)
+    const call = (id: string) =>
+      client.callTool({ name: "agent_cancel", arguments: { agentId: id } })
+    const noOp = { ok: true, agentId, outcome: "no-active-turn" }
+    try {
+      const missing = await call(crypto.randomUUID())
+      expect(isToolError(missing)).toBe(true)
+      expect(toolText(missing)).toBe("agent not found")
+      expect(agentSessionRegistry.getHost).not.toHaveBeenCalled()
+      expect(JSON.parse(toolText(await call(agentId)))).toEqual(noOp)
+      expect(agentSessionRegistry.getOrCreateHost).not.toHaveBeenCalled()
+      await agentSessionRegistry.getOrCreateHost(agentId)
+      vi.mocked(agentSessionRegistry.getOrCreateHost).mockClear()
+      expect(JSON.parse(toolText(await call(agentId)))).toEqual(noOp)
+      expect(agentSessionRegistry.hosts.get(agentId)?.cancelActiveTurn).toHaveBeenCalledOnce()
+      expect(agentSessionRegistry.getOrCreateHost).not.toHaveBeenCalled()
+    } finally {
+      await client.close()
+    }
+  })
+
+  it.each(["permanent send grant", "reply grant"])(
+    "uses message scope before host lookup and accepts a %s",
+    async (grant) => {
+      const { app, registry, agentSessionRegistry } = makeApp()
+      const caller = await registry.create({ cwd: "/fixture", cliKind: "claude" })
+      const target = await registry.create({ cwd: "/fixture", cliKind: "claude" })
+      await agentSessionRegistry.getOrCreateHost(target.id)
+      vi.mocked(agentSessionRegistry.getOrCreateHost).mockClear()
+      const host = agentSessionRegistry.hosts.get(target.id)
+      if (!host) throw new Error("Target host fixture did not start")
+      host.state.turnState = "responding"
+      setScopePolicyOverride({ message: "deny", update: "allow", close: "deny" })
+      const client = await connectClient(app, { [SCOPE_HEADER]: issueToken(caller.id) })
+      const call = () =>
+        client.callTool({ name: "agent_cancel", arguments: { agentId: target.id } })
+      try {
+        const denied = await call()
+        expect(isToolError(denied)).toBe(true)
+        expect(toolText(denied)).toContain("scope-denied")
+        expect(agentSessionRegistry.getHost).not.toHaveBeenCalled()
+        expect(host.cancelActiveTurn).not.toHaveBeenCalled()
+        expect(host.state.turnState).toBe("responding")
+
+        if (grant === "permanent send grant") {
+          recordAllowAlwaysGrant(caller.id, target.id, "send")
+        } else {
+          recordReplyGrant(caller.id, target.id)
+        }
+        expect(JSON.parse(toolText(await call()))).toEqual({
+          ok: true,
+          agentId: target.id,
+          outcome: "cancel-requested",
+        })
+        expect(agentSessionRegistry.getHost).toHaveBeenCalledExactlyOnceWith(target.id)
+        expect(host.cancelActiveTurn).toHaveBeenCalledOnce()
+        expect(agentSessionRegistry.getOrCreateHost).not.toHaveBeenCalled()
+      } finally {
+        await client.close()
+      }
+    },
+  )
 })

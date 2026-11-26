@@ -35,6 +35,7 @@ const VERB_KEYS: Record<string, MessageKey> = {
   reply: "scopePrompt.verb.reply",
   send: "scopePrompt.verb.send",
   subscribe: "scopePrompt.verb.subscribe",
+  unsubscribe: "scopePrompt.verb.unsubscribe",
   detach: "scopePrompt.verb.detach",
 }
 
@@ -62,11 +63,20 @@ export function scopeDetailRows(
   if (isMessageGrantVerb(detail.verb)) {
     rows.push({ label: t("scopePrompt.allowAlways"), value: t("scopePrompt.messageGrant") })
   }
-  if (detail.verb === "subscribe" && typeof detail.watched === "string") {
-    rows.push({ label: t("scopePrompt.watched"), value: detail.watched })
+  const watched =
+    detail.verb === "subscribe" && detail.watchedAgentPendingCreation === true
+      ? t("scopePrompt.watchedAgentPendingCreation")
+      : detail.watched
+  if (
+    (detail.verb === "subscribe" || detail.verb === "unsubscribe") &&
+    typeof watched === "string"
+  ) {
+    const grantKey =
+      detail.verb === "subscribe" ? "scopePrompt.subscribeGrant" : "scopePrompt.unsubscribeGrant"
+    rows.push({ label: t("scopePrompt.watched"), value: watched })
     rows.push({
       label: t("scopePrompt.allowAlways"),
-      value: t("scopePrompt.subscribeGrant").replace(/\{(caller|target)\}/g, (_, party) =>
+      value: t(grantKey).replace(/\{(caller|target)\}/g, (_, party) =>
         party === "caller" ? detail.caller : detail.target,
       ),
     })

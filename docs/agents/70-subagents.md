@@ -11,13 +11,15 @@ surface: [http, mcp]
 stability: stable
 routes:
   - GET /api/agent-prompt
+  - DELETE /api/agents/:id/subscribe
   - DELETE /api/agents
 mcp_tools:
   - session_open
+  - agent_unsubscribe
   - notify_parent
   - session_surface
-docs_version: 1.10.3
-updated: 2026-11-21
+docs_version: 1.14.0
+updated: 2026-11-25
 ---
 
 # Subagents
@@ -51,17 +53,21 @@ and your session memory.
 
 ## notify_parent
 
-Registration lives in **`delivery/agent-events-mcp-tools.ts:99`** (not `mcp-write-tools.ts`).
+`registerAgentEventMcpTools` in `delivery/agent-events-mcp-tools.ts` registers this tool.
 
-**`notify_parent` appears in the MCP tool list only when the session has `parentAgentId`.** A root session will not see it — that is expected, not a bug (`agent-events-mcp-tools.ts:95-99`).
+**`notify_parent` appears in the MCP tool list only when the session has `parentAgentId`.**
 
-The tool prompts the parent's live session with your text (`agent-events-mcp-tools.ts:102-117`).
+The tool prompts the parent's live session with your text.
 When you are a known caller, that text is wrapped as **`drive-coding-msg` v1** with **`sender`**
 set to **your** agent id/name and **`body`** equal to the notify text — same shape as
 **session_send**. The parent should read **`sender`** as “which child spoke”, not as proof the
 user typed the message.
 
 HTTP alternative for event delivery: **`POST /api/agents/:id/subscribe`** (documented in `97-transports`).
+To stop receiving those events, call **`agent_unsubscribe { agentId: "<watched>" }`** with
+your identity header or **`DELETE /api/agents/:id/subscribe`** with
+`{ "subscriberAgentId": "<your agent id>" }`. The same calls stop registrations made through
+`notifyOnDone`.
 
 ## Closing agents
 

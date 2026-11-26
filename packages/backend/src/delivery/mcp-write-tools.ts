@@ -4,6 +4,7 @@
 // Guard rail, not a lock - see NOT_A_SECURITY_BOUNDARY in ../agent-scope.ts
 
 import {
+  AgentCancelInput,
   AgentCloseInput,
   type AgentRegistry,
   AgentSendInput,
@@ -66,6 +67,24 @@ export function registerMcpWriteTools(
   jsonError: (message: string) => ToolResult,
   sender?: ResolvedSender,
 ): void {
+  registerArkTool(server, "agent_cancel", MCP_TOOL_META.agent_cancel, AgentCancelInput, (raw) => {
+    const { agentId } = raw as AgentCancelInput
+    return runScopedMcpTool(
+      scopeToken,
+      scopeDeps,
+      agentId,
+      RPC_METHODS.cancel,
+      () =>
+        deps.registry.get(agentId).then((existing) => {
+          if (!existing) return jsonError("agent not found")
+          const outcome =
+            deps.agentSessionRegistry.getHost(agentId)?.cancelActiveTurn() ?? "no-active-turn"
+          return jsonResult({ ok: true, agentId, outcome })
+        }),
+      () => jsonError(JSON.stringify(scopeDeniedBody())),
+    )
+  })
+
   registerArkTool(
     server,
     "session_close",

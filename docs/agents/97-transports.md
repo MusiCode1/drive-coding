@@ -1,10 +1,11 @@
 ---
 id: transports
 title: Transports — HTTP, SSE, MCP, WebSocket
-summary: When to use REST, agent events SSE, Streamable HTTP MCP, or browser WebSockets.
+summary: Choose REST, SSE, MCP, or WebSocket, and manage subscriptions to agent events.
 read_when:
   - You need server push for turn events but HTTP alone is stateless
   - You integrate via MCP Streamable HTTP at /api/mcp
+  - You want to subscribe to an agent's events or stop receiving them
   - You want to receive session events or send RPC calls over WebSocket
 tags: [transports]
 surface: [http, mcp]
@@ -14,10 +15,12 @@ routes:
   - POST /api/mcp
   - DELETE /api/mcp
   - POST /api/agents/:id/subscribe
+  - DELETE /api/agents/:id/subscribe
   - DELETE /api/agents/:id/connection
 mcp_tools:
   - session_subscribe
-docs_version: 1.13.0
+  - agent_unsubscribe
+docs_version: 1.14.0
 updated: 2026-11-25
 ---
 
@@ -57,6 +60,21 @@ Events arrive in the subscriber's own session as a system envelope (`45-render-c
 `<event-kind>turn-ended</event-kind>` when a turn ends — not that the task is done — and
 `<event-kind>stall-suspected</event-kind>` when a turn looks stuck, a suspicion only. With
 `includeLastAssistantText`, turn-ended carries a truncated preview of the agent's last reply.
+
+### Stop receiving agent events
+
+Send **`DELETE /api/agents/:id/subscribe`** with JSON `{ "subscriberAgentId": "<uuid>" }`.
+The HTTP response is `204` for removal or an absent pair, `400` for an invalid body, or
+`403` when scope denies the request.
+
+Over MCP, call **`agent_unsubscribe`** with `{ agentId: "<watched>", subscriberAgentId: "<subscriber>" }`.
+Omit `subscriberAgentId` to use the caller identity header. Success returns
+`{ ok: true, agentId, subscriberAgentId }`. Invalid input, missing subscriber identity or denied scope
+returns a tool error.
+
+Both transports remove the same pair, including registrations made with `notifyOnDone`.
+A repeated removal succeeds even after either agent closes. New events for that pair stop
+after removal. An event already dispatched for delivery may still arrive.
 
 ## MCP Streamable HTTP — `/api/mcp`
 

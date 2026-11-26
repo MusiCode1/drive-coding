@@ -34,8 +34,6 @@ import type { Patch, SessionConfigOption, SessionState, ToolOutputRules } from "
 import {
   applyPatch,
   applyPendingRequest,
-  applyTurnEnd,
-  applyTurnStart,
   applyUserMessage,
   clearPendingRequest,
   createInitialSessionState,
@@ -53,7 +51,6 @@ import type {
 import { createAcpClient, createAttachedAcpClient } from "@drive-coding/provider/client"
 import type { ProviderConnection } from "@drive-coding/provider/connection"
 import { parseExtResult } from "@drive-coding/provider/extensions"
-import { msgOf } from "./error-message.js"
 import { createPendingRequests } from "./pending-requests.js"
 import { defaultRequestTimeouts } from "./request-timeout.js"
 import {
@@ -63,7 +60,8 @@ import {
   publishResponseModes,
 } from "./session-host-ingest.js"
 import { attachScopePermission, type ScopePermissionHost } from "./session-host-scope.js"
-import { createSessionSwitch } from "./session-switch.js"
+import { type CancelActiveTurnOutcome, createSessionHostTurn } from "./session-host-turn.js"
+import { createSessionSwitch, SWITCHING_SESSION_ID } from "./session-switch.js"
 import { createTurnLifecycleHandlers, type TurnTimingHost } from "./turn-lifecycle.js"
 
 type SessionMcpOpts = { mcpServers?: NewSessionRequest["mcpServers"] }
@@ -309,6 +307,7 @@ export type ExtendedSessionHost = Omit<SessionHost, "loadSession"> & TurnTimingH
     sessionId: string
     _meta?: Record<string, unknown>
   } & SessionMcpOpts): Promise<{ sessionId: string; version: number }>
+  cancelActiveTurn(): CancelActiveTurnOutcome
   /**
    * Respond to a pending permission request.
    * requestId is a sequential counter (0, 1, 2...) assigned internally.
@@ -427,11 +426,11 @@ export async function createSessionHostFromConnection(
   })
 
   // ── C3: turn boundaries ─────────────────────────────────────────────────
-  const { turn: turnLifecycle, emitTurnEnd, maybeScheduleCloseOnTurnEnd, stampTurnStart, turnHostMethods } =
-    createTurnLifecycleHandlers({
-      getState: () => currentState, emit, closeOnTurnEnd, onScheduleCloseOnTurnEnd,
-      onTurnEnded, disposed: () => disposed,
-    })
+  const turnHandlers = createTurnLifecycleHandlers({
+    getState: () => currentState, emit, closeOnTurnEnd, onScheduleCloseOnTurnEnd,
+    onTurnEnded, disposed: () => disposed,
+  })
+  const { turn: turnLifecycle, turnHostMethods } = turnHandlers
 
   // ── PendingRequests for permission + elicitation ──────────────────────────
   // slice session-host-pending-surface C4: מונה requestId משותף יחיד — לא שני
@@ -656,6 +655,18 @@ export async function createSessionHostFromConnection(
     emitPatches,
   })
 
+  let activeSessionSwitches = 0
+  const turnOperations = createSessionHostTurn({
+    client,
+    getState: () => currentState,
+    isDisposed: () => disposed,
+    isSwitching: () => activeSessionSwitches > 0,
+    turnHandlers,
+    transformPromptForAcp,
+    emit,
+    startQuotaFetch,
+  })
+
   // ── ExtendedSessionHost ───────────────────────────────────────────────────
 
   return {
@@ -666,52 +677,7 @@ export async function createSessionHostFromConnection(
     patches: patchStream,
 
     dispose,
-    // C3 turn boundaries — waiting before add-message (hotfix).
-    // slice agent-charter C2: transformPromptForAcp prepends charter to ACP only.
-    async prompt(
-      sessionId: string,
-      content: string | PromptBlocks,
-      meta?: Record<string, unknown>,
-    ): Promise<void> {
-      if (disposed) throw new Error("SessionHost disposed")
-      const turn = ++turnLifecycle.turnSeq
-      stampTurnStart()
-      emit(applyTurnStart(currentState)) // 1. waiting — לפני ה-await, ולפני add-message (hotfix)
-      const msg = synthesizeUserMessage(currentState, content, meta)
-      const applied = applyUserMessage(currentState, msg)
-      currentState = applied.state
-      emitPatches(applied.patches) // 2. add-message — role="user" משמר waiting (מלכודת ג')
-      try {
-        const acpContent = transformPromptForAcp?.(content) ?? content
-        await client.prompt(sessionId, acpContent)
-        if (turn === turnLifecycle.turnSeq) {
-          emitTurnEnd(applyTurnEnd(currentState), {
-            stopReason: "end_turn",
-            contextUsage: currentState.contextUsage,
-            acpSessionId: currentState.sessionId,
-          }) // 3א. הצלחה
-          maybeScheduleCloseOnTurnEnd()
-          // slice http-state-gaps C3: refresh quota at turn end — the brief asked for
-          // it and it was missing (calev finding 7). A turn is exactly when usage
-          // changes. Non-blocking, and guarded by the same generation/in-flight rules.
-          if (currentState.sessionId) startQuotaFetch(currentState.sessionId)
-        }
-      } catch (err) {
-        if (turn === turnLifecycle.turnSeq) {
-          const error =
-            turn === turnLifecycle.cancelledTurn
-              ? undefined
-              : { message: msgOf(err), at: Date.now() }
-          emitTurnEnd(applyTurnEnd(currentState, error), {
-            stopReason: error?.message,
-            lastTurnError: error ?? null,
-            contextUsage: currentState.contextUsage,
-            acpSessionId: currentState.sessionId,
-          }) // 3ב. שגיאה — אין closeOnTurnEnd (הסוכן נשאר כראיה)
-        }
-        throw err // rethrow — הקורא הישיר עדיין רואה את השגיאה
-      }
-    },
+    ...turnOperations,
 
     /**
      * Cold create (no prior sessionId): thin path — ACP session/new + optional
@@ -735,35 +701,40 @@ export async function createSessionHostFromConnection(
         return result
       }
 
-      sessionSwitch.beginSessionSwitchInvalidate()
-      if (sessionSwitch.cancelOpenPendingSync()) {
-        // One microtask: let handlers' finally (clearPendingRequest + emit) land
-        // before the reset. ❌ Do not await when there is no pending — that would
-        // yield and let old-session tails land before the sessionId flip.
-        await Promise.resolve()
-      }
-      const { oldSessionId, snapshot } = sessionSwitch.emitSessionSwitchReset()
-      // Sentinel ≠ any real ACP sessionId → handleUpdate drops outgoing tails.
-      // null would pass the filter (host-with-no-session pass-through) and re-fill.
-      currentState = { ...currentState, sessionId: "__drive_switching__" }
-
+      activeSessionSwitches++
       try {
-        const result = await client.newSession(sessionOpts)
-        const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
-        currentState = { ...currentState, sessionId: result.sessionId, configOptions }
-        applySessionChanges({
-          turnState: "idle",
-          lastTurnError: null,
-          quota: null,
-          title: "",
-          ...(configOptions.length > 0 ? { configOptions } : {}),
-        })
-        publishResponseModes(handleUpdate, result.sessionId, result.modes)
-        startQuotaFetch(result.sessionId)
-        return result
-      } catch (err) {
-        sessionSwitch.rollbackSessionSwitch(oldSessionId, snapshot)
-        throw err
+        sessionSwitch.beginSessionSwitchInvalidate()
+        if (sessionSwitch.cancelOpenPendingSync()) {
+          // One microtask: let handlers' finally (clearPendingRequest + emit) land
+          // before the reset. ❌ Do not await when there is no pending — that would
+          // yield and let old-session tails land before the sessionId flip.
+          await Promise.resolve()
+        }
+        const { oldSessionId, snapshot } = sessionSwitch.emitSessionSwitchReset()
+        // Sentinel ≠ any real ACP sessionId → handleUpdate drops outgoing tails.
+        // null would pass the filter (host-with-no-session pass-through) and re-fill.
+        currentState = { ...currentState, sessionId: SWITCHING_SESSION_ID }
+
+        try {
+          const result = await client.newSession(sessionOpts)
+          const configOptions = Array.isArray(result.configOptions) ? result.configOptions : []
+          currentState = { ...currentState, sessionId: result.sessionId, configOptions }
+          applySessionChanges({
+            turnState: "idle",
+            lastTurnError: null,
+            quota: null,
+            title: "",
+            ...(configOptions.length > 0 ? { configOptions } : {}),
+          })
+          publishResponseModes(handleUpdate, result.sessionId, result.modes)
+          startQuotaFetch(result.sessionId)
+          return result
+        } catch (err) {
+          sessionSwitch.rollbackSessionSwitch(oldSessionId, snapshot)
+          throw err
+        }
+      } finally {
+        activeSessionSwitches--
       }
     },
 
@@ -774,60 +745,46 @@ export async function createSessionHostFromConnection(
     } & SessionMcpOpts): Promise<{ sessionId: string; version: number }> {
       if (disposed) throw new Error("SessionHost disposed")
       sessionSwitch.assertCanLoad(opts.sessionId)
-      sessionSwitch.beginSessionSwitchInvalidate()
-      if (sessionSwitch.cancelOpenPendingSync()) {
-        await Promise.resolve()
-      }
-      const { oldSessionId, preResetConfigOptions, snapshot } = sessionSwitch.emitSessionSwitchReset()
-
-      // 4. Flip sessionId BEFORE the await — otherwise the step-5 filter would
-      //    drop the new session's replay (arriving during the await; streamHistory
-      //    runs inside the CLI's loadSession handler) and let in old-session tails.
-      currentState = { ...currentState, sessionId: opts.sessionId }
-
-      // 6.
+      activeSessionSwitches++
       try {
-        const result = await client.loadSession({
-          ...opts,
-          mcpServers: opts.mcpServers ?? [],
-        })
-        const isSameSession = opts.sessionId === oldSessionId
-        const mergedConfigOptions = configOptionsAfterLoad(
-          result?.configOptions,
-          isSameSession ? preResetConfigOptions : undefined,
-        )
-        applySessionChanges({
-          turnState: "idle",
-          lastTurnError: null,
-          ...(mergedConfigOptions.length > 0 ? { configOptions: mergedConfigOptions } : {}),
-          ...(isSameSession ? {} : { quota: null }),
-        })
-        publishResponseModes(handleUpdate, opts.sessionId, result?.modes)
-        // slice http-state-gaps C3: the generation already advanced at entry (above).
-        startQuotaFetch(opts.sessionId)
-        return { sessionId: opts.sessionId, version: currentState.version }
-      } catch (err) {
-        sessionSwitch.rollbackSessionSwitch(oldSessionId, snapshot)
-        throw err
-      }
-    },
+        sessionSwitch.beginSessionSwitchInvalidate()
+        if (sessionSwitch.cancelOpenPendingSync()) {
+          await Promise.resolve()
+        }
+        const { oldSessionId, preResetConfigOptions, snapshot } = sessionSwitch.emitSessionSwitchReset()
 
-    async cancel(sessionId: string) {
-      if (disposed) throw new Error("SessionHost disposed")
-      const turn = turnLifecycle.turnSeq // מסמן, ❌ לא מקדם
-      turnLifecycle.cancelledTurn = turn
-      try {
-        await client.cancel(sessionId)
-      } catch {
-        // best-effort — תואם ל-local
-      }
-      if (turn === turnLifecycle.turnSeq) {
-        emitTurnEnd(applyTurnEnd(currentState), {
-          stopReason: "cancelled",
-          contextUsage: currentState.contextUsage,
-          acpSessionId: currentState.sessionId,
-        }) // אותה גדר בדיוק כמו ב-prompt
-        maybeScheduleCloseOnTurnEnd()
+        // 4. Flip sessionId BEFORE the await — otherwise the step-5 filter would
+        //    drop the new session's replay (arriving during the await; streamHistory
+        //    runs inside the CLI's loadSession handler) and let in old-session tails.
+        currentState = { ...currentState, sessionId: opts.sessionId }
+
+        // 6.
+        try {
+          const result = await client.loadSession({
+            ...opts,
+            mcpServers: opts.mcpServers ?? [],
+          })
+          const isSameSession = opts.sessionId === oldSessionId
+          const mergedConfigOptions = configOptionsAfterLoad(
+            result?.configOptions,
+            isSameSession ? preResetConfigOptions : undefined,
+          )
+          applySessionChanges({
+            turnState: "idle",
+            lastTurnError: null,
+            ...(mergedConfigOptions.length > 0 ? { configOptions: mergedConfigOptions } : {}),
+            ...(isSameSession ? {} : { quota: null }),
+          })
+          publishResponseModes(handleUpdate, opts.sessionId, result?.modes)
+          // slice http-state-gaps C3: the generation already advanced at entry (above).
+          startQuotaFetch(opts.sessionId)
+          return { sessionId: opts.sessionId, version: currentState.version }
+        } catch (err) {
+          sessionSwitch.rollbackSessionSwitch(oldSessionId, snapshot)
+          throw err
+        }
+      } finally {
+        activeSessionSwitches--
       }
     },
 
