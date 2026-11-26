@@ -7,10 +7,11 @@ import {
 import { getCliSpec } from "@drive-coding/provider/config"
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { AGENT_ID_HEADER } from "../agent-identity.js"
+import { checkNotifyOnDoneScope, SCOPE_DENIED_BODY } from "../scope-write.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { applyNotifyOnDoneToOpenBody } from "./agent-events-mcp-tools.js"
 import { parseCreateAgentBody } from "./create-agent-input.js"
-import type { McpHttpDeps } from "./http-mcp.js"
+import type { McpHttpDeps, McpRequestContext } from "./http-mcp.js"
 import { McpToolError, registerToolPair } from "./mcp-tool-alias.js"
 import { defaultPublicUrl, loopbackBaseUrl } from "./public-url.js"
 import { applySessionOpenCreateFields } from "./session-open-body.js"
@@ -45,7 +46,7 @@ export function cliMeta(
 export function registerMcpOpenTool(
   server: McpServer,
   deps: McpHttpDeps,
-  callerAgentId: string | undefined,
+  { callerAgentId, scopeToken }: McpRequestContext,
 ): void {
   registerToolPair(
     server,
@@ -81,6 +82,17 @@ export function registerMcpOpenTool(
         sidecarSizeBase: (explicit ?? loopbackBaseUrl(deps.urlConfig)).replace(/\/$/, ""),
       })
       if (!parsed.ok) throw new McpToolError(parsed.error.body.error)
+
+      const subscriberId = parsed.value.notifyOnDone
+      if (
+        subscriberId &&
+        !(await checkNotifyOnDoneScope(scopeToken, subscriberId, {
+          registry: deps.registry,
+          sessionRegistry: deps.agentSessionRegistry,
+        }))
+      ) {
+        throw new McpToolError(JSON.stringify(SCOPE_DENIED_BODY))
+      }
 
       const created = await deps.orchestrator.createAndSpawn(parsed.value)
       return withSessionOpenRollback(deps, created.agentId, async () => {

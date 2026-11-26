@@ -164,7 +164,7 @@ function createSessionBusMcpServer(
     },
   )
 
-  registerMcpOpenTool(server, deps, callerAgentId)
+  registerMcpOpenTool(server, deps, ctx)
 
   const callerSender = callerAgentId && callerRecord ? senderFromRecord(callerRecord) : undefined
   registerMcpWriteTools(server, deps, scopeToken, scopeDeps, callerSender)

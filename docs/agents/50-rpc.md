@@ -7,7 +7,7 @@ read_when:
   - You are integrating with the FE-style RPC surface instead of MCP session_send
   - You need the canonical list of RPC method names and what each one expects
 tags: [rpc, session]
-surface: [http]
+surface: [http, mcp]
 stability: transitional
 routes: [POST /api/agents/:id/rpc]
 ext_methods:
@@ -17,7 +17,8 @@ ext_methods:
   - _drive/voice/stop
   - _drive/voice/listVoices
   - _drive/voice/speak
-docs_version: 1.17.1
+mcp_tools: [agent_cancel]
+docs_version: 1.17.2
 updated: 2026-11-26
 ---
 
@@ -43,6 +44,11 @@ Legacy aliases (for example `prompt` instead of `session/prompt`) may still be a
 | `session/delete` | Delete a session by `params.sessionId`. |
 | `_drive/ext` | Extension dispatch (`params.method`, optional `params.params`). |
 | `_drive/set_session_model` | Legacy model override (`params.model`) — prefer config options when available. |
+
+MCP clients can call `agent_cancel {agentId}` to target the current active
+turn. Its best-effort response is separate from the RPC result and the
+client observes completion through **session_state**. HTTP and WebSocket RPC
+`session/cancel` use the caller's `params.sessionId` and honor `waitMs`.
 
 ## Listing sessions
 

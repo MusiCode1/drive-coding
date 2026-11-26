@@ -39,3 +39,18 @@ export const McpAgentSubscribeInput = AgentSubscribeInput.pick("includeLastAssis
     "Subscriber agent UUID. Defaults to X-Drive-Coding-Agent header when present.",
   ),
 })
+
+/** DELETE /api/agents/:id/subscribe body */
+export const AgentUnsubscribeBody = type({
+  subscriberAgentId: "string.uuid",
+}).onUndeclaredKey("reject")
+export type AgentUnsubscribeBody = typeof AgentUnsubscribeBody.infer
+
+/** MCP agent_unsubscribe input */
+export const AgentUnsubscribeInput = type({
+  agentId: type("string >= 1").describe("Watched agent id."),
+  "subscriberAgentId?": type("string >= 1").describe(
+    "Subscriber agent id. Defaults to X-Drive-Coding-Agent header when present.",
+  ),
+}).onUndeclaredKey("reject")
+export type AgentUnsubscribeInput = typeof AgentUnsubscribeInput.infer

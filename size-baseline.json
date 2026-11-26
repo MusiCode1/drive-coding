@@ -56,10 +56,10 @@
       "codeLines": 181
     },
     "packages/backend/src/app/recordings-store.ts": {
-      "metric": 130,
-      "impurity": 17,
+      "metric": 105,
+      "impurity": 13,
       "class": "mixed",
-      "codeLines": 93
+      "codeLines": 75
     },
     "packages/backend/src/app-version.ts": {
       "metric": 35,
@@ -152,10 +152,10 @@
       "codeLines": 41
     },
     "packages/backend/src/delivery/http-agents.ts": {
-      "metric": 126,
-      "impurity": 5,
+      "metric": 91,
+      "impurity": 3,
       "class": "mixed",
-      "codeLines": 92
+      "codeLines": 64
     },
     "packages/backend/src/delivery/http-cache.ts": {
       "metric": 51,
@@ -338,10 +338,10 @@
       "codeLines": 214
     },
     "packages/backend/src/session-host/session-host.ts": {
-      "metric": 824,
-      "impurity": 14,
+      "metric": 779,
+      "impurity": 10,
       "class": "scattered",
-      "codeLines": 510
+      "codeLines": 478
     },
     "packages/backend/src/session-host/turn-lifecycle.ts": {
       "metric": 93,

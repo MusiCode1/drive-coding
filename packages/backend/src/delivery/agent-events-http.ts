@@ -3,7 +3,7 @@
  */
 
 import type { AgentRegistry } from "@drive-coding/core"
-import { AgentSubscribeBody } from "@drive-coding/core"
+import { AgentSubscribeBody, AgentUnsubscribeBody } from "@drive-coding/core"
 import { type } from "arktype"
 import type { Hono } from "hono"
 import { SCOPE_DENIED_BODY, whenScopedWriteAllowed } from "../scope-write.js"
@@ -47,6 +47,31 @@ export function registerAgentEventsHttp(
       return c.body(null, 204)
     })
   })
+
+  app.delete("/api/agents/:id/subscribe", (c) =>
+    c.req.json<unknown>().then<Response, Response>(
+      (body) => {
+        const parsed = AgentUnsubscribeBody(body)
+        if (parsed instanceof type.errors) {
+          return c.json({ error: parsed.summary }, 400)
+        }
+
+        const watchedId = c.req.param("id")
+        return whenScopedWriteAllowed((name) => c.req.header(name), {
+          targetId: parsed.subscriberAgentId,
+          watchedId,
+          verb: "unsubscribe",
+          registry: deps.registry,
+          sessionRegistry: deps.agentSessionRegistry,
+        }).then<Response>((allowed) => {
+          if (!allowed) return c.json(SCOPE_DENIED_BODY, 403)
+          deps.eventBus.unsubscribe(watchedId, parsed.subscriberAgentId)
+          return c.body(null, 204)
+        })
+      },
+      () => c.json({ error: "invalid json" }, 400),
+    ),
+  )
 }
 
 /**

@@ -37,7 +37,12 @@ function prompt(request) {
   chunk(request.params.sessionId, replyText)
   if (scenario === "reject") {
     send({ id: request.id, error: { code: -32001, message: "Fixture prompt rejected" } })
-  } else if (scenario === "cancelled" || scenario === "hold" || scenario === "late-cancel") {
+  } else if (
+    scenario === "cancelled" ||
+    scenario === "hold" ||
+    scenario === "late-cancel" ||
+    scenario === "held-refusal"
+  ) {
     pending.set(request.params.sessionId, { request, scenario })
   } else {
     complete(request, reasons.has(scenario) ? scenario : "end_turn")
@@ -75,10 +80,13 @@ input.on("line", (line) => {
     }
     case "_test/complete": {
       const turn = pending.get(message.params.sessionId)
-      if (turn?.scenario === "late-cancel") {
+      if (
+        turn?.scenario === "late-cancel" ||
+        (turn?.scenario === "held-refusal" && message.params.tail)
+      ) {
         chunk(message.params.sessionId, " after local cancel")
       }
-      if (turn) complete(turn.request, "end_turn")
+      if (turn) complete(turn.request, turn.scenario === "held-refusal" ? "refusal" : "end_turn")
       break
     }
     default:

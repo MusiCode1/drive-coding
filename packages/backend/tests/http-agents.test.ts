@@ -20,6 +20,7 @@ import { registerAgentsHttp } from "../src/delivery/http-agents"
 import { httpCacheInvalidateAll } from "../src/delivery/http-cache"
 import { CF_ACCESS_EMAIL_HEADER } from "../src/delivery/opened-by-email.js"
 import type { SessionHistoryStore } from "../src/history/session-history-store.js"
+import { checkNotifyOnDoneScope } from "../src/scope-write.js"
 import { createAgentEventBus } from "../src/session-host/agent-events.js"
 import type { AgentSessionRegistry } from "../src/session-host/registry.js"
 
@@ -47,6 +48,7 @@ function makeApp(opts?: {
   sessionHistoryStore?: ReturnType<typeof makeFakeSessionHistoryStore>
   sidecar?: string
   eventBus?: ReturnType<typeof createAgentEventBus>
+  checkSubscriberScope?: boolean
 }) {
   const app = new Hono()
   const registry = createInMemoryAgentRegistry()
@@ -83,19 +85,29 @@ function makeApp(opts?: {
   }
 
   const sessionHistoryStore = opts?.sessionHistoryStore ?? makeFakeSessionHistoryStore()
+  const agentSessionRegistry = { getHost: vi.fn() } as unknown as AgentSessionRegistry
   registerAgentsHttp(app, {
     registry,
     orchestrator: opts?.eventBus
       ? wrapOrchestratorWithAgentEvents(orchestrator, opts.eventBus)
       : orchestrator,
     sessionHistoryStore,
+    ...(opts?.checkSubscriberScope
+      ? {
+          checkNotifyOnDone: (token, subscriberId) =>
+            checkNotifyOnDoneScope(token, subscriberId, {
+              registry,
+              sessionRegistry: agentSessionRegistry,
+            }),
+        }
+      : {}),
     env: { ...process.env, AGENT_SIDECAR: opts?.sidecar },
   })
   if (opts?.eventBus) {
     registerAgentEventsHttp(app, {
       registry,
       eventBus: opts.eventBus,
-      agentSessionRegistry: { getHost: vi.fn() } as unknown as AgentSessionRegistry,
+      agentSessionRegistry,
     })
   }
   return { app, registry, orchestrator, sessionHistoryStore }
@@ -164,7 +176,7 @@ describe("HTTP /api/agents", () => {
       "normalizes %s subscribe input once",
       async (form) => {
         const eventBus = createAgentEventBus()
-        const { app, registry, orchestrator } = makeApp({ eventBus })
+        const { app, registry, orchestrator } = makeApp({ eventBus, checkSubscriberScope: true })
         const parent = await registry.create({ cliKind: "opencode", cwd: "/parent" })
         const create = vi.spyOn(orchestrator, "createAndSpawn")
         const subscribe = vi.spyOn(eventBus, "subscribe")

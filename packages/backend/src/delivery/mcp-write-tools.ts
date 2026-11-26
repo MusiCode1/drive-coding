@@ -4,9 +4,11 @@
 // Guard rail, not a lock - see NOT_A_SECURITY_BOUNDARY in ../agent-scope.ts
 
 import {
+  AgentCancelInput,
   AgentCloseInput,
   type AgentRegistry,
   AgentSendInput,
+  MCP_TOOL_META,
   McpAgentCloseInput,
   McpAgentSendInput,
 } from "@drive-coding/core"
@@ -23,7 +25,7 @@ import { raceKeepRunning } from "../session-host/http/rpc-wait.js"
 import type { AgentSessionRegistry } from "../session-host/registry.js"
 import { type ResolvedSender, wrapPromptContent } from "./drive-message-source.js"
 import { runScopedMcpTool } from "./mcp-scope.js"
-import { McpToolError, registerToolPair } from "./mcp-tool-alias.js"
+import { jsonResult, McpToolError, registerArkTool, registerToolPair } from "./mcp-tool-alias.js"
 
 const log = createLogger("backend.mcp")
 
@@ -57,6 +59,27 @@ export function registerMcpWriteTools(
   scopeDeps: ScopeEnforcementDeps,
   sender?: ResolvedSender,
 ): void {
+  registerArkTool(
+    server,
+    "agent_cancel",
+    MCP_TOOL_META.agent_cancel,
+    AgentCancelInput,
+    ({ agentId }) =>
+      runScopedMcpTool(
+        scopeToken,
+        scopeDeps,
+        agentId,
+        RPC_METHODS.cancel,
+        async () => {
+          if (!(await deps.registry.get(agentId))) throw new McpToolError("agent not found")
+          const outcome =
+            deps.agentSessionRegistry.getHost(agentId)?.cancelActiveTurn() ?? "no-active-turn"
+          return jsonResult({ ok: true, agentId, outcome })
+        },
+        scopeDenied,
+      ),
+  )
+
   registerToolPair(
     server,
     "session_close",

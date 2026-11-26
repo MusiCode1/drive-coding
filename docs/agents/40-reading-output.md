@@ -15,8 +15,8 @@ routes:
   - GET /api/agents/:id/events
   - GET /api/agents/:id/state
   - POST /api/agents/:id/rpc
-mcp_tools: [session_send, session_state, agent_send, agent_state]
-docs_version: 1.17.1
+mcp_tools: [session_send, session_state, agent_send, agent_state, agent_cancel]
+docs_version: 1.17.2
 updated: 2026-11-26
 ---
 
@@ -43,6 +43,14 @@ A rejected request uses the normalized rejection message in `stopReason` and `la
 
 With `noWait: true`, or when the wait reaches `timeoutSec` (default 1800 seconds),
 the response is `{ running: true }`. Follow the turn through state or the session stream.
+
+After `agent_cancel` returns `cancel-requested`, poll **session_state** until
+`turnState` is `idle`. The outcome acknowledges the request. During a session
+switch the tool returns `no-active-turn`; retry it when the current session
+has an active turn. The first completed outcome wins. For example, if the
+provider returns `refusal` before cancellation completes, the waiting caller,
+live idle update, and reconnect snapshot keep that outcome. Late output
+following cancellation can arrive without a second `turn-ended` event.
 
 ## One-shot HTTP snapshot
 

@@ -1,10 +1,11 @@
 ---
 id: transports
 title: Transports — HTTP, SSE, MCP, WebSocket
-summary: When to use REST, agent events SSE, Streamable HTTP MCP, or browser WebSockets.
+summary: Choose REST, SSE, MCP, or WebSocket, and manage subscriptions to agent events.
 read_when:
   - You need server push for turn events but HTTP alone is stateless
   - You integrate via MCP Streamable HTTP at /api/mcp
+  - You want to subscribe to an agent's events or stop receiving them
   - You want to receive session events or send RPC calls over WebSocket
 tags: [transports]
 surface: [http, mcp]
@@ -14,12 +15,14 @@ routes:
   - POST /api/mcp
   - DELETE /api/mcp
   - POST /api/agents/:id/subscribe
+  - DELETE /api/agents/:id/subscribe
   - DELETE /api/agents/:id/connection
 mcp_tools:
   - session_subscribe
   - agent_subscribe
-docs_version: 1.16.0
-updated: 2026-11-25
+  - agent_unsubscribe
+docs_version: 1.17.2
+updated: 2026-11-26
 ---
 
 # Transports
@@ -60,6 +63,21 @@ Events arrive in the subscriber's own session as a system envelope (`45-render-c
 `includeLastAssistantText`, turn-ended carries a truncated preview of the agent's last reply.
 
 MCP discovery also lists the alternate name `agent_subscribe` while the bus is enabled. Both names use the same subscription and scope checks.
+
+### Stop receiving agent events
+
+Send **`DELETE /api/agents/:id/subscribe`** with JSON `{ "subscriberAgentId": "<uuid>" }`.
+The HTTP response is `204` for removal or an absent pair, `400` for an invalid body, or
+`403` when scope denies the request.
+
+Over MCP, call **`agent_unsubscribe`** with `{ agentId: "<watched>", subscriberAgentId: "<subscriber>" }`.
+Omit `subscriberAgentId` to use the caller identity header. Success returns
+`{ ok: true, agentId, subscriberAgentId }`. Invalid input, missing subscriber identity or denied scope
+returns a tool error.
+
+Both transports remove the same pair, including registrations made with `notifyOnDone`.
+A repeated removal succeeds even after either agent closes. New events for that pair stop
+after removal. An event already dispatched for delivery may still arrive.
 
 ## MCP Streamable HTTP — `/api/mcp`
 

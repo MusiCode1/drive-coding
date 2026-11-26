@@ -23,43 +23,40 @@ export const MCP_AGENT_CONFIGURE_HINT =
 
 export const MCP_SERVER_INSTRUCTIONS = `# drive-coding MCP
 
-Remote control for live ACP agents. Discover both tool vocabularies and their input schemas with \`tools/list\`. The workflow below uses \`session_*\`.
+Discover both tool vocabularies and their schemas with \`tools/list\`. The workflow here uses \`session_*\`.
 
 ## Typical workflow
 
-1. **session_list** — see agents already running on this backend (id, cliKind, cwd, turnState).
-2. **session_open** — pass \`cli\` and absolute \`cwd\`. Wait for \`sessionId\` (up to 30s) and save the returned \`agent\` UUID.
-3. **session_send** — send a user prompt to that \`agent\`; waits until the turn ends unless \`noWait\` or timeout.
-4. **session_state** — inspect turnState, modes, configOptions, errors without pulling the full message log.
-5. **session_close** — delete the agent and kill its CLI when finished.
+1. **session_list** — find a live agent before spawning one.
+2. **session_open** — pass \`cli\` and absolute \`cwd\`. Wait up to 30s for \`sessionId\` and save \`agent\`.
+3. **session_send** — prompt that \`agent\`. Wait for completion, or continue after \`noWait\` or timeout.
+4. **session_state** — inspect turnState, modes, configOptions and errors. Use \`fields: ["*"]\` for the full snapshot.
+5. **session_close** — close the agent you opened when finished. Wait for idle or pass \`force: true\`.
 
-Reuse an existing agent when appropriate. Close any agent you opened when finished.
-If its turn is open, wait for idle or pass \`force: true\`.
+Apply the live \`configOptions\` or mode IDs and allowed values with \`session_send.sets\`.
 
-## Configure the child
+## Identity and scope
 
-Read the CLI name, \`configOptions\` and \`modes.availableModes\` from open/state.
-Apply live option IDs and allowed values via \`session_send.sets\` before the prompt.
+A registered \`X-Drive-Coding-Agent\` identifies the caller, sets the parent for **session_open** and enables **notify_parent** for child agents. An explicit parent must match the header.
+**session_whoami** reads caller identity and runtime. Child RSS is Linux-only and can be unavailable.
+**session_surface** reads UI and runtime instructions. Edit your record with \`session_note_set\`, \`session_field_set\` or \`session_field_delete\`.
+Scope policy applies to writes outside your subtree. Denial returns \`scope-denied\`. Reads are unrestricted.
 
-## Identity header
+## Cancellation
 
-When drive-coding injects this server into a child agent, requests include \`X-Drive-Coding-Agent: <uuid>\`.
-That sets the parent for **session_open** (any explicit \`parent\` must match) and enables **notify_parent** for child agents.
-Call **session_whoami** (no parameters) to discover your own agent UUID and runtime context from that header — the server does not guess from ENV.
+Call **agent_cancel** with \`{agentId}\`. \`cancel-requested\` is best effort, with one provider request per active turn. Poll **session_state** for idle.
+Idle, disconnected and switching sessions yield \`no-active-turn\`; call again once a turn is active.
 
-When child RSS cannot be measured (Windows, stale pid, /proc failure): \`runtime.memory\` is \`null\` and \`runtime.source\` is \`"unavailable"\`. Child memory is Linux-only in v1.
+## Subscriptions
 
-The header supplies identity. See \`session_subscribe\` for subscriptions and \`session_surface\` for this agent’s UI and runtime instructions. Use \`session_note_set\`, \`session_field_set\` and \`session_field_delete\` to edit your record.
-
-Scoped sends and closes target your subtree. Outside it, scope policy controls
-permission escalation. A refusal returns \`scope-denied\`. Reads are unrestricted.
+**session_subscribe** takes \`agent\` and optional \`subscriber\`. **agent_unsubscribe** takes \`agentId\` and optional \`subscriberAgentId\`.
+Both default to the caller as subscriber and check scope against the effective subscriber. Unsubscribe also removes subscriptions from \`notifyOnDone\`, even after an agent closes.
 
 ## Limits
 
-- **Stateless HTTP** — no live push notifications; poll with session_state or session_send.
-- **session_close** refuses when \`turnState !== idle\` unless \`force: true\`, and is subject to the scope rule above.
-- **session_send** defaults to 1800s wait; \`file\`, \`marker\`, \`idleTimeoutSec\`, \`keep\` are ignored (CLI-only).
-- Kill switch: backend owner sets \`MCP_HTTP=0\` to disable the endpoint.
+- MCP HTTP is stateless. Poll state or wait on send for output.
+- Send waits up to 1800s by default. \`file\`, \`marker\`, \`idleTimeoutSec\` and \`keep\` are CLI-only.
+- Set \`MCP_HTTP=0\` to disable the endpoint.
 `
 
 export type McpToolName =
@@ -69,6 +66,8 @@ export type McpToolName =
   | "session_state"
   | "session_close"
   | "session_subscribe"
+  | "agent_cancel"
+  | "agent_unsubscribe"
   | "session_whoami"
   | "session_surface"
   | "session_note_set"
@@ -128,56 +127,56 @@ export const MCP_TOOL_META: Record<Exclude<McpToolName, "notify_parent">, ToolMe
   ...aliasMeta(
     "session_list",
     "List live agents",
-    "List registered agents and live CLI status. Check before opening a duplicate.",
+    "List live agents and CLI status before opening a duplicate.",
     "Legacy fields: userNotes, sessionFields, connectionCount.",
     "Canonical fields: agentNotes, agentFields, viewerCount.",
   ),
   ...aliasMeta(
     "session_open",
     "Open agent",
-    "Wait up to 30s for sessionId. Inspect cli, modes and configOptions. Use session_send.sets with live IDs and session_close when finished.",
-    "Input uses cli and cwd. Returns agent UUID in agent.",
-    "Input uses cliKind and cwd. Use returned agentId as agent in the recommended workflow.",
+    "Wait up to 30s for sessionId. Use returned modes/configOptions in session_send.sets.",
+    "Uses cli, cwd and optional notifyOnDone (subscribe scope). Returns agent.",
+    "Uses cliKind, cwd and optional subscribeOnOpenAgentId (subscribe scope). Returns agentId.",
   ),
   ...aliasMeta(
     "session_send",
     "Send prompt to agent",
-    "Apply sets using live option IDs, then send a prompt. Wait up to timeoutSec (default 1800), or return { running: true } on timeout or noWait.",
+    "Apply sets, then prompt. Wait up to timeoutSec (default 1800), or return { running: true } on timeout or noWait.",
     "Input uses agent.",
     "Input uses agentId.",
   ),
   ...aliasMeta(
     "session_state",
     "Read agent state",
-    'Read selected host state, including the live options by default. Pass fields: ["*"] for the full snapshot.',
+    'Read host state and live options. Pass fields: ["*"] for the full snapshot.',
     "Input and result use agent.",
     "Input and result use agentId.",
   ),
   ...aliasMeta(
     "session_close",
     "Close agent",
-    "Delete one agent and kill its CLI. Scope applies. Wait for idle or pass force. A missing record returns alreadyClosed.",
+    "Close one agent and its CLI. Scope applies. Wait for idle or pass force. Missing agents return alreadyClosed.",
     "Input and result use agent.",
     "Input and result use agentId.",
   ),
   ...aliasMeta(
     "session_subscribe",
     "Subscribe to agent events",
-    "Receive turn-ended and stall-suspected events. Repeated calls update options on the same subscription. The caller is the default subscriber.",
+    "Receive turn-ended and stall-suspected events. Calls update the same pair. Scope uses the subscriber, defaulting to the caller.",
     "Inputs use agent and subscriber.",
     "Inputs use agentId and subscriberAgentId.",
   ),
   ...aliasMeta(
     "session_whoami",
     "Read caller identity",
-    "Read caller identity, optional ACP sessionId, agent memory, backend and child runtime. Requires a registered X-Drive-Coding-Agent header. Child RSS may be unavailable.",
+    "Read identity, ACP sessionId, memory and runtime. Requires registered X-Drive-Coding-Agent.",
     "Identity uses agent.",
     "Identity uses agentId, agentNotes and agentFields.",
   ),
   ...aliasMeta(
     "session_surface",
     "Read agent surface prompt",
-    "Read the same Markdown as GET /api/agent-prompt: runtime, chat rendering, capabilities, agent memory and charter. Requires caller identity.",
+    "Read the UI, runtime and charter prompt from GET /api/agent-prompt. Requires caller identity.",
   ),
   ...aliasMeta(
     "session_note_set",
@@ -194,6 +193,16 @@ export const MCP_TOOL_META: Record<Exclude<McpToolName, "notify_parent">, ToolMe
     "Delete agent field",
     "Remove one field on the caller’s record by header identity. A missing key is a successful no-op.",
   ),
+  agent_cancel: {
+    title: "Cancel the active turn",
+    description:
+      "Cancel agentId’s active turn using session/cancel scope. Best effort, once per turn. Returns no-active-turn during switches or when idle. Poll session_state for idle.",
+  },
+  agent_unsubscribe: {
+    title: "Unsubscribe from agent events",
+    description:
+      "Remove events from agentId for the effective subscriber (defaults to caller). Uses unsubscribe scope. Removes pairs from notifyOnDone and succeeds if already absent.",
+  },
   docs_get: {
     title: "Get agent documentation",
     description:

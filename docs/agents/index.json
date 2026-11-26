@@ -1,5 +1,5 @@
 {
-  "docsVersion": "1.17.1",
+  "docsVersion": "1.17.2",
   "docs": [
     {
       "id": "orientation",
@@ -56,7 +56,7 @@
     {
       "id": "session-lifecycle",
       "title": "Session lifecycle — open, send, close",
-      "summary": "How to open an agent, drive a turn, close it, and keep session viewers alive.",
+      "summary": "How to open an agent, send and cancel turns, close the agent, and keep viewers alive.",
       "read_when": [
         "You need to spawn an agent and get its id",
         "A turn is running and you must decide between waiting and forcing",
@@ -65,7 +65,7 @@
       "tags": ["session", "ownership", "turnstate"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.17.0",
+      "docs_version": "1.17.2",
       "routes": [
         "GET /api/agents",
         "POST /api/agents",
@@ -83,6 +83,7 @@
         "agent_send",
         "session_state",
         "agent_state",
+        "agent_cancel",
         "session_close",
         "agent_close",
         "session_note_set",
@@ -99,6 +100,7 @@
         "MCP tool names",
         "Open (spawn)",
         "Send (drive a turn)",
+        "Cancel the active turn",
         "Close",
         "Viewer groups and liveness",
         "Identity header",
@@ -155,14 +157,14 @@
       "tags": ["output", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.17.1",
+      "docs_version": "1.17.2",
       "routes": [
         "GET /api/agents/:id/history",
         "GET /api/agents/:id/events",
         "GET /api/agents/:id/state",
         "POST /api/agents/:id/rpc"
       ],
-      "mcp_tools": ["session_send", "session_state", "agent_send", "agent_state"],
+      "mcp_tools": ["session_send", "session_state", "agent_send", "agent_state", "agent_cancel"],
       "path": "docs/agents/40-reading-output.md",
       "headings": [
         "Reading output",
@@ -248,11 +250,11 @@
         "You need the canonical list of RPC method names and what each one expects"
       ],
       "tags": ["rpc", "session"],
-      "surface": ["http"],
+      "surface": ["http", "mcp"],
       "stability": "transitional",
-      "docs_version": "1.17.1",
+      "docs_version": "1.17.2",
       "routes": ["POST /api/agents/:id/rpc"],
-      "mcp_tools": [],
+      "mcp_tools": ["agent_cancel"],
       "path": "docs/agents/50-rpc.md",
       "headings": [
         "Agent session RPC",
@@ -280,9 +282,14 @@
       "tags": ["identity"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.16.0",
-      "routes": ["POST /api/agents/:id/reply", "GET /api/scope-policy", "PATCH /api/scope-policy"],
-      "mcp_tools": ["session_whoami", "agent_whoami"],
+      "docs_version": "1.17.2",
+      "routes": [
+        "POST /api/agents/:id/reply",
+        "DELETE /api/agents/:id/subscribe",
+        "GET /api/scope-policy",
+        "PATCH /api/scope-policy"
+      ],
+      "mcp_tools": ["agent_cancel", "agent_unsubscribe", "session_whoami", "agent_whoami"],
       "path": "docs/agents/60-identity-and-scopes.md",
       "headings": [
         "Agent identity and scoped writes",
@@ -310,13 +317,14 @@
       "tags": ["subagents", "session"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.16.0",
-      "routes": ["GET /api/agent-prompt", "DELETE /api/agents"],
+      "docs_version": "1.17.2",
+      "routes": ["GET /api/agent-prompt", "DELETE /api/agents/:id/subscribe", "DELETE /api/agents"],
       "mcp_tools": [
         "session_subscribe",
         "agent_subscribe",
         "session_open",
         "agent_open",
+        "agent_unsubscribe",
         "notify_parent",
         "session_surface",
         "agent_surface"
@@ -357,16 +365,16 @@
     {
       "id": "files",
       "title": "Files, projects, and recordings",
-      "summary": "Browse local paths, serve file bytes to the browser, and store short audio recordings.",
+      "summary": "Browse local paths, serve file bytes to the browser, and manage short audio recordings.",
       "read_when": [
         "You need a clickable file:// link the user can open in the chat UI",
         "You want to list project roots or browse a directory through the backend",
-        "You are uploading or fetching a voice recording id for playback"
+        "You are uploading, fetching, or deleting a voice recording"
       ],
       "tags": ["files", "output"],
       "surface": ["http"],
       "stability": "stable",
-      "docs_version": "1.2.1",
+      "docs_version": "1.17.2",
       "routes": [
         "GET /api/fs/browse",
         "GET /api/fs/file",
@@ -374,6 +382,7 @@
         "DELETE /api/projects",
         "GET /api/sessions/:cliKind/:sessionId",
         "GET /api/recordings/:id",
+        "DELETE /api/recordings/:id",
         "POST /api/recordings"
       ],
       "mcp_tools": [],
@@ -385,7 +394,8 @@
         "GET /api/fs/browse",
         "Projects",
         "Session lookup (history)",
-        "Recordings"
+        "Recordings",
+        "DELETE /api/recordings/:id"
       ]
     },
     {
@@ -502,24 +512,26 @@
     {
       "id": "transports",
       "title": "Transports — HTTP, SSE, MCP, WebSocket",
-      "summary": "When to use REST, agent events SSE, Streamable HTTP MCP, or browser WebSockets.",
+      "summary": "Choose REST, SSE, MCP, or WebSocket, and manage subscriptions to agent events.",
       "read_when": [
         "You need server push for turn events but HTTP alone is stateless",
         "You integrate via MCP Streamable HTTP at /api/mcp",
+        "You want to subscribe to an agent's events or stop receiving them",
         "You want to receive session events or send RPC calls over WebSocket"
       ],
       "tags": ["transports"],
       "surface": ["http", "mcp"],
       "stability": "stable",
-      "docs_version": "1.16.0",
+      "docs_version": "1.17.2",
       "routes": [
         "GET /api/mcp",
         "POST /api/mcp",
         "DELETE /api/mcp",
         "POST /api/agents/:id/subscribe",
+        "DELETE /api/agents/:id/subscribe",
         "DELETE /api/agents/:id/connection"
       ],
-      "mcp_tools": ["session_subscribe", "agent_subscribe"],
+      "mcp_tools": ["session_subscribe", "agent_subscribe", "agent_unsubscribe"],
       "path": "docs/agents/97-transports.md",
       "headings": [
         "Transports",
@@ -527,6 +539,7 @@
         "SSE — turn and session events",
         "HTTP subscribe (agent events bus)",
         "The same bus over MCP — `session_subscribe`",
+        "Stop receiving agent events",
         "MCP Streamable HTTP — `/api/mcp`",
         "WebSocket — session channel",
         "DELETE /api/agents/:id/connection"

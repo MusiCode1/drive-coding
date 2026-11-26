@@ -137,7 +137,8 @@ export function isMessageGrantVerb(verb: string): boolean {
 
 export function classifyScopeAction(verb: string): ScopeAction | undefined {
   const canonical = canonicalRpcMethod(verb)
-  if (isMessageGrantVerb(canonical ?? verb) || verb === "subscribe") return "message"
+  if (isMessageGrantVerb(canonical ?? verb) || verb === "subscribe" || verb === "unsubscribe")
+    return "message"
   if (canonical !== undefined) {
     if (canonical === RPC_METHODS.listSessions) return undefined
     if (canonical === RPC_METHODS.extMethod) return undefined

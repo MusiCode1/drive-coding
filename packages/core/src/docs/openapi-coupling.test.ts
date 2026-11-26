@@ -32,15 +32,14 @@ describe("openapi and RPC doc coupling", () => {
     expect(mentioned).toHaveLength(10)
   })
 
-  it("openapi.json carries 42 HTTP operations", () => {
+  it("openapi.json carries 44 HTTP operations", () => {
     const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8")) as {
       paths?: Record<string, Record<string, unknown>>
     }
     const ops = Object.values(spec.paths ?? {}).flatMap((item) =>
       Object.keys(item).filter((k) => !k.startsWith("x-") && k !== "parameters"),
     )
-    // 42 since fix-session-url-hijack C1: GET /api/sessions/:cliKind/:sessionId
-    expect(ops).toHaveLength(42)
+    expect(ops).toHaveLength(44)
   })
 
   it("publishes both input spellings for POST and PATCH under the docs version", () => {
@@ -56,7 +55,7 @@ describe("openapi and RPC doc coupling", () => {
     expect(patch.requestBody.content["application/json"].schema.$ref).toBe(
       "#/components/schemas/PatchAgentInput",
     )
-    expect(Object.keys(post.responses).sort()).toEqual(["201", "400", "500"])
+    expect(Object.keys(post.responses).sort()).toEqual(["201", "400", "403", "500"])
     expect(Object.keys(patch.responses)).toEqual(["200"])
     const create = spec.components.schemas.CreateAgentInputFull
     expect(create.properties.notifyOnDone).toMatchObject({ format: "uuid" })
@@ -69,7 +68,7 @@ describe("openapi and RPC doc coupling", () => {
     expect(notes.properties).not.toHaveProperty("agentFields")
   })
 
-  it("keeps both MCP vocabularies and the two single-name tools", () => {
+  it("keeps both MCP vocabularies and all four single-name tools", () => {
     const names = mcpToolNamesFromSource()
     const suffixes = [
       "list",
@@ -86,6 +85,8 @@ describe("openapi and RPC doc coupling", () => {
     ]
     expect(names.sort()).toEqual(
       [
+        "agent_cancel",
+        "agent_unsubscribe",
         "docs_get",
         "notify_parent",
         ...suffixes.flatMap((suffix) => [`agent_${suffix}`, `session_${suffix}`]),
@@ -93,7 +94,7 @@ describe("openapi and RPC doc coupling", () => {
     )
   })
 
-  it("openapi.json status codes match agent HTTP handlers for four core operations", () => {
+  it("openapi.json status codes match agent HTTP handlers for core operations", () => {
     const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8")) as {
       paths: Record<string, Record<string, { responses?: Record<string, unknown> }>>
     }
@@ -101,9 +102,41 @@ describe("openapi and RPC doc coupling", () => {
       Object.keys(spec.paths[path]?.[method]?.responses ?? {}).sort()
 
     expect(keys("post", "/api/agents/:id/rpc")).toEqual(["200", "202", "400", "401", "404", "409"])
-    expect(keys("post", "/api/agents/:id/subscribe")).toEqual(["204", "400", "404"])
-    expect(keys("post", "/api/agents")).toEqual(["201", "400", "500"])
+    expect(keys("post", "/api/agents/:id/subscribe")).toEqual(["204", "400", "403", "404"])
+    expect(keys("delete", "/api/agents/:id/subscribe")).toEqual(["204", "400", "403"])
+    expect(keys("post", "/api/agents")).toEqual(["201", "400", "403", "500"])
     expect(keys("delete", "/api/agents/:id")).toEqual(["204", "404"])
+  })
+
+  it("DELETE subscribe resolves to a required subscriber UUID with no other fields", () => {
+    const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8"))
+    const requestBody = spec.paths["/api/agents/:id/subscribe"]?.delete?.requestBody
+    expect(requestBody?.required).toBe(true)
+    const ref = requestBody?.content?.["application/json"]?.schema?.$ref
+    expect(ref).toBe("#/components/schemas/AgentUnsubscribeBody")
+    const component = spec.components.schemas[ref.split("/").at(-1)]
+    expect(component).toMatchObject({
+      additionalProperties: false,
+      required: ["subscriberAgentId"],
+      properties: { subscriberAgentId: { format: "uuid" } },
+    })
+    expect(Object.keys(component.properties)).toEqual(["subscriberAgentId"])
+  })
+
+  it("DELETE recording uses the existing id path, has no request body, and documents the outcomes", () => {
+    const spec = JSON.parse(fs.readFileSync(OPENAPI, "utf8"))
+    const recording = spec.paths["/api/recordings/:id"]
+    expect(recording?.get?.parameters).toContainEqual(expect.objectContaining({ name: "id" }))
+    const deletion = recording?.delete
+    expect(deletion?.parameters).toContainEqual({
+      name: "id",
+      in: "path",
+      required: true,
+      schema: { type: "string", format: "uuid" },
+    })
+    expect(deletion?.requestBody).toBeUndefined()
+    expect(Object.keys(deletion?.responses ?? {}).sort()).toEqual(["204", "400", "403", "500"])
+    expect(deletion?.responses?.["204"]?.content).toBeUndefined()
   })
 
   it("openapi.json status codes match agent docs HTTP handlers", () => {

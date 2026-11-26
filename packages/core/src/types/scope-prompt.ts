@@ -24,6 +24,7 @@ export type ScopePromptDetail = {
   callerShortId: string
   targetShortId: string
   watched?: string
+  watchedAgentPendingCreation?: true
   /** epoch-ms of automatic rejection. undefined = no timeout shown. */
   expiresAtMs?: number
 }
@@ -73,6 +74,7 @@ export function buildScopePromptDetail(opts: {
   verb: string
   agents: readonly ScopePartyInfo[]
   watchedId?: string
+  watchedAgentPendingCreation?: true
 }): ScopePromptDetail {
   const callerParty = partyFromAgents(opts.callerId, opts.agents)
   const targetParty = partyFromAgents(opts.targetId, opts.agents)
@@ -84,6 +86,9 @@ export function buildScopePromptDetail(opts: {
     targetShortId: shortAgentId(opts.targetId),
     ...(opts.watchedId !== undefined && {
       watched: describeScopeParty(partyFromAgents(opts.watchedId, opts.agents)),
+    }),
+    ...(opts.watchedAgentPendingCreation && {
+      watchedAgentPendingCreation: opts.watchedAgentPendingCreation,
     }),
   }
 }

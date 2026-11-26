@@ -8,6 +8,7 @@ import { configDefault } from "../config/specs.js"
 import { RPC_METHODS } from "../session/rpc-methods.js"
 import {
   classifyScopeAction,
+  isMessageGrantVerb,
   parseScopePolicyValue,
   readScopePolicyFromEnv,
   resolveScopePolicy,
@@ -32,6 +33,11 @@ describe("classifyScopeAction", () => {
   ])("maps %s and %s to the same message policy", (first, second) => {
     expect(classifyScopeAction(first)).toBe("message")
     expect(classifyScopeAction(second)).toBe(classifyScopeAction(first))
+  })
+
+  it("classifies unsubscribe as message policy with a separate grant", () => {
+    expect(classifyScopeAction("unsubscribe")).toBe("message")
+    expect(isMessageGrantVerb("unsubscribe")).toBe(false)
   })
 
   it("keeps update outside the send and cancel policy", () => {

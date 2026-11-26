@@ -41,7 +41,7 @@ export const AgentOpenInput = type({
     "When true, automatically close this agent after its first clean turn end.",
   ),
   "notifyOnDone?": optStr(
-    "UUID of the agent to notify when this agent's turn ends (auto-subscribe on create).",
+    "UUID of the agent to notify when this agent's turn ends. Subscriber scope is checked before spawning.",
   ),
   "includeLastAssistantText?": optBool(
     "When true with notifyOnDone, turn-ended prompts include a truncated preview of the last assistant message.",
@@ -121,6 +121,12 @@ export const AgentCloseInput = type({
   ),
 })
 export type AgentCloseInput = typeof AgentCloseInput.infer
+
+export const AgentCancelInput = type({
+  "+": "reject",
+  agentId: reqStr("Target agent UUID from session_open or session_list."),
+})
+export type AgentCancelInput = typeof AgentCancelInput.infer
 
 export const AgentStateInput = type({
   agent: reqStr("Agent UUID to read state for."),

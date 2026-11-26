@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.17.1",
+    "version": "1.17.2",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
@@ -635,6 +635,146 @@
         }
       }
     },
+    "/api/agents": {
+      "post": {
+        "operationId": "post_api_agents",
+        "summary": "POST /api/agents",
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid create input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "notifyOnDone subscriber scope denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Agent spawn failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentInputFull"
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "get_api_agents",
+        "summary": "GET /api/agents",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_agents",
+        "summary": "DELETE /api/agents",
+        "responses": {
+          "200": {
+            "description": "Bulk close results. Scoped tokens select the caller's subtree.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["closed", "failed"],
+                  "properties": {
+                    "closed": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "failed": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "error"],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "skipped": {
+                      "type": "array",
+                      "description": "Agents outside the selected subtree. Present for scoped tokens.",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "reason"],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "const": "scope"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Invalid scope token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/options": {
       "get": {
         "operationId": "get_api_options",
@@ -712,59 +852,26 @@
             }
           }
         }
-      }
-    },
-    "/api/tts/capabilities": {
-      "get": {
-        "operationId": "get_api_tts_capabilities",
-        "summary": "GET /api/tts/capabilities",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/agents": {
-      "get": {
-        "operationId": "get_api_agents",
-        "summary": "GET /api/agents",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        }
       },
-      "post": {
-        "operationId": "post_api_agents",
-        "summary": "POST /api/agents",
-        "responses": {
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
+      "delete": {
+        "operationId": "delete_api_agents_id_subscribe",
+        "summary": "DELETE /api/agents/:id/subscribe",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Subscription removed or already absent"
           },
           "400": {
-            "description": "Invalid create input",
+            "description": "Invalid JSON or unsubscribe body",
             "content": {
               "application/json": {
                 "schema": {
@@ -773,8 +880,8 @@
               }
             }
           },
-          "500": {
-            "description": "Agent spawn failed",
+          "403": {
+            "description": "Subscriber scope denied",
             "content": {
               "application/json": {
                 "schema": {
@@ -789,68 +896,20 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateAgentInputFull"
+                "$ref": "#/components/schemas/AgentUnsubscribeBody"
               }
             }
           }
         }
-      },
-      "delete": {
-        "operationId": "delete_api_agents",
-        "summary": "DELETE /api/agents",
+      }
+    },
+    "/api/tts/capabilities": {
+      "get": {
+        "operationId": "get_api_tts_capabilities",
+        "summary": "GET /api/tts/capabilities",
         "responses": {
           "200": {
-            "description": "Bulk close results. Scoped tokens select the caller's subtree.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["closed", "failed"],
-                  "properties": {
-                    "closed": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "failed": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "required": ["id", "error"],
-                        "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "error": {
-                            "type": "string"
-                          }
-                        }
-                      }
-                    },
-                    "skipped": {
-                      "type": "array",
-                      "description": "Agents outside the selected subtree. Present for scoped tokens.",
-                      "items": {
-                        "type": "object",
-                        "required": ["id", "reason"],
-                        "properties": {
-                          "id": {
-                            "type": "string"
-                          },
-                          "reason": {
-                            "const": "scope"
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Invalid scope token",
+            "description": "OK",
             "content": {
               "application/json": {
                 "schema": {
@@ -1001,6 +1060,65 @@
           },
           "404": {
             "description": "Recording not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "delete_api_recordings_id",
+        "summary": "DELETE /api/recordings/:id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Drive-Coding-Scope",
+            "in": "header",
+            "required": false,
+            "description": "The operator may omit the header, send a blank value, or send the master key.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Recording deleted or already absent"
+          },
+          "400": {
+            "description": "Invalid recording UUID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Recording deletion requires operator scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Could not delete recording",
             "content": {
               "application/json": {
                 "schema": {
@@ -1791,6 +1909,35 @@
           }
         },
         "required": ["subscriberAgentId"]
+      },
+      "AgentUnsubscribeBody": {
+        "type": "object",
+        "properties": {
+          "subscriberAgentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "a UUID",
+                "format": "uuid",
+                "pattern": "^[\\da-f]{8}-[\\da-f]{4}-[1-8][\\da-f]{3}-[89ab][\\da-f]{3}-[\\da-f]{12}$"
+              },
+              {
+                "const": "00000000-0000-0000-0000-000000000000",
+                "description": "a UUID",
+                "format": "uuid"
+              },
+              {
+                "const": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+                "description": "a UUID",
+                "format": "uuid"
+              }
+            ],
+            "description": "a UUID",
+            "format": "uuid"
+          }
+        },
+        "required": ["subscriberAgentId"],
+        "additionalProperties": false
       },
       "RpcPromptParams": {
         "type": "object",

@@ -36,6 +36,8 @@ function toolCatalogChars(): number {
     "field_delete",
   ]
   const expected = [
+    "agent_cancel",
+    "agent_unsubscribe",
     "docs_get",
     "notify_parent",
     ...suffixes.flatMap((suffix) => [`agent_${suffix}`, `session_${suffix}`]),
@@ -61,8 +63,6 @@ describe("tier2 surface + MCP catalog budget", () => {
       MCP_AGENT_CONFIGURE_HINT.length +
       surface.length
 
-    // Measured 2026-11-03 on edge: total=13,708 — only 292 chars of headroom.
-    // (Was 12,336 on 2026-09-28; the older note understated the total by ~1,370.)
     expect(total).toBeLessThanOrEqual(TIER2_BUDGET_CHARS)
     expect(total).toBeGreaterThan(9_000)
   })

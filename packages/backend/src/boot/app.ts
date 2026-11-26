@@ -8,6 +8,7 @@ import { onConfigChange } from "@drive-coding/provider/config"
 import { serveStatic } from "@hono/node-server/serve-static"
 import type { Hono } from "hono"
 import { agentDocFiles } from "../agent-docs-runtime.js"
+import { checkNotifyOnDoneScope } from "../scope-write.js"
 import { isBinary } from "../binary.js"
 import { applyReloadEffects, reloadRuntimeConfig } from "../config/runtime-config.js"
 import { bootAgentEvents } from "../delivery/agent-events-boot.js"
@@ -81,6 +82,11 @@ export async function buildApp(
     registry,
     orchestrator: orchestratorWithEvents,
     sessionHistoryStore,
+    checkNotifyOnDone: (token, subscriberAgentId) =>
+      checkNotifyOnDoneScope(token, subscriberAgentId, {
+        registry,
+        sessionRegistry: agentSessionRegistry,
+      }),
     bridgeManager: connectionRegistry,
     env,
   })

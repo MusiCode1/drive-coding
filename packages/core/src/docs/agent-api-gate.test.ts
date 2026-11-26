@@ -27,7 +27,12 @@ describe("agent-api gate helpers", () => {
       "field_delete",
     ]
     const expectedPairs = suffixes.map((name) => [`session_${name}`, `agent_${name}`])
-    const expectedMetadata = ["docs_get", ...expectedPairs.flat()].sort()
+    const expectedMetadata = [
+      "agent_cancel",
+      "agent_unsubscribe",
+      "docs_get",
+      ...expectedPairs.flat(),
+    ].sort()
     expect(names.sort()).toEqual([...expectedMetadata, "notify_parent"].sort())
     expect(Object.keys(MCP_TOOL_META).sort()).toEqual(expectedMetadata)
     expect(MCP_TOOL_ALIASES).toEqual(Object.fromEntries(expectedPairs))
@@ -60,7 +65,7 @@ describe("agent-api gate helpers", () => {
     const keys = documentableRouteKeys(REPO_ROOT)
     expect(keys.has("get /api/health")).toBe(true)
     expect(keys.has("get /*")).toBe(false)
-    // 42 since fix-session-url-hijack C1: GET /api/sessions/:cliKind/:sessionId
-    expect(keys.size).toBe(42)
+    // 44 after adding DELETE /api/recordings/:id
+    expect(keys.size).toBe(44)
   })
 })

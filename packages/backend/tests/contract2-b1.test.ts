@@ -115,11 +115,12 @@ type Point = "rpc" | "mcp"
 type WireMessage = {
   id?: number | string
   method?: string
+  params?: { sessionId?: string }
   result?: unknown
   error?: unknown
 }
 
-async function setup(point: Point, holdCancel = false) {
+async function setup(point: Point, holdCancel = false, measureClose = false) {
   const cliSpecsFile = `${fixture}.jsonc`
   vi.stubEnv("CLI_SPECS_FILE", cliSpecsFile)
   vi.stubEnv("AGENT_SIDECAR", "")
@@ -164,6 +165,7 @@ async function setup(point: Point, holdCancel = false) {
   const eventBus = createAgentEventBus()
   const emitTurnEnded = createTurnEndedEmitter(eventBus)
   const ended: { agentId: string; info: TurnEndedInfo }[] = []
+  const scheduleClose = vi.fn()
   const sessions = createAgentSessionRegistry({
     connectionRegistry: connections,
     onTurnEnded(id, info) {
@@ -174,6 +176,7 @@ async function setup(point: Point, holdCancel = false) {
       createSessionHostFromConnection(connection, {
         ...opts,
         initTimeoutMs: deadline,
+        ...(measureClose && { closeOnTurnEnd: true, onScheduleCloseOnTurnEnd: scheduleClose }),
         _createAcpClient: async (...args) => {
           const client = await createAcpClient(...args)
           if (!holdCancel) return client
@@ -255,11 +258,24 @@ async function setup(point: Point, holdCancel = false) {
     promptRequest: () => wireMessage("out", (message) => message.method === "session/prompt"),
     cancelRequest: () => wireMessage("out", (message) => message.method === "session/cancel"),
     answerTo: (id: WireMessage["id"]) => wireMessage("in", (message) => message.id === id),
-    releasePrompt: () =>
+    releasePrompt: (tail = false) =>
       conn.wire.write(
-        `${JSON.stringify({ jsonrpc: "2.0", method: "_test/complete", params: { sessionId } })}\n`,
+        `${JSON.stringify({ jsonrpc: "2.0", method: "_test/complete", params: { sessionId, tail } })}\n`,
       ),
-    cancel: () => rpc("session/cancel", { sessionId }, deadline / 2),
+    cancel: (targetId = sessionId) => rpc("session/cancel", { sessionId: targetId }, deadline / 2),
+    async cancelViaMcp() {
+      if (!mcp) throw new Error("MCP transport required")
+      const result = CallToolResultSchema.parse(
+        await mcp.callTool({ name: "agent_cancel", arguments: { agentId } }),
+      )
+      expect(result.isError).not.toBe(true)
+      const block = result.content.find((entry) => entry.type === "text")
+      if (block?.type !== "text") throw new Error("Missing cancellation result text")
+      return JSON.parse(block.text) as unknown
+    },
+    scheduleClose,
+    cancelFrames: () =>
+      wire.filter(({ dir, message }) => dir === "out" && message.method === "session/cancel"),
     async send(scenario: string, mode: "wait" | "no-wait" | "timeout" = "wait") {
       const prompt = `[b1:${scenario}]`
       if (mcp) {
@@ -457,4 +473,76 @@ it("preserves local cancellation through a late chunk and a different wire compl
   expect(harness.ended).toHaveLength(1)
   const { snapshot } = await harness.openViewer()
   expect(snapshot.updates.find(isIdle)?.stopReason).toBe("cancelled")
+}, 20_000)
+
+it.each(["provider", "local"] as const)(
+  "keeps the %s outcome when agent_cancel races with an ACP refusal",
+  async (first) => {
+    const harness = await setup("mcp", true, true)
+    const { next } = await harness.openViewer()
+    const caller = harness.send("held-refusal")
+    const request = await harness.promptRequest()
+    expect(request.id).toBeDefined()
+    const accepted = { ok: true, agentId: harness.agentId, outcome: "cancel-requested" }
+    expect(await harness.cancelViaMcp()).toEqual(accepted)
+    expect((await harness.cancelRequest()).params).toMatchObject({ sessionId })
+    expect(await harness.cancelViaMcp()).toEqual(accepted)
+    expect(harness.cancelFrames()).toHaveLength(1)
+    expect(harness.ended).toEqual([])
+    expect(harness.scheduleClose).not.toHaveBeenCalled()
+
+    if (first === "local") {
+      harness.releaseCancel()
+      await expectObserver(harness, next, "cancelled")
+      expect(harness.scheduleClose).toHaveBeenCalledOnce()
+    }
+
+    expect(harness.releasePrompt(first === "local")).toBe(true)
+    expect(await harness.answerTo(request.id)).toMatchObject({ result: { stopReason: "refusal" } })
+    if (first === "provider") {
+      expectCompletion("mcp", await caller, "refusal")
+      await expectObserver(harness, next, "refusal")
+      harness.releaseCancel()
+    } else {
+      const response = await caller
+      expect(response.body).toMatchObject({
+        stopReason: "cancelled",
+        lastTurnError: null,
+        text: `${replyText} after local cancel`,
+      })
+      const tail = await nextUpdate(next, (update) =>
+        JSON.stringify(update).includes(" after local cancel"),
+      )
+      expect(tail.sessionUpdate).toBe("agent_message_chunk")
+      expect((await nextUpdate(next, isIdle)).stopReason).toBe("cancelled")
+    }
+    const { snapshot } = await harness.openViewer()
+    expect(snapshot.updates.find(isIdle)?.stopReason).toBe(
+      first === "provider" ? "refusal" : "cancelled",
+    )
+    expect(harness.ended).toHaveLength(1)
+    expect(harness.cancelFrames()).toHaveLength(1)
+    expect(harness.scheduleClose).toHaveBeenCalledTimes(first === "provider" ? 0 : 1)
+  },
+  20_000,
+)
+
+it("forwards an RPC cancel for another session without replacing the current refusal", async () => {
+  const harness = await setup("mcp", false, true)
+  const { next } = await harness.openViewer()
+  const caller = harness.send("held-refusal")
+  const request = await harness.promptRequest()
+  const otherSessionId = "fixture-foreign-session"
+  expect(await harness.cancel(otherSessionId)).toMatchObject({
+    status: 200,
+    body: { ok: true, timedOut: false },
+  })
+  expect((await harness.cancelRequest()).params).toMatchObject({ sessionId: otherSessionId })
+  expect(harness.ended).toEqual([])
+  expect(harness.releasePrompt()).toBe(true)
+  expect(await harness.answerTo(request.id)).toMatchObject({ result: { stopReason: "refusal" } })
+  expectCompletion("mcp", await caller, "refusal")
+  await expectObserver(harness, next, "refusal")
+  expect(harness.cancelFrames()).toHaveLength(1)
+  expect(harness.scheduleClose).not.toHaveBeenCalled()
 }, 20_000)

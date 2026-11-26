@@ -6,7 +6,9 @@ import {
   AgentNotifyParentInput,
   type AgentRegistry,
   AgentSubscribeInput,
+  AgentUnsubscribeInput,
   MCP_NOTIFY_PARENT_META,
+  MCP_TOOL_META,
   McpAgentSubscribeInput,
 } from "@drive-coding/core"
 import { createLogger } from "@drive-coding/core/log"
@@ -92,6 +94,33 @@ export function registerAgentEventMcpTools(
         agentId: agent,
         subscriberAgentId: subscriber,
       }),
+    },
+  )
+
+  registerArkTool(
+    server,
+    "agent_unsubscribe",
+    MCP_TOOL_META.agent_unsubscribe,
+    AgentUnsubscribeInput,
+    async (input) => {
+      const subscriberId = input.subscriberAgentId ?? callerAgentId
+      if (!subscriberId) {
+        throw new McpToolError(
+          `subscriberAgentId required — pass subscriberAgentId or ${AGENT_ID_HEADER} header`,
+        )
+      }
+      return checkScopedWrite({
+        token: ctx.scopeToken,
+        targetId: subscriberId,
+        watchedId: input.agentId,
+        verb: "unsubscribe",
+        registry: deps.registry,
+        sessionRegistry: deps.agentSessionRegistry,
+      }).then((allowed) => {
+        if (!allowed) throw new McpToolError(JSON.stringify(SCOPE_DENIED_BODY))
+        deps.eventBus.unsubscribe(input.agentId, subscriberId)
+        return jsonResult({ ok: true, agentId: input.agentId, subscriberAgentId: subscriberId })
+      })
     },
   )
 

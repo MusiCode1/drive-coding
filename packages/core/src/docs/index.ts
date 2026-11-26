@@ -1,4 +1,4 @@
-export const DOCS_VERSION = "1.17.1"
+export const DOCS_VERSION = "1.17.2"
 
 export type AgentDocFile = { readonly name: string; readonly text: string }
 /** Document source. **Synchronous on purpose** — async IO belongs in dev-source.ts. */

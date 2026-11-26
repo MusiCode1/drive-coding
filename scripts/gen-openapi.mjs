@@ -15,7 +15,10 @@ import {
   PromptParams,
 } from "../packages/backend/src/session-host/http/rpc.ts"
 import { PUBLISHED_CONTRACT_VERSION } from "../packages/core/src/contract-version.ts"
-import { AgentSubscribeBody } from "../packages/core/src/schemas/agent-events.ts"
+import {
+  AgentSubscribeBody,
+  AgentUnsubscribeBody,
+} from "../packages/core/src/schemas/agent-events.ts"
 import {
   ScopePolicyPatchBodySchema,
   ScopePolicySnapshotSchema,
@@ -119,6 +122,7 @@ const components = {
     CreateAgentInputFull: arkToJsonSchema(CreateAgentInputFull, "CreateAgentInputFull"),
     PatchAgentInput: arkToJsonSchema(PatchAgentInput, "PatchAgentInput"),
     AgentSubscribeBody: arkToJsonSchema(AgentSubscribeBody, "AgentSubscribeBody"),
+    AgentUnsubscribeBody: arkToJsonSchema(AgentUnsubscribeBody, "AgentUnsubscribeBody"),
     RpcPromptParams: arkToJsonSchema(PromptParams, "PromptParams"),
     RpcCancelParams: arkToJsonSchema(CancelParams, "CancelParams"),
     RpcLoadSessionParams: arkToJsonSchema(LoadSessionParams, "LoadSessionParams"),
@@ -204,6 +208,7 @@ const SPECIAL = {
     responses: {
       ...jsonResponse("Created", "201"),
       400: jsonErrorResponse("Invalid create input"),
+      403: jsonErrorResponse("notifyOnDone subscriber scope denied"),
       500: jsonErrorResponse("Agent spawn failed"),
     },
   },
@@ -259,6 +264,14 @@ const SPECIAL = {
       400: jsonErrorResponse("Invalid JSON or subscribe body"),
       403: jsonErrorResponse("Subscriber scope denied"),
       404: jsonErrorResponse("Agent not found"),
+    },
+  },
+  "delete /api/agents/:id/subscribe": {
+    requestBody: requestBodyFromSchema("#/components/schemas/AgentUnsubscribeBody"),
+    responses: {
+      ...noContentResponse("Subscription removed or already absent"),
+      400: jsonErrorResponse("Invalid JSON or unsubscribe body"),
+      403: jsonErrorResponse("Subscriber scope denied"),
     },
   },
   "post /api/agents/:id/rpc": {
@@ -420,6 +433,25 @@ const SPECIAL = {
       404: jsonErrorResponse("Recording not found"),
     },
   },
+  "delete /api/recordings/:id": {
+    parameters: [
+      { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+      {
+        name: "X-Drive-Coding-Scope",
+        in: "header",
+        required: false,
+        description:
+          "The operator may omit the header, send a blank value, or send the master key.",
+        schema: { type: "string" },
+      },
+    ],
+    responses: {
+      ...noContentResponse("Recording deleted or already absent"),
+      400: jsonErrorResponse("Invalid recording UUID"),
+      403: jsonErrorResponse("Recording deletion requires operator scope"),
+      500: jsonErrorResponse("Could not delete recording"),
+    },
+  },
   "get /api/cli-logo/:cliId": {
     responses: {
       200: {
@@ -558,8 +590,9 @@ if (!docsVersion) {
 }
 
 const { paths, count } = buildPaths()
-if (count !== 42) {
-  console.error(`🔴 expected 42 documentable operations, got ${count}`)
+const expectedOperationCount = 44
+if (count !== expectedOperationCount) {
+  console.error(`🔴 expected ${expectedOperationCount} documentable operations, got ${count}`)
   process.exit(1)
 }
 

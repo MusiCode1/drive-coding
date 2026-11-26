@@ -1,7 +1,7 @@
 ---
 id: session-lifecycle
 title: Session lifecycle — open, send, close
-summary: How to open an agent, drive a turn, close it, and keep session viewers alive.
+summary: How to open an agent, send and cancel turns, close the agent, and keep viewers alive.
 read_when:
   - You need to spawn an agent and get its id
   - A turn is running and you must decide between waiting and forcing
@@ -25,6 +25,7 @@ mcp_tools:
   - agent_send
   - session_state
   - agent_state
+  - agent_cancel
   - session_close
   - agent_close
   - session_note_set
@@ -33,7 +34,7 @@ mcp_tools:
   - agent_field_set
   - session_field_delete
   - agent_field_delete
-docs_version: 1.17.0
+docs_version: 1.17.2
 updated: 2026-11-26
 ---
 
@@ -65,8 +66,8 @@ HTTP mirrors the same lifecycle: `POST /api/agents` (create), agent-scoped route
 `/api/agents/:id/…`, `DELETE /api/agents/:id` (close).
 To subscribe an existing agent to the new agent's events, pass its UUID in
 `notifyOnDone` or `subscribeOnOpenAgentId` at creation. If you supply both,
-they must match. The server creates one subscription and honors
-`includeLastAssistantText`.
+they must match. The server checks subscribe scope for the selected subscriber
+before spawning, creates one subscription, and honors `includeLastAssistantText`.
 
 ## MCP tool names
 
@@ -111,6 +112,10 @@ Optional highlights:
 - **`permission`** — policy for the new agent (`allow_once`, `allow_always`, `reject_once`, `ask`).
 - **`parent`** / header **`X-Drive-Coding-Agent`** — sub-agent wiring (`parentAgentId`).
 - **`closeOnTurnEnd`** — auto-close after first clean turn end.
+- **`notifyOnDone`** in `session_open`, or **`subscribeOnOpenAgentId`** in `agent_open` —
+  subscriber agent UUID for automatic turn-ended notifications. A scope denial returns
+  `scope-denied` before spawning. HTTP returns 403 for the same denial.
+  Set `includeLastAssistantText: true` to include a truncated preview.
 - **`publicUrl`** — base for the returned chat link. With legacy `session_open`, `base`
   also works and `publicUrl` takes precedence when supplied, including an empty string.
   With canonical `agent_open`, use `publicUrl`. By default, both use the instance's
@@ -137,6 +142,19 @@ When **`turnState !== idle`**:
 - **session_close** / `DELETE` / CLI `close` **refuse** unless **`force: true`** (or CLI
   `--force`). Prefer waiting for idle unless you accept a hard stop.
 - Closing with force while a turn runs still kills the process; log may record prior turn state.
+
+## Cancel the active turn
+
+Call `agent_cancel` with `{ "agentId": "..." }` to cancel the current turn.
+`{ ok: true, agentId, outcome: "cancel-requested" }` confirms best-effort acceptance.
+Check **session_state** for `turnState: "idle"` before sending follow-up work.
+Repeated requests during that turn receive the same outcome and send one provider
+request in total.
+
+An idle agent, an agent without a live session, or a session switch returns
+`no-active-turn`. Call again once a turn is active in the current session.
+A missing agent record returns a tool error. Cancellation leaves the agent
+and conversation available, subject to the existing `closeOnTurnEnd` setting.
 
 ## Close
 
