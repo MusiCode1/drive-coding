@@ -2,7 +2,7 @@
   "openapi": "3.1.1",
   "info": {
     "title": "drive-coding HTTP API",
-    "version": "1.17.0",
+    "version": "1.17.1",
     "description": "Documentable Hono routes on the drive-coding backend. Generated from code — run `bun scripts/gen-openapi.mjs` to refresh."
   },
   "paths": {
@@ -1342,7 +1342,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Blocking waitMs completion or method-specific JSON result",
+            "description": "Waited completion or method-specific JSON result. An ACP v1 prompt result includes ok: true, timedOut: false, messagesSince, and stopReason, including on refusal or limit. A wait timeout returns ok: false and timedOut: true while the turn continues.",
             "content": {
               "application/json": {
                 "schema": {
