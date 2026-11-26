@@ -146,12 +146,13 @@ export function createFailedPromptStore(db = promptRecoveryDb, now = Date.now) {
     return db.transact("readwrite", [rowRead(expected.owner)], (tx, [raw]) => {
       const { record, version } = readSlot(raw, expected.owner)
       if (!matches(record, expected) || record.claimUntil === undefined) return false
-      if (outcome.delivery === "not-started" && record.claimUntil <= now()) return false
+      const { delivery, ...details } = outcome
+      if (delivery === "not-started" && record.claimUntil <= now()) return false
       const next = { owner: record.owner, version: version + 1 }
-      if (outcome.delivery === "accepted") persist(tx, next)
+      if (delivery === "accepted") persist(tx, next)
       else {
         const { claimUntil: _claim, ...previous } = record
-        persist(tx, { ...next, record: { ...previous, ...outcome, version: next.version } })
+        persist(tx, { ...next, record: { ...previous, ...details, delivery, version: next.version } })
       }
       return true
     })

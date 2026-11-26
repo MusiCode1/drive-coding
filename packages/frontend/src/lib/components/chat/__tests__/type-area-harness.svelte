@@ -63,6 +63,7 @@ export function promptTestDb() {
  * denied-icon tests.
  */
 
+import { untrack } from "svelte"
 import {
   setComposerDraft,
   setDictate,
@@ -153,10 +154,14 @@ const fakeDictate = {
     (props.finishListening ?? (async () => ({ ok: true, text: "" } as const)))(),
 }
 
+let permissionDenied = $state<boolean>()
 const fakeMic = {
   state: "idle" as MicState,
   get permissionDenied() {
-    return props.micPermissionDenied ?? false
+    return permissionDenied ?? props.micPermissionDenied ?? false
+  },
+  set permissionDenied(denied: boolean) {
+    permissionDenied = denied
   },
 }
 
@@ -170,16 +175,17 @@ setSettings(fakeSettings)
 setVoiceMode(fakeVoiceMode)
 setModelStatus(fakeModelStatus)
 setComposerDraft(composerDraft)
-const prompts = new PromptRetry({ current: () => null, isCurrent: () => false }, () => {})
-if (props.owned) {
-  setPromptRetry(props.owned)
+const owned = untrack(() => props.owned)
+if (owned) {
+  setPromptRetry(owned)
   setDictate(new Dictate({
     mic: fakeMic as unknown as Mic,
     draft: composerDraft,
     recovery: createDictateRecovery(),
-    submit: props.owned.dictateSubmit,
+    submit: owned.dictateSubmit,
   }))
 } else {
+  const prompts = new PromptRetry({ current: () => null, isCurrent: () => false }, () => {})
   setPromptRetry({ prompts, dictateSubmit: new DictateSubmit(prompts), legacyFixture: () => true })
   setDictate(fakeDictate as unknown as Dictate)
 }

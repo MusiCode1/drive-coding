@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { flushSync, mount, unmount } from "svelte"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { createFailedPromptStore } from "$lib/adapters/failed-prompt-store"
+import { createFailedPromptStore, PROMPT_CLAIM_MS } from "$lib/adapters/failed-prompt-store"
 import type { RecordTarget } from "$lib/engines/pending-capture-wiring"
 import { promptOwner, promptPayload } from "$lib/engines/prompt-payload"
 import type { SessionView } from "$lib/session/session-view"
@@ -57,7 +57,9 @@ describe("ChatSessionStatus saved prompts", () => {
   })
 
   it("offers only dismissal for unknown delivery once its claim expires", async () => {
-    const store = createFailedPromptStore(promptTestDb(), () => 0)
+    let now = 1
+    const clock = () => now
+    const store = createFailedPromptStore(promptTestDb(), clock)
     const base = "https://fixture.local"
     const active: RecordTarget = {
       ownerKey: promptOwner(base, "fixture", "A"), backendBaseUrl: base,
@@ -65,9 +67,14 @@ describe("ChatSessionStatus saved prompts", () => {
     }
     const claimed = await store.adopt(active.ownerKey, promptPayload("synthetic body"))
     if (claimed.kind !== "claimed") throw new Error("Missing fixture claim")
-    await store.settle(claimed.record, { delivery: "unknown" })
-    vm = new PromptRetry({ current: () => active, isCurrent: () => true }, vi.fn(), store)
+    vm = new PromptRetry({ current: () => active, isCurrent: () => true }, vi.fn(), store, clock)
     component = mount(Harness, { target: document.body, props: { prompts: vm } })
+    await vm.refresh()
+    flushSync()
+    expect(document.querySelector('[role="alert"] [dir="auto"]')?.textContent?.trim()).toBe("synthetic body")
+    expect(document.querySelectorAll("button")).toHaveLength(0)
+
+    now += PROMPT_CLAIM_MS
     await vm.refresh()
     flushSync()
     const buttons = [...document.querySelectorAll("button")].map((button) => button.textContent?.trim())

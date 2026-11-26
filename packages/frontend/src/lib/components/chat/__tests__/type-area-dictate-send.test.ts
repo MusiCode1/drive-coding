@@ -5,7 +5,7 @@
  * ─── slice dictate-to-input-polish (C1) ───
  */
 import { flushSync, mount, unmount } from "svelte"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createDictateSubmitSourceDb } from "$lib/adapters/dictate-submit-source"
 import { createFailedPromptStore } from "$lib/adapters/failed-prompt-store"
 import type { RecordTarget } from "$lib/engines/pending-capture-wiring"
@@ -36,11 +36,20 @@ let app: object | null = null
 
 let ownedVm: PromptRetry | undefined
 
-afterEach(() => {
-  if (app !== null) unmount(app)
+beforeEach(() => {
+  const values = new Map<string, string>()
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => { values.set(key, value) },
+    removeItem: (key: string) => { values.delete(key) },
+  } satisfies Pick<Storage, "getItem" | "setItem" | "removeItem">)
+})
+
+afterEach(async () => {
+  if (app !== null) await unmount(app)
   ownedVm?.dispose()
   ownedVm = undefined
-  localStorage.clear()
+  vi.unstubAllGlobals()
   target?.remove()
   target = null
   app = null

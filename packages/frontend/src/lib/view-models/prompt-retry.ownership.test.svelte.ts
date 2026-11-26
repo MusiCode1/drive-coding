@@ -100,11 +100,15 @@ describe("owned prompt delivery", () => {
     move("B", 2)
     resume.resolve()
     expect(await submission).toBe(true)
-    await vi.waitFor(async () => expect(await store.load(owner("A"))).toMatchObject({
-      payload: aPayload,
-      delivery: expired ? "unknown" : "not-started",
-      claimUntil: expired ? 1 + PROMPT_CLAIM_MS : undefined,
-    }))
+    await vi.waitFor(async () => {
+      const stored = await store.load(owner("A"))
+      expect(stored).toMatchObject({
+        payload: aPayload,
+        delivery: expired ? "unknown" : "not-started",
+      })
+      if (expired) expect(stored).toHaveProperty("claimUntil", 1 + PROMPT_CLAIM_MS)
+      else expect(stored).not.toHaveProperty("claimUntil")
+    })
     expect(transport).not.toHaveBeenCalled()
     expect(prompts.record).toBeUndefined()
   })
